@@ -9,6 +9,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
+use App\Services\Git\GitRepositoryOriginPolicy;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRegistrationResponse;
 
@@ -41,6 +42,13 @@ final class RegisterInstanceCommand extends GatewayCommand
         $facts = $git->inspect($requestedPath);
 
         if (! $facts instanceof GitRegistrationFacts) {
+            return $this->renderGatewayFailure(
+                'instance.source_invalid',
+                'The current path is not a supported Git checkout or worktree.',
+            );
+        }
+
+        if (! GitRepositoryOriginPolicy::isSafe($facts->repositoryUrl)) {
             return $this->renderGatewayFailure(
                 'instance.source_invalid',
                 'The current path is not a supported Git checkout or worktree.',

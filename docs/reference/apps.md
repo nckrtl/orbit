@@ -47,7 +47,7 @@ During an upgrade, the Gateway checks every existing App before it makes reposit
 
 Registration uses the verified checkout origin to find an App by canonical repository identity. The Gateway does not choose by URL transport or database order, and conflicting App or source identity stops registration before mutation.
 
-When no App owns the repository, the interactive CLI shows every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its AppInstance. Non-interactive registration refuses when a required value remains unresolved. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
+When no App owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its AppInstance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request. Non-interactive registration refuses when a required value remains unresolved. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
 
 Registration can infer these App values from unambiguous source evidence.
 

@@ -12,6 +12,8 @@ interface RegistrationSourceManager
     /** @return list<RegistrationSourceFacts> */
     public function inspect(Node $node, string $sourcePath, bool $includeWorktrees): array;
 
+    public function validateRetained(Node $node, RegistrationSourceFacts $facts, string $authoritativePath): void;
+
     public function relocate(AppInstance $appInstance, RegistrationSourceFacts $facts): void;
 
     /** @param list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}> $members */

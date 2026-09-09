@@ -20,7 +20,7 @@ final readonly class NativeGitRegistrationDiscovery implements GitRegistrationDi
         $repository = $this->git($top, ['remote', 'get-url', 'origin']);
         $commit = $this->git($top, ['rev-parse', '--verify', 'HEAD^{commit}']);
 
-        if ($repository === null || $commit === null) {
+        if ($repository === null || ! GitRepositoryOriginPolicy::isSafe($repository) || $commit === null) {
             return null;
         }
 

@@ -6,6 +6,7 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
+use App\Services\Git\NativeGitRegistrationDiscovery;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
@@ -15,6 +16,7 @@ use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -141,6 +143,66 @@ describe('instance:register', function (): void {
             'instance_name' => 'feature',
             'hostname' => 'feature.test',
         ]);
+    });
+
+    it('refuses a credential-bearing discovered origin without printing it', function (bool $json): void {
+        $secret = 'orb105-user:orb105-token';
+        $this->registrationGit->facts = new GitRegistrationFacts(
+            path: '/work/acme',
+            repositoryUrl: "https://{$secret}@example.test/acme.git",
+            slug: 'acme',
+            defaultBranch: 'main',
+            branch: 'main',
+            root: 'public',
+            layout: 'checkout',
+            commit: str_repeat('a', 40),
+        );
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('instance:register', [
+                '--json' => $json,
+                '--no-interaction' => true,
+            ])
+            ->expectsOutputToContain('not a supported Git checkout or worktree')
+            ->doesntExpectOutputToContain($secret)
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with(['interactive output' => false, 'JSON output' => true]);
+
+    it('rejects a credential-bearing native Git origin during local discovery', function (): void {
+        $directory = sys_get_temp_dir().'/orbit-cli-origin-'.Str::uuid();
+        $files = new Filesystem;
+        $files->ensureDirectoryExists($directory);
+
+        try {
+            $commands = [
+                ['git', 'init', '--initial-branch=main', $directory],
+                ['git', '-C',   $directory,              'config',   'user.email', 'orb105@example.test'],
+                ['git', '-C',   $directory,              'config',   'user.name',  'ORB-105'],
+            ];
+            file_put_contents($directory.'/README.md', "test\n");
+            $commands[] = ['git', '-C', $directory, 'add', 'README.md'];
+            $commands[] = ['git', '-C', $directory, 'commit', '-m', 'Initial'];
+            $commands[] = [
+                'git',
+                '-C',
+                $directory,
+                'remote',
+                'add',
+                'origin',
+                'https://orb105-user:orb105-token@example.test/acme.git',
+            ];
+
+            foreach ($commands as $command) {
+                new Process($command)->mustRun();
+            }
+
+            expect(new NativeGitRegistrationDiscovery()->inspect($directory))->toBeNull();
+        } finally {
+            $files->deleteDirectory($directory);
+        }
     });
 });
 

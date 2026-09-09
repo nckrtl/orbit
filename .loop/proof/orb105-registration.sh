@@ -29,7 +29,7 @@ create_checkout() {
     remote_script "$path" "$branch" <<'BASH'
 path=$1
 branch=$2
-case "$path" in /home/orbit/orb105-*|/dev/shm/orb105-*) ;; *) exit 64 ;; esac
+case "$path" in /home/orbit/orb105-*|/dev/shm/orb105-*|/home/orbit/apps/laravel-typed/orb105-*) ;; *) exit 64 ;; esac
 test ! -e "$path"
 if [[ "$path" == /dev/shm/* ]]; then
     git clone --no-local --no-checkout /home/orbit/apps/laravel-typed/e2e-dev "$path" >/dev/null
@@ -70,7 +70,7 @@ register_source() {
 }
 
 register_request() {
-    remote_command php "$registration_fixture" "$1"
+    remote_command php "$registration_fixture" "$@"
 }
 
 json_field() {
@@ -216,6 +216,12 @@ case "$scenario" in
         assert_registration "$output" checkout "$destination"
         remove_instance "$(json_field "$output" app_instance.id)"
 
+        source=/home/orbit/apps/laravel-typed/orb105-already
+        create_checkout "$source" orb105-already
+        output=$(register_source "$source")
+        assert_registration "$output" checkout "$source"
+        remove_instance "$(json_field "$output" app_instance.id)"
+
         root=/home/orbit/orb105-common
         child=/home/orbit/orb105-linked
         create_graph "$root" "$child"
@@ -270,6 +276,17 @@ BASH
         test "$(json_field "$retry" app_instance.id)" = "$id"
         test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
         remote_command grep -Fx 'normal edit after registration' "$destination/README.md" >/dev/null
+        remote_command git -C "$destination" remote set-url origin https://github.com/acme/replacement.git
+        set +e
+        conflict=$(register_request "$source" 2>&1)
+        conflict_status=$?
+        set -e
+        test "$conflict_status" -ne 0
+        test "$(json_field "$conflict" error.code)" = instance.registration_conflict
+        remote_command git -C "$destination" remote set-url origin https://github.com/laravel/laravel.git
+        retry=$(register_request "$source")
+        test "$(json_field "$retry" app_instance.id)" = "$id"
+        test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
         remove_instance "$id"
         ;;
     registered-source-provisioning-rollback)
@@ -371,10 +388,62 @@ assert isinstance(after["error_code"], str) and after["error_code"]' "$before" "
         root=/home/orbit/orb105-set-root
         child=/home/orbit/orb105-set-child
         create_graph "$root" "$child"
-        output=$(register_source "$root" --include-worktrees)
+        output=$(register_source "$root" --include-worktrees --hostname=orb105-primary.orbit)
         test "$(json_field "$output" source_count)" = 2
         test "$(json_field "$output" completed_count)" = 2
+        python3 -c 'import json,sys
+value=json.loads(sys.argv[1]); members={member["name"]:member for member in value["app_instances"]}
+assert members["orb105-set-root"]["hostname"] == "orb105-primary.orbit"
+assert members["orb105-set-child"]["hostname"] != "orb105-primary.orbit"
+assert members["orb105-set-root"]["route"]["id"] != members["orb105-set-child"]["route"]["id"]' "$output"
+        retry=$(register_request "$root" true orb105-primary.orbit)
+        test "$(json_field "$retry" source_count)" = 2
+        test "$(json_field "$retry" completed_count)" = 2
         remove_instance "$(json_field "$output" app_instance.id)"
+
+        root=/home/orbit/orb105-owner-root
+        child=/home/orbit/orb105-owner-child
+        create_graph "$root" "$child"
+        remote_command sudo chown root:root "$child/composer.json"
+        set +e
+        failure=$(register_source "$root" --include-worktrees 2>&1)
+        status=$?
+        set -e
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = app-dev.source_metadata_unsafe
+        remote_command test -d "$root" -a -d "$child"
+        state=$(gateway_state registration-set-count "$root" "$child")
+        test "$(json_field "$state" instances)" = 0
+        test "$(json_field "$state" routes)" = 0
+        remote_command sudo chown orbit:orbit "$child/composer.json"
+        cleanup_path "$root" "$child"
+
+        source=/home/orbit/orb105-credential
+        create_checkout "$source" orb105-credential
+        remote_command git -C "$source" remote set-url origin https://orb105-user:orb105-token@example.invalid/acme.git
+        set +e
+        failure=$(register_source "$source" 2>&1)
+        status=$?
+        set -e
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = instance.source_invalid
+        case "$failure" in *orb105-token*) exit 1 ;; esac
+        cleanup_path "$source"
+
+        managed=/home/orbit/orb105-managed-owner
+        source="$managed/nested"
+        create_checkout "$source" orb105-overlap
+        owner_state=$(gateway_state seed-overlap-owner "$managed")
+        owner_id=$(json_field "$owner_state" id)
+        set +e
+        failure=$(register_source "$source" 2>&1)
+        status=$?
+        set -e
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = instance.source_conflict
+        remote_command test -d "$source"
+        gateway_state delete-overlap-owner "$owner_id" >/dev/null
+        cleanup_path "$managed"
 
         root=/home/orbit/orb105-bad-root
         child=/home/orbit/orb105-bad-child

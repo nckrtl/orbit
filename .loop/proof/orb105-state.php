@@ -158,5 +158,42 @@ if ($command === 'registration-set-count') {
     exit(0);
 }
 
+if ($command === 'seed-overlap-owner') {
+    $path = $argv[2] ?? '';
+
+    if (! str_starts_with($path, '/home/orbit/orb105-')) {
+        fwrite(STDERR, "Invalid ORB-105 managed overlap path.\n");
+        exit(64);
+    }
+
+    $app = OrbitApp::query()->where('slug', 'laravel-typed')->sole();
+    $node = Node::query()->where('name', 'app-dev')->sole();
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'orb105-overlap-owner',
+        'environment' => 'development',
+        'source_layout' => 'checkout',
+        'checkout_path' => $path,
+        'status' => AppInstanceState::Reserved,
+    ]);
+    echo json_encode(['id' => $instance->id], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+if ($command === 'delete-overlap-owner') {
+    $id = (int) ($argv[2] ?? 0);
+    $instance = AppInstance::query()->findOrFail($id);
+
+    if ($instance->name !== 'orb105-overlap-owner' || $instance->status !== AppInstanceState::Reserved) {
+        fwrite(STDERR, "Invalid ORB-105 managed overlap owner.\n");
+        exit(64);
+    }
+
+    $instance->delete();
+    echo "ok\n";
+    exit(0);
+}
+
 fwrite(STDERR, "Unknown ORB-105 fixture command.\n");
 exit(64);

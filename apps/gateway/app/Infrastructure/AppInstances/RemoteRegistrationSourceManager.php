@@ -83,6 +83,36 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         $this->relocateSet([['appInstance' => $appInstance, 'facts' => $facts]]);
     }
 
+    public function validateRetained(
+        Node $node,
+        RegistrationSourceFacts $facts,
+        string $authoritativePath,
+    ): void {
+        try {
+            $actual = $this->inspect($node, $authoritativePath, false);
+        } catch (\Throwable $exception) {
+            throw new ResourceOperationException(
+                'instance.registration_conflict',
+                'The retained authoritative registration source no longer matches its verified Git identity.',
+                409,
+                previous: $exception,
+            );
+        }
+
+        if (
+            count($actual) !== 1
+            || $actual[0]->path !== $authoritativePath
+            || $actual[0]->layout !== $facts->layout
+            || $actual[0]->repositoryIdentity !== $facts->repositoryIdentity
+        ) {
+            throw new ResourceOperationException(
+                'instance.registration_conflict',
+                'The retained authoritative registration source no longer matches its verified Git identity.',
+                409,
+            );
+        }
+    }
+
     public function relocateSet(array $members): void
     {
         if ($members === []) {
@@ -672,20 +702,41 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             receipt=root.parent/('.orbit-registration-url-'+instance)
             paths=[root/'.env', root/'bootstrap'/'cache'/'config.php']
             directories=[root, root/'bootstrap', root/'bootstrap'/'cache']
+            def validate_receipt():
+                if receipt.is_symlink() or not receipt.is_dir(): raise SystemExit(42)
+                manifest_path=receipt/'manifest'
+                if manifest_path.is_symlink() or not manifest_path.is_file(): raise SystemExit(42)
+                try: manifest=json.loads(manifest_path.read_text())
+                except (OSError,ValueError,TypeError): raise SystemExit(42)
+                if set(manifest) != {'files','directories'}: raise SystemExit(42)
+                if not isinstance(manifest['files'],list) or len(manifest['files']) != len(paths): raise SystemExit(42)
+                if any(type(value) is not bool for value in manifest['files']): raise SystemExit(42)
+                if not isinstance(manifest['directories'],list) or len(manifest['directories']) != len(directories): raise SystemExit(42)
+                for index,exists in enumerate(manifest['files']):
+                    backup=receipt/str(index)
+                    if exists != (backup.is_file() and not backup.is_symlink()): raise SystemExit(42)
+                return manifest
             if operation == 'prepare':
-                if receipt.exists(): shutil.rmtree(receipt)
-                receipt.mkdir(mode=0o700)
+                if receipt.exists() or receipt.is_symlink():
+                    validate_receipt()
+                    raise SystemExit(0)
+                preparing=receipt.with_name(receipt.name+'.preparing')
+                if preparing.is_symlink() or preparing.exists() and not preparing.is_dir(): raise SystemExit(42)
+                if preparing.exists(): shutil.rmtree(preparing)
+                preparing.mkdir(mode=0o700)
                 manifest={'files': [], 'directories': []}
                 for index,path in enumerate(paths):
                     exists=path.is_file() and not path.is_symlink()
                     manifest['files'].append(exists)
-                    if exists: shutil.copy2(path, receipt/str(index))
+                    if exists: shutil.copy2(path, preparing/str(index))
                 for path in directories:
                     info=path.stat() if path.is_dir() and not path.is_symlink() else None
                     manifest['directories'].append(None if info is None else [info.st_atime_ns,info.st_mtime_ns])
-                (receipt/'manifest').write_text(json.dumps(manifest)); os.chmod(receipt/'manifest',0o600)
+                (preparing/'manifest').write_text(json.dumps(manifest)); os.chmod(preparing/'manifest',0o600)
+                os.replace(preparing,receipt)
+                validate_receipt()
             elif operation == 'restore':
-                manifest=json.loads((receipt/'manifest').read_text())
+                manifest=validate_receipt()
                 for index,path in enumerate(paths):
                     if manifest['files'][index]: path.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(receipt/str(index),path)
                     elif path.exists() and not path.is_symlink(): path.unlink()
@@ -693,7 +744,9 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     if times is not None and path.is_dir() and not path.is_symlink(): os.utime(path,ns=tuple(times))
                 shutil.rmtree(receipt)
             elif operation == 'discard':
-                if receipt.exists(): shutil.rmtree(receipt)
+                if receipt.exists() or receipt.is_symlink():
+                    validate_receipt()
+                    shutil.rmtree(receipt)
             else: raise SystemExit(42)
             PYTHON;
     }

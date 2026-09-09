@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\Registration\RegistrationSourceFacts;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
+use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -21,8 +23,10 @@ use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\Workspace;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create([
@@ -45,9 +49,16 @@ beforeEach(function (): void {
             return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
         }
     });
-    app()->instance(AppInstanceDestinationGuard::class, new class implements AppInstanceDestinationGuard {
-        public function assertUnoccupied(Node $node, App\Domain\Nodes\Storage\StoragePath $destination): void {}
-    });
+    $this->destinationGuard = new class implements AppInstanceDestinationGuard {
+        /** @var list<string> */
+        public array $paths = [];
+
+        public function assertUnoccupied(Node $node, App\Domain\Nodes\Storage\StoragePath $destination): void
+        {
+            $this->paths[] = $destination->value;
+        }
+    };
+    app()->instance(AppInstanceDestinationGuard::class, $this->destinationGuard);
     app()->instance(RepositoryDefaultBranchResolver::class, new class implements RepositoryDefaultBranchResolver {
         public function resolve(string $repository): string
         {
@@ -56,14 +67,30 @@ beforeEach(function (): void {
 
         public function verify(string $repository, string $branch): void {}
     });
-    app()->instance(DevelopmentAppInstanceConfigurator::class, new class implements DevelopmentAppInstanceConfigurator {
+    $this->configuration = new class implements DevelopmentAppInstanceConfigurator {
+        public ?string $unsafePath = null;
+
+        /** @var list<string> */
+        public array $inspected = [];
+
         public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
         {
+            $this->inspected[] = $appInstance->checkout_path;
+
+            if ($appInstance->checkout_path === $this->unsafePath) {
+                throw new App\Domain\AppDev\RuntimeConvergenceException(
+                    'source-classification',
+                    'app-dev.source_metadata_unsafe',
+                    'The development source metadata is invalid or unsupported.',
+                );
+            }
+
             return new DevelopmentSourceProfile('8.5', true);
         }
 
         public function configureLaravelUrl(AppInstance $appInstance, string $url): void {}
-    });
+    };
+    app()->instance(DevelopmentAppInstanceConfigurator::class, $this->configuration);
     $this->projection = new class implements DevelopmentRouteProjector {
         public bool $fail = false;
 
@@ -81,6 +108,8 @@ beforeEach(function (): void {
 
         public bool $invalid = false;
 
+        public bool $retainedInvalid = false;
+
         /** @var list<string> */
         public array $calls = [];
 
@@ -92,6 +121,22 @@ beforeEach(function (): void {
             }
 
             return $this->facts;
+        }
+
+        public function validateRetained(
+            Node $node,
+            RegistrationSourceFacts $facts,
+            string $authoritativePath,
+        ): void {
+            $this->calls[] = 'validate:'.$authoritativePath;
+
+            if ($this->retainedInvalid) {
+                throw new ResourceOperationException(
+                    'instance.registration_conflict',
+                    'The retained authoritative registration source no longer matches its verified Git identity.',
+                    409,
+                );
+            }
         }
 
         public function relocate(AppInstance $appInstance, RegistrationSourceFacts $facts): void
@@ -281,7 +326,13 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         ->and(Route::query()->count())
         ->toBe(1)
         ->and($this->registrationSource->calls)
-        ->toBe(['inspect', 'relocate-set:1', 'url-prepare', 'url-discard']);
+        ->toBe([
+            'inspect',
+            'relocate-set:1',
+            'url-prepare',
+            'url-discard',
+            'validate:/srv/orbit/apps/acme/default',
+        ]);
 
     $this
         ->postJson('/api/v1/instances/register', [...$payload, 'app_slug' => 'different'])
@@ -490,11 +541,301 @@ it('restores a failed default migration and completes the identical retry with s
             'url-prepare',
             'url-restore',
             'restore-original',
+            'validate:/work/acme',
             'relocate-set:1',
             'url-prepare',
             'url-discard',
         ]);
 });
+
+it('resumes a manual migration from the durable post-transition boundary', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'default',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/srv/orbit/apps/acme/default',
+        'branch' => 'main',
+        'migration_required' => false,
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'registration_original_path' => '/work/acme',
+        'registration_request_id' => (string) Illuminate\Support\Str::uuid(),
+        'registration_primary' => true,
+        'registration_repository_url' => 'git@github.com:acme/acme.git',
+        'registration_repository_identity' => 'github.com/acme/acme',
+        'registration_source_digest' => str_repeat('c', 64),
+        'registration_default_branch' => 'main',
+        'registration_inferred_slug' => 'acme',
+        'registration_inferred_root' => 'public',
+        'registration_common_repository_path' => '/work/acme/.git',
+        'registration_worktree_paths' => ['/work/acme'],
+        'registration_relocation_state' => 'relocated',
+        'registration_authoritative_path' => '/srv/orbit/apps/acme/default',
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'generation_basis_node_id' => null,
+        'hostname' => 'preserved.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update([
+        'registration_migration_recovery' => [
+            'app_instance' => [
+                'name' => 'main',
+                'source_layout' => 'checkout',
+                'checkout_path' => '/work/acme',
+                'root' => null,
+                'branch' => 'main',
+                'branch_override' => null,
+                'migration_required' => 1,
+                'starting_commit' => str_repeat('a', 40),
+                'selected_php_version' => '8.4',
+                'source_is_laravel' => 0,
+                'provisioning_step' => null,
+                'status' => AppInstanceState::Active->value,
+            ],
+            'route' => [
+                'id' => $route->id,
+                'hostname' => 'preserved.test',
+                'provenance' => RouteProvenance::Explicit->value,
+            ],
+        ],
+    ]);
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+    ])->assertOk();
+
+    expect($response->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($response->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($response->json('data.app_instance.route.hostname'))
+        ->toBe('preserved.test')
+        ->and($instance->refresh()->registration_migration_recovery)
+        ->toBeNull()
+        ->and($instance->migration_required)
+        ->toBeFalse()
+        ->and($this->registrationSource->calls)
+        ->toBe([
+            'validate:/srv/orbit/apps/acme/default',
+            'url-prepare',
+            'url-discard',
+        ]);
+});
+
+it('uses an explicit hostname only for the primary member of a requested source set', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $paths = ['/work/acme', '/work/feature'];
+    $this->registrationSource->facts = registration_set_facts($paths);
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $paths[0],
+        'include_worktrees' => true,
+        'app_id' => $app->id,
+        'hostname' => 'primary.test',
+    ])->assertOk();
+
+    $instances = collect($response->json('data.app_instances'))->keyBy('name');
+    $retry = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $paths[0],
+        'include_worktrees' => true,
+        'app_id' => $app->id,
+        'hostname' => 'primary.test',
+    ])->assertOk();
+    $retried = collect($retry->json('data.app_instances'))->keyBy('name');
+    expect($instances['default']['route']['hostname'])
+        ->toBe('primary.test')
+        ->and($instances['feature']['route']['hostname'])
+        ->toBe('feature.acme.test')
+        ->and($retried['default']['id'])
+        ->toBe($instances['default']['id'])
+        ->and($retried['default']['route']['id'])
+        ->toBe($instances['default']['route']['id'])
+        ->and($retried['feature']['id'])
+        ->toBe($instances['feature']['id'])
+        ->and($retried['feature']['route']['id'])
+        ->toBe($instances['feature']['route']['id'])
+        ->and(Route::query()->count())
+        ->toBe(2);
+});
+
+it('adopts an unregistered source already at its calculated managed destination', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $path = '/srv/orbit/apps/acme/feature';
+    $this->registrationSource->facts = registration_set_facts(['/work/acme', $path]);
+    $this->registrationSource->facts = [$this->registrationSource->facts[1]];
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $path,
+            'app_id' => $app->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.app_instance.checkout_path', $path);
+
+    expect($this->destinationGuard->paths)->toBe([]);
+});
+
+it('preflights every member source profile before reservation or relocation', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $paths = ['/work/acme', '/work/feature'];
+    $this->registrationSource->facts = registration_set_facts($paths);
+    $this->configuration->unsafePath = $paths[1];
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $paths[0],
+            'include_worktrees' => true,
+            'app_id' => $app->id,
+        ])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'app-dev.source_metadata_unsafe');
+
+    expect($this->configuration->inspected)
+        ->toBe($paths)
+        ->and(AppInstance::query()->count())
+        ->toBe(0)
+        ->and($this->registrationSource->calls)
+        ->toBe(['inspect']);
+});
+
+it('refuses retained source identity replacement before activation', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $payload = ['source_path' => '/work/acme', 'app_id' => $app->id];
+    $this->projection->fail = true;
+    $this->postJson('/api/v1/instances/register', $payload)->assertStatus(502);
+    $this->registrationSource->retainedInvalid = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', $payload)
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
+});
+
+it('refuses a source nested in each existing managed checkout type before relocation', function (string $owner): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $other = OrbitApp::query()->create([
+        'name' => 'Other',
+        'slug' => 'other',
+        'repository_url' => 'https://github.com/acme/other.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $source = '/managed/other/nested/acme';
+
+    if ($owner === 'app-instance') {
+        AppInstance::query()->create([
+            'app_id' => $other->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+            'environment' => 'development',
+            'checkout_path' => '/managed/other',
+            'status' => AppInstanceState::Active,
+        ]);
+    } else {
+        $legacy = Instance::query()->create([
+            'app_id' => $other->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+            'environment' => 'development',
+            'checkout_path' => '/managed/other',
+            'document_root' => '/managed/other/public',
+            'php_version' => '8.4',
+            'hostname' => 'other.test',
+            'certificate_mode' => CertificateMode::OrbitCa,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        if ($owner === 'workspace') {
+            $legacy->update(['checkout_path' => '/managed/legacy']);
+            Workspace::query()->create([
+                'instance_id' => $legacy->id,
+                'name' => 'other',
+                'branch' => 'feature',
+                'checkout_path' => '/managed/other',
+                'php_version' => '8.4',
+                'hostname' => 'workspace.test',
+                'status' => LifecycleStatus::Active,
+            ]);
+        }
+    }
+
+    $facts = registration_facts();
+    $this->registrationSource->facts = [new RegistrationSourceFacts(
+        path: $source,
+        layout: $facts->layout,
+        repositoryUrl: $facts->repositoryUrl,
+        repositoryIdentity: $facts->repositoryIdentity,
+        branch: $facts->branch,
+        detached: $facts->detached,
+        commit: $facts->commit,
+        defaultBranch: $facts->defaultBranch,
+        inferredSlug: $facts->inferredSlug,
+        inferredRoot: $facts->inferredRoot,
+        commonRepositoryPath: $source.'/.git',
+        worktreePaths: [$source],
+        sourceDigest: $facts->sourceDigest,
+    )];
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $source,
+            'app_id' => $app->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_conflict');
+
+    expect($this->registrationSource->calls)->toBe(['inspect']);
+})->with(['app-instance', 'legacy-instance', 'workspace']);
 
 function registration_facts(string $digest = ''): RegistrationSourceFacts
 {

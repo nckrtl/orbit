@@ -41,6 +41,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $registration_authoritative_path
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
+ * @property array<string, mixed>|null $registration_migration_recovery
  * @property \Illuminate\Support\Carbon|null $registration_completed_at
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
@@ -99,6 +100,7 @@ final class AppInstance extends Model
         'registration_authoritative_path',
         'registration_source_device',
         'registration_source_inode',
+        'registration_migration_recovery',
         'registration_completed_at',
         'starting_commit',
         'selected_php_version',
@@ -155,6 +157,7 @@ final class AppInstance extends Model
             'registration_worktree_paths' => 'array',
             'registration_source_device' => 'integer',
             'registration_source_inode' => 'integer',
+            'registration_migration_recovery' => 'array',
             'registration_completed_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
             'status' => AppInstanceState::class,

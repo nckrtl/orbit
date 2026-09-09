@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
@@ -32,8 +33,23 @@ return new class extends Migration {
 
     public function down(): void
     {
+        $unfinished = DB::table('app_instances')
+            ->whereNotNull('registration_request_id')
+            ->whereNull('registration_completed_at')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn (mixed $id): string => (string) $id)
+            ->all();
+
+        if ($unfinished !== []) {
+            throw new RuntimeException(
+                'Cannot roll back while AppInstance registrations are incomplete: '.implode(', ', $unfinished),
+            );
+        }
+
         Schema::table('app_instances', static function (Blueprint $table): void {
             $table->dropUnique(['node_id', 'registration_original_path']);
+            $table->dropIndex(['registration_request_id']);
             $table->dropColumn([
                 'registration_original_path',
                 'registration_request_id',

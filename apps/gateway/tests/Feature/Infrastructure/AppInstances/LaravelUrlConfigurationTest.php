@@ -57,6 +57,30 @@ it('leaves a Composer non-Laravel source classified as PHP only', function (): v
     expect($profile->phpVersion)->toBe('8.4')->and($profile->laravel)->toBeFalse();
 });
 
+it('emits a source preflight that rejects foreign-owned Composer metadata', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-source-owner-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    file_put_contents($directory.'/composer.json', '{"require":{"php":"^8.4"}}');
+
+    try {
+        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
+
+        expect(fn () => $configurator->inspect($instance))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
+            });
+
+        $result = orb127_run_laravel_command($ssh->commands[0]);
+        expect($result->isSuccessful())
+            ->toBeTrue($result->getErrorOutput())
+            ->and(trim($result->getOutput()))
+            ->toBe('UNSAFE');
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
 it('refuses malformed Composer metadata and conflicting Laravel declarations', function (): void {
     $classifier = new ComposerSourceClassifier(new AppInstancePhpVersionCatalog);
 

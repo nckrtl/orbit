@@ -6,6 +6,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -161,6 +162,7 @@ it('does not reapply source-digest relocation after the managed destination beco
         file_put_contents($fixture['destination'].'/README.md', "normal development edit\n", FILE_APPEND);
         $afterEdits = orb105_complete_manifest($fixture['destination']);
 
+        $fixture['manager']->validateRetained($fixture['node'], $facts, $fixture['destination']);
         $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
 
         expect(orb105_complete_manifest($fixture['destination']))
@@ -171,6 +173,34 @@ it('does not reapply source-digest relocation after the managed destination beco
             ->toBe('relocated')
             ->and($fixture['instance']->registration_authoritative_path)
             ->toBe($fixture['destination']);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses a replacement repository at a retained authoritative destination', function (): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $fixture['manager']->relocate($fixture['instance'], $facts);
+        orb105_run([
+            'git',
+            '-C',
+            $fixture['destination'],
+            'remote',
+            'set-url',
+            'origin',
+            'https://example.test/replacement.git',
+        ]);
+
+        expect(fn () => $fixture['manager']->validateRetained(
+            $fixture['node'],
+            $facts,
+            $fixture['destination'],
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.registration_conflict');
+        });
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }
@@ -290,9 +320,32 @@ it('restores Laravel URL files and the stable directory timestamps they touch', 
             $fixture['source'].'/bootstrap/cache/config.php.next',
             $fixture['source'].'/bootstrap/cache/config.php',
         );
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
         $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
 
         expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses an incomplete Laravel rollback receipt without replacing it', function (): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $receipt = dirname($fixture['source']).'/.orbit-registration-url-'.$fixture['instance']->id;
+        new Filesystem()->ensureDirectoryExists($receipt);
+        file_put_contents($receipt.'/0', "partial\n");
+        $fixture['instance']->update(['checkout_path' => $fixture['source']]);
+
+        expect(fn () => $fixture['manager']->prepareLaravelRollback($fixture['instance']))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('instance.laravel_rollback_failed');
+            })
+            ->and(file_get_contents($receipt.'/0'))
+            ->toBe("partial\n")
+            ->and(file_exists($receipt.'/manifest'))
+            ->toBeFalse();
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }

@@ -64,7 +64,7 @@ Run registration from an independent Git checkout or a linked worktree on the ca
 orbit instance:register
 ```
 
-The CLI refuses a directory outside a Git checkout or worktree before it asks the Gateway to create an App or AppInstance. The Gateway independently verifies the submitted source on the authenticated caller Node before it changes Git, files, runtime, Routes, or database records.
+The CLI refuses a directory outside a Git checkout or worktree and refuses a credential-bearing origin without displaying it before it asks the Gateway to create an App or AppInstance. The Gateway independently verifies the submitted source on the authenticated caller Node before it changes Git, files, runtime, Routes, or database records.
 
 The Gateway resolves an existing App by the source's canonical repository identity. The [Apps reference](../reference/apps.md#resolve-an-app-during-registration) owns App lookup, inference, confirmation, and missing-App creation.
 
@@ -77,21 +77,23 @@ Registration infers AppInstance placement from verified source facts.
 
 An explicit valid value can fill an unresolved or optional value. It cannot replace conflicting verified source identity. Registration infers `public` as the web root only when Laravel detection is unambiguous.
 
-Orbit records `checkout` for an independent repository and `worktree` for a linked working tree. It preserves the complete source, including HEAD, branch or detached state, index, dirty and untracked files, refs, commits, and unrelated configuration, while it moves the source into managed placement.
+Orbit records `checkout` for an independent repository and `worktree` for a linked working tree. It preserves the complete source, including HEAD, branch or detached state, index, dirty and untracked files, refs, commits, and unrelated configuration, while it moves the source into managed placement. A verified unregistered source that is already at its calculated managed placement does not move.
 
-By default, registering a checkout adopts only the caller's source. Orbit repairs retained linked worktrees after it moves their common checkout and leaves those worktrees usable and unregistered. Use `--include-worktrees` to adopt the checkout and every linked worktree as one preflighted set. If any requested source fails preflight, Orbit moves none of them.
+By default, registering a checkout adopts only the caller's source. Orbit repairs retained linked worktrees after it moves their common checkout and leaves those worktrees usable and unregistered. Use `--include-worktrees` to adopt the checkout and every linked worktree as one preflighted set. The Gateway checks every member's canonical Git identity, source metadata ownership and mode, calculated identity and placement, and overlap with existing managed AppInstance, legacy Instance, and Workspace source before relocation. If any requested source fails preflight, Orbit moves none of them.
 
-For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress keeps one verified authoritative copy after interruption. An identical retry resumes the same App, AppInstances, Routes, and managed paths; conflicting input preserves the accepted registration.
+For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress binds original cleanup to the verified source directory identity and keeps one verified authoritative copy after interruption. An identical retry revalidates the canonical authoritative path, repository identity, checkout or worktree layout, and provisioning safety without requiring an unchanged source digest. It resumes the same App, AppInstances, Routes, and managed paths; conflicting input preserves the accepted registration.
 
 ## Complete a required source migration
 
 An AppInstance can require manual migration when its stored name follows the earlier branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until an operator runs `instance:register` from its recorded source. List and show responses return `migration_required: true`, Doctor reports the same bounded condition, and the existing Route continues to serve the same source path.
 
-Registration verifies the recorded source, moves it to the managed `default` placement, and updates its identity and runtime while it preserves the Route hostname. An identical retry resumes the same migration. A failed migration keeps the old record, path, runtime, Route, and Laravel URL configuration authoritative. An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing AppInstance, source, and Route.
+Registration verifies the recorded source, moves it to the managed `default` placement, and updates its identity and runtime while it preserves the Route hostname. Before it publishes the new record, Orbit stores the original AppInstance state and Route intent as durable recovery evidence. An identical retry resumes the same migration even after process interruption. A failed migration keeps the old record, path, runtime, Route, and original Laravel URL configuration authoritative. Database rollback refuses to discard registration or source-cleanup evidence while the related operation is incomplete.
+
+An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing AppInstance, source, and Route.
 
 ## Provision the application endpoint
 
-Before source or runtime changes, the Gateway resolves the Route hostname. The optional `--hostname` value requests an explicit hostname and takes precedence over generated naming. Without it, the Gateway uses the Node or Cluster naming basis described in the [Route reference](../reference/routes.md). The request fails before source or runtime mutation when neither basis can produce a hostname.
+Before source or runtime changes, the Gateway resolves the Route hostname. The optional `--hostname` value requests an explicit hostname for the caller's primary source and takes precedence over its generated name. Other members of an included worktree set use their generated Route names. Without an explicit primary hostname, the Gateway uses the Node or Cluster naming basis described in the [Route reference](../reference/routes.md). The request fails before source or runtime mutation when neither basis can produce a hostname.
 
 After source creation or adoption, the Gateway classifies the source, selects any required PHP runtime, associates the AppInstance with its sole Route, configures Laravel when detected, and prepares the runtime, certificates, Caddy, firewall, and private Domain Name System (DNS) projection. A Cluster-scoped Route also prepares the Router path. The [PHP runtime reference](../reference/php-runtime.md) describes source-driven runtime selection.
 
