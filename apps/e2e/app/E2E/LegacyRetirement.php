@@ -6,6 +6,7 @@ namespace App\E2E;
 
 use App\E2E\State\OperationLock;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\PreservedIncusReference;
 use App\E2E\Value\QuarantineManifest;
 use App\E2E\Value\RetirementInventory;
 use App\E2E\Value\RetirementResult;
@@ -297,7 +298,7 @@ final readonly class LegacyRetirement
         }
         foreach ($retirement->preserved as $kind => $resources) {
             foreach ($resources as $resource) {
-                $actual = $this->find($observed[$kind] ?? [], $this->identity($resource));
+                $actual = $this->findExact($kind, $observed[$kind] ?? [], $resource);
                 if (
                     $actual === null
                     || $this->canonical($this->withResourceDigest($this->withFilesystemType(
@@ -539,7 +540,7 @@ final readonly class LegacyRetirement
         if (! is_string($kind) || ! is_array($resource)) {
             throw new RuntimeException('The quarantine target is invalid.');
         }
-        if ($this->find($observed[$kind] ?? [], $this->identity($resource)) !== null) {
+        if ($this->findExact($kind, $observed[$kind] ?? [], $resource) !== null) {
             throw new RuntimeException('A recorded deletion was not completed.');
         }
     }
@@ -568,7 +569,7 @@ final readonly class LegacyRetirement
     /** @param array<string, mixed> $expected @param array<string, list<array<string, mixed>>> $observed */
     private function resourceMatches(string $kind, array $expected, array $observed): bool
     {
-        $actual = $this->find($observed[$kind] ?? [], $this->identity($expected));
+        $actual = $this->findExact($kind, $observed[$kind] ?? [], $expected);
         if ($actual === null) {
             return false;
         }
@@ -606,7 +607,7 @@ final readonly class LegacyRetirement
                 'pending',
                 'completed',
             ]
-            || ($resume['version'] ?? null) !== 2
+            || ($resume['version'] ?? null) !== 3
             || ! in_array($resume['phase'] ?? null, ['pending', 'complete'], true)
             || ($resume['inventory_sha256'] ?? null) !== $inventory->sha256()
             || ($resume['freeze_evidence'] ?? null) !== $evidenceIdentity
@@ -689,7 +690,7 @@ final readonly class LegacyRetirement
                 'pending',
                 'completed',
             ]
-            || ($resume['version'] ?? null) !== 2
+            || ($resume['version'] ?? null) !== 3
             || ! in_array($resume['phase'] ?? null, ['pending', 'complete'], true)
             || ($resume['quarantine_sha256'] ?? null) !== $manifest->sha256()
             || ($resume['freeze_evidence'] ?? null) !== $manifest->freezeEvidence
@@ -956,7 +957,7 @@ final readonly class LegacyRetirement
         string $phase,
     ): array {
         return [
-            'version' => 2,
+            'version' => 3,
             'operation' => 'quarantine',
             'phase' => $phase,
             'inventory_sha256' => $manifest->inventorySha256,
@@ -976,7 +977,7 @@ final readonly class LegacyRetirement
         string $phase,
     ): array {
         return [
-            'version' => 2,
+            'version' => 3,
             'operation' => 'delete',
             'phase' => $phase,
             'quarantine_sha256' => $manifest->sha256(),
@@ -1230,9 +1231,14 @@ final readonly class LegacyRetirement
     }
 
     /** @param list<array<string, mixed>> $resources */
-    private function sortResources(array &$resources): void
+    private function sortResources(string $kind, array &$resources): void
     {
-        usort($resources, fn (array $left, array $right): int => $this->identity($left) <=> $this->identity($right));
+        usort(
+            $resources,
+            fn (array $left, array $right): int => (
+                $this->resourceSelectionKey($kind, $left) <=> $this->resourceSelectionKey($kind, $right)
+            ),
+        );
     }
 
     /** @param array<string, list<array<string, mixed>>> $groups @param list<string> $order @return array<string, list<array<string, mixed>>> */
@@ -1244,7 +1250,7 @@ final readonly class LegacyRetirement
                 continue;
             }
             $resources = $groups[$kind];
-            $this->sortResources($resources);
+            $this->sortResources($kind, $resources);
             $ordered[$kind] = $resources;
         }
         if (count($ordered) !== count($groups)) {
@@ -1264,6 +1270,43 @@ final readonly class LegacyRetirement
         }
 
         return null;
+    }
+
+    /** @param list<array<string, mixed>> $resources @param array<string, mixed> $expected @return array<string, mixed>|null */
+    private function findExact(string $kind, array $resources, array $expected): ?array
+    {
+        $reference = $this->resourceSelectionKey($kind, $expected);
+        foreach ($resources as $resource) {
+            if ($this->resourceSelectionKey($kind, $resource) === $reference) {
+                return $resource;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $resource */
+    private function resourceSelectionKey(string $kind, array $resource): string
+    {
+        if (PreservedIncusReference::supports($kind)) {
+            return PreservedIncusReference::fromResource($kind, $resource)->key();
+        }
+
+        $identity = $this->identity($resource);
+        if (in_array($kind, ['instances', 'snapshots', 'networks', 'new_namespace'], true)) {
+            $remote = $resource['remote'] ?? null;
+            $project = $resource['project'] ?? null;
+            if ($remote === null && $project === null) {
+                return $kind."\0".$identity;
+            }
+            if (! is_string($remote) || ! is_string($project)) {
+                throw new RuntimeException('An Incus retirement resource has no exact scope.');
+            }
+
+            return $kind."\0".$remote."\0".$project."\0".$identity;
+        }
+
+        return $kind."\0".$identity;
     }
 
     /** @param array<string, mixed> $resource @return list<string> */
