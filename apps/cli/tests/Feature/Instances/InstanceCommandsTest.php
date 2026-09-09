@@ -88,10 +88,61 @@ describe('instance:register', function (): void {
             ->and($mockClient->getLastRequest()?->body()->all())
             ->toBe([
                 'source_path' => '/work/acme',
-                'app_slug' => 'acme',
-                'default_branch' => 'main',
-                'root' => 'public',
             ]);
+    });
+
+    it('omits inferred creation values when canonical repository lookup can resolve a different App identity', function (): void {
+        $this->registrationGit->facts = new GitRegistrationFacts(
+            path: '/work/legacy-default',
+            repositoryUrl: 'https://github.com/laravel/laravel.git',
+            slug: 'laravel',
+            defaultBranch: 'master',
+            branch: '13.x',
+            root: 'public',
+            layout: 'checkout',
+            commit: str_repeat(string: 'a', times: 40),
+        );
+        $mockClient = MockClient::global([
+            RegisterAppInstanceRequest::class => registration_mock_response(),
+        ]);
+
+        $this
+            ->artisan('instance:register', [
+                '--no-interaction' => true,
+                '--json' => true,
+            ])
+            ->expectsOutput(registration_json())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'source_path' => '/work/legacy-default',
+        ]);
+    });
+
+    it('transports explicit creation values when App lookup is not selected', function (): void {
+        $mockClient = MockClient::global([
+            RegisterAppInstanceRequest::class => registration_mock_response(),
+        ]);
+
+        $this
+            ->artisan('instance:register', [
+                '--app-name' => 'Confirmed',
+                '--app-slug' => 'confirmed',
+                '--default-branch' => 'trunk',
+                '--root' => 'web',
+                '--no-interaction' => true,
+                '--json' => true,
+            ])
+            ->expectsOutput(registration_json())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'source_path' => '/work/acme',
+            'app_name' => 'Confirmed',
+            'app_slug' => 'confirmed',
+            'default_branch' => 'trunk',
+            'root' => 'web',
+        ]);
     });
 
     it('refuses unresolved non interactive input without sending a request', function (): void {

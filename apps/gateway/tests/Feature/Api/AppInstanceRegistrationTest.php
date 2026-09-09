@@ -1206,7 +1206,6 @@ it('resumes an interrupted manual migration through its validated planned destin
 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => $destination,
-        'app_id' => $app->id,
     ])->assertOk();
 
     expect($response->json('data.app_instance.id'))
@@ -1220,7 +1219,7 @@ it('resumes an interrupted manual migration through its validated planned destin
         ->and(Route::query()->count())
         ->toBe(1)
         ->and($this->registrationSource->calls)
-        ->not->toContain('inspect');
+        ->toContain('inspect');
 
     if ($state === 'relocating') {
         expect($this->registrationSource->calls)
@@ -1229,12 +1228,242 @@ it('resumes an interrupted manual migration through its validated planned destin
         expect($this->registrationSource->calls)
             ->toContain('validate:'.$destination);
     }
+
+    $instance->refresh()->update(['registration_completed_at' => null]);
+    $retry = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $destination,
+    ])->assertOk();
+
+    expect($retry->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($retry->json('data.app_instance.name'))
+        ->toBe('default')
+        ->and($retry->json('data.app_instance.checkout_path'))
+        ->toBe($destination)
+        ->and($retry->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($instance->refresh()->registration_completed_at)
+        ->not->toBeNull();
 })->with([
     'rename before checkpoint' => 'relocating',
     'verified destination' => 'destination_verified',
     'original cleanup' => 'original_cleanup',
     'relocated before publication' => 'relocated',
 ]);
+
+it('migrates a marked default source independently of its original directory name', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $source = '/work/legacy-main-source';
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'source_layout' => 'checkout',
+        'checkout_path' => $source,
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'migration_required' => true,
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'preserved.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $base = registration_facts();
+    $this->registrationSource->facts = [new RegistrationSourceFacts(
+        path: $source,
+        layout: $base->layout,
+        repositoryUrl: $base->repositoryUrl,
+        repositoryIdentity: $base->repositoryIdentity,
+        branch: $base->branch,
+        detached: $base->detached,
+        commit: $base->commit,
+        defaultBranch: $base->defaultBranch,
+        inferredSlug: $base->inferredSlug,
+        inferredRoot: $base->inferredRoot,
+        commonRepositoryPath: "{$source}/.git",
+        worktreePaths: [$source],
+        sourceDigest: $base->sourceDigest,
+    )];
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $source,
+        'app_id' => $app->id,
+    ])->assertOk();
+
+    expect($response->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($response->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($response->json('data.app_instance.name'))
+        ->toBe('default')
+        ->and($response->json('data.app_instance.checkout_path'))
+        ->toBe('/srv/orbit/apps/acme/default');
+});
+
+it('returns 409 when retained default migration input conflicts with planned intent', function (
+    array $input,
+    array $expectedCalls,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $source = '/work/acme';
+    $destination = '/srv/orbit/apps/acme/default';
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'source_layout' => 'checkout',
+        'checkout_path' => $source,
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'migration_required' => true,
+        ...registration_evidence_for_test($source),
+        'registration_relocation_state' => 'reserved',
+        'registration_authoritative_path' => $source,
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'preserved.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update([
+        'registration_migration_recovery' => [
+            ...registration_migration_recovery($instance, $route),
+            'planned' => ['name' => 'default', 'checkout_path' => $destination],
+        ],
+    ]);
+    $instanceBefore = $instance->refresh()->getAttributes();
+    $routeBefore = $route->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $source,
+            'app_id' => $app->id,
+            ...$input,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($instanceBefore)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($routeBefore)
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(1)
+        ->and($this->registrationSource->calls)
+        ->toBe($expectedCalls);
+})->with([
+    'different instance name' => [['instance_name' => 'other'], ['validate:/work/acme']],
+    'different explicit hostname' => [['hostname' => 'changed.test'], ['validate:/work/acme']],
+    'different source-set intent' => [['include_worktrees' => true], []],
+]);
+
+it('returns 409 when several retained migrations match one inspected repository and destination', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $destination = '/srv/orbit/apps/acme/default';
+
+    foreach ([
+        ['main', '/work/acme-one'],
+        ['13.x', '/work/acme-two'],
+    ] as [$name, $source]) {
+        $instance = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $this->node->id,
+            'name' => $name,
+            'source_layout' => 'checkout',
+            'checkout_path' => $source,
+            'branch' => 'main',
+            'starting_commit' => str_repeat('a', 40),
+            'selected_php_version' => '8.4',
+            'source_is_laravel' => false,
+            'provisioning_step' => 'active',
+            'migration_required' => true,
+            ...registration_evidence_for_test($source),
+            'registration_relocation_state' => 'relocating',
+            'registration_authoritative_path' => $source,
+            'status' => AppInstanceState::Active,
+        ]);
+        $route = Route::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $this->node->id,
+            'hostname' => "{$name}.test",
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+        $instance->update([
+            'registration_migration_recovery' => [
+                ...registration_migration_recovery($instance, $route),
+                'planned' => ['name' => 'default', 'checkout_path' => $destination],
+            ],
+        ]);
+    }
+    $before = AppInstance::query()
+        ->orderBy('id')
+        ->get()
+        ->mapWithKeys(static fn (AppInstance $instance): array => [$instance->id => $instance->getAttributes()])
+        ->all();
+
+    $this
+        ->postJson('/api/v1/instances/register', ['source_path' => $destination])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_evidence_invalid');
+
+    expect(
+        AppInstance::query()
+            ->orderBy('id')
+            ->get()
+            ->mapWithKeys(static fn (AppInstance $instance): array => [$instance->id => $instance->getAttributes()])
+            ->all(),
+    )
+        ->toBe($before)
+        ->and(AppInstance::query()->count())
+        ->toBe(2)
+        ->and(Route::query()->count())
+        ->toBe(2)
+        ->and($this->registrationSource->calls)
+        ->toBe(['inspect']);
+});
 
 it('refuses mismatched migration evidence at every managed recovery boundary without mutation', function (
     string $state,

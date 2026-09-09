@@ -125,11 +125,15 @@ final class RegisterInstanceCommand extends GatewayCommand
         }
 
         $selectedApp = is_int($appIdValue);
-        $appValues = $selectedApp ? $this->explicitAppValues() : $this->inferredAppValues($facts);
+        $appValues = $selectedApp ? $this->explicitAppValues() : $this->inferredAppValues();
         $name = $this->stringOption('app-name');
 
         if (! $this->input->isInteractive()) {
-            if (! $selectedApp && ($appValues['branch'] === null || $appValues['root'] === null)) {
+            if (
+                ! $selectedApp
+                && (($appValues['branch'] ?? $facts->defaultBranch) === null
+                || ($appValues['root'] ?? $facts->root) === null)
+            ) {
                 $this->renderGatewayFailure(
                     'instance.registration_values_unresolved',
                     'Non-interactive registration requires unresolved App values as options.',
@@ -165,9 +169,9 @@ final class RegisterInstanceCommand extends GatewayCommand
         ?string $name,
         array $appValues,
     ): ?array {
-        $slug = $appValues['slug'];
-        $branch = $appValues['branch'];
-        $root = $appValues['root'];
+        $slug = $appValues['slug'] ?? $facts->slug;
+        $branch = $appValues['branch'] ?? $facts->defaultBranch;
+        $root = $appValues['root'] ?? $facts->root;
         $selectedApp = $appId !== null;
 
         $this->line("Source: {$facts->path}");
@@ -179,12 +183,14 @@ final class RegisterInstanceCommand extends GatewayCommand
             /** @mago-expect analysis:mixed-assignment Console prompts cross an untyped framework boundary. */
             $branchAnswer = $this->ask('Default branch');
             $branch = is_string($branchAnswer) ? $branchAnswer : null;
+            $appValues['branch'] = $branch;
         }
 
         if (! $selectedApp && $root === null) {
             /** @mago-expect analysis:mixed-assignment Console prompts cross an untyped framework boundary. */
             $rootAnswer = $this->ask('Application root');
             $root = is_string($rootAnswer) ? $rootAnswer : null;
+            $appValues['root'] = $root;
         }
 
         if (! $selectedApp && (! is_string($branch) || $branch === '' || ! is_string($root) || $root === '')) {
@@ -205,9 +211,9 @@ final class RegisterInstanceCommand extends GatewayCommand
         return [
             'appId' => $appId,
             'appName' => $name,
-            'appSlug' => $slug,
-            'defaultBranch' => $branch,
-            'root' => $root,
+            'appSlug' => $appValues['slug'],
+            'defaultBranch' => $appValues['branch'],
+            'root' => $appValues['root'],
         ];
     }
 
@@ -222,12 +228,12 @@ final class RegisterInstanceCommand extends GatewayCommand
     }
 
     /** @return array{slug: ?string, branch: ?string, root: ?string} */
-    private function inferredAppValues(GitRegistrationFacts $facts): array
+    private function inferredAppValues(): array
     {
         return [
-            'slug' => $this->stringOption('app-slug') ?? $facts->slug,
-            'branch' => $this->stringOption('default-branch') ?? $facts->defaultBranch,
-            'root' => $this->stringOption('root') ?? $facts->root,
+            'slug' => $this->stringOption('app-slug'),
+            'branch' => $this->stringOption('default-branch'),
+            'root' => $this->stringOption('root'),
         ];
     }
 }

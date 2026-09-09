@@ -69,6 +69,7 @@ if ($command === 'migration-state') {
         'path' => $instance->checkout_path,
         'migration_required' => $instance->migration_required,
         'status' => $instance->status->value,
+        'provisioning_step' => $instance->provisioning_step,
         'branch' => $instance->branch,
         'selected_php_version' => $instance->selected_php_version,
         'source_is_laravel' => $instance->source_is_laravel,
@@ -91,21 +92,7 @@ if ($command === 'set-migration-rename-interruption') {
     $destination = $argv[3] ?? '';
     $instance = AppInstance::query()->with('routes')->findOrFail($id);
     $route = $instance->routes->sole();
-
-    if (
-        ! $instance->migration_required
-        || $instance->registration_request_id === null
-        || ! $instance->registration_primary
-        || ! in_array($instance->registration_relocation_state, ['reserved', 'relocated'], strict: true)
-        || $instance->registration_authoritative_path !== $instance->registration_original_path
-        || $instance->checkout_path !== $instance->registration_original_path
-        || $instance->registration_migration_recovery !== null
-        || $destination !== '/home/orbit/apps/laravel-typed/default'
-    ) {
-        fwrite(STDERR, "Invalid ORB-105 migration interruption boundary.\n");
-        exit(64);
-    }
-
+    $recovery = $instance->registration_migration_recovery;
     $fields = [
         'name',
         'source_layout',
@@ -120,14 +107,47 @@ if ($command === 'set-migration-rename-interruption') {
         'provisioning_step',
         'status',
     ];
-    $original = [];
+    $recoveryOriginal = is_array($recovery) ? $recovery['app_instance'] ?? null : null;
+    $recoveryRoute = is_array($recovery) ? $recovery['route'] ?? null : null;
+    $recoveryPlanned = is_array($recovery) ? $recovery['planned'] ?? null : null;
+    $retainedRecoveryIsValid = is_array($recoveryOriginal)
+        && array_diff($fields, array_keys($recoveryOriginal)) === []
+        && ($recoveryOriginal['name'] ?? null) === $instance->name
+        && ($recoveryOriginal['checkout_path'] ?? null) === $instance->checkout_path
+        && is_array($recoveryRoute)
+        && ($recoveryRoute['id'] ?? null) === $route->id
+        && ($recoveryRoute['hostname'] ?? null) === $route->hostname
+        && ($recoveryRoute['provenance'] ?? null) === $route->provenance->value
+        && is_array($recoveryPlanned)
+        && ($recoveryPlanned['name'] ?? null) === 'default'
+        && ($recoveryPlanned['checkout_path'] ?? null) === $destination;
+    $rolledBackBoundary = $recovery === null
+        && in_array($instance->registration_relocation_state, ['reserved', 'relocated'], strict: true);
+    $retainedBoundary = $instance->registration_relocation_state === 'relocating'
+        && $retainedRecoveryIsValid;
 
-    foreach ($fields as $field) {
-        $original[$field] = $instance->getRawOriginal($field);
+    if (
+        ! $instance->migration_required
+        || $instance->registration_request_id === null
+        || ! $instance->registration_primary
+        || $instance->registration_authoritative_path !== $instance->registration_original_path
+        || $instance->checkout_path !== $instance->registration_original_path
+        || $instance->failed_step !== 'registration'
+        || $destination !== '/home/orbit/apps/laravel-typed/default'
+        || ! $rolledBackBoundary && ! $retainedBoundary
+    ) {
+        fwrite(STDERR, "Invalid ORB-105 migration interruption boundary.\n");
+        exit(64);
     }
 
-    $instance->update([
-        'registration_migration_recovery' => [
+    if ($recovery === null) {
+        $original = [];
+
+        foreach ($fields as $field) {
+            $original[$field] = $instance->getRawOriginal($field);
+        }
+
+        $recovery = [
             'app_instance' => $original,
             'route' => [
                 'id' => $route->id,
@@ -138,7 +158,11 @@ if ($command === 'set-migration-rename-interruption') {
                 'name' => 'default',
                 'checkout_path' => $destination,
             ],
-        ],
+        ];
+    }
+
+    $instance->update([
+        'registration_migration_recovery' => $recovery,
         'registration_relocation_state' => 'relocating',
         'registration_authoritative_path' => $instance->registration_original_path,
         'registration_source_device' => null,
@@ -276,6 +300,7 @@ if ($command === 'seed-owned-active') {
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
+        'generation_basis_node_id' => $node->id,
         'hostname' => 'orb105-owned-new.laravel-typed.orbit',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,

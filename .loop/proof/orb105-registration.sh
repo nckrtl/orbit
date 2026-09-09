@@ -69,6 +69,12 @@ register_source() {
     remote_command orbit instance:register "--path=$path" --app=1 --no-interaction --json "$@"
 }
 
+register_source_without_app() {
+    local path=$1
+    shift
+    remote_command orbit instance:register "--path=$path" --no-interaction --json "$@"
+}
+
 register_request() {
     remote_command php "$registration_fixture" "$@"
 }
@@ -376,7 +382,7 @@ BASH
         ;;
     manual-default-migration)
         root=/home/orbit/orb105-migration
-        source="$root/laravel-typed"
+        source=$root
         create_checkout "$source" 13.x
         remote_script "$source" <<'BASH'
 path=$1
@@ -387,6 +393,7 @@ BASH
         seeded=$(gateway_state seed-migration "$source" "$commit")
         id=$(json_field "$seeded" id)
         route_id=$(json_field "$seeded" route_id)
+        printf '%s\n' manual-default:seeded
 
         before=$(gateway_state migration-state "$id")
         install_projection_fault
@@ -409,6 +416,7 @@ assert isinstance(after["error_code"], str) and after["error_code"]' "$before" "
         remote_command test -d "$source"
         remote_command test ! -e /home/orbit/apps/laravel-typed/default
         assert_source_snapshot "$source" /tmp/orb105-migration-before
+        printf '%s\n' manual-default:rollback-verified
 
         destination=/home/orbit/apps/laravel-typed/default
         gateway_state set-migration-rename-interruption "$id" "$destination" >/dev/null
@@ -426,7 +434,8 @@ BASH
         test "$(json_field "$interrupted" migration_required)" = true
         test "$(json_field "$interrupted" relocation_state)" = relocating
         test "$(json_field "$interrupted" authoritative_path)" = "$source"
-        output=$(register_source "$destination")
+        printf '%s\n' manual-default:rename-staged
+        output=$(register_source_without_app "$destination")
         test "$(json_field "$output" app_instance.id)" = "$id"
         state=$(gateway_state migration-state "$id")
         test "$(json_field "$state" name)" = default
@@ -442,16 +451,19 @@ BASH
         test "$(json_field "$state" authoritative_path)" = /home/orbit/apps/laravel-typed/default
         test "$(json_field "$state" route_target_instance_id)" = "$id"
         remote_command test ! -e "$source"
+        printf '%s\n' manual-default:no-app-recovery-complete
         gateway_state set-registration-incomplete "$id" >/dev/null
-        retry=$(register_source "/home/orbit/apps/laravel-typed/default")
+        retry=$(register_source_without_app "/home/orbit/apps/laravel-typed/default")
         test "$(json_field "$retry" app_instance.id)" = "$id"
         test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
         state=$(gateway_state migration-state "$id")
         test "$(json_field "$state" status)" = active
         test "$(json_field "$state" provisioning_step)" = active
+        printf '%s\n' manual-default:no-app-repeat-complete
         remote_command rm -f /tmp/orb105-migration-before
         remove_instance "$id"
         cleanup_path "$root"
+        printf '%s\n' manual-default:restored
         ;;
     checkout-move-repairs-worktrees)
         root=/home/orbit/orb105-repair-root
