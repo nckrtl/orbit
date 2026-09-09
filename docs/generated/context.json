@@ -1022,6 +1022,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md",
+            "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Doctor",
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0013",
+                "0038",
+                "0046",
+                "0047",
+                "0048"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
