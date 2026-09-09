@@ -1034,6 +1034,16 @@
             ]
         },
         {
+            "path": "docs/reference/gateway-trust.md",
+            "title": "Gateway trust",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/incus-topologies.md",
             "title": "Incus topology registry",
             "kind": "reference",

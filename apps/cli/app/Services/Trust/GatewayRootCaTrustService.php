@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Trust;
 
 use App\Data\GatewayProfile;
+use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayApiException;
@@ -34,14 +35,36 @@ final readonly class GatewayRootCaTrustService
         $certificate = $this->certificateFrom($response);
         $this->assertReplacementUnchanged($profile, $certificate, $response->requestId);
 
-        return $this->finish($profile, $certificate, $response->requestId);
+        $result = $this->finish($profile, $certificate, $response->requestId);
+        $this->updateExistingProfile($profile, $result->profile, $result->requestId);
+
+        return $result;
     }
 
     public function trustChangedCertificate(GatewayProfile $profile): GatewayRootCaTrustResult
     {
         $response = $this->fetchForBootstrap($profile->url);
 
-        return $this->finish($profile, $this->certificateFrom($response), $response->requestId);
+        $result = $this->finish(
+            $profile,
+            $this->certificateFrom($response),
+            $response->requestId,
+        );
+        $this->updateExistingProfile($profile, $result->profile, $result->requestId);
+
+        return $result;
+    }
+
+    public function trustForRegistration(GatewayProfile $profile): GatewayRootCaTrustResult
+    {
+        $response = $this->fetchForBootstrap($profile->url);
+        $certificate = $this->certificateFrom($response);
+        $this->assertReplacementUnchanged($profile, $certificate, $response->requestId);
+
+        $result = $this->finish($profile, $certificate, $response->requestId);
+        $this->replaceProfile($result->profile, $result->requestId);
+
+        return $result;
     }
 
     private function finish(
@@ -69,7 +92,6 @@ final readonly class GatewayRootCaTrustService
             $path,
             $verifiedRequestId,
         );
-        $this->updateProfile($verificationProfile, $verifiedRequestId);
 
         return new GatewayRootCaTrustResult(
             profile: $verificationProfile,
@@ -271,7 +293,28 @@ final readonly class GatewayRootCaTrustService
         }
     }
 
-    private function updateProfile(GatewayProfile $profile, string $requestId): void
+    private function updateExistingProfile(
+        GatewayProfile $expectedProfile,
+        GatewayProfile $verifiedProfile,
+        string $requestId,
+    ): void {
+        try {
+            if ($verifiedProfile->caPath === null) {
+                throw new GatewayConfigException('Gateway profile pin is missing.');
+            }
+
+            $this->repository->updatePin($expectedProfile, $verifiedProfile->caPath);
+        } catch (Throwable $exception) {
+            throw new GatewayRootCaTrustException(
+                errorCode: 'gateway.ca_profile_update_failed',
+                message: 'The root CA was trusted, but the gateway profile could not be updated.',
+                requestId: $requestId,
+                previous: $exception,
+            );
+        }
+    }
+
+    private function replaceProfile(GatewayProfile $profile, string $requestId): void
     {
         try {
             $this->repository->add($profile);
