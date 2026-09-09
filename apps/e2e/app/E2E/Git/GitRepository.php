@@ -152,6 +152,7 @@ final readonly class GitRepository
 
     public function dirtyOverlay(): ?\App\E2E\Value\DirtyOverlay
     {
+        $root = $this->root();
         $records = $this->run(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none']);
         if ($records === '') {
             return null;
@@ -178,7 +179,7 @@ final readonly class GitRepository
                 $paths[] = $previousPath;
             }
             $this->validateOverlayPath($path);
-            $this->validateOverlayEntry($path, $status);
+            $this->validateOverlayEntry($path, $status, $root);
             $paths[] = $path;
         }
 
@@ -226,12 +227,13 @@ final readonly class GitRepository
     /** @param list<string> $paths */
     public function createOverlayArchive(string $destination, array $paths): void
     {
+        $root = $this->root();
         $files = [];
         foreach ($paths as $path) {
             $this->validateOverlayPath($path);
-            $absolute = $this->root().'/'.$path;
+            $absolute = $root.'/'.$path;
             if (is_file($absolute)) {
-                $this->validateOverlayEntry($path, '??');
+                $this->validateOverlayEntry($path, '??', $root);
                 $files[] = $path;
             }
         }
@@ -240,7 +242,7 @@ final readonly class GitRepository
 
             return;
         }
-        $result = Process::path($this->root())->run([
+        $result = Process::path($root)->run([
             'tar',
             '--format=ustar',
             '--no-recursion',
@@ -272,20 +274,20 @@ final readonly class GitRepository
         }
     }
 
-    private function validateOverlayEntry(string $path, string $status): void
+    private function validateOverlayEntry(string $path, string $status, string $root): void
     {
         if (str_contains($status, 'D')) {
             return;
         }
-        $absolute = $this->root().'/'.$path;
+        $absolute = $root.'/'.$path;
         $parent = dirname($absolute);
-        while ($parent !== $this->root()) {
+        while ($parent !== $root) {
             if (is_link($parent)) {
                 throw new InvalidArgumentException('Dirty paths cannot traverse a symlink parent.');
             }
 
             $next = dirname($parent);
-            if ($next === $parent || ! str_starts_with($next.'/', $this->root().'/')) {
+            if ($next === $parent || ! str_starts_with($next.'/', $root.'/')) {
                 throw new InvalidArgumentException('Dirty path parent escaped the repository.');
             }
             $parent = $next;
