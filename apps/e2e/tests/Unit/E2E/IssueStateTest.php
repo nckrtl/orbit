@@ -10,6 +10,8 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
+use App\E2E\Value\TopologyExtension;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
@@ -18,8 +20,13 @@ function issueStateTopology(
     string $issue,
     AttemptId $attempt,
     AttemptPurpose $purpose = AttemptPurpose::Discovery,
+    ?TopologyExtension $extension = null,
 ): FeatureTopology {
-    $target = TopologyTarget::feature($issue, $attempt);
+    $target = TopologyTarget::feature(
+        $issue,
+        $attempt,
+        $extension?->recipe() ?? TopologyRecipe::registered(),
+    );
     $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
@@ -37,7 +44,13 @@ function issueStateTopology(
     );
 
     return new FeatureTopology(
-        TopologyConstructionInputs::create($target, $generation, 2),
+        TopologyConstructionInputs::create(
+            $target,
+            $generation,
+            2,
+            $extension,
+            $extension === null ? null : str_repeat('f', 64),
+        ),
         $purpose,
         $generation,
         new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
@@ -75,6 +88,10 @@ describe('IssueState', function () {
             ->toBe($operation->value)
             ->and($state->attempt()['purpose'])
             ->toBe('discovery')
+            ->and(array_key_exists('extension', $state->attempt()))
+            ->toBeTrue()
+            ->and($state->attempt()['extension'])
+            ->toBeNull()
             ->and($state->requireTopology()->attempt->value)
             ->toBe($attempt->value)
             ->and($state->proof())
@@ -191,5 +208,90 @@ describe('IssueState', function () {
             ->toThrow(RuntimeException::class, 'another issue')
             ->and(fn () => IssueState::forWorktree('TST-12', $worktree)->requireTopology())
             ->toThrow(RuntimeException::class, 'name different attempts');
+    });
+
+    it('records and validates the extension target for every current lease purpose', function (): void {
+        $worktree = temporaryPath('orbit-issue-state-extension-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('AUX-7', $worktree);
+        $operation = new OperationId(str_repeat('d', 32));
+        $discovery = new AttemptId(str_repeat('a', 32));
+        $proof = new AttemptId(str_repeat('b', 32));
+        $candidate = new AttemptId(str_repeat('c', 32));
+
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, $operation, TopologyExtension::AppProd);
+        $state->writeAttempt($proof, AttemptPurpose::Proof, $operation, null);
+        $state->writeAttempt($candidate, AttemptPurpose::CandidateConvergence, $operation, null);
+
+        expect($state->attempt(AttemptPurpose::Discovery)['extension'])
+            ->toBe('app-prod')
+            ->and(array_key_exists('extension', $state->attempt(AttemptPurpose::Proof)))
+            ->toBeTrue()
+            ->and($state->attempt(AttemptPurpose::Proof)['extension'])
+            ->toBeNull()
+            ->and(array_key_exists('extension', $state->attempt(AttemptPurpose::CandidateConvergence)))
+            ->toBeTrue()
+            ->and($state->attempt(AttemptPurpose::CandidateConvergence)['extension'])
+            ->toBeNull();
+
+        $state->writeTopology(issueStateTopology(
+            'AUX-7',
+            $discovery,
+            AttemptPurpose::Discovery,
+            TopologyExtension::AppProd,
+        ));
+        expect($state->requireTopology(AttemptPurpose::Discovery)->construction->extension)
+            ->toBe(TopologyExtension::AppProd);
+
+        $leasePath = $worktree.'/.e2e/'.IssueState::ATTEMPT;
+        $lease = json_decode((string) file_get_contents($leasePath), true, 8, JSON_THROW_ON_ERROR);
+        $lease['extension'] = null;
+        file_put_contents($leasePath, json_encode($lease, JSON_THROW_ON_ERROR));
+
+        expect(fn () => $state->requireTopology(AttemptPurpose::Discovery))
+            ->toThrow(RuntimeException::class, 'name different extensions');
+    });
+
+    it('accepts a matching complete legacy record and recovers only a missing lease extension', function (): void {
+        $worktree = temporaryPath('orbit-issue-state-legacy-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('AUX-7', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $operation = new OperationId(str_repeat('b', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, $operation, TopologyExtension::AppProd);
+        $state->writeTopology(issueStateTopology(
+            'AUX-7',
+            $attempt,
+            AttemptPurpose::Discovery,
+            TopologyExtension::AppProd,
+        ));
+        $leasePath = $worktree.'/.e2e/'.IssueState::ATTEMPT;
+        $legacy = json_decode((string) file_get_contents($leasePath), true, 8, JSON_THROW_ON_ERROR);
+        unset($legacy['extension']);
+        file_put_contents($leasePath, json_encode($legacy, JSON_THROW_ON_ERROR));
+
+        expect($state->requireTopology(AttemptPurpose::Discovery)->attempt->value)
+            ->toBe($attempt->value)
+            ->and($state->leaseHasExtension(AttemptPurpose::Discovery))
+            ->toBeFalse();
+
+        $state->recoverLeaseExtension(AttemptPurpose::Discovery, $attempt, TopologyExtension::AppProd);
+        $recovered = $state->attempt(AttemptPurpose::Discovery);
+        expect($recovered)
+            ->toMatchArray($legacy)
+            ->and($recovered['extension'])
+            ->toBe('app-prod');
+
+        $state->recoverLeaseExtension(AttemptPurpose::Discovery, $attempt, TopologyExtension::AppProd);
+        expect($state->attempt(AttemptPurpose::Discovery))
+            ->toBe($recovered)
+            ->and(fn () => $state->recoverLeaseExtension(AttemptPurpose::Discovery, $attempt, null))
+            ->toThrow(RuntimeException::class, 'cannot replace')
+            ->and(fn () => $state->recoverLeaseExtension(
+                AttemptPurpose::Discovery,
+                new AttemptId(str_repeat('c', 32)),
+                TopologyExtension::AppProd,
+            ))
+            ->toThrow(RuntimeException::class, 'does not match the active lease');
     });
 });

@@ -7,6 +7,7 @@ namespace App\Console\Commands\Topology;
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyReleaser;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\LeaseTargetRecovery;
 use Throwable;
 
 final class ReleaseCommand extends E2ECommand
@@ -16,7 +17,10 @@ final class ReleaseCommand extends E2ECommand
         'topology:release {issue} '
             .self::WORKTREE_OPTION
             .' {--proof : Release the retained proof topology instead of discovery}'
-            .' {--candidate : Release the candidate-convergence topology instead of discovery} {--json}';
+            .' {--candidate : Release the candidate-convergence topology instead of discovery}'
+            .' {--recover-extension= : Recover a legacy lease target as none or app-prod}'
+            .' {--expected-attempt= : Full attempt ID required with --recover-extension}'
+            .' {--json}';
     #[\Override]
     protected $description = 'Release discovery, or explicitly the retained proof, and sweep orphaned networks';
 
@@ -30,9 +34,13 @@ final class ReleaseCommand extends E2ECommand
             $purpose = match (true) {
                 (bool) $this->option('proof') => AttemptPurpose::Proof,
                 (bool) $this->option('candidate') => AttemptPurpose::CandidateConvergence,
-                default => null,
+                default => AttemptPurpose::Discovery,
             };
-            $result = $releaser->release($request, $purpose);
+            $recovery = LeaseTargetRecovery::fromOptions(
+                $this->option('recover-extension'),
+                $this->option('expected-attempt'),
+            );
+            $result = $releaser->release($request, $purpose, $recovery);
             $this->log($request, 'purpose='.$result['purpose'].' attempt='.$result['attempt_id'].' ok');
             $this->outputJson($result, 'released '.$result['attempt_id']);
 
