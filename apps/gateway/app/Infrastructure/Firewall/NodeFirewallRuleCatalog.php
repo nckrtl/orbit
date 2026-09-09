@@ -29,7 +29,7 @@ final class NodeFirewallRuleCatalog
             ],
             RoleName::Vpn => [],
             RoleName::Router, RoleName::Ingress, RoleName::AppDev => [],
-            RoleName::AppProd => [$this->rule('orbit:app-prod-http', '80'), $this->rule('orbit:app-prod-https', '443')],
+            RoleName::AppProd => [],
             RoleName::Metrics => [],
         };
     }
@@ -38,6 +38,14 @@ final class NodeFirewallRuleCatalog
     public function retiredForRole(Node $node, RoleName $role): array
     {
         $rules = [$this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit')];
+
+        if ($role === RoleName::AppProd) {
+            return [
+                ...$rules,
+                $this->rule('orbit:app-prod-http', '80'),
+                $this->rule('orbit:app-prod-https', '443'),
+            ];
+        }
 
         if ($role !== RoleName::AppDev) {
             return $rules;

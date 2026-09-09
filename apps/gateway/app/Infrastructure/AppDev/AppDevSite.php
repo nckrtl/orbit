@@ -20,6 +20,8 @@ final readonly class AppDevSite
         public array $upstreamAddresses = [],
         public bool $unavailable = false,
         public string $environment = 'development',
+        public ?string $productionUser = null,
+        public ?string $productionHome = null,
         public ?string $appSlug = null,
     ) {}
 
@@ -55,15 +57,19 @@ final readonly class AppDevSite
 
     public function executionUser(string $developmentUser): string
     {
-        return $this->environment === 'production' && is_string($this->appSlug)
-            ? "orbit-{$this->appSlug}"
-            : $developmentUser;
+        if ($this->environment !== 'production') {
+            return $developmentUser;
+        }
+
+        return $this->productionUser ?? (is_string($this->appSlug) ? "orbit-{$this->appSlug}" : $developmentUser);
     }
 
     public function executionHome(string $developmentHome): string
     {
-        return $this->environment === 'production' && is_string($this->appSlug)
-            ? "/var/www/{$this->appSlug}"
-            : $developmentHome;
+        if ($this->environment !== 'production') {
+            return $developmentHome;
+        }
+
+        return $this->productionHome ?? (is_string($this->appSlug) ? "/var/www/{$this->appSlug}" : $developmentHome);
     }
 }

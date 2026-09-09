@@ -1,6 +1,6 @@
 # Applications
 
-This page tells an operator how Orbit creates, configures, and exposes a development AppInstance on one manually selected app-dev Node. An App stores shared source defaults, and each AppInstance owns one source and one Route.
+This page tells an operator how Orbit creates, configures, and exposes an AppInstance on one manually selected application Node. An App stores shared source defaults, and each AppInstance owns one placement and one Route.
 
 [ADR 0009](../decisions/0009-clustered-app-instance-routing.md) defines the development source boundary. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines stable default identity, [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) defines owned source layouts, and [ADR 0032](../decisions/0032-preserve-explicit-appinstance-branch-selection.md) defines explicit branch selection. [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md) defines the separate production placement contract.
 
@@ -56,6 +56,24 @@ reserved -> checkout_prepared -> source_resolved
 
 An identical retry verifies the recorded App, Node, source layout, root, path, repository, branch override, selected branch, hostname input, and pre-activation commit evidence. It then resumes the next incomplete source or provisioning boundary. Once active, the recorded starting commit stays unchanged while normal development advances `HEAD`. Adding, removing, or changing the branch override returns `instance.placement_conflict` before database, Git, filesystem, configuration, runtime, or Route mutation.
 
+## Create a standalone production AppInstance
+
+Select one active standalone Node with an active app-prod role. The same command creates a production placement when the selected Node carries that role:
+
+```text
+orbit instance:new <app-id> <app-prod-node-id> primary [--branch=release] [--root=current/public] [--hostname=app.example.test]
+```
+
+The Gateway records one dedicated system user and `/home/<app-user>` home for the App on that Node. It clones the App repository into that home before runtime or Route publication. An omitted branch selects the App `default_branch`, even when a remote branch matches the AppInstance name. An explicit branch must exist and remains independent from the AppInstance name. The response returns the recorded user, home, absolute effective root, selected initial branch, exact starting commit, nullable branch override, and sole Route.
+
+A given App can have one production AppInstance per app-prod Node. The same App can use another app-prod Node, where it receives an independent user home and runtime. The recorded user and home do not change when the App slug changes.
+
+Production source preparation retains the same `reserved`, `checkout_prepared`, and `source_resolved` checkpoints. The Gateway records the complete source profile before runtime work. A plain PHP source gets the selected PHP-FPM pool and socket. A non-PHP source gets no PHP runtime. Detected Laravel source stops at its safely recorded initial-source checkpoint until the separate Laravel production contract is available; Orbit does not change Laravel files or publish its Route in this state.
+
+Production creation requires an explicit Route hostname or a TLD from the standalone Node. A Node in an active Cluster is outside this creation path. Both refusals happen before production source or runtime mutation.
+
+An identical retry resumes only incomplete Orbit-owned preparation. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, or other operator content. The operator or deployment agent owns every later production source change and must follow the [production PHP reload contract](../reference/php-runtime.md#production-deploy-contract).
+
 ## Complete a required source migration
 
 An AppInstance can require manual migration when its stored name follows the earlier branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until an operator completes migration outside the current command set. List and show responses return `migration_required: true`, Doctor reports the same bounded condition, and the existing Route continues to serve the same source path.
@@ -66,7 +84,7 @@ The Gateway returns `instance.migration_required` before database, Git, filesyst
 
 Before source or runtime changes, the Gateway resolves the Route hostname. The optional `--hostname` value requests an explicit hostname and takes precedence over generated naming. Without it, the Gateway uses the Node or Cluster naming basis described in the [Route reference](../reference/routes.md). The request fails before source or runtime mutation when neither basis can produce a hostname.
 
-After source resolution, the Gateway classifies the source, selects any required PHP runtime, associates the AppInstance with its sole Route, configures Laravel when detected, and prepares the runtime, certificates, Caddy, firewall, and private Domain Name System (DNS) projection. A Cluster-scoped Route also prepares the Router path. The [PHP runtime reference](../reference/php-runtime.md) describes source-driven runtime selection.
+After source resolution, the Gateway classifies the source and selects any required PHP runtime. It associates the AppInstance with its sole Route and prepares certificates, Caddy, firewall, and private Domain Name System (DNS) projection. Supported creation paths also configure Laravel. A Cluster-scoped development Route prepares the Router path. The [PHP runtime reference](../reference/php-runtime.md) describes source-driven runtime selection.
 
 At the first retained provisioning checkpoint, the Gateway records the complete development source profile in one database update: the selected PHP version, including no PHP runtime, and whether the source is Laravel. A retry at the `php-selected` or `url-configured` checkpoint inspects the source again and requires the exact same pair before it changes Laravel URL configuration or Route projection. A changed PHP version, a change between PHP and non-PHP, or a change between Laravel and plain PHP returns `app-dev.source_evidence_changed`.
 
@@ -105,7 +123,7 @@ orbit instance:new <app-id> <node-id> feature-one \
   --root=site/public
 ```
 
-The effective root is the AppInstance root when set and the App root otherwise. Orbit rejects absolute paths and parent traversal.
+The effective root is the AppInstance root when set and the App root otherwise. Development output returns this relative value. Production output resolves it below the recorded home. Orbit rejects empty values, absolute paths, and parent traversal. A production path such as `current/public` can remain unresolved until deployment; when it resolves, every component must stay in the recorded home and have the expected ownership.
 
 ## Remove an AppInstance
 

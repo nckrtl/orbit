@@ -24,7 +24,7 @@ One AppInstance cannot belong to two Routes. An active AppInstance has exactly o
 
 ## Select a hostname and scope
 
-During creation of a development AppInstance, optional hostname input selects an explicit Route. The AppInstance does not store a second authoritative hostname; API, PHP SDK, and CLI AppInstance output derives the hostname and URL from its sole Route. Without hostname input, the Gateway selects a generated Route. The Gateway refuses a request without an explicit hostname when neither the Node nor its active Cluster supplies a generation basis, and it does so before source or runtime mutation.
+During AppInstance creation, optional hostname input selects an explicit Route. The AppInstance does not store a second authoritative hostname; API, PHP SDK, and CLI AppInstance output derives the hostname and URL from its sole Route. Without hostname input, the Gateway selects a generated Route from an available Node naming basis. The Gateway refuses a request without an explicit hostname when no supported generation basis exists, and it does so before source or runtime mutation.
 
 A generated Route derives its hostname from the target AppInstance identity, App name, and effective target Node TLD. The Node TLD has priority; the active Cluster TLD is the fallback when the Node has no TLD. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines the reserved default identity and hostname shape.
 
@@ -35,7 +35,7 @@ A generated Route derives its hostname from the target AppInstance identity, App
 
 An explicit source branch changes neither placement nor generated Route identity. For example, `instance:new <app> <node> default --branch=release` still generates `<app>.test`.
 
-An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. An app-prod Node can remain valid without either TLD because an explicit Route supplies its hostname.
+An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. A standalone app-prod Node can remain valid without a TLD when production creation supplies an explicit Route hostname.
 
 Hostname selection and routing scope are independent. An AppInstance on a Node outside an active Cluster produces Node scope. An AppInstance on a Node in an active Cluster produces Cluster scope, including when the hostname uses the Node TLD or the Cluster has no TLD. A Cluster that owns a Route needs exactly one active Router.
 
@@ -96,7 +96,7 @@ Publication exposes the Route only after every required private projection is re
 
 Active WireGuard membership trusts a Node to reach every other active WireGuard member over all protocols and ports. Node grants do not limit ordinary private Node traffic; they authorize only Orbit commands and Gateway API actions. A configured LAN path can carry Router-to-workload traffic only when it preserves the same registered-Node trust boundary.
 
-Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
+Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. A standalone production Route is private and terminates Orbit-CA TLS on its workload Node. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 
 ## Guard later reconciliation
 

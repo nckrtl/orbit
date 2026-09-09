@@ -24,6 +24,9 @@ use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
+use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
@@ -90,11 +93,14 @@ use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppInstances\NativeAppInstanceRemovalProjector;
 use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
+use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
+use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
 use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
+use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
 use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
@@ -197,6 +203,9 @@ final class AppServiceProvider extends ServiceProvider
         DevelopmentAppInstanceConfigurator::class => RemoteDevelopmentAppInstanceConfigurator::class,
         DevelopmentAppInstanceProvisioner::class => NativeDevelopmentAppInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
+        ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,
+        ProductionAppInstanceSourceLifecycle::class => RemoteProductionAppInstanceSourceLifecycle::class,
+        ProductionRouteProjector::class => NativeProductionRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,

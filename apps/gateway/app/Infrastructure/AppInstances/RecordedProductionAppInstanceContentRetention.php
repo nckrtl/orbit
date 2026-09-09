@@ -16,7 +16,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
     public function inventory(AppInstance $appInstance): AppInstanceSourceInventory
     {
         $appInstance->loadMissing('app');
-        $root = $appInstance->effectiveRoot();
+        $root = $appInstance->root ?? $appInstance->app->root;
 
         if (
             $appInstance->environment !== 'production'

@@ -105,7 +105,7 @@ it('inspects each role with exact package service and firewall requirements', fu
         RoleName::AppProd,
         ['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'],
         ['caddy', 'docker'],
-        ['orbit:app-prod-http', 'orbit:app-prod-https'],
+        [],
     ],
 ]);
 
@@ -145,10 +145,10 @@ it('returns independent false projections for one missing requirement', function
         [true, false, true],
     ],
     'missing firewall rule' => [
-        RoleName::AppProd,
+        RoleName::Gateway,
         "1\n",
         "1\n",
-        ['orbit:app-prod-http'],
+        [],
         [true, true, false],
     ],
 ]);

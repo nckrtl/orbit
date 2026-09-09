@@ -87,7 +87,7 @@ it('converges private SSH and each exact role-owned firewall intent', function (
 })->with([
     'app development' => [RoleName::AppDev, []],
     'Router' => [RoleName::Router, []],
-    'app production' => [RoleName::AppProd, ['orbit:app-prod-http', 'orbit:app-prod-https']],
+    'app production' => [RoleName::AppProd, []],
     'gateway' => [RoleName::Gateway, ['orbit:gateway-https']],
     'VPN' => [RoleName::Vpn, []],
 ]);
@@ -132,16 +132,14 @@ it('retires the superseded VPN and app development listener rules', function ():
     expect($ssh->comments())->toBe(['orbit:wireguard-members']);
 });
 
-it('removes only exact owned rules in descending number order', function (): void {
+it('retires only Orbit-owned public app production rules and preserves operator rules', function (): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
 
     $ssh = new RoleFirewallSshExecutor;
     $manager = role_firewall_manager($ssh);
     $node = role_firewall_node();
+    $ssh->seed(['orbit:app-prod-http', 'orbit:app-prod-https']);
     $manager->converge($node, RoleName::AppProd, 'nckrtl');
-    $ssh->calls = [];
-
-    $manager->remove($node, RoleName::AppProd, 'nckrtl');
 
     $deletions = array_values(array_filter(
         $ssh->mutations(),
@@ -157,7 +155,7 @@ it('removes only exact owned rules in descending number order', function (): voi
         ->not->toContain(
             'orbit:app-prod-http',
             'orbit:app-prod-https',
-        )->and($ssh->unrelatedRulePresent)->toBeTrue()->and($ssh->users())
+        )->and($ssh->operatorWebRulesPresent)->toBeTrue()->and($ssh->users())
         ->each->toBe('nckrtl');
 });
 
@@ -234,7 +232,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
     /** @var list<array{connection: SshConnection, command: RemoteCommand}> */
     public array $calls = [];
 
-    public bool $unrelatedRulePresent = true;
+    public bool $operatorWebRulesPresent = true;
 
     /** @var list<array{comment: string, family: string}> */
     private array $rules = [];
@@ -271,6 +269,10 @@ final class RoleFirewallSshExecutor implements SshExecutor
         }
 
         if (array_slice(array: $arguments, offset: 0, length: 4) === ['sudo', 'ufw', '--force', 'delete']) {
+            if (in_array((int) ($arguments[4] ?? 0), [90, 91], strict: true)) {
+                $this->operatorWebRulesPresent = false;
+            }
+
             $index = (int) ($arguments[4] ?? 0) - 2;
 
             if (array_key_exists($index, $this->rules)) {
@@ -349,6 +351,11 @@ final class RoleFirewallSshExecutor implements SshExecutor
         foreach ($this->rules as $offset => $rule) {
             $number = $offset + 2;
             $lines[] = $this->line($number, $rule['comment'], $rule['family']);
+        }
+
+        if ($this->operatorWebRulesPresent) {
+            $lines[] = '[90] 80/tcp ALLOW IN 198.51.100.20';
+            $lines[] = '[91] 443/tcp ALLOW IN 198.51.100.20';
         }
 
         if ($this->driftedComment !== null && ! in_array($this->driftedComment, $this->comments(), strict: true)) {

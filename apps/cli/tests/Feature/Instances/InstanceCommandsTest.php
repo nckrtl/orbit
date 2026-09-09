@@ -31,11 +31,11 @@ afterEach(function (): void {
 });
 
 describe('instance:new', function (): void {
-    it('documents the development source-only contract', function (): void {
+    it('documents the development and standalone production contract', function (): void {
         $this
             ->artisan('help', ['command_name' => 'instance:new'])
-            ->expectsOutputToContain('Create a development AppInstance on an app-dev node.')
-            ->expectsOutputToContain('default is reserved for the App default source')
+            ->expectsOutputToContain('Create an AppInstance on an app-dev or standalone app-prod node.')
+            ->expectsOutputToContain('default is reserved for the default development source')
             ->assertExitCode(0);
     });
 
@@ -169,12 +169,32 @@ describe('instance:new', function (): void {
             ->artisan('instance:new', ['app' => '3', 'node' => '2', 'name' => 'dev'])
             ->expectsOutput('Instance [dev] is active.')
             ->expectsOutput('Source layout: checkout')
+            ->expectsOutput('Effective root: public')
             ->expectsOutput('Selected branch: dev')
             ->expectsOutput('Branch override: -')
             ->expectsOutput('Migration required: no')
             ->expectsOutput('Route hostname: dev.orbit.test')
             ->expectsOutput('URL: https://dev.orbit.test')
             ->expectsOutput('Request ID: '.instance_request_id())
+            ->assertExitCode(0);
+    });
+
+    it('reports production placement identity for humans', function (): void {
+        $payload = [
+            ...instance_payload(),
+            'environment' => 'production',
+            'production_user' => 'orbit-app-3',
+            'production_home' => '/home/orbit-app-3',
+            'checkout_path' => '/home/orbit-app-3',
+            'effective_root' => '/home/orbit-app-3/current/public',
+        ];
+        MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201, $payload)]);
+
+        $this
+            ->artisan('instance:new', ['app' => '3', 'node' => '2', 'name' => 'dev'])
+            ->expectsOutput('Production user: orbit-app-3')
+            ->expectsOutput('Production home: /home/orbit-app-3')
+            ->expectsOutput('Effective root: /home/orbit-app-3/current/public')
             ->assertExitCode(0);
     });
 });
@@ -455,6 +475,8 @@ function instance_payload(?array $removal = null): array
         'environment' => 'development',
         'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs/dev',
+        'production_user' => null,
+        'production_home' => null,
         'root' => null,
         'effective_root' => 'public',
         'selected_branch' => 'dev',

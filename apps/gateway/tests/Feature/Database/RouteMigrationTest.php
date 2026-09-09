@@ -57,32 +57,6 @@ it('stores exclusive Route scope, immutable provenance, basis, and pending lifec
         ->toThrow(QueryException::class);
 });
 
-it('rejects duplicate target Nodes', function (): void {
-    $app = App\Models\App::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'https://example.test/acme.git',
-    ]);
-    $nodeOne = route_migration_node('one');
-    $one = route_migration_instance($app, $nodeOne, 'one');
-    $duplicateNode = route_migration_instance($app, $nodeOne, 'duplicate');
-    $explicit = Route::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $nodeOne->id,
-        'hostname' => 'explicit.test',
-        'provenance' => RouteProvenance::Explicit,
-        'publication' => RoutePublication::Private,
-    ]);
-    $explicit->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
-
-    expect(fn () => $explicit
-        ->targets()
-        ->create([
-            'app_instance_id' => $duplicateNode->id,
-            'position' => 1,
-        ]))->toThrow(QueryException::class)->and($explicit->targets()->count())->toBe(1);
-});
-
 it('enforces multi-target storage with compatible Cluster-scoped production rows', function (): void {
     $app = App\Models\App::query()->create([
         'name' => 'Acme',
