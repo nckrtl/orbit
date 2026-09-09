@@ -46,7 +46,7 @@ beforeEach(function (): void {
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
 });
 
-it('refuses active Route changes before mutating the serving path', function (): void {
+it('reports association conflicts before active Route reconciliation refusals', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
         hostname: 'active.example.test',
@@ -56,6 +56,41 @@ it('refuses active Route changes before mutating the serving path', function ():
         clusterId: null,
     ))['route'];
     $route->update(['status' => RouteStatus::Active]);
+    $replacement = reconciliation_instance(
+        $this->orbitApp,
+        reconciliation_node('replacement', 'replacement.test'),
+        'replacement',
+    );
+    $before = $route->fresh(['targets'])->toArray();
+
+    foreach ([
+        fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
+        fn () => app(ClearRouteTargetAction::class)->execute($route),
+        fn () => app(RemoveRouteAction::class)->execute($route),
+    ] as $mutation) {
+        expect($mutation)->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.target_conflict');
+        });
+        expect($route->fresh(['targets'])->toArray())->toBe($before);
+    }
+});
+
+it('retains reconciliation refusals for active Route changes without association conflicts', function (): void {
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $replacement = reconciliation_instance(
+        $this->orbitApp,
+        reconciliation_node('replacement', 'replacement.test'),
+        'replacement',
+    );
     $before = $route->fresh(['targets'])->toArray();
 
     foreach ([
@@ -63,7 +98,7 @@ it('refuses active Route changes before mutating the serving path', function ():
             $route,
             new UpdateRouteData(true, 'changed.example.test', false, null),
         ),
-        fn () => app(ClearRouteTargetAction::class)->execute($route),
+        fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
         fn () => app(RemoveRouteAction::class)->execute($route),
     ] as $mutation) {
         expect($mutation)->toThrow(function (ResourceOperationException $exception): void {
@@ -117,6 +152,7 @@ it('reconciles a zero-target generated Route from its retained basis', function 
     $cluster = reconciliation_active_cluster('routing', 'old.test');
     $this->node->update(['cluster_id' => $cluster->id, 'tld' => null]);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
 
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(tldProvided: true, tld: 'new.test'));
@@ -178,6 +214,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->target->delete();
     $observed = [];
@@ -267,6 +304,7 @@ it('preserves Node and Route state when the last app-dev TLD has no active fallb
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->target->delete();
     $nodeBefore = $this->node->fresh()->getAttributes();
@@ -295,6 +333,7 @@ it('uses the active Cluster TLD when the retained basis Node TLD is cleared', fu
     ]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->target->delete();
     bind_route_reconciliation_provisioning();
@@ -386,7 +425,10 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
     expect(app(CreateRouteAction::class)->ensureForAppInstance($memberTarget, null)->cluster_id)
         ->toBe($cluster->id)
         ->and(fn () => app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id))
-        ->toThrow(ResourceOperationException::class, 'conflicts with existing Route state');
+        ->toThrow(
+            ResourceOperationException::class,
+            "AppInstance [{$memberTarget->id}] is already associated with Route",
+        );
 });
 
 function reconciliation_node(string $name, ?string $tld): Node
