@@ -423,9 +423,11 @@ describe('IncusNetworkLifecycle', function (): void {
             if ($process->command === lifecycleFirewallHelper()) {
                 $helperCalls++;
 
-                return Process::result($helperCalls === 1
-                    ? "{\"changed\":true}\n"
-                    : "{\"changed\":false}\n");
+                return Process::result(
+                    $helperCalls === 1
+                        ? "{\"changed\":true}\n"
+                        : "{\"changed\":false}\n",
+                );
             }
 
             return Process::result('', 'Unexpected command.', 2);
