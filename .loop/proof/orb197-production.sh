@@ -396,7 +396,8 @@ grep -Fq 'operator:orb197' <<<"$status"
 ! grep -Fq 'orbit:app-prod-http' <<<"$status"
 ! grep -Fq 'orbit:app-prod-https' <<<"$status"
 REMOTE
-        curl --fail --silent --show-error --retry 10 --retry-delay 1 --cacert /home/orbit/.orbit/ca/root.pem --resolve orb197-create.test:443:10.44.0.3 https://orb197-create.test/ | grep -Fq orb197-create-web
+        body=$(curl --fail --silent --show-error --retry 10 --retry-delay 1 --cacert /home/orbit/.orbit/ca/root.pem --resolve orb197-create.test:443:10.44.0.3 https://orb197-create.test/)
+        grep -Fq orb197-create-web <<<"$body"
         printf 'private Orbit-CA HTTPS and app-prod firewall retirement passed\n'
         ;;
 
