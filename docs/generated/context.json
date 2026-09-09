@@ -1045,6 +1045,39 @@
             ]
         },
         {
+            "path": "docs/decisions/0049-keep-delivery-artifacts-off-the-merge-head.md",
+            "title": "ADR 0049: Keep delivery artifacts off the merge head",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0006",
+                "0015",
+                "0049"
+            ]
+        },
+        {
+            "path": "docs/decisions/0050-release-successful-proof-resources-before-landing.md",
+            "title": "ADR 0050: Release successful proof resources before landing",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0006",
+                "0015",
+                "0035",
+                "0050"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
