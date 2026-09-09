@@ -80,4 +80,4 @@ Reported:
 ## Proof decisions
 
 - Incus plan: `.loop/proof/ORB-168.json` with action `source-profile-checkpoint-drift`.
-- Observed inputs: decide after the executable discovery scenario identifies every PHP surface and confirms PCOV collection support.
+- Observed inputs: `true`. Setup runs the app-dev CLI and a Gateway CLI fixture, while acceptance runs the Gateway CLI fixture and the app-dev CLI through Gateway FPM. These actions exercise all required `app-dev:cli`, `gateway:cli`, and `gateway:fpm` surfaces, so PCOV can record complete PHP observations.
