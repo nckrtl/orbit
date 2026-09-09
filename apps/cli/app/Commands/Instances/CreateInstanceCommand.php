@@ -20,6 +20,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {--root= : Optional relative web-root override}
         {--hostname= : Optional explicit Route hostname}
         {--branch= : Optional explicit source branch}
+        {--recover-source-profile : Adopt complete source evidence for a legacy incomplete checkpoint}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -62,6 +63,7 @@ final class CreateInstanceCommand extends GatewayCommand
                 root: $this->stringOption('root'),
                 hostname: $this->stringOption('hostname'),
                 branch: $this->stringOption('branch'),
+                recoverSourceProfile: $this->option('recover-source-profile') === true ? true : null,
             ),
             AppInstanceResponse::class,
         );

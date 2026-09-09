@@ -22,6 +22,8 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteMutationReconciler;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -146,6 +148,186 @@ it('atomically reconciles attach, activation, TLD changes, deactivation, and det
 
     app(DetachClusterNodeAction::class)->execute($cluster, $this->node);
     expect($this->node->refresh()->cluster_id)->toBeNull()->and($route->refresh()->node_id)->toBe($this->node->id);
+});
+
+it('bypasses Route reconciliation when a Cluster patch leaves placement inputs unchanged', function (): void {
+    $unrelatedNode = reconciliation_node('unrelated', 'unrelated.test');
+    $unrelatedTarget = reconciliation_instance($this->orbitApp, $unrelatedNode, 'unrelated');
+    $unrelatedTarget->update(['status' => AppInstanceState::CheckoutPrepared]);
+    $unrelatedRoute = reconciliation_route(
+        $this->orbitApp,
+        'unrelated.acme.unrelated.test',
+        node: $unrelatedNode,
+        basis: $unrelatedNode,
+    );
+    $unrelatedRoute->targets()->create(['app_instance_id' => $unrelatedTarget->id, 'position' => 0]);
+    $unrelatedRoute->update([
+        'status' => RouteStatus::Failed,
+        'failed_step' => 'provisioning',
+        'error_code' => 'instance.provisioning_failed',
+    ]);
+    $before = $unrelatedRoute->fresh(['targets'])->toArray();
+    $cluster = Cluster::query()->create([
+        'name' => 'routing',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster.test',
+    ]);
+
+    $renamed = app(UpdateClusterAction::class)->execute($cluster, new UpdateClusterData(
+        nameProvided: true,
+        name: 'renamed',
+        tldProvided: false,
+        tld: null,
+        stateProvided: false,
+        state: null,
+    ));
+    $unchanged = app(UpdateClusterAction::class)->execute($renamed, new UpdateClusterData(
+        nameProvided: false,
+        name: null,
+        tldProvided: true,
+        tld: 'cluster.test',
+        stateProvided: true,
+        state: ClusterState::Inactive,
+    ));
+
+    expect($unchanged->name)
+        ->toBe('renamed')
+        ->and($unrelatedRoute->fresh(['targets'])->toArray())
+        ->toBe($before);
+});
+
+it('hydrates and reconciles the complete affected Route dependency closure', function (): void {
+    $targeted = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $targetlessDirect = reconciliation_route($this->orbitApp, 'direct.example.test', node: $this->node);
+    $retainedTarget = reconciliation_instance($this->orbitApp, $this->node, 'retained');
+    $retained = app(CreateRouteAction::class)->ensureForAppInstance($retainedTarget, null);
+    app(ClearRouteTargetAction::class)->execute($retained);
+
+    $cluster = reconciliation_active_cluster('production', 'cluster.test');
+    $firstNode = reconciliation_node('production-one', null);
+    $secondNode = reconciliation_node('production-two', null);
+    foreach ([$firstNode, $secondNode] as $node) {
+        $node->update(['cluster_id' => $cluster->id]);
+        $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    }
+    $firstTarget = reconciliation_instance($this->orbitApp, $firstNode, 'production-one');
+    $secondTarget = reconciliation_instance($this->orbitApp, $secondNode, 'production-two');
+    $firstTarget->update(['environment' => 'production', 'status' => AppInstanceState::SourceResolved]);
+    $secondTarget->update(['environment' => 'production', 'status' => AppInstanceState::SourceResolved]);
+    $multiTarget = reconciliation_route($this->orbitApp, 'production.example.test', cluster: $cluster);
+    $multiTarget->targets()->create(['app_instance_id' => $firstTarget->id, 'position' => 0]);
+    $multiTarget->targets()->create(['app_instance_id' => $secondTarget->id, 'position' => 1]);
+    $firstTarget->update(['status' => AppInstanceState::Active]);
+    $secondTarget->update(['status' => AppInstanceState::Active]);
+    $targetlessCluster = reconciliation_route($this->orbitApp, 'targetless.example.test', cluster: $cluster);
+
+    $unrelatedNode = reconciliation_node('unrelated-closure', 'unrelated.test');
+    $unrelatedTarget = reconciliation_instance($this->orbitApp, $unrelatedNode, 'failed');
+    $unrelatedTarget->update(['status' => AppInstanceState::CheckoutPrepared]);
+    $unrelated = reconciliation_route(
+        $this->orbitApp,
+        'failed.acme.unrelated.test',
+        node: $unrelatedNode,
+        basis: $unrelatedNode,
+    );
+    $unrelated->targets()->create(['app_instance_id' => $unrelatedTarget->id, 'position' => 0]);
+    $unrelated->update([
+        'status' => RouteStatus::Failed,
+        'failed_step' => 'provisioning',
+        'error_code' => 'instance.provisioning_failed',
+    ]);
+    $unrelatedBefore = $unrelated->fresh(['targets'])->toArray();
+    $hydrated = [];
+    Route::retrieved(static function (Route $route) use (&$hydrated): void {
+        $hydrated[] = $route->id;
+    });
+
+    app(RouteMutationReconciler::class)->reconcile(
+        nodeOverrides: [$this->node->id => ['tld' => 'next.test']],
+        clusterOverrides: [$cluster->id => ['tld' => 'next-cluster.test']],
+    );
+
+    sort($hydrated);
+    $expected = [$targeted->id, $targetlessDirect->id, $retained->id, $multiTarget->id, $targetlessCluster->id];
+    sort($expected);
+    expect($hydrated)
+        ->toBe($expected)
+        ->and($targeted->refresh()->hostname)
+        ->toBe('feature.acme.next.test')
+        ->and($retained->refresh()->hostname)
+        ->toBe('retained.acme.next.test')
+        ->and($multiTarget->targets()->pluck('position')->all())
+        ->toBe([0, 1])
+        ->and($targetlessCluster->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($unrelated->fresh(['targets'])->toArray())
+        ->toBe($unrelatedBefore);
+});
+
+it('uses provisioning baseline overrides to select retained generated Routes', function (): void {
+    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    app(ClearRouteTargetAction::class)->execute($route);
+    $this->node->update(['tld' => 'next.test']);
+
+    app(RouteMutationReconciler::class)->reconcile(baselineNodeOverrides: [
+        $this->node->id => ['tld' => 'dev.test'],
+    ]);
+
+    expect($route->refresh()->hostname)
+        ->toBe('feature.acme.next.test')
+        ->and($route->generation_basis_node_id)
+        ->toBe($this->node->id);
+});
+
+it('rejects a proposed hostname owned by an unaffected Route before any write', function (): void {
+    $affected = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $unaffectedNode = reconciliation_node('unaffected-owner', 'owner.test');
+    $unaffected = reconciliation_route(
+        $this->orbitApp,
+        'feature.acme.next.test',
+        node: $unaffectedNode,
+    );
+    $affectedBefore = $affected->fresh()->toArray();
+    $unaffectedBefore = $unaffected->fresh()->toArray();
+
+    expect(fn () => app(RouteMutationReconciler::class)->reconcile(nodeOverrides: [
+        $this->node->id => ['tld' => 'next.test'],
+    ]))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.hostname_conflict');
+    });
+
+    expect($affected->fresh()->toArray())
+        ->toBe($affectedBefore)
+        ->and($unaffected->fresh()->toArray())
+        ->toBe($unaffectedBefore);
+});
+
+it('keeps affected Route hydration bounded as unrelated graph state grows', function (): void {
+    $affected = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $hydrated = [];
+    Route::retrieved(static function (Route $route) use (&$hydrated): void {
+        $hydrated[] = $route->id;
+    });
+
+    app(RouteMutationReconciler::class)->reconcile(nodeOverrides: [
+        $this->node->id => ['tld' => 'first.test'],
+    ]);
+    $beforeGrowth = $hydrated;
+
+    foreach (range(1, 12) as $index) {
+        $node = reconciliation_node("growth-{$index}", "growth-{$index}.test");
+        reconciliation_route($this->orbitApp, "growth-{$index}.example.test", node: $node);
+    }
+    $hydrated = [];
+
+    app(RouteMutationReconciler::class)->reconcile(nodeOverrides: [
+        $this->node->id => ['tld' => 'second.test'],
+    ]);
+
+    expect($beforeGrowth)
+        ->toBe([$affected->id])
+        ->and($hydrated)
+        ->toBe([$affected->id]);
 });
 
 it('reconciles a zero-target generated Route from its retained basis', function (): void {
@@ -499,6 +681,25 @@ function reconciliation_active_cluster(string $name, ?string $tld): Cluster
         ]);
 
     return $cluster;
+}
+
+function reconciliation_route(
+    OrbitApp $app,
+    string $hostname,
+    ?Node $node = null,
+    ?Cluster $cluster = null,
+    ?Node $basis = null,
+): Route {
+    return Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node?->id,
+        'cluster_id' => $cluster?->id,
+        'generation_basis_node_id' => $basis?->id,
+        'hostname' => $hostname,
+        'provenance' => $basis === null ? RouteProvenance::Explicit : RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
 }
 
 function reconciliation_update(
