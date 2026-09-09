@@ -80,7 +80,7 @@ final class GatewayAddCommand extends GatewayCommand
         );
 
         try {
-            $result = $trust->trust($profile);
+            $result = $trust->trustForRegistration($profile);
 
             if ($this->option('use') === true) {
                 $repository->use($name);

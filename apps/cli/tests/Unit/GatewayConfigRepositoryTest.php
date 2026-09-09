@@ -108,6 +108,73 @@ describe(GatewayConfigRepository::class, function (): void {
     });
 });
 
+it('preserves a same-name profile replacement when a stale pin update finishes later', function (
+    GatewayProfile $replacement,
+): void {
+    $repository = new GatewayConfigRepository($this->configPath);
+    $expected = new GatewayProfile(
+        name: 'test',
+        url: 'https://10.70.0.1',
+        caPath: '/home/orbit/.orbit/ca/old.pem',
+    );
+    $repository->add($expected);
+    $repository->add($replacement);
+
+    expect(fn () => $repository->updatePin($expected, '/home/orbit/.orbit/ca/fetched.pem'))
+        ->toThrow(
+            GatewayConfigException::class,
+            'Gateway profile changed while its root CA was being trusted.',
+        )
+        ->and($repository->find('test'))
+        ->toEqual($replacement);
+})->with([
+    'URL replacement' => new GatewayProfile(
+        name: 'test',
+        url: 'https://10.80.0.1',
+        caPath: '/home/orbit/.orbit/ca/old.pem',
+    ),
+    'pin replacement' => new GatewayProfile(
+        name: 'test',
+        url: 'https://10.70.0.1',
+        caPath: '/home/orbit/.orbit/ca/competing.pem',
+    ),
+]);
+
+it('updates a pin without reverting an independent active-profile switch', function (): void {
+    $repository = new GatewayConfigRepository($this->configPath);
+    $expected = new GatewayProfile('test', 'https://10.70.0.1');
+    $repository->add($expected);
+    $repository->add(new GatewayProfile('production', 'https://10.80.0.1'));
+    $repository->use('production');
+
+    $repository->updatePin($expected, '/home/orbit/.orbit/ca/fetched.pem');
+
+    expect($repository->active()?->name)
+        ->toBe('production')
+        ->and($repository->find('test'))
+        ->toEqual(new GatewayProfile(
+            name: 'test',
+            url: 'https://10.70.0.1',
+            caPath: '/home/orbit/.orbit/ca/fetched.pem',
+        ));
+});
+
+it('accepts an identical pin update that completed before the stale updater', function (): void {
+    $repository = new GatewayConfigRepository($this->configPath);
+    $expected = new GatewayProfile('test', 'https://10.70.0.1');
+    $updated = new GatewayProfile(
+        name: 'test',
+        url: 'https://10.70.0.1',
+        caPath: '/home/orbit/.orbit/ca/fetched.pem',
+    );
+    $repository->add($expected);
+    $repository->add($updated);
+
+    $repository->updatePin($expected, '/home/orbit/.orbit/ca/fetched.pem');
+
+    expect($repository->find('test'))->toEqual($updated);
+});
+
 it('preserves concurrent profile additions on first use', function (): void {
     $operations = [];
 
