@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\WireGuard\WireGuardEndpoint;
 use Illuminate\Console\Command;
 
 /** @mago-expect lint:cyclomatic-complexity Bootstrap validates canonical and compatibility WireGuard inputs independently. */
@@ -49,7 +50,7 @@ final class BootstrapGatewayCommand extends Command
         }
 
         $port = (int) $wireguardPort;
-        $endpoint = $this->stringOption('wireguard-endpoint') ?? "{$publicHost}:{$port}";
+        $endpoint = $this->stringOption('wireguard-endpoint') ?? WireGuardEndpoint::format($publicHost, $port);
         try {
             $node = $action->execute(new BootstrapGatewayData(
                 publicHost: $publicHost,

@@ -62,6 +62,67 @@ it('resolves peer overrides and renders the complete server peer set', function 
     }
 });
 
+it('preserves explicit endpoint forms at the peer configuration boundary', function (string $endpoint): void {
+    $orbitHome = wireguard_configuration_home();
+
+    try {
+        [$settings, $peer] = wireguard_configuration_fixture();
+        $peer->update(['wireguard_endpoint_override' => $endpoint]);
+
+        $configuration = new VpnConfigurationRepository($settings, $orbitHome);
+
+        expect($configuration->forPeer($peer)->endpoint)->toBe($endpoint);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+})->with([
+    'IPv4' => '192.0.2.10:51820',
+    'hostname' => 'vpn.example.test:51820',
+    'bracketed IPv6' => '[2001:db8::10]:51820',
+]);
+
+it('formats the public-host fallback for peer configuration', function (
+    string $publicHost,
+    string $endpoint,
+): void {
+    $orbitHome = wireguard_configuration_home();
+
+    try {
+        [$settings, $peer, $gateway] = wireguard_configuration_fixture();
+        $gateway->update(['public_ssh_host' => $publicHost]);
+
+        $configuration = new VpnConfigurationRepository($settings, $orbitHome);
+
+        expect($configuration->forPeer($peer)->endpoint)->toBe($endpoint);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+})->with([
+    'IPv4 bytes' => ['192.0.2.10', '192.0.2.10:51820'],
+    'hostname bytes' => ['Vpn.Example.test', 'Vpn.Example.test:51820'],
+    'IPv6 brackets' => ['2001:db8::10', '[2001:db8::10]:51820'],
+]);
+
+it('rejects malformed endpoints at the peer configuration boundary', function (string $endpoint): void {
+    $orbitHome = wireguard_configuration_home();
+
+    try {
+        [$settings, $peer] = wireguard_configuration_fixture();
+        $peer->update(['wireguard_endpoint_override' => $endpoint]);
+
+        $configuration = new VpnConfigurationRepository($settings, $orbitHome);
+
+        expect(fn () => $configuration->forPeer($peer))
+            ->toThrow(NodeProvisioningException::class, 'The WireGuard endpoint is invalid.');
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+})->with([
+    'bare IPv6' => '2001:db8::10:51820',
+    'invalid port' => '192.0.2.10:0',
+    'whitespace' => 'vpn.example.test :51820',
+]);
+
 it('rejects unsafe endpoint, DNS, and domain values before rendering peer shell hooks', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
@@ -172,3 +233,35 @@ it('rejects peer addresses outside the usable subnet range', function (string $a
     'outside' => '10.44.0.4',
     'IPv6' => '2001:db8::2',
 ]);
+
+function wireguard_configuration_home(): string
+{
+    $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
+    mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
+    file_put_contents(filename: $orbitHome.'/wireguard/private.key', data: 'SERVER_PRIVATE');
+    file_put_contents(filename: $orbitHome.'/wireguard/public.key', data: 'SERVER_PUBLIC');
+
+    return $orbitHome;
+}
+
+/** @return array{VpnSettings, Node, Node} */
+function wireguard_configuration_fixture(): array
+{
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '192.0.2.10',
+        'wireguard_ip' => '10.44.0.1',
+        'wireguard_public_key' => 'SERVER_PUBLIC',
+    ]);
+    $gateway->roles()->create(['role' => RoleName::Vpn]);
+    $peer = Node::query()->create([
+        'name' => 'app-dev',
+        'public_ssh_host' => '192.0.2.20',
+        'wireguard_ip' => '10.44.0.2',
+        'wireguard_public_key' => 'PEER_PUBLIC',
+    ]);
+    $settings = new VpnSettings(app(SettingRepository::class));
+    $settings->configure(subnet: '10.44.0.0/24');
+
+    return [$settings, $peer, $gateway];
+}
