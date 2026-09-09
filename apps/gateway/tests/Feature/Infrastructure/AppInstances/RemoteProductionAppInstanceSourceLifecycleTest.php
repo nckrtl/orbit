@@ -66,8 +66,8 @@ it('prepares the recorded user and home and resolves only the App default branch
         ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public'])
         ->and($ssh->commands[4]->input)
         ->toContain(
-            'sudo -u "$user" -H realpath -e -- "$document_root"',
-            'sudo -u "$user" -H find -P "$document_root_real" -type l',
+            'sudo -u "$user" -H realpath -m -- "$document_root"',
+            'sudo find -P "$document_root_real" -type l',
             'sudo setfacl -m u:caddy:--x /home "$home"',
             'sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"',
         )
@@ -90,6 +90,37 @@ it('passes an explicit branch without changing production identity', function ()
         ->toBe('release')
         ->and($instance->name)
         ->toBe('matching-remote-name');
+});
+
+it('permits an unresolved root and revalidates complete ownership immediately before ACL mutation', function (): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, '', '', 1, false),
+    ]);
+    $instance->update(['root' => 'current/public']);
+
+    $source->prepareCaddyAccess($instance);
+
+    $command = $ssh->commands[0];
+    $userOwnership = strpos($command->input, 'sudo find -P "$home" -xdev ! -user "$user"');
+    $groupOwnership = strpos($command->input, 'sudo find -P "$home" -xdev ! -group "$user"');
+    $firstAclMutation = strpos($command->input, 'sudo setfacl -P -R -m u:caddy:--- "$home"');
+
+    expect($command->arguments)
+        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'current/public'])
+        ->and($command->input)
+        ->toContain(
+            'document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")',
+            'if sudo -u "$user" -H test -e "$document_root" || sudo -u "$user" -H test -L "$document_root"; then',
+            'if [ "$document_root_exists" = 1 ]; then',
+        )
+        ->and($userOwnership)
+        ->toBeInt()
+        ->toBeLessThan($firstAclMutation)
+        ->and($groupOwnership)
+        ->toBeInt()
+        ->toBeLessThan($firstAclMutation)
+        ->and($firstAclMutation)
+        ->toBeInt();
 });
 
 /**

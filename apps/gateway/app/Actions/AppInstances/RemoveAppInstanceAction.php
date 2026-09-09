@@ -515,7 +515,6 @@ final readonly class RemoveAppInstanceAction
     {
         if (
             $route->status !== RouteStatus::Active
-            || $route->publication !== RoutePublication::Private
             || $route->targets->isEmpty()
             || ! $route->targets->contains('app_instance_id', $requested->id)
         ) {
@@ -527,6 +526,7 @@ final readonly class RemoveAppInstanceAction
 
             return (
                 $route->node_id === $requested->node_id
+                && $route->publication === RoutePublication::Private
                 && $route->targets->count() === 1
                 && $route->targets->sole()->app_instance_id === $requested->id
                 && $requested->environment === 'production'

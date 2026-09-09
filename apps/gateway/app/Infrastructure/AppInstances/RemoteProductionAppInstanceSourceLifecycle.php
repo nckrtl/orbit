@@ -235,19 +235,28 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     sudo -u "$user" -H test ! -L "$home"
                     home_real=$(sudo -u "$user" -H realpath -e -- "$home")
                     test "$home_real" = "$home"
-                    sudo -u "$user" -H test -d "$document_root"
-                    sudo -u "$user" -H test ! -L "$document_root"
-                    document_root_real=$(sudo -u "$user" -H realpath -e -- "$document_root")
+                    document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")
                     case "$document_root_real" in
                         "$home"|"$home"/*) ;;
                         *) exit 1 ;;
                     esac
-                    test -z "$(sudo -u "$user" -H find -P "$document_root_real" -type l -print -quit)"
+                    document_root_exists=0
+                    if sudo -u "$user" -H test -e "$document_root" || sudo -u "$user" -H test -L "$document_root"; then
+                        sudo -u "$user" -H test -d "$document_root"
+                        sudo -u "$user" -H test ! -L "$document_root"
+                        test "$(sudo -u "$user" -H realpath -e -- "$document_root")" = "$document_root_real"
+                        test -z "$(sudo find -P "$document_root_real" -type l -print -quit)"
+                        document_root_exists=1
+                    fi
+                    test -z "$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)"
+                    test -z "$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)"
                     sudo setfacl -P -R -m u:caddy:--- "$home"
                     sudo find -P "$home" -type d -exec setfacl -m d:u:caddy:--- -- {} +
                     sudo setfacl -m u:caddy:--x /home "$home"
-                    sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"
-                    sudo find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    if [ "$document_root_exists" = 1 ]; then
+                        sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"
+                        sudo find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    fi
                     BASH,
             ),
             step: 'production-caddy-access',

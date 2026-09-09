@@ -48,9 +48,9 @@ Reported: none.
 | Plain PHP and non-PHP runtime | Production source classifier and projector | PHP runtime selection tests; `app-prod-non-laravel` |
 | Cluster and Laravel intermediate gates | Production placement preflight and durable source profile | API/coordinator tests; `app-prod-intermediate-gates` |
 | Stable placement and cardinality | Stored production user/home and production uniqueness | Gateway API tests |
-| Relative root | Existing validator plus production resolved-root response | Gateway API tests |
-| User, home, source, root, and ownership safety | Remote production placement and source lifecycle | `app-prod-source-safety` |
-| Failure and retry boundaries | Durable production coordinator checkpoints | Coordinator tests; `app-prod-standalone-retry` |
+| Relative root | Existing validator plus production resolved-root response | Gateway API tests; `app-prod-unresolved-root` |
+| User, home, source, root, and ownership safety | Remote production placement and source lifecycle | `app-prod-source-safety`; `app-prod-ownership-retry` |
+| Failure and retry boundaries | Durable production coordinator checkpoints | Coordinator tests; `app-prod-standalone-retry`; `app-prod-ownership-retry` |
 | Active creation idempotency | Active terminal gate before Git | Coordinator tests; `app-prod-creation-after-deployment` |
 | Private-only exposure | Orbit-CA workload projection and app-prod firewall retirement | Firewall tests; `app-prod-standalone-exposure` |
 | Removal compatibility | Existing removal coordinator with recorded production identity | API/removal tests; `app-prod-create-and-remove` |
@@ -86,4 +86,6 @@ Reported: none.
 
 ## Review findings
 
-- None yet.
+- Resolved: allow an unresolved production document root while retaining containment checks for resolved paths; covered by the real `app-prod-unresolved-root` lifecycle action.
+- Resolved: revalidate full recorded user and group ownership immediately before every retry-time ACL mutation; covered by `app-prod-ownership-retry`, including an unchanged ACL sentinel after refusal.
+- Resolved: require private publication only for standalone production removal and retain public clustered production removal; covered by the API regression.

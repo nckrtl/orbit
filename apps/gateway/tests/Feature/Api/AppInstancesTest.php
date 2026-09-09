@@ -2341,7 +2341,7 @@ it('reports retained fixed-set progress and refuses a new source before retry ad
         ->toBeTrue();
 });
 
-it('removes one production target through the public API and reports retained Route progress', function (): void {
+it('removes one target from a public clustered production Route and reports retained progress', function (): void {
     $cluster = Cluster::query()->create([
         'name' => 'production-removal',
         'state' => ClusterState::Active,
@@ -2377,7 +2377,7 @@ it('removes one production target through the public API and reports retained Ro
         'cluster_id' => $cluster->id,
         'hostname' => 'production.example.test',
         'provenance' => RouteProvenance::Explicit,
-        'publication' => RoutePublication::Private,
+        'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create(['app_instance_id' => $instances[0]->id, 'position' => 0]);

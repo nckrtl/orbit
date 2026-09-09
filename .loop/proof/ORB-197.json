@@ -95,6 +95,24 @@
             "timeout_seconds": 300
         },
         {
+            "id": "app-prod-unresolved-root",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "unresolved-root"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-ownership-retry",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "ownership-retry"
+            ],
+            "timeout_seconds": 300
+        },
+        {
             "id": "app-prod-standalone-retry",
             "node": "gateway",
             "argv": [

@@ -37,6 +37,8 @@ function definitions(): array
         'safety-home',
         'safety-existing',
         'safety-root',
+        'unresolved',
+        'ownership',
         'retry',
         'active',
         'remove',

@@ -121,7 +121,7 @@ case "$scenario" in
         [[ $# -eq 2 && "$2" =~ ^app-prod(-2)?$ && "$(id -u)" -eq 1000 ]]
         base=/var/www/orb197
         sudo install -d -o orbit -g orbit -m 0755 "$base"
-        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-root retry active remove; do
+        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-root unresolved ownership retry active remove; do
             work=$(mktemp -d)
             trap 'rm -rf -- "$work"' EXIT
             git -C "$work" init --initial-branch=main --quiet
@@ -334,6 +334,74 @@ REMOTE
         [[ "$(json_field error_code <<<"$root_instance")" == app-prod.source_metadata_unsafe ]]
         [[ "$(gateway_fixture inspect orb197-safety-root | json_field route_count)" == 0 ]]
         printf 'production user, existing source, ownership, and root containment gates passed\n'
+        ;;
+
+    unresolved-root)
+        [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
+        app_id=$(fixture_app_id orb197-unresolved)
+        node_id=$(fixture_node_field app-prod id)
+        output=$(orbit instance:new "$app_id" "$node_id" default --root=current/public --hostname=orb197-unresolved.test --json)
+        assert_instance "$output" "$app_id" "$node_id" default orb197-unresolved.test main null current/public
+        instance_id=$(json_field id <<<"$output")
+        user=orbit-app-$app_id
+        remote_script app-prod "$user" "$instance_id" <<'REMOTE'
+user=$1
+instance=$2
+home=/home/$user
+test ! -e "$home/current"
+test ! -L "$home/current"
+test -S "/run/php/orbit-app-instance-$instance.sock"
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+fragment="$(dirname "$live")/fragments/app-dev.caddy"
+sudo grep -Fq -- "root * $home/current/public" "$fragment"
+home_acl=$(sudo getfacl -cp -- "$home")
+grep -Fq 'user:caddy:--x' <<<"$home_acl"
+REMOTE
+        printf 'unresolved current/public completed the real production lifecycle\n'
+        ;;
+
+    ownership-retry)
+        [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
+        app_id=$(fixture_app_id orb197-ownership)
+        node_id=$(fixture_node_field app-prod id)
+        user=orbit-app-$app_id
+        cleanup_ownership_retry() {
+            remote_script app-prod "$user" <<'REMOTE'
+user=$1
+sudo rm -f -- /etc/php/8.5/fpm/pool.d/orb197-invalid.conf "/home/$user/public/ownership-drift"
+REMOTE
+        }
+        trap cleanup_ownership_retry EXIT
+        remote_script app-prod <<'REMOTE'
+printf '%s\n' '[orb197-invalid' | sudo tee /etc/php/8.5/fpm/pool.d/orb197-invalid.conf >/dev/null
+REMOTE
+        expect_error app-dev.php_fpm_config_failed orbit instance:new "$app_id" "$node_id" default --hostname=orb197-ownership.test
+        instance=$(inspect_single orb197-ownership)
+        [[ "$(json_field provisioning_step <<<"$instance")" == source-classified ]]
+        [[ "$(json_field error_code <<<"$instance")" == app-dev.php_fpm_config_failed ]]
+        remote_script app-prod "$user" <<'REMOTE'
+user=$1
+home=/home/$user
+sudo rm -f -- /etc/php/8.5/fpm/pool.d/orb197-invalid.conf
+sudo install -o root -g root -m 0600 /dev/null "$home/public/ownership-drift"
+sudo setfacl -m u:caddy:rw- -- "$home/public/ownership-drift"
+sudo getfacl -cp -- "$home/public/ownership-drift" > /tmp/orb197-ownership-acl.before
+REMOTE
+        expect_error app-prod.source_metadata_unsafe orbit instance:new "$app_id" "$node_id" default --hostname=orb197-ownership.test
+        instance=$(inspect_single orb197-ownership)
+        [[ "$(json_field provisioning_step <<<"$instance")" == source-classified ]]
+        [[ "$(json_field error_code <<<"$instance")" == app-prod.source_metadata_unsafe ]]
+        remote_script app-prod "$user" <<'REMOTE'
+user=$1
+home=/home/$user
+sudo getfacl -cp -- "$home/public/ownership-drift" > /tmp/orb197-ownership-acl.after
+cmp -s /tmp/orb197-ownership-acl.before /tmp/orb197-ownership-acl.after
+test "$(sudo stat -c %U:%G -- "$home/public/ownership-drift")" = root:root
+sudo rm -f -- /tmp/orb197-ownership-acl.before /tmp/orb197-ownership-acl.after
+REMOTE
+        cleanup_ownership_retry
+        trap - EXIT
+        printf 'retry ownership drift refused before ACL side effects\n'
         ;;
 
     standalone-retry)
