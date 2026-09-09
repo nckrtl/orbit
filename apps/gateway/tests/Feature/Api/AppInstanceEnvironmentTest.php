@@ -366,6 +366,11 @@ final class EnvironmentApiAccess implements AppInstanceOperationPreflight, AppIn
         $this->preflights++;
     }
 
+    public function assertEnvironmentWritable(
+        AppInstanceEnvironmentContext $context,
+        int $requiredCapacityBytes,
+    ): void {}
+
     public function read(AppInstanceEnvironmentContext $context): string
     {
         $this->reads++;

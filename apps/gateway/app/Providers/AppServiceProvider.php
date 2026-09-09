@@ -26,6 +26,7 @@ use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
@@ -200,6 +201,7 @@ final class AppServiceProvider extends ServiceProvider
     public array $bindings = [
         AppInstanceDestinationGuard::class => RemoteAppInstanceDestinationGuard::class,
         AppInstanceEnvironmentReader::class => RemoteAppInstanceEnvironmentAccess::class,
+        AppInstanceEnvironmentWriter::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceOperationPreflight::class => RemoteAppInstanceEnvironmentAccess::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevCertificateManager::class => RemoteAppDevCertificateManager::class,

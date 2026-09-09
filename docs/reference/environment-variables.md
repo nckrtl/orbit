@@ -1,6 +1,6 @@
 # AppInstance environment variables
 
-This page tells an operator how to import an AppInstance environment file into the Gateway, update one stored value, and understand the limits and effects of those operations. [ADR 0044](../decisions/0044-own-appinstance-environment-configuration-in-orbit.md) owns the environment-configuration boundary.
+This page tells an operator how the Gateway reads, stores, and safely replaces an AppInstance environment file. [ADR 0044](../decisions/0044-own-appinstance-environment-configuration-in-orbit.md) owns the environment-configuration boundary.
 
 ## Select an AppInstance
 
@@ -57,6 +57,18 @@ The Gateway validates the complete result before it stores any part of an import
 | Placeholders | Only `{{app_instance.hostname}}` and `{{app_instance.environment}}`, including as part of a longer value |
 
 Malformed or unknown placeholder expressions fail validation. Database-path placeholders, `{{instance.hostname}}`, and `{{app_instance.url}}` are not supported.
+
+## Replace a remote environment file
+
+The Gateway can install a supplied complete environment file through a protected internal operation. For development, it selects `.env` in the recorded checkout. For production, it selects `.env` in the recorded application-user home and runs as that user even when the account has a disabled login shell. An App or AppInstance web root such as `public` does not change this location. Callers cannot override the Node, runtime user, directory, or filename.
+
+Before a write, the Gateway checks trusted SSH access, the recorded execution identity, path containment, directory write access, destination type and ownership, replacement permission, read-only storage, and conservative required capacity. A missing parent, unsafe symlink, special file, wrong owner, failed or malformed observation, or insufficient capacity stops the operation before it changes `.env`. This preflight reads no environment values and does not parse or decrypt configuration. Import uses the same boundary with read checks and needs no write permission or replacement capacity.
+
+The writer checks the recorded boundary again, writes the supplied bytes through protected input to a mode-`0600` candidate owned by the runtime user, and atomically replaces `.env`. It does not parse or import the old file. A missing `.env` is created. A matching protected file remains the same file and reports `changed: false`; different bytes or a different mode produce a complete protected replacement and report `changed: true`.
+
+A confirmed candidate-write, protection, or rename failure leaves the previous `.env` unchanged and removes only the failed attempt's candidate. When the Gateway loses the final acknowledgement, it reports an unconfirmed result because the replacement might have completed. A retry repeats placement and boundary checks, then accepts an already matching protected file or installs the supplied complete file.
+
+The remote operation does not expose supplied bytes or raw remote output in results, errors, exception chains, logs, or normal debugging. It changes no source file outside `.env`, Git metadata, database file, framework cache, service, or application process. It runs without an installed framework, application dependencies, or an application database.
 
 ## Read results and recover encrypted values
 
