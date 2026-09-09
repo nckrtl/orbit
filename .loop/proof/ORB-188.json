@@ -33,6 +33,26 @@
             "timeout_seconds": 300
         },
         {
+            "id": "route-interrupted-dns-publication",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/route-hostname-change.sh",
+                "route-interrupted-dns-publication"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "route-cutover-revalidation",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/route-hostname-change.sh",
+                "route-cutover-revalidation"
+            ],
+            "timeout_seconds": 300
+        },
+        {
             "id": "route-change-with-application-error",
             "node": "gateway",
             "argv": [

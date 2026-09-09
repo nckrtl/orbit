@@ -335,9 +335,63 @@ it('keeps the new hostname authoritative when cleanup fails and retries cleanup 
     $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
     expect(array_slice($this->events->values, $eventCount))
-        ->toBe(['owner', 'cleanup'])
+        ->toBe(['owner', 'firewall-policy', 'cleanup', 'workload-verify'])
         ->and($updated->hostname_change_target)
         ->toBeNull();
+});
+
+it('repairs completed non-projector evidence before retrying cleanup after database cutover', function (): void {
+    $route = route_hostname_change_route(laravel: true);
+    $route->update([
+        'hostname' => 'next.example.test',
+        'hostname_change_previous' => 'old.example.test',
+        'hostname_change_target' => 'next.example.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
+        'failed_step' => 'cleanup',
+        'error_code' => 'route.test_cleanup',
+    ]);
+
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
+
+    expect($this->events->values)
+        ->toBe([
+            'owner',
+            'firewall-policy',
+            'url:https://next.example.test',
+            'cleanup',
+            'workload-verify',
+        ])
+        ->and($updated->hostname)
+        ->toBe('next.example.test')
+        ->and($updated->hostname_change_target)
+        ->toBeNull();
+});
+
+it('keeps database cutover authoritative when completed cleanup evidence cannot be repaired', function (): void {
+    $route = route_hostname_change_route(laravel: true);
+    $route->update([
+        'hostname' => 'next.example.test',
+        'hostname_change_previous' => 'old.example.test',
+        'hostname_change_target' => 'next.example.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
+        'failed_step' => 'cleanup',
+        'error_code' => 'route.test_cleanup',
+    ]);
+    $this->configuration->failures = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected Laravel URL failure.');
+
+    expect($route->refresh()->hostname)
+        ->toBe('next.example.test')
+        ->and($route->hostname_change_step)
+        ->toBe(RouteHostnameChangeStep::DatabaseCutover)
+        ->and($route->failed_step)
+        ->toBe('cleanup')
+        ->and($route->error_code)
+        ->toBe('route.test_laravel_url');
 });
 
 it('records cleanup failure when clearing the durable operation fields fails', function (): void {

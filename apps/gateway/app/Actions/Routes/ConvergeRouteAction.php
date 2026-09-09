@@ -56,7 +56,7 @@ final readonly class ConvergeRouteAction
         }
 
         if ($route->hostname_change_step === RouteHostnameChangeStep::DatabaseCutover) {
-            return $this->cleanup($route, $appInstance);
+            return $this->cleanup($route, $appInstance, revalidate: true);
         }
 
         $candidate = $this->candidate($route);
@@ -258,10 +258,27 @@ final readonly class ConvergeRouteAction
         });
     }
 
-    private function cleanup(Route $route, AppInstance $appInstance): Route
+    private function cleanup(Route $route, AppInstance $appInstance, bool $revalidate = false): Route
     {
         try {
+            if ($revalidate) {
+                $candidate = $this->candidate($route);
+                $this->projection->prepareFirewallPolicy($appInstance, $candidate);
+
+                if ($appInstance->source_is_laravel) {
+                    $this->configuration->configureLaravelUrl(
+                        $appInstance,
+                        "https://{$candidate->hostname}",
+                    );
+                }
+            }
+
             $this->projection->cleanup($appInstance, $route);
+
+            if ($revalidate) {
+                $this->projection->verifyWorkload($appInstance, $this->candidate($route));
+            }
+
             $route->update([
                 'hostname_change_previous' => null,
                 'hostname_change_target' => null,

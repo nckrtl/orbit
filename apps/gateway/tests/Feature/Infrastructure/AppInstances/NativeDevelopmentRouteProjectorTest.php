@@ -110,7 +110,7 @@ it('renders old and candidate hostname sites with separate certificate scopes be
         );
 });
 
-it('preserves a durably published hostname candidate in ordinary Caddy and DNS inventory rebuilds', function (): void {
+it('preserves the ready hostname candidate across an interrupted DNS publication and ordinary rebuild', function (): void {
     [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
     $appInstance->update([
         'status' => AppInstanceState::Active,
@@ -121,9 +121,14 @@ it('preserves a durably published hostname candidate in ordinary Caddy and DNS i
         'hostname_change_previous' => 'feature.acme.test',
         'hostname_change_target' => 'next.acme.test',
         'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::DnsPublished,
+        'hostname_change_step' => RouteHostnameChangeStep::RouterCaddy,
     ]);
     $sites = new AppDevSiteRepository;
+
+    expect($sites->forNode($workload)->pluck('hostname')->all())
+        ->toBe(['feature.acme.test']);
+
+    $route->update(['hostname_change_step' => RouteHostnameChangeStep::LaravelUrl]);
 
     $workloadSites = $sites->forNode($workload);
     $routerSites = $sites->forNode($router);

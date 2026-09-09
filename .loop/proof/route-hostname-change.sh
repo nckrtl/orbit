@@ -103,6 +103,11 @@ restore_original_route() {
     local route_id=$1
     local original=$2
     local current
+    local pending
+    pending=$(fixture_field route.hostname_change_target)
+    if [[ "$pending" != null ]]; then
+        update_route "$route_id" "$pending" >/dev/null
+    fi
     current=$(fixture_field route.hostname)
     if [[ "$current" != "$original" ]]; then
         update_route "$route_id" "$original" >/dev/null
@@ -256,6 +261,64 @@ REMOTE
         restore_original_route "$route_id" "$original"
         trap - EXIT
         printf 'database failure restored URL and DNS, then the same request resumed\n'
+        ;;
+
+    route-interrupted-dns-publication)
+        [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
+        route_id=$(fixture_field route.id)
+        original=$(fixture_field original_hostname)
+        checkout=$(fixture_field instance.checkout_path)
+        node_ip=$(fixture_field instance.node_ip)
+        candidate=orb188-interrupted.orbit
+        trap 'restore_original_route "$route_id" "$original"' EXIT
+        interrupted=$(gateway_fixture dns-interruption start)
+        assert_route "$(app_dev_route "$node_ip" "$route_id")" "$original" "$candidate" forward laravel-url null null
+        assert_dns_owner "$candidate" "$node_ip"
+        curl --fail --silent --show-error --cacert "$ca" --resolve "$candidate:443:$node_ip" "https://$candidate/" >/dev/null
+        rebuilt=$(gateway_fixture dns-interruption rebuild)
+        [[ "$(json_field route.hostname_change_step <<<"$interrupted")" == laravel-url ]]
+        [[ "$(json_field route.hostname_change_step <<<"$rebuilt")" == laravel-url ]]
+        assert_dns_owner "$candidate" "$node_ip"
+        curl --fail --silent --show-error --cacert "$ca" --resolve "$candidate:443:$node_ip" "https://$candidate/" >/dev/null
+        output=$(update_route "$route_id" "$candidate")
+        assert_route "$output" "$candidate" null null null null null
+        remote_script "$node_ip" "$checkout" "$candidate" <<'REMOTE'
+checkout=$1
+hostname=$2
+grep -Fxq "APP_URL=https://$hostname" "$checkout/.env"
+REMOTE
+        restore_original_route "$route_id" "$original"
+        trap - EXIT
+        printf 'ordinary Caddy and DNS rebuild preserved an interrupted candidate publication\n'
+        ;;
+
+    route-cutover-revalidation)
+        [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
+        route_id=$(fixture_field route.id)
+        original=$(fixture_field original_hostname)
+        checkout=$(fixture_field instance.checkout_path)
+        node_ip=$(fixture_field instance.node_ip)
+        candidate=orb188-cutover.orbit
+        trap 'restore_original_route "$route_id" "$original"' EXIT
+        update_route "$route_id" "$candidate" >/dev/null
+        drifted=$(gateway_fixture cutover-drift)
+        [[ "$(json_field route.hostname_change_step <<<"$drifted")" == database-cutover ]]
+        remote_script "$node_ip" "$checkout" "$original" <<'REMOTE'
+checkout=$1
+hostname=$2
+grep -Fxq "APP_URL=https://$hostname" "$checkout/.env"
+REMOTE
+        output=$(update_route "$route_id" "$candidate")
+        assert_route "$output" "$candidate" null null null null null
+        remote_script "$node_ip" "$checkout" "$candidate" <<'REMOTE'
+checkout=$1
+hostname=$2
+grep -Fxq "APP_URL=https://$hostname" "$checkout/.env"
+REMOTE
+        curl --fail --silent --show-error --cacert "$ca" --resolve "$candidate:443:$node_ip" "https://$candidate/" >/dev/null
+        restore_original_route "$route_id" "$original"
+        trap - EXIT
+        printf 'database-cutover retry repaired stale Laravel URL evidence before cleanup\n'
         ;;
 
     route-change-with-application-error)

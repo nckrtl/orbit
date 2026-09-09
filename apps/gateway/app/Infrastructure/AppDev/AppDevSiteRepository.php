@@ -175,7 +175,11 @@ final readonly class AppDevSiteRepository
 
             if (
                 $route->hostname_change_direction === RouteHostnameChangeDirection::Forward
-                && $route->hostname_change_step === RouteHostnameChangeStep::DnsPublished
+                && in_array(
+                    $route->hostname_change_step,
+                    [RouteHostnameChangeStep::LaravelUrl, RouteHostnameChangeStep::DnsPublished],
+                    true,
+                )
                 && is_string($route->hostname_change_target)
                 && ! ($additionalRoute instanceof Route
                 && $additionalRoute->id === $route->id

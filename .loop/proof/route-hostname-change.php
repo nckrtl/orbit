@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteHostnameChangeStep;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Routes\RouteHostname;
 use App\Domain\Routes\RouteStatus;
+use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
+use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Models\AppInstance;
 use App\Models\Route;
 use Illuminate\Contracts\Console\Kernel;
@@ -177,6 +182,80 @@ switch ($command) {
         }
 
         writeJson(['enabled' => $arguments[0] === 'on']);
+        break;
+
+    case 'dns-interruption':
+        if (count($arguments) !== 1 || ! in_array($arguments[0], ['start', 'rebuild'], true)) {
+            exit(64);
+        }
+
+        $fixture = readState($statePath);
+        $route = Route::query()
+            ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->findOrFail($fixture['route_id']);
+        $instance = $route->targets->sole()->appInstance;
+
+        if ($arguments[0] === 'start') {
+            $candidateHostname = RouteHostname::validate('orb188-interrupted.orbit');
+            $route->update([
+                'hostname_change_previous' => $route->hostname,
+                'hostname_change_target' => $candidateHostname,
+                'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+                'hostname_change_step' => RouteHostnameChangeStep::Reserved,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+            $route->refresh();
+            $candidate = clone $route;
+            $candidate->hostname = $candidateHostname;
+            $projection = app(RouteHostnameProjector::class);
+            $projection->prepareWorkloadCertificate($instance, $route, $candidate);
+            $route->update(['hostname_change_step' => RouteHostnameChangeStep::WorkloadCertificate]);
+            $projection->prepareWorkloadCaddy($instance, $route, $candidate);
+            $route->update(['hostname_change_step' => RouteHostnameChangeStep::WorkloadCaddy]);
+            $projection->prepareRouterCertificate($instance, $route, $candidate);
+            $route->update(['hostname_change_step' => RouteHostnameChangeStep::RouterCertificate]);
+            $projection->prepareFirewallPolicy($instance, $candidate);
+            $route->update(['hostname_change_step' => RouteHostnameChangeStep::FirewallPolicy]);
+            $projection->verifyWorkload($instance, $candidate);
+            $route->update(['hostname_change_step' => RouteHostnameChangeStep::WorkloadVerified]);
+            $projection->prepareRouterCaddy($instance, $route, $candidate);
+            $route->update(['hostname_change_step' => RouteHostnameChangeStep::RouterCaddy]);
+            app(DevelopmentAppInstanceConfigurator::class)->configureLaravelUrl(
+                $instance,
+                "https://{$candidateHostname}",
+            );
+            $route->update(['hostname_change_step' => RouteHostnameChangeStep::LaravelUrl]);
+            $projection->publishDns($route, $candidate);
+        } else {
+            app(RemoteAppDevCaddyManager::class)->converge($instance->node);
+            app(DnsmasqPrivateDnsManager::class)->converge();
+        }
+
+        writeJson(routeState($fixture));
+        break;
+
+    case 'cutover-drift':
+        if ($arguments !== []) {
+            exit(64);
+        }
+
+        $fixture = readState($statePath);
+        $route = Route::query()->with('targets.appInstance')->findOrFail($fixture['route_id']);
+        $instance = $route->targets->sole()->appInstance;
+        $route->update([
+            'hostname_change_previous' => $fixture['original_hostname'],
+            'hostname_change_target' => $route->hostname,
+            'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+            'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
+            'failed_step' => 'cleanup',
+            'error_code' => 'route.hostname_change_failed',
+        ]);
+        app(DevelopmentAppInstanceConfigurator::class)->configureLaravelUrl(
+            $instance,
+            "https://{$fixture['original_hostname']}",
+        );
+        writeJson(routeState($fixture));
         break;
 
     default:
