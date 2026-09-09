@@ -622,6 +622,114 @@ describe('legacy commands', function () {
         rmdir($root);
     });
 
+    it('refuses an appended duplicate preserved reference before any command mutation', function (
+        string $kind,
+        array $duplicate,
+    ): void {
+        $root = temporaryPath('legacy-preserved-duplicate-', 5);
+        $safeRoot = $root.'/safe';
+        mkdir($safeRoot, 0700, true);
+        $candidate = $safeRoot.'/candidate.json';
+        $observation = $root.'/observation.json';
+        $freezeEvidence = $root.'/freeze.json';
+        $quarantinePath = $root.'/quarantine.json';
+        $fingerprint = str_repeat('d', 64);
+        $candidateBytes = 'reviewed candidate';
+        file_put_contents($candidate, $candidateBytes);
+        file_put_contents($freezeEvidence, 'frozen');
+        $observed = [
+            'manifests' => [[
+                'path' => $candidate,
+                'safe_root' => $safeRoot,
+                'filesystem_type' => 'file',
+                'classification' => 'legacy',
+                'content_sha256' => hash('sha256', $candidateBytes),
+            ]],
+            'base_images' => [[
+                'name' => 'ubuntu-display',
+                'remote' => 'local',
+                'project' => 'default',
+                'fingerprint' => $fingerprint,
+                'classification' => 'preserve',
+            ]],
+            'pools' => [[
+                'name' => 'orbit-e2e',
+                'identity' => 'display-only-pool',
+                'remote' => 'local',
+                'project' => 'default',
+                'classification' => 'preserve',
+            ]],
+        ];
+        file_put_contents($observation, json_encode($observed, JSON_THROW_ON_ERROR));
+        chmod($observation, 0600);
+        chmod($freezeEvidence, 0600);
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+        $host = app(\App\E2E\LegacyRetirementHost::class);
+        $early = new LegacyRetirement(
+            $host->observe(...),
+            $host->mutate(...),
+            fn (): DateTimeImmutable => new DateTimeImmutable('2026-08-28T10:00:00+00:00'),
+            new \App\E2E\State\OperationLock(
+                new \App\E2E\State\StatePaths(temporaryPath('legacy-preserved-duplicate-lock-', 5)),
+            ),
+            new \App\E2E\Value\OperationId(str_repeat('e', 32)),
+            $host->observeCurrent(...),
+        );
+        $inventory = $early->inventory();
+        $manifest = $early->quarantine($inventory, $inventory->sha256(), $freezeEvidence);
+        $early->write($quarantinePath, $manifest->toArray());
+        $observed[$kind][] = $duplicate;
+        file_put_contents($observation, json_encode($observed, JSON_THROW_ON_ERROR));
+        Process::fake();
+
+        $this
+            ->artisan('legacy:delete', [
+                '--quarantine' => $quarantinePath,
+                '--ack-sha256' => $manifest->sha256(),
+            ])
+            ->expectsOutputToContain('frozen host observation contains a duplicate exact resource')
+            ->assertFailed();
+
+        expect(file_get_contents($candidate))
+            ->toBe($candidateBytes)
+            ->and(file_exists($quarantinePath.'.retirement.json'))
+            ->toBeFalse();
+        Process::assertNothingRan();
+
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION');
+        $journalPath = $quarantinePath.'.retirement.json.journal.json';
+        if (is_file($journalPath)) {
+            unlink($journalPath);
+        }
+        unlink($quarantinePath);
+        unlink($candidate);
+        unlink($freezeEvidence);
+        unlink($observation);
+        rmdir($safeRoot);
+        rmdir($root);
+    })->with([
+        'pool exact key' => [
+            'pools',
+            [
+                'name' => 'orbit-e2e',
+                'identity' => 'appended-pool-display',
+                'remote' => 'local',
+                'project' => 'default',
+                'classification' => 'preserve',
+            ],
+        ],
+        'base image exact key' => [
+            'base_images',
+            [
+                'name' => 'appended-image-display',
+                'remote' => 'local',
+                'project' => 'default',
+                'fingerprint' => str_repeat('d', 64),
+                'classification' => 'preserve',
+            ],
+        ],
+    ]);
+
     it('leaves a file candidate byte-identical when a preserved reference changes', function (
         string $kind,
         string $field,

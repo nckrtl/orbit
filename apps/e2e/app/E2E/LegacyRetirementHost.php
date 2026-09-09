@@ -114,11 +114,19 @@ final readonly class LegacyRetirementHost
                     throw new \RuntimeException('The requested host observation contains a duplicate resource.');
                 }
                 $seen[$key] = true;
+                $match = null;
                 foreach ($frozen[$kind] ?? [] as $candidate) {
                     if ($this->resourceSelectionKey($kind, $candidate) === $key) {
-                        $selected[$kind][] = $candidate;
-                        continue 2;
+                        if ($match !== null) {
+                            throw new \RuntimeException(
+                                'The frozen host observation contains a duplicate exact resource.',
+                            );
+                        }
+                        $match = $candidate;
                     }
+                }
+                if ($match !== null) {
+                    $selected[$kind][] = $match;
                 }
             }
         }
