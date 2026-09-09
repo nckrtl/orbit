@@ -15,6 +15,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
+use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
@@ -38,6 +39,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
@@ -69,6 +71,134 @@ it('uses one local workload site when Router and workload roles share a Node', f
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
+});
+
+it('hydrates only requested workload and Router routes while global inventory stays complete', function (): void {
+    [$pendingInstance, $pendingRoute, $workload, $router] = orb127_route_projection_models();
+    $activeInstance = AppInstance::query()->create([
+        'app_id' => $pendingInstance->app_id,
+        'node_id' => $workload->id,
+        'name' => 'active',
+        'checkout_path' => '/home/orbit/apps/acme/active',
+        'root' => 'public',
+        'selected_php_version' => '8.5',
+        'status' => 'source_resolved',
+    ]);
+    $activeRoute = Route::query()->create([
+        'app_id' => $pendingInstance->app_id,
+        'cluster_id' => $pendingRoute->cluster_id,
+        'hostname' => 'active.acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $activeRoute->targets()->create(['app_instance_id' => $activeInstance->id, 'position' => 0]);
+    $activeRoute->update(['status' => RouteStatus::Active]);
+    $activeInstance->update(['status' => 'active']);
+    $failedInstance = AppInstance::query()->create([
+        'app_id' => $pendingInstance->app_id,
+        'node_id' => $workload->id,
+        'name' => 'failed',
+        'checkout_path' => '/home/orbit/apps/acme/failed',
+        'root' => 'public',
+        'selected_php_version' => '8.5',
+        'status' => 'source_resolved',
+    ]);
+    $failedRoute = Route::query()->create([
+        'app_id' => $pendingInstance->app_id,
+        'cluster_id' => $pendingRoute->cluster_id,
+        'hostname' => 'failed.acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $failedRoute->targets()->create(['app_instance_id' => $failedInstance->id, 'position' => 0]);
+    $failedRoute->update([
+        'status' => RouteStatus::Failed,
+        'failed_step' => 'runtime',
+        'error_code' => 'app-dev.runtime_failed',
+    ]);
+    $unrelatedNode = Node::query()->create([
+        'name' => 'unrelated-workload',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.30',
+        'wireguard_ip' => '10.44.0.30',
+        'user' => 'orbit',
+    ]);
+    $unrelatedInstance = AppInstance::query()->create([
+        'app_id' => $pendingInstance->app_id,
+        'node_id' => $unrelatedNode->id,
+        'name' => 'unrelated',
+        'checkout_path' => '/home/orbit/apps/acme/unrelated',
+        'root' => 'public',
+        'selected_php_version' => '8.5',
+        'status' => 'source_resolved',
+    ]);
+    $unrelatedRoute = Route::query()->create([
+        'app_id' => $pendingInstance->app_id,
+        'node_id' => $unrelatedNode->id,
+        'hostname' => 'unrelated.acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $unrelatedRoute->targets()->create(['app_instance_id' => $unrelatedInstance->id, 'position' => 0]);
+    $unrelatedRoute->update(['status' => RouteStatus::Active]);
+    $unrelatedInstance->update(['status' => 'active']);
+    $sites = new AppDevSiteRepository;
+    $globalSites = $sites->all($pendingRoute);
+    $retrievedRoutes = collect();
+    $retrievedInstances = collect();
+    Event::listen(
+        'eloquent.retrieved: '.Route::class,
+        static function (Route $retrieved) use ($retrievedRoutes): void {
+            $retrievedRoutes->push($retrieved->id);
+        },
+    );
+    Event::listen(
+        'eloquent.retrieved: '.AppInstance::class,
+        static function (AppInstance $retrieved) use ($retrievedInstances): void {
+            $retrievedInstances->push($retrieved->id);
+        },
+    );
+
+    $workloadSites = $sites->forNode($workload, $pendingRoute);
+
+    $siteIdentity = static fn (AppDevSite $site): array => [
+        $site->scope,
+        $site->hostname,
+        $site->nodeAddress,
+        $site->upstreamAddresses,
+    ];
+    expect($workloadSites->map($siteIdentity)->all())
+        ->toBe($globalSites->where('nodeId', $workload->id)->values()->map($siteIdentity)->all())
+        ->and($workloadSites->pluck('scope')->all())
+        ->toHaveCount(2)
+        ->toContain("app-instance-{$pendingInstance->id}", "app-instance-{$activeInstance->id}")
+        ->and($workloadSites->pluck('hostname'))
+        ->not->toContain($failedRoute->hostname, $unrelatedRoute->hostname)->and($retrievedRoutes)->toContain(
+            $pendingRoute->id,
+            $activeRoute->id,
+        )
+        ->not->toContain($failedRoute->id, $unrelatedRoute->id)->and($retrievedInstances)->toContain(
+            $pendingInstance->id,
+            $activeInstance->id,
+        )
+        ->not->toContain($failedInstance->id, $unrelatedInstance->id)->and($globalSites->pluck('hostname'))->toContain(
+            $pendingRoute->hostname,
+            $activeRoute->hostname,
+            $unrelatedRoute->hostname,
+        )
+        ->not->toContain($failedRoute->hostname);
+
+    $routerSites = $sites->forNode($router, $pendingRoute);
+
+    expect($routerSites->map($siteIdentity)->all())
+        ->toBe($globalSites->where('nodeId', $router->id)->values()->map($siteIdentity)->all())
+        ->and($routerSites->pluck('scope')->all())
+        ->toHaveCount(2)
+        ->toContain("route-{$pendingRoute->id}-router", "route-{$activeRoute->id}-router");
 });
 
 it('projects a dedicated Router over reachable LAN with separate keys and preserved TLS identity', function (): void {
