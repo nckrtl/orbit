@@ -58,6 +58,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read Node $node
  * @property-read \Illuminate\Database\Eloquent\Collection<int, RouteTarget> $routeTargets
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Route> $routes
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, AppInstanceEnvironmentValue> $environmentValues
  * @property-read AppInstanceRemovalMember|null $removalMember
  */
 final class AppInstance extends Model
@@ -141,6 +142,12 @@ final class AppInstance extends Model
     public function routes(): BelongsToMany
     {
         return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
+    }
+
+    /** @return HasMany<AppInstanceEnvironmentValue, $this> */
+    public function environmentValues(): HasMany
+    {
+        return $this->hasMany(AppInstanceEnvironmentValue::class);
     }
 
     /** @return HasOne<AppInstanceRemovalMember, $this> */

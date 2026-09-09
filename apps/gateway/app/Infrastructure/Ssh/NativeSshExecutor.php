@@ -42,6 +42,7 @@ final readonly class NativeSshExecutor implements SshExecutor
             timeout: $connection->commandTimeout,
             input: $command->input,
             protectedInput: $command->protectedInput,
+            maxOutputBytes: $command->maxOutputBytes,
         ));
     }
 }

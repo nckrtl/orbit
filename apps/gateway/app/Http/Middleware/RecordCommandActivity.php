@@ -351,6 +351,14 @@ final readonly class RecordCommandActivity
             return $this->appInstanceRegistrationInput($request);
         }
 
+        if ($command === 'instance:environment:import') {
+            return $this->appInstanceEnvironmentImportInput($request);
+        }
+
+        if ($command === 'instance:environment:update') {
+            return [];
+        }
+
         if ($command === 'node:role:remove') {
             return $this->inputSanitizer->sanitizeProperties(
                 $this->removeNodeRoleInputParser->safeActivityInput(
@@ -415,6 +423,22 @@ final readonly class RecordCommandActivity
         unset($input['source_path']);
 
         return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function appInstanceEnvironmentImportInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['replace']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        if (array_key_exists('replace', $input) && ! is_bool($input['replace'])) {
+            return [];
+        }
+
+        return $input;
     }
 
     /**
@@ -607,6 +631,11 @@ final readonly class RecordCommandActivity
             : null;
         /** @var list<string> $values */
         $values = [];
+
+        $submittedValue = $request->input('value');
+        if (is_string($submittedValue) && $submittedValue !== '') {
+            $values[] = $submittedValue;
+        }
 
         foreach ([$request->input('environment'), $storedEnvironment] as $environment) {
             if (! is_array($environment)) {

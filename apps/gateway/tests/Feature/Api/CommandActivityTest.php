@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
+use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -10,6 +13,9 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -20,13 +26,56 @@ use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Route;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Str;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
+
+it('records environment commands without submitted imported or rejected values', function (): void {
+    $submitted = 'arbitrary-submitted-value';
+    $imported = 'arbitrary-imported-value';
+    [$caller, $instance] = command_activity_environment_fixture();
+    $access = new CommandActivityEnvironmentAccess("IMPORTED={$imported}\n");
+    app()->instance(AppInstanceOperationPreflight::class, $access);
+    app()->instance(AppInstanceEnvironmentReader::class, $access);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$instance->id}/environment/SUBMITTED", ['value' => $submitted])
+        ->assertOk();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson("/api/v1/instances/{$instance->id}/environment/import", ['replace' => true])
+        ->assertOk();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$instance->id}/environment/REJECTED", [
+            'value' => 'safe',
+            'unsupported' => $submitted,
+        ])
+        ->assertUnprocessable();
+
+    $activities = Activity::query()->orderBy('id')->get();
+    expect($activities)
+        ->toHaveCount(3)
+        ->and($activities[0]->command)
+        ->toBe('instance:environment:update')
+        ->and($activities[0]->properties?->get('input'))
+        ->toBe([])
+        ->and($activities[1]->command)
+        ->toBe('instance:environment:import')
+        ->and($activities[1]->properties?->get('input'))
+        ->toBe(['replace' => true])
+        ->and($activities[2]->properties?->get('input'))
+        ->toBe([])
+        ->and(json_encode($activities->toArray(), JSON_THROW_ON_ERROR))
+        ->not->toContain($submitted, $imported);
+});
 
 it('records exactly one bounded doctor activity without report findings or diagnostics', function (): void {
     $requestId = (string) Str::uuid();
@@ -1082,4 +1131,59 @@ function command_activity_doctor_node(string $name): Node
         'user' => 'orbit',
         'wireguard_ip' => "10.44.0.{$number}",
     ]);
+}
+
+/** @return array{Node, AppInstance} */
+function command_activity_environment_fixture(): array
+{
+    $caller = command_activity_doctor_node('environment-activity-caller');
+    $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $owner = command_activity_doctor_node('environment-activity-owner');
+    $app = OrbitApp::query()->create([
+        'name' => 'Environment activity',
+        'slug' => 'environment-activity',
+        'repository_url' => 'https://example.test/environment-activity.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $owner->id,
+        'name' => 'default',
+        'environment' => 'development',
+        'checkout_path' => '/srv/orbit/environment-activity/default',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'source_resolved',
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $owner->id,
+        'hostname' => 'environment-activity.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => 'active']);
+
+    return [$caller, $instance->fresh(['node'])];
+}
+
+/** @mago-expect lint:file-name Test-local adapter isolates environment activity from SSH. */
+final readonly class CommandActivityEnvironmentAccess implements
+    AppInstanceOperationPreflight,
+    AppInstanceEnvironmentReader
+{
+    public function __construct(
+        private string $contents,
+    ) {}
+
+    public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void {}
+
+    public function read(AppInstanceEnvironmentContext $context): string
+    {
+        return $this->contents;
+    }
 }

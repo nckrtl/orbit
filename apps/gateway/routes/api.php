@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
+use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\AppInstancesController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
@@ -117,6 +119,14 @@ Route::prefix('v1')->group(function (): void {
         Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:remove');
+        Route::post(
+            'instances/{instance}/environment/import',
+            [AppInstanceEnvironmentImportsController::class, 'store'],
+        )->name('instance:environment:import');
+        Route::put(
+            'instances/{instance}/environment/{key}',
+            [AppInstanceEnvironmentValuesController::class, 'update'],
+        )->name('instance:environment:update');
         Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
         Route::post('routes', [RoutesController::class, 'store'])->name('route:new');
         Route::get('routes/{route}', [RoutesController::class, 'show'])
