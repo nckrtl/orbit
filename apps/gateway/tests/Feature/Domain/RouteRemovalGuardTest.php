@@ -51,6 +51,7 @@ it('guards App ownership, Node scope, target host, retained basis, and app roles
         ->and(fn () => $this->guard->assertRoleRemovable($this->node, RoleName::AppDev))
         ->toThrow(NodeRoleValidationException::class, 'hosts Route targets');
 
+    $this->instance->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($this->route);
     expect(fn () => $this->guard->assertNodeRemovable($this->node))
         ->toThrow(ResourceOperationException::class, 'referenced by Routes');
@@ -103,7 +104,7 @@ it('runs the target-host guard before every app-role removal mode', function (
     'offline' => [true, true, true],
 ]);
 
-it('Route removal deletes only owned target rows and releases unrelated resources', function (): void {
+it('eligible Route removal deletes only owned target rows and releases unrelated resources', function (): void {
     $unrelatedNode = route_removal_node('unrelated');
     $unrelatedApp = OrbitApp::query()->create([
         'name' => 'Other',
@@ -111,6 +112,7 @@ it('Route removal deletes only owned target rows and releases unrelated resource
         'repository_url' => 'https://example.test/other.git',
     ]);
 
+    $this->instance->update(['status' => AppInstanceState::Reserved]);
     app(RemoveRouteAction::class)->execute($this->route);
 
     expect(Route::query()->count())
