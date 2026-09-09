@@ -117,7 +117,7 @@ describe('instance:register', function (): void {
         expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 
-    it('transports include worktrees and explicit values as JSON', function (): void {
+    it('transports include worktrees and omits inferred values for a selected App', function (): void {
         $mockClient = MockClient::global([
             RegisterAppInstanceRequest::class => registration_mock_response(),
         ]);
@@ -138,10 +138,7 @@ describe('instance:register', function (): void {
             'source_path' => '/work/acme',
             'include_worktrees' => true,
             'app_id' => 3,
-            'app_slug' => 'acme',
-            'default_branch' => 'main',
             'instance_name' => 'feature',
-            'root' => 'public',
             'hostname' => 'feature.test',
         ]);
     });

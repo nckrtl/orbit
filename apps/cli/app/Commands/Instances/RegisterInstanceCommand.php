@@ -116,13 +116,12 @@ final class RegisterInstanceCommand extends GatewayCommand
             return null;
         }
 
-        $slug = $this->stringOption('app-slug') ?? $facts->slug;
-        $branch = $this->stringOption('default-branch') ?? $facts->defaultBranch;
-        $root = $this->stringOption('root') ?? $facts->root;
+        $selectedApp = is_int($appIdValue);
+        $appValues = $selectedApp ? $this->explicitAppValues() : $this->inferredAppValues($facts);
         $name = $this->stringOption('app-name');
 
         if (! $this->input->isInteractive()) {
-            if ($appIdValue === null && ($branch === null || $root === null)) {
+            if (! $selectedApp && ($appValues['branch'] === null || $appValues['root'] === null)) {
                 $this->renderGatewayFailure(
                     'instance.registration_values_unresolved',
                     'Non-interactive registration requires unresolved App values as options.',
@@ -134,30 +133,53 @@ final class RegisterInstanceCommand extends GatewayCommand
             return [
                 'appId' => is_int($appIdValue) ? $appIdValue : null,
                 'appName' => $name,
-                'appSlug' => $slug,
-                'defaultBranch' => $branch,
-                'root' => $root,
+                'appSlug' => $appValues['slug'],
+                'defaultBranch' => $appValues['branch'],
+                'root' => $appValues['root'],
             ];
         }
 
+        return $this->confirmInteractiveValues(
+            $facts,
+            is_int($appIdValue) ? $appIdValue : null,
+            $name,
+            $appValues,
+        );
+    }
+
+    /**
+     * @param array{slug: ?string, branch: ?string, root: ?string} $appValues
+     * @return array{appId: ?int, appName: ?string, appSlug: ?string, defaultBranch: ?string, root: ?string}|null
+     */
+    private function confirmInteractiveValues(
+        GitRegistrationFacts $facts,
+        ?int $appId,
+        ?string $name,
+        array $appValues,
+    ): ?array {
+        $slug = $appValues['slug'];
+        $branch = $appValues['branch'];
+        $root = $appValues['root'];
+        $selectedApp = $appId !== null;
+
         $this->line("Source: {$facts->path}");
         $this->line("Repository: {$facts->repositoryUrl}");
-        $this->line("App slug: {$slug}");
-        $this->line('Default branch: '.($branch ?? 'unresolved'));
-        $this->line('Root: '.($root ?? 'unresolved'));
-        if ($branch === null) {
+        $this->line('App slug: '.($slug ?? $facts->slug));
+        $this->line('Default branch: '.($branch ?? $facts->defaultBranch ?? 'unresolved'));
+        $this->line('Root: '.($root ?? $facts->root ?? 'unresolved'));
+        if (! $selectedApp && $branch === null) {
             /** @mago-expect analysis:mixed-assignment Console prompts cross an untyped framework boundary. */
             $branchAnswer = $this->ask('Default branch');
             $branch = is_string($branchAnswer) ? $branchAnswer : null;
         }
 
-        if ($root === null) {
+        if (! $selectedApp && $root === null) {
             /** @mago-expect analysis:mixed-assignment Console prompts cross an untyped framework boundary. */
             $rootAnswer = $this->ask('Application root');
             $root = is_string($rootAnswer) ? $rootAnswer : null;
         }
 
-        if (! is_string($branch) || $branch === '' || ! is_string($root) || $root === '') {
+        if (! $selectedApp && (! is_string($branch) || $branch === '' || ! is_string($root) || $root === '')) {
             $this->renderGatewayFailure(
                 'instance.registration_values_unresolved',
                 'Required App values remain unresolved.',
@@ -173,11 +195,31 @@ final class RegisterInstanceCommand extends GatewayCommand
         }
 
         return [
-            'appId' => is_int($appIdValue) ? $appIdValue : null,
+            'appId' => $appId,
             'appName' => $name,
             'appSlug' => $slug,
             'defaultBranch' => $branch,
             'root' => $root,
+        ];
+    }
+
+    /** @return array{slug: ?string, branch: ?string, root: ?string} */
+    private function explicitAppValues(): array
+    {
+        return [
+            'slug' => $this->stringOption('app-slug'),
+            'branch' => $this->stringOption('default-branch'),
+            'root' => $this->stringOption('root'),
+        ];
+    }
+
+    /** @return array{slug: ?string, branch: ?string, root: ?string} */
+    private function inferredAppValues(GitRegistrationFacts $facts): array
+    {
+        return [
+            'slug' => $this->stringOption('app-slug') ?? $facts->slug,
+            'branch' => $this->stringOption('default-branch') ?? $facts->defaultBranch,
+            'root' => $this->stringOption('root') ?? $facts->root,
         ];
     }
 }
