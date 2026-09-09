@@ -308,6 +308,40 @@ final readonly class IssueState
         );
     }
 
+    /** Captured evidence remains usable after the lease and virtual machines are released. */
+    public function proofTopology(): ?FeatureTopology
+    {
+        if ($this->isProved()) {
+            return $this->requireTopology(AttemptPurpose::Proof);
+        }
+        $proof = $this->proof() ?? [];
+        $attempt = $proof['attempt_id'] ?? null;
+        if (($proof['status'] ?? null) !== 'proved' || ! is_string($attempt)) {
+            return null;
+        }
+        $attempt = new AttemptId($attempt);
+        $captured = $this->store->read('captured-proof/'.$attempt->value.'.json');
+        if ($captured === null) {
+            return null;
+        }
+        if (($captured['proof'] ?? null) !== $proof || ! is_array($captured['topology'] ?? null)) {
+            throw new RuntimeException('Captured proof evidence does not match the current proof result.');
+        }
+        $topology = FeatureTopology::fromArray($captured['topology']);
+        if ($topology->attempt->value !== $attempt->value || $topology->target->issue !== $this->issue) {
+            throw new RuntimeException('Captured proof topology has a different identity.');
+        }
+
+        return $topology;
+    }
+
+    /** @param array<array-key, mixed> $evidence */
+    public function captureProof(array $evidence): void
+    {
+        $attempt = new AttemptId((string) ($evidence['proof']['attempt_id'] ?? ''));
+        $this->writeImmutable('captured-proof/'.$attempt->value.'.json', $evidence);
+    }
+
     /** Drop the attempt lease and record; the proof result and the log stay. */
     public function forgetAttempt(?AttemptPurpose $purpose = null): void
     {

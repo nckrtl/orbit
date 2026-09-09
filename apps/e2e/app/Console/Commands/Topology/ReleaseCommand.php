@@ -20,6 +20,7 @@ final class ReleaseCommand extends E2ECommand
             .' {--candidate : Release the candidate-convergence topology instead of discovery}'
             .' {--recover-extension= : Recover a legacy lease target as none or app-prod}'
             .' {--expected-attempt= : Full attempt ID required with --recover-extension}'
+            .' {--capture : Preserve verified proof evidence before releasing its VMs}'
             .' {--json}';
     #[\Override]
     protected $description = 'Release discovery, or explicitly the retained proof, and sweep orphaned networks';
@@ -40,7 +41,7 @@ final class ReleaseCommand extends E2ECommand
                 $this->option('recover-extension'),
                 $this->option('expected-attempt'),
             );
-            $result = $releaser->release($request, $purpose, $recovery);
+            $result = $releaser->release($request, $purpose, $recovery, (bool) $this->option('capture'));
             $this->log($request, 'purpose='.$result['purpose'].' attempt='.$result['attempt_id'].' ok');
             $this->outputJson($result, 'released '.$result['attempt_id']);
 

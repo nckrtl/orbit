@@ -398,3 +398,74 @@ describe('ProofEquivalenceEvaluator', function (): void {
         expect(evaluateProof($fixture, $plan)->result)->toBe(ProofEquivalenceResult::Indeterminate);
     });
 });
+
+it('evaluates captured proof after the proof lease and topology are released', function (): void {
+    $fixture = proofEquivalenceFixture();
+    $evidence = App\E2E\ProofEvidence::capture($fixture['state'], $fixture['plan']);
+    $fixture['state']->captureProof($evidence);
+    $fixture['state']->forgetAttempt(AttemptPurpose::Proof);
+
+    expect($fixture['state']->hasAttempt())
+        ->toBeFalse()
+        ->and(evaluateProof($fixture)->result)
+        ->toBe(ProofEquivalenceResult::Exact);
+
+    $proof = $fixture['state']->proof();
+    $proof['actions'] = [];
+    $fixture['state']->writeProof($proof);
+    expect(fn () => evaluateProof($fixture))
+        ->toThrow(RuntimeException::class, 'Captured proof evidence does not match');
+});
+
+it('refuses capture when action evidence is incomplete', function (): void {
+    $fixture = proofEquivalenceFixture();
+    $proof = $fixture['state']->proof();
+    $proof['actions'] = [];
+    $fixture['state']->writeProof($proof);
+
+    expect(fn () => App\E2E\ProofEvidence::capture($fixture['state'], $fixture['plan']))
+        ->toThrow(RuntimeException::class, 'complete zero-exit');
+});
+
+it('archives proof before cleanup and keeps that evidence through a release retry', function (): void {
+    $fixture = proofEquivalenceFixture();
+    $hostPaths = new StatePaths($fixture['root'].'-host');
+    $host = new IncusHost;
+    $releaser = new App\E2E\TopologyReleaser(
+        $host,
+        new App\E2E\IncusNetworkLifecycle($host),
+        $hostPaths,
+        new OperationId(str_repeat('c', 32)),
+    );
+    $failInventory = true;
+    Illuminate\Support\Facades\Process::fake(function (Illuminate\Process\PendingProcess $process) use (
+        &$failInventory,
+    ) {
+        $command = $process->command;
+        if (is_array($command) && $command[0] === 'git') {
+            return new ProcessFactory()->path($process->path)->run($command);
+        }
+        if ($failInventory) {
+            return Illuminate\Support\Facades\Process::result(errorOutput: 'injected inventory failure', exitCode: 1);
+        }
+
+        return Illuminate\Support\Facades\Process::result('[]');
+    });
+    $request = new TopologyRequest('AUX-99', $fixture['root']);
+    expect(fn () => $releaser->release($request, AttemptPurpose::Proof, capture: true))
+        ->toThrow(RuntimeException::class);
+    $attempt = $fixture['state']->attemptId(AttemptPurpose::Proof)->value;
+    $archive = new App\E2E\State\AtomicJsonStore($hostPaths);
+    $saved = $archive->read('proof-evidence/AUX-99/'.$attempt.'.json');
+    expect($saved['proof'])->toBe($fixture['state']->proof());
+    $failInventory = false;
+    $result = $releaser->release($request, AttemptPurpose::Proof, capture: true);
+    expect($result['state'])
+        ->toBe('released')
+        ->and($fixture['state']->hasAttempt())
+        ->toBeFalse()
+        ->and($archive->read('proof-evidence/AUX-99/'.$attempt.'.json'))
+        ->toBe($saved)
+        ->and(evaluateProof($fixture)->result)
+        ->toBe(ProofEquivalenceResult::Exact);
+});

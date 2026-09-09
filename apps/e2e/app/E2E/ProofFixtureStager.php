@@ -57,7 +57,10 @@ final readonly class ProofFixtureStager
         TopologyTarget::assertIssue($issue);
         $planName = $issue.'.json';
         $files = [];
-        foreach ($repository->directoryBlobs($candidateSha, ProofFixtures::hostDirectory()) as $name => $blob) {
+        foreach ($repository->directoryBlobs(
+            $repository->loopCommit($issue, $candidateSha),
+            ProofFixtures::hostDirectory(),
+        ) as $name => $blob) {
             if ($name === $planName) {
                 continue;
             }

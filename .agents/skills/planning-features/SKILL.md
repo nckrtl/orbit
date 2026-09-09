@@ -5,7 +5,7 @@ description: Use when preparing or correcting the plan for one Orbit issue of an
 
 # Planning Features
 
-Turn one Linear issue into `.loop/plan.md`, the tracked implementation map the plan reviewer checks and the implementer follows, and bring the maintained documentation for the issue up to date before any code exists. This task is the planner, which the other skills call preflight. It edits only the plan and pages under `docs/`. It does not change product code, tests, proof files, Linear, or GitHub, and it never rewrites Git history.
+Turn one Linear issue into `.loop/plan.md`, the separately versioned implementation map the plan reviewer checks and the implementer follows, and bring the maintained documentation for the issue up to date before any code exists. This task is the planner, which the other skills call preflight. It edits only the plan and pages under `docs/`. It does not change product code, tests, proof files, Linear, or GitHub, and it never rewrites Git history.
 
 This is an independently invokable planning task. It does not assume who implements the plan or what lifecycle surrounds it.
 
@@ -39,7 +39,7 @@ Use existing Linear activity and Git history; do not require a separate creation
 
 ## Write the documentation
 
-Before the acceptance map, run `auditing-documentation` in its default issue scope and fix the drift it finds. Then, when the issue carries the `docs` label, write or update the pages that describe the issue's outcome by following `writing-documentation`, stating the behavior the `Acceptance` items deliver in the present tense. For these pages the reference is the issue and its ADRs, not the code; the code follows. Run `composer docs-build` and then `composer docs-lint` from the repository root, then commit every change under `docs/`, including `docs/generated/context.json`, as one commit on the feature branch whose message starts with `docs:`. The plan stays uncommitted until independent plan review; `.loop/` is tracked so the reviewer can commit the reviewed plan and its verdict. A blocked issue keeps its `docs:` commits on the branch, and the next planning pass starts from them. The implementer starts from these pages and corrects them only where implementation deviates.
+Before the acceptance map, run `auditing-documentation` in its default issue scope and fix the drift it finds. Then, when the issue carries the `docs` label, write or update the pages that describe the issue's outcome by following `writing-documentation`, stating the behavior the `Acceptance` items deliver in the present tense. For these pages the reference is the issue and its ADRs, not the code; the code follows. Run `composer docs-build` and then `composer docs-lint` from the repository root, then commit every change under `docs/`, including `docs/generated/context.json`, as one commit on the feature branch whose message starts with `docs:`. Save the ignored plan with `bin/loop-artifacts save <ISSUE>` for independent plan review. The reviewer saves its verdict on that separate draft ref. A blocked issue keeps its `docs:` commits on the branch, and the next planning pass starts from them. The implementer starts from these pages and corrects them only where implementation deviates.
 
 ## Write the plan
 

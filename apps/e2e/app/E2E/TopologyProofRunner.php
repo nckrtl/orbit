@@ -111,7 +111,7 @@ final readonly class TopologyProofRunner
         IssueState $state,
         string $candidateSha,
     ): ProofEquivalenceReport {
-        if (! $state->isProved()) {
+        if ($state->proofTopology() === null) {
             throw new RuntimeException("{$request->issue} has no retained proof for candidate convergence.");
         }
         $rawReport = $state->equivalence() ?? throw new RuntimeException(
@@ -267,7 +267,7 @@ final readonly class TopologyProofRunner
             $this->observedPhpInputs->normalizeRuntime($target);
             $phase = 'converge';
             $this->converger->converge($target, $source, $generation->laravel);
-            $entries = $repository->entries($candidateSha);
+            $entries = $repository->entries($repository->loopCommit($request->issue, $candidateSha));
             $observed = null;
             if ($plan->observedInputs) {
                 $phase = 'pcov.prepare';

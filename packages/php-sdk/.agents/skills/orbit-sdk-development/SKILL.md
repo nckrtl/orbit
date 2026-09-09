@@ -51,7 +51,6 @@ It is framework-neutral. Laravel Boost is deliberately required in
 ## Verification
 
 ```bash
-composer test
 composer check
 vendor/bin/mago format --check
 vendor/bin/mago lint src tests --reporting-format=medium
@@ -61,7 +60,7 @@ git diff --check -- packages/php-sdk
 ```
 
 Use Pest 5 with `describe()` and `it()`. Run focused tests during development
-and the full parallel no-TIA suite before handoff. Run focused gateway
+and require green CI full parallel no-TIA suites before handoff. Run focused gateway
 API and CLI tests when a contract changes. Coordinate those changes in the same
 feature branch. Run Mago format, lint, and analysis and Rector before
 handoff.

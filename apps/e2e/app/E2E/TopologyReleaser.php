@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
+use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
@@ -42,6 +43,7 @@ final readonly class TopologyReleaser
         TopologyRequest $request,
         ?AttemptPurpose $purpose = null,
         ?LeaseTargetRecovery $recovery = null,
+        bool $capture = false,
     ): array {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = new OperationLock($this->hostPaths);
@@ -57,7 +59,23 @@ final readonly class TopologyReleaser
                 $this->recoverLeaseTarget($request, $state, $purpose, $recovery);
             }
 
-            return $this->releaseAttempt($request, $state, $purpose, $state->attemptId($purpose));
+            if ($capture) {
+                if ($purpose !== AttemptPurpose::Proof) {
+                    throw new RuntimeException('Only proof attempts support evidence capture.');
+                }
+                $plan = ProofPlanFile::currentOrRetained($request, null)->plan;
+                $evidence = ProofEvidence::capture($state, $plan);
+                $archive = new AtomicJsonStore($this->hostPaths);
+                $path = 'proof-evidence/'.$request->issue.'/'.$state->attemptId($purpose)->value.'.json';
+                $previous = $archive->read($path);
+                if ($previous !== null && $previous !== $evidence) {
+                    throw new RuntimeException('The retained proof archive is immutable.');
+                }
+                $archive->write($path, $evidence);
+                $state->captureProof($evidence);
+            }
+
+            return $this->releaseAttempt($request, $state, $purpose, $state->attemptId($purpose), $capture);
         } finally {
             $lock->release();
         }
@@ -158,12 +176,14 @@ final readonly class TopologyReleaser
         IssueState $state,
         AttemptPurpose $purpose,
         AttemptId $attempt,
+        bool $capture = false,
     ): array {
         $target = $this->targetForRelease($request, $state, $purpose, $attempt);
         [$released, $absent] = $this->deleteResources($target);
         $proof = $state->proof() ?? [];
         if (
-            $purpose === AttemptPurpose::Proof
+            ! $capture
+            && $purpose === AttemptPurpose::Proof
             && ($proof['status'] ?? null) === 'proved'
             && ($proof['attempt_id'] ?? null) === $attempt->value
             && is_string($proof['manifest_sha256'] ?? null)

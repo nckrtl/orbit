@@ -31,7 +31,7 @@ Every command accepts `--json`, and `--main-sha=SHA` must be the full SHA of the
 
 ## Promote
 
-After a merge, `promote` installs the reviewer's retained topology instead of rebuilding it and verifies the plan selected from `.loop/proof/`. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the reviewable issue workspace that supplied that plan. The harness refuses, without touching Incus, in each of these cases.
+Feature closeout uses `refresh` from merged main after captured proof resources are released, under [ADR 0050](../decisions/0050-release-successful-proof-resources-before-landing.md). The explicit `promote` command remains available for a retained live topology and verifies its plan selected from `.loop/proof/`. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
 
 | Refusal | Condition |
 | --- | --- |
@@ -53,7 +53,7 @@ The failure reports that the new snapshot generation is already installed, the c
 
 `refresh` is the maintenance path when no proved topology exists, and, at the current `origin/main`, the closeout path when the merged candidate's proof plan normalizes to `mutates: true` ([ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)). An extended plan always takes this closeout path. Merge closeout never substitutes a refresh for a missing or invalid proof.
 
-It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation. After a successful extended-proof closeout refresh, closeout records the proved attempt, accepted head, merge commit, and promoted generation, then releases the complete extended proof and discovery inventories. A failed refresh retains both attempts and does not report closeout complete. The result is `unchanged`, `promoted`, or `failed`.
+It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation. After a successful closeout refresh, closeout records the proved attempt, artifact SHA, accepted head, merge commit, and promoted generation. A failed refresh retains captured proof evidence and does not report closeout complete. The result is `unchanged`, `promoted`, or `failed`.
 
 ### Convergence
 

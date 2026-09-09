@@ -36,6 +36,6 @@ Laravel or Boost support.
 - Review matching SDK requests, exceptions, correlation behavior, and tests
   before inventing a transport pattern.
 - Use Pest 5 with `describe()` and `it()`.
-- Use Pest 5 with full parallel no-TIA runs for the normal workflow.
+- Use focused Pest tests locally; CI owns full parallel no-TIA suites.
 - Run Mago format, lint, and analysis, Rector, and
   `git diff --check -- packages/php-sdk` from the monorepo root before handoff.

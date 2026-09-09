@@ -44,8 +44,8 @@
     "scripts": {
         "analyse": "vendor/bin/mago analyze app --reporting-format=medium",
         "check": [
+            "@guidance:check",
             "@rector",
-            "@test",
             "@format:check",
             "@lint",
             "@analyse"

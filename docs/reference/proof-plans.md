@@ -1,6 +1,6 @@
 # Proof plans
 
-This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the tracked issue workspace, and the commands that run a plan are on the [Incus topology registry](incus-topologies.md).
+This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the separate candidate-bound artifact workspace, and the commands that run a plan are on the [Incus topology registry](incus-topologies.md).
 
 ## Plan file
 
@@ -35,7 +35,7 @@ A literal `/home/orbit/orbit/...` argument must resolve to a runtime path under 
 
 ## Fixtures
 
-Files beside the plan under `.loop/proof/` are the active issue's proof-only fixtures. The harness refuses a nested directory, a symlink, a name outside `[a-z0-9][a-z0-9._-]{0,127}`, and every declaration that names another issue's fixtures. `prove` reads the fixtures from the exact candidate commit, never from the host working tree. It installs them root-owned, `0755` for an executable blob and `0644` otherwise, at `/var/lib/orbit-e2e/proof/<name>` on every physical Node, including `app-prod-2` in an extended proof. A plan references a fixture by that guest path, for example `["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod-2"]`.
+Files beside the plan under `.loop/proof/` are the active issue's proof-only fixtures. The harness refuses a nested directory, a symlink, a name outside `[a-z0-9][a-z0-9._-]{0,127}`, and every declaration that names another issue's fixtures. `prove` reads the fixtures from the candidate-bound artifact commit, never from the host working tree. It installs them root-owned, `0755` for an executable blob and `0644` otherwise, at `/var/lib/orbit-e2e/proof/<name>` on every physical Node, including `app-prod-2` in an extended proof. A plan references a fixture by that guest path, for example `["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod-2"]`.
 
 The harness empties the guest directory before staging. Every physical Node prints `name<TAB>mode<TAB>sha256` per file, and the digest must equal the host digest. An issue with no fixture files beside its plan stages an empty inventory.
 
@@ -77,7 +77,7 @@ With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matc
 | `failed_action` | The action that ended the proof, with `stdout_tail` and `stderr_tail` of the final 4096 bytes |
 | `error` | `proof phase <phase> failed: <message>` |
 
-A proved result also writes the manifest, whose content [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. Its topology input records the normalized extension, promoted source generation, ordered physical Node inventory and identities, and the extra Node's image alias and fingerprint. Equivalence is stale when the current extension or construction input differs. The harness pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` until release and never overwrites immutable evidence.
+A proved result also writes the manifest, whose content [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. Its topology input records the normalized extension, promoted source generation, ordered physical Node inventory and identities, and the extra Node's image alias and fingerprint. Equivalence is stale when the current extension or construction input differs. The harness pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` through captured release and never overwrites immutable evidence.
 
 ## Equivalence outcomes
 
@@ -85,10 +85,20 @@ After a later commit, `bin/e2e-topology equivalence ISSUE` compares the clean HE
 
 | Outcome | Meaning | Next command |
 | --- | --- | --- |
-| `exact` | The SHA or the complete Git tree is unchanged | Review the head, then `bin/e2e-topology-snapshot promote ISSUE` after merge |
-| `equivalent`, `retained-proof` path | Every change is non-runtime | Review the head, then `promote` after merge |
-| `equivalent`, `candidate-convergence` path | An observed-input proof has only unrelated runtime drift from `main` | `bin/e2e-topology candidate ISSUE`, then review and `promote` |
-| `stale` | A runtime or proof-contract input changed | `bin/e2e-topology release ISSUE --proof`, then `prove` |
-| `indeterminate` | A classification, identity, current-main, manifest, plan, or completeness gate failed | Resolve the listed errors, `release --proof`, then `prove` |
+| `exact` | The SHA or the complete Git tree is unchanged | Review the head, then refresh the snapshot from merged main |
+| `equivalent`, `retained-proof` path | Every change is non-runtime | Review the head, then refresh from merged main |
+| `equivalent`, `candidate-convergence` path | An observed-input proof has only unrelated runtime drift from `main` | `bin/e2e-topology candidate ISSUE`, release its resources, then review and refresh |
+| `stale` | A runtime or proof-contract input changed | Release any remaining proof lease, then `prove` |
+| `indeterminate` | A classification, identity, current-main, manifest, plan, or completeness gate failed | Resolve the listed errors, release any remaining lease, then `prove` |
 
-The report's `next_action` field names the same step, and the command exits `0` for `exact` and `equivalent`. `candidate` accepts only an `equivalent` report on the `candidate-convergence` path bound to the current HEAD with a complete observed-input manifest. It synchronizes the exact head into a fresh attempt, proves checkout identity, prepares the runtime, converges, and verifies. It never stages fixtures or reruns setup or acceptance. A `converged` topology stays immutable for review and is what `promote` installs; the operator releases a `diagnosis` with `--candidate` before a retry.
+The report's `next_action` field names the same step, and the command exits `0` for `exact` and `equivalent`. `candidate` accepts only an `equivalent` report on the `candidate-convergence` path bound to the current HEAD with a complete observed-input manifest. It synchronizes the exact head into a fresh attempt, proves checkout identity, prepares the runtime, converges, and verifies. It never stages fixtures or reruns setup or acceptance. A successful result remains evidence after the operator releases its resources with `--candidate`; the operator retains a `diagnosis` for inspection and releases it before a retry.
+
+## Captured proof and resource release
+
+After successful proof, run `bin/e2e-topology release ISSUE --proof --capture`, then release idle discovery. [ADR 0050](../decisions/0050-release-successful-proof-resources-before-landing.md) governs this lifecycle. Capture verifies the exact plan, complete zero-exit actions, matching topology and candidate identities, and complete input manifest before any resource deletion.
+
+The harness writes immutable acceptance evidence to `<primary>/.e2e/proof-evidence/<ISSUE>/<attempt>.json` and `<worktree>/.e2e/captured-proof/<attempt>.json`. It retains the proof commit reference. The primary archive survives worktree cleanup. Cleanup failure leaves the archive and attempt lease available for retry. Failed proof remains available for diagnosis and cannot use `--capture`.
+
+`status` reports `captured` when proof evidence remains without active attempts. Equivalence reads captured topology and input evidence and requires the newly submitted artifact snapshot to match the proved inputs. Missing or changed evidence requires correction or complete proof. Released VMs cannot support interactive inspection.
+
+After the verified merge, closeout refreshes the shared snapshot from current main containing that merge. It records the proved attempt, artifact SHA, accepted head, merge commit, and resulting generation. A failed refresh retains acceptance evidence for retry. Refresh does not replace acceptance proof.

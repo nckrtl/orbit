@@ -21,7 +21,8 @@ bin/bootstrap
 
 The equivalent Composer command is `composer bootstrap`.
 
-Run every full test suite in parallel:
+Run focused Pest tests and the changed project's `composer check` locally. CI
+runs all full suites. For an explicit full local run:
 
 ```bash
 bin/test
@@ -51,9 +52,10 @@ bin/worktree-create NCK-123 concise-feature-name
 ```
 
 The command creates `.worktrees/nck-123-concise-feature-name` on branch
-`nck-123-concise-feature-name`, initializes a tracked `.loop/plan.md` beside
-`.loop/proof/`, and bootstraps all projects. The issue branch carries that
-workspace through its first review and removes it alone before merge.
+`nck-123-concise-feature-name`, initializes an ignored `.loop/plan.md` beside
+`.loop/proof/`, and bootstraps all projects. Publish the workspace with
+`bin/loop-artifacts publish NCK-123` after committing the candidate. Review and
+merge that same candidate. See [the implementation loop](docs/reference/implementation-loop.md).
 
 Repository-owned skills under `.agents/skills/` are independently invokable
 helpers for decision records, issue creation, documentation writing and auditing, planning, implementation, review, and merge

@@ -5,9 +5,9 @@ description: Use when independently reviewing the plan for one Orbit issue of an
 
 # Reviewing Feature Plans
 
-Independently review one `.loop/plan.md` and the documentation commits the planner made, before any code exists. This role reports plan quality only. It never edits planning content, documentation, product code, tests, proof, Git history, Linear, or GitHub; it may update only `Review verdict` and `## Review findings` in the plan and commit that tracked review record. Never approve a plan you authored, and never decide lifecycle transitions.
+Independently review one `.loop/plan.md` and the documentation commits the planner made, before any code exists. This role reports plan quality only. It never edits planning content, documentation, product code, tests, proof, Git history, Linear, or GitHub; it may update only `Review verdict` and `## Review findings` in the plan and save that review record on the separate artifact ref. Never approve a plan you authored, and never decide lifecycle transitions.
 
-The plan starts uncommitted, so this review runs on the planner's worktree. Commit the reviewed `.loop/plan.md` and no other change with a message beginning `plan:` after recording the verdict and findings.
+Review the plan in the planner's worktree. After recording the verdict and findings, run `bin/loop-artifacts save <ISSUE>` and return the artifact SHA. Do not commit `.loop/` to the feature branch.
 
 ## Inputs
 
