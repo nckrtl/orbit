@@ -12,9 +12,12 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
- * @mago-expect lint:cyclomatic-complexity The reconciler validates the complete closed Route proposal before any write.
+ * @mago-expect lint:cyclomatic-complexity The reconciler validates the complete affected Route proposal before any write.
  * @mago-expect lint:kan-defect Atomic reconciliation keeps every fail-closed proposal branch in one domain boundary.
  */
 final readonly class RouteMutationReconciler
@@ -82,13 +85,22 @@ final readonly class RouteMutationReconciler
         array $baselineNodeOverrides,
         array $baselineClusterOverrides,
     ): array {
-        $routes = Route::query()
-            ->with(['app', 'targets.appInstance.node', 'generationBasisNode'])
+        $hostnames = DB::table('routes')
             ->lockForUpdate()
             ->orderBy('id')
-            ->get();
+            ->pluck('id', 'hostname')
+            ->all();
+        $routes = $this->affectedRoutes(
+            $nodeOverrides,
+            $clusterOverrides,
+            $baselineNodeOverrides,
+            $baselineClusterOverrides,
+        );
         $proposals = [];
-        $hostnames = [];
+
+        foreach ($routes as $route) {
+            unset($hostnames[$route->hostname]);
+        }
 
         foreach ($routes as $route) {
             $proposal = $this->proposal(
@@ -113,6 +125,72 @@ final readonly class RouteMutationReconciler
         }
 
         return [$routes, $proposals];
+    }
+
+    /**
+     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
+     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
+     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $baselineNodeOverrides
+     * @param array<int, array{tld?: ?string, state?: ClusterState}> $baselineClusterOverrides
+     * @return Collection<int, Route>
+     */
+    private function affectedRoutes(
+        array $nodeOverrides,
+        array $clusterOverrides,
+        array $baselineNodeOverrides,
+        array $baselineClusterOverrides,
+    ): Collection {
+        $nodeIds = $this->affectedIds($nodeOverrides, $baselineNodeOverrides);
+        $clusterIds = $this->affectedIds($clusterOverrides, $baselineClusterOverrides);
+
+        return Route::query()
+            ->with(['app', 'targets.appInstance.node', 'generationBasisNode'])
+            ->where(function (Builder $query) use ($nodeIds, $clusterIds): void {
+                $query->whereRaw('0 = 1');
+
+                if ($nodeIds !== []) {
+                    $query
+                        ->orWhereIn('node_id', $nodeIds)
+                        ->orWhereIn('generation_basis_node_id', $nodeIds)
+                        ->orWhereHas(
+                            'targets.appInstance',
+                            static fn (Builder $target): Builder => $target->whereIn('node_id', $nodeIds),
+                        );
+                }
+
+                if ($clusterIds !== []) {
+                    $query
+                        ->orWhereIn('cluster_id', $clusterIds)
+                        ->orWhereHas(
+                            'node',
+                            static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
+                        )
+                        ->orWhereHas(
+                            'generationBasisNode',
+                            static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
+                        )
+                        ->orWhereHas(
+                            'targets.appInstance.node',
+                            static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
+                        );
+                }
+            })
+            ->lockForUpdate()
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * @param array<int, mixed> $overrides
+     * @param array<int, mixed> $baselineOverrides
+     * @return list<int>
+     */
+    private function affectedIds(array $overrides, array $baselineOverrides): array
+    {
+        return array_values(array_unique([
+            ...array_map(intval(...), array_keys($overrides)),
+            ...array_map(intval(...), array_keys($baselineOverrides)),
+        ]));
     }
 
     /**
