@@ -27,7 +27,7 @@ it('uses the same bounded remote check without reading environment contents', fu
     expect($ssh->commands)
         ->toHaveCount(1)
         ->and($ssh->commands[0]->arguments)
-        ->toContain('check')
+        ->toContain('read-check')
         ->and($ssh->commands[0]->maxOutputBytes)
         ->toBe(64)
         ->and($ssh->commands[0]->input)
@@ -35,6 +35,99 @@ it('uses the same bounded remote check without reading environment contents', fu
         ->and($ssh->commands[0]->protectedInput)
         ->toBeNull();
 });
+
+it('selects bounded write and required-capacity checks without environment input', function (): void {
+    $ssh = new EnvironmentObservationSshExecutor([
+        new CommandResult(0, "OK\n", '', 1, false),
+    ]);
+    $access = environment_remote_access($ssh);
+
+    $access->assertEnvironmentWritable(environment_access_context('/srv/apps/example'), 8192);
+
+    expect($ssh->commands)
+        ->toHaveCount(1)
+        ->and(array_slice($ssh->commands[0]->arguments, -6))
+        ->toBe([
+            'write-check',
+            '/srv/apps/example',
+            (string) posix_getpwuid(posix_geteuid())['name'],
+            '1048576',
+            '0',
+            '8192',
+        ])
+        ->and($ssh->commands[0]->maxOutputBytes)
+        ->toBe(64)
+        ->and($ssh->commands[0]->input)
+        ->toBeNull()
+        ->and($ssh->commands[0]->protectedInput)
+        ->toBeNull();
+});
+
+it('checks a writable destination without reading its contents', function (): void {
+    $directory = environment_access_directory();
+    file_put_contents("{$directory}/.env", "MUST_NOT_BE_OBSERVED=sentinel\n");
+    chmod("{$directory}/.env", 0000);
+
+    try {
+        $access = environment_remote_access(new LocalEnvironmentProgramSshExecutor(new NativeProcessRunner));
+
+        $access->assertEnvironmentWritable(environment_access_context($directory), 4096);
+
+        chmod("{$directory}/.env", 0600);
+        expect(file_get_contents("{$directory}/.env"))->toBe("MUST_NOT_BE_OBSERVED=sentinel\n");
+    } finally {
+        chmod("{$directory}/.env", 0600);
+        unlink("{$directory}/.env");
+        rmdir($directory);
+    }
+});
+
+it('refuses missing unsafe unwritable and insufficient-capacity write destinations', function (string $kind): void {
+    $parent = environment_access_directory();
+    $real = "{$parent}/real";
+    mkdir($real, 0700);
+    $path = $real;
+    $requiredCapacity = 0;
+
+    if ($kind === 'missing parent') {
+        $path = "{$parent}/missing";
+    } elseif ($kind === 'ancestor symlink') {
+        symlink($real, "{$parent}/linked");
+        $path = "{$parent}/linked";
+    } elseif ($kind === 'special destination') {
+        posix_mkfifo("{$real}/.env", 0600);
+    } elseif ($kind === 'unwritable directory') {
+        chmod($real, 0500);
+    } else {
+        $requiredCapacity = PHP_INT_MAX;
+    }
+
+    try {
+        $access = environment_remote_access(new LocalEnvironmentProgramSshExecutor(new NativeProcessRunner));
+
+        expect(fn () => $access->assertEnvironmentWritable(
+            environment_access_context($path),
+            $requiredCapacity,
+        ))
+            ->toThrow(ResourceOperationException::class, 'cannot be replaced safely');
+    } finally {
+        chmod($real, 0700);
+        if (file_exists("{$real}/.env")) {
+            unlink("{$real}/.env");
+        }
+        if (is_link("{$parent}/linked")) {
+            unlink("{$parent}/linked");
+        }
+        rmdir($real);
+        rmdir($parent);
+    }
+})->with([
+    'missing parent',
+    'ancestor symlink',
+    'special destination',
+    'unwritable directory',
+    'insufficient capacity',
+]);
 
 it('refuses failed truncated and malformed remote observations', function (CommandResult $observation): void {
     $access = environment_remote_access(new EnvironmentObservationSshExecutor([$observation]));
@@ -157,13 +250,15 @@ it('selects the recorded application user directly even when production login sh
             '--',
             'python3',
             '-c',
-        ])
-        ->and(array_slice($ssh->commands[0]->arguments, -4))
+        ]);
+    expect(array_slice($ssh->commands[0]->arguments, -6))
         ->toBe([
-            'check',
+            'read-check',
             '/home/example-app',
+            'example-app',
             '1048576',
             '1',
+            '0',
         ]);
 });
 
@@ -264,6 +359,8 @@ final class LocalEnvironmentProgramSshExecutor implements SshExecutor
 
         return $this->runner->run(new ProcessInvocation(
             arguments: array_values(array_slice($command->arguments, $separator + 1)),
+            input: $command->input,
+            protectedInput: $command->protectedInput,
             maxOutputBytes: $command->maxOutputBytes,
         ));
     }

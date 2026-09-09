@@ -1182,6 +1182,11 @@ final readonly class CommandActivityEnvironmentAccess implements
 
     public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void {}
 
+    public function assertEnvironmentWritable(
+        AppInstanceEnvironmentContext $context,
+        int $requiredCapacityBytes,
+    ): void {}
+
     public function read(AppInstanceEnvironmentContext $context): string
     {
         return $this->contents;
