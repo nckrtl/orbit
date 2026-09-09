@@ -968,6 +968,60 @@
             ]
         },
         {
+            "path": "docs/decisions/0046-own-production-release-deployment-in-orbit.md",
+            "title": "ADR 0046: Own production release deployment in Orbit",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Ingress"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0030",
+                "0031",
+                "0032",
+                "0044",
+                "0045",
+                "0046"
+            ]
+        },
+        {
+            "path": "docs/decisions/0047-create-production-appinstances-from-candidates.md",
+            "title": "ADR 0047: Create production AppInstances from candidates",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0028",
+                "0030",
+                "0031",
+                "0032",
+                "0044",
+                "0045",
+                "0047"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
