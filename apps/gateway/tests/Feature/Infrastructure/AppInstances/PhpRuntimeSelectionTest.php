@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstancePhpVersionCatalog;
 use App\Domain\AppInstances\ComposerSourceClassifier;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
+use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
+use App\Infrastructure\AppDev\AppDevSite;
 
 it('owns a finite descending AppInstance PHP candidate catalog', function (): void {
     expect(new AppInstancePhpVersionCatalog()->versions())->toBe(['8.5', '8.4']);
@@ -44,4 +48,58 @@ it('classifies Composer metadata as PHP and metadata absence as non-PHP', functi
     expect($classifier->classify('{"name":"acme/site"}', 'absent'))
         ->phpVersion->toBe('8.5')
         ->laravel->toBeFalse();
+});
+
+it('renders only the selected production PHP site with its recorded user home pool and socket', function (): void {
+    $php = new AppDevSite(
+        nodeId: 1,
+        nodeAddress: '10.44.0.10',
+        scope: 'app-instance-7',
+        checkoutPath: '/home/orbit-app-3',
+        documentRoot: 'current/public',
+        phpVersion: '8.5',
+        hostname: 'app.example.test',
+        environment: 'production',
+        productionUser: 'orbit-app-3',
+        productionHome: '/home/orbit-app-3',
+    );
+    $nonPhp = new AppDevSite(
+        nodeId: 1,
+        nodeAddress: '10.44.0.10',
+        scope: 'app-instance-8',
+        checkoutPath: '/home/orbit-app-4',
+        documentRoot: 'public',
+        phpVersion: null,
+        hostname: 'static.example.test',
+        environment: 'production',
+        productionUser: 'orbit-app-4',
+        productionHome: '/home/orbit-app-4',
+    );
+    $selected = collect([$php, $nonPhp])
+        ->filter(static fn (AppDevSite $site): bool => $site->phpVersion !== null)
+        ->values();
+    $configuration = new AppDevPhpFpmConfigRenderer()->render(
+        $selected,
+        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+    );
+    $caddy = new AppDevCaddyConfigRenderer()->render(collect([$php, $nonPhp]));
+
+    expect($selected)
+        ->toHaveCount(1)
+        ->and($configuration)
+        ->toContain(
+            '[orbit-app-instance-7]',
+            'user = orbit-app-3',
+            'group = orbit-app-3',
+            'listen = /run/php/orbit-app-instance-7.sock',
+            'env[HOME] = /home/orbit-app-3',
+        )
+        ->not
+        ->toContain('app-instance-8', 'composer install', 'artisan')
+        ->and($caddy)
+        ->toContain(
+            'root * /home/orbit-app-3/current/public',
+            'php_fastcgi unix//run/php/orbit-app-instance-7.sock',
+            'root * /home/orbit-app-4/public',
+        );
 });

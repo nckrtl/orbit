@@ -73,7 +73,7 @@ it('rejects duplicate target Nodes', function (): void {
     ]);
     $nodeOne = route_migration_node('one');
     $one = route_migration_instance($app, $nodeOne, 'one');
-    $duplicateNode = route_migration_instance($app, $nodeOne, 'duplicate');
+    $duplicateNode = route_migration_instance($app, $nodeOne, 'duplicate', 'development');
     $explicit = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $nodeOne->id,
@@ -327,12 +327,13 @@ function route_migration_instance(
     App\Models\App $app,
     App\Models\Node $node,
     string $name,
+    string $environment = 'production',
 ): App\Models\AppInstance {
     return App\Models\AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
-        'environment' => 'production',
+        'environment' => $environment,
         'checkout_path' => "/srv/{$name}",
         'status' => AppInstanceState::Active,
     ]);

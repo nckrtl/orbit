@@ -7,12 +7,17 @@ namespace App\Infrastructure\Firewall;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Models\Node;
 
 /** @mago-expect lint:too-many-methods One catalog owns the exact firewall rule shapes shared by every projector. */
-final class NodeFirewallRuleCatalog
+final readonly class NodeFirewallRuleCatalog
 {
+    public function __construct(
+        private AppProdSiteRepository $appProdSites = new AppProdSiteRepository,
+    ) {}
+
     /** @return list<UfwManagedRule> */ public function forNode(Node $node): array
     {
         return [
@@ -29,7 +34,12 @@ final class NodeFirewallRuleCatalog
             ],
             RoleName::Vpn => [],
             RoleName::Router, RoleName::Ingress, RoleName::AppDev => [],
-            RoleName::AppProd => [$this->rule('orbit:app-prod-http', '80'), $this->rule('orbit:app-prod-https', '443')],
+            RoleName::AppProd => $this->appProdSites->requiresPublicFirewall($node)
+                ? [
+                    $this->rule('orbit:app-prod-http', '80'),
+                    $this->rule('orbit:app-prod-https', '443'),
+                ]
+                : [],
             RoleName::Metrics => [],
         };
     }
@@ -38,6 +48,18 @@ final class NodeFirewallRuleCatalog
     public function retiredForRole(Node $node, RoleName $role): array
     {
         $rules = [$this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit')];
+
+        if ($role === RoleName::AppProd) {
+            if ($this->appProdSites->requiresPublicFirewall($node)) {
+                return $rules;
+            }
+
+            return [
+                ...$rules,
+                $this->rule('orbit:app-prod-http', '80'),
+                $this->rule('orbit:app-prod-https', '443'),
+            ];
+        }
 
         if ($role !== RoleName::AppDev) {
             return $rules;

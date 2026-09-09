@@ -48,6 +48,33 @@ describe('AppInstance requests', function (): void {
             ->toBe('orbit-docs.test');
     });
 
+    it('maps recorded production placement identity', function (): void {
+        $data = [
+            ...instance_gateway_data(),
+            'environment' => 'production',
+            'checkout_path' => '/home/orbit-app-3',
+            'production_user' => 'orbit-app-3',
+            'production_home' => '/home/orbit-app-3',
+            'effective_root' => '/home/orbit-app-3/current/public',
+        ];
+        $mockClient = new MockClient([
+            CreateAppInstanceRequest::class => MockResponse::make([
+                'data' => $data,
+                'meta' => ['request_id' => instance_request_id()],
+            ], 201),
+        ]);
+        $response = instance_gateway_connector($mockClient)
+            ->send(new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main'))
+            ->dto();
+
+        expect($response->productionUser)
+            ->toBe('orbit-app-3')
+            ->and($response->productionHome)
+            ->toBe('/home/orbit-app-3')
+            ->and($response->effectiveRoot)
+            ->toBe('/home/orbit-app-3/current/public');
+    });
+
     it('transports only the optional root override', function (): void {
         $request = new CreateAppInstanceRequest(
             appId: 3,
@@ -276,6 +303,8 @@ function instance_gateway_data(): array
         'environment' => 'development',
         'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs',
+        'production_user' => null,
+        'production_home' => null,
         'root' => null,
         'effective_root' => 'public',
         'selected_branch' => 'main',

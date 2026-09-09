@@ -4,19 +4,19 @@ Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site w
 
 ## Select an AppInstance runtime
 
-For a development AppInstance, the Gateway reads source metadata after source preparation and before runtime or Domain Name System (DNS) publication. [ADR 0034](../decisions/0034-select-appinstance-php-from-composer-constraints.md) defines this source-driven selection boundary.
+For a development or standalone production AppInstance, the Gateway reads source metadata after initial source preparation and before runtime or Domain Name System (DNS) publication. [ADR 0034](../decisions/0034-select-appinstance-php-from-composer-constraints.md) defines this source-driven selection boundary.
 
-Orbit's code-owned development candidate set is PHP 8.5 followed by PHP 8.4. The Gateway compares a Composer constraint only with these candidates in this order. It does not select another PHP version, even when that version is syntactically valid.
+Orbit's code-owned AppInstance candidate set is PHP 8.5 followed by PHP 8.4. The Gateway compares a Composer constraint only with these candidates in this order. It does not select another PHP version, even when that version is syntactically valid.
 
 | Source or package result | Runtime result | Error code |
 | --- | --- | --- |
 | No `composer.json` file | Orbit classifies the source as non-PHP and prepares no PHP runtime. | None |
 | Valid `composer.json` without a PHP platform constraint | Orbit selects PHP 8.5. | None |
 | Valid `composer.json` whose PHP platform constraint matches a candidate | Orbit selects the first matching candidate: PHP 8.5 before PHP 8.4. | None |
-| Invalid PHP platform constraint, or a constraint below, between, or above all candidates | The Gateway stops at PHP selection. | `app-dev.php_version_unsupported` |
-| Selected candidate is unavailable from the pinned Sury source | The Gateway stops when it verifies the runtime source. | `app-dev.php_package_source_unavailable` |
+| Invalid PHP platform constraint, or a constraint below, between, or above all candidates | The Gateway stops at PHP selection. | `app-dev.php_version_unsupported` or `app-prod.php_version_unsupported` |
+| Selected candidate is unavailable from the pinned Sury source | The Gateway stops when it verifies the runtime source. | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable` |
 
-Both failures happen before runtime or DNS publication. At its first provisioning checkpoint, the Gateway stores the selected version together with the Laravel classification as one complete source profile. A retry at a retained checkpoint requires both values to match before Laravel URL configuration or runtime and Route projection. A changed version, a change between PHP and non-PHP, or a Laravel-classification change returns `app-dev.source_evidence_changed`.
+Both failures happen before runtime or DNS publication. At its first provisioning checkpoint, the Gateway stores the selected version together with the Laravel classification as one complete source profile. A development retry at a retained checkpoint requires both values to match before Laravel URL configuration or runtime and Route projection. A changed development profile returns `app-dev.source_evidence_changed`. Production source changes after successful provisioning are operator-owned and an identical creation retry does not inspect them.
 
 The Gateway does not infer missing Laravel evidence for a legacy retained checkpoint. An ordinary retry fails closed. The explicit recovery contract, including URL-reconciliation consent, rollback refusal, active-state behavior, and unchanged removal boundaries, is described in [Applications](../domains/applications.md#provision-the-application-endpoint).
 

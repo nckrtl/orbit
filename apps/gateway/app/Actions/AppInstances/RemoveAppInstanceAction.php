@@ -22,6 +22,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -49,6 +51,7 @@ final readonly class RemoveAppInstanceAction
         private ManagedCheckoutOverlap $checkoutOverlap,
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceContentRetention $productionContent,
+        private RouteStateResolver $routeState,
     ) {}
 
     public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
@@ -514,11 +517,36 @@ final readonly class RemoveAppInstanceAction
     {
         if (
             $route->status !== RouteStatus::Active
-            || $route->provenance !== RouteProvenance::Explicit
-            || $route->cluster_id === null
             || $route->targets->isEmpty()
             || ! $route->targets->contains('app_instance_id', $requested->id)
         ) {
+            return false;
+        }
+
+        if ($route->cluster_id === null) {
+            $node = $requested->node;
+            $placement = $this->routeState->forNode($node);
+
+            return (
+                $route->node_id === $requested->node_id
+                && $route->publication === RoutePublication::Private
+                && $route->targets->count() === 1
+                && $route->targets->sole()->app_instance_id === $requested->id
+                && $requested->environment === 'production'
+                && $requested->status === AppInstanceState::Active
+                && $node->status === LifecycleStatus::Active
+                && $placement->nodeId === $node->id
+                && $placement->clusterId === null
+                && $node->roles->contains(
+                    static fn ($role): bool => (
+                        $role->role === RoleName::AppProd
+                        && $role->status === LifecycleStatus::Active
+                    ),
+                )
+            );
+        }
+
+        if ($route->provenance !== RouteProvenance::Explicit) {
             return false;
         }
 
