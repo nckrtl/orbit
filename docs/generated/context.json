@@ -926,6 +926,28 @@
             ]
         },
         {
+            "path": "docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md",
+            "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0029",
+                "0030",
+                "0044"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
