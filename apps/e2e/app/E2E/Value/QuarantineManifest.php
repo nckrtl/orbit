@@ -129,7 +129,7 @@ final readonly class QuarantineManifest
     public function toArray(): array
     {
         return [
-            'version' => 2,
+            'version' => 3,
             'inventory_sha256' => $this->inventorySha256,
             'freeze_evidence' => $this->freezeEvidence,
             'targets' => $this->targets,
@@ -161,7 +161,7 @@ final readonly class QuarantineManifest
             }
         }
         if (
-            ($value['version'] ?? null) !== 2
+            ($value['version'] ?? null) !== 3
             || ! is_array($value['freeze_evidence'] ?? null)
             || ! is_array($value['targets'] ?? null)
             || ! is_array($value['preserved'] ?? null)

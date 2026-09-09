@@ -13,6 +13,7 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\FirewallDoctorIssueCode;
 use App\Domain\Firewall\FirewallBackendStatus;
+use App\Domain\Firewall\FirewallInspectionBatchData;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
@@ -20,6 +21,7 @@ use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
 
+/** @mago-expect lint:cyclomatic-complexity The probe preserves ordered lifecycle, observation, and issue mapping branches. */
 final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
@@ -53,12 +55,16 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
                 'unreachable',
             )]);
         }
-        $issues = [];
+        /** @var list<DoctorIssueData|FirewallInspectionTarget> $entries */
+        $entries = [];
+        /** @var list<FirewallInspectionTarget> $targets */
+        $targets = [];
+
         foreach ($rules as $rule) {
             $target = FirewallInspectionTarget::fromRule($rule);
 
             if ($rule->status !== LifecycleStatus::Active) {
-                $issues[] = $this->issue(
+                $entries[] = $this->issue(
                     $target,
                     FirewallDoctorIssueCode::LifecycleNotActive,
                     DoctorIssueKind::Drift,
@@ -67,15 +73,28 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
                 );
                 continue;
             }
-            $issue = $this->inspectTarget($target);
 
-            if ($issue instanceof DoctorIssueData) {
-                $issues[] = $issue;
-            }
+            $entries[] = $target;
+            $targets[] = $target;
         }
 
         foreach ($expectations as $target) {
-            $issue = $this->inspectTarget($target);
+            $entries[] = $target;
+            $targets[] = $target;
+        }
+
+        $batch = $this->inspectTargets($targets);
+        $issues = [];
+        $targetIndex = 0;
+
+        foreach ($entries as $entry) {
+            if ($entry instanceof DoctorIssueData) {
+                $issues[] = $entry;
+                continue;
+            }
+
+            $issue = $this->inspectTarget($entry, $batch, $targetIndex);
+            $targetIndex++;
 
             if ($issue instanceof DoctorIssueData) {
                 $issues[] = $issue;
@@ -85,11 +104,30 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, $rules->count(), $issues);
     }
 
-    private function inspectTarget(FirewallInspectionTarget $target): ?DoctorIssueData
+    /**
+     * @param list<FirewallInspectionTarget> $targets
+     */
+    private function inspectTargets(array $targets): ?FirewallInspectionBatchData
     {
+        if ($targets === []) {
+            return null;
+        }
+
         try {
-            $inspection = $this->inspector->inspect($target);
+            $batch = $this->inspector->inspect($targets);
         } catch (DoctorInspectionException) {
+            return null;
+        }
+
+        return count($batch->rules) === count($targets) ? $batch : null;
+    }
+
+    private function inspectTarget(
+        FirewallInspectionTarget $target,
+        ?FirewallInspectionBatchData $batch,
+        int $index,
+    ): ?DoctorIssueData {
+        if (! $batch instanceof FirewallInspectionBatchData) {
             return $this->issue(
                 $target,
                 FirewallDoctorIssueCode::InspectionFailed,
@@ -99,21 +137,33 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
             );
         }
 
-        if ($inspection->backend !== FirewallBackendStatus::Active) {
+        if ($batch->backend !== FirewallBackendStatus::Active) {
             return $this->issue(
                 $target,
                 FirewallDoctorIssueCode::BackendInactive,
                 DoctorIssueKind::Drift,
                 'active',
-                $inspection->backend->value,
+                $batch->backend->value,
             );
         }
 
-        if ($inspection->rule === FirewallRuleInspectionStatus::Exact) {
+        $rule = $batch->rules[$index];
+
+        if (! $rule instanceof FirewallRuleInspectionStatus) {
+            return $this->issue(
+                $target,
+                FirewallDoctorIssueCode::InspectionFailed,
+                DoctorIssueKind::Unverifiable,
+                'verifiable',
+                'unverifiable',
+            );
+        }
+
+        if ($rule === FirewallRuleInspectionStatus::Exact) {
             return null;
         }
 
-        $code = $inspection->rule === FirewallRuleInspectionStatus::Missing
+        $code = $rule === FirewallRuleInspectionStatus::Missing
             ? FirewallDoctorIssueCode::RuleMissing
             : FirewallDoctorIssueCode::RuleMismatch;
 
@@ -122,7 +172,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
             $code,
             DoctorIssueKind::Drift,
             'exact',
-            $inspection->rule->value,
+            $rule->value,
         );
     }
 
