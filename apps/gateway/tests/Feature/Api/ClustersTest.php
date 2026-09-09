@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
 use App\Models\Node;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     $this->operator = Node::query()->create([
@@ -176,6 +178,34 @@ describe('Cluster lifecycle', function (): void {
             ->assertJsonPath('data.state', 'inactive');
     });
 
+    it('owns state and TLD updates outside their transaction and leaves name-only updates independent', function (): void {
+        $cluster = Cluster::query()->create([
+            'name' => 'development',
+            'state' => ClusterState::Inactive,
+        ]);
+        $transactionLevel = DB::transactionLevel();
+        $owner = new ClusterUpdateRouterOperationLock;
+        app()->instance(ClusterRouterOperationLock::class, $owner);
+
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['name' => 'renamed'])
+            ->assertOk();
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'beast'])
+            ->assertOk();
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'inactive'])
+            ->assertOk();
+
+        expect($owner->entries)
+            ->toBe([
+                ['cluster_id' => $cluster->id, 'transaction_level' => $transactionLevel],
+                ['cluster_id' => $cluster->id, 'transaction_level' => $transactionLevel],
+            ])
+            ->and($cluster->refresh()->only(['name', 'tld']))
+            ->toBe(['name' => 'renamed', 'tld' => 'beast']);
+    });
+
     it('allows only member Nodes to share an active Cluster TLD', function (): void {
         $cluster = Cluster::query()->create([
             'name' => 'development',
@@ -247,3 +277,19 @@ describe('Cluster lifecycle', function (): void {
             ->toBeNull();
     });
 });
+
+final class ClusterUpdateRouterOperationLock implements ClusterRouterOperationLock
+{
+    /** @var list<array{cluster_id: int, transaction_level: int}> */
+    public array $entries = [];
+
+    public function run(int $clusterId, Closure $operation): mixed
+    {
+        $this->entries[] = [
+            'cluster_id' => $clusterId,
+            'transaction_level' => DB::transactionLevel(),
+        ];
+
+        return $operation();
+    }
+}

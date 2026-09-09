@@ -10,6 +10,7 @@ use InvalidArgumentException;
 
 /**
  * @mago-expect lint:cyclomatic-complexity Exact UFW parsing rejects every unsupported managed shape.
+ * @mago-expect lint:kan-defect The score reflects strict shape parsing and indexed multi-target ownership resolution.
  */
 final class UfwStatusParser
 {
@@ -42,10 +43,50 @@ final class UfwStatusParser
 
     public function ownership(string $output, UfwRuleShape $expected): UfwRuleOwnership
     {
-        $matchingLines = new UfwManagedCommentCounter()->count($output, $expected->comment);
-        $observed = $this->ownedRuleShapes($output, $expected->comment);
+        return $this->ownerships($output, [$expected])[0];
+    }
 
-        return new UfwRuleOwnershipResolver()->resolve($matchingLines, $observed, $expected);
+    /**
+     * @param non-empty-list<UfwRuleShape> $expected
+     * @return list<UfwRuleOwnership>
+     */
+    public function ownerships(string $output, array $expected): array
+    {
+        $expectedComments = [];
+        $matchingLines = [];
+        $observed = [];
+
+        foreach ($expected as $shape) {
+            $expectedComments[$shape->comment] = true;
+            $matchingLines[$shape->comment] = 0;
+            $observed[$shape->comment] = [];
+        }
+
+        foreach (explode("\n", $output) as $line) {
+            $comment = $this->comment($line);
+
+            if ($comment === null || ! array_key_exists($comment, $expectedComments)) {
+                continue;
+            }
+
+            $matchingLines[$comment]++;
+            $rule = $this->parseLine($line, $comment);
+
+            if ($rule instanceof UfwRuleShape) {
+                $observed[$comment][] = $rule;
+            }
+        }
+
+        $resolver = new UfwRuleOwnershipResolver;
+
+        return array_map(
+            static fn (UfwRuleShape $shape): UfwRuleOwnership => $resolver->resolve(
+                $matchingLines[$shape->comment],
+                $observed[$shape->comment],
+                $shape,
+            ),
+            $expected,
+        );
     }
 
     /** @return list<UfwRuleShape> */
@@ -111,6 +152,17 @@ final class UfwStatusParser
             outInterface: $outInterface,
             family: $family,
         );
+    }
+
+    private function comment(string $line): ?string
+    {
+        $marker = strrpos(haystack: $line, needle: '#');
+
+        if ($marker === false) {
+            return null;
+        }
+
+        return trim(substr(string: $line, offset: $marker + 1));
     }
 
     /** @return array{endpoint: string, port: string, protocol: string, interface: ?string}|null */

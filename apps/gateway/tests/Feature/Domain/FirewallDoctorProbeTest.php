@@ -8,7 +8,7 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Firewall\FirewallBackendStatus;
-use App\Domain\Firewall\FirewallInspectionData;
+use App\Domain\Firewall\FirewallInspectionBatchData;
 use App\Domain\Firewall\FirewallInspectionShape;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
@@ -39,7 +39,7 @@ it('returns a healthy empty report without calling the inspector', function (): 
             private int &$calls,
         ) {}
 
-        public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
+        public function inspect(array $targets): FirewallInspectionBatchData
         {
             $this->calls++;
             throw new DoctorInspectionException;
@@ -73,7 +73,7 @@ it('short-circuits unreachable nodes without inspector calls', function (): void
             private int &$calls,
         ) {}
 
-        public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
+        public function inspect(array $targets): FirewallInspectionBatchData
         {
             $this->calls++;
             throw new DoctorInspectionException;
@@ -89,7 +89,7 @@ it('short-circuits unreachable nodes without inspector calls', function (): void
         ->toBe(0);
 });
 
-it('checks real database rows in id order and emits bounded lifecycle issues', function (): void {
+it('checks real database rows in id order and skips non-active rows during inspection', function (): void {
     $node = Node::create([
         'name' => 'node',
         'platform' => 'linux',
@@ -104,7 +104,7 @@ it('checks real database rows in id order and emits bounded lifecycle issues', f
         'source' => 'any',
         'protocol' => 'tcp',
         'port' => '443',
-        'status' => LifecycleStatus::Provisioning,
+        'status' => LifecycleStatus::Active,
     ]);
     $early = FirewallRule::create([
         'node_id' => $node->id,
@@ -117,10 +117,23 @@ it('checks real database rows in id order and emits bounded lifecycle issues', f
     ]);
     $context = new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true));
 
-    $report = new FirewallDoctorProbe(new class implements FirewallInspector {
-        public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
+    $calls = [];
+    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector {
+        public function __construct(
+            private array &$calls,
+        ) {}
+
+        public function inspect(array $targets): FirewallInspectionBatchData
         {
-            throw new DoctorInspectionException;
+            $this->calls = array_map(
+                static fn (FirewallInspectionTarget $target): string => $target->resourceName,
+                $targets,
+            );
+
+            return new FirewallInspectionBatchData(
+                FirewallBackendStatus::Active,
+                [FirewallRuleInspectionStatus::Missing],
+            );
         }
     }, new FirewallExpectationProviderFake)->inspect($context);
 
@@ -129,14 +142,16 @@ it('checks real database rows in id order and emits bounded lifecycle issues', f
         ->and($report->issues)
         ->toHaveCount(2)
         ->and(array_map(static fn (DoctorIssueData $issue): mixed => $issue->code, $report->issues))
-        ->toBe(['firewall.lifecycle_not_active', 'firewall.lifecycle_not_active'])
+        ->toBe(['firewall.rule_missing', 'firewall.lifecycle_not_active'])
         ->and($report->issues[0]->resourceId)
         ->toBe($late->id)
         ->and($report->issues[1]->resourceId)
-        ->toBe($early->id);
+        ->toBe($early->id)
+        ->and($calls)
+        ->toBe(['late']);
 });
 
-it('maps backend, rule, exact, typed failure, and excludes other nodes', function (): void {
+it('maps ordered rule results and typed failures and excludes other nodes', function (): void {
     $node = Node::create([
         'name' => 'target',
         'platform' => 'linux',
@@ -152,8 +167,6 @@ it('maps backend, rule, exact, typed failure, and excludes other nodes', functio
         'user' => 'orbit',
     ]);
     foreach ([
-        ['inactive', FirewallBackendStatus::Inactive],
-        ['absent',   FirewallBackendStatus::Absent],
         ['missing',  FirewallRuleInspectionStatus::Missing],
         ['mismatch', FirewallRuleInspectionStatus::Drift],
         ['exact',    FirewallRuleInspectionStatus::Exact],
@@ -184,43 +197,29 @@ it('maps backend, rule, exact, typed failure, and excludes other nodes', functio
             private array &$calls,
         ) {}
 
-        public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
+        public function inspect(array $targets): FirewallInspectionBatchData
         {
-            $this->calls[] = $target->resourceName;
+            $this->calls = array_map(
+                static fn (FirewallInspectionTarget $target): string => $target->resourceName,
+                $targets,
+            );
 
-            return match ($target->resourceName) {
-                'inactive' => new FirewallInspectionData(
-                    FirewallBackendStatus::Inactive,
-                    FirewallRuleInspectionStatus::Missing,
-                ),
-                'absent' => new FirewallInspectionData(
-                    FirewallBackendStatus::Absent,
-                    FirewallRuleInspectionStatus::Missing,
-                ),
-                'missing' => new FirewallInspectionData(
-                    FirewallBackendStatus::Active,
-                    FirewallRuleInspectionStatus::Missing,
-                ),
-                'mismatch' => new FirewallInspectionData(
-                    FirewallBackendStatus::Active,
-                    FirewallRuleInspectionStatus::Drift,
-                ),
-                'exact' => new FirewallInspectionData(
-                    FirewallBackendStatus::Active,
-                    FirewallRuleInspectionStatus::Exact,
-                ),
-                default => throw new DoctorInspectionException,
-            };
+            return new FirewallInspectionBatchData(FirewallBackendStatus::Active, [
+                FirewallRuleInspectionStatus::Missing,
+                FirewallRuleInspectionStatus::Drift,
+                FirewallRuleInspectionStatus::Exact,
+                null,
+            ]);
         }
     }, new FirewallExpectationProviderFake)->inspect(
         new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true)),
     );
     expect($report->checked)
-        ->toBe(6)
+        ->toBe(4)
         ->and($report->issues)
-        ->toHaveCount(5)
+        ->toHaveCount(3)
         ->and($calls)
-        ->toBe(['inactive', 'absent', 'missing', 'mismatch', 'exact', 'failed']);
+        ->toBe(['missing', 'mismatch', 'exact', 'failed']);
 });
 
 it('orders persisted issues before bounded Metrics issues without increasing checked', function (): void {
@@ -243,19 +242,13 @@ it('orders persisted issues before bounded Metrics issues without increasing che
     $exporter = firewallMetricsTarget($node, 'orbit:metrics-node-exporter', 'Metrics node exporter');
     $publication = firewallMetricsTarget($node, 'orbit:metrics-grafana-upstream', 'Metrics Grafana upstream');
     $inspector = new class implements FirewallInspector {
-        public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
+        public function inspect(array $targets): FirewallInspectionBatchData
         {
-            return match ($target->resourceId) {
-                'orbit:metrics-grafana-upstream' => throw new DoctorInspectionException,
-                'orbit:metrics-node-exporter' => new FirewallInspectionData(
-                    FirewallBackendStatus::Active,
-                    FirewallRuleInspectionStatus::Drift,
-                ),
-                default => new FirewallInspectionData(
-                    FirewallBackendStatus::Active,
-                    FirewallRuleInspectionStatus::Missing,
-                ),
-            };
+            return new FirewallInspectionBatchData(FirewallBackendStatus::Active, [
+                FirewallRuleInspectionStatus::Missing,
+                FirewallRuleInspectionStatus::Drift,
+                null,
+            ]);
         }
     };
 
@@ -274,6 +267,54 @@ it('orders persisted issues before bounded Metrics issues without increasing che
         ->not->toContain('credential-sentinel', 'sudo', 'ufw', 'stdout', 'stderr');
 });
 
+it('makes every target in a failed observation unverifiable without leaking diagnostics', function (): void {
+    $node = Node::create([
+        'name' => 'failed-observation',
+        'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.5',
+        'public_ssh_host' => '192.0.2.5',
+        'user' => 'orbit',
+    ]);
+    $persisted = FirewallRule::create([
+        'node_id' => $node->id,
+        'name' => 'persisted',
+        'action' => 'allow',
+        'source' => 'any',
+        'protocol' => 'tcp',
+        'port' => '443',
+        'status' => LifecycleStatus::Active,
+    ]);
+    $synthetic = firewallMetricsTarget($node, 'orbit:metrics-node-exporter', 'Metrics node exporter');
+    $calls = 0;
+    $inspector = new class($calls) implements FirewallInspector {
+        public function __construct(
+            private int &$calls,
+        ) {}
+
+        public function inspect(array $targets): FirewallInspectionBatchData
+        {
+            $this->calls++;
+
+            throw new DoctorInspectionException('secret-output sudo ufw');
+        }
+    };
+
+    $report = new FirewallDoctorProbe(
+        $inspector,
+        new FirewallExpectationProviderFake([$synthetic]),
+    )->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true)));
+
+    expect(array_map(static fn (DoctorIssueData $issue): int|string|null => $issue->resourceId, $report->issues))
+        ->toBe([$persisted->id, 'orbit:metrics-node-exporter'])
+        ->and(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe(['firewall.inspection_failed', 'firewall.inspection_failed'])
+        ->and(json_encode($report->toArray(), JSON_THROW_ON_ERROR))
+        ->not
+        ->toContain('secret-output', 'sudo', 'ufw')
+        ->and($calls)
+        ->toBe(1);
+});
+
 it('checks a Metrics expectation with zero persisted rows and short-circuits when unreachable', function (): void {
     $node = Node::create([
         'name' => 'metrics-only',
@@ -289,21 +330,27 @@ it('checks a Metrics expectation with zero persisted rows and short-circuits whe
             private int &$calls,
         ) {}
 
-        public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
+        public function inspect(array $targets): FirewallInspectionBatchData
         {
             $this->calls++;
 
-            return new FirewallInspectionData(FirewallBackendStatus::Active, FirewallRuleInspectionStatus::Exact);
+            return new FirewallInspectionBatchData(
+                FirewallBackendStatus::Active,
+                [FirewallRuleInspectionStatus::Exact],
+            );
         }
     };
     $probe = new FirewallDoctorProbe($inspector, new FirewallExpectationProviderFake([$target]));
 
     $healthy = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true)));
+    $fresh = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true)));
     $unreachable = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)));
 
     expect($healthy->checked)
         ->toBe(0)
         ->and($healthy->issues)
+        ->toBe([])
+        ->and($fresh->issues)
         ->toBe([])
         ->and($unreachable->checked)
         ->toBe(0)
@@ -312,7 +359,7 @@ it('checks a Metrics expectation with zero persisted rows and short-circuits whe
         ->and($unreachable->issues[0]->code)
         ->toBe('firewall.node_unreachable')
         ->and($calls)
-        ->toBe(1);
+        ->toBe(2);
 });
 
 function firewallMetricsTarget(Node $node, string $resourceId, string $resourceName): FirewallInspectionTarget

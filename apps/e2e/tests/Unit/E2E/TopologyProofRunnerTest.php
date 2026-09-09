@@ -298,9 +298,23 @@ it('converges and verifies an authorized exact candidate without rerunning accep
         'pcov_version' => null,
         'package_versions' => $packageVersions,
     ], JSON_THROW_ON_ERROR);
+    $candidateLeaseAtNetworkCreation = null;
     fakePinnedWorktreeProcesses(
         $candidateTarget,
         $events,
+        observe: static function (array $command) use ($fixture, &$candidateLeaseAtNetworkCreation): void {
+            if (($command[3] ?? null) !== 'network' || ($command[4] ?? null) !== 'create') {
+                return;
+            }
+            $candidateLeaseAtNetworkCreation = json_decode(
+                (string) file_get_contents(
+                    $fixture['worktree'].'/.e2e/'.IssueState::CANDIDATE_ATTEMPT,
+                ),
+                true,
+                8,
+                JSON_THROW_ON_ERROR,
+            );
+        },
         guestOverride: static function (array $guest) use ($candidateTree, $fixture, $runtime) {
             if ($guest === ['/usr/local/bin/observe-php.sh', 'runtime-info', 'runtime']) {
                 return Process::result($runtime);
@@ -339,6 +353,12 @@ it('converges and verifies an authorized exact candidate without rerunning accep
     );
     expect($result['error'])
         ->toBeNull()
+        ->and(array_key_exists('extension', $candidateLeaseAtNetworkCreation))
+        ->toBeTrue()
+        ->and($candidateLeaseAtNetworkCreation['extension'])
+        ->toBeNull()
+        ->and($candidateLeaseAtNetworkCreation['attempt_id'])
+        ->toBe($attempt->value)
         ->and($result)
         ->toMatchArray([
             'status' => 'converged',
@@ -358,6 +378,10 @@ it('converges and verifies an authorized exact candidate without rerunning accep
         ->toBeTrue()
         ->and($state->requireTopology(AttemptPurpose::CandidateConvergence)->source->hostSha)
         ->toBe($fixture['candidate'])
+        ->and(array_key_exists('extension', $state->attempt(AttemptPurpose::CandidateConvergence)))
+        ->toBeTrue()
+        ->and($state->attempt(AttemptPurpose::CandidateConvergence)['extension'])
+        ->toBeNull()
         ->and(implode("\n", $commands))
         ->toContain(
             '/usr/local/bin/receive-source.sh',
@@ -802,9 +826,21 @@ it('constructs and retains an independently addressed extended proof beside disc
         'pcov_version' => null,
         'package_versions' => $packages,
     ], JSON_THROW_ON_ERROR);
+    $proofLeaseAtNetworkCreation = null;
     fakePinnedWorktreeProcesses(
         $proofTarget,
         $events,
+        observe: static function (array $command) use ($worktree, &$proofLeaseAtNetworkCreation): void {
+            if (($command[3] ?? null) !== 'network' || ($command[4] ?? null) !== 'create') {
+                return;
+            }
+            $proofLeaseAtNetworkCreation = json_decode(
+                (string) file_get_contents($worktree.'/.e2e/'.IssueState::PROOF_ATTEMPT),
+                true,
+                8,
+                JSON_THROW_ON_ERROR,
+            );
+        },
         guestOverride: static function (array $guest) use ($candidate, $tree, $runtime) {
             if ($guest === ['/usr/local/bin/observe-php.sh', 'runtime-info', 'runtime']) {
                 return Process::result($runtime);
@@ -864,6 +900,12 @@ it('constructs and retains an independently addressed extended proof beside disc
     ));
     expect($result->status)
         ->toBe(ProofStatus::Proved)
+        ->and($proofLeaseAtNetworkCreation['extension'] ?? null)
+        ->toBe('app-prod')
+        ->and($proofLeaseAtNetworkCreation['attempt_id'] ?? null)
+        ->toBe($proofTarget->requireAttempt()->value)
+        ->and($state->attempt(AttemptPurpose::Proof)['extension'])
+        ->toBe('app-prod')
         ->and($result->actions)
         ->toBe([[
             'id' => 'extended-ready',
