@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsGatewayResolver;
@@ -127,7 +128,13 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
 
     $events = [];
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->twice();
+    $metricsFleet
+        ->shouldReceive('reconcile')
+        ->times(3)
+        ->andReturnUsing(static function () use (&$events): void {
+            $events[] = 'metrics';
+        });
+    $owner = new NodeRoleBaselineClusterRouterOperationLock($events);
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(baseline_firewall($events)),
         new VpnRoleBaseline(
@@ -154,18 +161,29 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
             baseline_known_hosts(),
         ),
         router_role_baseline($events),
+        $owner,
     );
 
     $dispatcher->converge($node, $assignment);
     $dispatcher->remove($node, $assignment, purgeData: false);
+    $dispatcher->removeUnreachable($node, $assignment);
 
     expect($events)->toBe([
+        "owner:enter:{$assignment->cluster_id}",
         'guard:gateway',
         'ssh:router',
         'caddy:converge',
         'firewall:converge:router',
+        'metrics',
+        "owner:exit:{$assignment->cluster_id}",
+        "owner:enter:{$assignment->cluster_id}",
         'caddy:remove',
         'firewall:remove:router',
+        'metrics',
+        "owner:exit:{$assignment->cluster_id}",
+        "owner:enter:{$assignment->cluster_id}",
+        'metrics',
+        "owner:exit:{$assignment->cluster_id}",
     ]);
 });
 
@@ -821,6 +839,25 @@ function baseline_account_resolver(?ManagedUserAccount $account = null): Managed
             return $this->account;
         }
     };
+}
+
+final class NodeRoleBaselineClusterRouterOperationLock implements ClusterRouterOperationLock
+{
+    /** @param list<string> $events */
+    public function __construct(
+        private array &$events,
+    ) {}
+
+    public function run(int $clusterId, Closure $operation): mixed
+    {
+        $this->events[] = "owner:enter:{$clusterId}";
+
+        try {
+            return $operation();
+        } finally {
+            $this->events[] = "owner:exit:{$clusterId}";
+        }
+    }
 }
 
 /** @param list<string> $events */

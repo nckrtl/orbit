@@ -17,6 +17,7 @@ use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
@@ -338,6 +339,13 @@ it('reconciles a zero-target generated Route from its retained basis', function 
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
+    $owner = new RouteReconciliationClusterRouterOperationLock;
+    app()->instance(ClusterRouterOperationLock::class, $owner);
+    Route::updating(static function (Route $updating) use ($owner, $route): void {
+        if ($updating->id === $route->id) {
+            expect($owner->active)->toBeTrue();
+        }
+    });
 
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(tldProvided: true, tld: 'new.test'));
 
@@ -348,7 +356,9 @@ it('reconciles a zero-target generated Route from its retained basis', function 
         ->and($route->targets()->count())
         ->toBe(0)
         ->and($route->status->value)
-        ->toBe('pending');
+        ->toBe('pending')
+        ->and($owner->clusterIds)
+        ->toBe([$cluster->id]);
 });
 
 it('refuses an invalid proposal and preserves Route, Cluster, and membership state', function (): void {
@@ -717,4 +727,24 @@ function reconciliation_update(
         stateProvided: $state !== null,
         state: $state,
     );
+}
+
+final class RouteReconciliationClusterRouterOperationLock implements ClusterRouterOperationLock
+{
+    /** @var list<int> */
+    public array $clusterIds = [];
+
+    public bool $active = false;
+
+    public function run(int $clusterId, Closure $operation): mixed
+    {
+        $this->clusterIds[] = $clusterId;
+        $this->active = true;
+
+        try {
+            return $operation();
+        } finally {
+            $this->active = false;
+        }
+    }
 }
