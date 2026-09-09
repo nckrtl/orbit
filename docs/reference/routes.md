@@ -111,9 +111,23 @@ Deploy the shared publication owner by stopping admission of new Gateway mutatio
 
 ## Guard later reconciliation
 
-Initial projection does not implement general later reconciliation. After it rejects a standalone change that would violate an AppInstance-to-Route association with `route.target_conflict`, the Gateway returns `route.reconciliation_required` before another mutation that would change an active Route's hostname, target, Node-or-Cluster scope, runtime projection, or Laravel URL. It preserves source, application configuration, Route records, and the serving path.
+### Change a development hostname
 
-The reconciliation guard covers Route hostname or publication changes and target or removal changes that pass the association guard. It also covers Node WireGuard, LAN, TLD, or Cluster-membership changes, Cluster activation, deactivation, or TLD changes, and Router replacement or clearing when an active Route depends on the change. Setting the existing target or clearing an already empty Route succeeds without creating, deleting, or reassigning a Route association. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
+The Gateway can change the hostname of an active explicit private development Route with one target. It refuses an invalid or occupied hostname before it changes Route records, Laravel configuration, runtime projections, or traffic.
+
+The Gateway prepares the new workload certificate and Caddy site before it prepares the Router certificate, workload firewall policy, and Router Caddy site. For a detected Laravel source, it then aligns `APP_URL` in the environment file and cached configuration without running Composer, Artisan, or application bootstrap. A non-Laravel source receives no application configuration change. The Gateway accepts valid serving configuration even when the application returns an HTTP error.
+
+Private DNS publication is the traffic cutover. The Gateway publishes the new exact owner only after it verifies every required projection. It then records the new Route hostname, normalizes the serving projections, and removes the old Caddy, certificate, and DNS state. The old hostname remains authoritative until the new hostname is ready, and cleanup starts only after the new hostname is authoritative.
+
+### Resume or refuse a change
+
+The Route exposes the requested hostname, direction, durable checkpoint, `failed_step`, and `error_code` while a change is unfinished. Each failure identifies one bounded preparation, publication, database, cleanup, or rollback step. A retry must request the same hostname, revalidates completed evidence, and resumes at the first unverified step. A conflicting hostname request returns a conflict without changing the in-progress operation.
+
+A failure before database cutover rolls back to the previous Route and Laravel URL. Rollback first restores authoritative DNS, then serving configuration and certificates, and finally the Laravel URL. A rollback interruption keeps its checkpoint and failure visible so the same request can resume restoration. A cleanup failure leaves the new hostname authoritative and resumes cleanup without reverting the completed cutover.
+
+The reconciliation guard still returns `route.reconciliation_required` for production or generated Route hostname changes and active Route publication or target changes. It also refuses Node WireGuard, LAN, TLD, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation, deactivation, or TLD changes and Router replacement or clearing.
+
+Route and AppInstance removal keep their coordinated removal contract. Setting the existing target or clearing an already empty Route succeeds without creating, deleting, or reassigning a Route association. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
 
 AppInstance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted AppInstance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its hostname before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [AppInstance removal reference](appinstance-removal.md) owns content retention, the transient response, cascade order, and retry behavior.
 

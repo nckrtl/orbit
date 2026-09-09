@@ -24,14 +24,18 @@ final readonly class AppDevSiteRepository
         Node $node,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
+        ?Route $additionalRoute = null,
     ): Collection {
-        return $this->sites($node, $pendingRoute, $unavailableInstance);
+        return $this->sites($node, $pendingRoute, $unavailableInstance, $additionalRoute);
     }
 
     /** @return Collection<int, AppDevSite> */
-    public function all(?Route $pendingRoute = null, ?AppInstance $unavailableInstance = null): Collection
-    {
-        return $this->sites(null, $pendingRoute, $unavailableInstance);
+    public function all(
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+        ?Route $additionalRoute = null,
+    ): Collection {
+        return $this->sites(null, $pendingRoute, $unavailableInstance, $additionalRoute);
     }
 
     /** @return Collection<int, AppDevSite> */
@@ -39,6 +43,7 @@ final readonly class AppDevSiteRepository
         ?Node $node,
         ?Route $pendingRoute,
         ?AppInstance $unavailableInstance,
+        ?Route $additionalRoute,
     ): Collection {
         $instanceQuery = Instance::query()
             ->with(['node', 'workspaces'])
@@ -166,6 +171,38 @@ final readonly class AppDevSiteRepository
             }
         }
 
+        if ($additionalRoute instanceof Route) {
+            $additionalRoute->loadMissing([
+                'targets.appInstance.app',
+                'targets.appInstance.node',
+                'cluster.routerAssignment.node',
+            ]);
+            $targets = $additionalRoute
+                ->targets
+                ->map(static fn ($targetRow) => $targetRow->appInstance)
+                ->filter(static fn ($target): bool => $target instanceof AppInstance)
+                ->values();
+            $router = $additionalRoute->cluster?->routerAssignment?->node;
+
+            foreach ($targets as $target) {
+                assert($target instanceof AppInstance);
+                $sites->push($this->appInstanceSite($target, $additionalRoute, hostnameChange: true));
+            }
+
+            if (
+                $router instanceof Node
+                && $targets->isNotEmpty()
+                && ! $targets->contains(static fn (AppInstance $target): bool => $router->is($target->node))
+            ) {
+                $sites->push($this->routerSite(
+                    array_values($targets->all()),
+                    $additionalRoute,
+                    $router,
+                    hostnameChange: true,
+                ));
+            }
+        }
+
         /** @var Collection<int, AppDevSite> $sites */
         if ($node instanceof Node) {
             return $sites->where('nodeId', $node->id)->values();
@@ -200,8 +237,11 @@ final readonly class AppDevSiteRepository
         );
     }
 
-    private function appInstanceSite(AppInstance $instance, Route $route): AppDevSite
-    {
+    private function appInstanceSite(
+        AppInstance $instance,
+        Route $route,
+        bool $hostnameChange = false,
+    ): AppDevSite {
         return new AppDevSite(
             nodeId: $instance->node_id,
             nodeAddress: $instance->node->wireguard_ip ?? '',
@@ -212,12 +252,17 @@ final readonly class AppDevSiteRepository
             hostname: $route->hostname,
             environment: $instance->environment,
             appSlug: $instance->app->slug,
+            certificateScope: $hostnameChange ? "app-instance-{$instance->id}-hostname-change" : null,
         );
     }
 
     /** @param list<AppInstance> $instances */
-    private function routerSite(array $instances, Route $route, Node $router): AppDevSite
-    {
+    private function routerSite(
+        array $instances,
+        Route $route,
+        Node $router,
+        bool $hostnameChange = false,
+    ): AppDevSite {
         $addresses = collect($instances)
             ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
                 && $instance->node->lan_ip !== ''
@@ -238,6 +283,7 @@ final readonly class AppDevSiteRepository
             phpVersion: null,
             hostname: $route->hostname,
             upstreamAddresses: $addresses,
+            certificateScope: $hostnameChange ? "route-{$route->id}-router-hostname-change" : null,
         );
     }
 

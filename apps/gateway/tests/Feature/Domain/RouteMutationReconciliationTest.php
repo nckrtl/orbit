@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Clusters\AttachClusterNodeAction;
 use App\Actions\Clusters\DetachClusterNodeAction;
+use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Routes\ClearRouteTargetAction;
@@ -16,12 +17,15 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppDev\AppDevTldConverger;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -46,6 +50,52 @@ beforeEach(function (): void {
     ]);
     $this->node = reconciliation_node('dev', 'dev.test');
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
+});
+
+it('converges an eligible active explicit development Route hostname', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+    $projector = Mockery::mock(RouteHostnameProjector::class);
+
+    foreach ([
+        'prepareWorkloadCertificate',
+        'prepareWorkloadCaddy',
+        'prepareRouterCertificate',
+        'prepareFirewallPolicy',
+        'verifyWorkload',
+        'prepareRouterCaddy',
+        'publishDns',
+        'cleanup',
+    ] as $method) {
+        $projector->shouldReceive($method)->once();
+    }
+
+    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
+
+    $updated = app(UpdateRouteAction::class)->execute(
+        $route,
+        new UpdateRouteData(true, 'next.example.test', false, null),
+    );
+
+    expect($updated->hostname)
+        ->toBe('next.example.test')
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->hostname_change_target)
+        ->toBeNull();
 });
 
 it('reports association conflicts before active Route reconciliation refusals', function (): void {
@@ -100,6 +150,10 @@ it('retains reconciliation refusals for active Route changes without association
             $route,
             new UpdateRouteData(true, 'changed.example.test', false, null),
         ),
+        fn () => app(UpdateRouteAction::class)->execute(
+            $route,
+            new UpdateRouteData(false, null, true, RoutePublication::Public),
+        ),
         fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
         fn () => app(RemoveRouteAction::class)->execute($route),
     ] as $mutation) {
@@ -108,6 +162,106 @@ it('retains reconciliation refusals for active Route changes without association
         });
         expect($route->fresh(['targets'])->toArray())->toBe($before);
     }
+});
+
+it('retains hostname reconciliation refusals for generated and production Routes before projection', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+
+    $productionNode = reconciliation_node('production-refusal', 'production.test');
+    $productionTarget = reconciliation_instance($this->orbitApp, $productionNode, 'production-refusal');
+    $productionTarget->update([
+        'environment' => 'production',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+    ]);
+    $production = reconciliation_route(
+        $this->orbitApp,
+        'production.example.test',
+        node: $productionNode,
+    );
+    $production->targets()->create(['app_instance_id' => $productionTarget->id, 'position' => 0]);
+    $production->update(['status' => RouteStatus::Active]);
+
+    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
+
+    foreach ([$generated, $production] as $route) {
+        $before = $route->fresh(['targets'])->toArray();
+
+        expect(fn () => app(UpdateRouteAction::class)->execute(
+            $route,
+            new UpdateRouteData(true, "next-{$route->id}.example.test", false, null),
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        });
+
+        expect($route->fresh(['targets'])->toArray())->toBe($before);
+    }
+});
+
+it('retains Node, Cluster, and Router reconciliation refusals before dependent state changes', function (): void {
+    $standalone = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $standalone->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('active-refusal', 'cluster.test');
+    $standaloneBefore = $standalone->fresh(['targets'])->toArray();
+    $nodeBefore = $this->node->fresh()->toArray();
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        });
+    expect($standalone->fresh(['targets'])->toArray())
+        ->toBe($standaloneBefore)
+        ->and($this->node->fresh()->toArray())
+        ->toBe($nodeBefore);
+
+    $workload = reconciliation_node('cluster-workload-refusal', null);
+    $workload->update(['cluster_id' => $cluster->id]);
+    $clusterTarget = reconciliation_instance($this->orbitApp, $workload, 'cluster-target');
+    $clusterRoute = app(CreateRouteAction::class)->ensureForAppInstance($clusterTarget, null);
+    $clusterRoute->update(['status' => RouteStatus::Active]);
+    $clusterBefore = $cluster->fresh()->toArray();
+    $clusterRouteBefore = $clusterRoute->fresh(['targets'])->toArray();
+
+    expect(fn () => app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: 'next-cluster.test'),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.reconciliation_required');
+    });
+    expect($cluster->fresh()->toArray())
+        ->toBe($clusterBefore)
+        ->and($clusterRoute->fresh(['targets'])->toArray())
+        ->toBe($clusterRouteBefore);
+
+    $replacement = reconciliation_node('router-replacement-refusal', null);
+    $replacement->update(['cluster_id' => $cluster->id]);
+    $assignmentsBefore = \App\Models\NodeRole::query()
+        ->where('cluster_id', $cluster->id)
+        ->get()
+        ->map
+        ->getAttributes()
+        ->all();
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        });
+    expect(
+        \App\Models\NodeRole::query()
+            ->where('cluster_id', $cluster->id)
+            ->get()
+            ->map
+            ->getAttributes()
+            ->all(),
+    )
+        ->toBe($assignmentsBefore);
 });
 
 it('atomically reconciles attach, activation, TLD changes, deactivation, and detach', function (): void {
@@ -717,4 +871,13 @@ function reconciliation_update(
         stateProvided: $state !== null,
         state: $state,
     );
+}
+
+/** @mago-expect lint:file-name Test-local owner executes one synchronous development projection operation. */
+final readonly class RouteMutationProjectionOwner implements DevelopmentProjectionOperationLock
+{
+    public function run(Closure $operation): mixed
+    {
+        return $operation();
+    }
 }

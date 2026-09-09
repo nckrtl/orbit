@@ -26,6 +26,10 @@ final class RouteData extends Data
         public string $status,
         public ?string $failedStep,
         public ?string $errorCode,
+        public ?string $hostnameChangePrevious,
+        public ?string $hostnameChangeTarget,
+        public ?string $hostnameChangeDirection,
+        public ?string $hostnameChangeStep,
         public ?RouteTargetData $target,
     ) {}
 
@@ -46,6 +50,10 @@ final class RouteData extends Data
             status: $route->status->value,
             failedStep: $route->failed_step,
             errorCode: $route->error_code,
+            hostnameChangePrevious: $route->hostname_change_previous,
+            hostnameChangeTarget: $route->hostname_change_target,
+            hostnameChangeDirection: $route->hostname_change_direction?->value,
+            hostnameChangeStep: $route->hostname_change_step?->value,
             target: $target instanceof RouteTarget ? RouteTargetData::fromModel($target) : null,
         );
     }

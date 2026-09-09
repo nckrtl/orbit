@@ -6,10 +6,13 @@ use App\Actions\Clusters\AttachClusterNodeAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Clusters\UpdateClusterData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
@@ -381,6 +384,112 @@ it('rejects malformed input, caller-owned fields, arrays, and conflicting retrie
     expect(Route::query()->where('hostname', 'retry.test')->sole()->toArray())->toBe($before);
 });
 
+it('refuses invalid or occupied active explicit hostnames before Route or projection state changes', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'occupied.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'bad_name'])
+        ->assertUnprocessable();
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'occupied.example.test'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.hostname_conflict');
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+});
+
+it('updates an active explicit private development hostname through convergence', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector->shouldReceive('prepareWorkloadCertificate')->once();
+    $projector->shouldReceive('prepareWorkloadCaddy')->once();
+    $projector->shouldReceive('prepareRouterCertificate')->once();
+    $projector->shouldReceive('prepareFirewallPolicy')->once();
+    $projector->shouldReceive('verifyWorkload')->once();
+    $projector->shouldReceive('prepareRouterCaddy')->once();
+    $projector->shouldReceive('publishDns')->once();
+    $projector->shouldReceive('cleanup')->once();
+    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertOk()
+        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.failed_step', null)
+        ->assertJsonPath('data.hostname_change_target', null);
+
+    expect($this->target->refresh()->status)->toBe(AppInstanceState::Active);
+});
+
+it('keeps production hostname changes behind the active reconciliation refusal', function (): void {
+    $this->target->update([
+        'environment' => 'production',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+    ]);
+    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'production.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+});
+
 function route_node(string $name, string $wireguardIp, ?string $tld): Node
 {
     return Node::query()->create([
@@ -427,6 +536,14 @@ function route_api_target_rows(): array
         ->get()
         ->map(static fn (RouteTarget $target): array => $target->getAttributes())
         ->all();
+}
+
+final readonly class RouteApiProjectionOwner implements DevelopmentProjectionOperationLock
+{
+    public function run(Closure $operation): mixed
+    {
+        return $operation();
+    }
 }
 
 /** @return array{Cluster, Node} */

@@ -11,44 +11,63 @@ use Illuminate\Support\Facades\Schema;
 
 it('adds nullable profile evidence without inferring or changing legacy rows', function (): void {
     $migration = app_instance_source_profile_migration();
-    $migration->down();
-    [$active, $withoutCheckpoint, $phpSelected, $urlConfigured] = legacy_source_profile_rows();
-    $before = source_profile_migration_rows();
+    $routeMigration = route_hostname_change_state_migration();
+    $routeMigration->down();
 
-    $migration->up();
+    try {
+        $migration->down();
+        [$active, $withoutCheckpoint, $phpSelected, $urlConfigured] = legacy_source_profile_rows();
+        $before = source_profile_migration_rows();
 
-    $after = source_profile_migration_rows();
-    expect(Schema::hasColumn('app_instances', 'source_is_laravel'))->toBeTrue();
-    foreach ([$active, $withoutCheckpoint, $phpSelected, $urlConfigured] as $instance) {
-        expect(DB::table('app_instances')->where('id', $instance->id)->value('source_is_laravel'))->toBeNull();
+        $migration->up();
+
+        $after = source_profile_migration_rows();
+        expect(Schema::hasColumn('app_instances', 'source_is_laravel'))->toBeTrue();
+        foreach ([$active, $withoutCheckpoint, $phpSelected, $urlConfigured] as $instance) {
+            expect(DB::table('app_instances')->where('id', $instance->id)->value('source_is_laravel'))->toBeNull();
+        }
+        $withoutProfile = array_map(static function (array $row): array {
+            unset($row['source_is_laravel']);
+
+            return $row;
+        }, $after);
+        expect($withoutProfile)->toBe($before);
+    } finally {
+        if (! Schema::hasColumn('app_instances', 'source_is_laravel')) {
+            $migration->up();
+        }
+        $routeMigration->up();
     }
-    $withoutProfile = array_map(static function (array $row): array {
-        unset($row['source_is_laravel']);
-
-        return $row;
-    }, $after);
-    expect($withoutProfile)->toBe($before);
 });
 
 it('refuses rollback before discarding non-active retained profile evidence', function (): void {
     $migration = app_instance_source_profile_migration();
-    [$phpSelected, $urlConfigured] = complete_retained_source_profile_rows();
-    $before = source_profile_migration_rows();
+    $routeMigration = route_hostname_change_state_migration();
+    $routeMigration->down();
 
-    expect(fn () => $migration->down())
-        ->toThrow(
-            RuntimeException::class,
-            "Cannot discard retained AppInstance source profiles: {$phpSelected->id}, {$urlConfigured->id}",
-        );
+    try {
+        [$phpSelected, $urlConfigured] = complete_retained_source_profile_rows();
+        $before = source_profile_migration_rows();
 
-    expect(Schema::hasColumn('app_instances', 'source_is_laravel'))
-        ->toBeTrue()
-        ->and(source_profile_migration_rows())
-        ->toBe($before);
+        expect(fn () => $migration->down())
+            ->toThrow(
+                RuntimeException::class,
+                "Cannot discard retained AppInstance source profiles: {$phpSelected->id}, {$urlConfigured->id}",
+            );
+
+        expect(Schema::hasColumn('app_instances', 'source_is_laravel'))
+            ->toBeTrue()
+            ->and(source_profile_migration_rows())
+            ->toBe($before);
+    } finally {
+        $routeMigration->up();
+    }
 });
 
 it('allows rollback when complete profile evidence belongs only to Active rows', function (): void {
     $migration = app_instance_source_profile_migration();
+    $routeMigration = route_hostname_change_state_migration();
+    $routeMigration->down();
     [$active] = complete_retained_source_profile_rows(AppInstanceState::Active);
     $before = $active->getAttributes();
 
@@ -64,6 +83,7 @@ it('allows rollback when complete profile evidence belongs only to Active rows',
         if (! Schema::hasColumn('app_instances', 'source_is_laravel')) {
             $migration->up();
         }
+        $routeMigration->up();
     }
 });
 
@@ -72,6 +92,14 @@ function app_instance_source_profile_migration(): object
     return require
         base_path(
             'database/migrations/2026_09_09_015031_add_source_profile_to_app_instances_table.php',
+        );
+}
+
+function route_hostname_change_state_migration(): object
+{
+    return require
+        base_path(
+            'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
         );
 }
 

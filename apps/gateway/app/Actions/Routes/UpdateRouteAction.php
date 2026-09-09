@@ -13,11 +13,32 @@ use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
+/** @mago-expect lint:cyclomatic-complexity The action preserves validation, active convergence, and pending mutation order. */
 final readonly class UpdateRouteAction
 {
+    public function __construct(
+        private ConvergeRouteAction $converge,
+        private RouteReconciliationGuard $reconciliation,
+    ) {}
+
     public function execute(Route $route, UpdateRouteData $data): Route
     {
         try {
+            $route->refresh();
+            $hostname = $data->hostnameProvided && $data->hostname !== null
+                ? RouteHostname::validate($data->hostname)
+                : null;
+            $publicationChanges =
+                $data->publicationProvided && $data->publication !== null && $route->publication !== $data->publication;
+
+            if ($route->status === \App\Domain\Routes\RouteStatus::Active && $publicationChanges) {
+                $this->reconciliation->refuse();
+            }
+
+            if ($route->status === \App\Domain\Routes\RouteStatus::Active && $hostname !== null) {
+                return $this->converge->execute($route, $hostname);
+            }
+
             /** @var Route $updated */
             $updated = DB::transaction(function () use ($route, $data): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
@@ -53,7 +74,7 @@ final readonly class UpdateRouteAction
                 );
 
                 if ($changed !== []) {
-                    app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
+                    $this->reconciliation->assertRouteMutable($locked);
                 }
 
                 $locked->update($attributes);

@@ -146,6 +146,10 @@ function route_data(): array
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,
+        'hostname_change_previous' => 'app.test',
+        'hostname_change_target' => 'next.test',
+        'hostname_change_direction' => 'rollback',
+        'hostname_change_step' => 'rollback-caddy',
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
     ];
 }

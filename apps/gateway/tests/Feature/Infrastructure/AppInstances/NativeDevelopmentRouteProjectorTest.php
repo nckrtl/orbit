@@ -74,6 +74,40 @@ it('uses one local workload site when Router and workload roles share a Node', f
     }
 });
 
+it('renders old and candidate hostname sites with separate certificate scopes before DNS cutover', function (): void {
+    [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
+    $appInstance->update(['status' => AppInstanceState::Active]);
+    $route->update(['status' => RouteStatus::Active]);
+    $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node']);
+    $candidate = clone $route;
+    $candidate->hostname = 'next.acme.test';
+    $sites = new AppDevSiteRepository;
+
+    $workloadSites = $sites->forNode($workload, additionalRoute: $candidate);
+    $routerSites = $sites->forNode($router, additionalRoute: $candidate);
+    $dns = new AppDevDnsConfigRenderer($sites)->render(additionalRoute: $candidate);
+
+    expect($workloadSites->pluck('hostname')->all())
+        ->toBe(['feature.acme.test', 'next.acme.test'])
+        ->and($workloadSites->map->certificateDirectory()->all())
+        ->toBe([
+            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}-hostname-change/current",
+        ])
+        ->and($routerSites->pluck('hostname')->all())
+        ->toBe(['feature.acme.test', 'next.acme.test'])
+        ->and($routerSites->map->certificateDirectory()->all())
+        ->toBe([
+            "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
+            "/etc/caddy/orbit-certificates/route-{$route->id}-router-hostname-change/current",
+        ])
+        ->and($dns)
+        ->toContain(
+            "host-record=feature.acme.test,{$router->wireguard_ip}",
+            "host-record=next.acme.test,{$router->wireguard_ip}",
+        );
+});
+
 it('hydrates only requested workload and Router routes while global inventory stays complete', function (): void {
     [$pendingInstance, $pendingRoute, $workload, $router] = orb127_route_projection_models();
     $activeInstance = AppInstance::query()->create([
