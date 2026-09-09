@@ -1,0 +1,19 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "firewall-owned-group-repair",
+            "node": "gateway",
+            "argv": [
+                "sudo",
+                "/var/lib/orbit-e2e/proof/firewall-owned-group-repair.sh"
+            ],
+            "timeout_seconds": 120
+        }
+    ],
+    "mutates": false,
+    "inputs": [
+        "apps/e2e/resources/host/reconcile-firewall.py"
+    ],
+    "observed_inputs": false
+}
