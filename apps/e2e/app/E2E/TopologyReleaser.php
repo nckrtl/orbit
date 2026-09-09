@@ -9,7 +9,9 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\LeaseTargetRecovery;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
@@ -36,8 +38,11 @@ final readonly class TopologyReleaser
     ) {}
 
     /** @return array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
-    public function release(TopologyRequest $request, ?AttemptPurpose $purpose = null): array
-    {
+    public function release(
+        TopologyRequest $request,
+        ?AttemptPurpose $purpose = null,
+        ?LeaseTargetRecovery $recovery = null,
+    ): array {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = new OperationLock($this->hostPaths);
         if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
@@ -47,13 +52,10 @@ final readonly class TopologyReleaser
             if (! $state->hasAttempt()) {
                 throw new RuntimeException("{$request->issue} has no active attempt.");
             }
-            $purpose ??= $state->hasAttempt(AttemptPurpose::Discovery)
-                ? AttemptPurpose::Discovery
-                : (
-                    $state->hasAttempt(AttemptPurpose::Proof)
-                        ? AttemptPurpose::Proof
-                        : AttemptPurpose::CandidateConvergence
-                );
+            $purpose ??= AttemptPurpose::Discovery;
+            if ($recovery !== null) {
+                $this->recoverLeaseTarget($request, $state, $purpose, $recovery);
+            }
 
             return $this->releaseAttempt($request, $state, $purpose, $state->attemptId($purpose));
         } finally {
@@ -157,7 +159,7 @@ final readonly class TopologyReleaser
         AttemptPurpose $purpose,
         AttemptId $attempt,
     ): array {
-        $target = $state->topology($purpose)?->target ?? TopologyTarget::feature($request->issue, $attempt);
+        $target = $this->targetForRelease($request, $state, $purpose, $attempt);
         [$released, $absent] = $this->deleteResources($target);
         $proof = $state->proof() ?? [];
         if (
@@ -179,6 +181,70 @@ final readonly class TopologyReleaser
             'already_absent' => $absent,
             'networks_reaped' => $this->sweep?->sweep() ?? [],
         ];
+    }
+
+    private function recoverLeaseTarget(
+        TopologyRequest $request,
+        IssueState $state,
+        AttemptPurpose $purpose,
+        LeaseTargetRecovery $recovery,
+    ): void {
+        $lease = $state->attempt($purpose);
+        if ($lease['attempt_id'] !== $recovery->expectedAttempt->value) {
+            throw new RuntimeException(
+                "The expected {$purpose->value} attempt {$recovery->expectedAttempt->value} does not match the active lease.",
+            );
+        }
+        if (
+            array_key_exists('extension', $lease)
+            && $lease['extension'] !== $recovery->extension?->value
+        ) {
+            throw new RuntimeException('Recovery cannot replace the lease extension target.');
+        }
+
+        $topology = $state->topology($purpose);
+        if (
+            $topology !== null
+            && $topology->construction->extension?->value !== $recovery->extension?->value
+        ) {
+            throw new RuntimeException('Recovery conflicts with the complete topology target.');
+        }
+        if ($recovery->extension === null) {
+            $extended = TopologyTarget::feature(
+                $request->issue,
+                $recovery->expectedAttempt,
+                TopologyRecipe::extendedAppProd(),
+            );
+            $extraName = $extended->instance('app-prod-2');
+            $extra = $this->host->instances([$extraName])[$extraName] ?? null;
+            if ($extra !== null) {
+                $this->assertOwnership($extra->metadata, $extended, $extraName);
+
+                throw new RuntimeException('Recovery extension none conflicts with the exact app-prod-2 VM.');
+            }
+        }
+
+        $state->recoverLeaseExtension($purpose, $recovery->expectedAttempt, $recovery->extension);
+    }
+
+    private function targetForRelease(
+        TopologyRequest $request,
+        IssueState $state,
+        AttemptPurpose $purpose,
+        AttemptId $attempt,
+    ): TopologyTarget {
+        $topology = $state->topology($purpose);
+        if ($topology !== null) {
+            return $topology->target;
+        }
+
+        $extension = $state->leaseExtension($purpose);
+
+        return TopologyTarget::feature(
+            $request->issue,
+            $attempt,
+            $extension?->recipe() ?? TopologyRecipe::registered(),
+        );
     }
 
     /** @return array{list<string>, list<string>} */

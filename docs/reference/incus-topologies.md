@@ -40,7 +40,7 @@ Each topology is one attempt with a purpose, a lease, and a record under `<workt
 | `proof` | `prove` | `proof-attempt.json`, `proof-topology.json`, `proof.json` | `release --proof`, `promote`, or `bin/worktree-remove` |
 | `candidate-convergence` | `candidate` | `candidate-attempt.json`, `candidate-topology.json`, `candidate-convergence.json` | `release --candidate` or `promote` |
 
-A lease names the issue, attempt ID, purpose, operation ID, and acquisition time. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved. The results, `proof-inputs/`, `equivalence/`, and the `log` file survive release. `status` reports `absent`, one purpose, or the active purposes joined with `+`. An issue holds at most one attempt per purpose: `acquire` refuses a second discovery, `prove` refuses while a proof attempt exists, and `candidate` refuses while a candidate-convergence attempt exists.
+A lease names the issue, attempt ID, purpose, operation ID, acquisition time, and topology extension. The extension is `null` or `app-prod` and is stored before the harness creates a network or VM. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved. The results, `proof-inputs/`, `equivalence/`, and the `log` file survive release. `status` reports `absent`, one purpose, or the active purposes joined with `+`. An issue holds at most one attempt per purpose: `acquire` refuses a second discovery, `prove` refuses while a proof attempt exists, and `candidate` refuses while a candidate-convergence attempt exists.
 
 ## Capacity budget and leases
 
@@ -72,7 +72,7 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | `equivalence ISSUE [--plan=PATH]` | Compares the clean HEAD with the retained proof using the plan that defaults to `.loop/proof/ISSUE.json`, then writes an immutable report; see [Equivalence outcomes](proof-plans.md#equivalence-outcomes) |
 | `candidate ISSUE` | Converges and verifies the accepted head on a candidate-convergence topology after an `equivalent` report that requires it |
 | `status ISSUE` | Reports the state files without touching Incus |
-| `release ISSUE [--proof\|--candidate]` | Releases discovery, or the selected retained topology, verifies absence, and sweeps orphaned networks |
+| `release ISSUE [--proof\|--candidate] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases discovery, or the selected retained topology, verifies absence, and sweeps orphaned networks; the paired recovery options add missing target evidence to one exact legacy lease |
 
 `bin/worktree-remove ISSUE slug` releases the proof topology, then discovery, then removes the worktree. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the tracked plan and fixture lifecycle on an issue branch.
 
@@ -88,7 +88,13 @@ The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit
 
 ## Release and network ownership
 
-`release` reads the complete physical Node inventory from the attempt record. It checks each VM against the attempt's ownership metadata, force-stops the running ones, deletes them, and verifies they are gone. It then checks the network's ownership immediately before it deletes the network, drops the lease and record, and unpins a proved commit's Git ref. A retry continues from the same exact inventory after partial cleanup. An ownership conflict preserves every unrelated resource and keeps the attempt record for diagnosis. The output lists `released`, `already_absent`, and `networks_reaped`.
+`release` reads the target extension from the lease and uses a matching complete topology record when one exists. A complete record must match the lease's issue, purpose, attempt, and extension. A legacy lease without an extension remains compatible when it has a complete matching topology record. A legacy lease without that record is ambiguous, so ordinary release refuses before Incus access and does not infer a target from a current proof plan.
+
+An operator recovers an ambiguous lease with both `--recover-extension=none|app-prod` and `--expected-attempt=ID`. Discovery is the default; `--proof` or `--candidate` selects that purpose. The harness requires the full 32-character attempt ID and matching issue, purpose, attempt, and existing target evidence. Before it accepts `none`, it also requires the exact attempt-derived `app-prod-2` VM to be absent. Matching recovery atomically adds only the extension to the lease, and the same input can retry after partial cleanup. Conflicting input cannot replace the stored target.
+
+After target selection, `release` checks each VM against the attempt's ownership metadata, force-stops the running ones, deletes them, and verifies they are gone. It then checks the network's ownership immediately before it deletes the network, drops the lease and record, and unpins a proved commit's Git ref. A retry continues from the same exact target after partial cleanup. An ownership conflict preserves every unrelated resource and keeps the attempt record for diagnosis. The output lists `released`, `already_absent`, and `networks_reaped`.
+
+The retained proof topology can exercise lease files, identity validation, and refusal before transport from inside a guest. Actual Incus deletion is a host boundary: an issue that changes release selection uses a separately reviewed host rehearsal bound to the same proved candidate and leaves the retained proof evidence unchanged.
 
 Every Incus network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep that deletes each harness network in the configured Incus project with an empty `used_by`, except `oe-topo-snap` and `oe-standby`. The sweep holds the `topology-create` lock, so a network created moments before its first VM is never swept.
 
