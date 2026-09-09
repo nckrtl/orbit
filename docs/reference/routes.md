@@ -106,7 +106,7 @@ The guard covers Route hostname or publication changes, independent target repla
 
 AppInstance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted AppInstance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its hostname before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [AppInstance removal reference](appinstance-removal.md) owns content retention, the transient response, cascade order, and retry behavior.
 
-Routes without an active AppInstance retain the existing validation for hostname, scope, target, uniqueness, generation basis, and required Router. Full reconciliation of an existing active Route is a separate contract.
+During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed hostnames with one operation-local index of all Route hostname owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. Full reconciliation of an existing active Route is a separate contract.
 
 ## Guard removal
 
