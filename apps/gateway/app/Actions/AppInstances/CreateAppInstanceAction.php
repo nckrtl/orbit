@@ -104,7 +104,11 @@ final readonly class CreateAppInstanceAction
                     $this->provisioner->reserve($appInstance, $data->hostname);
                     $resolved = $this->resumeSource($appInstance, ! $created);
 
-                    return $this->provisioner->complete($resolved, $data->hostname);
+                    return $this->provisioner->complete(
+                        $resolved,
+                        $data->hostname,
+                        $data->recoverSourceProfile,
+                    );
                 } catch (Throwable $exception) {
                     $this->recordFailure($appInstance, $exception);
 

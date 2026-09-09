@@ -10,6 +10,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Routes\RouteStatus;
 use App\Models\AppInstance;
 use App\Models\Route;
@@ -32,32 +33,39 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         }
     }
 
-    public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
-    {
+    public function complete(
+        AppInstance $appInstance,
+        ?string $hostname,
+        bool $recoverSourceProfile = false,
+    ): AppInstance {
         $route = $this->routes->ensureForAppInstance($appInstance, $hostname);
 
         if ($appInstance->status === AppInstanceState::Active && $route->status === RouteStatus::Active) {
             return $appInstance->load('routes.targets');
         }
 
+        if (
+            $appInstance->provisioning_step !== null
+            && ! in_array($appInstance->provisioning_step, ['php-selected', 'url-configured'], strict: true)
+        ) {
+            throw $this->sourceEvidenceChanged();
+        }
+
+        $legacyIncompleteProfile = $appInstance->provisioning_step !== null && $appInstance->source_is_laravel === null;
+
+        if ($legacyIncompleteProfile && ! $recoverSourceProfile) {
+            throw $this->sourceEvidenceChanged();
+        }
+
         $profile = $this->configuration->inspect($appInstance);
 
-        if ($appInstance->provisioning_step === null) {
-            $appInstance->update([
-                'selected_php_version' => $profile->phpVersion,
-                'provisioning_step' => 'php-selected',
-                'failed_step' => null,
-                'error_code' => null,
-            ]);
+        if ($appInstance->provisioning_step === null || $legacyIncompleteProfile) {
+            $this->recordProfile($appInstance, $profile);
         } elseif (
-            ! in_array($appInstance->provisioning_step, ['php-selected', 'url-configured'], strict: true)
-            || $appInstance->selected_php_version !== $profile->phpVersion
+            $appInstance->selected_php_version !== $profile->phpVersion
+            || $appInstance->source_is_laravel !== $profile->laravel
         ) {
-            throw new RuntimeConvergenceException(
-                step: 'source-classification',
-                errorCode: 'app-dev.source_evidence_changed',
-                message: 'The development source classification changed after provisioning began.',
-            );
+            throw $this->sourceEvidenceChanged();
         }
 
         if ($appInstance->provisioning_step === 'php-selected') {
@@ -86,5 +94,27 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         });
 
         return $appInstance->refresh()->load('routes.targets');
+    }
+
+    private function recordProfile(
+        AppInstance $appInstance,
+        DevelopmentSourceProfile $profile,
+    ): void {
+        $appInstance->update([
+            'selected_php_version' => $profile->phpVersion,
+            'source_is_laravel' => $profile->laravel,
+            'provisioning_step' => 'php-selected',
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+    }
+
+    private function sourceEvidenceChanged(): RuntimeConvergenceException
+    {
+        return new RuntimeConvergenceException(
+            step: 'source-classification',
+            errorCode: 'app-dev.source_evidence_changed',
+            message: 'The development source classification changed after provisioning began.',
+        );
     }
 }
