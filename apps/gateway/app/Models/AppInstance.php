@@ -26,6 +26,27 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $branch
  * @property string|null $branch_override
  * @property bool $migration_required
+ * @property string|null $registration_original_path
+ * @property string|null $registration_request_id
+ * @property bool $registration_primary
+ * @property bool $registration_include_worktrees
+ * @property string|null $registration_repository_url
+ * @property string|null $registration_repository_identity
+ * @property string|null $registration_source_digest
+ * @property bool $registration_detached
+ * @property string|null $registration_default_branch
+ * @property string|null $registration_inferred_slug
+ * @property string|null $registration_inferred_root
+ * @property string|null $registration_common_repository_path
+ * @property list<string>|null $registration_worktree_paths
+ * @property string|null $registration_relocation_state
+ * @property string|null $registration_authoritative_path
+ * @property string|null $registration_route_hostname
+ * @property string|null $registration_route_provenance
+ * @property int|null $registration_source_device
+ * @property int|null $registration_source_inode
+ * @property array<string, mixed>|null $registration_migration_recovery
+ * @property \Illuminate\Support\Carbon|null $registration_completed_at
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
  * @property bool|null $source_is_laravel
@@ -47,6 +68,9 @@ final class AppInstance extends Model
         'environment' => 'development',
         'source_layout' => 'checkout',
         'migration_required' => false,
+        'registration_detached' => false,
+        'registration_primary' => false,
+        'registration_include_worktrees' => false,
         'status' => 'reserved',
     ];
 
@@ -65,6 +89,27 @@ final class AppInstance extends Model
         'branch',
         'branch_override',
         'migration_required',
+        'registration_original_path',
+        'registration_request_id',
+        'registration_primary',
+        'registration_include_worktrees',
+        'registration_repository_url',
+        'registration_repository_identity',
+        'registration_source_digest',
+        'registration_detached',
+        'registration_default_branch',
+        'registration_inferred_slug',
+        'registration_inferred_root',
+        'registration_common_repository_path',
+        'registration_worktree_paths',
+        'registration_relocation_state',
+        'registration_authoritative_path',
+        'registration_route_hostname',
+        'registration_route_provenance',
+        'registration_source_device',
+        'registration_source_inode',
+        'registration_migration_recovery',
+        'registration_completed_at',
         'starting_commit',
         'selected_php_version',
         'source_is_laravel',
@@ -120,6 +165,14 @@ final class AppInstance extends Model
     {
         return [
             'migration_required' => 'boolean',
+            'registration_detached' => 'boolean',
+            'registration_primary' => 'boolean',
+            'registration_include_worktrees' => 'boolean',
+            'registration_worktree_paths' => 'array',
+            'registration_source_device' => 'integer',
+            'registration_source_inode' => 'integer',
+            'registration_migration_recovery' => 'array',
+            'registration_completed_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
             'status' => AppInstanceState::class,
         ];

@@ -2,6 +2,8 @@
 
 This page tells an operator how Orbit removes one AppInstance, what `--force` changes for development source, and how an interrupted removal resumes. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns development source-removal safety, [ADR 0031](../decisions/0031-clone-initial-production-source-during-provisioning.md) owns retained production content, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) owns the coordinated Route boundary, and [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target Route deletion.
 
+Registration transfers an adopted checkout or worktree into AppInstance ownership. Orbit removes that source through `instance:remove`; it exposes no separate unregister command or lifecycle.
+
 ## Choose normal or forced removal
 
 Use normal removal when the development source is clean and its current commit is published:

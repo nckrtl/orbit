@@ -739,6 +739,43 @@ it('finalizes one recorded checkout with durable matching evidence', function ()
         ->toBe("{$receipt}\n");
 });
 
+it('removes a detached checkout with forced nullable branch evidence', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'detached');
+    orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '--detach']);
+    $instance->update(['branch' => null]);
+
+    $inventory = orb178_remove_source($this->removal, $instance->refresh()->load(['app', 'node']), true);
+
+    expect($inventory->branch)
+        ->toBeNull()
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse();
+});
+
+it('finalizes a detached checkout from durable nullable branch evidence', function (): void {
+    $instance = orb180_resolved_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'recorded-detached',
+    );
+    orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '--detach']);
+    $instance->update(['branch' => null]);
+    $member = orb180_record_source($this->removal, $instance->refresh()->load(['app', 'node']), false);
+
+    $receipt = $this->removal->finalize($member);
+
+    expect($member->branch)
+        ->toBeNull()
+        ->and($receipt)
+        ->toBeString()
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse()
+        ->and($this->removal->revalidate($member))
+        ->toBe(AppInstanceSourceRevalidationState::Completed);
+});
+
 it('finalizes newer published and forced unpublished commits from immutable evidence', function (
     bool $force,
 ): void {

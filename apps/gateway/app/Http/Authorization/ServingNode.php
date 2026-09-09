@@ -17,4 +17,5 @@ enum ServingNode
     case RouteOwning;
     case RoleMutation;
     case Collection;
+    case Caller;
 }

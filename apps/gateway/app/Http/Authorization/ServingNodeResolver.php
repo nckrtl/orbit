@@ -39,7 +39,16 @@ final readonly class ServingNodeResolver
             ServingNode::RouteOwning => $this->routeOwning($request),
             ServingNode::RoleMutation => $this->roleMutation($request),
             ServingNode::Collection => [],
+            ServingNode::Caller => $this->caller($request),
         };
+    }
+
+    /** @return list<Node> */
+    private function caller(Request $request): array
+    {
+        $caller = $request->user();
+
+        return $caller instanceof Node ? [$caller] : [];
     }
 
     /** @return list<Node> */

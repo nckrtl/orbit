@@ -347,6 +347,10 @@ final readonly class RecordCommandActivity
             return $this->appInstanceRemovalInput($request);
         }
 
+        if ($command === 'instance:register') {
+            return $this->appInstanceRegistrationInput($request);
+        }
+
         if ($command === 'node:role:remove') {
             return $this->inputSanitizer->sanitizeProperties(
                 $this->removeNodeRoleInputParser->safeActivityInput(
@@ -385,6 +389,30 @@ final readonly class RecordCommandActivity
         if (array_key_exists('force', $input) && ! is_bool($input['force'])) {
             return [];
         }
+
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function appInstanceRegistrationInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), [
+                'source_path',
+                'include_worktrees',
+                'app_id',
+                'app_name',
+                'app_slug',
+                'default_branch',
+                'instance_name',
+                'root',
+                'hostname',
+            ]);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        unset($input['source_path']);
 
         return $this->inputSanitizer->sanitizeProperties($input);
     }

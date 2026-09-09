@@ -28,6 +28,7 @@ use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionRouteProjector;
+use App\Domain\AppInstances\Registration\RegistrationSourceManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
@@ -105,6 +106,7 @@ use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
+use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
 use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
@@ -202,6 +204,7 @@ final class AppServiceProvider extends ServiceProvider
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         AppDevSourceManager::class => RemoteAppDevSourceManager::class,
         DevelopmentAppInstanceSourceLifecycle::class => RemoteDevelopmentAppInstanceSourceLifecycle::class,
+        RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentAppInstanceSourceRemoval::class => RemoteDevelopmentAppInstanceSourceRemoval::class,
         ProductionAppInstanceContentRetention::class => RecordedProductionAppInstanceContentRetention::class,
         AppInstanceRemovalProjector::class => NativeAppInstanceRemovalProjector::class,

@@ -87,7 +87,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         string $user,
         string $group,
         string $layout,
-        string $expectedBranch,
+        ?string $expectedBranch,
         string $startingCommit,
         string $expectedRepositoryIdentity,
         bool $force,
@@ -106,7 +106,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     $user,
                     $group,
                     $layout,
-                    $expectedBranch,
+                    $expectedBranch ?? '',
                     $startingCommit,
                     $inspectContent && ! $force ? '1' : '0',
                 ],
@@ -126,6 +126,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             fn (string $value): string => $this->decode($value, $appInstance, $force),
             $values,
         );
+        $branch = $branch === '' ? null : $branch;
         $top = $top === $physicalCheckout ? $logicalCheckout : $top;
         $common = $common === $physicalCheckout.'/.git' ? $logicalCheckout.'/.git' : $common;
         $checkout = StoragePath::tryParse($top);
@@ -247,7 +248,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     $groupingDirectory,
                     $context['user'],
                     $context['group'],
-                    $inventory->branch,
+                    $inventory->branch ?? '',
                     $context['startingCommit'],
                     $inventory->startingCommit,
                     $inventory->sourceIdentity,
@@ -383,7 +384,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                         $root->value,
                         (string) $member->common_repository_path,
                         $member->source_layout,
-                        (string) $member->branch,
+                        $member->branch ?? '',
                         (string) $member->starting_commit,
                         $member->app_instance_removal_id,
                         (string) $member->id,
@@ -455,7 +456,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             user: $context['user'],
             group: $context['group'],
             layout: $member->source_layout,
-            expectedBranch: (string) $member->branch,
+            expectedBranch: $member->branch,
             startingCommit: (string) $member->starting_commit,
             expectedRepositoryIdentity: (string) $member->repository_identity,
             force: (bool) $removal->force,
@@ -745,7 +746,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             )
             || ! is_string($member->checkout_path)
             || ! is_string($member->root)
-            || ! is_string($member->branch)
+            || $member->branch !== null
+            && ! is_string($member->branch)
             || ! is_string($member->starting_commit)
             || ! is_string($member->source_commit)
             || ! is_string($member->common_repository_path)
@@ -823,7 +825,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         );
     }
 
-    /** @return array{root: StoragePath, user: string, group: string, branch: string, startingCommit: string, repositoryIdentity: string} */
+    /** @return array{root: StoragePath, user: string, group: string, branch: ?string, startingCommit: string, repositoryIdentity: string} */
     private function context(AppInstance $appInstance): array
     {
         $appInstance->loadMissing(['app', 'node']);
@@ -843,7 +845,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         $branch = $appInstance->branch;
         $startingCommit = $appInstance->starting_commit;
 
-        if (! is_string($branch) || ! is_string($startingCommit)) {
+        if ($branch !== null && ! is_string($branch) || ! is_string($startingCommit)) {
             $this->invalidEvidence($appInstance, false);
         }
 
@@ -1460,7 +1462,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     ;;
                 *) exit 1 ;;
             esac
-            test "$(git -C "$physical" symbolic-ref --short HEAD)" = "$branch"
+            current_branch=$(git -C "$physical" symbolic-ref --quiet --short HEAD || true)
+            test "$current_branch" = "$branch"
             test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$source_commit"
             git -C "$physical" merge-base --is-ancestor "$starting_commit" HEAD
             origin_with_marker=$(git -C "$physical" remote get-url origin && printf x)
@@ -1623,7 +1626,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 *$'\n') origin=${origin%$'\n'} ;;
                 *) exit 1 ;;
             esac
-            branch=$(git -C "$checkout" symbolic-ref --short HEAD)
+            branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
             commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
             test "$branch" = "$expected_branch"
             git -C "$checkout" merge-base --is-ancestor "$expected_starting_commit" HEAD
@@ -1713,7 +1716,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
             test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
             test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
-            test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$expected_branch"
+            current_branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
+            test "$current_branch" = "$expected_branch"
             test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$expected_commit"
             git -C "$checkout" merge-base --is-ancestor "$expected_starting_commit" HEAD
             origin_with_marker=$(git -C "$checkout" remote get-url origin && printf x)

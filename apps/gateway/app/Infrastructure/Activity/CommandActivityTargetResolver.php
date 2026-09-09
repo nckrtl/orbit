@@ -149,6 +149,12 @@ final readonly class CommandActivityTargetResolver
 
     private function subject(Request $request): ?Model
     {
+        $registration = $request->attributes->get('orbit.app_instance_registration');
+
+        if ($registration instanceof AppInstance) {
+            return $registration;
+        }
+
         if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny'], strict: true)) {
             return $this->createdFirewallRule($request);
         }

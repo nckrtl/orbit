@@ -16,7 +16,7 @@ final readonly class AppInstanceSourceInventory
         public string $repositoryIdentity,
         public string $checkoutPath,
         public string $root,
-        public string $branch,
+        public ?string $branch,
         public string $startingCommit,
         public string $commonRepositoryPath,
         public string $sourceIdentity,

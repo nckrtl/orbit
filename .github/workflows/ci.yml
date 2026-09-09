@@ -55,6 +55,7 @@ jobs:
       - name: Install Gateway system dependencies
         if: matrix.directory == 'apps/gateway'
         run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes acl attr wireguard-tools
           brew install caddy openssl@3

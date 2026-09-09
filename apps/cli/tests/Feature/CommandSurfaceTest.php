@@ -46,6 +46,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'gateway:use',
         'instance:list',
         'instance:new',
+        'instance:register',
         'instance:remove',
         'instance:show',
         'metrics:credentials',
@@ -96,7 +97,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(70);
+    expect($orbitCommands)->toHaveCount(71);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -174,6 +175,21 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'hostname' => null,
                 'branch' => null,
                 'recover-source-profile' => false,
+                'json' => false,
+            ],
+        ],
+        'instance:register' => [
+            [],
+            [
+                'path' => null,
+                'include-worktrees' => false,
+                'app' => null,
+                'app-name' => null,
+                'app-slug' => null,
+                'default-branch' => null,
+                'name' => null,
+                'root' => null,
+                'hostname' => null,
                 'json' => false,
             ],
         ],
@@ -408,6 +424,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         ],
         'instance:list' => [[], ...$profileMissing],
         'instance:new' => [['app' => '1', 'node' => '1', 'name' => 'web'], ...$profileMissing],
+        'instance:register' => [['--app' => '1', '--no-interaction' => true], ...$profileMissing],
         'instance:remove' => [['instance' => '1'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],

@@ -14,4 +14,7 @@
             <directory>src</directory>
         </include>
     </source>
+    <php>
+        <ini name="zend.exception_ignore_args" value="0"/>
+    </php>
 </phpunit>

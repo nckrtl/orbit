@@ -6,8 +6,10 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceRegistrationResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
@@ -129,6 +131,66 @@ describe('AppInstance requests', function (): void {
             ])
             ->and($inherited->body()->all())
             ->not->toHaveKey('branch');
+    });
+
+    it('registers a caller-local source with typed confirmed values', function (): void {
+        $registration = [
+            'app' => [
+                'id' => 3,
+                'name' => 'Orbit Docs',
+                'slug' => 'orbit-docs',
+                'repository_url' => 'https://github.com/nckrtl/orbit-docs.git',
+                'default_branch' => 'main',
+                'root' => 'public',
+                'defaults' => null,
+            ],
+            'app_instance' => instance_gateway_data(),
+            'app_instances' => [instance_gateway_data()],
+            'status' => 'active',
+            'source_count' => 1,
+            'completed_count' => 1,
+        ];
+        $mockClient = new MockClient([
+            RegisterAppInstanceRequest::class => MockResponse::make([
+                'data' => $registration,
+                'meta' => ['request_id' => instance_request_id()],
+            ]),
+        ]);
+        $connector = instance_gateway_connector($mockClient);
+        $request = new RegisterAppInstanceRequest(
+            sourcePath: '/work/orbit-docs',
+            includeWorktrees: true,
+            appId: 3,
+            instanceName: 'preview',
+            root: 'web',
+        );
+        $response = $connector->send($request)->dto();
+
+        expect($request->getMethod())
+            ->toBe(Method::POST)
+            ->and($request->resolveEndpoint())
+            ->toBe('/api/v1/instances/register')
+            ->and($request->body()->all())
+            ->toBe([
+                'source_path' => '/work/orbit-docs',
+                'include_worktrees' => true,
+                'app_id' => 3,
+                'instance_name' => 'preview',
+                'root' => 'web',
+            ])
+            ->and($response)
+            ->toBeInstanceOf(AppInstanceRegistrationResponse::class)
+            ->and($response->appInstance->sourceLayout)
+            ->toBe('checkout')
+            ->and($response->sourceCount)
+            ->toBe(1)
+            ->and($response->requestId)
+            ->toBe(instance_request_id());
+    });
+
+    it('omits null and false optional registration values', function (): void {
+        expect(new RegisterAppInstanceRequest('/work/orbit-docs')->body()->all())
+            ->toBe(['source_path' => '/work/orbit-docs']);
     });
 
     it('transports explicit source profile recovery intent and preserves ordinary omission', function (): void {
@@ -311,6 +373,7 @@ function instance_gateway_data(): array
         'branch_override' => null,
         'migration_required' => false,
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'detached' => false,
         'status' => 'active',
         'route' => instance_gateway_route_data(),
         'hostname' => 'orbit-docs.test',
