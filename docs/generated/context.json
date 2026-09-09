@@ -948,6 +948,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md",
+            "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Ingress",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0021",
+                "0045"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
