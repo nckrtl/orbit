@@ -51,6 +51,8 @@ beforeEach(function (): void {
 
         public bool $laravel = true;
 
+        public ?string $phpVersion = '8.5';
+
         public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
         {
             $this->inspections++;
@@ -58,7 +60,7 @@ beforeEach(function (): void {
                 throw provisioning_failure('source-classification');
             }
 
-            return new DevelopmentSourceProfile('8.5', $this->laravel);
+            return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
         public function configureLaravelUrl(AppInstance $appInstance, string $url): void
@@ -127,7 +129,19 @@ it('resumes Laravel URL configuration from selected PHP evidence', function (): 
 
     expect(fn () => $this->provisioner->complete($this->instance, null))
         ->toThrow(RuntimeConvergenceException::class);
-    expect($this->instance->refresh()->provisioning_step)->toBe('php-selected');
+    expect(
+        $this->instance
+            ->refresh()
+            ->only([
+                'selected_php_version',
+                'source_is_laravel',
+                'provisioning_step',
+            ]),
+    )->toBe([
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'php-selected',
+    ]);
 
     $this->configuration->failConfiguration = false;
     $this->provisioner->reserve($this->instance, null);
@@ -138,6 +152,191 @@ it('resumes Laravel URL configuration from selected PHP evidence', function (): 
         ->and($this->projection->convergences)
         ->toBe(1)
         ->and($this->instance->routes()->count())
+        ->toBe(1);
+});
+
+it('rejects every complete source profile change at each retained checkpoint', function (
+    string $checkpoint,
+    ?string $recordedPhp,
+    bool $recordedLaravel,
+    ?string $currentPhp,
+    bool $currentLaravel,
+): void {
+    $this->instance->update([
+        'selected_php_version' => $recordedPhp,
+        'source_is_laravel' => $recordedLaravel,
+        'provisioning_step' => $checkpoint,
+    ]);
+    $this->configuration->phpVersion = $currentPhp;
+    $this->configuration->laravel = $currentLaravel;
+    $this->provisioner->reserve($this->instance, null);
+
+    try {
+        $this->provisioner->complete($this->instance, null);
+        $this->fail('Expected source profile drift refusal.');
+    } catch (RuntimeConvergenceException $exception) {
+        expect($exception->errorCode)->toBe('app-dev.source_evidence_changed');
+    }
+
+    expect(
+        $this->instance
+            ->refresh()
+            ->only([
+                'selected_php_version',
+                'source_is_laravel',
+                'provisioning_step',
+            ]),
+    )
+        ->toBe([
+            'selected_php_version' => $recordedPhp,
+            'source_is_laravel' => $recordedLaravel,
+            'provisioning_step' => $checkpoint,
+        ])
+        ->and($this->configuration->configurations)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0);
+})->with([
+    'Laravel to plain PHP at php-selected' => ['php-selected', '8.5', true, '8.5', false],
+    'Laravel to plain PHP at url-configured' => ['url-configured', '8.5', true, '8.5', false],
+    'plain PHP to Laravel at php-selected' => ['php-selected', '8.5', false, '8.5', true],
+    'plain PHP to Laravel at url-configured' => ['url-configured', '8.5', false, '8.5', true],
+    'PHP to non-PHP at php-selected' => ['php-selected', '8.5', false, null, false],
+    'PHP to non-PHP at url-configured' => ['url-configured', '8.5', false, null, false],
+]);
+
+it('fails closed for legacy incomplete profile evidence without inspecting or mutating projections', function (
+    string $checkpoint,
+): void {
+    $this->instance->update([
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => null,
+        'provisioning_step' => $checkpoint,
+    ]);
+    $this->provisioner->reserve($this->instance, null);
+
+    try {
+        $this->provisioner->complete($this->instance, null);
+        $this->fail('Expected incomplete source profile refusal.');
+    } catch (RuntimeConvergenceException $exception) {
+        expect($exception->errorCode)->toBe('app-dev.source_evidence_changed');
+    }
+
+    expect($this->configuration->inspections)
+        ->toBe(0)
+        ->and($this->configuration->configurations)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0)
+        ->and($this->instance->refresh()->provisioning_step)
+        ->toBe($checkpoint);
+})->with(['php-selected', 'url-configured']);
+
+it('recovers only incomplete legacy evidence and preserves identity', function (): void {
+    $this->instance->update([
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => null,
+        'provisioning_step' => 'url-configured',
+    ]);
+    $this->configuration->phpVersion = '8.5';
+    $this->configuration->laravel = false;
+    $this->provisioner->reserve($this->instance, null);
+    $routeId = $this->instance->routes()->sole()->id;
+    $identity = $this->instance->only([
+        'id',
+        'app_id',
+        'node_id',
+        'checkout_path',
+        'branch',
+        'starting_commit',
+    ]);
+
+    $result = $this->provisioner->complete($this->instance, null, true);
+
+    expect($result->only([
+        'selected_php_version',
+        'source_is_laravel',
+        'status',
+        'provisioning_step',
+    ]))
+        ->toBe([
+            'selected_php_version' => '8.5',
+            'source_is_laravel' => false,
+            'status' => AppInstanceState::Active,
+            'provisioning_step' => 'active',
+        ])
+        ->and($result->only(array_keys($identity)))
+        ->toBe($identity)
+        ->and($result->routes()->sole()->id)
+        ->toBe($routeId);
+});
+
+it('retries recovered Laravel URL reconciliation from its durable complete checkpoint', function (): void {
+    $this->instance->update([
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => null,
+        'provisioning_step' => 'url-configured',
+    ]);
+    $this->configuration->failConfiguration = true;
+    $this->provisioner->reserve($this->instance, null);
+
+    expect(fn () => $this->provisioner->complete($this->instance, null, true))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(
+        $this->instance
+            ->refresh()
+            ->only([
+                'selected_php_version',
+                'source_is_laravel',
+                'provisioning_step',
+            ]),
+    )->toBe([
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'php-selected',
+    ]);
+
+    $this->configuration->failConfiguration = false;
+    $result = $this->provisioner->complete($this->instance, null);
+
+    expect($result->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($this->configuration->configurations)
+        ->toBe(2)
+        ->and($this->projection->convergences)
+        ->toBe(1);
+});
+
+it('does not let recovery bypass complete profile drift', function (): void {
+    $this->instance->update([
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'php-selected',
+    ]);
+    $this->configuration->laravel = true;
+    $this->provisioner->reserve($this->instance, null);
+
+    try {
+        $this->provisioner->complete($this->instance, null, true);
+        $this->fail('Expected complete source profile drift refusal.');
+    } catch (RuntimeConvergenceException $exception) {
+        expect($exception->errorCode)->toBe('app-dev.source_evidence_changed');
+    }
+});
+
+it('keeps an Active AppInstance terminal without profile inspection during recovery', function (): void {
+    $this->provisioner->reserve($this->instance, null);
+    $active = $this->provisioner->complete($this->instance, null);
+    $this->configuration->inspections = 0;
+    $this->configuration->failInspection = true;
+
+    $result = $this->provisioner->complete($active, null, true);
+
+    expect($result->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($this->configuration->inspections)
+        ->toBe(0)
+        ->and($this->projection->convergences)
         ->toBe(1);
 });
 

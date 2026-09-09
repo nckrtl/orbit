@@ -34,6 +34,7 @@ final class StoreAppInstanceRequest extends FormRequest
             'root' => ['sometimes', 'string', 'max:255'],
             'hostname' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
+            'recover_source_profile' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -42,7 +43,7 @@ final class StoreAppInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_id', 'node_id', 'name', 'root', 'hostname', 'branch'],
+                ['app_id', 'node_id', 'name', 'root', 'hostname', 'branch', 'recover_source_profile'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -87,6 +88,7 @@ final class StoreAppInstanceRequest extends FormRequest
                 ? RouteHostname::normalize($validated['hostname'])
                 : null,
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
+            recoverSourceProfile: (bool) ($validated['recover_source_profile'] ?? false),
         );
     }
 }
