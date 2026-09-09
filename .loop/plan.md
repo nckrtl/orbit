@@ -80,7 +80,9 @@ Verification: `composer docs-build` and `composer docs-lint` pass; the lint repo
 - `apps/e2e` `composer check`: 1,169 tests passed with 5,980 assertions; Rector, formatting, lint, and analysis passed.
 - Guest proof fixture: local execution passed schema 3 serialization, malformed-reference refusal, five schema 2 immutable-file refusals, and exact temporary-file deletion.
 - Host fixture scenarios: local native execution passed the matching deletion and changed-project, changed-pool, and changed-fingerprint byte-identical refusals against `local:/default`.
-- Discovery diagnostics, repository `bin/test`, current-main integration, immutable proof, and the authoritative host receipt remain assigned to the final root-coordinated window.
+- Standard three-node discovery `437d3fc242ef81d18d5e02b5cd9f7bfa` passed acquisition and source synchronization on `local:/default`.
+- The discovery guest action exited zero. The diagnostic host rehearsal also passed with 18 zero-exit commands, 16 zero-exit assertions, exact production raw-query logs, and unchanged discovery and Incus resource captures.
+- Repository `bin/test`, current-main integration, immutable proof, and the authoritative host receipt remain assigned to the final root-coordinated window.
 
 ## Review findings
 
