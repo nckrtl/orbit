@@ -94,18 +94,17 @@ def owned_rules(rules: list[list[str]], network: str) -> list[list[str]]:
     return [rule for rule in rules if (comment(rule) or "").startswith(marker)]
 
 
-def current(rules: list[list[str]], desired: list[list[str]]) -> bool:
-    positions: list[int] = []
-    for expected in desired:
-        matches = [index for index, rule in enumerate(rules) if rule == expected]
-        if len(matches) != 1:
-            return False
-        positions.append(matches[0])
-
-    if positions != sorted(positions):
+def current(rules: list[list[str]], desired: list[list[str]], network: str) -> bool:
+    marker = f"{OWNER}:{network}:"
+    observed = [
+        (position, rule)
+        for position, rule in enumerate(rules)
+        if (comment(rule) or "").startswith(marker)
+    ]
+    if [rule for _, rule in observed] != desired:
         return False
 
-    last = positions[-1]
+    last = observed[-1][0]
     return all((comment(rule) or "").startswith(f"{OWNER}:") for rule in rules[: last + 1])
 
 
@@ -137,7 +136,7 @@ def apply_transaction(removals: list[list[str]], additions: list[list[str]]) -> 
 def reconcile(operation: str, network: str) -> bool:
     rules = forward_rules()
     desired = desired_rules(network)
-    if operation == "ensure" and current(rules, desired):
+    if operation == "ensure" and current(rules, desired, network):
         return False
 
     owned = owned_rules(rules, network)
@@ -146,7 +145,7 @@ def reconcile(operation: str, network: str) -> bool:
         apply_transaction(list(reversed(owned)), additions)
 
     final = forward_rules()
-    if operation == "ensure" and not current(final, desired):
+    if operation == "ensure" and not current(final, desired, network):
         raise RuntimeError("owned FORWARD rules failed postcondition")
     if operation == "remove" and owned_rules(final, network):
         raise RuntimeError("owned FORWARD rules remain after removal")
