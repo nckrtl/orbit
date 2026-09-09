@@ -14,7 +14,7 @@ In:
 - `apps/gateway/app/Infrastructure/AppInstances/RemoteAppInstanceEnvironmentAccess.php`: placement-bound remote read/write preflight and protected atomic writer.
 - `apps/gateway/tests/Feature/Infrastructure`: focused preflight and writer behavior, including actual trace arguments.
 - `docs/reference/environment-variables.md`: placement, preflight, protection, repeat, failure, and acknowledgement boundaries.
-- `.loop/proof`: nine issue actions and fresh ORB-211-only fixtures.
+- `.loop/proof`: seven Incus actions named by the issue and fresh ORB-211-only fixtures.
 
 Out:
 - Public synchronization endpoints, SDK or CLI commands.

@@ -66,7 +66,7 @@ Before a write, the Gateway checks trusted SSH access, the recorded execution id
 
 The writer checks the recorded boundary again, writes the supplied bytes through protected input to a mode-`0600` candidate owned by the runtime user, and atomically replaces `.env`. It does not parse or import the old file. A missing `.env` is created. A matching protected file remains the same file and reports `changed: false`; different bytes or a different mode produce a complete protected replacement and report `changed: true`.
 
-A confirmed candidate-write, protection, or rename failure leaves the previous `.env` unchanged and removes only the failed attempt's candidate. When the Gateway loses the final acknowledgement, it reports an unconfirmed result because the replacement might have completed. A retry repeats placement and boundary checks, then accepts an already matching protected file or installs the supplied complete file.
+A confirmed candidate-write, protection, or rename failure leaves the previous `.env` unchanged and removes only the failed attempt's candidate. When the Gateway cannot confirm completion after replacement, it reports an unconfirmed result because the replacement might have completed. A retry repeats placement and boundary checks, then accepts an already matching protected file or installs the supplied complete file.
 
 The remote operation does not expose supplied bytes or raw remote output in results, errors, exception chains, logs, or normal debugging. It changes no source file outside `.env`, Git metadata, database file, framework cache, service, or application process. It runs without an installed framework, application dependencies, or an application database.
 

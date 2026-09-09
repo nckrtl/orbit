@@ -39,6 +39,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements
         descriptors = []
         candidate_name = None
         candidate_identity = None
+        replacement_installed = False
 
         class BoundaryError(Exception):
             pass
@@ -201,6 +202,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements
                     print("UNCHANGED")
                 else:
                     os.replace(candidate_name, ".env", src_dir_fd=current, dst_dir_fd=current)
+                    replacement_installed = True
                     candidate_name = None
                     candidate_identity = None
                     os.fsync(current)
@@ -210,11 +212,17 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements
         except BoundaryError:
             if "current" in locals():
                 cleanup_candidate(current)
+            if replacement_installed:
+                print("FAILED")
+                raise SystemExit(44)
             print("REFUSED")
             raise SystemExit(42)
         except Exception:
             if "current" in locals():
                 cleanup_candidate(current)
+            if replacement_installed:
+                print("FAILED")
+                raise SystemExit(44)
             print("FAILED")
             raise SystemExit(43)
         finally:
@@ -314,10 +322,11 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements
             return AppInstanceEnvironmentWriteResult::unchanged();
         }
 
-        if (
-            in_array($result->exitCode, [42, 43], true)
-            && in_array($result->stdout, ["REFUSED\n", "FAILED\n"], true)
-        ) {
+        if ($result->exitCode === 42 && $result->stdout === "REFUSED\n") {
+            $this->failWrite();
+        }
+
+        if ($result->exitCode === 43 && $result->stdout === "FAILED\n") {
             $this->failWrite();
         }
 

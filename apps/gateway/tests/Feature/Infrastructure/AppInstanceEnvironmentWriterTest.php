@@ -204,6 +204,67 @@ it('returns an unconfirmed result after a lost acknowledgement and accepts the p
     }
 });
 
+it('returns an unconfirmed result when directory sync fails after atomic replacement', function (): void {
+    $directory = writer_environment_directory();
+    file_put_contents("{$directory}/.env", "KEY=previous\n");
+    chmod("{$directory}/.env", 0600);
+    $contents = "KEY=current\n";
+
+    try {
+        $access = writer_environment_access(new WriterLocalSshExecutor(
+            new NativeProcessRunner,
+            [
+                'os.fsync(current)' => '(_ for _ in ()).throw(OSError())',
+            ],
+        ));
+
+        $unconfirmed = $access->write(writer_environment_context($directory), $contents);
+        $installedIdentity = fileinode("{$directory}/.env");
+        $retry = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner))
+            ->write(writer_environment_context($directory), $contents);
+
+        expect($unconfirmed->confirmed)
+            ->toBeFalse()
+            ->and($unconfirmed->changed)
+            ->toBeNull();
+        expect(file_get_contents("{$directory}/.env"))
+            ->toBe($contents)
+            ->and(glob("{$directory}/.env.orbit-*") ?: [])
+            ->toBe([]);
+        expect($retry->confirmed)
+            ->toBeTrue()
+            ->and($retry->changed)
+            ->toBeFalse()
+            ->and(fileinode("{$directory}/.env"))
+            ->toBe($installedIdentity);
+    } finally {
+        writer_remove_directory($directory);
+    }
+});
+
+it('treats mismatched failure exit and receipt pairs as unconfirmed', function (
+    int $exitCode,
+    string $receipt,
+): void {
+    $directory = writer_environment_directory();
+
+    try {
+        $result = writer_environment_access(new WriterObservationSshExecutor(
+            new CommandResult($exitCode, $receipt, '', 1, false),
+        ))->write(writer_environment_context($directory), "KEY=current\n");
+
+        expect($result->confirmed)
+            ->toBeFalse()
+            ->and($result->changed)
+            ->toBeNull();
+    } finally {
+        writer_remove_directory($directory);
+    }
+})->with([
+    'refusal exit with failure receipt' => [42, "FAILED\n"],
+    'failure exit with refusal receipt' => [43, "REFUSED\n"],
+]);
+
 it('keeps supplied bytes and raw remote output out of diagnostics and trace arguments', function (): void {
     $directory = writer_environment_directory();
     file_put_contents("{$directory}/.env", "KEY=previous\n");
