@@ -75,6 +75,13 @@ Verification: `composer docs-build` and `composer docs-lint` passed with zero fi
 
 - None.
 
+## Proof decisions
+
+- Use the standard three-node topology without an extension.
+- Keep `mutates` false because the action backs up and restores the operator profile file and Linux trust-store target, refreshes the trust bundle after restoration, and leaves every registered Node and service intact.
+- Set `observed_inputs` true. Both setup and acceptance execute the CLI on app-dev and through SSH on gateway, while each request reaches Gateway FPM, so all required `app-dev:cli`, `gateway:cli`, and `gateway:fpm` surfaces produce complete PHP observations.
+- The acceptance action removes only the profile-named Linux CA target, invokes the real `gateway:trust` command with a temporary `sudo` wrapper that applies the concurrent profile operation immediately after `update-ca-certificates`, verifies partial OS trust and profile state, and restores all state on exit.
+
 ## Review findings
 
 - None yet.
@@ -85,4 +92,6 @@ Verification: `composer docs-build` and `composer docs-lint` passed with zero fi
 - Gateway registration regression: 20 passed, 82 assertions.
 - CLI `PHPRC=/dev/null composer check`: passed; 609 tests and 3,620 assertions, with three unchanged analysis warnings outside this issue's paths.
 - Documentation build and lint: passed with zero findings.
-- Root suite, discovery, and immutable Incus proof: pending the coordinated windows.
+- Discovery `5da03d6614801818e2425869c9e79630` from generation `f197ba3b8bd7-45e9179c7f72`: acquired and verified.
+- Discovery action diagnostics: URL contention, pin contention, active-only switch, identical pin update, OS trust visibility, and conflict recovery all passed with zero exit.
+- Root suite and immutable Incus proof: pending the coordinated final window.

@@ -1,0 +1,26 @@
+{
+    "setup": [
+        {
+            "id": "gateway-trust-observation-setup",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/gateway-trust-profile-contention.sh",
+                "probe"
+            ],
+            "timeout_seconds": 120
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "gateway-trust-profile-contention",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/gateway-trust-profile-contention.sh",
+                "contention"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "mutates": false,
+    "observed_inputs": true
+}
