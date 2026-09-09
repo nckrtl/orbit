@@ -2254,8 +2254,8 @@ it('returns current bounded progress when retry source revalidation is refused',
     $route = Route::query()->sole();
     $this
         ->putJson("/api/v1/routes/{$route->id}/target", ['app_instance_id' => $id])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.target_inactive');
+        ->assertOk()
+        ->assertJsonPath('data.target.app_instance_id', $id);
 
     $this->removalProjector->fail = null;
     $this->removalSource->fail = 'revalidate';

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Metrics\MetricsPublicationManager as PublicationManager;
@@ -22,9 +23,15 @@ final readonly class MetricsPublicationManager implements PublicationManager
         private MetricsPublicationSshExecutor $firewall,
         private PrivateDnsManager $dns,
         private MetricsPublicationRenderer $renderer = new MetricsPublicationRenderer,
+        private ?DevelopmentProjectionOperationLock $projection = null,
     ) {}
 
     public function converge(Node $gateway, Node $metrics): void
+    {
+        $this->owner()->run(fn () => $this->convergeOwned($gateway, $metrics));
+    }
+
+    private function convergeOwned(Node $gateway, Node $metrics): void
     {
         $gatewayAddress = $this->address($gateway);
         $metricsAddress = $this->address($metrics);
@@ -61,6 +68,11 @@ final readonly class MetricsPublicationManager implements PublicationManager
 
     public function remove(Node $gateway, Node $metrics): void
     {
+        $this->owner()->run(fn () => $this->removeOwned($gateway, $metrics));
+    }
+
+    private function removeOwned(Node $gateway, Node $metrics): void
+    {
         $gatewayAddress = $this->address($gateway);
         $this->address($metrics);
         $this->dns->converge();
@@ -76,6 +88,11 @@ final readonly class MetricsPublicationManager implements PublicationManager
 
     public function retract(Node $metrics): void
     {
+        $this->owner()->run(fn () => $this->retractOwned($metrics));
+    }
+
+    private function retractOwned(Node $metrics): void
+    {
         $this->address($metrics);
         $this->dns->converge();
         $this->caddy->remove();
@@ -90,5 +107,10 @@ final readonly class MetricsPublicationManager implements PublicationManager
         }
 
         return $address;
+    }
+
+    private function owner(): DevelopmentProjectionOperationLock
+    {
+        return $this->projection ?? app(DevelopmentProjectionOperationLock::class);
     }
 }

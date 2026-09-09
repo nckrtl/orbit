@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppInstances;
 
 use App\Actions\Routes\CreateRouteAction;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -12,16 +13,19 @@ use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
+/** @mago-expect lint:cyclomatic-complexity Completion keeps source-profile recovery inside the owned publication lifecycle. */
 final readonly class NativeDevelopmentAppInstanceProvisioner implements DevelopmentAppInstanceProvisioner
 {
     public function __construct(
         private CreateRouteAction $routes,
         private DevelopmentAppInstanceConfigurator $configuration,
         private DevelopmentRouteProjector $projection,
+        private ?DevelopmentProjectionOperationLock $projectionOwner = null,
     ) {}
 
     public function reserve(AppInstance $appInstance, ?string $hostname): void
@@ -39,6 +43,35 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         bool $recoverSourceProfile = false,
     ): AppInstance {
         $route = $this->routes->ensureForAppInstance($appInstance, $hostname);
+
+        return $this->owner()->run(
+            fn (): AppInstance => $this->completeOwned(
+                $appInstance->id,
+                $route->id,
+                $recoverSourceProfile,
+            ),
+        );
+    }
+
+    private function completeOwned(
+        int $appInstanceId,
+        int $routeId,
+        bool $recoverSourceProfile,
+    ): AppInstance {
+        $appInstance = AppInstance::query()->with('node')->findOrFail($appInstanceId);
+        $route = Route::query()
+            ->with(['targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->whereKey($routeId)
+            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstanceId))
+            ->first();
+
+        if (! $route instanceof Route) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.lifecycle_conflict',
+                message: 'The AppInstance Route changed before development projection began.',
+                status: 409,
+            );
+        }
 
         if ($appInstance->status === AppInstanceState::Active && $route->status === RouteStatus::Active) {
             return $appInstance->load('routes.targets');
@@ -94,6 +127,11 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         });
 
         return $appInstance->refresh()->load('routes.targets');
+    }
+
+    private function owner(): DevelopmentProjectionOperationLock
+    {
+        return $this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class);
     }
 
     private function recordProfile(
