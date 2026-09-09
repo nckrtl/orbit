@@ -1,0 +1,145 @@
+{
+    "setup": [
+        {
+            "id": "app-prod-source-one-setup",
+            "node": "app-prod",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "setup-node",
+                "app-prod"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-source-two-setup",
+            "node": "app-prod-2",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "setup-node",
+                "app-prod-2"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-gateway-setup",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "setup-gateway"
+            ],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "app-prod-observation-setup",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "setup-observation"
+            ],
+            "timeout_seconds": 60
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "app-prod-standalone-create",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "standalone-create"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-initial-source",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "initial-source"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-branch-refusal",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "branch-refusal"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-non-laravel",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "non-laravel"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-intermediate-gates",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "intermediate-gates"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-source-safety",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "source-safety"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-standalone-retry",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "standalone-retry"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-creation-after-deployment",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "creation-after-deployment"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "app-prod-standalone-exposure",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "standalone-exposure"
+            ],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "app-prod-create-and-remove",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "create-and-remove"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "extension": "app-prod",
+    "mutates": true,
+    "ends_with": {
+        "nodes": [
+            "gateway",
+            "app-dev",
+            "app-prod",
+            "app-prod-2"
+        ]
+    },
+    "observed_inputs": true
+}
