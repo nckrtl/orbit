@@ -14,6 +14,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -88,6 +89,65 @@ it('rejects conflicting bootstrap WireGuard options before mutation', function (
 
     expect(Node::query()->exists())->toBeFalse();
 });
+
+it('persists and resolves an implicit endpoint with the public host bytes and IPv6 brackets', function (
+    string $publicHost,
+    string $endpoint,
+): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-command-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->ensureDirectoryExists($orbitHome);
+    $osReleasePath = $orbitHome.'/os-release';
+    $filesystem->put($osReleasePath, "ID=ubuntu\nVERSION_CODENAME=resolute\n");
+
+    app()->instance(BootstrapGatewayAction::class, new BootstrapGatewayAction(
+        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
+        operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
+        vpnSettings: app(VpnSettings::class),
+        processes: new NativeProcessRunner,
+        files: new ProtectedFileWriter,
+        vpn: new class implements GatewayVpnConverger {
+            public function converge(Node $gateway, BootstrapGatewayData $data): void {}
+        },
+        web: new class implements GatewayWebConverger {
+            public function converge(string $hostname, string $wireguardIp): void {}
+        },
+        selfAccess: new class implements GatewaySelfAccessConverger {
+            public function converge(Node $node): void {}
+        },
+        orbitHome: $orbitHome,
+    ));
+
+    try {
+        $this
+            ->artisan('orbit:bootstrap', [
+                'public-host' => $publicHost,
+                '--wireguard-ip' => '10.44.0.1',
+            ])
+            ->expectsOutput('Gateway [gateway] initialized.')
+            ->assertSuccessful();
+
+        $peer = Node::query()->create([
+            'name' => 'app-dev',
+            'public_ssh_host' => '192.0.2.20',
+            'wireguard_ip' => '10.44.0.2',
+            'wireguard_public_key' => 'PEER_PUBLIC',
+        ]);
+        $vpn = new VpnConfigurationRepository(app(VpnSettings::class), $orbitHome);
+
+        expect(app(VpnSettings::class)->endpoint())
+            ->toBe($endpoint)
+            ->and($vpn->forPeer($peer)->endpoint)
+            ->toBe($endpoint);
+    } finally {
+        $filesystem->deleteDirectory($orbitHome);
+    }
+})->with([
+    'IPv4 bytes' => ['192.0.2.10', '192.0.2.10:51820'],
+    'hostname bytes' => ['Vpn.Example.test', 'Vpn.Example.test:51820'],
+    'IPv6 brackets' => ['2001:db8::10', '[2001:db8::10]:51820'],
+]);
 
 it('does not convert non-provisioning failures into the stable diagnostic', function (): void {
     expect(fn () => $this->artisan('orbit:bootstrap', [

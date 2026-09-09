@@ -407,6 +407,7 @@ it('rejects an invalid static identity before persistence or host side effects',
     string $wireguardIp,
     string $wireguardSubnet,
     string $domain,
+    string $wireguardEndpoint,
 ): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $processes = new class implements ProcessRunner {
@@ -441,7 +442,7 @@ it('rejects an invalid static identity before persistence or host side effects',
         publicHost: '85.9.218.89',
         wireguardIp: $wireguardIp,
         wireguardSubnet: $wireguardSubnet,
-        wireguardEndpoint: '85.9.218.89:51820',
+        wireguardEndpoint: $wireguardEndpoint,
         dnsServer: '10.44.0.1',
         domain: $domain,
     )))
@@ -453,12 +454,40 @@ it('rejects an invalid static identity before persistence or host side effects',
         ->and($processes->calls)
         ->toBe(0);
 })->with([
-    'invalid domain' => ['10.44.0.1', '10.44.0.0/24', 'invalid domain'],
-    'subnet host bits' => ['10.44.0.2', '10.44.0.1/24', 'orbit'],
-    'bad prefix' => ['10.44.0.1', '10.44.0.0/31', 'orbit'],
-    'network address' => ['10.44.0.0', '10.44.0.0/30', 'orbit'],
-    'broadcast address' => ['10.44.0.3', '10.44.0.0/30', 'orbit'],
-    'outside address' => ['10.44.0.4', '10.44.0.0/30', 'orbit'],
+    'invalid domain' => ['10.44.0.1', '10.44.0.0/24', 'invalid domain', '85.9.218.89:51820'],
+    'subnet host bits' => ['10.44.0.2', '10.44.0.1/24', 'orbit', '85.9.218.89:51820'],
+    'bad prefix' => ['10.44.0.1', '10.44.0.0/31', 'orbit', '85.9.218.89:51820'],
+    'network address' => ['10.44.0.0', '10.44.0.0/30', 'orbit', '85.9.218.89:51820'],
+    'broadcast address' => ['10.44.0.3', '10.44.0.0/30', 'orbit', '85.9.218.89:51820'],
+    'outside address' => ['10.44.0.4', '10.44.0.0/30', 'orbit', '85.9.218.89:51820'],
+    'bare IPv6 endpoint' => ['10.44.0.1', '10.44.0.0/24', 'orbit', '2001:db8::10:51820'],
+    'invalid endpoint port' => ['10.44.0.1', '10.44.0.0/24', 'orbit', '85.9.218.89:0'],
+    'endpoint whitespace' => ['10.44.0.1', '10.44.0.0/24', 'orbit', 'vpn.example.test :51820'],
+    'endpoint control character' => [
+        '10.44.0.1',
+        '10.44.0.0/24',
+        'orbit',
+        "85.9.218.89:51820\nPostUp = touch /tmp/orbit-injected",
+    ],
+]);
+
+it('accepts the shared WireGuard endpoint forms at the bootstrap boundary', function (string $endpoint): void {
+    $data = bootstrap_gateway_action_data();
+
+    expect(fn () => new App\Actions\Gateway\GatewayBootstrapIdentityValidator()->validate(new BootstrapGatewayData(
+        publicHost: $data->publicHost,
+        wireguardIp: $data->wireguardIp,
+        wireguardSubnet: $data->wireguardSubnet,
+        wireguardEndpoint: $endpoint,
+        dnsServer: $data->dnsServer,
+        domain: $data->domain,
+    )))
+        ->not
+        ->toThrow(InvalidArgumentException::class);
+})->with([
+    'IPv4' => '192.0.2.10:51820',
+    'hostname' => 'vpn.example.test:51820',
+    'bracketed IPv6' => '[2001:db8::10]:51820',
 ]);
 
 it('records provisioning and failed host convergence state and activates an idempotent retry', function (): void {

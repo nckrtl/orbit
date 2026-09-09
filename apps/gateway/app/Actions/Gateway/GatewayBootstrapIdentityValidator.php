@@ -6,6 +6,7 @@ namespace App\Actions\Gateway;
 
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\WireGuard\WireGuardEndpoint;
 use InvalidArgumentException;
 
 /** @mago-expect lint:cyclomatic-complexity Static gateway identity validation centralizes independent boundary checks before host effects. */
@@ -37,15 +38,7 @@ final readonly class GatewayBootstrapIdentityValidator
             throw new InvalidArgumentException('Gateway WireGuard port is invalid.');
         }
 
-        $matches = [];
-
-        if (preg_match('/^(.+):([0-9]{1,5})$/', $data->wireguardEndpoint, $matches) !== 1) {
-            throw new InvalidArgumentException("Gateway WireGuard endpoint [{$data->wireguardEndpoint}] is invalid.");
-        }
-
-        $endpointPort = filter_var($matches[2], FILTER_VALIDATE_INT);
-
-        if (! $this->isHost($matches[1]) || ! is_int($endpointPort) || $endpointPort < 1 || $endpointPort > 65_535) {
+        if (! WireGuardEndpoint::isValid($data->wireguardEndpoint)) {
             throw new InvalidArgumentException("Gateway WireGuard endpoint [{$data->wireguardEndpoint}] is invalid.");
         }
 
