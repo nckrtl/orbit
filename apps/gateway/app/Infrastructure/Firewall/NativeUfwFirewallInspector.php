@@ -6,7 +6,7 @@ namespace App\Infrastructure\Firewall;
 
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Firewall\FirewallBackendStatus;
-use App\Domain\Firewall\FirewallInspectionData;
+use App\Domain\Firewall\FirewallInspectionBatchData;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
@@ -27,9 +27,16 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
         private UfwStatusParser $parser = new UfwStatusParser,
     ) {}
 
-    public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
+    public function inspect(array $targets): FirewallInspectionBatchData
     {
-        $node = $target->node;
+        $node = $targets[0]->node;
+
+        foreach ($targets as $target) {
+            if (! $target->node->is($node)) {
+                throw new DoctorInspectionException;
+            }
+        }
+
         $host = $node->wireguard_ip;
         if ($node->platform !== 'linux' || ! is_string($host) || $host === '') {
             throw new DoctorInspectionException;
@@ -53,39 +60,55 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
             throw new DoctorInspectionException;
         }
         if (preg_match('/\AStatus:\s+inactive\s*$/mi', $r->stdout) === 1) {
-            return new FirewallInspectionData(FirewallBackendStatus::Inactive, FirewallRuleInspectionStatus::Missing);
+            return $this->uniformResult(FirewallBackendStatus::Inactive, $targets);
         }
         if (preg_match('/\AStatus:\s+absent\s*$/mi', $r->stdout) === 1) {
-            return new FirewallInspectionData(FirewallBackendStatus::Absent, FirewallRuleInspectionStatus::Missing);
+            return $this->uniformResult(FirewallBackendStatus::Absent, $targets);
         }
         if (preg_match('/\AStatus:\s+active\s*$/mi', $r->stdout) !== 1) {
             throw new DoctorInspectionException;
         }
         try {
-            $shape = $target->shape;
-            $o = $this->parser->ownership(
+            $ownerships = $this->parser->ownerships(
                 $r->stdout,
-                new UfwRuleShape(
-                    $shape->comment,
-                    $shape->action,
-                    $shape->direction,
-                    $shape->source,
-                    $shape->destination,
-                    $shape->port,
-                    $shape->protocol,
-                    $shape->inInterface,
-                    $shape->outInterface,
-                    $shape->family,
+                array_map(
+                    static fn (FirewallInspectionTarget $target): UfwRuleShape => new UfwRuleShape(
+                        $target->shape->comment,
+                        $target->shape->action,
+                        $target->shape->direction,
+                        $target->shape->source,
+                        $target->shape->destination,
+                        $target->shape->port,
+                        $target->shape->protocol,
+                        $target->shape->inInterface,
+                        $target->shape->outInterface,
+                        $target->shape->family,
+                    ),
+                    $targets,
                 ),
             );
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }
 
-        return new FirewallInspectionData(FirewallBackendStatus::Active, match ($o) {
-            UfwRuleOwnership::Exact => FirewallRuleInspectionStatus::Exact,
-            UfwRuleOwnership::Missing => FirewallRuleInspectionStatus::Missing,
-            UfwRuleOwnership::Drift => FirewallRuleInspectionStatus::Drift,
-        });
+        return new FirewallInspectionBatchData(
+            FirewallBackendStatus::Active,
+            array_map(static fn (UfwRuleOwnership $ownership): FirewallRuleInspectionStatus => match ($ownership) {
+                UfwRuleOwnership::Exact => FirewallRuleInspectionStatus::Exact,
+                UfwRuleOwnership::Missing => FirewallRuleInspectionStatus::Missing,
+                UfwRuleOwnership::Drift => FirewallRuleInspectionStatus::Drift,
+            }, $ownerships),
+        );
+    }
+
+    /** @param non-empty-list<FirewallInspectionTarget> $targets */
+    private function uniformResult(
+        FirewallBackendStatus $backend,
+        array $targets,
+    ): FirewallInspectionBatchData {
+        return new FirewallInspectionBatchData(
+            $backend,
+            array_fill(0, count($targets), FirewallRuleInspectionStatus::Missing),
+        );
     }
 }

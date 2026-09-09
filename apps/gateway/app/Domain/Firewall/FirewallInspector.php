@@ -6,5 +6,6 @@ namespace App\Domain\Firewall;
 
 interface FirewallInspector
 {
-    public function inspect(FirewallInspectionTarget $target): FirewallInspectionData;
+    /** @param non-empty-list<FirewallInspectionTarget> $targets */
+    public function inspect(array $targets): FirewallInspectionBatchData;
 }
