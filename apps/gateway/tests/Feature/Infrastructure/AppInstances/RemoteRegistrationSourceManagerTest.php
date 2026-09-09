@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\Registration\RegistrationSourceFacts;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
@@ -109,6 +110,206 @@ it('fails closed when an incomplete stage has no verified original', function ()
                 'registration_relocation_state' => 'relocating',
                 'registration_authoritative_path' => $fixture['source'],
             ]);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('resumes after an emitted same-filesystem rename outruns its database checkpoint', function (): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $gitBefore = orb105_git_state($fixture['source']);
+        $manifestBefore = orb105_complete_manifest($fixture['source']);
+        $interruptingManager = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor);
+
+        expect(fn () => $interruptingManager->relocate($fixture['instance'], $facts))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('instance.registration_incomplete');
+            })
+            ->and(file_exists($fixture['source']))
+            ->toBeFalse()
+            ->and(orb105_git_state($fixture['destination']))
+            ->toBe($gitBefore)
+            ->and(orb105_complete_manifest($fixture['destination']))
+            ->toBe($manifestBefore)
+            ->and($fixture['instance']->refresh()->registration_relocation_state)
+            ->toBe('relocating')
+            ->and($fixture['instance']->registration_authoritative_path)
+            ->toBe($fixture['source']);
+
+        $fixture['manager']->validateRelocationRecovery(
+            $fixture['node'],
+            $facts,
+            $fixture['destination'],
+        );
+        $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
+
+        expect(file_exists($fixture['source']))
+            ->toBeFalse()
+            ->and(orb105_git_state($fixture['destination']))
+            ->toBe($gitBefore)
+            ->and(orb105_complete_manifest($fixture['destination']))
+            ->toBe($manifestBefore)
+            ->and($fixture['instance']->refresh()->registration_relocation_state)
+            ->toBe('relocated')
+            ->and($fixture['instance']->registration_authoritative_path)
+            ->toBe($fixture['destination']);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('resumes a partially renamed included worktree set from retained evidence', function (): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        $linkedSource = $fixture['source_root'].'/source/feature';
+        $linkedDestination = $fixture['destination_root'].'/managed/acme/feature';
+        orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', 'feature', $linkedSource]);
+        $files = new Filesystem;
+        $files->ensureDirectoryExists($linkedSource.'/many');
+        for ($index = 0; $index < 2_000; $index++) {
+            file_put_contents($linkedSource.'/many/'.$index, "retained\n");
+        }
+
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], true);
+        $requestId = $fixture['instance']->registration_request_id;
+        $linked = AppInstance::query()->create([
+            'app_id' => $fixture['instance']->app_id,
+            'node_id' => $fixture['node']->id,
+            'name' => 'feature',
+            'source_layout' => 'worktree',
+            'checkout_path' => $linkedDestination,
+            'branch' => 'feature',
+            'starting_commit' => collect($facts)->firstWhere('path', $linkedSource)?->commit,
+            'registration_original_path' => $linkedSource,
+            'registration_request_id' => $requestId,
+            'registration_repository_url' => 'https://example.test/acme.git',
+            'registration_repository_identity' => 'example.test/acme',
+            'registration_relocation_state' => 'reserved',
+            'registration_authoritative_path' => $linkedSource,
+            'status' => 'reserved',
+        ]);
+        $members = array_map(
+            static fn (RegistrationSourceFacts $fact): array => [
+                'appInstance' => $fact->path === $fixture['source'] ? $fixture['instance'] : $linked,
+                'facts' => $fact,
+            ],
+            $facts,
+        );
+        $manifests = [];
+        foreach ($facts as $fact) {
+            $manifests[$fact->path] = orb105_preserved_manifest($fact->path);
+        }
+        $interrupting = orb105_registration_manager(new Orb105InterruptPartialPrepareSshExecutor(
+            movedSource: $linkedSource,
+            unmovedSource: $fixture['source'],
+        ));
+
+        expect(fn () => $interrupting->relocateSet($members))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('instance.registration_incomplete');
+            })
+            ->and(file_exists($linkedSource))
+            ->toBeFalse()
+            ->and(is_dir($linkedDestination))
+            ->toBeTrue()
+            ->and(is_dir($fixture['source']))
+            ->toBeTrue()
+            ->and($fixture['instance']->refresh()->registration_relocation_state)
+            ->toBe('relocating')
+            ->and($linked->refresh()->registration_relocation_state)
+            ->toBe('relocating');
+
+        foreach ($facts as $fact) {
+            $fixture['manager']->validateRelocationRecovery(
+                $fixture['node'],
+                $fact,
+                $fact->path === $linkedSource ? $linkedDestination : $fixture['source'],
+            );
+        }
+
+        $fixture['manager']->relocateSet($members);
+
+        expect(file_exists($fixture['source']))
+            ->toBeFalse()
+            ->and(file_exists($linkedSource))
+            ->toBeFalse()
+            ->and(orb105_preserved_manifest($fixture['destination']))
+            ->toBe($manifests[$fixture['source']])
+            ->and(orb105_preserved_manifest($linkedDestination))
+            ->toBe($manifests[$linkedSource])
+            ->and($fixture['instance']->refresh()->registration_relocation_state)
+            ->toBe('relocated')
+            ->and($linked->refresh()->registration_relocation_state)
+            ->toBe('relocated');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses unsafe checkout and Git administration modes before relocation', function (string $target): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        chmod($target === 'checkout' ? $fixture['source'] : $fixture['source'].'/.git', 0o777);
+
+        expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['source'], false))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('instance.source_invalid');
+            })
+            ->and(is_dir($fixture['source']))
+            ->toBeTrue()
+            ->and(file_exists($fixture['destination']))
+            ->toBeFalse()
+            ->and($fixture['instance']->refresh()->registration_relocation_state)
+            ->toBe('reserved');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['checkout', 'Git administration']);
+
+it('refuses an invalid second non-Composer worktree before any included source moves', function (): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        $linkedSource = $fixture['source_root'].'/source/feature';
+        orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', 'feature', $linkedSource]);
+        chmod($linkedSource.'/.git', 0o666);
+
+        expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['source'], true))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('instance.source_invalid');
+            })
+            ->and(is_dir($fixture['source']))
+            ->toBeTrue()
+            ->and(is_dir($linkedSource))
+            ->toBeTrue()
+            ->and(file_exists($fixture['destination']))
+            ->toBeFalse()
+            ->and(file_exists($fixture['destination_root'].'/managed/acme/feature'))
+            ->toBeFalse();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses a non-Composer checkout outside the resolved managed group', function (): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $manager = orb105_registration_manager(new Orb105LocalSshExecutor, managedGroup: 'root');
+
+        expect(fn () => $manager->inspect($fixture['node'], $fixture['source'], false))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('instance.source_invalid');
+            })
+            ->and(is_dir($fixture['source']))
+            ->toBeTrue()
+            ->and(file_exists($fixture['destination']))
+            ->toBeFalse();
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }
@@ -362,18 +563,26 @@ it('refuses an incomplete Laravel rollback receipt without replacing it', functi
  *     destination: string
  * }
  */
-function orb105_relocation_fixture(): array
+function orb105_relocation_fixture(bool $crossFilesystem = true): array
 {
     $token = (string) Str::uuid();
-    $sourceRoot = '/dev/shm/orbit-orb105-'.$token;
-    $destinationRoot = sys_get_temp_dir().'/orbit-orb105-'.$token;
-    $source = $sourceRoot.'/acme';
+    $sourceRoot = $crossFilesystem
+        ? '/dev/shm/orbit-orb105-'.$token
+        : sys_get_temp_dir().'/orbit-orb105-'.$token;
+    $destinationRoot = $crossFilesystem
+        ? sys_get_temp_dir().'/orbit-orb105-'.$token
+        : $sourceRoot;
+    $source = $sourceRoot.($crossFilesystem ? '/acme' : '/source/acme');
     $destination = $destinationRoot.'/managed/acme/default';
     $files = new Filesystem;
     $files->ensureDirectoryExists($source);
     $files->ensureDirectoryExists(dirname($destination));
 
-    expect(stat($sourceRoot)['dev'])->not->toBe(stat($destinationRoot)['dev']);
+    if ($crossFilesystem) {
+        expect(stat($sourceRoot)['dev'])->not->toBe(stat($destinationRoot)['dev']);
+    } else {
+        expect(stat($sourceRoot)['dev'])->toBe(stat($destinationRoot)['dev']);
+    }
 
     orb105_run(['git', 'init', '--initial-branch=main', $source]);
     orb105_run(['git', '-C', $source, 'config', 'user.email', 'orb105@example.test']);
@@ -444,8 +653,10 @@ function orb105_relocation_fixture(): array
     );
 }
 
-function orb105_registration_manager(SshExecutor $executor): RemoteRegistrationSourceManager
-{
+function orb105_registration_manager(
+    SshExecutor $executor,
+    ?string $managedGroup = null,
+): RemoteRegistrationSourceManager {
     $keys = new class implements SshKeyProvider {
         public function privateKeyPath(): string
         {
@@ -465,10 +676,14 @@ function orb105_registration_manager(SshExecutor $executor): RemoteRegistrationS
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    $accounts = new class implements ManagedUserAccountResolver {
+    $accounts = new class($managedGroup) implements ManagedUserAccountResolver {
+        public function __construct(
+            private readonly ?string $managedGroup,
+        ) {}
+
         public function resolve(Node $node): ManagedUserAccount
         {
-            return new ManagedUserAccount($node->user, $node->user, '/tmp');
+            return new ManagedUserAccount($node->user, $this->managedGroup ?? $node->user, '/tmp');
         }
     };
     $manager = new RemoteRegistrationSourceManager(
@@ -542,6 +757,16 @@ function orb105_complete_manifest(string $path): array
     return json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
 }
 
+/** @return list<array<string, int|string|null>> */
+function orb105_preserved_manifest(string $path): array
+{
+    return array_values(array_filter(
+        orb105_complete_manifest($path),
+        static fn (array $entry): bool => $entry['path'] !== '.git'
+        && ! str_starts_with((string) $entry['path'], '.git/'),
+    ));
+}
+
 /** @param non-empty-list<string> $arguments */
 function orb105_run(array $arguments): CommandResult
 {
@@ -557,6 +782,78 @@ final readonly class Orb105LocalSshExecutor implements SshExecutor
             input: $command->input,
             protectedInput: $command->protectedInput,
         ));
+    }
+}
+
+final class Orb105InterruptAfterPrepareSshExecutor implements SshExecutor
+{
+    private bool $interrupted = false;
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        $result = new Orb105LocalSshExecutor()->execute($connection, $command);
+
+        if (! $this->interrupted && ($command->arguments[3] ?? null) === 'prepare' && $result->succeeded()) {
+            $this->interrupted = true;
+
+            return new CommandResult(
+                exitCode: 137,
+                stdout: $result->stdout,
+                stderr: 'Simulated process stop after remote prepare completed.',
+                durationMs: $result->durationMs,
+                truncated: $result->truncated,
+            );
+        }
+
+        return $result;
+    }
+}
+
+final class Orb105InterruptPartialPrepareSshExecutor implements SshExecutor
+{
+    private bool $interrupted = false;
+
+    public function __construct(
+        private readonly string $movedSource,
+        private readonly string $unmovedSource,
+    ) {}
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        if ($this->interrupted || ($command->arguments[3] ?? null) !== 'prepare') {
+            return new Orb105LocalSshExecutor()->execute($connection, $command);
+        }
+
+        $this->interrupted = true;
+        $process = new SymfonyProcess($command->arguments);
+        $process->start();
+        $deadline = microtime(true) + 30;
+
+        while ($process->isRunning() && microtime(true) < $deadline) {
+            if (! file_exists($this->movedSource) && is_dir($this->unmovedSource)) {
+                $process->stop(0, SIGKILL);
+
+                return new CommandResult(
+                    exitCode: $process->getExitCode() ?? 137,
+                    stdout: $process->getOutput(),
+                    stderr: $process->getErrorOutput(),
+                    durationMs: 0,
+                    truncated: false,
+                );
+            }
+        }
+
+        if ($process->isRunning()) {
+            $process->stop(0, SIGKILL);
+        }
+
+        return new CommandResult(
+            exitCode: $process->getExitCode() ?? 1,
+            stdout: $process->getOutput(),
+            stderr: 'Partial prepare interruption was not observed.',
+            durationMs: 0,
+            truncated: false,
+        );
     }
 }
 

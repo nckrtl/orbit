@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Registration\RegistrationSourceFacts;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -35,11 +36,19 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
     public function inspect(Node $node, string $sourcePath, bool $includeWorktrees): array
     {
-        $this->assertNode($node);
+        $account = $this->account($node);
         $result = $this->ssh->execute(
             $node,
             new RemoteCommand(
-                arguments: ['python3', '-c', self::inspectionScript(), $sourcePath, $includeWorktrees ? '1' : '0'],
+                arguments: [
+                    'python3',
+                    '-c',
+                    self::inspectionScript(),
+                    $sourcePath,
+                    $includeWorktrees ? '1' : '0',
+                    $account->user,
+                    $account->group,
+                ],
             ),
             step: 'registration-source-inspect',
             errorCode: 'instance.source_invalid',
@@ -108,6 +117,40 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             throw new ResourceOperationException(
                 'instance.registration_conflict',
                 'The retained authoritative registration source no longer matches its verified Git identity.',
+                409,
+            );
+        }
+    }
+
+    public function validateRelocationRecovery(
+        Node $node,
+        RegistrationSourceFacts $facts,
+        string $candidatePath,
+    ): void {
+        try {
+            $actual = $this->inspect($node, $candidatePath, false);
+        } catch (\Throwable $exception) {
+            throw new ResourceOperationException(
+                'instance.registration_conflict',
+                'The retained relocation path no longer matches its preserved source state.',
+                409,
+                previous: $exception,
+            );
+        }
+
+        if (
+            count($actual) !== 1
+            || $actual[0]->path !== $candidatePath
+            || $actual[0]->layout !== $facts->layout
+            || $actual[0]->repositoryIdentity !== $facts->repositoryIdentity
+            || $actual[0]->branch !== $facts->branch
+            || $actual[0]->detached !== $facts->detached
+            || $actual[0]->commit !== $facts->commit
+            || $actual[0]->sourceDigest !== $facts->sourceDigest
+        ) {
+            throw new ResourceOperationException(
+                'instance.registration_conflict',
+                'The retained relocation path no longer matches its preserved source state.',
                 409,
             );
         }
@@ -466,7 +509,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         return $value;
     }
 
-    private function assertNode(Node $node): void
+    private function account(Node $node): ManagedUserAccount
     {
         $account = $this->accounts->resolve($node);
 
@@ -477,6 +520,8 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 409,
             );
         }
+
+        return $account;
     }
 
     private function invalidSource(?\Throwable $previous = null): ResourceOperationException
@@ -496,6 +541,8 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
             requested = sys.argv[1]
             include_worktrees = sys.argv[2] == '1'
+            managed_user = sys.argv[3]
+            managed_group = sys.argv[4]
             git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
 
             def git(path, *args):
@@ -531,6 +578,14 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         else: h.update(b'D')
                 return h.hexdigest()
 
+            def safe_metadata(path, directory):
+                import grp, pwd
+                entry = pathlib.Path(path)
+                if entry.is_symlink() or (directory and not entry.is_dir()) or (not directory and not entry.is_file()): raise SystemExit(42)
+                info = entry.stat()
+                if pwd.getpwuid(info.st_uid).pw_name != managed_user or grp.getgrgid(info.st_gid).gr_name != managed_group: raise SystemExit(42)
+                if stat.S_IMODE(info.st_mode) & 0o7002: raise SystemExit(42)
+
             top = git(requested, 'rev-parse', '--show-toplevel')
             if not os.path.isabs(top) or os.path.realpath(top) != top or not os.path.isdir(top): raise SystemExit(42)
             origin = git(top, 'remote', 'get-url', 'origin')
@@ -549,9 +604,14 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             for path in paths:
                 canonical = git(path, 'rev-parse', '--show-toplevel')
                 if canonical != path or os.path.realpath(path) != path: raise SystemExit(42)
+                safe_metadata(path, True)
                 dot_git = pathlib.Path(path) / '.git'
                 layout = 'checkout' if dot_git.is_dir() and not dot_git.is_symlink() else 'worktree'
                 if layout == 'worktree' and (not dot_git.is_file() or dot_git.is_symlink()): raise SystemExit(42)
+                safe_metadata(dot_git, layout == 'checkout')
+                git_dir = os.path.realpath(git(path, 'rev-parse', '--absolute-git-dir'))
+                safe_metadata(git_dir, True)
+                safe_metadata(common, True)
                 try: branch = git(path, 'symbolic-ref', '--short', 'HEAD')
                 except subprocess.CalledProcessError: branch = None
                 rows.append({

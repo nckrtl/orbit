@@ -110,6 +110,11 @@ beforeEach(function (): void {
 
         public bool $retainedInvalid = false;
 
+        public bool $failDiscardOnce = false;
+
+        /** @var list<string> */
+        public array $invalidRelocationPaths = [];
+
         /** @var list<string> */
         public array $calls = [];
 
@@ -134,6 +139,22 @@ beforeEach(function (): void {
                 throw new ResourceOperationException(
                     'instance.registration_conflict',
                     'The retained authoritative registration source no longer matches its verified Git identity.',
+                    409,
+                );
+            }
+        }
+
+        public function validateRelocationRecovery(
+            Node $node,
+            RegistrationSourceFacts $facts,
+            string $candidatePath,
+        ): void {
+            $this->calls[] = 'validate-relocation:'.$candidatePath;
+
+            if ($this->retainedInvalid || in_array($candidatePath, $this->invalidRelocationPaths, true)) {
+                throw new ResourceOperationException(
+                    'instance.registration_conflict',
+                    'The retained relocation path no longer matches its preserved source state.',
                     409,
                 );
             }
@@ -182,6 +203,15 @@ beforeEach(function (): void {
         public function discardLaravelRollback(AppInstance $appInstance): void
         {
             $this->calls[] = 'url-discard';
+
+            if ($this->failDiscardOnce) {
+                $this->failDiscardOnce = false;
+
+                throw new ResourceOperationException(
+                    'instance.laravel_rollback_failed',
+                    'Laravel receipt cleanup was interrupted.',
+                );
+            }
         }
     };
     $this->registrationSource->facts = [registration_facts()];
@@ -332,6 +362,7 @@ it('returns the same identities on an identical retry and refuses conflicting ev
             'url-prepare',
             'url-discard',
             'validate:/srv/orbit/apps/acme/default',
+            'url-discard',
         ]);
 
     $this
@@ -457,6 +488,7 @@ it('restores a failed default migration and completes the identical retry with s
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.4',
         'source_is_laravel' => false,
+        'provisioning_step' => 'active',
         'status' => 'active',
     ]);
     $route = Route::query()->create([
@@ -481,6 +513,7 @@ it('restores a failed default migration and completes the identical retry with s
         'starting_commit',
         'selected_php_version',
         'source_is_laravel',
+        'provisioning_step',
         'status',
     ]);
     $routeBefore = $route->only([
@@ -606,7 +639,7 @@ it('resumes a manual migration from the durable post-transition boundary', funct
                 'starting_commit' => str_repeat('a', 40),
                 'selected_php_version' => '8.4',
                 'source_is_laravel' => 0,
-                'provisioning_step' => null,
+                'provisioning_step' => 'active',
                 'status' => AppInstanceState::Active->value,
             ],
             'route' => [
@@ -638,6 +671,240 @@ it('resumes a manual migration from the durable post-transition boundary', funct
             'url-prepare',
             'url-discard',
         ]);
+});
+
+it('finishes the same published registration without downgrading its active provisioning state', function (
+    bool $manualMigration,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'default',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/srv/orbit/apps/acme/default',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'registration_original_path' => '/work/acme',
+        'registration_request_id' => (string) Illuminate\Support\Str::uuid(),
+        'registration_primary' => true,
+        'registration_repository_url' => 'git@github.com:acme/acme.git',
+        'registration_repository_identity' => 'github.com/acme/acme',
+        'registration_source_digest' => str_repeat('c', 64),
+        'registration_default_branch' => 'main',
+        'registration_inferred_slug' => 'acme',
+        'registration_inferred_root' => 'public',
+        'registration_common_repository_path' => '/work/acme/.git',
+        'registration_worktree_paths' => ['/work/acme'],
+        'registration_relocation_state' => 'relocated',
+        'registration_authoritative_path' => '/srv/orbit/apps/acme/default',
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'preserved.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    if ($manualMigration) {
+        $instance->update([
+            'registration_migration_recovery' => registration_migration_recovery($instance, $route),
+        ]);
+    }
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+        'hostname' => 'preserved.test',
+    ])->assertOk();
+
+    expect($response->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($response->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($response->json('data.app_instance.route.hostname'))
+        ->toBe('preserved.test')
+        ->and($instance
+            ->refresh()
+            ->only([
+                'status',
+                'provisioning_step',
+                'selected_php_version',
+                'source_is_laravel',
+                'failed_step',
+                'error_code',
+            ]))
+        ->toBe([
+            'status' => AppInstanceState::Active,
+            'provisioning_step' => 'active',
+            'selected_php_version' => '8.5',
+            'source_is_laravel' => true,
+            'failed_step' => null,
+            'error_code' => null,
+        ])
+        ->and($instance->registration_completed_at)
+        ->not
+        ->toBeNull()
+        ->and($instance->registration_migration_recovery)
+        ->toBeNull()
+        ->and($this->registrationSource->calls)
+        ->toBe(['validate:/srv/orbit/apps/acme/default', 'url-discard']);
+})->with([
+    'ordinary registration' => false,
+    'manual migration' => true,
+]);
+
+it('retries receipt cleanup after registration completion without republishing or replacing evidence', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $payload = ['source_path' => '/work/acme', 'app_id' => $app->id];
+    $this->registrationSource->failDiscardOnce = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', $payload)
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete');
+
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    expect($instance->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($instance->provisioning_step)
+        ->toBe('active')
+        ->and($instance->registration_completed_at)
+        ->not
+        ->toBeNull()
+        ->and($instance->failed_step)
+        ->toBe('registration')
+        ->and($instance->error_code)
+        ->toBe('instance.laravel_rollback_failed');
+
+    $response = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+
+    expect($response->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($response->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($instance->refresh()->failed_step)
+        ->toBeNull()
+        ->and($instance->error_code)
+        ->toBeNull()
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(1)
+        ->and($this->registrationSource->calls)
+        ->toBe([
+            'inspect',
+            'relocate-set:1',
+            'url-prepare',
+            'url-discard',
+            'validate:/srv/orbit/apps/acme/default',
+            'url-discard',
+        ]);
+});
+
+it('recovers a same-filesystem move that outran its relocation checkpoint', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'default',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/srv/orbit/apps/acme/default',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        ...registration_evidence_for_test('/work/acme'),
+        'registration_relocation_state' => 'relocating',
+        'registration_authoritative_path' => '/work/acme',
+        'status' => AppInstanceState::Reserved,
+    ]);
+    $this->registrationSource->invalidRelocationPaths = ['/work/acme'];
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+    ])->assertOk();
+
+    expect($response->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($this->configuration->inspected)
+        ->toBe([
+            '/srv/orbit/apps/acme/default',
+            '/srv/orbit/apps/acme/default',
+        ])
+        ->and($this->registrationSource->calls)
+        ->toBe([
+            'validate-relocation:/work/acme',
+            'validate-relocation:/srv/orbit/apps/acme/default',
+            'relocate-set:1',
+            'url-prepare',
+            'url-discard',
+        ]);
+});
+
+it('refuses to adopt an AppInstance already owned through instance new', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'default',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/work/acme',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
+    ]);
+    $before = $instance->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'app_id' => $app->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->registrationSource->calls)
+        ->toBe(['inspect']);
 });
 
 it('uses an explicit hostname only for the primary member of a requested source set', function (): void {
@@ -854,6 +1121,52 @@ function registration_facts(string $digest = ''): RegistrationSourceFacts
         worktreePaths: ['/work/acme'],
         sourceDigest: $digest === '' ? str_repeat('c', 64) : $digest,
     );
+}
+
+/** @return array<string, mixed> */
+function registration_evidence_for_test(string $source): array
+{
+    return [
+        'registration_original_path' => $source,
+        'registration_request_id' => (string) Illuminate\Support\Str::uuid(),
+        'registration_primary' => true,
+        'registration_include_worktrees' => false,
+        'registration_repository_url' => 'git@github.com:acme/acme.git',
+        'registration_repository_identity' => 'github.com/acme/acme',
+        'registration_source_digest' => str_repeat('c', 64),
+        'registration_detached' => false,
+        'registration_default_branch' => 'main',
+        'registration_inferred_slug' => 'acme',
+        'registration_inferred_root' => 'public',
+        'registration_common_repository_path' => $source.'/.git',
+        'registration_worktree_paths' => [$source],
+    ];
+}
+
+/** @return array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}} */
+function registration_migration_recovery(AppInstance $instance, Route $route): array
+{
+    return [
+        'app_instance' => [
+            'name' => 'main',
+            'source_layout' => 'checkout',
+            'checkout_path' => '/work/acme',
+            'root' => null,
+            'branch' => 'main',
+            'branch_override' => null,
+            'migration_required' => 1,
+            'starting_commit' => $instance->starting_commit,
+            'selected_php_version' => '8.4',
+            'source_is_laravel' => 0,
+            'provisioning_step' => 'active',
+            'status' => AppInstanceState::Active->value,
+        ],
+        'route' => [
+            'id' => $route->id,
+            'hostname' => $route->hostname,
+            'provenance' => $route->provenance->value,
+        ],
+    ];
 }
 
 /** @param array{string, string} $paths */

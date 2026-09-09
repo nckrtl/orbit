@@ -14,6 +14,12 @@ interface RegistrationSourceManager
 
     public function validateRetained(Node $node, RegistrationSourceFacts $facts, string $authoritativePath): void;
 
+    public function validateRelocationRecovery(
+        Node $node,
+        RegistrationSourceFacts $facts,
+        string $candidatePath,
+    ): void;
+
     public function relocate(AppInstance $appInstance, RegistrationSourceFacts $facts): void;
 
     /** @param list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}> $members */

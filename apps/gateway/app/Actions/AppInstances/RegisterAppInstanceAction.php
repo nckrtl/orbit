@@ -127,10 +127,18 @@ final readonly class RegisterAppInstanceAction
     private function preflightSources(Node $node, OrbitApp $app, array $facts, bool $retained): void
     {
         foreach ($facts as $fact) {
-            $path = $this->authoritativeSourcePath($node, $fact);
+            $instance = AppInstance::query()
+                ->where('node_id', $node->id)
+                ->where('registration_original_path', $fact->path)
+                ->first();
+            $path = $this->authoritativeSourcePath($instance, $fact);
 
             if ($retained) {
-                $this->sources->validateRetained($node, $fact, $path);
+                if ($instance instanceof AppInstance && $instance->registration_relocation_state === 'relocating') {
+                    $path = $this->relocatingSourcePath($node, $instance, $fact);
+                } else {
+                    $this->sources->validateRetained($node, $fact, $path);
+                }
             }
 
             $candidate = new AppInstance([
@@ -144,13 +152,8 @@ final readonly class RegisterAppInstanceAction
         }
     }
 
-    private function authoritativeSourcePath(Node $node, RegistrationSourceFacts $facts): string
+    private function authoritativeSourcePath(?AppInstance $instance, RegistrationSourceFacts $facts): string
     {
-        $instance = AppInstance::query()
-            ->where('node_id', $node->id)
-            ->where('registration_original_path', $facts->path)
-            ->first();
-
         if (! $instance instanceof AppInstance) {
             return $facts->path;
         }
@@ -170,6 +173,31 @@ final readonly class RegisterAppInstanceAction
         }
 
         return $expected;
+    }
+
+    private function relocatingSourcePath(
+        Node $node,
+        AppInstance $instance,
+        RegistrationSourceFacts $facts,
+    ): string {
+        try {
+            $this->sources->validateRelocationRecovery($node, $facts, $facts->path);
+
+            return $facts->path;
+        } catch (Throwable) {
+            try {
+                $this->sources->validateRelocationRecovery($node, $facts, $instance->checkout_path);
+
+                return $instance->checkout_path;
+            } catch (Throwable $destinationFailure) {
+                throw new ResourceOperationException(
+                    'instance.registration_conflict',
+                    'Neither retained relocation path matches the verified source state.',
+                    409,
+                    previous: $destinationFailure,
+                );
+            }
+        }
     }
 
     /** @param list<RegistrationSourceFacts> $facts */
@@ -420,9 +448,7 @@ final readonly class RegisterAppInstanceAction
             $destination = $roots->instance->append($app->slug, $name);
             $instance = AppInstance::query()
                 ->where('node_id', $node->id)
-                ->where(static fn ($query) => $query
-                    ->where('registration_original_path', $fact->path)
-                    ->orWhere('checkout_path', $fact->path))
+                ->where('registration_original_path', $fact->path)
                 ->first();
 
             if (! $instance instanceof AppInstance && $fact === $primary) {
@@ -620,7 +646,9 @@ final readonly class RegisterAppInstanceAction
         ?string $root,
     ): void {
         if (
-            $instance->app_id !== $app->id
+            $instance->registration_request_id === null
+            && ! $instance->migration_required
+            || $instance->app_id !== $app->id
             || $instance->source_layout !== $facts->layout->value
             || $instance->registration_repository_identity !== null
             && $instance->registration_repository_identity !== $facts->repositoryIdentity
@@ -646,8 +674,11 @@ final readonly class RegisterAppInstanceAction
     ): AppInstance {
         if ($instance->registration_completed_at !== null && $instance->status === AppInstanceState::Active) {
             $this->provisioner->reserve($instance, $hostname);
+            $completed = $this->provisioner->complete($instance, $hostname);
+            $this->sources->discardLaravelRollback($completed);
+            $completed->update(['failed_step' => null, 'error_code' => null]);
 
-            return $this->provisioner->complete($instance, $hostname);
+            return $completed->refresh()->load('routes.targets');
         }
 
         $migration = $instance->migration_required;
@@ -665,7 +696,20 @@ final readonly class RegisterAppInstanceAction
                 : null;
         }
 
-        DB::transaction(static function () use ($instance, $facts, $recovery): void {
+        if (
+            ! $migration
+            && $instance->status === AppInstanceState::Active
+            && $instance->provisioning_step === 'active'
+            && $instance->registration_request_id !== null
+        ) {
+            $this->provisioner->reserve($instance, $provisioningHostname);
+
+            return $this->finishPublishedRegistration(
+                $this->provisioner->complete($instance, $provisioningHostname),
+            );
+        }
+
+        DB::transaction(static function () use ($instance, $facts, $recovery, $recoveringMigration): void {
             $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
             $locked->update([
                 'name' => $instance->name,
@@ -680,6 +724,14 @@ final readonly class RegisterAppInstanceAction
                 'registration_source_digest' => $facts->sourceDigest,
                 'registration_detached' => $facts->detached,
                 'registration_migration_recovery' => $recovery,
+                ...(
+                    $recoveringMigration
+                        ? [
+                            'selected_php_version' => null,
+                            'source_is_laravel' => null,
+                            'provisioning_step' => null,
+                        ] : []
+                ),
                 'status' => AppInstanceState::SourceResolved,
                 'failed_step' => null,
                 'error_code' => null,
@@ -692,13 +744,6 @@ final readonly class RegisterAppInstanceAction
         try {
             $this->provisioner->reserve($instance, $provisioningHostname);
             $completed = $this->provisioner->complete($instance, $provisioningHostname);
-            $this->sources->discardLaravelRollback($completed);
-            $completed->update([
-                'registration_completed_at' => now(),
-                'registration_migration_recovery' => null,
-            ]);
-
-            return $completed->refresh()->load('routes.targets');
         } catch (Throwable $exception) {
             $this->sources->restoreLaravelConfiguration($instance);
 
@@ -714,6 +759,21 @@ final readonly class RegisterAppInstanceAction
 
             throw $exception;
         }
+
+        return $this->finishPublishedRegistration($completed);
+    }
+
+    private function finishPublishedRegistration(AppInstance $completed): AppInstance
+    {
+        $completed->update([
+            'registration_completed_at' => now(),
+            'registration_migration_recovery' => null,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+        $this->sources->discardLaravelRollback($completed);
+
+        return $completed->refresh()->load('routes.targets');
     }
 
     /** @return array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}} */
