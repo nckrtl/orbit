@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
@@ -30,6 +31,7 @@ it('publishes Metrics in certificate firewall Caddy and DNS order', function ():
             metrics_publication_manager_result(),
             metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
         ],
+        projection: new MetricsPublicationManagerProjectionOwner($events),
     );
 
     $manager->converge(
@@ -38,6 +40,7 @@ it('publishes Metrics in certificate firewall Caddy and DNS order', function ():
     );
 
     expect($events)->toBe([
+        'projection:enter',
         'certificate:issue',
         'process:certificate',
         'ssh:status',
@@ -45,6 +48,7 @@ it('publishes Metrics in certificate firewall Caddy and DNS order', function ():
         'ssh:status',
         'process:caddy',
         'dns:metrics',
+        'projection:leave',
     ]);
 });
 
@@ -57,6 +61,7 @@ it('removes Metrics publication in exact reverse order', function (): void {
             metrics_publication_manager_result(),
             metrics_publication_manager_result(stdout: "Status: active\n"),
         ],
+        projection: new MetricsPublicationManagerProjectionOwner($events),
     );
 
     $manager->remove(
@@ -65,12 +70,14 @@ it('removes Metrics publication in exact reverse order', function (): void {
     );
 
     expect($events)->toBe([
+        'projection:enter',
         'dns:none',
         'process:caddy',
         'ssh:status',
         'ssh:delete',
         'ssh:status',
         'process:certificate',
+        'projection:leave',
     ]);
 });
 
@@ -221,14 +228,60 @@ it('restores a renewed certificate after an unchanged Caddy publication when DNS
 
 it('retracts only the Gateway side of the publication, never touching the firewall', function (): void {
     $events = [];
-    $manager = metrics_publication_manager($events, []);
+    $manager = metrics_publication_manager(
+        $events,
+        [],
+        projection: new MetricsPublicationManagerProjectionOwner($events),
+    );
 
     $manager->retract(metrics_publication_manager_node('metrics', '10.44.0.3'));
 
     expect($events)->toBe([
+        'projection:enter',
         'dns:none',
         'process:caddy',
         'process:certificate',
+        'projection:leave',
+    ]);
+});
+
+it('retains projection ownership through DNS failure rollback', function (): void {
+    $events = [];
+    $projection = new MetricsPublicationManagerProjectionOwner($events);
+    $manager = metrics_publication_manager(
+        $events,
+        [
+            metrics_publication_manager_result(stdout: "Status: active\n"),
+            metrics_publication_manager_result(),
+            metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
+            metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
+            metrics_publication_manager_result(),
+            metrics_publication_manager_result(stdout: "Status: active\n"),
+        ],
+        failDns: true,
+        projection: $projection,
+    );
+
+    expect(fn () => $manager->converge(
+        metrics_publication_manager_node('gateway', '10.44.0.1'),
+        metrics_publication_manager_node('metrics', '10.44.0.3'),
+    ))
+        ->toThrow(RuntimeException::class, 'DNS publication failed.');
+    expect($events)->toBe([
+        'projection:enter',
+        'certificate:issue',
+        'process:certificate',
+        'ssh:status',
+        'ssh:apply',
+        'ssh:status',
+        'process:caddy',
+        'dns:metrics',
+        'process:caddy',
+        'ssh:status',
+        'ssh:delete',
+        'ssh:status',
+        'process:certificate',
+        'projection:leave',
     ]);
 });
 
@@ -243,6 +296,7 @@ function metrics_publication_manager(
     bool $failDns = false,
     ?string $previousCertificateTarget = null,
     ?string $previousCaddyConfiguration = null,
+    ?DevelopmentProjectionOperationLock $projection = null,
 ): MetricsPublicationManager {
     $processes = new MetricsPublicationManagerProcessRunner(
         $events,
@@ -263,6 +317,7 @@ function metrics_publication_manager(
             new MetricsPublicationManagerKnownHostsStore,
         ),
         dns: new MetricsPublicationManagerDns($events, $failDns),
+        projection: $projection ?? new MetricsPublicationManagerProjectionOwner,
     );
 }
 
@@ -401,6 +456,33 @@ final class MetricsPublicationManagerDns implements PrivateDnsManager
 
         if ($this->fail) {
             throw new RuntimeException('DNS publication failed.');
+        }
+    }
+}
+
+final class MetricsPublicationManagerProjectionOwner implements DevelopmentProjectionOperationLock
+{
+    /** @var list<string>|null */
+    private ?array $events;
+
+    /** @param list<string>|null $events */
+    public function __construct(?array &$events = null)
+    {
+        $this->events = &$events;
+    }
+
+    public function run(Closure $operation): mixed
+    {
+        if (is_array($this->events)) {
+            $this->events[] = 'projection:enter';
+        }
+
+        try {
+            return $operation();
+        } finally {
+            if (is_array($this->events)) {
+                $this->events[] = 'projection:leave';
+            }
         }
     }
 }

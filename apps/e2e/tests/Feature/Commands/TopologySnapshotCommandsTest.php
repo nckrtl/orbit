@@ -142,7 +142,12 @@ describe('topology snapshot commands', function () {
         $target = TopologyTarget::feature('AUX-132', $attempt, TopologyRecipe::extendedAppProd());
         $generation = promotedGenerationFixture();
         $state = IssueState::forWorktree('AUX-132', $worktree);
-        $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
+        $state->writeAttempt(
+            $attempt,
+            AttemptPurpose::Proof,
+            new OperationId(str_repeat('b', 32)),
+            TopologyExtension::AppProd,
+        );
         $state->writeTopology(new FeatureTopology(
             TopologyConstructionInputs::create(
                 $target,

@@ -126,6 +126,18 @@ describe('topology commands', function () {
                     ->getDefinition()
                     ->hasOption('candidate'),
             )
+            ->toBeTrue()
+            ->and(
+                new ReleaseCommand()
+                    ->getDefinition()
+                    ->hasOption('recover-extension'),
+            )
+            ->toBeTrue()
+            ->and(
+                new ReleaseCommand()
+                    ->getDefinition()
+                    ->hasOption('expected-attempt'),
+            )
             ->toBeTrue();
 
         foreach ([
@@ -276,6 +288,43 @@ describe('topology commands', function () {
             ->assertFailed();
     });
 
+    it('requires exact paired legacy recovery options before state or Incus mutation', function (): void {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $state = IssueState::forWorktree('TST-12', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('b', 32)));
+        $leasePath = $worktree.'/.e2e/'.IssueState::ATTEMPT;
+        $lease = file_get_contents($leasePath);
+        Process::fake();
+
+        $this
+            ->artisan('topology:release', [
+                'issue' => 'TST-12',
+                '--recover-extension' => 'app-prod',
+            ])
+            ->expectsOutputToContain('Use --recover-extension and --expected-attempt together.')
+            ->assertFailed();
+        $this
+            ->artisan('topology:release', [
+                'issue' => 'TST-12',
+                '--recover-extension' => 'other',
+                '--expected-attempt' => $attempt->value,
+            ])
+            ->expectsOutputToContain('must be none or app-prod')
+            ->assertFailed();
+        $this
+            ->artisan('topology:release', [
+                'issue' => 'TST-12',
+                '--recover-extension' => 'none',
+                '--expected-attempt' => 'short',
+            ])
+            ->expectsOutputToContain('attempt ID is invalid')
+            ->assertFailed();
+
+        expect(file_get_contents($leasePath))->toBe($lease);
+        Process::assertNothingRan();
+    });
+
     it('refuses sync and exec on a proved extended attempt before touching Incus', function () {
         ['primary' => $primary, 'worktree' => $worktree] = commandPrimaryFixture();
         rmdir($worktree);
@@ -288,7 +337,12 @@ describe('topology commands', function () {
         Process::run(['git', '-C', $primary, 'worktree', 'add', '--quiet', '-b', 'tst-12-feature', $worktree])->throw();
         $state = IssueState::forWorktree('TST-12', $worktree);
         $proof = new AttemptId(str_repeat('c', 32));
-        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
+        $state->writeAttempt(
+            $proof,
+            AttemptPurpose::Proof,
+            new OperationId(str_repeat('b', 32)),
+            \App\E2E\Value\TopologyExtension::AppProd,
+        );
         $state->writeProof(['status' => 'proved', 'attempt_id' => $proof->value]);
         $state->writeTopology(commandTopologyFixture(
             'TST-12',
@@ -361,7 +415,12 @@ describe('topology commands', function () {
             AttemptPurpose::Discovery,
             \App\E2E\Value\TopologyRecipe::extendedAppProd(),
         );
-        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('b', 32)));
+        $state->writeAttempt(
+            $attempt,
+            AttemptPurpose::Discovery,
+            new OperationId(str_repeat('b', 32)),
+            \App\E2E\Value\TopologyExtension::AppProd,
+        );
         $state->writeTopology($topology);
         app()->instance(
             \App\E2E\State\StatePaths::class,

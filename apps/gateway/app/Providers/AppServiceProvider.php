@@ -18,6 +18,7 @@ use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -83,6 +84,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
+use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
@@ -253,6 +255,13 @@ final class AppServiceProvider extends ServiceProvider
             ClusterRouterOperationLock::class,
             static fn (): ClusterRouterOperationLock => new NativeClusterRouterOperationLock(
                 directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/cluster-router',
+                deadline: app(CommandDeadline::class),
+            ),
+        );
+        $this->app->scoped(
+            DevelopmentProjectionOperationLock::class,
+            static fn (): DevelopmentProjectionOperationLock => new NativeDevelopmentProjectionOperationLock(
+                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 deadline: app(CommandDeadline::class),
             ),
         );
