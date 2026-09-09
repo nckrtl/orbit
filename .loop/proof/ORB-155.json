@@ -1,0 +1,17 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "candidate-authorization-contention",
+            "node": "app-dev",
+            "argv": [
+                "sh",
+                "-c",
+                "cd /home/orbit/orbit/apps/e2e && vendor/bin/pest tests/Unit/E2E/TopologyProofRunnerTest.php tests/Unit/E2E/TopologyReleaserTest.php --filter='authorized exact candidate|proof release completes during issue-lock contention|equivalence pointer changes during issue-lock contention|linked manifest changes during issue-lock contention|stops and deletes the exact VMs and network, drops the lease, and keeps the proof' --compact"
+            ],
+            "timeout_seconds": 120
+        }
+    ],
+    "mutates": false,
+    "observed_inputs": false
+}
