@@ -14,14 +14,17 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Support\Facades\DB;
 use JsonException;
 
 /**
  * @mago-expect lint:too-many-methods The adapter keeps the fixed registration protocol and its parser together.
  * @mago-expect lint:cyclomatic-complexity The adapter validates each source and relocation state before mutation.
+ * @mago-expect lint:kan-defect The adapter keeps preparation, cleanup authorization, and retained retry in one protocol.
  */
 final readonly class RemoteRegistrationSourceManager implements RegistrationSourceManager
 {
@@ -88,6 +91,8 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
         $node = $members[0]['appInstance']->node;
         $payload = [];
+        $relocated = 0;
+        $cleanupReady = 0;
 
         foreach ($members as $member) {
             $instance = $member['appInstance'];
@@ -112,39 +117,197 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 'digest' => $facts->sourceDigest,
                 'common' => $facts->commonRepositoryPath,
                 'worktrees' => $facts->worktreePaths,
+                'source_device' => $instance->registration_source_device,
+                'source_inode' => $instance->registration_source_inode,
             ];
 
-            if ($instance->registration_relocation_state !== 'relocated') {
-                AppInstance::query()
-                    ->whereKey($instance->id)
-                    ->update([
-                        'registration_relocation_state' => 'relocating',
-                        'registration_authoritative_path' => $facts->path,
-                    ]);
+            if (
+                $instance->registration_relocation_state === 'relocated'
+                && $instance->registration_authoritative_path === $instance->checkout_path
+            ) {
+                $relocated++;
+            }
+
+            if (
+                in_array(
+                    $instance->registration_relocation_state,
+                    ['destination_verified', 'original_cleanup'],
+                    strict: true,
+                )
+                && $instance->registration_authoritative_path === $instance->checkout_path
+                && ($facts->path === $instance->checkout_path
+                || is_int($instance->registration_source_device)
+                && is_int($instance->registration_source_inode))
+            ) {
+                $cleanupReady++;
             }
         }
 
-        $this->ssh->execute(
+        if ($relocated === count($members)) {
+            return;
+        }
+
+        if ($relocated !== 0 || $cleanupReady !== 0 && $cleanupReady !== count($members)) {
+            throw new ResourceOperationException(
+                'instance.registration_evidence_invalid',
+                'Registration relocation evidence does not contain one complete source set.',
+                409,
+            );
+        }
+
+        if ($cleanupReady === 0) {
+            DB::transaction(static function () use ($members): void {
+                foreach ($members as $member) {
+                    AppInstance::query()
+                        ->whereKey($member['appInstance']->id)
+                        ->update([
+                            'registration_relocation_state' => 'relocating',
+                            'registration_authoritative_path' => $member['facts']->path,
+                            'registration_source_device' => null,
+                            'registration_source_inode' => null,
+                        ]);
+                }
+            });
+
+            $result = $this->runRelocation($node, 'prepare', $payload);
+            $identities = $this->preparationIdentities($result->stdout, $members);
+
+            DB::transaction(static function () use ($members, $identities): void {
+                foreach ($members as $member) {
+                    $instance = $member['appInstance'];
+                    $identity = $identities[$instance->id];
+                    AppInstance::query()
+                        ->whereKey($instance->id)
+                        ->update([
+                            'registration_relocation_state' => 'destination_verified',
+                            'registration_authoritative_path' => $instance->checkout_path,
+                            'registration_source_device' => $identity['device'],
+                            'registration_source_inode' => $identity['inode'],
+                        ]);
+                }
+            });
+
+            $payload = array_map(
+                static function (array $member) use ($identities): array {
+                    $identity = $identities[$member['id']];
+
+                    return [
+                        ...$member,
+                        'source_device' => $identity['device'],
+                        'source_inode' => $identity['inode'],
+                    ];
+                },
+                $payload,
+            );
+        }
+
+        DB::transaction(static function () use ($members): void {
+            foreach ($members as $member) {
+                AppInstance::query()
+                    ->whereKey($member['appInstance']->id)
+                    ->update(['registration_relocation_state' => 'original_cleanup']);
+            }
+        });
+
+        $this->runRelocation($node, 'cleanup', $payload);
+
+        DB::transaction(static function () use ($members): void {
+            foreach ($members as $member) {
+                AppInstance::query()
+                    ->whereKey($member['appInstance']->id)
+                    ->update([
+                        'registration_relocation_state' => 'relocated',
+                        'registration_authoritative_path' => $member['appInstance']->checkout_path,
+                    ]);
+            }
+        });
+    }
+
+    /**
+     * @param list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}> $members
+     * @return array<int, array{device: int|null, inode: int|null}>
+     */
+    private function preparationIdentities(string $output, array $members): array
+    {
+        try {
+            $rows = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new ResourceOperationException(
+                'instance.registration_incomplete',
+                'Registration relocation returned invalid cleanup evidence.',
+                502,
+                previous: $exception,
+            );
+        }
+
+        if (! is_array($rows) || count($rows) !== count($members)) {
+            throw new ResourceOperationException(
+                'instance.registration_incomplete',
+                'Registration relocation returned incomplete cleanup evidence.',
+                502,
+            );
+        }
+
+        $identities = [];
+
+        foreach ($rows as $row) {
+            $id = is_array($row) ? $row['id'] ?? null : null;
+            $device = is_array($row) ? $row['source_device'] ?? null : null;
+            $inode = is_array($row) ? $row['source_inode'] ?? null : null;
+
+            if (
+                ! is_int($id)
+                || isset($identities[$id])
+                || ($device !== null
+                || $inode !== null)
+                && (! is_int($device)
+                || ! is_int($inode))
+            ) {
+                throw new ResourceOperationException(
+                    'instance.registration_incomplete',
+                    'Registration relocation returned invalid cleanup evidence.',
+                    502,
+                );
+            }
+
+            $identities[$id] = ['device' => $device, 'inode' => $inode];
+        }
+
+        $expectedIds = array_map(
+            static fn (array $member): int => $member['appInstance']->id,
+            $members,
+        );
+        sort($expectedIds);
+        $actualIds = array_keys($identities);
+        sort($actualIds);
+
+        if ($actualIds !== $expectedIds) {
+            throw new ResourceOperationException(
+                'instance.registration_incomplete',
+                'Registration relocation returned cleanup evidence for a different source set.',
+                502,
+            );
+        }
+
+        return $identities;
+    }
+
+    /** @param list<array<string, mixed>> $payload */
+    private function runRelocation(Node $node, string $operation, array $payload): CommandResult
+    {
+        return $this->ssh->execute(
             $node,
             new RemoteCommand([
                 'python3',
                 '-c',
                 self::relocationScript(),
+                $operation,
                 json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
             ]),
             step: 'registration-source-relocate',
             errorCode: 'instance.registration_incomplete',
             commandTimeout: 900,
         );
-
-        foreach ($members as $member) {
-            AppInstance::query()
-                ->whereKey($member['appInstance']->id)
-                ->update([
-                    'registration_relocation_state' => 'relocated',
-                    'registration_authoritative_path' => $member['appInstance']->checkout_path,
-                ]);
-        }
     }
 
     public function restoreOriginal(AppInstance $appInstance, RegistrationSourceFacts $facts): void
@@ -383,7 +546,8 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     {
         return <<<'PYTHON'
             import errno, hashlib, json, os, pathlib, shutil, stat, subprocess, sys
-            members = json.loads(sys.argv[1])
+            operation = sys.argv[1]
+            members = json.loads(sys.argv[2])
             git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
 
             def git(path, *args): return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
@@ -417,17 +581,24 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             def remove_stage(path):
                 if os.path.islink(path) or os.path.isfile(path): os.unlink(path)
                 else: shutil.rmtree(path)
-            def move(member):
+            def source_identity(path):
+                if not os.path.isdir(path) or os.path.islink(path) or os.path.realpath(path) != path: raise SystemExit(42)
+                info=os.lstat(path)
+                return info.st_dev,info.st_ino
+            def prepare(member):
                 source=member['source']; destination=member['destination']; stage=destination+'.orbit-stage-'+str(member['id'])
-                if source == destination: verify(destination, member); return
+                if source == destination:
+                    verify(destination, member)
+                    return {'id':member['id'],'source_device':None,'source_inode':None}
                 pathlib.Path(destination).parent.mkdir(parents=True, exist_ok=True)
                 if os.path.exists(destination):
                     verify(destination, member)
                     if os.path.exists(source):
                         verify(source, member)
-                        shutil.rmtree(source)
+                        device,inode=source_identity(source)
+                    else: device,inode=None,None
                     if os.path.lexists(stage): remove_stage(stage)
-                    return
+                    return {'id':member['id'],'source_device':device,'source_inode':inode}
                 if os.path.lexists(stage):
                     try: verify(stage, member)
                     except SystemExit:
@@ -435,14 +606,13 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         verify(source, member)
                         remove_stage(stage)
                     else:
+                        device,inode=source_identity(source) if os.path.exists(source) else (None,None)
                         os.rename(stage, destination)
                         verify(destination, member)
-                        if os.path.exists(source):
-                            verify(source, member)
-                            shutil.rmtree(source)
-                        return
+                        return {'id':member['id'],'source_device':device,'source_inode':inode}
                 if os.path.exists(source): verify(source, member)
                 else: raise SystemExit(42)
+                device,inode=source_identity(source)
                 try: os.rename(source, destination)
                 except OSError as error:
                     if error.errno != errno.EXDEV: raise
@@ -451,20 +621,46 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     verify(stage, member)
                     os.rename(stage, destination)
                     verify(destination, member)
-                    shutil.rmtree(source)
                 verify(destination, member)
+                return {'id':member['id'],'source_device':device,'source_inode':inode}
+            def repair():
+                mapping={m['source']:m['destination'] for m in members}
+                checkouts=[m for m in members if m['layout']=='checkout']
+                if checkouts:
+                    checkout=checkouts[0]
+                    retained=[mapping.get(path,path) for path in checkout['worktrees'] if path != checkout['source']]
+                    subprocess.check_call(['git','-C',checkout['destination'],'worktree','repair',*retained], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    member=members[0]
+                    subprocess.check_call(['git','--git-dir',member['common'],'worktree','repair',member['destination']], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            def cleanup(member):
+                source=member['source']; destination=member['destination']; stage=destination+'.orbit-stage-'+str(member['id'])
+                verify(destination, member)
+                if source != destination and os.path.exists(source):
+                    device,inode=source_identity(source)
+                    if device != member['source_device'] or inode != member['source_inode']: raise SystemExit(42)
+                if os.path.lexists(stage): remove_stage(stage)
+            def remove_original(member):
+                source=member['source']; destination=member['destination']
+                if source == destination or not os.path.exists(source): return
+                for current,dirs,files in os.walk(source, topdown=False, followlinks=False):
+                    for name in files: os.unlink(os.path.join(current,name))
+                    for name in dirs:
+                        path=os.path.join(current,name)
+                        if os.path.islink(path): os.unlink(path)
+                        else: os.rmdir(path)
+                os.rmdir(source)
             ordered = sorted(members, key=lambda m: 1 if m['layout'] == 'checkout' else 0)
-            for member in ordered: move(member)
-            mapping={m['source']:m['destination'] for m in members}
-            checkouts=[m for m in members if m['layout']=='checkout']
-            if checkouts:
-                checkout=checkouts[0]
-                retained=[mapping.get(path,path) for path in checkout['worktrees'] if path != checkout['source']]
-                subprocess.check_call(['git','-C',checkout['destination'],'worktree','repair',*retained], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                member=members[0]
-                subprocess.check_call(['git','--git-dir',member['common'],'worktree','repair',member['destination']], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for member in members: verify(member['destination'], member)
+            if operation == 'prepare':
+                identities=[prepare(member) for member in ordered]
+                repair()
+                for member in members: verify(member['destination'], member)
+                print(json.dumps(identities,separators=(',',':')))
+            elif operation == 'cleanup':
+                for member in members: cleanup(member)
+                for member in ordered: remove_original(member)
+                for member in members: verify(member['destination'], member)
+            else: raise SystemExit(42)
             PYTHON;
     }
 

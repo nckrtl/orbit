@@ -102,11 +102,26 @@ beforeEach(function (): void {
         public function relocateSet(array $members): void
         {
             $this->calls[] = 'relocate-set:'.count($members);
+
+            foreach ($members as $member) {
+                AppInstance::query()
+                    ->whereKey($member['appInstance']->id)
+                    ->update([
+                        'registration_relocation_state' => 'relocated',
+                        'registration_authoritative_path' => $member['appInstance']->checkout_path,
+                    ]);
+            }
         }
 
         public function restoreOriginal(AppInstance $appInstance, RegistrationSourceFacts $facts): void
         {
             $this->calls[] = 'restore-original';
+            AppInstance::query()
+                ->whereKey($appInstance->id)
+                ->update([
+                    'registration_relocation_state' => 'reserved',
+                    'registration_authoritative_path' => $facts->path,
+                ]);
         }
 
         public function prepareLaravelRollback(AppInstance $appInstance): void
@@ -264,13 +279,112 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         ->and(AppInstance::query()->count())
         ->toBe(1)
         ->and(Route::query()->count())
-        ->toBe(1);
+        ->toBe(1)
+        ->and($this->registrationSource->calls)
+        ->toBe(['inspect', 'relocate-set:1', 'url-prepare', 'url-discard']);
 
     $this
         ->postJson('/api/v1/instances/register', [...$payload, 'app_slug' => 'different'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'app.identity_conflict');
     expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
+});
+
+it('refuses colliding complete-set identities before reservation on every retry', function (
+    array $paths,
+    ?string $name,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $this->registrationSource->facts = registration_set_facts($paths);
+    $payload = [
+        'source_path' => $paths[0],
+        'include_worktrees' => true,
+        'app_id' => $app->id,
+        ...($name === null ? [] : ['instance_name' => $name]),
+    ];
+
+    foreach ([1, 2] as $attempt) {
+        $this
+            ->postJson('/api/v1/instances/register', $payload)
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'instance.identity_conflict');
+
+        expect(AppInstance::query()->count())
+            ->toBe(0, "attempt {$attempt}")
+            ->and(Route::query()->count())
+            ->toBe(0, "attempt {$attempt}");
+    }
+
+    expect($this->registrationSource->calls)->toBe(['inspect', 'inspect']);
+})->with([
+    'equal basenames' => [
+        ['/work/primary/shared', '/work/linked/shared'],
+        null,
+    ],
+    'explicit primary name matches another member' => [
+        ['/work/primary/source', '/work/linked/feature'],
+        'feature',
+    ],
+]);
+
+it('refuses retained registration evidence that omits one requested worktree', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $paths = ['/work/primary/source', '/work/linked/feature'];
+    $requestId = (string) Illuminate\Support\Str::uuid();
+    AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'source',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/srv/orbit/apps/acme/source',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'registration_original_path' => $paths[0],
+        'registration_request_id' => $requestId,
+        'registration_primary' => true,
+        'registration_include_worktrees' => true,
+        'registration_repository_url' => 'git@github.com:acme/acme.git',
+        'registration_repository_identity' => 'github.com/acme/acme',
+        'registration_source_digest' => str_repeat('c', 64),
+        'registration_default_branch' => 'main',
+        'registration_inferred_slug' => 'acme',
+        'registration_inferred_root' => 'public',
+        'registration_common_repository_path' => '/work/primary/source/.git',
+        'registration_worktree_paths' => $paths,
+        'registration_relocation_state' => 'reserved',
+        'registration_authoritative_path' => $paths[0],
+        'status' => 'reserved',
+    ]);
+
+    foreach ([1, 2] as $attempt) {
+        $this
+            ->postJson('/api/v1/instances/register', [
+                'source_path' => $paths[0],
+                'include_worktrees' => true,
+                'app_id' => $app->id,
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'instance.registration_evidence_invalid');
+
+        expect(AppInstance::query()->count())
+            ->toBe(1, "attempt {$attempt}")
+            ->and(Route::query()->count())
+            ->toBe(0, "attempt {$attempt}");
+    }
+
+    expect($this->registrationSource->calls)->toBe([]);
 });
 
 it('restores a failed default migration and completes the identical retry with stable identities', function (): void {
@@ -399,4 +513,41 @@ function registration_facts(string $digest = ''): RegistrationSourceFacts
         worktreePaths: ['/work/acme'],
         sourceDigest: $digest === '' ? str_repeat('c', 64) : $digest,
     );
+}
+
+/** @param array{string, string} $paths */
+function registration_set_facts(array $paths): array
+{
+    return [
+        new RegistrationSourceFacts(
+            path: $paths[0],
+            layout: AppInstanceSourceLayout::Checkout,
+            repositoryUrl: 'git@github.com:acme/acme.git',
+            repositoryIdentity: 'github.com/acme/acme',
+            branch: 'main',
+            detached: false,
+            commit: str_repeat('a', 40),
+            defaultBranch: 'main',
+            inferredSlug: 'acme',
+            inferredRoot: 'public',
+            commonRepositoryPath: $paths[0].'/.git',
+            worktreePaths: $paths,
+            sourceDigest: str_repeat('c', 64),
+        ),
+        new RegistrationSourceFacts(
+            path: $paths[1],
+            layout: AppInstanceSourceLayout::Worktree,
+            repositoryUrl: 'git@github.com:acme/acme.git',
+            repositoryIdentity: 'github.com/acme/acme',
+            branch: 'feature',
+            detached: false,
+            commit: str_repeat('b', 40),
+            defaultBranch: 'main',
+            inferredSlug: 'acme',
+            inferredRoot: 'public',
+            commonRepositoryPath: $paths[0].'/.git',
+            worktreePaths: $paths,
+            sourceDigest: str_repeat('d', 64),
+        ),
+    ];
 }

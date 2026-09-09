@@ -53,6 +53,7 @@ case "$root" in /home/orbit/orb105-*) ;; *) exit 64 ;; esac
 case "$child" in /home/orbit/orb105-*) ;; *) exit 64 ;; esac
 test ! -e "$root"
 test ! -e "$child"
+mkdir -p "$(dirname "$root")" "$(dirname "$child")"
 git clone --local --no-checkout /home/orbit/apps/laravel-typed/e2e-dev "$root" >/dev/null
 git -C "$root" remote set-url origin https://github.com/laravel/laravel.git
 git -C "$root" checkout -B orb105-root HEAD >/dev/null
@@ -122,15 +123,18 @@ snapshot_source() {
     local path=$1
     local output=$2
     local portable=${3:-false}
-    remote_script "$path" "$output" "$portable" <<'BASH'
+    local ignored=${4:-}
+    remote_script "$path" "$output" "$portable" "$ignored" <<'BASH'
 path=$1
 output=$2
 portable=$3
+ignored=$4
 case "$output" in /tmp/orb105-*) ;; *) exit 64 ;; esac
-env GIT_OPTIONAL_LOCKS=0 python3 - "$path" "$portable" > "$output" <<'PYTHON'
+env GIT_OPTIONAL_LOCKS=0 python3 - "$path" "$portable" "$ignored" > "$output" <<'PYTHON'
 import base64, hashlib, json, os, pathlib, stat, subprocess, sys
 root = pathlib.Path(sys.argv[1])
 portable = sys.argv[2] == 'true'
+ignored = sys.argv[3]
 environment = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
 
 def git(*arguments):
@@ -153,10 +157,19 @@ git_state = {
     'status': git('status', '--porcelain=v2', '--untracked-files=all'),
     'config': git('config', '--local', '--null', '--list'),
     'refs': git('show-ref', '--head'),
-    'index': hashlib.sha256((root / '.git' / 'index').read_bytes()).hexdigest(),
+    'index': hashlib.sha256(pathlib.Path(
+        subprocess.check_output(
+            ['git', '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-path', 'index'],
+            env=environment,
+        ).decode().strip(),
+    ).read_bytes()).hexdigest(),
 }
 entries = []
-for entry in [root, *sorted(root.rglob('*'))]:
+selected = [root, *[
+    entry for entry in sorted(root.rglob('*'))
+    if not ignored or entry.relative_to(root).parts[0] != ignored
+]]
+for entry in selected:
     info = entry.lstat()
     relative = '.' if entry == root else entry.relative_to(root).as_posix()
     kind = 'link' if entry.is_symlink() else 'file' if entry.is_file() else 'directory'
@@ -180,8 +193,9 @@ assert_source_snapshot() {
     local path=$1
     local expected=$2
     local portable=${3:-false}
+    local ignored=${4:-}
     local actual="${expected}.actual"
-    snapshot_source "$path" "$actual" "$portable"
+    snapshot_source "$path" "$actual" "$portable" "$ignored"
     remote_command cmp "$expected" "$actual"
     remote_command rm -f "$actual"
 }
@@ -240,10 +254,20 @@ BASH
         output=$(register_source "$source")
         destination=/home/orbit/apps/laravel-typed/orb105-provision
         assert_registration "$output" checkout "$destination"
+        id=$(json_field "$output" app_instance.id)
+        route_id=$(json_field "$output" app_instance.route.id)
         hostname=$(json_field "$output" app_instance.hostname)
         test "$(json_field "$output" app_instance.url)" = "https://$hostname"
         remote_command grep -F "APP_URL=https://$hostname" "$destination/.env" >/dev/null
-        remove_instance "$(json_field "$output" app_instance.id)"
+        remote_script "$destination" <<'BASH'
+path=$1
+printf '%s\n' 'normal edit after registration' >> "$path/README.md"
+BASH
+        retry=$(register_request "$source")
+        test "$(json_field "$retry" app_instance.id)" = "$id"
+        test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
+        remote_command grep -Fx 'normal edit after registration' "$destination/README.md" >/dev/null
+        remove_instance "$id"
         ;;
     registered-source-provisioning-rollback)
         source=/home/orbit/orb105-rollback
@@ -368,12 +392,64 @@ BASH
         remote_command test -d "$root"
         remote_command test -L "$child/.git"
         cleanup_path "$root" "$child"
+
+        base=/home/orbit/orb105-collision-equal
+        root="$base/primary/shared"
+        child="$base/linked/shared"
+        create_graph "$root" "$child"
+        snapshot_source "$root" /tmp/orb105-collision-equal-root
+        snapshot_source "$child" /tmp/orb105-collision-equal-child
+        for attempt in 1 2; do
+            set +e
+            failure=$(register_source "$root" --include-worktrees 2>&1)
+            status=$?
+            set -e
+            test "$status" -ne 0
+            test "$(json_field "$failure" error.code)" = instance.identity_conflict
+            state=$(gateway_state registration-set-count "$root" "$child")
+            test "$(json_field "$state" instances)" = 0
+            test "$(json_field "$state" routes)" = 0
+            assert_source_snapshot "$root" /tmp/orb105-collision-equal-root
+            assert_source_snapshot "$child" /tmp/orb105-collision-equal-child
+        done
+        remote_command rm -f /tmp/orb105-collision-equal-root /tmp/orb105-collision-equal-child
+        cleanup_path "$base"
+
+        base=/home/orbit/orb105-collision-explicit
+        root="$base/primary/source"
+        child="$base/linked/feature"
+        create_graph "$root" "$child"
+        snapshot_source "$root" /tmp/orb105-collision-explicit-root
+        snapshot_source "$child" /tmp/orb105-collision-explicit-child
+        for attempt in 1 2; do
+            set +e
+            failure=$(register_source "$root" --include-worktrees --name=feature 2>&1)
+            status=$?
+            set -e
+            test "$status" -ne 0
+            test "$(json_field "$failure" error.code)" = instance.identity_conflict
+            state=$(gateway_state registration-set-count "$root" "$child")
+            test "$(json_field "$state" instances)" = 0
+            test "$(json_field "$state" routes)" = 0
+            assert_source_snapshot "$root" /tmp/orb105-collision-explicit-root
+            assert_source_snapshot "$child" /tmp/orb105-collision-explicit-child
+        done
+        remote_command rm -f /tmp/orb105-collision-explicit-root /tmp/orb105-collision-explicit-child
+        cleanup_path "$base"
         ;;
     cross-filesystem-registration-retry)
         source=/dev/shm/orb105-cross
         create_checkout "$source" orb105-cross
         destination=/home/orbit/apps/laravel-typed/orb105-cross
-        snapshot_source "$source" /tmp/orb105-cross-before true
+        remote_script "$source" <<'BASH'
+path=$1
+mkdir "$path/orb105-cleanup"
+printf '/orb105-cleanup/\n' >> "$path/.git/info/exclude"
+for index in $(seq -w 0 30000); do
+    printf 'retained\n' > "$path/orb105-cleanup/$index"
+done
+BASH
+        snapshot_source "$source" /tmp/orb105-cross-before true orb105-cleanup
         install_projection_fault
         trap clear_projection_fault EXIT
         set +e
@@ -388,58 +464,76 @@ BASH
         id=$(json_field "$retained" id)
         route_id=$(json_field "$retained" route_id)
         test "$(json_field "$retained" path)" = "$destination"
-        assert_source_snapshot "$destination" /tmp/orb105-cross-before true
+        assert_source_snapshot "$destination" /tmp/orb105-cross-before true orb105-cleanup
+        test "$(remote_command find "$destination/orb105-cleanup" -type f | wc -l)" = 30001
 
-        stage="${destination}.orbit-stage-${id}"
-        remote_script "$source" "$destination" "$stage" <<'BASH'
+        remote_script "$source" "$destination" <<'BASH'
 source=$1
 destination=$2
-stage=$3
-test ! -e "$source" && test -d "$destination" && test ! -e "$stage"
+test ! -e "$source" && test -d "$destination"
 cp -a "$destination" "$source"
-cp -a "$destination" "$stage"
-printf 'incomplete stage\n' > "$stage/README.md"
-rm -rf -- "$destination"
 BASH
         gateway_state set-relocation-checkpoint "$id" relocating "$source" >/dev/null
-        incomplete=$(register_request "$source")
-        test "$(json_field "$incomplete" app_instance.id)" = "$id"
-        test "$(json_field "$incomplete" app_instance.route.id)" = "$route_id"
-        remote_command test ! -e "$source"
-        remote_command test ! -e "$stage"
-        assert_source_snapshot "$destination" /tmp/orb105-cross-before true
 
-        remote_script "$source" "$destination" "$stage" <<'BASH'
+        set +e
+        register_request "$source" >/tmp/orb105-cleanup-request 2>&1 &
+        request_pid=$!
+        set -e
+        remote_script "$source" <<'BASH'
 source=$1
-destination=$2
-stage=$3
-test ! -e "$source" && test -d "$destination" && test ! -e "$stage"
-cp -a "$destination" "$source"
-cp -a "$destination" "$stage"
-rm -rf -- "$destination"
+deadline=$((SECONDS + 60))
+cleanup_pid=
+while [ -z "$cleanup_pid" ]; do
+    test "$SECONDS" -lt "$deadline"
+    for command_line in /proc/[0-9]*/cmdline; do
+        test -r "$command_line" || continue
+        command=$(tr '\0' ' ' < "$command_line")
+        case "$command" in
+            *"python3 -c"*" cleanup "*"$source"*)
+                cleanup_pid=${command_line#/proc/}
+                cleanup_pid=${cleanup_pid%/cmdline}
+                break
+                ;;
+        esac
+    done
+done
+while [ -e "$source/orb105-cleanup/00000" ]; do
+    test "$SECONDS" -lt "$deadline"
+    kill -0 "$cleanup_pid"
+done
+test -d "$source"
+kill -KILL "$cleanup_pid"
 BASH
-        gateway_state set-relocation-checkpoint "$id" relocating "$source" >/dev/null
-        complete=$(register_request "$source")
-        test "$(json_field "$complete" app_instance.id)" = "$id"
-        test "$(json_field "$complete" app_instance.route.id)" = "$route_id"
-        remote_command test ! -e "$source"
-        remote_command test ! -e "$stage"
-        assert_source_snapshot "$destination" /tmp/orb105-cross-before true
+        set +e
+        wait "$request_pid"
+        status=$?
+        set -e
+        failure=$(cat /tmp/orb105-cleanup-request)
+        rm -f /tmp/orb105-cleanup-request
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = instance.registration_incomplete
+        interrupted=$(gateway_state registration-by-original "$source")
+        test "$(json_field "$interrupted" id)" = "$id"
+        test "$(json_field "$interrupted" route_id)" = "$route_id"
+        test "$(json_field "$interrupted" relocation_state)" = original_cleanup
+        test "$(json_field "$interrupted" authoritative_path)" = "$destination"
+        remote_command test -d "$source"
+        remote_command test ! -e "$source/orb105-cleanup/00000"
+        assert_source_snapshot "$destination" /tmp/orb105-cross-before true orb105-cleanup
+        test "$(remote_command find "$destination/orb105-cleanup" -type f | wc -l)" = 30001
 
-        remote_command cp -a "$destination" "$source"
-        gateway_state set-relocation-checkpoint "$id" relocating "$source" >/dev/null
-        duplicate=$(register_request "$source")
-        test "$(json_field "$duplicate" app_instance.id)" = "$id"
-        test "$(json_field "$duplicate" app_instance.route.id)" = "$route_id"
+        set +e
+        completed=$(register_request "$source" 2>&1)
+        retry_status=$?
+        set -e
+        if [ "$retry_status" -ne 0 ]; then
+            printf '%s\n' "$completed" >&2
+            exit "$retry_status"
+        fi
+        test "$(json_field "$completed" app_instance.id)" = "$id"
+        test "$(json_field "$completed" app_instance.route.id)" = "$route_id"
         remote_command test ! -e "$source"
-        assert_source_snapshot "$destination" /tmp/orb105-cross-before true
-
-        gateway_state set-relocation-checkpoint "$id" relocating "$source" >/dev/null
-        destination_only=$(register_request "$source")
-        test "$(json_field "$destination_only" app_instance.id)" = "$id"
-        test "$(json_field "$destination_only" app_instance.route.id)" = "$route_id"
-        remote_command test ! -e "$source"
-        assert_source_snapshot "$destination" /tmp/orb105-cross-before true
+        remote_command test -f "$destination/orb105-cleanup/30000"
         remote_command rm -f /tmp/orb105-cross-before
         remove_instance "$id"
         ;;

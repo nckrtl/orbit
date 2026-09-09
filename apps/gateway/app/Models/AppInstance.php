@@ -39,6 +39,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property list<string>|null $registration_worktree_paths
  * @property string|null $registration_relocation_state
  * @property string|null $registration_authoritative_path
+ * @property int|null $registration_source_device
+ * @property int|null $registration_source_inode
  * @property \Illuminate\Support\Carbon|null $registration_completed_at
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
@@ -95,6 +97,8 @@ final class AppInstance extends Model
         'registration_worktree_paths',
         'registration_relocation_state',
         'registration_authoritative_path',
+        'registration_source_device',
+        'registration_source_inode',
         'registration_completed_at',
         'starting_commit',
         'selected_php_version',
@@ -149,6 +153,8 @@ final class AppInstance extends Model
             'registration_primary' => 'boolean',
             'registration_include_worktrees' => 'boolean',
             'registration_worktree_paths' => 'array',
+            'registration_source_device' => 'integer',
+            'registration_source_inode' => 'integer',
             'registration_completed_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
             'status' => AppInstanceState::class,

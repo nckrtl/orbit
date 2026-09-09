@@ -72,7 +72,9 @@ final readonly class RegisterAppInstanceAction
             $members = $this->reserveMembers($caller, $app, $facts, $primaryFacts, $data);
 
             try {
-                $this->sources->relocateSet($members);
+                if ($this->needsRelocation($members)) {
+                    $this->sources->relocateSet($members);
+                }
                 $instances = [];
 
                 foreach ($members as $member) {
@@ -141,6 +143,52 @@ final readonly class RegisterAppInstanceAction
             ->orderByDesc('registration_primary')
             ->orderBy('id')
             ->get();
+
+        $expectedPaths = $data->includeWorktrees
+            ? $primary->registration_worktree_paths
+            : [$primary->registration_original_path];
+
+        if (
+            ! is_array($expectedPaths)
+            || array_filter($expectedPaths, static fn (mixed $path): bool => ! is_string($path)) !== []
+        ) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Retained registration evidence does not contain the complete requested source set.',
+            );
+        }
+
+        /** @var list<string> $expectedPaths */
+        $retainedPaths = [];
+
+        foreach ($instances as $instance) {
+            if (! is_string($instance->registration_original_path)) {
+                throw $this->conflict(
+                    'instance.registration_evidence_invalid',
+                    'Retained registration evidence does not contain the complete requested source set.',
+                );
+            }
+
+            $retainedPaths[] = $instance->registration_original_path;
+        }
+
+        if (
+            count($instances) !== count($expectedPaths)
+            || count($retainedPaths) !== count(array_unique($retainedPaths))
+            || $this->sortedPaths($retainedPaths) !== $this->sortedPaths($expectedPaths)
+            || $instances->where('registration_primary', true)->count() !== 1
+            || $instances->contains(
+                static fn (AppInstance $instance): bool => (
+                    $instance->registration_include_worktrees !== $data->includeWorktrees
+                ),
+            )
+        ) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Retained registration evidence does not contain the complete requested source set.',
+            );
+        }
+
         $facts = [];
 
         foreach ($instances as $instance) {
@@ -295,33 +343,16 @@ final readonly class RegisterAppInstanceAction
             $this->nodeSettings->legacyFromStored($node->settings),
             $account,
         );
-        $reserved = [];
         $rootOverride = $data->root !== null && $data->root !== $app->root ? $data->root : null;
         $retainedRequestId = AppInstance::query()
             ->where('node_id', $node->id)
             ->where('registration_original_path', $primary->path)
             ->value('registration_request_id');
         $requestId = is_string($retainedRequestId) ? $retainedRequestId : (string) Str::uuid();
-
-        foreach ($facts as $fact) {
-            $name = $this->instanceName($app, $fact, $fact === $primary ? $data->instanceName : null);
-            $destination = $roots->instance->append($app->slug, $name);
-            $instance = AppInstance::query()
-                ->where('node_id', $node->id)
-                ->where(static fn ($query) => $query
-                    ->where('registration_original_path', $fact->path)
-                    ->orWhere('checkout_path', $fact->path))
-                ->first();
-
-            if (! $instance instanceof AppInstance) {
-                $this->checkoutOverlap->assertAvailable($node->id, $destination, 'instance.path_taken');
-                $this->destinationGuard->assertUnoccupied($node, $destination);
-
-                continue;
-            }
-
-            $this->assertRetry($instance, $app, $fact, $destination, $rootOverride);
-        }
+        /** @var list<array{facts: RegistrationSourceFacts, name: string, destination: StoragePath, instance: AppInstance|null, primary: bool}> $proposals */
+        $proposals = [];
+        $names = [];
+        $destinations = [];
 
         foreach ($facts as $fact) {
             $name = $this->instanceName($app, $fact, $fact === $primary ? $data->instanceName : null);
@@ -342,47 +373,108 @@ final readonly class RegisterAppInstanceAction
                     ->first();
             }
 
-            if ($instance instanceof AppInstance) {
-                $this->assertRetry($instance, $app, $fact, $destination, $rootOverride);
-                if ($instance->registration_request_id === null) {
-                    $instance->fill($this->registrationEvidence(
-                        $fact,
-                        requestId: $requestId,
-                        primary: $fact === $primary,
-                        includeWorktrees: $data->includeWorktrees,
-                    ));
-                    $instance->save();
-                }
-                $instance->name = $name;
-                $instance->checkout_path = $destination->value;
-                $reserved[] = ['appInstance' => $instance, 'facts' => $fact];
-
-                continue;
+            if (isset($names[$name]) || isset($destinations[$destination->value])) {
+                throw $this->conflict(
+                    'instance.identity_conflict',
+                    'The requested source set contains conflicting AppInstance identities or placements.',
+                );
             }
 
-            $this->checkoutOverlap->assertAvailable($node->id, $destination, 'instance.path_taken');
-            $this->destinationGuard->assertUnoccupied($node, $destination);
-            $instance = AppInstance::query()->create([
-                'app_id' => $app->id,
-                'node_id' => $node->id,
+            $names[$name] = true;
+            $destinations[$destination->value] = true;
+
+            if (! $instance instanceof AppInstance) {
+                $this->checkoutOverlap->assertAvailable($node->id, $destination, 'instance.path_taken');
+                $this->destinationGuard->assertUnoccupied($node, $destination);
+            } else {
+                $this->assertRetry($instance, $app, $fact, $destination, $rootOverride);
+            }
+
+            $proposals[] = [
+                'facts' => $fact,
                 'name' => $name,
-                'source_layout' => $fact->layout,
-                'checkout_path' => $destination->value,
-                'root' => $rootOverride,
-                'branch' => $fact->branch,
-                'starting_commit' => $fact->commit,
-                ...$this->registrationEvidence(
-                    $fact,
-                    requestId: $requestId,
-                    primary: $fact === $primary,
-                    includeWorktrees: $data->includeWorktrees,
-                ),
-                'status' => AppInstanceState::Reserved,
-            ]);
-            $reserved[] = ['appInstance' => $instance, 'facts' => $fact];
+                'destination' => $destination,
+                'instance' => $instance,
+                'primary' => $fact === $primary,
+            ];
         }
 
+        /** @var list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}> $reserved */
+        $reserved = DB::transaction(function () use ($proposals, $app, $node, $rootOverride, $requestId, $data): array {
+            $reserved = [];
+
+            foreach ($proposals as $proposal) {
+                $fact = $proposal['facts'];
+                $instance = $proposal['instance'];
+
+                if ($instance instanceof AppInstance) {
+                    if ($instance->registration_request_id === null) {
+                        $instance->fill($this->registrationEvidence(
+                            $fact,
+                            requestId: $requestId,
+                            primary: $proposal['primary'],
+                            includeWorktrees: $data->includeWorktrees,
+                        ));
+                        $instance->save();
+                    }
+                    $instance->name = $proposal['name'];
+                    $instance->checkout_path = $proposal['destination']->value;
+                    $reserved[] = ['appInstance' => $instance, 'facts' => $fact];
+
+                    continue;
+                }
+
+                $instance = AppInstance::query()->create([
+                    'app_id' => $app->id,
+                    'node_id' => $node->id,
+                    'name' => $proposal['name'],
+                    'source_layout' => $fact->layout,
+                    'checkout_path' => $proposal['destination']->value,
+                    'root' => $rootOverride,
+                    'branch' => $fact->branch,
+                    'starting_commit' => $fact->commit,
+                    ...$this->registrationEvidence(
+                        $fact,
+                        requestId: $requestId,
+                        primary: $proposal['primary'],
+                        includeWorktrees: $data->includeWorktrees,
+                    ),
+                    'status' => AppInstanceState::Reserved,
+                ]);
+                $reserved[] = ['appInstance' => $instance, 'facts' => $fact];
+            }
+
+            return $reserved;
+        });
+
         return $reserved;
+    }
+
+    /**
+     * @param list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}> $members
+     */
+    private function needsRelocation(array $members): bool
+    {
+        foreach ($members as $member) {
+            $instance = $member['appInstance'];
+
+            if (
+                $instance->registration_relocation_state !== 'relocated'
+                || $instance->registration_authoritative_path !== $instance->checkout_path
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param list<string> $paths */
+    private function sortedPaths(array $paths): array
+    {
+        sort($paths, SORT_STRING);
+
+        return $paths;
     }
 
     /** @return array<string, mixed> */

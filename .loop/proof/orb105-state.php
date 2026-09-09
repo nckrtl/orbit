@@ -99,6 +99,8 @@ if ($command === 'registration-by-original') {
         'path' => $instance->checkout_path,
         'relocation_state' => $instance->registration_relocation_state,
         'authoritative_path' => $instance->registration_authoritative_path,
+        'source_device' => $instance->registration_source_device,
+        'source_inode' => $instance->registration_source_inode,
         'source_digest' => $instance->registration_source_digest,
         'commit' => $instance->starting_commit,
         'branch' => $instance->branch,
@@ -126,8 +128,33 @@ if ($command === 'set-relocation-checkpoint') {
     $instance->update([
         'registration_relocation_state' => $state,
         'registration_authoritative_path' => $authoritativePath,
+        'registration_source_device' => null,
+        'registration_source_inode' => null,
     ]);
     echo "ok\n";
+    exit(0);
+}
+
+if ($command === 'registration-set-count') {
+    $paths = array_slice($argv, 2);
+    $instances = AppInstance::query()->whereIn('registration_original_path', $paths)->get();
+    echo json_encode([
+        'instances' => $instances->count(),
+        'instance_rows' => $instances->map(static fn (AppInstance $instance): array => [
+            'id' => $instance->id,
+            'path' => $instance->checkout_path,
+            'status' => $instance->status->value,
+            'relocation_state' => $instance->registration_relocation_state,
+            'authoritative_path' => $instance->registration_authoritative_path,
+            'source_device' => $instance->registration_source_device,
+            'source_inode' => $instance->registration_source_inode,
+            'failed_step' => $instance->failed_step,
+            'error_code' => $instance->error_code,
+        ])->values()->all(),
+        'routes' => Route::query()
+            ->whereHas('targets', static fn ($query) => $query->whereIn('app_instance_id', $instances->modelKeys()))
+            ->count(),
+    ], JSON_THROW_ON_ERROR)."\n";
     exit(0);
 }
 
