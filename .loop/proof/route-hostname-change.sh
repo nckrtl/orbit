@@ -110,10 +110,17 @@ case "$scenario" in
         state=$(gateway_fixture setup)
         route_id=$(json_field route.id <<<"$state")
         original=$(json_field original_hostname <<<"$state")
+        checkout=$(json_field instance.checkout_path <<<"$state")
         node_ip=$(json_field instance.node_ip <<<"$state")
         [[ "$route_id" =~ ^[1-9][0-9]*$ && "$original" == e2e-dev.orbit && "$node_ip" == 10.44.0.2 ]]
+        remote_script "$node_ip" "$checkout" <<'REMOTE'
+checkout=$1
+cd "$checkout"
+DB_DATABASE="$checkout/database/database.sqlite" php artisan migrate:fresh --force --no-interaction >/dev/null
+REMOTE
         assert_route "$(orbit route:show "$route_id" --json)" "$original" null null null null null
         assert_dns_owner "$original" "$node_ip"
+        curl --fail --silent --show-error --cacert "$ca" --resolve "$original:443:$node_ip" "https://$original/" >/dev/null
         printf 'active development Route fixture ready\n'
         ;;
 
