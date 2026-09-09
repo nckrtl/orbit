@@ -220,6 +220,24 @@ describe('topology commands', function () {
             ]);
     });
 
+    it('reports captured evidence in both human and JSON status after release', function () {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $state = IssueState::forWorktree('TST-12', $worktree);
+        $topology = commandTopologyFixture('TST-12', attemptId());
+        $proof = ['status' => 'proved', 'attempt_id' => attemptId()->value];
+        $state->writeProof($proof);
+        $state->captureProof(['proof' => $proof, 'topology' => $topology->toArray()]);
+
+        $this
+            ->artisan('topology:status', ['issue' => 'TST-12'])
+            ->expectsOutput('captured '.attemptId()->value)
+            ->assertSuccessful();
+        $this
+            ->artisan('topology:status', ['issue' => 'TST-12', '--json' => true])
+            ->expectsOutputToContain('"state":"captured"')
+            ->assertSuccessful();
+    });
+
     it('reports the active proof attempt and its result from the worktree state', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
         $state = IssueState::forWorktree('TST-12', $worktree);

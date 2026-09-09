@@ -22,13 +22,17 @@ final class StatusCommand extends E2ECommand
             $request = $this->request();
             $state = $this->state($request);
             if (! $state->hasAttempt()) {
-                $this->outputJson([
-                    'state' => $state->proofTopology() !== null ? 'captured' : 'absent',
-                    'issue' => $request->issue,
-                    'worktree' => $request->worktree,
-                    'proof' => $state->proof(),
-                    'captured_topology' => $state->proofTopology()?->toArray(),
-                ], 'absent');
+                $captured = $state->proofTopology();
+                $this->outputJson(
+                    [
+                        'state' => $captured !== null ? 'captured' : 'absent',
+                        'issue' => $request->issue,
+                        'worktree' => $request->worktree,
+                        'proof' => $state->proof(),
+                        'captured_topology' => $captured?->toArray(),
+                    ],
+                    $captured !== null ? 'captured '.$captured->attempt->value : 'absent',
+                );
 
                 return self::SUCCESS;
             }
