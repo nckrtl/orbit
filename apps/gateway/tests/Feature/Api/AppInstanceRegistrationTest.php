@@ -112,6 +112,8 @@ beforeEach(function (): void {
 
         public bool $failDiscardOnce = false;
 
+        public bool $failRelocateOnce = false;
+
         /** @var list<string> */
         public array $invalidRelocationPaths = [];
 
@@ -168,6 +170,12 @@ beforeEach(function (): void {
         public function relocateSet(array $members): void
         {
             $this->calls[] = 'relocate-set:'.count($members);
+
+            if ($this->failRelocateOnce) {
+                $this->failRelocateOnce = false;
+
+                throw new ResourceOperationException('instance.relocation_failed', 'Relocation failed.');
+            }
 
             foreach ($members as $member) {
                 AppInstance::query()
@@ -372,6 +380,275 @@ it('returns the same identities on an identical retry and refuses conflicting ev
     expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
 });
 
+it('preserves an ordinary retained root when retry input is omitted or identical and returns 409 for a conflict', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $payload = [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+        'root' => 'web',
+    ];
+
+    $first = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+    $omitted = $this->postJson('/api/v1/instances/register', [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+    ])->assertOk();
+    $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $before = $instance->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'app_id' => $app->id,
+            'root' => 'public',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($omitted->json('data.app_instance.id'))
+        ->toBe($first->json('data.app_instance.id'))
+        ->and($identical->json('data.app_instance.id'))
+        ->toBe($first->json('data.app_instance.id'))
+        ->and($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and($instance->root)
+        ->toBe('web')
+        ->and($route->id)
+        ->toBe($first->json('data.app_instance.route.id'));
+});
+
+it('returns 409 before mutation when the App root conflicts with retained migration intent', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $source = '/work/legacy-main-source';
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'source_layout' => 'checkout',
+        'checkout_path' => $source,
+        'root' => 'web',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'migration_required' => true,
+        ...registration_evidence_for_test($source),
+        'registration_route_hostname' => 'preserved.test',
+        'registration_route_provenance' => RouteProvenance::Explicit->value,
+        'registration_relocation_state' => 'reserved',
+        'registration_authoritative_path' => $source,
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'preserved.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update([
+        'registration_migration_recovery' => [
+            ...registration_migration_recovery($instance, $route),
+            'planned' => [
+                'name' => 'default',
+                'checkout_path' => '/srv/orbit/apps/acme/default',
+            ],
+        ],
+    ]);
+    $before = $instance->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $source,
+            'app_id' => $app->id,
+            'root' => 'public',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and($instance->root)
+        ->toBe('web')
+        ->and($route->refresh()->hostname)
+        ->toBe('preserved.test');
+});
+
+it('retains explicit hostname intent before Route creation and rejects a changed retry with 409', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $payload = [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+        'hostname' => 'original.test',
+    ];
+    $this->registrationSource->failRelocateOnce = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', $payload)
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete');
+
+    $instance = AppInstance::query()->sole();
+    $before = $instance->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'app_id' => $app->id,
+            'hostname' => 'changed.test',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and($instance->registration_route_hostname)
+        ->toBe('original.test')
+        ->and($instance->registration_route_provenance)
+        ->toBe(RouteProvenance::Explicit->value)
+        ->and(Route::query()->count())
+        ->toBe(0);
+
+    $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+    $omitted = $this->postJson('/api/v1/instances/register', [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+    ])->assertOk();
+
+    expect($identical->json('data.app_instance.route.hostname'))
+        ->toBe('original.test')
+        ->and($omitted->json('data.app_instance.route.id'))
+        ->toBe($identical->json('data.app_instance.route.id'))
+        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->toBe('original.test');
+});
+
+it('preserves explicit hostname intent after Route creation and returns 409 for a changed retry', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $payload = [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+        'hostname' => 'preserved.test',
+    ];
+    $this->projection->fail = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', $payload)
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete');
+
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $instanceBefore = $instance->refresh()->getAttributes();
+    $routeBefore = $route->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'app_id' => $app->id,
+            'hostname' => 'changed.test',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($instanceBefore)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($routeBefore);
+
+    $this->projection->fail = false;
+    $omitted = $this->postJson('/api/v1/instances/register', [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+    ])->assertOk();
+    $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+
+    expect($omitted->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->toBe('preserved.test')
+        ->and($identical->json('data.app_instance.route.id'))
+        ->toBe($route->id);
+});
+
+it('retains generated hostname provenance and returns 409 for a later explicit hostname', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $this->registrationSource->failRelocateOnce = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'app_id' => $app->id,
+        ])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete');
+
+    $instance = AppInstance::query()->sole();
+    $before = $instance->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'app_id' => $app->id,
+            'hostname' => 'changed.test',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and($instance->registration_route_hostname)
+        ->toBeNull()
+        ->and($instance->registration_route_provenance)
+        ->toBe(RouteProvenance::Generated->value)
+        ->and(Route::query()->count())
+        ->toBe(0);
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+    ])->assertOk();
+
+    expect($response->json('data.app_instance.route.provenance'))
+        ->toBe(RouteProvenance::Generated->value);
+});
+
 it('refuses colliding complete-set identities before reservation on every retry', function (
     array $paths,
     ?string $name,
@@ -512,6 +789,10 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
             'registration_worktree_paths' => $fact->worktreePaths,
             'registration_relocation_state' => 'reserved',
             'registration_authoritative_path' => $fact->path,
+            'registration_route_hostname' => $index === 0 ? 'primary.test' : null,
+            'registration_route_provenance' => $index === 0
+                ? RouteProvenance::Explicit->value
+                : RouteProvenance::Generated->value,
             'status' => AppInstanceState::Reserved,
         ]);
     });
@@ -1607,6 +1888,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
         'hostname' => 'primary.test',
     ])->assertOk();
     $retried = collect($retry->json('data.app_instances'))->keyBy('name');
+    $retained = AppInstance::query()->get()->keyBy('name');
     expect($instances['default']['route']['hostname'])
         ->toBe('primary.test')
         ->and($instances['feature']['route']['hostname'])
@@ -1619,6 +1901,14 @@ it('uses an explicit hostname only for the primary member of a requested source 
         ->toBe($instances['feature']['id'])
         ->and($retried['feature']['route']['id'])
         ->toBe($instances['feature']['route']['id'])
+        ->and($retained['default']->registration_route_hostname)
+        ->toBe('primary.test')
+        ->and($retained['default']->registration_route_provenance)
+        ->toBe(RouteProvenance::Explicit->value)
+        ->and($retained['feature']->registration_route_hostname)
+        ->toBeNull()
+        ->and($retained['feature']->registration_route_provenance)
+        ->toBe(RouteProvenance::Generated->value)
         ->and(Route::query()->count())
         ->toBe(2);
 });
@@ -1814,6 +2104,8 @@ function registration_evidence_for_test(string $source): array
         'registration_inferred_root' => 'public',
         'registration_common_repository_path' => $source.'/.git',
         'registration_worktree_paths' => [$source],
+        'registration_route_hostname' => null,
+        'registration_route_provenance' => RouteProvenance::Generated->value,
     ];
 }
 

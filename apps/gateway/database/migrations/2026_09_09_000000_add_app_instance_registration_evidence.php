@@ -26,7 +26,9 @@ return new class extends Migration {
             $table->json('registration_worktree_paths')->nullable()->after('registration_common_repository_path');
             $table->string('registration_relocation_state')->nullable()->after('registration_worktree_paths');
             $table->text('registration_authoritative_path')->nullable()->after('registration_relocation_state');
-            $table->timestamp('registration_completed_at')->nullable()->after('registration_authoritative_path');
+            $table->string('registration_route_hostname', 253)->nullable()->after('registration_authoritative_path');
+            $table->string('registration_route_provenance')->nullable()->after('registration_route_hostname');
+            $table->timestamp('registration_completed_at')->nullable()->after('registration_route_provenance');
             $table->unique(['node_id', 'registration_original_path']);
         });
     }
@@ -66,6 +68,8 @@ return new class extends Migration {
                 'registration_worktree_paths',
                 'registration_relocation_state',
                 'registration_authoritative_path',
+                'registration_route_hostname',
+                'registration_route_provenance',
                 'registration_completed_at',
             ]);
         });

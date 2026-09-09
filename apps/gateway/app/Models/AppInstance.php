@@ -41,6 +41,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property list<string>|null $registration_worktree_paths
  * @property string|null $registration_relocation_state
  * @property string|null $registration_authoritative_path
+ * @property string|null $registration_route_hostname
+ * @property string|null $registration_route_provenance
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
  * @property array<string, mixed>|null $registration_migration_recovery
@@ -102,6 +104,8 @@ final class AppInstance extends Model
         'registration_worktree_paths',
         'registration_relocation_state',
         'registration_authoritative_path',
+        'registration_route_hostname',
+        'registration_route_provenance',
         'registration_source_device',
         'registration_source_inode',
         'registration_migration_recovery',
