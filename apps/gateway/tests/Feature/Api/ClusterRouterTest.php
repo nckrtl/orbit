@@ -4,12 +4,22 @@ declare(strict_types=1);
 
 use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\SetClusterRouterAction;
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     $this->baselines = new class implements RoleBaselineConverger {
@@ -22,8 +32,11 @@ beforeEach(function (): void {
 
         public ?int $failRemoveNodeId = null;
 
+        public ?Closure $observe = null;
+
         public function converge(Node $node, NodeRole $assignment): void
         {
+            ($this->observe ?? static function (): void {})();
             $this->calls[] = "converge:{$node->id}";
 
             if ($this->failConverge) {
@@ -33,6 +46,7 @@ beforeEach(function (): void {
 
         public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
         {
+            ($this->observe ?? static function (): void {})();
             $this->calls[] = "remove:{$node->id}";
 
             if ($this->failRemove || $this->failRemoveNodeId === $node->id) {
@@ -96,6 +110,161 @@ it('atomically replaces the Router and preserves exactly one assignment', functi
         ->toBe(1)
         ->and($this->cluster->routerAssignment()->sole()->node_id)
         ->toBe($this->second->id);
+});
+
+it('returns 409 before Router validation or mutation while the Cluster owner is busy', function (): void {
+    $outside = cluster_router_api_node('busy-outside', '10.44.0.4');
+    $candidate = $this->first
+        ->roles()
+        ->create([
+            'cluster_id' => $this->cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Provisioning,
+        ]);
+    app()->instance(ClusterRouterOperationLock::class, new class implements ClusterRouterOperationLock {
+        public function run(int $clusterId, Closure $operation): mixed
+        {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.router_busy',
+                message: 'Another Cluster Router operation is active. Retry the request.',
+                status: 409,
+            );
+        }
+    });
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$outside->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.router_busy');
+    $this
+        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.router_busy');
+
+    expect($candidate->fresh()->status)
+        ->toBe(LifecycleStatus::Provisioning)
+        ->and($this->baselines->calls)
+        ->toBeEmpty();
+
+    app()->instance(ClusterRouterOperationLock::class, new ClusterRouterApiOperationLock);
+    $this
+        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
+        ->assertOk();
+
+    expect($candidate->fresh())->toBeNull();
+});
+
+it('reloads Router assignments after waiting before a replacement', function (): void {
+    $owner = new ClusterRouterApiOperationLock(function (): void {
+        $this->first
+            ->roles()
+            ->create([
+                'cluster_id' => $this->cluster->id,
+                'role' => RoleName::Router,
+                'status' => LifecycleStatus::Active,
+            ]);
+    });
+    app()->instance(ClusterRouterOperationLock::class, $owner);
+
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->second->id)
+        ->and($this->baselines->calls)
+        ->toBe([
+            "converge:{$this->second->id}",
+            "remove:{$this->first->id}",
+        ]);
+});
+
+it('reloads the requested Node after waiting and rejects stale membership', function (): void {
+    $owner = new ClusterRouterApiOperationLock(function (): void {
+        $this->second->update(['cluster_id' => null]);
+    });
+    app()->instance(ClusterRouterOperationLock::class, $owner);
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.router_node_invalid');
+
+    expect($this->second->roles()->where('role', RoleName::Router)->exists())
+        ->toBeFalse()
+        ->and($this->baselines->calls)
+        ->toBeEmpty();
+});
+
+it('runs Router mutation and removal guards against state created while waiting', function (): void {
+    $owner = new ClusterRouterApiOperationLock(function (): void {
+        $app = OrbitApp::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://example.test/acme.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $this->first
+            ->roles()
+            ->create([
+                'cluster_id' => $this->cluster->id,
+                'role' => RoleName::Router,
+                'status' => LifecycleStatus::Active,
+            ]);
+        $target = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $this->first->id,
+            'name' => 'default',
+            'checkout_path' => '/srv/acme/default',
+        ]);
+        $route = Route::query()->create([
+            'app_id' => $app->id,
+            'cluster_id' => $this->cluster->id,
+            'hostname' => 'acme.example.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+        ]);
+        $route->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+        $target->update(['status' => AppInstanceState::Active]);
+    });
+    app()->instance(ClusterRouterOperationLock::class, $owner);
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
+    $this
+        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->first->id)
+        ->and($this->baselines->calls)
+        ->toBeEmpty();
+});
+
+it('holds Router ownership through baseline work outside database transactions', function (): void {
+    $owner = new ClusterRouterApiOperationLock;
+    app()->instance(ClusterRouterOperationLock::class, $owner);
+    $transactionLevel = DB::transactionLevel();
+    $this->baselines->observe = static function () use ($owner, $transactionLevel): void {
+        expect($owner->active)
+            ->toBeTrue()
+            ->and(DB::transactionLevel())
+            ->toBe($transactionLevel);
+    };
+
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
+    app(ClearClusterRouterAction::class)->execute($this->cluster);
+
+    expect($owner->clusterIds)
+        ->toBe([$this->cluster->id, $this->cluster->id])
+        ->and($this->baselines->calls)
+        ->toBe([
+            "converge:{$this->first->id}",
+            "remove:{$this->first->id}",
+        ]);
 });
 
 it('removes every obsolete Router after several replacement convergence failures', function (): void {
@@ -346,4 +515,36 @@ function cluster_router_api_node(string $name, string $wireguardIp, ?Cluster $cl
         'public_ssh_host' => '192.0.2.'.str_replace('10.44.0.', '', $wireguardIp),
         'wireguard_ip' => $wireguardIp,
     ]);
+}
+
+final class ClusterRouterApiOperationLock implements ClusterRouterOperationLock
+{
+    /** @var list<int> */
+    public array $clusterIds = [];
+
+    public bool $active = false;
+
+    private bool $prepared = false;
+
+    public function __construct(
+        private readonly ?Closure $before = null,
+    ) {}
+
+    public function run(int $clusterId, Closure $operation): mixed
+    {
+        $this->clusterIds[] = $clusterId;
+
+        if (! $this->prepared) {
+            ($this->before ?? static function (): void {})();
+            $this->prepared = true;
+        }
+
+        $this->active = true;
+
+        try {
+            return $operation();
+        } finally {
+            $this->active = false;
+        }
+    }
 }

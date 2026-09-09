@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -19,15 +20,25 @@ final readonly class ClearClusterRouterAction
 {
     public function __construct(
         private RoleBaselineConverger $baselines,
+        private ClusterRouterOperationLock $operations,
         private ?RouteReconciliationGuard $routes = null,
         private ?RouteRemovalGuard $removal = null,
     ) {}
 
     public function execute(Cluster $cluster): Cluster
     {
+        return $this->operations->run(
+            $cluster->id,
+            fn (): Cluster => $this->executeOwned($cluster->id),
+        );
+    }
+
+    private function executeOwned(int $clusterId): Cluster
+    {
+        $cluster = Cluster::query()->findOrFail($clusterId);
+
         ($this->routes ?? app(RouteReconciliationGuard::class))->assertClusterRouterMutable($cluster->id);
         ($this->removal ?? app(RouteRemovalGuard::class))->assertRouterRemovable($cluster);
-        $cluster->refresh();
 
         if ($cluster->state === ClusterState::Active && $cluster->tld !== null) {
             throw new ResourceOperationException(
