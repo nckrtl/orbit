@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Value\PreservedIncusReference;
 use Illuminate\Support\Facades\Process;
 
 /**
@@ -108,14 +109,13 @@ final readonly class LegacyRetirementHost
                 if (! is_string($kind) || ! is_array($resource)) {
                     throw new \RuntimeException('The requested host observation is invalid.');
                 }
-                $identity = $this->identity($resource);
-                $key = $kind."\0".$identity;
+                $key = $this->resourceSelectionKey($kind, $resource);
                 if (isset($seen[$key])) {
                     throw new \RuntimeException('The requested host observation contains a duplicate resource.');
                 }
                 $seen[$key] = true;
                 foreach ($frozen[$kind] ?? [] as $candidate) {
-                    if ($this->identity($candidate) === $identity) {
+                    if ($this->resourceSelectionKey($kind, $candidate) === $key) {
                         $selected[$kind][] = $candidate;
                         continue 2;
                     }
@@ -258,6 +258,30 @@ final readonly class LegacyRetirementHost
         }
 
         return $identity;
+    }
+
+    /** @param array<string, mixed> $resource */
+    private function resourceSelectionKey(string $kind, array $resource): string
+    {
+        if (PreservedIncusReference::supports($kind)) {
+            return PreservedIncusReference::fromResource($kind, $resource)->key();
+        }
+
+        $identity = $this->identity($resource);
+        if (in_array($kind, ['instances', 'snapshots', 'networks', 'new_namespace'], true)) {
+            $remote = $resource['remote'] ?? null;
+            $project = $resource['project'] ?? null;
+            if ($remote === null && $project === null) {
+                return $kind."\0".$identity;
+            }
+            if (! is_string($remote) || ! is_string($project)) {
+                throw new \RuntimeException('The requested Incus observation has no exact scope.');
+            }
+
+            return $kind."\0".$remote."\0".$project."\0".$identity;
+        }
+
+        return $kind."\0".$identity;
     }
 
     private function isIncusOperation(string $operation): bool
