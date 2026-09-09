@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
+use App\E2E\IncusHost;
 use App\E2E\IssueState;
 use App\E2E\ProofEquivalenceEvaluator;
 use App\E2E\ProofInputManifestBuilder;
@@ -111,6 +112,11 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
         'AUX-99',
         '.loop/proof/AUX-99.json',
         $plan,
+        \App\E2E\Value\TopologyConstructionInputs::forGeneration(
+            featureTarget('AUX-99'),
+            'equivalence-generation',
+            2,
+        ),
         $observed,
     );
     $attempt = new AttemptId(str_repeat('a', 32));
@@ -118,11 +124,9 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
     $state = IssueState::forWorktree('AUX-99', $root);
     $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
     $state->writeTopology(new FeatureTopology(
-        $target,
+        $manifest->construction,
         AttemptPurpose::Proof,
         proofEquivalenceGeneration($main),
-        $target->network(),
-        array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),
         new SourceState($proved, $proved),
         new VerificationReport(true, [
             'proof.verify' => [
@@ -161,6 +165,7 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
             $builder,
             new StatePaths(temporaryPath('orbit-equivalence-host-', 6)),
             new OperationId(str_repeat('c', 32)),
+            new IncusHost,
             $root,
         ),
     ];

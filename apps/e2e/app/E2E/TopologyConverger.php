@@ -9,7 +9,6 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use JsonException;
 use RuntimeException;
@@ -29,17 +28,18 @@ final readonly class TopologyConverger
 
     public function converge(TopologyTarget $target, SourceState $source, LaravelRelease $laravel): ConvergenceReport
     {
-        $instances = array_combine(
-            TopologyProfile::ROLES,
-            array_map($target->instance(...), TopologyProfile::ROLES),
-        );
         $nodes = array_combine(
             $target->recipe->nodeKeys(),
             array_map($target->instance(...), $target->recipe->nodeKeys()),
         );
+        $instances = $nodes;
         $gatewayNode = $target->recipe->nodeForRole('gateway')->key;
         $appDevNode = $target->recipe->nodeForRole('app-dev')->key;
-        $appProdNode = $target->recipe->nodeForRole('app-prod')->key;
+        $appProdNodes = $target->recipe->nodesForRole('app-prod');
+        if ($appProdNodes === []) {
+            throw new RuntimeException('The topology has no app-prod Node.');
+        }
+        $appProdNode = $appProdNodes[0]->key;
 
         $this->host->assertTopologyNetworkIdentity($nodes, $target->network(), $target);
         $addresses = $this->host->globalIpv4All($nodes);
@@ -62,36 +62,36 @@ final readonly class TopologyConverger
         $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $addresses[$gatewayNode]]);
         $steps['bootstrap.gateway'] = true;
         $gatewayPublicKey = $this->gatewayPublicKey($instances['gateway']);
-        $this->runAll([
-            'app-dev' => [
-                'instance' => $instances['app-dev'],
+        $authorize = [
+            $appDevNode => [
+                'instance' => $instances[$appDevNode],
                 'script' => 'prepare-node.sh',
                 'arguments' => ['gateway-authorize', $gatewayPublicKey],
             ],
-            'app-prod' => [
-                'instance' => $instances['app-prod'],
+        ];
+        foreach ($appProdNodes as $node) {
+            $authorize[$node->key] = [
+                'instance' => $instances[$node->key],
                 'script' => 'prepare-node.sh',
                 'arguments' => ['gateway-authorize', $gatewayPublicKey],
-            ],
-        ]);
+            ];
+        }
+        $this->runAll($authorize);
         $steps['authorize.gateway-ssh'] = true;
-        $this->runAll([
-            'app-dev' => [
-                'instance' => $instances['app-dev'],
+        $retarget = [];
+        foreach ([$target->recipe->node($appDevNode), ...$appProdNodes] as $node) {
+            $retarget[$node->key] = [
+                'instance' => $instances[$node->key],
                 'script' => 'retarget-vpn.sh',
                 'arguments' => [$addresses[$gatewayNode]],
-            ],
-            'app-prod' => [
-                'instance' => $instances['app-prod'],
-                'script' => 'retarget-vpn.sh',
-                'arguments' => [$addresses[$gatewayNode]],
-            ],
-        ]);
+            ];
+        }
+        $this->runAll($retarget);
         $steps['retarget.vpn'] = true;
-        $architectures = $this->architectures($instances);
-        $appDevArchitecture = $architectures['app-dev'] ?? null;
-        $appProdArchitecture = $architectures['app-prod'] ?? null;
-        if (! is_string($appDevArchitecture) || ! is_string($appProdArchitecture)) {
+        $architectureNodes = [$appDevNode, ...array_map(static fn ($node): string => $node->key, $appProdNodes)];
+        $architectures = $this->architectures(array_intersect_key($instances, array_flip($architectureNodes)));
+        $appDevArchitecture = $architectures[$appDevNode] ?? null;
+        if (! is_string($appDevArchitecture)) {
             throw new RuntimeException('Target node architectures are incomplete.');
         }
         // Both commands mutate the shared Gateway SQLite store. Keep this phase ordered.
@@ -102,13 +102,24 @@ final readonly class TopologyConverger
                 'arguments' => [$appDevNode, $addresses[$appDevNode], $appDevArchitecture],
             ],
         ]);
-        $this->runAll([
-            'app-prod' => [
-                'instance' => $instances['gateway'],
-                'script' => 'converge-app-prod-internal-tls.sh',
-                'arguments' => [$appProdNode, $addresses[$appProdNode], $appProdArchitecture],
-            ],
-        ]);
+        foreach ($appProdNodes as $node) {
+            $architecture = $architectures[$node->key] ?? null;
+            if (! is_string($architecture)) {
+                throw new RuntimeException('Target node architectures are incomplete.');
+            }
+            $this->runAll([
+                $node->key => [
+                    'instance' => $instances[$gatewayNode],
+                    'script' => 'converge-app-prod-internal-tls.sh',
+                    'arguments' => [
+                        $node->key,
+                        $addresses[$node->key],
+                        $architecture,
+                        $node->wireGuardAddress(),
+                    ],
+                ],
+            ]);
+        }
         $steps['provision.app-dev'] = true;
         $steps['provision.app-prod'] = true;
         $this->run(
@@ -121,9 +132,9 @@ final readonly class TopologyConverger
             ],
         );
         $steps['authorize.app-dev-operator'] = true;
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['configure-cli', '10.44.0.1']);
+        $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['configure-cli', '10.44.0.1']);
         $steps['configure.app-dev-cli'] = true;
-        $sampleResources = $this->run($instances['app-dev'], 'converge-sample-app.sh', [
+        $sampleResources = $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
             'create-resources',
             $appDevNode,
             $appProdNode,
@@ -131,24 +142,24 @@ final readonly class TopologyConverger
         ]);
         $typedCheckoutPath = $this->typedCheckoutPath($sampleResources);
         $steps['create.sample-resources'] = true;
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics', $appDevNode]);
+        $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['metrics', $appDevNode]);
         $steps['converge.metrics'] = true;
         // Rolling refreshes restore snapshots and skip provisioning, so the
         // product must re-render every projection from the checked-out code.
         // The app-prod internal-TLS fragment lands inside the managed Caddy
         // layout first so the product publisher carries it forward.
         if ($typedCheckoutPath === null) {
-            $this->run($instances['app-prod'], 'converge-sample-app.sh', ['internal-tls']);
+            $this->run($instances[$appProdNode], 'converge-sample-app.sh', ['internal-tls']);
         }
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['reproject']);
+        $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['reproject']);
         $steps['reproject.product-state'] = true;
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics-publication', $appDevNode]);
+        $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['metrics-publication', $appDevNode]);
         $steps['refresh.metrics-publication'] = true;
-        $this->awaitInstanceApiReadiness($instances['app-dev']);
+        $this->awaitInstanceApiReadiness($instances[$appDevNode]);
         $steps['await.instance-api-readiness'] = true;
 
         if ($typedCheckoutPath !== null) {
-            $this->run($instances['app-dev'], 'converge-sample-app.sh', [
+            $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
                 'hydrate',
                 $laravel->commit,
                 'app-dev',
@@ -157,12 +168,12 @@ final readonly class TopologyConverger
         } else {
             $this->runAll([
                 'app-dev' => [
-                    'instance' => $instances['app-dev'],
+                    'instance' => $instances[$appDevNode],
                     'script' => 'converge-sample-app.sh',
                     'arguments' => ['hydrate', $laravel->commit, 'app-dev'],
                 ],
                 'app-prod' => [
-                    'instance' => $instances['app-prod'],
+                    'instance' => $instances[$appProdNode],
                     'script' => 'converge-sample-app.sh',
                     'arguments' => ['hydrate', $laravel->commit, 'app-prod'],
                 ],
@@ -186,30 +197,28 @@ final readonly class TopologyConverger
         return ConvergenceReport::successful($steps);
     }
 
-    /** @param array<string, string> $instances @return array{app-dev:string,app-prod:string} */
+    /** @param array<string, string> $instances @return array<string, string> */
     private function architectures(array $instances): array
     {
-        $results = $this->host->execAll([
-            'app-dev' => ['instance' => $instances['app-dev'], 'command' => new GuestCommand(['uname', '-m'], 10)],
-            'app-prod' => ['instance' => $instances['app-prod'], 'command' => new GuestCommand(['uname', '-m'], 10)],
-        ]);
+        $requests = [];
+        foreach ($instances as $node => $instance) {
+            $requests[$node] = ['instance' => $instance, 'command' => new GuestCommand(['uname', '-m'], 10)];
+        }
+        $results = $this->host->execAll($requests);
         $architectures = [];
-        foreach (['app-dev', 'app-prod'] as $role) {
-            $result = $results[$role] ?? null;
+        foreach ($instances as $node => $instance) {
+            $result = $results[$node] ?? null;
             if (! $result instanceof GuestCommandResult) {
-                throw new RuntimeException("Target node {$instances[$role]} returned no architecture result.");
+                throw new RuntimeException("Target node {$instance} returned no architecture result.");
             }
             $architecture = trim($result->stdout);
             if (! $result->successful() || preg_match('/\A(?:x86_64|aarch64)\z/', $architecture) !== 1) {
-                throw new RuntimeException("Target node {$instances[$role]} reported an invalid architecture.");
+                throw new RuntimeException("Target node {$instance} reported an invalid architecture.");
             }
-            $architectures[$role] = $architecture;
+            $architectures[$node] = $architecture;
         }
 
-        return [
-            'app-dev' => $architectures['app-dev'],
-            'app-prod' => $architectures['app-prod'],
-        ];
+        return $architectures;
     }
 
     /** @param array<string, array{instance:string,script:string,arguments:list<string>}> $commands */

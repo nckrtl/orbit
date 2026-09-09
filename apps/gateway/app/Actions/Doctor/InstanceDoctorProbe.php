@@ -6,7 +6,7 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
-use App\Domain\AppInstances\AppInstanceSourceKind;
+use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
@@ -61,26 +61,39 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 );
             }
 
-            if ($instance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+            if (! AppInstanceSourceLayout::tryFrom($instance->source_layout) instanceof AppInstanceSourceLayout) {
                 $issues[] = new DoctorIssueData(
-                    InstanceDoctorIssueCode::SourceKindMismatch,
+                    InstanceDoctorIssueCode::SourceLayoutMismatch,
                     DoctorIssueKind::Drift,
                     'instance',
                     $instance->id,
                     $instance->name,
                     'Instance source ownership does not match managed intent.',
-                    AppInstanceSourceKind::ManagedClone->value,
-                    $instance->source_kind,
+                    'checkout or worktree',
+                    $instance->source_layout,
                 );
 
                 continue;
+            }
+
+            if ($instance->migration_required) {
+                $issues[] = new DoctorIssueData(
+                    InstanceDoctorIssueCode::MigrationRequired,
+                    DoctorIssueKind::Drift,
+                    'instance',
+                    $instance->id,
+                    $instance->name,
+                    'Instance source requires manual migration.',
+                    'migration complete',
+                    'migration required',
+                );
             }
 
             try {
                 $observation = $this->inspector->inspect($instance);
                 foreach ([
                     'checkoutExists' => InstanceDoctorIssueCode::CheckoutMissing,
-                    'repositoryIndependent' => InstanceDoctorIssueCode::RepositoryNotIndependent,
+                    'repositoryLayoutMatches' => InstanceDoctorIssueCode::RepositoryLayoutMismatch,
                     'originMatches' => InstanceDoctorIssueCode::OriginMismatch,
                     'sourceIdentityMatches' => InstanceDoctorIssueCode::SourceIdentityMismatch,
                 ] as $field => $code) {

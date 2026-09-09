@@ -8,10 +8,13 @@ use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Routes\ClearRouteTargetAction;
 use App\Actions\Routes\CreateRouteAction;
+use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Routes\SetRouteTargetAction;
+use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Data\Routes\CreateRouteData;
+use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
@@ -20,6 +23,7 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -35,11 +39,38 @@ beforeEach(function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     $this->node = reconciliation_node('dev', 'dev.test');
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
+});
+
+it('refuses active Route changes before mutating the serving path', function (): void {
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+    $before = $route->fresh(['targets'])->toArray();
+
+    foreach ([
+        fn () => app(UpdateRouteAction::class)->execute(
+            $route,
+            new UpdateRouteData(true, 'changed.example.test', false, null),
+        ),
+        fn () => app(ClearRouteTargetAction::class)->execute($route),
+        fn () => app(RemoveRouteAction::class)->execute($route),
+    ] as $mutation) {
+        expect($mutation)->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        });
+        expect($route->fresh(['targets'])->toArray())->toBe($before);
+    }
 });
 
 it('atomically reconciles attach, activation, TLD changes, deactivation, and detach', function (): void {
@@ -182,6 +213,56 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
         ]);
 });
 
+it('preserves a legacy default hostname and source during Route-only reconciliation', function (): void {
+    $this->target->update([
+        'name' => 'main',
+        'checkout_path' => '/srv/acme/main',
+        'branch' => 'main',
+        'migration_required' => true,
+    ]);
+    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $route->update(['hostname' => 'acme.dev.test']);
+    $cluster = Cluster::query()->create([
+        'name' => 'legacy-routing',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster.test',
+    ]);
+    $router = reconciliation_node('legacy-router', null);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router
+        ->roles()
+        ->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $sourceBefore = $this->target
+        ->fresh()
+        ->only([
+            'name',
+            'source_layout',
+            'checkout_path',
+            'root',
+            'branch',
+            'branch_override',
+            'migration_required',
+            'starting_commit',
+        ]);
+    $routeTargetBefore = $route->targets()->firstOrFail()->getAttributes();
+
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+
+    expect($this->target->fresh()->only(array_keys($sourceBefore)))
+        ->toBe($sourceBefore)
+        ->and($route->refresh()->hostname)
+        ->toBe('acme.dev.test')
+        ->and($route->cluster_id)
+        ->toBe($cluster->id)
+        ->and($route->targets()->firstOrFail()->getAttributes())
+        ->toBe($routeTargetBefore);
+});
+
 it('preserves Node and Route state when the last app-dev TLD has no active fallback', function (): void {
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -304,8 +385,8 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
 
     expect(app(CreateRouteAction::class)->ensureForAppInstance($memberTarget, null)->cluster_id)
         ->toBe($cluster->id)
-        ->and(app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id)->cluster_id)
-        ->toBe($cluster->id);
+        ->and(fn () => app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id))
+        ->toThrow(ResourceOperationException::class, 'conflicts with existing Route state');
 });
 
 function reconciliation_node(string $name, ?string $tld): Node

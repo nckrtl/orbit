@@ -29,7 +29,7 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         private readonly string $repositoryUrl,
         private readonly string $root,
         private readonly ?string $name = null,
-        private readonly ?string $mainBranch = null,
+        private readonly ?string $defaultBranch = null,
         #[\SensitiveParameter]
         private readonly ?array $defaults = null,
     ) {}
@@ -55,7 +55,7 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
                 'name' => $this->name,
                 'slug' => $this->slug,
                 'repository_url' => $this->repositoryUrl,
-                'main_branch' => $this->mainBranch,
+                'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
                 'defaults' => $this->defaults,
             ],

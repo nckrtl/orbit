@@ -49,46 +49,59 @@ function providerDeletionFixture(string $kind = 'instances', string $name = 'old
     return [$retirement, $manifest, $root];
 }
 
+/** @return array{string, string, string} */
+function observedHostTypeSubstitutionFixture(string $kind, string $expectedType): array
+{
+    $root = temporaryPath('legacy-provider-type-', 5);
+    mkdir($root, 0700);
+    $path = $root.'/target';
+    if ($expectedType === 'directory') {
+        file_put_contents($path, 'substituted file');
+    } else {
+        mkdir($path, 0700);
+    }
+    $resource = [
+        'path' => $path,
+        'filesystem_type' => $expectedType,
+        'classification' => $kind === 'evidence' ? 'preserve' : 'legacy',
+        'content_sha256' => str_repeat('a', 64),
+    ];
+    if ($kind !== 'evidence') {
+        $resource['safe_root'] = $root;
+    } else {
+        $resource['identity'] = 'proof-1';
+    }
+    $observation = $root.'/observation.json';
+    file_put_contents($observation, json_encode([$kind => [$resource]], JSON_THROW_ON_ERROR));
+    chmod($observation, 0600);
+    putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+
+    return [$root, $path, $observation];
+}
+
+function removeObservedHostTypeSubstitutionFixture(string $root, string $path, string $observation): void
+{
+    putenv('ORBIT_E2E_LEGACY_OBSERVATION');
+    if (is_dir($path)) {
+        rmdir($path);
+    } else {
+        unlink($path);
+    }
+    unlink($observation);
+    rmdir($root);
+}
+
 describe('legacy commands', function () {
     it('rejects file and directory substitution for every observed host path kind', function (
         string $kind,
         string $expectedType,
     ): void {
-        $root = temporaryPath('legacy-provider-type-', 5);
-        mkdir($root, 0700);
-        $path = $root.'/target';
-        if ($expectedType === 'directory') {
-            file_put_contents($path, 'substituted file');
-        } else {
-            mkdir($path, 0700);
-        }
-        $resource = [
-            'path' => $path,
-            'filesystem_type' => $expectedType,
-            'classification' => $kind === 'evidence' ? 'preserve' : 'legacy',
-            'sha256' => str_repeat('a', 64),
-        ];
-        if ($kind !== 'evidence') {
-            $resource['safe_root'] = $root;
-        } else {
-            $resource['identity'] = 'proof-1';
-        }
-        $observation = $root.'/observation.json';
-        file_put_contents($observation, json_encode([$kind => [$resource]], JSON_THROW_ON_ERROR));
-        chmod($observation, 0600);
-        putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+        [$root, $path, $observation] = observedHostTypeSubstitutionFixture($kind, $expectedType);
 
         expect(fn () => app(\App\E2E\LegacyRetirementHost::class)->observeCurrent())
             ->toThrow(RuntimeException::class, 'filesystem type');
 
-        putenv('ORBIT_E2E_LEGACY_OBSERVATION');
-        if (is_dir($path)) {
-            rmdir($path);
-        } else {
-            unlink($path);
-        }
-        unlink($observation);
-        rmdir($root);
+        removeObservedHostTypeSubstitutionFixture($root, $path, $observation);
     })->with([
         'source directory replaced by file' => ['source_paths', 'directory'],
         'manifest file replaced by directory' => ['manifests', 'file'],
@@ -115,7 +128,7 @@ describe('legacy commands', function () {
             'path' => $path,
             'filesystem_type' => $kind === 'source_paths' ? 'directory' : 'file',
             'classification' => $kind === 'evidence' ? 'preserve' : 'legacy',
-            'sha256' => str_repeat('a', 64),
+            'content_sha256' => str_repeat('a', 64),
         ];
         if ($kind !== 'evidence') {
             $resource['safe_root'] = $root;
@@ -166,6 +179,110 @@ describe('legacy commands', function () {
         rmdir($root.'/real');
         rmdir($root);
     });
+
+    it('refuses changed reviewed host contents before deleting the resource', function (
+        string $kind,
+        string $message,
+    ): void {
+        $root = temporaryPath('legacy-content-digest-', 5);
+        $safeRoot = $root.'/safe';
+        mkdir($safeRoot, 0700, true);
+        $target = $safeRoot.'/target';
+        $initialContents = 'reviewed';
+        if ($kind === 'source_paths') {
+            mkdir($target, 0700);
+            file_put_contents($target.'/payload.txt', $initialContents);
+            $contentSha256 = hash('sha256', 'payload.txt:'.hash('sha256', $initialContents));
+        } else {
+            file_put_contents($target, $initialContents);
+            $contentSha256 = hash('sha256', $initialContents);
+        }
+        $resource = [
+            'path' => $target,
+            'filesystem_type' => $kind === 'source_paths' ? 'directory' : 'file',
+            'classification' => $kind === 'evidence' ? 'preserve' : 'legacy',
+            'content_sha256' => $contentSha256,
+        ];
+        if ($kind === 'evidence') {
+            $resource['identity'] = 'proof-1';
+            $candidate = [
+                'path' => $safeRoot.'/candidate',
+                'safe_root' => $safeRoot,
+                'filesystem_type' => 'directory',
+                'classification' => 'legacy',
+                'content_sha256' => hash('sha256', ''),
+            ];
+            mkdir($candidate['path'], 0700);
+            $observed = ['source_paths' => [$candidate], 'evidence' => [$resource]];
+        } else {
+            $resource['safe_root'] = $safeRoot;
+            $observed = [$kind => [$resource]];
+        }
+        $observation = $root.'/observation.json';
+        $freezeEvidence = $root.'/freeze.json';
+        file_put_contents($observation, json_encode($observed, JSON_THROW_ON_ERROR));
+        file_put_contents($freezeEvidence, 'frozen');
+        chmod($observation, 0600);
+        chmod($freezeEvidence, 0600);
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+        $host = app(\App\E2E\LegacyRetirementHost::class);
+        $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-content-lock-', 5));
+        $early = new LegacyRetirement(
+            $host->observe(...),
+            $host->mutate(...),
+            fn (): \DateTimeImmutable => new \DateTimeImmutable('2026-08-28T10:00:00+00:00'),
+            new \App\E2E\State\OperationLock($paths),
+            new \App\E2E\Value\OperationId(str_repeat('d', 32)),
+            $host->observeCurrent(...),
+        );
+        $inventory = $early->inventory();
+        $manifest = $early->quarantine($inventory, $inventory->sha256(), $freezeEvidence);
+        $changedContents = 'changed after review';
+        if ($kind === 'source_paths') {
+            file_put_contents($target.'/payload.txt', $changedContents);
+            $resource['content_sha256'] = hash('sha256', 'payload.txt:'.hash('sha256', $changedContents));
+        } else {
+            file_put_contents($target, $changedContents);
+            $resource['content_sha256'] = hash('sha256', $changedContents);
+        }
+        if ($kind === 'evidence') {
+            $observed['evidence'] = [$resource];
+        } else {
+            $observed[$kind] = [$resource];
+        }
+        file_put_contents($observation, json_encode($observed, JSON_THROW_ON_ERROR));
+        $later = new LegacyRetirement(
+            $host->observe(...),
+            $host->mutate(...),
+            fn (): \DateTimeImmutable => new \DateTimeImmutable('2026-09-05T10:00:00+00:00'),
+            new \App\E2E\State\OperationLock($paths),
+            new \App\E2E\Value\OperationId(str_repeat('e', 32)),
+            $host->observeCurrent(...),
+        );
+
+        expect(fn () => $later->delete($manifest, $manifest->sha256()))
+            ->toThrow(RuntimeException::class, $message);
+        expect(file_exists($target))->toBeTrue();
+
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION');
+        if ($kind === 'source_paths') {
+            unlink($target.'/payload.txt');
+            rmdir($target);
+        } else {
+            unlink($target);
+        }
+        if ($kind === 'evidence') {
+            rmdir($candidate['path']);
+        }
+        unlink($freezeEvidence);
+        unlink($observation);
+        rmdir($safeRoot);
+        rmdir($root);
+    })->with([
+        'directory content' => ['source_paths', 'quarantined resource drifted'],
+        'file content' => ['manifests', 'quarantined resource drifted'],
+        'preserved evidence content' => ['evidence', 'preserved resource drifted'],
+    ]);
 
     it('rejects symlink-parent inventory, quarantine, and retirement command inputs', function () {
         $root = temporaryPath('legacy-inputs-', 5);
@@ -359,7 +476,7 @@ describe('legacy commands', function () {
             ]],
         ], JSON_THROW_ON_ERROR));
         file_put_contents($retirement, json_encode([
-            'version' => 1,
+            'version' => 2,
             'successful' => true,
             'quarantine_sha256' => str_repeat('a', 64),
             'deleted' => [[

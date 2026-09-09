@@ -21,20 +21,45 @@ Close out one independently approved pull request after the external orchestrato
    exact tree) or carry an `exact`/`equivalent` retained-proof report.
    For every candidate, if `main` moved after approval, stop until a head that
    includes current `origin/main` carries a new approval, a green CI run, and,
-   with Incus proof, a new equivalence decision or complete proof.
+   with Incus proof, a new equivalence decision or complete proof. Rebuild that
+   head from the approved workspace head that still carries `.loop/`: integrate
+   `origin/main` into it, obtain its new approval, then create a fresh
+   single-parent removal commit and its second approval. Never integrate `main`
+   after the `.loop/` removal; a removal head with two parents cannot pass step 2.
 2. **Verify the removal.** Run `git diff <approved-sha> <head> --name-status`
    and fail unless every line has status `D` and a path below `.loop/`; fail if
    the diff is empty, any path remains below `.loop/` at the head, or the approved
    workspace head is not the head's only parent. Do not accept an equivalent tree
    produced by a different commit sequence.
 3. **Verify the external merge.** Require authoritative read-only GitHub state to report that the pull request merged the exact second-approved removal head into `main`; fetch `origin/main`, require the recorded merge commit to have that removal head as its exact second parent, and require its tree to equal the accepted head's tree. Do not run a merge command or mutate the pull-request surface. A missing, ambiguous, differently parented, or tree-mismatched merge is a stop.
-4. **Promote the proof.** For Incus proof, run
-   `bin/e2e-topology-snapshot promote <ISSUE>`. Do not substitute a refresh when
-   the proof plan mutates state, `main` differs, or another promotion precondition
-   fails. Promotion requires the merge tree to equal the exact accepted head
-   and records proved, accepted, and merged lineage plus the retained runtime
-   fingerprint. Stop closeout until the exact candidate has a promotable
-   retained proof.
+4. **Promote the proof.** Before Incus promotion, locate the primary checkout
+   through `git worktree list --porcelain` and inspect its `HEAD`, local `main`,
+   and fetched `origin/main`. The promoter reads local `main`. When the
+   external merge is verified and local `main` is an ancestor of `origin/main`,
+   bring it forward, read all three references back, and retry promotion: with
+   `main` checked out and the working tree clean, run
+   `git -C <primary> merge --ff-only origin/main`; with a detached `HEAD` that
+   equals `origin/main`, run `git -C <primary> branch -f main origin/main`. Do
+   not reset or clean the checkout. Any other mismatch remains a stop; this
+   repair never waives proof or merge lineage.
+   For Incus proof, run
+   `bin/e2e-topology-snapshot promote <ISSUE>`. A normalized extended proof plan
+   always declares `mutates: true` and is refresh-only. For that plan, or any
+   other retained proof plan that declares `mutates: true`, run
+   `bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>` instead,
+   with the primary checkout at that commit. If refresh fails, leave both the
+   proof and discovery attempts active and stop. Only after refresh succeeds,
+   record the proved attempt, accepted head, merge commit, and promoted
+   generation in the closeout handoff, then run
+   `bin/e2e-topology release <ISSUE> --proof` and
+   `bin/e2e-topology release <ISSUE>`. Release neither
+   attempt before successful refresh
+   ([ADR 0035](../../../docs/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)).
+   Do not substitute a refresh when `main` differs or another promotion
+   precondition fails. Promotion requires the merge tree to equal the exact
+   accepted head and records proved, accepted, and merged lineage plus the
+   retained runtime fingerprint. Stop closeout until the exact candidate has a
+   promotable retained proof or a mutating plan.
    Follow any extra closeout step in a harness issue's repository-owner-approved,
    issue-specific proof contract.
 5. **Clean repository resources.** Run

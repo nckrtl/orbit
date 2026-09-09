@@ -33,12 +33,22 @@ final readonly class NativeMetricsContainerRuntime implements MetricsRuntimeLife
             $configuration->grafanaHash,
         );
         $snapshot = $this->host->snapshotConfiguration($node, $configuration);
+        $containersCommitted = false;
 
         try {
             $this->host->publishConfiguration($node, $configuration);
             $this->host->convergeContainers($node, $specs);
+            $containersCommitted = true;
             $this->credentials->verifyActive($node);
         } catch (Throwable $exception) {
+            if (
+                $containersCommitted
+                || $exception instanceof ResourceOperationException
+                && $exception->errorCode === 'metrics.container_cleanup_failed'
+            ) {
+                throw $exception;
+            }
+
             try {
                 $this->host->restoreConfiguration($node, $snapshot);
             } catch (Throwable $rollback) {

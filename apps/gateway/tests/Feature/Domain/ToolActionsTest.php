@@ -14,10 +14,13 @@ use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
+use App\Infrastructure\Tools\NativeToolManagerMaterializer;
+use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Tests\Support\FakeToolManager;
+use Tests\Support\FakeToolManagerMaterializer;
 use Tests\Support\ImmediateToolOperationLock;
 
 /** @mago-expect lint:halstead The install matrix keeps every required state transition and failure contract visible. */
@@ -93,7 +96,7 @@ describe(InstallToolAction::class, function (): void {
             ->toBe(0);
     });
 
-    it('rejects inactive nodes and managers before package probes', function (
+    it('rejects inactive nodes before package probes', function (
         LifecycleStatus $nodeStatus,
         LifecycleStatus $managerStatus,
         string $errorCode,
@@ -116,12 +119,33 @@ describe(InstallToolAction::class, function (): void {
             ->toBe(0);
     })->with([
         'inactive node' => [LifecycleStatus::Failed, LifecycleStatus::Active, 'tool.node_inactive'],
-        'inactive manager' => [LifecycleStatus::Active, LifecycleStatus::Failed, 'tool.manager_unavailable'],
     ]);
 
-    it('requires an active app role for VP before manager I/O', function (): void {
+    it('allows VP installation on a managed roleless node', function (): void {
         $node = tool_action_node();
         tool_action_manager_record($node, ToolManagerName::Vp);
+        [$action, $manager, $lock] = tool_install_action(ToolManagerName::Vp);
+        $manager->installedVersions = [null, '2.4.1'];
+
+        $result = $action->execute(tool_install_data(
+            node: $node,
+            manager: ToolManagerName::Vp,
+            package: '@openai/codex',
+        ));
+
+        expect($result->outcome)
+            ->toBe(ToolOutcome::Applied)
+            ->and($manager->calls)
+            ->toBe(['validatePackage', 'installedVersion', 'install', 'installedVersion'])
+            ->and($lock->runs)
+            ->toBe(1)
+            ->and(Tool::query()->count())
+            ->toBe(1);
+    });
+
+    it('rejects a roleless operator client outside Gateway SSH management', function (): void {
+        $node = tool_action_node();
+        $node->update(['ssh_host_fingerprint' => null]);
         [$action, $manager, $lock] = tool_install_action(ToolManagerName::Vp);
 
         $exception = tool_operation_exception(fn () => $action->execute(tool_install_data(
@@ -131,15 +155,62 @@ describe(InstallToolAction::class, function (): void {
         )));
 
         expect($exception->errorCode)
-            ->toBe('tool.app_role_required')
-            ->and($exception->status)
-            ->toBe(409)
+            ->toBe('tool.node_unmanaged')
             ->and($manager->calls)
             ->toBe(['validatePackage'])
             ->and($lock->runs)
             ->toBe(0)
             ->and(Tool::query()->count())
             ->toBe(0);
+    });
+
+    it('retains failed first-use manager materialization and retries the same install', function (): void {
+        $node = tool_action_node();
+        $manager = new FakeToolManager(ToolManagerName::Vp);
+        $manager->failures['materialize'] = [new ToolManagerException('materialize', 'secret bootstrap failure')];
+        $action = new InstallToolAction(
+            managers: new ToolManagerRegistry([$manager]),
+            constraints: new VersionConstraint,
+            lock: new ImmediateToolOperationLock,
+            materializer: new NativeToolManagerMaterializer(
+                new ToolManagerRegistry([$manager]),
+                new NativeToolManagerScopeLock,
+            ),
+            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
+        );
+
+        $failure = tool_operation_exception(fn () => $action->execute(tool_install_data(
+            node: $node,
+            manager: ToolManagerName::Vp,
+            package: '@openai/codex',
+        )));
+        $record = $node->toolManagers()->where('name', 'vp')->sole();
+
+        expect($failure->errorCode)
+            ->toBe('tool.manager_provision_failed')
+            ->and($failure->getMessage())
+            ->not
+            ->toContain('secret')
+            ->and($record->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($record->failed_step)
+            ->toBe('materialize')
+            ->and(Tool::query()->count())
+            ->toBe(0);
+
+        $manager->installedVersions = [null, '2.4.1'];
+        $result = $action->execute(tool_install_data(
+            node: $node,
+            manager: ToolManagerName::Vp,
+            package: '@openai/codex',
+        ));
+
+        expect($result->outcome)
+            ->toBe(ToolOutcome::Applied)
+            ->and($record->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and(Tool::query()->sole()->status)
+            ->toBe(ToolStatus::Installed);
     });
 
     it('allows provisioning app roles for app-scoped managers', function (
@@ -174,23 +245,26 @@ describe(InstallToolAction::class, function (): void {
         'Composer with provisioning app-prod' => [ToolManagerName::Composer, RoleName::AppProd, 'laravel/installer'],
     ]);
 
-    it('reports the missing app role before unavailable app-scoped manager state', function (): void {
+    it('retries a failed manager before installing the Tool', function (): void {
         $node = tool_action_node();
         tool_action_manager_record($node, ToolManagerName::Vp, LifecycleStatus::Failed);
         [$action, $manager, $lock] = tool_install_action(ToolManagerName::Vp);
+        $manager->installedVersions = [null, '2.4.1'];
 
-        $exception = tool_operation_exception(fn () => $action->execute(tool_install_data(
+        $result = $action->execute(tool_install_data(
             node: $node,
             manager: ToolManagerName::Vp,
             package: '@openai/codex',
-        )));
+        ));
 
-        expect($exception->errorCode)
-            ->toBe('tool.app_role_required')
+        expect($result->outcome)
+            ->toBe(ToolOutcome::Applied)
             ->and($manager->calls)
-            ->toBe(['validatePackage'])
+            ->toBe(['validatePackage', 'installedVersion', 'install', 'installedVersion'])
             ->and($lock->runs)
-            ->toBe(0);
+            ->toBe(1)
+            ->and($node->toolManagers()->where('name', 'vp')->sole()->status)
+            ->toBe(LifecycleStatus::Active);
     });
 
     it('rejects a manager that does not support the node', function (): void {
@@ -657,12 +731,16 @@ function tool_install_action(ToolManagerName $name = ToolManagerName::Apt): arra
 {
     $manager = new FakeToolManager($name);
     $lock = new ImmediateToolOperationLock;
+    $materializer = new FakeToolManagerMaterializer;
+    $materializer->persistActive = true;
 
     return [
         new InstallToolAction(
             managers: new ToolManagerRegistry([$manager]),
             constraints: new VersionConstraint,
             lock: $lock,
+            materializer: $materializer,
+            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
         ),
         $manager,
         $lock,
@@ -679,6 +757,8 @@ function tool_action_node(
         'status' => $status,
         'platform' => 'linux',
         'public_ssh_host' => fake()->unique()->ipv4(),
+        'wireguard_ip' => fake()->unique()->ipv4(),
+        'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', times: 43),
     ]);
 
     if ($role !== null) {

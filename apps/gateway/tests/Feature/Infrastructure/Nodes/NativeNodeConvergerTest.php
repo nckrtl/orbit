@@ -146,8 +146,9 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
             '-seu',
             '--',
             'ubuntu',
-            'resolute',
             UbuntuRelease::unsupportedText(),
+            '1',
+            'resolute',
             'orbit',
             'ssh-ed25519 GATEWAY',
             'ca-certificates',
@@ -806,8 +807,9 @@ it('bootstraps a supplied nckrtl identity without orbit literals or package conf
             '-seu',
             '--',
             'ubuntu',
-            'resolute',
             UbuntuRelease::unsupportedText(),
+            '1',
+            'resolute',
             'nckrtl',
             'ssh-ed25519 GATEWAY',
             'ca-certificates',
@@ -821,8 +823,8 @@ it('bootstraps a supplied nckrtl identity without orbit literals or package conf
         ])
         ->and($script)
         ->toContain(
-            'managed_user=$4',
-            'orbit_key=$5',
+            'managed_user=$1',
+            'orbit_key=$2',
             'useradd --create-home --shell /bin/bash -- "$managed_user"',
             'sudo -n -u "$managed_user" -- sudo -n true',
             '[ ! -d "$managed_home/.ssh" ]',
@@ -896,8 +898,9 @@ function run_base_bootstrap_preflight(
         '-seu',
         '--',
         'ubuntu',
-        'resolute',
         UbuntuRelease::unsupportedText(),
+        '1',
+        'resolute',
         'orbit',
         'ssh-ed25519 TEST',
     ]);

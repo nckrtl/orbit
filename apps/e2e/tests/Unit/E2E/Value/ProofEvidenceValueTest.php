@@ -8,6 +8,8 @@ use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPromotionRecord;
 
+require_once dirname(__DIR__).'/Support/ObservedPhpRuntimeFixtures.php';
+
 describe('proof reuse evidence', function (): void {
     it('requires identical CLI, FPM, PCOV, and package runtime evidence across roles', function (): void {
         $packages = array_fill_keys(ObservedPhpInputs::PACKAGES, '8.5.10-sury');
@@ -51,6 +53,36 @@ describe('proof reuse evidence', function (): void {
             ->toThrow(InvalidArgumentException::class, 'not identical');
     });
 
+    it('rejects the live malformed runtime fixtures at the retained evidence boundary', function (string $fixture): void {
+        $runtime = malformedObservedPhpRuntime($fixture);
+        $entry = static fn (string $role): array => ['role' => $role, ...$runtime];
+        $surface = static fn (string $role, string $type, string $id): array => [
+            'role' => $role,
+            'process_type' => $type,
+            'processes' => [[
+                'id' => str_repeat($id, 32),
+                'started_at' => '2026-09-03T10:00:00.000001Z',
+                'finished_at' => '2026-09-03T10:00:00.000002Z',
+            ]],
+            'paths' => ['apps/cli/orbit'],
+        ];
+        $surfaces = [
+            $surface('app-dev', 'cli', '1'),
+            $surface('gateway', 'cli', '2'),
+            $surface('gateway', 'fpm', '3'),
+        ];
+
+        expect(fn () => new ObservedPhpInputs(
+            [$entry('app-dev'), $entry('gateway')],
+            ['setup' => $surfaces, 'acceptance' => $surfaces],
+        ))
+            ->toThrow(InvalidArgumentException::class, 'runtime entry is invalid');
+    })->with([
+        'PHP version' => 'php-version',
+        'PCOV version' => 'pcov-version',
+        'package version' => 'package-version',
+    ]);
+
     it('round-trips canonical immutable manifests and refuses fingerprint tampering', function (): void {
         $manifest = new ProofInputManifest(
             3,
@@ -65,6 +97,7 @@ describe('proof reuse evidence', function (): void {
             ]],
             '.loop/proof/AUX-99.json',
             [],
+            topologyConstructionFixture(),
             null,
             [
                 'static_classification' => true,
@@ -98,13 +131,17 @@ describe('proof reuse evidence', function (): void {
                 'change' => 'content-changed',
                 'classification' => 'non-runtime',
             ]],
-            'retained-proof',
-            'review-exact-head',
             [],
             '2026-09-02T10:00:00Z',
         );
 
-        expect(ProofEquivalenceReport::fromArray($report->toArray())->toArray())
+        $serialized = json_encode($report->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        expect($serialized)
+            ->toBe(<<<'JSON'
+                {"schema":1,"proved_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","accepted_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","included_main_sha":"cccccccccccccccccccccccccccccccccccccccc","plan_sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","manifest_sha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","result":"equivalent","changed_paths":[{"path":"docs/reference/note.md","previous_path":null,"change":"content-changed","classification":"non-runtime"}],"promotion_path":"retained-proof","next_action":"review-exact-head","errors":[],"recorded_at":"2026-09-02T10:00:00Z","fingerprint":"6eb0b5c2d7f19595d03a8b09fcfce769840f883db393c8c6b8f8ac811298ef58"}
+                JSON)
+            ->and(ProofEquivalenceReport::fromArray($report->toArray())->toArray())
             ->toBe($report->toArray())
             ->and(fn () => new ProofEquivalenceReport(
                 str_repeat('a', 40),
@@ -114,21 +151,62 @@ describe('proof reuse evidence', function (): void {
                 str_repeat('e', 64),
                 ProofEquivalenceResult::Stale,
                 [],
-                'retained-proof',
-                'reproof',
                 [],
                 '2026-09-02T10:00:00Z',
             ))
             ->toThrow(InvalidArgumentException::class, 'decision is invalid');
+
+        $tampered = $report->toArray();
+        $tampered['promotion_path'] = 'candidate-convergence';
+        $tampered['next_action'] = 'run-candidate-convergence';
+        unset($tampered['fingerprint']);
+        $tampered['fingerprint'] = hash('sha256', json_encode(
+            $tampered,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ));
+
+        expect(fn () => ProofEquivalenceReport::fromArray($tampered))
+            ->toThrow(InvalidArgumentException::class, 'decision is invalid');
     });
 
-    it('binds unrelated runtime equivalence to candidate convergence', function (): void {
+    it('derives the follow-up policy for every equivalence outcome', function (
+        ProofEquivalenceResult $result,
+        array $changedPaths,
+        array $errors,
+        ?string $promotionPath,
+        string $nextAction,
+    ): void {
         $report = new ProofEquivalenceReport(
             str_repeat('a', 40),
             str_repeat('b', 40),
             str_repeat('c', 40),
             str_repeat('d', 64),
             str_repeat('e', 64),
+            $result,
+            $changedPaths,
+            $errors,
+            '2026-09-02T10:00:00Z',
+        );
+
+        expect($report->promotionPath)
+            ->toBe($promotionPath)
+            ->and($report->nextAction)
+            ->toBe($nextAction);
+    })->with([
+        'exact' => [ProofEquivalenceResult::Exact, [], [], 'retained-proof', 'review-exact-head'],
+        'equivalent non-runtime' => [
+            ProofEquivalenceResult::Equivalent,
+            [[
+                'path' => 'docs/reference/note.md',
+                'previous_path' => null,
+                'change' => 'content-changed',
+                'classification' => 'non-runtime',
+            ]],
+            [],
+            'retained-proof',
+            'review-exact-head',
+        ],
+        'equivalent unrelated runtime' => [
             ProofEquivalenceResult::Equivalent,
             [[
                 'path' => 'apps/cli/app/Unrelated.php',
@@ -136,15 +214,30 @@ describe('proof reuse evidence', function (): void {
                 'change' => 'content-changed',
                 'classification' => 'unrelated-runtime',
             ]],
+            [],
             'candidate-convergence',
             'run-candidate-convergence',
+        ],
+        'stale' => [
+            ProofEquivalenceResult::Stale,
+            [[
+                'path' => 'apps/cli/app/Runtime.php',
+                'previous_path' => null,
+                'change' => 'content-changed',
+                'classification' => 'runtime',
+            ]],
             [],
-            '2026-09-02T10:00:00Z',
-        );
-
-        expect(ProofEquivalenceReport::fromArray($report->toArray())->promotionPath)
-            ->toBe('candidate-convergence');
-    });
+            null,
+            'release-proof-and-run-complete-reproof',
+        ],
+        'indeterminate' => [
+            ProofEquivalenceResult::Indeterminate,
+            [],
+            ['Unknown proof input.'],
+            null,
+            'resolve-equivalence-failure-and-run-complete-reproof',
+        ],
+    ]);
 
     it('records proved, accepted, merged, and runtime lineage for retained promotion', function (): void {
         $record = new ProofPromotionRecord(

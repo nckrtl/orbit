@@ -22,10 +22,10 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-it('reports the empty Router projection as healthy without remote inspection', function (): void {
+it('reports the empty Ingress projection as healthy without remote inspection', function (): void {
     $ssh = new RoleInspectorSshExecutor([]);
 
-    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Router));
+    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Ingress));
 
     expect($state->packagesPresent)
         ->toBeTrue()
@@ -89,16 +89,17 @@ it('inspects each role with exact package service and firewall requirements', fu
         ['wg-quick@orbit', 'dnsmasq'],
         ['orbit:vpn-ssh'],
     ],
+    'Router' => [
+        RoleName::Router,
+        ['caddy', 'openssl'],
+        ['caddy'],
+        [],
+    ],
     'app development' => [
         RoleName::AppDev,
         ['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'],
         ['caddy', 'docker'],
-        [
-            'orbit:app-dev-http',
-            'orbit:app-dev-https',
-            'orbit:app-dev-direct-http',
-            'orbit:app-dev-direct-https',
-        ],
+        [],
     ],
     'app production' => [
         RoleName::AppProd,
@@ -109,6 +110,7 @@ it('inspects each role with exact package service and firewall requirements', fu
 ]);
 
 it('returns independent false projections for one missing requirement', function (
+    RoleName $role,
     string $packageState,
     string $serviceState,
     array $firewallComments,
@@ -120,7 +122,7 @@ it('returns independent false projections for one missing requirement', function
         role_inspector_result(role_inspector_ufw($firewallComments)),
     ]);
 
-    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::AppDev));
+    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment($role));
 
     expect([
         $state->packagesPresent,
@@ -129,28 +131,26 @@ it('returns independent false projections for one missing requirement', function
     ])->toBe($expected);
 })->with([
     'missing package' => [
+        RoleName::AppDev,
         "0\n",
         "1\n",
-        [
-            'orbit:app-dev-http',
-            'orbit:app-dev-https',
-            'orbit:app-dev-direct-http',
-            'orbit:app-dev-direct-https',
-        ],
+        [],
         [false, true, true],
     ],
     'inactive service' => [
+        RoleName::AppDev,
         "1\n",
         "0\n",
-        [
-            'orbit:app-dev-http',
-            'orbit:app-dev-https',
-            'orbit:app-dev-direct-http',
-            'orbit:app-dev-direct-https',
-        ],
+        [],
         [true, false, true],
     ],
-    'missing firewall rule' => ["1\n", "1\n", ['orbit:app-dev-http'], [true, true, false]],
+    'missing firewall rule' => [
+        RoleName::AppProd,
+        "1\n",
+        "1\n",
+        ['orbit:app-prod-http'],
+        [true, true, false],
+    ],
 ]);
 
 it('fails closed for command failure timeout truncation and malformed output', function (
@@ -183,12 +183,7 @@ it('accepts only a complete healthy Docker CE stack as the Docker prerequisite',
     $ssh = new RoleInspectorSshExecutor([
         role_inspector_result("1\n"),
         role_inspector_result("1\n"),
-        role_inspector_result(role_inspector_ufw([
-            'orbit:app-dev-http',
-            'orbit:app-dev-https',
-            'orbit:app-dev-direct-http',
-            'orbit:app-dev-direct-https',
-        ])),
+        role_inspector_result(role_inspector_ufw([])),
     ]);
 
     role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::AppDev));

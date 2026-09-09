@@ -104,7 +104,7 @@ final readonly class RetirementResult
     public function toArray(): array
     {
         return [
-            'version' => 1,
+            'version' => 2,
             'successful' => $this->successful,
             'quarantine_sha256' => $this->quarantineSha256,
             'deleted' => $this->deleted,
@@ -118,7 +118,7 @@ final readonly class RetirementResult
     {
         if (
             array_keys($value) !== ['version', 'successful', 'quarantine_sha256', 'deleted', 'remaining', 'preserved']
-            || ($value['version'] ?? null) !== 1
+            || ($value['version'] ?? null) !== 2
             || ! is_bool($value['successful'] ?? null)
             || ! is_string($value['quarantine_sha256'] ?? null)
             || ! is_array($value['deleted'] ?? null)

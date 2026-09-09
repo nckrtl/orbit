@@ -4,22 +4,31 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Route;
 use App\Models\Workspace;
 use Illuminate\Support\Collection;
 
+/** @mago-expect lint:cyclomatic-complexity One inventory composes legacy, AppInstance workload, and Router site eligibility. */
 final readonly class AppDevSiteRepository
 {
     /** @return Collection<int, AppDevSite> */
-    public function forNode(Node $node): Collection
-    {
-        return $this->all()->where('nodeId', $node->id)->values();
+    public function forNode(
+        Node $node,
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+    ): Collection {
+        return $this->all($pendingRoute, $unavailableInstance)->where('nodeId', $node->id)->values();
     }
 
     /** @return Collection<int, AppDevSite> */
-    public function all(): Collection
+    public function all(?Route $pendingRoute = null, ?AppInstance $unavailableInstance = null): Collection
     {
         $instances = Instance::query()
             ->with(['node', 'workspaces'])
@@ -45,6 +54,63 @@ final readonly class AppDevSiteRepository
                 }
 
                 $sites->push($this->workspaceSite($instance, $workspace));
+            }
+        }
+
+        $routes = Route::query()
+            ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->where(static function ($query) use ($pendingRoute): void {
+                $query->where('status', RouteStatus::Active->value);
+
+                if ($pendingRoute instanceof Route) {
+                    $query->orWhere('id', $pendingRoute->id);
+                }
+            })
+            ->get();
+
+        foreach ($routes as $route) {
+            $targets = $route
+                ->targets
+                ->map(static fn ($targetRow) => $targetRow->appInstance)
+                ->filter(
+                    static fn ($target): bool => (
+                        $target instanceof AppInstance
+                        && is_string($target->node->wireguard_ip)
+                        && in_array(
+                            $target->status,
+                            [AppInstanceState::SourceResolved, AppInstanceState::Active],
+                            true,
+                        )
+                    ),
+                )
+                ->values();
+            $router = $route->cluster?->routerAssignment?->node;
+            $hasRouterSite = $router instanceof Node
+            && is_string($router->wireguard_ip)
+            && $targets->isNotEmpty()
+            && ! $targets->contains(
+                static fn (AppInstance $target): bool => $router->is($target->node),
+            );
+
+            foreach ($targets as $target) {
+                assert($target instanceof AppInstance);
+
+                $sites->push($this->appInstanceSite($target, $route));
+            }
+
+            if ($hasRouterSite) {
+                assert($router instanceof Node);
+
+                $sites->push($this->routerSite(array_values($targets->all()), $route, $router));
+            }
+
+            if (
+                $pendingRoute instanceof Route
+                && $route->is($pendingRoute)
+                && $unavailableInstance instanceof AppInstance
+                && $targets->isEmpty()
+            ) {
+                $sites->push($this->unavailableSite($unavailableInstance, $route, $router));
             }
         }
 
@@ -75,6 +141,67 @@ final readonly class AppDevSiteRepository
             documentRoot: $instance->document_root,
             phpVersion: $workspace->php_version ?? $instance->php_version,
             hostname: $workspace->hostname,
+        );
+    }
+
+    private function appInstanceSite(AppInstance $instance, Route $route): AppDevSite
+    {
+        return new AppDevSite(
+            nodeId: $instance->node_id,
+            nodeAddress: $instance->node->wireguard_ip ?? '',
+            scope: "app-instance-{$instance->id}",
+            checkoutPath: $instance->checkout_path,
+            documentRoot: $instance->effectiveRoot() ?? '',
+            phpVersion: $instance->selected_php_version,
+            hostname: $route->hostname,
+            environment: $instance->environment,
+            appSlug: $instance->app->slug,
+        );
+    }
+
+    /** @param list<AppInstance> $instances */
+    private function routerSite(array $instances, Route $route, Node $router): AppDevSite
+    {
+        $addresses = collect($instances)
+            ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
+                && $instance->node->lan_ip !== ''
+                    ? $instance->node->lan_ip
+                    : $instance->node->wireguard_ip)
+            ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
+            ->values()
+            ->all();
+
+        /** @var list<string> $addresses */
+
+        return new AppDevSite(
+            nodeId: $router->id,
+            nodeAddress: $router->wireguard_ip ?? '',
+            scope: "route-{$route->id}-router",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            hostname: $route->hostname,
+            upstreamAddresses: $addresses,
+        );
+    }
+
+    private function unavailableSite(AppInstance $instance, Route $route, ?Node $router): AppDevSite
+    {
+        $usesRouterProjection = $router instanceof Node && ! $router->is($instance->node);
+        $node = $usesRouterProjection ? $router : $instance->node;
+        $scope = $usesRouterProjection
+            ? "route-{$route->id}-router"
+            : "app-instance-{$instance->id}";
+
+        return new AppDevSite(
+            nodeId: $node->id,
+            nodeAddress: $node->wireguard_ip ?? '',
+            scope: $scope,
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            hostname: $route->hostname,
+            unavailable: true,
         );
     }
 }

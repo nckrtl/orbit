@@ -2,12 +2,9 @@
 
 declare(strict_types=1);
 
-it('keeps AppInstance creation and removal inside the source-only dependency boundary', function (): void {
+it('keeps the source lifecycle inside the source-only dependency boundary', function (): void {
     $appDirectory = dirname(path: __DIR__, levels: 3).'/app';
-    $files = [
-        ...(glob($appDirectory.'/Actions/AppInstances/*.php') ?: []),
-        ...(glob($appDirectory.'/Infrastructure/AppInstances/*.php') ?: []),
-    ];
+    $files = glob($appDirectory.'/Infrastructure/AppInstances/*SourceLifecycle.php') ?: [];
     $forbidden = [
         'AppDevRuntimeConverger',
         'AppDevSourceManager',

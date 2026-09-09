@@ -127,9 +127,7 @@ describe(AddNodeRoleAction::class, function (): void {
     it('reactivates retained app manager records when an app role is added again', function (): void {
         $baseline = new AddNodeRoleBaselineFake;
         $vpManager = new FakeToolManager(ToolManagerName::Vp);
-        $vpManager->requiresAppRole = true;
         $composerManager = new FakeToolManager(ToolManagerName::Composer);
-        $composerManager->requiresAppRole = true;
         app()->instance(RoleBaselineConverger::class, $baseline);
         app()->instance(ToolManagerMaterializer::class, new NativeToolManagerMaterializer(
             new ToolManagerRegistry([

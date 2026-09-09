@@ -8,7 +8,9 @@ use App\E2E\Value\AttemptId;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\ObservedPhpInputs;
+use App\E2E\Value\PhpRuntimeInventory;
 use App\E2E\Value\TopologyTarget;
+use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
 
@@ -19,18 +21,6 @@ use RuntimeException;
  */
 final readonly class ObservedPhpInputCollector
 {
-    private const array ROLES = ['app-dev', 'gateway'];
-
-    private const array RUNTIME_PACKAGES = [
-        'php8.5-cli',
-        'php8.5-fpm',
-        'php8.5-common',
-        'php8.5-curl',
-        'php8.5-mbstring',
-        'php8.5-sqlite3',
-        'php8.5-xml',
-    ];
-
     private const string SCRIPT = '/usr/local/bin/observe-php.sh';
 
     public function __construct(
@@ -40,7 +30,7 @@ final readonly class ObservedPhpInputCollector
     public function normalizeRuntime(TopologyTarget $target): void
     {
         $commands = [];
-        foreach (self::ROLES as $role) {
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $commands[$role] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([self::SCRIPT, 'prepare', 'runtime'], 900),
@@ -54,7 +44,7 @@ final readonly class ObservedPhpInputCollector
     public function prepare(TopologyTarget $target): array
     {
         $commands = [];
-        foreach (self::ROLES as $role) {
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $commands[$role] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([self::SCRIPT, 'prepare', 'pcov'], 900),
@@ -84,7 +74,7 @@ final readonly class ObservedPhpInputCollector
     private function runtimeInventory(TopologyTarget $target, bool $withPcov): array
     {
         $probes = [];
-        foreach (self::ROLES as $role) {
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $probes[$role] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([
@@ -95,13 +85,8 @@ final readonly class ObservedPhpInputCollector
             ];
         }
         $results = $this->guests->execAll($probes);
-        $packages = self::RUNTIME_PACKAGES;
-        if ($withPcov) {
-            $packages[] = 'php8.5-pcov';
-        }
-        $runtimes = [];
-        $shared = null;
-        foreach (self::ROLES as $role) {
+        $payloads = [];
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $result = $results[$role] ?? null;
             if (! $result instanceof GuestCommandResult || ! $result->successful()) {
                 throw new RuntimeException("Sury PHP runtime verification failed on {$role}.");
@@ -111,55 +96,32 @@ final readonly class ObservedPhpInputCollector
             } catch (JsonException $exception) {
                 throw new RuntimeException("Sury PHP runtime verification was malformed on {$role}.", 0, $exception);
             }
-            if (
-                ! is_array($runtime)
-                || array_keys($runtime) !== ['php_version', 'fpm_version', 'pcov_version', 'package_versions']
-                || ! is_string($runtime['php_version'])
-                || ! is_string($runtime['fpm_version'])
-                || $runtime['fpm_version'] !== $runtime['php_version']
-                || ($withPcov ? ! is_string($runtime['pcov_version']) : $runtime['pcov_version'] !== null)
-                || ! is_array($runtime['package_versions'])
-                || array_keys($runtime['package_versions']) !== $packages
-                || array_any(
-                    $runtime['package_versions'],
-                    static fn (mixed $version): bool => ! is_string($version)
-                    || $version === ''
-                    || str_contains($version, "\n"),
-                )
-                || count(array_unique(array_slice($runtime['package_versions'], 0, count(self::RUNTIME_PACKAGES))))
-                    !== 1
-            ) {
+            if (! is_array($runtime)) {
                 throw new RuntimeException("Sury PHP runtime verification was malformed on {$role}.");
             }
-            /** @var string $phpVersion */
-            $phpVersion = $runtime['php_version'];
-            /** @var string $fpmVersion */
-            $fpmVersion = $runtime['fpm_version'];
-            /** @var ?string $pcovVersion */
-            $pcovVersion = $runtime['pcov_version'];
-            /** @var array<string, string> $packageVersions */
-            $packageVersions = $runtime['package_versions'];
-            $comparison = [
-                'php_version' => $phpVersion,
-                'fpm_version' => $fpmVersion,
-                'pcov_version' => $pcovVersion,
-                'package_versions' => $packageVersions,
-            ];
-            if ($shared !== null && $comparison !== $shared) {
-                throw new RuntimeException('Sury PHP and PCOV runtime inventories differ between app-dev and gateway.');
-            }
-            $shared = $comparison;
-            $runtimes[] = ['role' => $role, ...$comparison];
+            $payloads[$role] = $runtime;
         }
 
-        return $runtimes;
+        try {
+            $inventory = $withPcov
+                ? PhpRuntimeInventory::pcovRequiredPayloads($payloads)
+                : PhpRuntimeInventory::runtimeOnlyPayloads($payloads);
+        } catch (InvalidArgumentException $exception) {
+            $message = str_contains($exception->getMessage(), 'not identical')
+                ? 'Sury PHP and PCOV runtime inventories differ between app-dev and gateway.'
+                : 'Sury PHP runtime verification was malformed.';
+
+            throw new RuntimeException($message, 0, $exception);
+        }
+
+        return $inventory->runtimes;
     }
 
     public function begin(TopologyTarget $target, string $phase, string $issue, AttemptId $attempt): void
     {
         $this->assertPhase($phase);
         $commands = [];
-        foreach (self::ROLES as $role) {
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $commands[$role] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([
@@ -192,7 +154,7 @@ final readonly class ObservedPhpInputCollector
     ): array {
         $this->assertPhase($phase);
         $commands = [];
-        foreach (self::ROLES as $role) {
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $commands[$role] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([
@@ -212,7 +174,7 @@ final readonly class ObservedPhpInputCollector
         }
         /** @var array<string, array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:array<string,true>}> $surfaces */
         $surfaces = [];
-        foreach (self::ROLES as $role) {
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $result = $results[$role] ?? null;
             if (! $result instanceof GuestCommandResult || ! $result->successful()) {
                 $detail = $result instanceof GuestCommandResult ? trim($result->stderr) : 'missing result';
@@ -271,7 +233,7 @@ final readonly class ObservedPhpInputCollector
     public function cleanup(TopologyTarget $target): void
     {
         $commands = [];
-        foreach (self::ROLES as $role) {
+        foreach (PhpRuntimeInventory::ROLES as $role) {
             $commands[$role] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([self::SCRIPT, 'cleanup'], 120),

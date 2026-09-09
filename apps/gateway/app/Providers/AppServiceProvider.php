@@ -19,8 +19,15 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppInstances\AppInstanceActivationHook;
+use App\Domain\AppInstances\AppInstanceDestinationGuard;
+use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
+use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
+use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
+use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\AppProd\AppProdRuntimeConverger;
@@ -80,7 +87,14 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
+use App\Infrastructure\AppInstances\NativeAppInstanceRemovalProjector;
+use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
+use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
+use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
+use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
+use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
+use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
@@ -147,6 +161,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\EloquentNodeRoleToolIntentGuard;
+use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
@@ -167,6 +182,7 @@ final class AppServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        AppInstanceDestinationGuard::class => RemoteAppInstanceDestinationGuard::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevCertificateManager::class => RemoteAppDevCertificateManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
@@ -175,7 +191,12 @@ final class AppServiceProvider extends ServiceProvider
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         AppDevSourceManager::class => RemoteAppDevSourceManager::class,
         DevelopmentAppInstanceSourceLifecycle::class => RemoteDevelopmentAppInstanceSourceLifecycle::class,
-        AppInstanceActivationHook::class => CreateRouteAction::class,
+        DevelopmentAppInstanceSourceRemoval::class => RemoteDevelopmentAppInstanceSourceRemoval::class,
+        ProductionAppInstanceContentRetention::class => RecordedProductionAppInstanceContentRetention::class,
+        AppInstanceRemovalProjector::class => NativeAppInstanceRemovalProjector::class,
+        DevelopmentAppInstanceConfigurator::class => RemoteDevelopmentAppInstanceConfigurator::class,
+        DevelopmentAppInstanceProvisioner::class => NativeDevelopmentAppInstanceProvisioner::class,
+        DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,
@@ -242,6 +263,7 @@ final class AppServiceProvider extends ServiceProvider
                 app(AptToolManager::class),
                 app(VpToolManager::class),
                 app(ComposerToolManager::class),
+                app(HomebrewToolManager::class),
             ]),
         );
         $this->app->singleton(
@@ -249,6 +271,10 @@ final class AppServiceProvider extends ServiceProvider
             static fn (): AppDevSourceOperationLock => new NativeAppDevSourceOperationLock(
                 rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/app-dev-source',
             ),
+        );
+        $this->app->singleton(
+            DevelopmentAppInstanceSourceFinalizer::class,
+            static fn (): DevelopmentAppInstanceSourceFinalizer => app(RemoteDevelopmentAppInstanceSourceRemoval::class),
         );
         $this->app->singleton(
             LeafCertificateSigner::class,

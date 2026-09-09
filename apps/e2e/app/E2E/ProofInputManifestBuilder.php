@@ -9,6 +9,7 @@ use App\E2E\Value\ObservedPhpInputs;
 use App\E2E\Value\ProofInputClassification;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
 
@@ -30,11 +31,15 @@ final readonly class ProofInputManifestBuilder
         string $issue,
         string $planPath,
         ProofPlan $plan,
+        TopologyConstructionInputs $construction,
         ?ObservedPhpInputs $observedInputs = null,
         bool $pcovCleanup = true,
     ): ProofInputManifest {
         if ($plan->observedInputs !== ($observedInputs !== null)) {
             throw new InvalidArgumentException('The observed PHP inputs do not match the proof plan.');
+        }
+        if ($construction->extension !== $plan->extension) {
+            throw new InvalidArgumentException('The topology construction inputs do not match the proof plan.');
         }
         TopologyTarget::assertIssue($issue);
         if (! $repository->isAncestor($includedMainSha, $provedSha)) {
@@ -102,6 +107,7 @@ final readonly class ProofInputManifestBuilder
             $inputs,
             $planPath,
             $plan->inputs,
+            $construction,
             $observedInputs,
             [
                 'static_classification' => true,

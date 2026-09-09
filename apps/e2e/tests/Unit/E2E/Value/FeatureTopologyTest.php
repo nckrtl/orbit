@@ -9,6 +9,7 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
@@ -23,27 +24,26 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
             'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
         ]
         : [];
+    $generation = new TopologySnapshotGeneration(
+        'g1',
+        str_repeat('a', 40),
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        str_repeat('c', 64),
+        str_repeat('d', 64),
+        new LaravelRelease('v13.10.1', str_repeat('e', 40)),
+        str_repeat('f', 64),
+        2,
+        'ubuntu-26.04-amd64-v1',
+        'orbit-base-ubuntu-26.04-runtime',
+        TopologyProfile::NAME,
+        TopologyProfile::ROLES,
+        TopologyProfile::CHECKOUT_ROLES,
+    );
 
     return new FeatureTopology(
-        $target,
+        TopologyConstructionInputs::create($target, $generation, 2),
         AttemptPurpose::Discovery,
-        new TopologySnapshotGeneration(
-            'g1',
-            str_repeat('a', 40),
-            ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
-            str_repeat('c', 64),
-            str_repeat('d', 64),
-            new LaravelRelease('v13.10.1', str_repeat('e', 40)),
-            str_repeat('f', 64),
-            2,
-            'ubuntu-26.04-amd64-v1',
-            'orbit-base-ubuntu-26.04-runtime',
-            TopologyProfile::NAME,
-            TopologyProfile::ROLES,
-            TopologyProfile::CHECKOUT_ROLES,
-        ),
-        $target->network(),
-        array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),
+        $generation,
         new SourceState(
             str_repeat('b', 40),
             str_repeat('b', 40),
@@ -71,6 +71,26 @@ describe('feature topology mounts', function () {
             ->and(mountedTopologyFixture(false)->toArray()['mounts'])
             ->toBe([]);
     });
+
+    it('rejects each redundant wire identity that conflicts with construction inputs', function (
+        string $field,
+        string $replacement,
+    ): void {
+        $value = mountedTopologyFixture(false)->toArray();
+        if ($field === 'instances') {
+            $value['instances']['gateway'] = $replacement;
+        } else {
+            $value[$field] = $replacement;
+        }
+
+        expect(fn () => FeatureTopology::fromArray($value))
+            ->toThrow(InvalidArgumentException::class, 'identity does not match its construction inputs');
+    })->with([
+        'issue' => ['issue', 'TST-322'],
+        'attempt' => ['attempt_id', str_repeat('b', 32)],
+        'network' => ['network', 'oe-forged'],
+        'instances' => ['instances', 'orbit-e2e-forged'],
+    ]);
 
     it('requires one identical mount per checkout role exactly when the source is mounted', function () {
         expect(fn () => mountedTopologyFixture(true, []))
@@ -121,13 +141,43 @@ describe('feature topology mounts', function () {
         $version = json_encode($schema, JSON_THROW_ON_ERROR);
 
         expect(FeatureTopology::SCHEMA)
-            ->toBe(3)
+            ->toBe(4)
             ->and(fn () => FeatureTopology::fromArray($value))
             ->toThrow(
                 InvalidArgumentException::class,
                 "schema {$version} is not supported; release with the previous harness",
             );
-    })->with(['schema 2' => [2], 'schema 1' => [1], 'string schema' => ['3']]);
+    })->with(['schema 3' => [3], 'schema 2' => [2], 'string schema' => ['4']]);
+});
+
+it('round-trips the exact extended mixed-source construction inventory', function (): void {
+    $recipe = \App\E2E\Value\TopologyRecipe::extendedAppProd();
+    $target = TopologyTarget::feature('TST-321', attemptId(), $recipe);
+    $generation = mountedTopologyFixture(false)->generation;
+    $construction = \App\E2E\Value\TopologyConstructionInputs::create(
+        $target,
+        $generation,
+        7,
+        \App\E2E\Value\TopologyExtension::AppProd,
+        str_repeat('f', 64),
+    );
+    $topology = new FeatureTopology(
+        $construction,
+        AttemptPurpose::Proof,
+        $generation,
+        new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
+        new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
+    );
+
+    expect($topology->construction->nodes['app-prod-2'])
+        ->toBe([
+            'source' => 'image',
+            'instance' => $target->instance('app-prod-2'),
+            'incus_address' => '10.232.7.13',
+            'wireguard_address' => '10.44.0.4',
+        ])
+        ->and(FeatureTopology::fromArray($topology->toArray())->toArray())
+        ->toBe($topology->toArray());
 });
 
 describe('mount paths', function () {

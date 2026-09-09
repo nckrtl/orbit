@@ -10,7 +10,6 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tools\ListToolManagersRequest;
-use App\Models\ToolManagerRecord;
 use Illuminate\Http\JsonResponse;
 
 #[RequiresNodeAccess(ServingNode::ToolOwning)]
@@ -24,7 +23,7 @@ final class ToolManagersController extends Controller
             'data' => $action
                 ->execute($request->nodeId())
                 ->map(
-                    static fn (ToolManagerRecord $manager): array => ToolManagerData::fromModel($manager)->toArray(),
+                    static fn (ToolManagerData $manager): array => $manager->toArray(),
                 )
                 ->all(),
             'meta' => $this->meta($request),

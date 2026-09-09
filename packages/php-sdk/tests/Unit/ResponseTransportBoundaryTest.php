@@ -10,6 +10,7 @@ use Orbit\Sdk\Responses\Doctor\DoctorIssueResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorNodeResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
+use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
 use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
@@ -17,6 +18,7 @@ use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Routes\RouteResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
@@ -30,7 +32,6 @@ it('rejects unsafe success error codes across every response surface', function 
     $responses = [
         ActivityResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         FirewallRuleResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
-        AppInstanceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         NodeResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         ProcessResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         WorkspaceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
@@ -72,6 +73,54 @@ it('preserves valid success error codes', function (): void {
 
     expect($response->errorCode)->toBe('vpn.server_config_invalid');
 });
+
+it('normalizes unsafe Route and Metrics success error codes before diagnostics', function (mixed $unsafeCode): void {
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $route = RouteResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId);
+    $appInstance = AppInstanceResponse::fromGatewayData([
+        'route' => ['error_code' => $unsafeCode],
+    ], $requestId);
+    $metrics = MetricsStatusResponse::fromGatewayData([
+        'enabled' => true,
+        'url' => 'https://metrics.orbit',
+        'assignment' => [
+            'id' => 7,
+            'node_id' => 3,
+            'node_name' => 'app-dev',
+            'status' => 'failed',
+            'failed_step' => 'metrics:runtime',
+            'error_code' => $unsafeCode,
+        ],
+        'prometheus' => 'unknown',
+        'grafana' => 'unknown',
+        'exporters' => [],
+    ], $requestId);
+
+    expect($route->errorCode)
+        ->toBeNull()
+        ->and($appInstance->route?->errorCode)
+        ->toBeNull()
+        ->and($metrics->assignment['error_code'])
+        ->toBeNull();
+
+    foreach ([$route, $appInstance, $metrics] as $response) {
+        $diagnostics = implode("\n", [
+            print_r($response, return: true),
+            serialize($response),
+            (string) json_encode($response->toArray(), JSON_THROW_ON_ERROR),
+        ]);
+
+        if (is_string($unsafeCode) && $unsafeCode !== '') {
+            expect($diagnostics)->not->toContain($unsafeCode);
+        }
+    }
+})->with([
+    'credential-shaped code' => 'token=route-metrics-response-credential',
+    'control characters' => "metrics.runtime_failed\r\nX-Orbit-Control: injected",
+    'surrounding whitespace' => ' metrics.runtime_failed ',
+    'non-string value' => [['metrics.runtime_failed']],
+    'oversized code' => str_repeat('a', times: 129),
+]);
 
 it('preserves every app default accepted by the Gateway array contract', function (): void {
     $defaults = [

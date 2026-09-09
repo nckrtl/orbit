@@ -60,3 +60,22 @@ it('keeps early-exit proof pipeline producers truthful under pipefail', function
 
     expect($unexpected)->toBe([]);
 });
+
+it('keeps permanent fixture contracts independent of individual proof fixtures', function (): void {
+    $individualFixture = '/\.loop\/proof\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/';
+    $contractTests = glob(__DIR__.'/*ContractTest.php') ?: [];
+    $dependencies = [];
+
+    foreach ($contractTests as $contractTest) {
+        $contents = file_get_contents($contractTest);
+        assert(is_string($contents));
+        $matched = preg_match_all($individualFixture, $contents, $matches);
+        assert(is_int($matched));
+
+        foreach ($matches[0] as $match) {
+            $dependencies[] = basename($contractTest).': '.$match;
+        }
+    }
+
+    expect($dependencies)->toBe([]);
+});

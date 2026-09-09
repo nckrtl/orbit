@@ -45,7 +45,7 @@ it('refuses Node removal around an AppInstance for ordinary and forced offline p
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     AppInstance::query()->create([

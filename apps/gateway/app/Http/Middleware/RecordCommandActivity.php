@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Data\AppInstances\AppInstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -16,6 +18,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationException;
+use App\Http\Requests\Nodes\RemoveNodeRoleInputParser;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Activity\CommandActivityTargetResolver;
@@ -49,6 +52,7 @@ final readonly class RecordCommandActivity
         private CommandActivityInputSanitizer $inputSanitizer,
         private CommandActivityTargetResolver $targetResolver,
         private TopLevelJsonObjectInspector $jsonInspector,
+        private RemoveNodeRoleInputParser $removeNodeRoleInputParser,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -145,12 +149,76 @@ final readonly class RecordCommandActivity
             $commandResult = null;
         }
 
+        $removal = $this->removalProjection($request, $response);
+
+        if (is_array($removal)) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'removal' => $this->inputSanitizer->sanitizeProperties($removal),
+            ];
+        }
+
         $activity->update($this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $commandResult),
             $toolException instanceof ToolOperationException ? $toolException : null,
         ));
+    }
+
+    /** @return array<string, mixed>|null */
+    private function removalProjection(Request $request, Response $response): ?array
+    {
+        $attribute = $request->attributes->get('orbit.app_instance_removal');
+
+        if (is_array($attribute)) {
+            /** @var array<string, mixed> $attribute */
+            return $attribute;
+        }
+
+        if ($request->route()?->getName() !== 'instance:remove' || $response->getStatusCode() >= 400) {
+            return null;
+        }
+
+        $content = $response->getContent();
+
+        if (! is_string($content)) {
+            return null;
+        }
+
+        try {
+            $body = json_decode($content, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        $data = is_array($body) && is_array($body['data'] ?? null) ? $body['data'] : null;
+
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $projection = [];
+
+        foreach ([
+            'operation_id',
+            'id',
+            'name',
+            'force',
+            'status',
+            'current_step',
+            'total',
+            'completed',
+            'remaining',
+            'failed_step',
+            'error_code',
+        ] as $key) {
+            if (array_key_exists($key, $data)) {
+                $projection[$key] = $data[$key];
+            }
+        }
+
+        return $projection;
     }
 
     private function fail(
@@ -169,6 +237,7 @@ final readonly class RecordCommandActivity
                 $exception instanceof NodeProvisioningException => $exception->errorCode,
                 $exception instanceof NodeRemovalException => $exception->errorCode,
                 $exception instanceof RuntimeConvergenceException => $exception->errorCode,
+                $exception instanceof AppInstanceRemovalException => $exception->errorCode,
                 $exception instanceof ProcessOperationException => $exception->errorCode,
                 $exception instanceof FirewallOperationException => $exception->errorCode,
                 $exception instanceof ResourceOperationException => $exception->errorCode,
@@ -195,6 +264,15 @@ final readonly class RecordCommandActivity
                 'tool' => $this->inputSanitizer->sanitizeProperties($this->toolProjection($exception)),
             ];
             $result = null;
+        }
+
+        if ($exception instanceof AppInstanceRemovalException) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'removal' => $this->inputSanitizer->sanitizeProperties(
+                    AppInstanceRemovalData::fromModel($exception->removal)->toArray(),
+                ),
+            ];
         }
 
         $activity->update($this->withTarget(
@@ -265,28 +343,47 @@ final readonly class RecordCommandActivity
             return $this->doctorInput($request);
         }
 
-        if (! in_array($command, ['node:role:add', 'node:role:remove'], strict: true)) {
+        if ($command === 'instance:remove') {
+            return $this->appInstanceRemovalInput($request);
+        }
+
+        if ($command === 'node:role:remove') {
+            return $this->inputSanitizer->sanitizeProperties(
+                $this->removeNodeRoleInputParser->safeActivityInput(
+                    $request->getContent(),
+                    $request->route('role'),
+                ),
+            );
+        }
+
+        if ($command !== 'node:role:add') {
             return $this->inputSanitizer->sanitizeProperties($request->collect()->all());
         }
 
-        $allowedKeys = $command === 'node:role:add'
-            ? ['role', 'converge_existing']
-            : ['force', 'purge_data'];
-
         try {
-            $input = $this->jsonInspector->inspect($request->getContent(), $allowedKeys);
+            $input = $this->jsonInspector->inspect($request->getContent(), ['role', 'converge_existing']);
         } catch (UnexpectedValueException) {
             return [];
         }
 
-        if (! $this->validNodeRoleInput($command, $input, $request)) {
+        if (! $this->validNodeRoleAdditionInput($input)) {
             return [];
         }
 
-        $routeRole = $request->route('role');
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
 
-        if ($command === 'node:role:remove' && is_string($routeRole)) {
-            $input['role'] = $routeRole;
+    /** @return array<array-key, mixed> */
+    private function appInstanceRemovalInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['force']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        if (array_key_exists('force', $input) && ! is_bool($input['force'])) {
+            return [];
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
@@ -347,25 +444,14 @@ final readonly class RecordCommandActivity
      * @param array<string, mixed> $input
      * @mago-expect analysis:mixed-assignment Request input is an untyped transport boundary.
      */
-    private function validNodeRoleInput(string $command, array $input, Request $request): bool
+    private function validNodeRoleAdditionInput(array $input): bool
     {
-        if ($command === 'node:role:add') {
-            $role = $input['role'] ?? null;
-
-            return (
-                is_string($role)
-                && RoleName::tryFrom($role) instanceof RoleName
-                && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']))
-            );
-        }
-
-        $routeRole = $request->route('role');
+        $role = $input['role'] ?? null;
 
         return (
-            is_string($routeRole)
-            && RoleName::tryFrom($routeRole) instanceof RoleName
-            && (! array_key_exists('force', $input) || is_bool($input['force']))
-            && (! array_key_exists('purge_data', $input) || is_bool($input['purge_data']))
+            is_string($role)
+            && RoleName::tryFrom($role) instanceof RoleName
+            && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']))
         );
     }
 
@@ -405,7 +491,7 @@ final readonly class RecordCommandActivity
             $updates = [...$updates, ...$target];
 
             if (($target['subject_type'] ?? null) === AppInstance::class) {
-                $updates = $this->withAppInstanceSourceKind($activity, $request, $updates, $target);
+                $updates = $this->withAppInstanceSourceLayout($activity, $request, $updates, $target);
             }
         }
 
@@ -441,7 +527,7 @@ final readonly class RecordCommandActivity
      * @param array<string, mixed> $target
      * @return array<string, mixed>
      */
-    private function withAppInstanceSourceKind(
+    private function withAppInstanceSourceLayout(
         Activity $activity,
         Request $request,
         array $updates,
@@ -465,7 +551,9 @@ final readonly class RecordCommandActivity
             ...$updates,
             'properties' => [
                 ...$properties,
-                'source_kind' => $appInstance->source_kind,
+                'source_layout' => $appInstance->source_layout,
+                'branch_override' => $appInstance->branch_override,
+                'migration_required' => $appInstance->migration_required,
             ],
         ];
     }

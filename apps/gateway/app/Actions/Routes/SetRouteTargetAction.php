@@ -6,6 +6,7 @@ namespace App\Actions\Routes;
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -26,6 +27,21 @@ final readonly class SetRouteTargetAction
             $updated = DB::transaction(function () use ($route, $appInstanceId): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $target = AppInstance::query()->with(['app', 'node'])->lockForUpdate()->findOrFail($appInstanceId);
+                $currentTarget = $locked->targets()->first();
+
+                if ($target->status === AppInstanceState::Removing) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.target_inactive',
+                        message: 'The Route target must be active.',
+                        status: 409,
+                    );
+                }
+
+                if ($currentTarget?->app_instance_id === $target->id) {
+                    return $locked->load('targets');
+                }
+
+                app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
 
                 if ($target->app_id !== $locked->app_id) {
                     throw new ResourceOperationException(
@@ -56,12 +72,13 @@ final readonly class SetRouteTargetAction
 
                 if ($locked->provenance === RouteProvenance::Generated) {
                     $attributes['generation_basis_node_id'] = $target->node_id;
-                    $attributes['hostname'] = $this->state->generatedHostname(
-                        $target->app->slug,
-                        (string) $target->app->main_branch,
-                        $target->name,
-                        $placement->effectiveTld,
-                    );
+                    $attributes['hostname'] = $target->migration_required
+                        ? $locked->hostname
+                        : $this->state->generatedHostname(
+                            $target->app->slug,
+                            $target->name,
+                            $placement->effectiveTld,
+                        );
                 }
 
                 $locked->update($attributes);

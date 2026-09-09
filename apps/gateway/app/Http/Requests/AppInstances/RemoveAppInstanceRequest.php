@@ -15,7 +15,7 @@ final class RemoveAppInstanceRequest extends FormRequest
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
-        return ['discard_source' => ['sometimes', $this->strictBoolean(...)]];
+        return ['force' => ['sometimes', $this->strictBoolean(...)]];
     }
 
     public function validationData(): array
@@ -27,15 +27,15 @@ final class RemoveAppInstanceRequest extends FormRequest
         }
 
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($content, ['discard_source']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($content, ['force']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
     }
 
-    public function discardSource(): bool
+    public function force(): bool
     {
-        return $this->validated('discard_source', false) === true;
+        return $this->validated('force', false) === true;
     }
 
     private function strictBoolean(string $attribute, mixed $value, Closure $fail): void

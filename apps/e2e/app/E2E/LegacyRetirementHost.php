@@ -82,7 +82,7 @@ final readonly class LegacyRetirementHost
                         }
                     }
                     $actualHash = $this->fileDigest($pathReal);
-                    if ($actualHash !== ($resource['sha256'] ?? null)) {
+                    if ($actualHash !== ($resource['content_sha256'] ?? null)) {
                         throw new \RuntimeException('The reviewed host path contents changed.');
                     }
                 }

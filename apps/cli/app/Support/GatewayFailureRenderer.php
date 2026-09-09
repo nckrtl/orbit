@@ -9,7 +9,7 @@ use LaravelZero\Framework\Commands\Command;
 final class GatewayFailureRenderer
 {
     /**
-     * @param array<string,string> $details
+     * @param array<string,mixed> $details
      *
      * @mago-expect lint:excessive-parameter-list Every knob is optional and mirrors the shared failure envelope shape.
      */
@@ -38,7 +38,7 @@ final class GatewayFailureRenderer
         }
     }
 
-    /** @param array<string,string> $details */
+    /** @param array<string,mixed> $details */
     public static function json(string $code, string $message, ?string $requestId = null, array $details = []): string
     {
         $error = [

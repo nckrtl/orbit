@@ -9,6 +9,8 @@ use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\RoleAssignmentException;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
@@ -17,7 +19,9 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
@@ -111,6 +115,75 @@ it('initializes the portable gateway authority idempotently', function (): void 
             ->toBe(['gateway', 'gateway'])
             ->and(Node::query()->count())
             ->toBe(1);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('activates only bootstrap roles while preserving colocated role outcomes', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $node = bootstrap_gateway_existing_node();
+    $node->roles()->create([
+        'role' => RoleName::Ingress,
+        'status' => LifecycleStatus::Active,
+        'cluster_id' => $node->cluster_id,
+    ]);
+    $node->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:metrics-runtime',
+        'error_code' => 'metrics.runtime_failed',
+    ]);
+    $baselines = new class implements RoleBaselineConverger {
+        /** @var list<RoleName> */
+        public array $convergedRoles = [];
+
+        public function converge(Node $node, NodeRole $assignment): void
+        {
+            $this->convergedRoles[] = $assignment->role;
+        }
+
+        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    };
+    app()->instance(RoleBaselineConverger::class, $baselines);
+    $action = bootstrap_gateway_action($orbitHome);
+
+    try {
+        $active = $action->execute(bootstrap_gateway_action_data());
+
+        expect($active->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($active->getAttribute('failed_step'))
+            ->toBeNull()
+            ->and($active->getAttribute('error_code'))
+            ->toBeNull()
+            ->and(bootstrap_gateway_role_states($active))
+            ->toBe([
+                'gateway' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'ingress' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'metrics' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:metrics-runtime',
+                    'error_code' => 'metrics.runtime_failed',
+                ],
+                'vpn' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+            ])
+            ->and($baselines->convergedRoles)
+            ->toBeEmpty();
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -330,7 +403,12 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
     }
 });
 
-it('rejects an invalid static identity before persistence or host side effects', function (): void {
+it('rejects an invalid static identity before persistence or host side effects', function (
+    string $wireguardIp,
+    string $wireguardSubnet,
+    string $domain,
+    string $wireguardEndpoint,
+): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $processes = new class implements ProcessRunner {
         public int $calls = 0;
@@ -362,11 +440,11 @@ it('rejects an invalid static identity before persistence or host side effects',
 
     expect(fn () => $action->execute(new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardIp: '10.44.0.1',
-        wireguardSubnet: '10.44.0.0/24',
-        wireguardEndpoint: '85.9.218.89:51820',
+        wireguardIp: $wireguardIp,
+        wireguardSubnet: $wireguardSubnet,
+        wireguardEndpoint: $wireguardEndpoint,
         dnsServer: '10.44.0.1',
-        domain: 'invalid domain',
+        domain: $domain,
     )))
         ->toThrow(InvalidArgumentException::class)
         ->and(Node::query()->count())
@@ -375,24 +453,69 @@ it('rejects an invalid static identity before persistence or host side effects',
         ->toBeFalse()
         ->and($processes->calls)
         ->toBe(0);
-});
+})->with([
+    'invalid domain' => ['10.44.0.1', '10.44.0.0/24', 'invalid domain', '85.9.218.89:51820'],
+    'subnet host bits' => ['10.44.0.2', '10.44.0.1/24', 'orbit', '85.9.218.89:51820'],
+    'bad prefix' => ['10.44.0.1', '10.44.0.0/31', 'orbit', '85.9.218.89:51820'],
+    'network address' => ['10.44.0.0', '10.44.0.0/30', 'orbit', '85.9.218.89:51820'],
+    'broadcast address' => ['10.44.0.3', '10.44.0.0/30', 'orbit', '85.9.218.89:51820'],
+    'outside address' => ['10.44.0.4', '10.44.0.0/30', 'orbit', '85.9.218.89:51820'],
+    'bare IPv6 endpoint' => ['10.44.0.1', '10.44.0.0/24', 'orbit', '2001:db8::10:51820'],
+    'invalid endpoint port' => ['10.44.0.1', '10.44.0.0/24', 'orbit', '85.9.218.89:0'],
+    'endpoint whitespace' => ['10.44.0.1', '10.44.0.0/24', 'orbit', 'vpn.example.test :51820'],
+    'endpoint control character' => [
+        '10.44.0.1',
+        '10.44.0.0/24',
+        'orbit',
+        "85.9.218.89:51820\nPostUp = touch /tmp/orbit-injected",
+    ],
+]);
+
+it('accepts the shared WireGuard endpoint forms at the bootstrap boundary', function (string $endpoint): void {
+    $data = bootstrap_gateway_action_data();
+
+    expect(fn () => new App\Actions\Gateway\GatewayBootstrapIdentityValidator()->validate(new BootstrapGatewayData(
+        publicHost: $data->publicHost,
+        wireguardIp: $data->wireguardIp,
+        wireguardSubnet: $data->wireguardSubnet,
+        wireguardEndpoint: $endpoint,
+        dnsServer: $data->dnsServer,
+        domain: $data->domain,
+    )))
+        ->not
+        ->toThrow(InvalidArgumentException::class);
+})->with([
+    'IPv4' => '192.0.2.10:51820',
+    'hostname' => 'vpn.example.test:51820',
+    'bracketed IPv6' => '[2001:db8::10]:51820',
+]);
 
 it('records provisioning and failed host convergence state and activates an idempotent retry', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $node = bootstrap_gateway_existing_node();
+    $node->roles()->create([
+        'role' => RoleName::Ingress,
+        'status' => LifecycleStatus::Active,
+        'cluster_id' => $node->cluster_id,
+    ]);
+    $node->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:metrics-runtime',
+        'error_code' => 'metrics.runtime_failed',
+    ]);
     $web = new class implements GatewayWebConverger {
         public bool $shouldFail = true;
 
-        /** @var list<array{node: LifecycleStatus, roles: list<LifecycleStatus>}> */
+        /** @var list<array{node: LifecycleStatus, roles: array<string, array{status: LifecycleStatus, failed_step: ?string, error_code: ?string}>}> */
         public array $observedStates = [];
 
         public function converge(string $hostname, string $wireguardIp): void
         {
             $node = Node::query()->where('name', 'gateway')->firstOrFail();
-            /** @var list<LifecycleStatus> $roleStatuses */
-            $roleStatuses = $node->roles()->orderBy('role')->pluck('status')->all();
             $this->observedStates[] = [
                 'node' => $node->status,
-                'roles' => $roleStatuses,
+                'roles' => bootstrap_gateway_role_states($node),
             ];
 
             if ($this->shouldFail) {
@@ -434,7 +557,28 @@ it('records provisioning and failed host convergence state and activates an idem
         expect($web->observedStates[0])
             ->toBe([
                 'node' => LifecycleStatus::Provisioning,
-                'roles' => [LifecycleStatus::Provisioning, LifecycleStatus::Provisioning],
+                'roles' => [
+                    'gateway' => [
+                        'status' => LifecycleStatus::Provisioning,
+                        'failed_step' => null,
+                        'error_code' => null,
+                    ],
+                    'ingress' => [
+                        'status' => LifecycleStatus::Active,
+                        'failed_step' => null,
+                        'error_code' => null,
+                    ],
+                    'metrics' => [
+                        'status' => LifecycleStatus::Failed,
+                        'failed_step' => 'converge:metrics-runtime',
+                        'error_code' => 'metrics.runtime_failed',
+                    ],
+                    'vpn' => [
+                        'status' => LifecycleStatus::Provisioning,
+                        'failed_step' => null,
+                        'error_code' => null,
+                    ],
+                ],
             ])
             ->and($failed->status)
             ->toBe(LifecycleStatus::Failed)
@@ -442,9 +586,29 @@ it('records provisioning and failed host convergence state and activates an idem
             ->toBe('gateway-caddy-validate')
             ->and($failed->getAttribute('error_code'))
             ->toBe('gateway.caddy_config_invalid')
-            ->and($failed->roles()->pluck('status')->all())
-            ->each->toBe(LifecycleStatus::Failed)->and($failed->roles()->pluck('failed_step')->all())
-            ->each->toBe('gateway-caddy-validate');
+            ->and(bootstrap_gateway_role_states($failed))
+            ->toBe([
+                'gateway' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'gateway-caddy-validate',
+                    'error_code' => 'gateway.caddy_config_invalid',
+                ],
+                'ingress' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'metrics' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:metrics-runtime',
+                    'error_code' => 'metrics.runtime_failed',
+                ],
+                'vpn' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'gateway-caddy-validate',
+                    'error_code' => 'gateway.caddy_config_invalid',
+                ],
+            ]);
 
         $web->shouldFail = false;
         $active = $action->execute($data);
@@ -455,9 +619,31 @@ it('records provisioning and failed host convergence state and activates an idem
             ->toBe(LifecycleStatus::Active)
             ->and($active->getAttribute('failed_step'))
             ->toBeNull()
-            ->and($active->roles()->pluck('status')->all())
-            ->each
-            ->toBe(LifecycleStatus::Active)
+            ->and($active->getAttribute('error_code'))
+            ->toBeNull()
+            ->and(bootstrap_gateway_role_states($active))
+            ->toBe([
+                'gateway' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'ingress' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'metrics' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:metrics-runtime',
+                    'error_code' => 'metrics.runtime_failed',
+                ],
+                'vpn' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+            ])
             ->and(Node::query()->count())
             ->toBe(1);
     } finally {
@@ -467,6 +653,13 @@ it('records provisioning and failed host convergence state and activates an idem
 
 it('records stable gateway failure state when bootstrap throws an unexpected exception', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $node = bootstrap_gateway_existing_node();
+    $node->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:metrics-runtime',
+        'error_code' => 'metrics.runtime_failed',
+    ]);
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
@@ -515,12 +708,213 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
             ->toBe('unknown')
             ->and($failed->getAttribute('error_code'))
             ->toBe('gateway.bootstrap_failed')
-            ->and($failed->roles()->count())
-            ->toBe(2)
-            ->and($failed->roles()->pluck('status')->all())
-            ->each->toBe(LifecycleStatus::Failed)->and($failed->roles()->pluck('failed_step')->all())
-            ->each->toBe('unknown')->and($failed->roles()->pluck('error_code')->all())
-            ->each->toBe('gateway.bootstrap_failed');
+            ->and(bootstrap_gateway_role_states($failed))
+            ->toBe([
+                'gateway' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'unknown',
+                    'error_code' => 'gateway.bootstrap_failed',
+                ],
+                'metrics' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:metrics-runtime',
+                    'error_code' => 'metrics.runtime_failed',
+                ],
+                'vpn' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'unknown',
+                    'error_code' => 'gateway.bootstrap_failed',
+                ],
+            ]);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('fails only bootstrap roles when VPN convergence fails', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $node = bootstrap_gateway_existing_node();
+    $node->roles()->create([
+        'role' => RoleName::Ingress,
+        'status' => LifecycleStatus::Active,
+        'cluster_id' => $node->cluster_id,
+    ]);
+    $node->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:metrics-runtime',
+        'error_code' => 'metrics.runtime_failed',
+    ]);
+    $vpn = new class implements GatewayVpnConverger {
+        public int $calls = 0;
+
+        public function converge(Node $gateway, BootstrapGatewayData $data): void
+        {
+            $this->calls++;
+
+            throw new NodeProvisioningException(
+                step: 'wireguard-config',
+                errorCode: 'vpn.configuration_failed',
+                message: 'Simulated VPN convergence failure.',
+            );
+        }
+    };
+    $web = new class implements GatewayWebConverger {
+        public int $calls = 0;
+
+        public function converge(string $hostname, string $wireguardIp): void
+        {
+            $this->calls++;
+        }
+    };
+    $action = bootstrap_gateway_action($orbitHome, vpn: $vpn, web: $web);
+
+    try {
+        expect(fn () => $action->execute(bootstrap_gateway_action_data()))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)
+                    ->toBe('wireguard-config')
+                    ->and($exception->errorCode)
+                    ->toBe('vpn.configuration_failed');
+            });
+
+        $failed = $node->refresh();
+
+        expect($failed->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($failed->getAttribute('failed_step'))
+            ->toBe('wireguard-config')
+            ->and($failed->getAttribute('error_code'))
+            ->toBe('vpn.configuration_failed')
+            ->and(bootstrap_gateway_role_states($failed))
+            ->toBe([
+                'gateway' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'wireguard-config',
+                    'error_code' => 'vpn.configuration_failed',
+                ],
+                'ingress' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'metrics' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:metrics-runtime',
+                    'error_code' => 'metrics.runtime_failed',
+                ],
+                'vpn' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'wireguard-config',
+                    'error_code' => 'vpn.configuration_failed',
+                ],
+            ])
+            ->and($vpn->calls)
+            ->toBe(1)
+            ->and($web->calls)
+            ->toBe(0);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('fails the assigned bootstrap role when the second role assignment fails', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $vpnOwner = bootstrap_gateway_existing_node(
+        name: 'vpn-owner',
+        publicHost: '192.0.2.45',
+        wireguardIp: '10.44.0.45',
+    );
+    $vpnOwner
+        ->roles()
+        ->create([
+            'role' => RoleName::Vpn,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $node = bootstrap_gateway_existing_node();
+    $node->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:metrics-runtime',
+        'error_code' => 'metrics.runtime_failed',
+    ]);
+    $vpn = new class implements GatewayVpnConverger {
+        public int $calls = 0;
+
+        public function converge(Node $gateway, BootstrapGatewayData $data): void
+        {
+            $this->calls++;
+        }
+    };
+    $web = new class implements GatewayWebConverger {
+        public int $calls = 0;
+
+        public function converge(string $hostname, string $wireguardIp): void
+        {
+            $this->calls++;
+        }
+    };
+    $selfAccess = new class implements GatewaySelfAccessConverger {
+        public int $calls = 0;
+
+        public function converge(Node $node): void
+        {
+            $this->calls++;
+        }
+    };
+    $action = bootstrap_gateway_action(
+        $orbitHome,
+        vpn: $vpn,
+        web: $web,
+        selfAccess: $selfAccess,
+    );
+
+    try {
+        expect(fn () => $action->execute(bootstrap_gateway_action_data()))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)
+                    ->toBe('unknown')
+                    ->and($exception->errorCode)
+                    ->toBe('gateway.bootstrap_failed')
+                    ->and($exception->getPrevious())
+                    ->toBeInstanceOf(RoleAssignmentException::class);
+            });
+
+        $failed = $node->refresh();
+
+        expect($failed->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($failed->getAttribute('failed_step'))
+            ->toBe('unknown')
+            ->and($failed->getAttribute('error_code'))
+            ->toBe('gateway.bootstrap_failed')
+            ->and(bootstrap_gateway_role_states($failed))
+            ->toBe([
+                'gateway' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'unknown',
+                    'error_code' => 'gateway.bootstrap_failed',
+                ],
+                'metrics' => [
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:metrics-runtime',
+                    'error_code' => 'metrics.runtime_failed',
+                ],
+            ])
+            ->and(bootstrap_gateway_role_states($vpnOwner))
+            ->toBe([
+                'vpn' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+            ])
+            ->and($vpn->calls)
+            ->toBe(0)
+            ->and($web->calls)
+            ->toBe(0)
+            ->and($selfAccess->calls)
+            ->toBe(0);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -607,6 +1001,64 @@ it('rejects unsupported local gateway operating systems before any persistence o
     'malformed release' => ["ID=ubuntu\nVERSION_CODENAME='resolute extra'\n"],
     'missing release file' => [null],
 ]);
+
+function bootstrap_gateway_action(
+    string $orbitHome,
+    ?GatewayVpnConverger $vpn = null,
+    ?GatewayWebConverger $web = null,
+    ?GatewaySelfAccessConverger $selfAccess = null,
+): BootstrapGatewayAction {
+    return new BootstrapGatewayAction(
+        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
+        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
+        vpnSettings: app(VpnSettings::class),
+        processes: new NativeProcessRunner,
+        files: new ProtectedFileWriter,
+        vpn: $vpn ?? gateway_vpn_noop(),
+        web: $web ?? new class implements GatewayWebConverger {
+            public function converge(string $hostname, string $wireguardIp): void {}
+        },
+        selfAccess: $selfAccess ?? gateway_self_access_noop(),
+        orbitHome: $orbitHome,
+    );
+}
+
+function bootstrap_gateway_existing_node(
+    string $name = 'gateway',
+    string $publicHost = '85.9.218.89',
+    string $wireguardIp = '10.44.0.1',
+): Node {
+    $cluster = Cluster::query()->create(['name' => "{$name}-cluster"]);
+
+    return Node::query()->create([
+        'name' => $name,
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => $publicHost,
+        'user' => 'orbit',
+        'wireguard_ip' => $wireguardIp,
+    ]);
+}
+
+/** @return array<string, array{status: LifecycleStatus, failed_step: ?string, error_code: ?string}> */
+function bootstrap_gateway_role_states(Node $node): array
+{
+    return $node
+        ->roles()
+        ->orderBy('role')
+        ->get()
+        ->mapWithKeys(static fn (NodeRole $assignment): array => [
+            $assignment->role->value => [
+                'status' => $assignment->status,
+                'failed_step' => $assignment->failed_step,
+                'error_code' => $assignment->error_code,
+            ],
+        ])
+        ->all();
+}
 
 function gateway_vpn_noop(): GatewayVpnConverger
 {

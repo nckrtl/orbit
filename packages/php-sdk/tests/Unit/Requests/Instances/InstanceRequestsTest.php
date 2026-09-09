@@ -2,17 +2,20 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
+/** @mago-expect lint:halstead The feature group locks the complete AppInstance request and removal contract. */
 describe('AppInstance requests', function (): void {
     it('creates an AppInstance with inherited root and maps the typed response', function (): void {
         $mockClient = new MockClient([
@@ -36,7 +39,13 @@ describe('AppInstance requests', function (): void {
             ->and($response)
             ->toBeInstanceOf(AppInstanceResponse::class)
             ->and($response->requestId)
-            ->toBe(instance_request_id());
+            ->toBe(instance_request_id())
+            ->and($response->hostname)
+            ->toBe('orbit-docs.test')
+            ->and($response->url)
+            ->toBe('https://orbit-docs.test')
+            ->and($response->route?->hostname)
+            ->toBe('orbit-docs.test');
     });
 
     it('transports only the optional root override', function (): void {
@@ -75,6 +84,26 @@ describe('AppInstance requests', function (): void {
             ->not->toHaveKey('hostname');
     });
 
+    it('transports an optional explicit branch and preserves omission', function (): void {
+        $explicit = new CreateAppInstanceRequest(
+            appId: 3,
+            nodeId: 4,
+            name: 'default',
+            branch: 'release',
+        );
+        $inherited = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'default');
+
+        expect($explicit->body()->all())
+            ->toBe([
+                'app_id' => 3,
+                'node_id' => 4,
+                'name' => 'default',
+                'branch' => 'release',
+            ])
+            ->and($inherited->body()->all())
+            ->not->toHaveKey('branch');
+    });
+
     it('lists instances through the explicit collection route', function (): void {
         $mockClient = new MockClient([
             ListAppInstancesRequest::class => MockResponse::make([
@@ -97,7 +126,7 @@ describe('AppInstance requests', function (): void {
             ->toHaveCount(1)
             ->and($response->toArray())
             ->toBe([
-                'app_instances' => [instance_gateway_data()],
+                'app_instances' => [instance_sdk_data()],
                 'request_id' => instance_request_id(),
             ]);
     });
@@ -119,13 +148,13 @@ describe('AppInstance requests', function (): void {
             ->toBeInstanceOf(AppInstanceResponse::class);
     });
 
-    it('removes an AppInstance and transports explicit discard intent', function (): void {
+    it('removes an AppInstance and transports explicit force intent with bounded progress', function (): void {
         $mockClient = new MockClient([
-            RemoveAppInstanceRequest::class => MockResponse::make(instance_envelope()),
+            RemoveAppInstanceRequest::class => MockResponse::make(removal_envelope()),
         ]);
         $connector = instance_gateway_connector($mockClient);
 
-        $remove = new RemoveAppInstanceRequest(7, discardSource: true);
+        $remove = new RemoveAppInstanceRequest(7, force: true);
         $response = $connector->send($remove)->dto();
         $request = $mockClient->getLastRequest();
 
@@ -134,9 +163,55 @@ describe('AppInstance requests', function (): void {
             ->and($request?->resolveEndpoint())
             ->toBe('/api/v1/instances/7')
             ->and($remove->body()->all())
-            ->toBe(['discard_source' => true])
-            ->and($response->id)
-            ->toBe(7);
+            ->toBe(['force' => true])
+            ->and($response)
+            ->toBeInstanceOf(AppInstanceRemovalResponse::class)
+            ->and($response->toArray())
+            ->toBe([...removal_gateway_data(), 'request_id' => instance_request_id()]);
+    });
+
+    it('preserves force omission and explicit false', function (): void {
+        expect(new RemoveAppInstanceRequest(7)->body()->all())
+            ->toBeEmpty()
+            ->and(new RemoveAppInstanceRequest(7, force: false)->body()->all())
+            ->toBe(['force' => false]);
+    });
+
+    it('retains bounded removal progress from a failed accepted request', function (): void {
+        $failure = removal_gateway_data();
+        $failure['status'] = 'failed';
+        $failure['current_step'] = 'runtime_cleanup';
+        $failure['completed'] = 0;
+        $failure['remaining'] = 1;
+        $failure['failed_step'] = 'runtime_cleanup';
+        $failure['error_code'] = 'instance.runtime_interrupted';
+        $mockClient = new MockClient([
+            RemoveAppInstanceRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'instance.runtime_interrupted',
+                        'message' => 'AppInstance removal was accepted but remains incomplete.',
+                        'details' => ['removal' => $failure],
+                        'request_id' => instance_request_id(),
+                    ],
+                ],
+                502,
+                ['X-Orbit-Request-Id' => instance_request_id()],
+            ),
+        ]);
+        $connector = instance_gateway_connector($mockClient);
+
+        try {
+            $connector->send(new RemoveAppInstanceRequest(7, force: true));
+            $this->fail('Expected GatewayApiException.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe('instance.runtime_interrupted')
+                ->and($exception->requestId())
+                ->toBe(instance_request_id())
+                ->and($exception->details())
+                ->toBe(['removal' => $failure]);
+        }
     });
 });
 
@@ -166,13 +241,74 @@ function instance_gateway_data(): array
         'node_id' => 4,
         'name' => 'main',
         'environment' => 'development',
-        'source_kind' => 'managed_clone',
+        'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs',
         'root' => null,
         'effective_root' => 'public',
         'selected_branch' => 'main',
+        'branch_override' => null,
+        'migration_required' => false,
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         'status' => 'active',
+        'route' => instance_gateway_route_data(),
+        'hostname' => 'orbit-docs.test',
+        'url' => 'https://orbit-docs.test',
+        'removal' => null,
+    ];
+}
+
+/** @return array<string, mixed> */
+function removal_envelope(): array
+{
+    return [
+        'data' => removal_gateway_data(),
+        'meta' => ['request_id' => instance_request_id()],
+    ];
+}
+
+/** @return array<string, mixed> */
+function removal_gateway_data(): array
+{
+    return [
+        'operation_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a845',
+        'id' => 7,
+        'name' => 'main',
+        'force' => true,
+        'status' => 'completed',
+        'current_step' => null,
+        'total' => 1,
+        'completed' => 1,
+        'remaining' => 0,
+        'failed_step' => null,
+        'error_code' => null,
+    ];
+}
+
+/** @return array<string, mixed> */
+function instance_sdk_data(): array
+{
+    return [
+        ...instance_gateway_data(),
+        'route' => [...instance_gateway_route_data(), 'request_id' => instance_request_id()],
+    ];
+}
+
+/** @return array<string, mixed> */
+function instance_gateway_route_data(): array
+{
+    return [
+        'id' => 9,
+        'app_id' => 3,
+        'node_id' => 4,
+        'cluster_id' => null,
+        'generation_basis_node_id' => 4,
+        'hostname' => 'orbit-docs.test',
+        'provenance' => 'generated',
+        'publication' => 'private',
+        'status' => 'active',
+        'failed_step' => null,
+        'error_code' => null,
+        'target' => ['id' => 10, 'app_instance_id' => 7, 'position' => 0],
     ];
 }
 

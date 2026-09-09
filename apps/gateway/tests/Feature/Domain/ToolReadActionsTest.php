@@ -10,11 +10,12 @@ use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 
 describe('closed tool registry', function (): void {
-    it('registers exactly APT, VP, and Composer managers', function (): void {
+    it('registers exactly APT, Homebrew, VP, and Composer managers', function (): void {
         $registry = app(ToolManagerRegistry::class);
 
         expect($registry->find(ToolManagerName::Apt->value))
@@ -23,20 +24,22 @@ describe('closed tool registry', function (): void {
             ->toBeInstanceOf(VpToolManager::class)
             ->and($registry->find(ToolManagerName::Composer->value))
             ->toBeInstanceOf(ComposerToolManager::class)
+            ->and($registry->find(ToolManagerName::Brew->value))
+            ->toBeInstanceOf(HomebrewToolManager::class)
             ->and($registry->find('npm'))
             ->toBeNull();
     });
 });
 
 describe('tool read actions', function (): void {
-    it('lists only the node managers in stable name order', function (): void {
+    it('lists persisted and supported uninstalled managers in stable name order', function (): void {
         $node = tool_read_node('first-tools-node');
         $other = tool_read_node('other-tools-node');
-        $node->toolManagers()->create([
+        $vp = $node->toolManagers()->create([
             'name' => ToolManagerName::Vp,
             'status' => LifecycleStatus::Active,
         ]);
-        $node->toolManagers()->create([
+        $apt = $node->toolManagers()->create([
             'name' => ToolManagerName::Apt,
             'status' => LifecycleStatus::Active,
         ]);
@@ -47,12 +50,35 @@ describe('tool read actions', function (): void {
                 'status' => LifecycleStatus::Active,
             ]);
 
-        $managers = new ListToolManagersAction()->execute($node->id);
+        $managers = app(ListToolManagersAction::class)->execute($node->id);
 
         expect($managers->pluck('name')->all())
-            ->toBe([ToolManagerName::Apt, ToolManagerName::Vp])
-            ->and($managers->pluck('node_id')->unique()->all())
-            ->toBe([$node->id]);
+            ->toBe(['apt', 'brew', 'composer', 'vp'])
+            ->and($managers->pluck('nodeId')->unique()->all())
+            ->toBe([$node->id])
+            ->and($managers->pluck('id')->all())
+            ->toBe([$apt->id, null, null, $vp->id])
+            ->and($managers->pluck('status')->all())
+            ->toBe(['active', 'uninstalled', 'uninstalled', 'active']);
+    });
+
+    it('keeps an unknown persisted manager readable without registering it', function (): void {
+        $node = tool_read_node('rollback-manager-node');
+        $record = $node->toolManagers()->create([
+            'name' => 'future-manager',
+            'status' => LifecycleStatus::Failed,
+            'failed_step' => 'materialize',
+            'error_code' => 'node.tool_manager_materialization_failed',
+        ]);
+
+        $managers = app(ListToolManagersAction::class)->execute($node->id);
+
+        expect($managers->pluck('name')->all())
+            ->toBe(['apt', 'brew', 'composer', 'future-manager', 'vp'])
+            ->and($managers->firstWhere('name', 'future-manager')?->id)
+            ->toBe($record->id)
+            ->and(app(ToolManagerRegistry::class)->find('future-manager'))
+            ->toBeNull();
     });
 
     it('lists only the node tools in stable identity order with managers loaded', function (): void {
@@ -104,5 +130,7 @@ function tool_read_node(string $name): Node
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => fake()->unique()->ipv4(),
+        'wireguard_ip' => fake()->unique()->ipv4(),
+        'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', times: 43),
     ]);
 }

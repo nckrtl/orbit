@@ -1790,6 +1790,46 @@ function candidateGuestFake(
 }
 
 describe('WorktreeSynchronizer::syncCommit', function () {
+    beforeEach(function (): void {
+        $container = new Container;
+        $container->instance(ProcessFactory::class, new ProcessFactory);
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication($container);
+    });
+
+    it('installs current mounted-worktree scripts on every extended physical Node', function (): void {
+        $fixture = createSynchronizerCandidateFixture('AUX-132');
+        ['root' => $root, 'worktree' => $worktree] = $fixture;
+        try {
+            $target = featureTarget('AUX-132', recipe: TopologyRecipe::extendedAppProd());
+            $guest = new WorktreeSynchronizerGuestFake('');
+
+            $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
+                ->syncWorkingTree($target, $worktree);
+
+            expect($state->mounted)
+                ->toBeTrue()
+                ->and($guest->execBatches[1])
+                ->toBe([
+                    'script-prepare.gateway',
+                    'script-prepare.app-dev',
+                    'script-prepare.app-prod',
+                    'script-prepare.app-prod-2',
+                ])
+                ->and(array_values(array_unique(array_column($guest->pushes, 'instance'))))
+                ->toBe([
+                    $target->instance('gateway'),
+                    $target->instance('app-dev'),
+                    $target->instance('app-prod'),
+                    $target->instance('app-prod-2'),
+                ])
+                ->and($guest->execBatches[array_key_last($guest->execBatches)])
+                ->toBe(['source-marker.gateway', 'source-marker.app-dev']);
+        } finally {
+            destroySynchronizerRepositoryFixture($root, $worktree);
+        }
+    });
+
     it('uses physical recipe Nodes for checkout transfer and guest script verification', function () {
         $fixture = createSynchronizerCandidateFixture('SCN-1');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;

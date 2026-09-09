@@ -5,6 +5,11 @@ declare(strict_types=1);
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -33,7 +38,7 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ]);
 
@@ -49,7 +54,7 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ]);
 
@@ -77,7 +82,7 @@ describe('app creation', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
         ]);
 
@@ -85,13 +90,137 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.identity_conflict');
 
         expect($app->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    });
+
+    it('returns 409 without mutation when another App owns the repository identity', function (
+        string $repository,
+    ): void {
+        $requestId = (string) Str::uuid();
+        $original = $this
+            ->postJson('/api/v1/apps', [
+                'name' => 'Acme',
+                'slug' => 'acme',
+                'repository_url' => 'git@github.com:acme/site.git',
+                'default_branch' => 'main',
+                'root' => 'public',
+                'defaults' => ['php_version' => '8.5'],
+            ])
+            ->assertCreated();
+        $branches = new class implements RepositoryDefaultBranchResolver {
+            public int $calls = 0;
+
+            public function resolve(string $repository): string
+            {
+                $this->calls++;
+
+                return 'main';
+            }
+
+            public function verify(string $repository, string $branch): void
+            {
+                $this->calls++;
+            }
+        };
+        app()->instance(RepositoryDefaultBranchResolver::class, $branches);
+
+        $response = $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->postJson('/api/v1/apps', [
+                'name' => 'Other',
+                'slug' => 'other',
+                'repository_url' => $repository,
+                'default_branch' => 'main',
+                'root' => 'web/public',
+                'defaults' => ['php_version' => '8.4'],
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'app.repository_identity_conflict');
+
+        expect(OrbitApp::query()->count())
+            ->toBe(1)
+            ->and(OrbitApp::query()
+                ->sole()
+                ->only([
+                    'id',
+                    'name',
+                    'slug',
+                    'repository_url',
+                    'default_branch',
+                    'root',
+                    'defaults',
+                ]))
+            ->toBe([
+                'id' => $original->json('data.id'),
+                'name' => 'Acme',
+                'slug' => 'acme',
+                'repository_url' => 'git@github.com:acme/site.git',
+                'default_branch' => 'main',
+                'root' => 'public',
+                'defaults' => ['php_version' => '8.5'],
+            ])
+            ->and($branches->calls)
+            ->toBe(0)
+            ->and(Activity::query()->where('request_id', $requestId)->sole()->error_code)
+            ->toBe('app.repository_identity_conflict')
+            ->and($response->getContent())
+            ->not->toContain($repository, 'repository_identity');
+    })->with([
+        'same access URL' => ['git@github.com:acme/site.git'],
+        'equivalent HTTPS URL' => ['https://github.com/acme/site'],
+        'equivalent HTTPS URL with trailing separator' => ['https://github.com/acme/site/'],
+        'equivalent HTTPS URL with suffix and trailing separator' => ['https://github.com/acme/site.git/'],
+        'equivalent SSH URL' => ['ssh://deploy@github.com/acme/site.git'],
+    ]);
+
+    it('returns 409 when repository ownership is claimed during creation', function (): void {
+        $requestId = (string) Str::uuid();
+        $repository = 'https://github.com/acme/site.git';
+        $ownerCreated = false;
+
+        OrbitApp::creating(static function (OrbitApp $app) use (&$ownerCreated): void {
+            if ($ownerCreated || $app->slug !== 'candidate') {
+                return;
+            }
+
+            $ownerCreated = true;
+            OrbitApp::query()->create([
+                'name' => 'Owner',
+                'slug' => 'owner',
+                'repository_url' => 'git@github.com:acme/site.git',
+                'default_branch' => 'main',
+                'root' => 'public',
+            ]);
+        });
+
+        $response = $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->postJson('/api/v1/apps', [
+                'name' => 'Candidate',
+                'slug' => 'candidate',
+                'repository_url' => $repository,
+                'default_branch' => 'main',
+                'root' => 'public',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'app.repository_identity_conflict');
+
+        expect(OrbitApp::query()->sole()->only(['name', 'slug', 'repository_url']))
+            ->toBe([
+                'name' => 'Owner',
+                'slug' => 'owner',
+                'repository_url' => 'git@github.com:acme/site.git',
+            ])
+            ->and(Activity::query()->where('request_id', $requestId)->sole()->error_code)
+            ->toBe('app.repository_identity_conflict')
+            ->and($response->getContent())
+            ->not->toContain($repository, 'repository_identity', 'UNIQUE constraint failed');
     });
 });
 
@@ -107,7 +236,7 @@ describe('app defaults projection', function (): void {
                 'name' => 'Acme',
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => $defaults,
             ])
@@ -168,7 +297,7 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => $defaults,
             ])
@@ -194,7 +323,7 @@ describe('app defaults diagnostics', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
             'defaults' => ['php_version' => '8.5'],
         ]);
@@ -204,7 +333,7 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => [
                     'nested' => ['api_token' => $errorSecret],
@@ -299,7 +428,7 @@ describe('app lifecycle', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
         ]);
         AppInstance::query()->create([
@@ -355,6 +484,67 @@ describe('app validation', function (): void {
             'repository_url',
         ],
     ]);
+
+    it('keeps repository credentials out of validation errors and activity diagnostics', function (): void {
+        $requestId = (string) Str::uuid();
+        $credential = (string) Str::uuid();
+        $repository = "https://alice:{$credential}@example.test/acme/site.git";
+
+        $response = $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->postJson('/api/v1/apps', [
+                'slug' => 'acme',
+                'repository_url' => $repository,
+                'root' => 'public',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed');
+        $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+        expect($response->getContent())
+            ->not->toContain($credential, $repository)->and(print_r($activity->toArray(), return: true))
+            ->not->toContain($credential, $repository);
+    });
+
+    it('keeps raw remote output out of repository errors and activity diagnostics', function (): void {
+        $requestId = (string) Str::uuid();
+        $diagnostic = (string) Str::uuid();
+        $processes = new class($diagnostic) implements ProcessRunner {
+            public function __construct(
+                private readonly string $diagnostic,
+            ) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                return new CommandResult(
+                    exitCode: 128,
+                    stdout: "remote stdout {$this->diagnostic}",
+                    stderr: "remote stderr {$this->diagnostic}",
+                    durationMs: 1,
+                    truncated: false,
+                );
+            }
+        };
+        app()->instance(
+            RepositoryDefaultBranchResolver::class,
+            new NativeRepositoryDefaultBranchResolver($processes),
+        );
+
+        $response = $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->postJson('/api/v1/apps', [
+                'slug' => 'acme',
+                'repository_url' => 'https://example.test/acme/site.git',
+                'root' => 'public',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'app.default_branch_unavailable');
+        $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+        expect($response->getContent())
+            ->not->toContain($diagnostic)->and(print_r($activity->toArray(), return: true))
+            ->not->toContain($diagnostic);
+    });
 });
 
 describe('app list access', function (): void {
@@ -407,48 +597,140 @@ describe('app list access', function (): void {
             'slug' => 'inaccessible',
             'repository_url' => 'https://example.test/inaccessible.git',
         ]);
-        Instance::query()->create([
+        $multiplyPlaced = OrbitApp::query()->create([
+            'name' => 'Multiply placed',
+            'slug' => 'multiply-placed',
+            'repository_url' => 'https://example.test/multiply-placed.git',
+        ]);
+        AppInstance::query()->create([
             'app_id' => $accessible->id,
             'node_id' => $accessibleNode->id,
             'name' => 'main',
-            'environment' => 'development',
             'checkout_path' => '/srv/accessible',
-            'hostname' => 'accessible.example.test',
-            'certificate_mode' => 'orbit-ca',
+            'status' => AppInstanceState::Active,
         ]);
-        Instance::query()->create([
+        AppInstance::query()->create([
             'app_id' => $inaccessible->id,
             'node_id' => $inaccessibleNode->id,
             'name' => 'main',
-            'environment' => 'development',
             'checkout_path' => '/srv/inaccessible',
-            'hostname' => 'inaccessible.example.test',
-            'certificate_mode' => 'orbit-ca',
+            'status' => AppInstanceState::Active,
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $multiplyPlaced->id,
+            'node_id' => $accessibleNode->id,
+            'name' => 'first',
+            'checkout_path' => '/srv/multiply-placed/first',
+            'status' => AppInstanceState::Active,
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $multiplyPlaced->id,
+            'node_id' => $accessibleNode->id,
+            'name' => 'second',
+            'checkout_path' => '/srv/multiply-placed/second',
+            'status' => AppInstanceState::Active,
         ]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$accessible->id]);
+            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $accessible->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
+    });
+
+    it('uses only AppInstance placement for a direct consumer', function (): void {
+        $accessibleNode = Node::query()->create([
+            'name' => 'accessible-node',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.20',
+            'wireguard_ip' => '10.44.0.20',
+        ]);
+        $inaccessibleNode = Node::query()->create([
+            'name' => 'inaccessible-node',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.21',
+            'wireguard_ip' => '10.44.0.21',
+        ]);
+        $consumer = Node::query()->create([
+            'name' => 'direct-consumer',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.22',
+            'wireguard_ip' => '10.44.0.22',
+        ]);
+        $consumer->accessibleNodes()->attach($accessibleNode);
+        $legacyOnly = OrbitApp::query()->create([
+            'name' => 'Legacy only',
+            'slug' => 'legacy-only',
+            'repository_url' => 'https://example.test/legacy-only.git',
+        ]);
+        $mixedHidden = OrbitApp::query()->create([
+            'name' => 'Mixed hidden',
+            'slug' => 'mixed-hidden',
+            'repository_url' => 'https://example.test/mixed-hidden.git',
+        ]);
+        $mixedVisible = OrbitApp::query()->create([
+            'name' => 'Mixed visible',
+            'slug' => 'mixed-visible',
+            'repository_url' => 'https://example.test/mixed-visible.git',
+        ]);
+        foreach ([$legacyOnly, $mixedHidden] as $app) {
+            Instance::query()->create([
+                'app_id' => $app->id,
+                'node_id' => $accessibleNode->id,
+                'name' => 'legacy',
+                'environment' => 'development',
+                'checkout_path' => "/srv/legacy/{$app->slug}",
+                'hostname' => "{$app->slug}.example.test",
+                'certificate_mode' => 'orbit-ca',
+            ]);
+        }
+        Instance::query()->create([
+            'app_id' => $mixedVisible->id,
+            'node_id' => $inaccessibleNode->id,
+            'name' => 'legacy',
+            'environment' => 'development',
+            'checkout_path' => '/srv/legacy/mixed-visible',
+            'hostname' => 'mixed-visible.example.test',
+            'certificate_mode' => 'orbit-ca',
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $mixedHidden->id,
+            'node_id' => $inaccessibleNode->id,
+            'name' => 'current',
+            'checkout_path' => '/srv/current/mixed-hidden',
+            'status' => AppInstanceState::Active,
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $mixedVisible->id,
+            'node_id' => $accessibleNode->id,
+            'name' => 'current',
+            'checkout_path' => '/srv/current/mixed-visible',
+            'status' => AppInstanceState::Active,
+        ]);
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
+            ->getJson('/api/v1/apps')
+            ->assertOk()
+            ->assertJsonPath('data.*.id', [$mixedVisible->id]);
     });
 });
 

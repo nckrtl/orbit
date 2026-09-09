@@ -74,6 +74,20 @@ final readonly class RemotePhpPackageManager
     }
 
     /** @param Collection<int, string> $versions */
+    public function installForAppInstance(
+        Node $node,
+        Collection $versions,
+        AppDevSshExecutor $ssh,
+        RoleName $role,
+    ): void {
+        $profile = $role === RoleName::AppProd && ! $node->roles->pluck('role')->contains(RoleName::AppDev)
+            ? 'app-prod'
+            : 'app-dev';
+
+        $this->install($node, $versions, $ssh, $role, $profile);
+    }
+
+    /** @param Collection<int, string> $versions */
     public function installForAppProd(Node $node, Collection $versions, AppProdSshExecutor $ssh): void
     {
         $needsPcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
@@ -161,13 +175,7 @@ final readonly class RemotePhpPackageManager
                     self::SURY_SIGNER,
                     ...$packages,
                 ],
-                input: <<<'BASH'
-                    expected_id=$1
-                    unsupported_text=$2
-                    allowed_count=$3
-                    shift 3
-                    allowed_codenames=("${@:1:$allowed_count}")
-                    shift "$allowed_count"
+                input: OsReleaseParserProgram::render()."\n".<<<'BASH'
                     expected_uri=$1
                     key_url=$2
                     keyring_path=$3
@@ -177,54 +185,6 @@ final readonly class RemotePhpPackageManager
                     secondary_fingerprint=$7
                     sury_signer=$8
                     shift 8
-
-                    fail_os() {
-                        if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
-                            printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
-                        else
-                            printf '%s\n' "$unsupported_text" >&2
-                        fi
-                        exit 1
-                    }
-
-                    if [ ! -r /etc/os-release ]; then
-                        fail_os
-                    fi
-
-                    os_id=''
-                    os_codename=''
-                    id_seen=0
-                    codename_seen=0
-                    while IFS= read -r os_line || [ -n "$os_line" ]; do
-                        case "$os_line" in
-                            ID=*) os_key=ID; os_value=${os_line#ID=} ;;
-                            VERSION_CODENAME=*) os_key=VERSION_CODENAME; os_value=${os_line#VERSION_CODENAME=} ;;
-                            ''|\#*) continue ;;
-                            *) continue ;;
-                        esac
-                        case "$os_value" in
-                            \"*\") os_value=${os_value#\"}; os_value=${os_value%\"} ;;
-                            \'*\') os_value=${os_value#\'}; os_value=${os_value%\'} ;;
-                            *\"|\"*) fail_os ;;
-                            *\'|\'*) fail_os ;;
-                        esac
-                        case "$os_value" in ''|*[!A-Za-z0-9._-]*) fail_os ;; esac
-                        if [ "$os_key" = ID ]; then
-                            [ "$id_seen" -eq 0 ] || fail_os
-                            os_id=$os_value; id_seen=1
-                        else
-                            [ "$codename_seen" -eq 0 ] || fail_os
-                            os_codename=$os_value; codename_seen=1
-                        fi
-                    done < /etc/os-release
-
-                    selected_codename=''
-                    for allowed_codename in "${allowed_codenames[@]}"; do
-                        if [ "$os_codename" = "$allowed_codename" ]; then selected_codename=$allowed_codename; fi
-                    done
-                    if [ "$os_id" != "$expected_id" ] || [ -z "$selected_codename" ]; then
-                        fail_os "$os_id" "$os_codename"
-                    fi
 
                     for configured_source in \
                         /etc/apt/sources.list \
@@ -469,6 +429,7 @@ final readonly class RemotePhpPackageManager
                     $version,
                     $profile,
                     base64_encode(new PhpFpmRuntimeIniRenderer()->render($profile)),
+                    self::EXPECTED_DISTRIBUTION,
                     UbuntuRelease::unsupportedText(),
                     (string) count(UbuntuRelease::forRole($role)),
                     ...array_map(
@@ -481,56 +442,8 @@ final readonly class RemotePhpPackageManager
                     version=$1
                     profile=$2
                     runtime_ini=$3
-                    unsupported_text=$4
-                    allowed_count=$5
-                    shift 5
-                    allowed_codenames=("${@:1:$allowed_count}")
-                    shift "$allowed_count"
-
-                    fail_os() {
-                        if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
-                            printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
-                        else
-                            printf '%s\n' "$unsupported_text" >&2
-                        fi
-                        exit 1
-                    }
-
-                    if [ ! -r /etc/os-release ]; then
-                        fail_os
-                    fi
-
-                    os_id=''
-                    os_codename=''
-                    id_seen=0
-                    codename_seen=0
-                    while IFS= read -r os_line || [ -n "$os_line" ]; do
-                        case "$os_line" in
-                            ID=*) os_key=ID; os_value=${os_line#ID=} ;;
-                            VERSION_CODENAME=*) os_key=VERSION_CODENAME; os_value=${os_line#VERSION_CODENAME=} ;;
-                            ''|\#*) continue ;;
-                            *) continue ;;
-                        esac
-                        case "$os_value" in
-                            \"*\") os_value=${os_value#\"}; os_value=${os_value%\"} ;;
-                            \'*\') os_value=${os_value#\'}; os_value=${os_value%\'} ;;
-                            *\"|\"*) fail_os ;;
-                            *\'|\'*) fail_os ;;
-                        esac
-                        case "$os_value" in ''|*[!A-Za-z0-9._-]*) fail_os ;; esac
-                        if [ "$os_key" = ID ]; then [ "$id_seen" -eq 0 ] || fail_os; os_id=$os_value; id_seen=1
-                        else [ "$codename_seen" -eq 0 ] || fail_os; os_codename=$os_value; codename_seen=1
-                        fi
-                    done < /etc/os-release
-
-                    selected_codename=''
-                    for allowed_codename in "${allowed_codenames[@]}"; do
-                        if [ "$os_codename" = "$allowed_codename" ]; then selected_codename=$allowed_codename; fi
-                    done
-                    if [ "$os_id" != ubuntu ] || [ -z "$selected_codename" ]; then
-                        fail_os "$os_id" "$os_codename"
-                    fi
-
+                    shift 3
+                    BASH."\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
                     missing_packages=()
                     for package in "$@"; do
                         case "$package" in

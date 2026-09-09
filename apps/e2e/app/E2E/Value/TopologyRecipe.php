@@ -40,7 +40,11 @@ final readonly class TopologyRecipe
         }
         foreach ($nodes as $node) {
             foreach ($node->roles as $role) {
-                if (isset($nodesByKey[$role]) && $role !== $node->key) {
+                if (
+                    isset($nodesByKey[$role])
+                    && $role !== $node->key
+                    && ! in_array($role, $nodesByKey[$role]->roles, true)
+                ) {
                     throw new InvalidArgumentException(
                         "Topology recipe Node key [{$role}] collides with a role assigned to another Node.",
                     );
@@ -74,6 +78,23 @@ final readonly class TopologyRecipe
                 $image,
                 TopologyNodePurpose::Workload,
                 12,
+                false,
+                TopologyProfile::ASSIGNMENTS['app-prod'],
+            ),
+        ]);
+    }
+
+    public static function extendedAppProd(string $image = self::BASE_IMAGE): self
+    {
+        $registered = self::registered($image);
+
+        return new self(TopologyProfile::NAME.'_app-prod', [
+            ...$registered->nodes,
+            new TopologyNode(
+                'app-prod-2',
+                $image,
+                TopologyNodePurpose::Extension,
+                13,
                 false,
                 TopologyProfile::ASSIGNMENTS['app-prod'],
             ),
@@ -139,6 +160,15 @@ final readonly class TopologyRecipe
         }
 
         return $matches[0];
+    }
+
+    /** @return list<TopologyNode> */
+    public function nodesForRole(string $role): array
+    {
+        return array_values(array_filter(
+            $this->nodes,
+            static fn (TopologyNode $node): bool => in_array($role, $node->roles, true),
+        ));
     }
 
     public function resolveNode(string $nodeOrRole): TopologyNode

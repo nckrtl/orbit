@@ -30,7 +30,7 @@ describe(ComposerToolManager::class, function (): void {
         expect($manager->name())->toBe(ToolManagerName::Composer);
     });
 
-    it('supports only provisioning or active Linux app nodes', function (
+    it('supports Linux nodes independently of node and role lifecycle', function (
         string $platform,
         LifecycleStatus $nodeStatus,
         ?RoleName $role,
@@ -57,11 +57,11 @@ describe(ComposerToolManager::class, function (): void {
             LifecycleStatus::Provisioning,
             true,
         ],
-        'gateway role' => ['linux', LifecycleStatus::Active, RoleName::Gateway, LifecycleStatus::Active, false],
-        'failed role' => ['linux', LifecycleStatus::Active, RoleName::AppDev, LifecycleStatus::Failed, false],
-        'removing role' => ['linux', LifecycleStatus::Active, RoleName::AppProd, LifecycleStatus::Removing, false],
+        'gateway role' => ['linux', LifecycleStatus::Active, RoleName::Gateway, LifecycleStatus::Active, true],
+        'failed role' => ['linux', LifecycleStatus::Active, RoleName::AppDev, LifecycleStatus::Failed, true],
+        'removing role' => ['linux', LifecycleStatus::Active, RoleName::AppProd, LifecycleStatus::Removing, true],
         'non-Linux node' => ['darwin', LifecycleStatus::Active, RoleName::AppDev, LifecycleStatus::Active, false],
-        'missing role' => ['linux', LifecycleStatus::Active, null, null, false],
+        'missing role' => ['linux', LifecycleStatus::Active, null, null, true],
     ]);
 
     it('accepts only one lowercase Composer package coordinate of at most 255 bytes', function (
@@ -93,9 +93,22 @@ describe(ComposerToolManager::class, function (): void {
         'oversized' => [str_repeat('v', times: 128).'/'.str_repeat('p', times: 127), false],
     ]);
 
+    it('materializes Composer and its protected shared scope with fixed bootstrap input', function (): void {
+        [$manager, $ssh] = composer_tool_manager([composer_result()]);
+
+        $manager->materialize(composer_tool_node(role: null, roleStatus: null));
+
+        expect($ssh->arguments())
+            ->toBe([['sudo', 'bash', '-seu', '--', 'orbit']])
+            ->and($ssh->commands[0]->input)
+            ->toContain('apt-get install --yes --no-install-recommends --no-remove -- composer git unzip')
+            ->and($ssh->commands[0]->input)
+            ->toContain('COMPOSER_HOME=/opt/orbit/composer');
+    });
+
     it('rejects an unsupported node before remote I/O', function (Closure $operation): void {
         [$manager, $ssh] = composer_tool_manager([]);
-        $node = composer_tool_node(role: RoleName::Gateway);
+        $node = composer_tool_node(platform: 'darwin', role: RoleName::AppDev);
 
         expect(fn () => $operation($manager, $node))
             ->toThrow(function (ToolManagerException $exception): void {

@@ -15,6 +15,4 @@ interface DevelopmentAppInstanceSourceLifecycle
     public function resolve(AppInstance $appInstance): DevelopmentSourceResolution;
 
     public function inspectResolved(AppInstance $appInstance): DevelopmentSourceResolution;
-
-    public function remove(AppInstance $appInstance, bool $discardSource): void;
 }

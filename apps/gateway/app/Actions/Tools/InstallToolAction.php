@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Tools;
 
 use App\Data\Tools\InstallToolData;
-use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOperationLock;
@@ -19,7 +21,6 @@ use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Throwable;
@@ -37,6 +38,8 @@ final readonly class InstallToolAction
         private ToolManagerRegistry $managers,
         private VersionConstraint $constraints,
         private ToolOperationLock $lock,
+        private ToolManagerMaterializer $materializer,
+        private ToolNodeEligibility $eligibility,
     ) {}
 
     public function execute(InstallToolData $data): ToolActionResult
@@ -89,31 +92,18 @@ final readonly class InstallToolAction
             );
         }
 
-        if ($this->requiresAppRole($managerName) && ! $this->hasAvailableAppRole($node)) {
+        if (! $this->eligibility->allows($node)) {
             throw $this->failure(
-                errorCode: 'tool.app_role_required',
+                errorCode: 'tool.node_unmanaged',
                 outcome: ToolOutcome::ManagerFailed,
                 status: 409,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager requires a provisioning or active app role.',
+                message: 'Tools can be installed only on a Gateway-managed node.',
             );
         }
 
         if (! $manager->supportsNode($node)) {
-            throw $this->failure(
-                errorCode: 'tool.manager_unavailable',
-                outcome: ToolOutcome::ManagerFailed,
-                status: 409,
-                data: $data,
-                manager: $managerName,
-                message: 'The tool manager is not available on this node.',
-            );
-        }
-
-        $record = $this->managerRecord($node, $managerName);
-
-        if ($record === null || $record->status !== LifecycleStatus::Active) {
             throw $this->failure(
                 errorCode: 'tool.manager_unavailable',
                 outcome: ToolOutcome::ManagerFailed,
@@ -159,14 +149,14 @@ final readonly class InstallToolAction
             );
         }
 
-        if ($this->requiresAppRole($managerName) && ! $this->hasAvailableAppRole($node)) {
+        if (! $this->eligibility->allows($node)) {
             throw $this->failure(
-                errorCode: 'tool.app_role_required',
+                errorCode: 'tool.node_unmanaged',
                 outcome: ToolOutcome::ManagerFailed,
                 status: 409,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager requires a provisioning or active app role.',
+                message: 'Tools can be installed only on a Gateway-managed node.',
             );
         }
 
@@ -178,6 +168,25 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 message: 'The tool manager is not available on this node.',
+            );
+        }
+
+        try {
+            $this->materializer->converge($node, $managerName);
+        } catch (NodeProvisioningException $exception) {
+            throw $this->failure(
+                errorCode: 'tool.manager_provision_failed',
+                outcome: ToolOutcome::ManagerFailed,
+                status: 502,
+                data: $data,
+                manager: $managerName,
+                message: 'The tool manager could not be provisioned.',
+                previous: new ToolManagerException(
+                    step: $exception->step,
+                    message: 'Tool manager provisioning failed.',
+                    result: $exception->result,
+                    previous: $exception,
+                ),
             );
         }
 
@@ -537,11 +546,6 @@ final readonly class InstallToolAction
         );
     }
 
-    private function managerRecord(Node $node, ToolManagerName $manager): ?ToolManagerRecord
-    {
-        return $node->toolManagers()->where('name', $manager)->first();
-    }
-
     private function lockedManagerRecord(Node $node, ToolManagerName $manager): ?ToolManagerRecord
     {
         return $node
@@ -549,27 +553,6 @@ final readonly class InstallToolAction
             ->where('name', $manager)
             ->lockForUpdate()
             ->first();
-    }
-
-    private function requiresAppRole(ToolManagerName $manager): bool
-    {
-        return in_array($manager, [ToolManagerName::Vp, ToolManagerName::Composer], strict: true);
-    }
-
-    private function hasAvailableAppRole(Node $node): bool
-    {
-        $node->loadMissing('roles');
-
-        return $node->roles->contains(
-            static fn (NodeRole $role): bool => (
-                in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true)
-                && in_array(
-                    $role->status,
-                    [LifecycleStatus::Provisioning, LifecycleStatus::Active],
-                    strict: true,
-                )
-            ),
-        );
     }
 
     private function isSafeRawVersion(?string $version): bool

@@ -36,6 +36,9 @@ final readonly class ProofPlan
     /** Optional: collect complete file-level PHP observations during proof actions. */
     private const string OBSERVED_INPUTS = 'observed_inputs';
 
+    /** Optional: add exactly one temporary app-prod Node to discovery and proof. */
+    private const string EXTENSION = 'extension';
+
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
@@ -50,6 +53,7 @@ final readonly class ProofPlan
         public TopologyEndState $endsWith,
         public array $inputs,
         public bool $observedInputs,
+        public ?TopologyExtension $extension,
     ) {}
 
     public static function fromFile(string $path): self
@@ -91,6 +95,17 @@ final readonly class ProofPlan
     /** @param array<array-key, mixed> $plan */
     public static function fromArray(array $plan): self
     {
+        $extension = null;
+        if (array_key_exists(self::EXTENSION, $plan)) {
+            $extension = is_string($plan[self::EXTENSION])
+                ? TopologyExtension::tryFrom($plan[self::EXTENSION])
+                : null;
+            if ($extension === null) {
+                throw new InvalidArgumentException('The proof plan extension must be app-prod.');
+            }
+            unset($plan[self::EXTENSION]);
+        }
+        $recipe = $extension?->recipe() ?? TopologyRecipe::registered();
         $mutates = false;
         if (array_key_exists(self::MUTATES, $plan)) {
             if (! is_bool($plan[self::MUTATES])) {
@@ -99,10 +114,15 @@ final readonly class ProofPlan
             $mutates = $plan[self::MUTATES];
             unset($plan[self::MUTATES]);
         }
-        $endsWith = TopologyEndState::complete();
+        $endsWith = TopologyEndState::complete($recipe);
         if (array_key_exists(self::ENDS_WITH, $plan)) {
-            $endsWith = TopologyEndState::fromArray($plan[self::ENDS_WITH]);
+            $endsWith = TopologyEndState::fromArray($plan[self::ENDS_WITH], $recipe);
             unset($plan[self::ENDS_WITH]);
+        }
+        if ($extension !== null && in_array('app-prod-2', $endsWith->absent(), true)) {
+            throw new InvalidArgumentException(
+                'An extended proof must keep app-prod-2; it cannot remove the extra Node to manufacture evidence.',
+            );
         }
         $inputs = [];
         if (array_key_exists(self::INPUTS, $plan)) {
@@ -118,7 +138,7 @@ final readonly class ProofPlan
             unset($plan[self::OBSERVED_INPUTS]);
         }
         // Removing a node changes the topology the proof ran on, whatever the plan says.
-        $mutates = $mutates || $endsWith->declaresAbsence();
+        $mutates = $mutates || $endsWith->declaresAbsence() || $extension !== null;
         $keys = array_keys($plan);
         sort($keys, SORT_STRING);
         $expected = self::SECTIONS;
@@ -126,7 +146,7 @@ final readonly class ProofPlan
         if ($keys !== $expected) {
             throw new InvalidArgumentException(
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, inputs, and observed_inputs.',
+                .'plus optional extension, mutates, ends_with, inputs, and observed_inputs.',
             );
         }
         $sections = [];
@@ -143,10 +163,10 @@ final readonly class ProofPlan
         }
 
         $ids = [];
-        $setup = self::actions('setup', $sections['setup'], $ids);
-        $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
+        $setup = self::actions('setup', $sections['setup'], $ids, $recipe);
+        $acceptance = self::actions('acceptance', $sections['acceptance'], $ids, $recipe);
 
-        return new self($setup, $acceptance, $mutates, $endsWith, $inputs, $observedInputs);
+        return new self($setup, $acceptance, $mutates, $endsWith, $inputs, $observedInputs, $extension);
     }
 
     /**
@@ -154,7 +174,7 @@ final readonly class ProofPlan
      * @param array<string, true> $ids
      * @return list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>
      */
-    private static function actions(string $section, array $declared, array &$ids): array
+    private static function actions(string $section, array $declared, array &$ids, TopologyRecipe $recipe): array
     {
         $actions = [];
         /** @mago-expect analysis:mixed-assignment Each declared action is validated one field at a time. */
@@ -189,9 +209,9 @@ final readonly class ProofPlan
             $ids[$id] = true;
             /** @var mixed $node */
             $node = $action['node'];
-            if (! is_string($node) || ! in_array($node, TopologyProfile::ROLES, strict: true)) {
+            if (! is_string($node) || ! $recipe->hasNode($node)) {
                 throw new InvalidArgumentException(
-                    "Proof action [{$id}] must name a node from ".implode(', ', TopologyProfile::ROLES).'.',
+                    "Proof action [{$id}] must name a node from ".implode(', ', $recipe->nodeKeys()).'.',
                 );
             }
             /** @var mixed $argv */
@@ -244,6 +264,9 @@ final readonly class ProofPlan
     public function toArray(): array
     {
         $plan = ['setup' => $this->setup, 'acceptance' => $this->acceptance];
+        if ($this->extension !== null) {
+            $plan[self::EXTENSION] = $this->extension->value;
+        }
         if ($this->mutates) {
             $plan['mutates'] = true;
         }
@@ -267,6 +290,11 @@ final readonly class ProofPlan
             $this->toArray(),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
         ));
+    }
+
+    public function recipe(): TopologyRecipe
+    {
+        return $this->extension?->recipe() ?? TopologyRecipe::registered();
     }
 
     /** @return list<string> */

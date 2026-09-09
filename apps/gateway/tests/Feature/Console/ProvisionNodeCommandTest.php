@@ -67,8 +67,9 @@ it('provisions the first peer from the gateway console', function (): void {
         ->toBe($cluster->id)
         ->and($node->wireguard_ip)
         ->toBe('10.44.0.2')
-        ->and($node->wireguard_address)
-        ->toBe('10.44.0.2')
+        ->and($node->getAttributes())
+        ->not
+        ->toHaveKey('wireguard_address')
         ->and($node->lan_ip)
         ->toBe('10.0.0.2');
 });

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -27,6 +29,8 @@ beforeEach(function (): void {
     $this->roleLifecycle = new NodeRoleApiLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $this->roleLifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $this->roleLifecycle);
+    $this->reachability = new NodeRoleApiReachabilityFake;
+    app()->instance(NodeReachabilityProbe::class, $this->reachability);
 
     $this->caller = $this->markAsGateway(node_roles_api_node('gateway-peer'));
     $this->node = node_roles_api_node('role-target');
@@ -54,11 +58,29 @@ it('rejects direct target access for Metrics role removal', function (): void {
         ]);
     $direct = node_roles_api_node('direct-removal-consumer');
     $direct->accessibleNodes()->attach($target);
+    $requestId = (string) Str::uuid();
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_ip])
-        ->deleteJson("/api/v1/nodes/{$target->id}/roles/metrics", ['force' => true])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->deleteJson("/api/v1/nodes/{$target->id}/roles/metrics", [
+            'force' => true,
+            'purge_data' => false,
+            'offline' => true,
+        ])
         ->assertForbidden();
+
+    expect(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('input'))
+        ->toBe([
+            'force' => true,
+            'purge_data' => false,
+            'offline' => true,
+            'role' => 'metrics',
+        ])
+        ->and($this->reachability->nodeIds)
+        ->toBeEmpty()
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty();
 });
 
 it('allows Metrics role mutation through directed Gateway access', function (): void {
@@ -424,6 +446,7 @@ it('returns standard validation failures for protected unknown and duplicate ass
 
 it('always returns the exact preview without mutating when force is absent or false', function (
     array $body,
+    array $expectedInput,
 ): void {
     $assignment = $this->node
         ->roles()
@@ -453,14 +476,24 @@ it('always returns the exact preview without mutating when force is absent or fa
 
     expect($assignment->refresh()->status)
         ->toBe(LifecycleStatus::Active)
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('input'))
+        ->toBe($expectedInput)
         ->and($this->roleLifecycle->removed)
         ->toBeEmpty();
 })->with([
-    'absent force' => [['purge_data' => false]],
-    'explicit false' => [['force' => false]],
+    'absent force' => [
+        ['purge_data' => false],
+        ['purge_data' => false, 'role' => 'app-dev'],
+    ],
+    'explicit false' => [
+        ['force' => false],
+        ['force' => false, 'role' => 'app-dev'],
+    ],
 ]);
 
-it('returns the exact mutation snapshot and forwards purge data on confirmed removal', function (): void {
+it('returns the exact mutation snapshot and records the complete SDK input on confirmed removal', function (
+    bool $offline,
+): void {
     $this->node
         ->roles()
         ->create([
@@ -474,6 +507,7 @@ it('returns the exact mutation snapshot and forwards purge data on confirmed rem
         ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/app-dev", [
             'force' => true,
             'purge_data' => true,
+            'offline' => $offline,
         ])
         ->assertOk()
         ->assertHeader('X-Orbit-Request-Id', $requestId)
@@ -493,9 +527,21 @@ it('returns the exact mutation snapshot and forwards purge data on confirmed rem
 
     expect(NodeRole::query()->where('node_id', $this->node->id)->count())
         ->toBe(0)
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('input'))
+        ->toBe([
+            'force' => true,
+            'purge_data' => true,
+            'offline' => $offline,
+            'role' => 'app-dev',
+        ])
+        ->and($this->reachability->nodeIds)
+        ->toBe($offline ? [$this->node->id] : [])
         ->and($this->roleLifecycle->removed)
         ->toBe([['role' => 'app-dev', 'purge_data' => true]]);
-});
+})->with([
+    'SDK default offline false' => [false],
+    'explicit offline true' => [true],
+]);
 
 it('does not let force offline or purge remove an app-dev role beneath an AppInstance', function (array $body): void {
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
@@ -510,7 +556,7 @@ it('does not let force offline or purge remove an app-dev role beneath an AppIns
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     AppInstance::query()->create([
@@ -683,6 +729,7 @@ it('returns a safe correlated 502 for removal failure', function (): void {
         ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/app-dev", [
             'force' => true,
             'purge_data' => false,
+            'offline' => false,
         ]);
 
     $response
@@ -700,7 +747,14 @@ it('returns a safe correlated 502 for removal failure', function (): void {
         ->not
         ->toContain($sentinel)
         ->and(Activity::query()->where('request_id', $requestId)->sole()->error_code)
-        ->toBe('node_role.remove_failed');
+        ->toBe('node_role.remove_failed')
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('input'))
+        ->toBe([
+            'force' => true,
+            'purge_data' => false,
+            'offline' => false,
+            'role' => 'app-dev',
+        ]);
 });
 
 it('rejects unsafe raw JSON without mutation or rejected activity input', function (
@@ -737,7 +791,9 @@ it('rejects unsafe raw JSON without mutation or rejected activity input', functi
     $activity = Activity::query()->where('request_id', $requestId)->sole();
 
     expect($response->getContent())
-        ->not->toContain($sentinel)->and(json_encode($activity->properties?->toArray()))
+        ->not->toContain($sentinel)->and($activity->properties?->get('input'))->toBe([])->and(
+            json_encode($activity->properties?->toArray()),
+        )
         ->not->toContain(
             $sentinel,
         )->and($this->roleLifecycle->converged)->toBeEmpty()->and($this->roleLifecycle->removed)->toBeEmpty();
@@ -781,6 +837,21 @@ it('rejects unsafe raw JSON without mutation or rejected activity input', functi
         'DELETE',
         '/api/v1/nodes/{node}/roles/app-dev',
         '{"force":true,"offline":"{sentinel}"}',
+    ],
+    'malformed removal JSON' => [
+        'DELETE',
+        '/api/v1/nodes/{node}/roles/app-dev',
+        '{"force":true,"offline":"{sentinel}"',
+    ],
+    'duplicate removal key' => [
+        'DELETE',
+        '/api/v1/nodes/{node}/roles/app-dev',
+        '{"force":true,"offline":false,"offline":"{sentinel}"}',
+    ],
+    'escaped duplicate removal key' => [
+        'DELETE',
+        '/api/v1/nodes/{node}/roles/app-dev',
+        '{"force":true,"offline":false,"offl\\u0069ne":"{sentinel}"}',
     ],
 ]);
 
@@ -856,4 +927,18 @@ final class NodeRoleApiLifecycleFake implements RoleBaselineConverger, NodeRoleD
     public function removeUnreachable(Node $node, NodeRole $assignment): void {}
 
     public function clean(NodeRoleDependencySet $dependencies): void {}
+}
+
+/** @mago-expect lint:file-name Test-local fake proves reachability runs only after authorization. */
+final class NodeRoleApiReachabilityFake implements NodeReachabilityProbe
+{
+    /** @var list<int> */
+    public array $nodeIds = [];
+
+    public function degradation(Node $node): ?ExporterDegradationReason
+    {
+        $this->nodeIds[] = $node->id;
+
+        return null;
+    }
 }

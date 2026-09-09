@@ -45,7 +45,18 @@ final readonly class RouteMutationReconciler
         );
 
         foreach ($routes as $route) {
-            $route->update($proposals[$route->id]);
+            $proposal = $proposals[$route->id];
+            $changed = array_filter(
+                $proposal,
+                static fn (mixed $value, string $key): bool => $route->getAttribute($key) !== $value,
+                ARRAY_FILTER_USE_BOTH,
+            );
+
+            if ($changed !== [] && $route->status === RouteStatus::Active) {
+                new RouteReconciliationGuard()->refuse();
+            }
+
+            $route->update($proposal);
         }
     }
 
@@ -155,19 +166,20 @@ final readonly class RouteMutationReconciler
         $hostname = $route->hostname;
 
         if ($route->provenance === RouteProvenance::Generated) {
-            $hostname = $firstTarget instanceof AppInstance
-                ? $this->state->generatedHostname(
+            if ($firstTarget instanceof AppInstance && ! $firstTarget->migration_required) {
+                $hostname = $this->state->generatedHostname(
                     $route->app->slug,
-                    (string) $route->app->main_branch,
                     $firstTarget->name,
                     $placement->effectiveTld,
-                )
-                : $this->rebaseRetainedHostname(
+                );
+            } elseif (! $firstTarget instanceof AppInstance) {
+                $hostname = $this->rebaseRetainedHostname(
                     $route,
                     $placement,
                     $baselineNodeOverrides,
                     $baselineClusterOverrides,
                 );
+            }
         }
 
         return [

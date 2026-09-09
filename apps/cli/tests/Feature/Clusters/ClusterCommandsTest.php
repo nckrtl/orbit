@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Clusters\AttachClusterNodeRequest;
 use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
@@ -176,6 +177,28 @@ it('rejects invalid IDs before any HTTP request', function (string $command, arr
     'set Router Cluster' => ['cluster:router:set', ['cluster' => '0', 'node' => '2']],
     'set Router Node' => ['cluster:router:set', ['cluster' => '3', 'node' => '0']],
     'clear Router' => ['cluster:router:clear', ['cluster' => '0', '--force' => true]],
+]);
+
+it('renders only the first invalid ID as one JSON document', function (string $command, array $arguments): void {
+    $mockClient = MockClient::global();
+    $expected = [
+        'error' => [
+            'code' => 'cluster.id_invalid',
+            'message' => 'Cluster ID must be a positive integer.',
+            'request_id' => null,
+        ],
+    ];
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true, '--no-interaction' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(1);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expected);
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with([
+    'attach' => ['cluster:node:attach', ['cluster' => 'invalid', 'node' => 'invalid']],
+    'detach' => ['cluster:node:detach', ['cluster' => 'invalid', 'node' => 'invalid']],
+    'set Router' => ['cluster:router:set', ['cluster' => 'invalid', 'node' => 'invalid']],
 ]);
 
 it('rejects malformed TLD and state values before any HTTP request', function (

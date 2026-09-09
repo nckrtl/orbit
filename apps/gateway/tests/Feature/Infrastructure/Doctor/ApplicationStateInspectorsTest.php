@@ -61,7 +61,7 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
             'bash',
             '-seu',
             '--',
-            'https://github.com/acme/project.git',
+            $app->repository_url,
             $instance->checkout_path,
             '/srv/users/nckrtl',
             'nckrtl',
@@ -195,11 +195,12 @@ it('observes only AppInstance source evidence through the fixed SSH boundary', f
             '/srv/users/nckrtl/apps',
             'nckrtl',
             'nckrtl',
+            $appInstance->source_layout,
             $appInstance->branch,
             $appInstance->starting_commit,
         ])
         ->and($ssh->commands[0]->input)
-        ->toContain('repository_independent', 'origin_matches', 'source_identity_matches')
+        ->toContain('repository_layout_matches', 'origin_matches', 'source_identity_matches')
         ->not->toContain('caddy', 'php', 'certificate', 'dns', 'hostname');
 });
 
@@ -221,31 +222,13 @@ it('maps each AppInstance source observation without retaining diagnostics', fun
 ]);
 
 it('reports shared AppInstance Git administration as non-independent', function (): void {
-    $node = application_inspector_node();
-    $appInstance = application_app_instance(application_inspector_app(), $node);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
-    application_instance_inspector($ssh)->inspect($appInstance);
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-instance-'.Str::uuid();
-    $checkout = "{$sandbox}/apps/acme/development";
-    $sharedGitDirectory = "{$sandbox}/shared.git";
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($appInstance);
+    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $sharedGitDirectory = "{$fixture['sandbox']}/shared.git";
     $files = new Filesystem;
-    $files->makeDirectory(dirname($checkout), 0o755, true);
-    application_run(['git', 'init', '--initial-branch=development', $checkout]);
-    application_run(['git', '-C', $checkout, 'config', 'user.name', 'Orbit Test']);
-    application_run(['git', '-C', $checkout, 'config', 'user.email', 'orbit@example.test']);
-    file_put_contents("{$checkout}/README.md", "managed\n");
-    application_run(['git', '-C', $checkout, 'add', 'README.md']);
-    application_run(['git', '-C', $checkout, 'commit', '-m', 'Managed']);
-    application_run(['git', '-C', $checkout, 'remote', 'add', 'origin', 'https://github.com/acme/project.git']);
-    $startingCommit = trim(application_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout);
-    $files->copyDirectory("{$checkout}/.git", $sharedGitDirectory);
-    file_put_contents("{$checkout}/.git/commondir", "{$sharedGitDirectory}\n");
-    $identity = posix_getpwuid(posix_geteuid());
-    $groupIdentity = posix_getgrgid(posix_getegid());
-    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
-    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
-        ? $groupIdentity['name']
-        : $user;
+    $files->copyDirectory("{$fixture['checkout']}/.git", $sharedGitDirectory);
+    file_put_contents("{$fixture['checkout']}/.git/commondir", "{$sharedGitDirectory}\n");
 
     try {
         $result = application_run(
@@ -253,20 +236,111 @@ it('reports shared AppInstance Git administration as non-independent', function 
                 'bash',
                 '-seu',
                 '--',
-                'https://github.com/acme/project.git',
-                $checkout,
-                "{$sandbox}/apps",
-                $user,
-                $group,
+                $appInstance->app->repository_url,
+                $fixture['checkout'],
+                $fixture['allowedRoot'],
+                $fixture['user'],
+                $fixture['group'],
+                'checkout',
                 'development',
-                $startingCommit,
+                $fixture['startingCommit'],
             ],
-            $ssh->commands[0]->input,
+            $script,
         );
 
         expect($result->stdout)->toBe("1\n0\n1\n1\n");
     } finally {
-        $files->deleteDirectory($sandbox);
+        $files->deleteDirectory($fixture['sandbox']);
+    }
+});
+
+it('keeps a wrong branch false when the ancestry check succeeds', function (): void {
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($appInstance);
+    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+
+    try {
+        $result = application_run(
+            [
+                'bash',
+                '-seu',
+                '--',
+                $appInstance->app->repository_url,
+                $fixture['checkout'],
+                $fixture['allowedRoot'],
+                $fixture['user'],
+                $fixture['group'],
+                'checkout',
+                'wrong-branch',
+                $fixture['startingCommit'],
+            ],
+            $script,
+        );
+
+        expect($result->stdout)->toBe("1\n1\n1\n0\n");
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+});
+
+it('keeps a symlink checkout false when ownership lookup succeeds', function (): void {
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($appInstance);
+    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $symlink = "{$fixture['allowedRoot']}/acme/symlink";
+    symlink($fixture['checkout'], $symlink);
+
+    try {
+        $result = application_run(
+            [
+                'bash',
+                '-seu',
+                '--',
+                $appInstance->app->repository_url,
+                $symlink,
+                $fixture['allowedRoot'],
+                $fixture['user'],
+                $fixture['group'],
+                'checkout',
+                'development',
+                $fixture['startingCommit'],
+            ],
+            $script,
+        );
+
+        expect($result->stdout)->toBe("0\n0\n1\n1\n");
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+});
+
+it('keeps a non-canonical checkout false when ownership lookup succeeds', function (): void {
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($appInstance);
+    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $nonCanonicalCheckout = "{$fixture['allowedRoot']}/acme/../acme/development";
+
+    try {
+        $result = application_run(
+            [
+                'bash',
+                '-seu',
+                '--',
+                $appInstance->app->repository_url,
+                $nonCanonicalCheckout,
+                $fixture['allowedRoot'],
+                $fixture['user'],
+                $fixture['group'],
+                'checkout',
+                'development',
+                $fixture['startingCommit'],
+            ],
+            $script,
+        );
+
+        expect($result->stdout)->toBe("0\n0\n1\n1\n");
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
     }
 });
 
@@ -440,6 +514,47 @@ function application_run(array $arguments, ?string $input = null): CommandResult
     return $result;
 }
 
+function application_instance_remote_script(AppInstance $appInstance): string
+{
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
+    application_instance_inspector($ssh)->inspect($appInstance);
+
+    return $ssh->commands[0]->input;
+}
+
+/** @return array{sandbox: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string} */
+function application_instance_repository_fixture(string $repository): array
+{
+    $sandbox = sys_get_temp_dir().'/orbit-doctor-instance-'.Str::uuid();
+    $allowedRoot = "{$sandbox}/apps";
+    $checkout = "{$allowedRoot}/acme/development";
+    $files = new Filesystem;
+    $files->makeDirectory(dirname($checkout), 0o755, true);
+    application_run(['git', 'init', '--initial-branch=development', $checkout]);
+    application_run(['git', '-C', $checkout, 'config', 'user.name', 'Orbit Test']);
+    application_run(['git', '-C', $checkout, 'config', 'user.email', 'orbit@example.test']);
+    file_put_contents("{$checkout}/README.md", "managed\n");
+    application_run(['git', '-C', $checkout, 'add', 'README.md']);
+    application_run(['git', '-C', $checkout, 'commit', '-m', 'Managed']);
+    application_run(['git', '-C', $checkout, 'remote', 'add', 'origin', $repository]);
+    $startingCommit = trim(application_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout);
+    $identity = posix_getpwuid(posix_geteuid());
+    $groupIdentity = posix_getgrgid(posix_getegid());
+    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
+    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
+        ? $groupIdentity['name']
+        : $user;
+
+    return [
+        'sandbox' => $sandbox,
+        'allowedRoot' => $allowedRoot,
+        'checkout' => $checkout,
+        'startingCommit' => $startingCommit,
+        'user' => $user,
+        'group' => $group,
+    ];
+}
+
 function application_capture_exception(Closure $operation): DoctorInspectionException
 {
     try {
@@ -504,7 +619,7 @@ function application_inspector_app(): App
     return App::query()->create([
         'name' => "Project {$number}",
         'slug' => "project-{$number}",
-        'repository_url' => 'https://github.com/acme/project.git',
+        'repository_url' => "https://github.com/acme/project-{$number}.git",
     ]);
 }
 
@@ -539,7 +654,7 @@ function application_inspector_instance(App $app, Node $node, CertificateMode $m
 
 function application_app_instance(App $app, Node $node): AppInstance
 {
-    $app->update(['main_branch' => 'main', 'root' => 'public']);
+    $app->update(['default_branch' => 'main', 'root' => 'public']);
 
     return AppInstance::query()->create([
         'app_id' => $app->id,

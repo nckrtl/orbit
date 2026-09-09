@@ -9,6 +9,7 @@ use App\Actions\AppInstances\ListAppInstancesAction;
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\AppInstances\ShowAppInstanceAction;
 use App\Data\AppInstances\AppInstanceData;
+use App\Data\AppInstances\AppInstanceRemovalData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -68,7 +69,7 @@ final class AppInstancesController extends Controller
         RemoveAppInstanceAction $action,
     ): JsonResponse {
         return response()->json([
-            'data' => AppInstanceData::fromModel($action->execute($instance, $request->discardSource()))->toArray(),
+            'data' => AppInstanceRemovalData::fromModel($action->execute($instance, $request->force()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

@@ -8,11 +8,13 @@ use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Nodes\PhpFpmInstalledProjection;
 use App\Infrastructure\Nodes\PhpFpmPublicationPlan;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
+use App\Models\Route;
 use App\Rules\SupportedPhpVersion;
 
 /** @mago-expect lint:excessive-parameter-list Fixed paths preserve isolated publication tests; the package service owns host installation. */
@@ -30,10 +32,23 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
 
     public function converge(Node $node): void
     {
+        $this->convergeSites($node);
+    }
+
+    public function convergeRoute(Node $node, Route $route): void
+    {
+        $this->convergeSites($node, $route);
+    }
+
+    private function convergeSites(Node $node, ?Route $pendingRoute = null): void
+    {
         $account = $this->accounts->resolve($node);
-        $desiredSites = $this->sites->forNode($node);
+        $desiredSites = $this->sites
+            ->forNode($node, $pendingRoute)
+            ->filter(static fn (AppDevSite $site): bool => $site->phpVersion !== null && ! $site->isProxy())
+            ->values();
         $desiredVersions = $desiredSites
-            ->map(static fn (AppDevSite $site): string => $site->phpVersion)
+            ->map(static fn (AppDevSite $site): string => $site->phpVersion ?? '')
             ->unique()
             ->values();
         $unsupportedVersion = $desiredVersions
@@ -48,15 +63,18 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         }
 
         $installedProjection = $this->installedProjection($node, $account);
-        $this->packages->installForAppDev($node, $desiredVersions, $this->ssh);
+        $role = $desiredSites->contains(static fn (AppDevSite $site): bool => $site->environment === 'production')
+            ? RoleName::AppProd
+            : RoleName::AppDev;
+        $this->packages->installForAppInstance($node->loadMissing('roles'), $desiredVersions, $this->ssh, $role);
 
         $desiredPoolVersions = $desiredSites
-            ->mapWithKeys(static fn (AppDevSite $site): array => [$site->poolName() => $site->phpVersion])
+            ->mapWithKeys(static fn (AppDevSite $site): array => [$site->poolName() => $site->phpVersion ?? ''])
             ->all();
         $plan = PhpFpmPublicationPlan::from(
             installed: $installedProjection,
             desiredPoolVersions: $desiredPoolVersions,
-            poolPattern: '/^\[(orbit-(?:instance|workspace)-[1-9][0-9]*)\]$/m',
+            poolPattern: '/^\[(orbit-(?:instance|workspace|app-instance)-[1-9][0-9]*)\]$/m',
         );
 
         $transitionSites = $desiredSites

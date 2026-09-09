@@ -23,6 +23,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private MetricsRoleBaseline $metrics,
         private MetricsFleetReconciler $metricsFleet,
         private NodeRoleOperatingSystemGuard $operatingSystem,
+        private ?RouterRoleBaseline $router = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -73,9 +74,8 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::AppDev => $this->appDev,
             RoleName::AppProd => $this->appProd,
             RoleName::Metrics => $this->metrics,
-            RoleName::Router, RoleName::Ingress => throw new LogicException(
-                'Router and Ingress roles do not have a host baseline.',
-            ),
+            RoleName::Router => $this->router ?? app(RouterRoleBaseline::class),
+            RoleName::Ingress => throw new LogicException('Ingress roles do not have a host baseline.'),
         };
     }
 }

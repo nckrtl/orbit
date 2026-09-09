@@ -412,8 +412,6 @@ describe('tool lifecycle failure contracts', function (): void {
             'invalid constraint' => $payload['version_constraint'] = 'not-a-constraint',
             'inactive node' => $this->node->update(['status' => LifecycleStatus::Failed]),
             'unsupported node' => $this->toolManager->supports = false,
-            'missing manager record' => $this->managerRecord->delete(),
-            'inactive manager record' => $this->managerRecord->update(['status' => LifecycleStatus::Failed]),
         };
 
         [$status, $code, $outcome] = match ($case) {
@@ -439,9 +437,25 @@ describe('tool lifecycle failure contracts', function (): void {
         'invalid constraint',
         'inactive node',
         'unsupported node',
-        'missing manager record',
-        'inactive manager record',
     ]);
+
+    it('materializes a missing or failed manager before creating Tool intent', function (string $state): void {
+        $state === 'missing'
+            ? $this->managerRecord->delete()
+            : $this->managerRecord->update(['status' => LifecycleStatus::Failed]);
+        $this->toolManager->installedVersions = [null, '1.7.1'];
+        $this->toolManager->candidateVersions = ['1.7.1'];
+
+        $this
+            ->postJson('/api/v1/tools', tools_api_payload($this->node))
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'installed');
+
+        expect($this->node->toolManagers()->where('name', 'apt')->sole()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and(Tool::query()->sole()->status)
+            ->toBe(ToolStatus::Installed);
+    })->with(['missing', 'failed']);
 
     it('maps candidate failures and retains a failed row', function (
         string|ToolManagerException|null $candidate,
@@ -615,6 +629,7 @@ function tools_api_node(string $name, string $address): Node
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.30',
         'wireguard_ip' => $address,
+        'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', times: 43),
     ]);
 }
 

@@ -20,6 +20,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 /** @mago-expect lint:halstead The interaction test keeps each security-sensitive publication boundary observable. */
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
@@ -107,6 +108,12 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'read_timeout 900s',
                 'write_timeout 900s',
             )
+            ->and(fileperms($orbitHome.'/generated/gateway/php-fpm-pool.conf') & 0o777)
+            ->toBe(0o644)
+            ->and(fileperms($orbitHome.'/generated/gateway/Caddyfile') & 0o777)
+            ->toBe(0o644)
+            ->and(fileperms($orbitHome.'/generated/gateway') & 0o777)
+            ->toBe(0o700)
             ->and($fpmStage?->input)
             ->toContain(
                 'for pool in /etc/php/8.5/fpm/pool.d/*.conf',
@@ -144,6 +151,97 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->toBeTrue();
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('publishes one complete gateway file from distinct candidates under contention', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-protected-writer-'.Str::uuid();
+    $path = $directory.'/generated/gateway/Caddyfile';
+    $markerDirectory = $directory.'/markers';
+    $startPath = $markerDirectory.'/start';
+    $characters = ['A', 'B', 'C', 'D'];
+    $bytes = 16 * 1024 * 1024;
+    $processes = [];
+    $observedCandidates = [];
+
+    mkdir($markerDirectory, permissions: 0o700, recursive: true);
+
+    try {
+        foreach ($characters as $index => $character) {
+            $readyPath = "{$markerDirectory}/ready-{$index}";
+            $process = protected_file_writer_process($path, $character, $bytes, $readyPath, $startPath);
+            $process->start();
+            $processes[] = $process;
+        }
+
+        foreach (array_keys($characters) as $index) {
+            protected_file_writer_wait_until(static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"));
+        }
+
+        file_put_contents($startPath, 'start');
+        protected_file_writer_wait_until(function () use ($path, &$observedCandidates): bool {
+            $observedCandidates = array_values(array_unique([
+                ...$observedCandidates,
+                ...protected_file_writer_candidates($path),
+            ]));
+
+            return count($observedCandidates) >= 2;
+        });
+
+        foreach ($processes as $process) {
+            protected_file_writer_wait_for_success($process);
+        }
+
+        $contents = file_get_contents($path);
+
+        expect(is_string($contents))->toBeTrue();
+
+        if (! is_string($contents) || $contents === '') {
+            throw new RuntimeException('The contended protected file was not published.');
+        }
+
+        expect(count($observedCandidates))->toBeGreaterThanOrEqual(2);
+        expect(in_array($contents[0], $characters, true))->toBeTrue();
+        expect($contents)->toBe(str_repeat($contents[0], $bytes));
+        expect(protected_file_writer_candidates($path))->toBe([]);
+        expect(fileperms($path) & 0o777)->toBe(0o644);
+        expect(fileperms(dirname($path)) & 0o777)->toBe(0o700);
+    } finally {
+        foreach ($processes as $process) {
+            if ($process->isRunning()) {
+                $process->stop(0.1, 9);
+            }
+        }
+
+        new Filesystem()->deleteDirectory($directory);
+    }
+});
+
+it('preserves a refused destination and cleans only its protected-file candidate', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-protected-writer-'.Str::uuid();
+    $path = $directory.'/generated/gateway/Caddyfile';
+    $unrelatedCandidate = $path.'.candidate.other-invocation';
+    mkdir($path, permissions: 0o700, recursive: true);
+    file_put_contents($path.'/original', 'original');
+    file_put_contents($unrelatedCandidate, 'other');
+    chmod($unrelatedCandidate, 0o600);
+
+    try {
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            expect(fn () => new ProtectedFileWriter()->put($path, 'replacement', 0o644))
+                ->toThrow(RuntimeException::class, "Could not install protected file [{$path}].");
+        } finally {
+            restore_error_handler();
+        }
+
+        expect(file_get_contents($path.'/original'))->toBe('original');
+        expect(protected_file_writer_siblings($path))->toBe([$unrelatedCandidate]);
+        expect(file_get_contents($unrelatedCandidate))->toBe('other');
+        expect(fileperms($unrelatedCandidate) & 0o777)->toBe(0o600);
+    } finally {
+        new Filesystem()->deleteDirectory($directory);
     }
 });
 
@@ -333,6 +431,96 @@ it('rejects a checkout outside the configured Orbit home before certificate or s
         new Filesystem()->deleteDirectory($orbitHome);
     }
 });
+
+function protected_file_writer_process(
+    string $path,
+    string $character,
+    int $bytes,
+    string $readyPath,
+    string $startPath,
+): Process {
+    $script = <<<'PHP'
+        require $argv[1].'/vendor/autoload.php';
+
+        file_put_contents($argv[4], 'ready');
+
+        while (! is_file($argv[5])) {
+            usleep(1_000);
+        }
+
+        new App\Infrastructure\Files\ProtectedFileWriter()->put(
+            $argv[2],
+            str_repeat($argv[3], (int) $argv[6]),
+            0o644,
+        );
+        PHP;
+    $process = new Process([
+        PHP_BINARY,
+        '-r',
+        $script,
+        base_path(),
+        $path,
+        $character,
+        $readyPath,
+        $startPath,
+        (string) $bytes,
+    ]);
+    $process->setTimeout(30);
+
+    return $process;
+}
+
+/** @return list<string> */
+function protected_file_writer_candidates(string $path): array
+{
+    $candidates = glob($path.'.candidate.*');
+
+    if (! is_array($candidates)) {
+        return [];
+    }
+
+    sort($candidates);
+
+    return $candidates;
+}
+
+/** @return list<string> */
+function protected_file_writer_siblings(string $path): array
+{
+    $siblings = glob($path.'.*');
+
+    if (! is_array($siblings)) {
+        return [];
+    }
+
+    sort($siblings);
+
+    return $siblings;
+}
+
+function protected_file_writer_wait_for_success(Process $process): void
+{
+    $exitCode = $process->wait();
+
+    if ($exitCode !== 0) {
+        throw new RuntimeException(
+            "Protected-file writer failed with exit code {$exitCode}: {$process->getErrorOutput()}",
+        );
+    }
+}
+
+function protected_file_writer_wait_until(Closure $condition, float $timeoutSeconds = 5.0): void
+{
+    $deadline = microtime(true) + $timeoutSeconds;
+
+    while (! $condition()) {
+        if (microtime(true) >= $deadline) {
+            throw new RuntimeException('Timed out waiting for protected-file writer state.');
+        }
+
+        usleep(1_000);
+    }
+}
 
 /**
  * @return array{

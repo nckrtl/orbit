@@ -6,9 +6,10 @@ namespace App\Actions\AppInstances;
 
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\AppInstances\AppInstanceActivationHook;
-use App\Domain\AppInstances\AppInstanceSourceKind;
+use App\Domain\AppInstances\AppInstanceDestinationGuard;
+use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -16,6 +17,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -24,10 +26,13 @@ use App\Domain\SourceControl\RelativeWebRoot;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * @mago-expect lint:cyclomatic-complexity The action keeps the closed durable state machine visible.
+ * @mago-expect lint:kan-defect The score reflects fail-closed placement, retry, and source-state gates.
  * @mago-expect lint:too-many-methods The action keeps every transition and evidence check in one durable state machine.
  */
 final readonly class CreateAppInstanceAction
@@ -38,9 +43,10 @@ final readonly class CreateAppInstanceAction
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
         private ManagedCheckoutOverlap $checkoutOverlap,
+        private AppInstanceDestinationGuard $destinationGuard,
         private AppDevSourceOperationLock $sourceLock,
         private DevelopmentAppInstanceSourceLifecycle $source,
-        private AppInstanceActivationHook $activationHook,
+        private DevelopmentAppInstanceProvisioner $provisioner,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -56,7 +62,8 @@ final readonly class CreateAppInstanceAction
             ->first();
 
         if ($existing instanceof AppInstance) {
-            $this->assertRetryIdentity($existing, $requestedNode, $root);
+            $this->assertDefaultIdentityAvailable($existing, $app);
+            $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch);
             $appInstance = $existing;
             $created = false;
         } else {
@@ -71,15 +78,20 @@ final readonly class CreateAppInstanceAction
             $this->checkoutOverlap->assertAvailable(
                 $requestedNode->id,
                 $checkout,
-                'instance.path_taken',
+                $data->name === 'default' ? 'instance.migration_conflict' : 'instance.path_taken',
             );
+
+            if ($data->name === 'default') {
+                $this->destinationGuard->assertUnoccupied($requestedNode, $checkout);
+            }
             $appInstance = AppInstance::query()->create([
                 'app_id' => $app->id,
                 'node_id' => $requestedNode->id,
                 'name' => $data->name,
-                'source_kind' => AppInstanceSourceKind::ManagedClone,
+                'source_layout' => AppInstanceSourceLayout::Checkout,
                 'checkout_path' => $checkout->value,
                 'root' => $root,
+                'branch_override' => $data->branch,
                 'status' => AppInstanceState::Reserved,
             ]);
             $created = true;
@@ -87,14 +99,24 @@ final readonly class CreateAppInstanceAction
 
         $result = $this->sourceLock->synchronized(
             $appInstance->node_id,
-            fn (): AppInstance => $this->resume($appInstance, ! $created),
+            function () use ($appInstance, $created, $data): AppInstance {
+                try {
+                    $this->provisioner->reserve($appInstance, $data->hostname);
+                    $resolved = $this->resumeSource($appInstance, ! $created);
+
+                    return $this->provisioner->complete($resolved, $data->hostname);
+                } catch (Throwable $exception) {
+                    $this->recordFailure($appInstance, $exception);
+
+                    throw $exception;
+                }
+            },
         );
-        $this->activationHook->complete($result, $data->hostname);
 
         return ['appInstance' => $result, 'created' => $created];
     }
 
-    private function resume(AppInstance $appInstance, bool $allowPreparedSource): AppInstance
+    private function resumeSource(AppInstance $appInstance, bool $allowPreparedSource): AppInstance
     {
         while (true) {
             $appInstance->refresh()->loadMissing(['app', 'node']);
@@ -125,9 +147,6 @@ final readonly class CreateAppInstanceAction
             if ($appInstance->status === AppInstanceState::SourceResolved) {
                 $this->source->inspectPrepared($appInstance);
                 $this->assertStoredResolution($appInstance, $this->source->inspectResolved($appInstance));
-                $this->transition($appInstance, AppInstanceState::SourceResolved, [
-                    'status' => AppInstanceState::Active,
-                ]);
 
                 return $appInstance->refresh();
             }
@@ -156,8 +175,8 @@ final readonly class CreateAppInstanceAction
     private function assertCompleteSourceDefaults(OrbitApp $app): void
     {
         if (
-            ! is_string($app->main_branch)
-            || ! GitBranchName::isValid($app->main_branch)
+            ! is_string($app->default_branch)
+            || ! GitBranchName::isValid($app->default_branch)
             || ! is_string($app->root)
             || ! RelativeWebRoot::isValid($app->root)
         ) {
@@ -188,13 +207,29 @@ final readonly class CreateAppInstanceAction
         AppInstance $appInstance,
         Node $requestedNode,
         ?string $root,
+        ?string $branchOverride,
     ): void {
+        if ($appInstance->status === AppInstanceState::Removing) {
+            throw $this->conflict(
+                'instance.removal_conflict',
+                "AppInstance [{$appInstance->name}] is being removed.",
+            );
+        }
+
+        if ($appInstance->migration_required) {
+            throw $this->conflict(
+                'instance.migration_required',
+                "AppInstance [{$appInstance->name}] requires manual source migration.",
+            );
+        }
+
         $recordedNode = Node::query()->findOrFail($appInstance->node_id);
 
         if (
             $requestedNode->id !== $recordedNode->id
-            || $appInstance->source_kind !== AppInstanceSourceKind::ManagedClone->value
+            || $appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value
             || $appInstance->root !== $root
+            || $appInstance->branch_override !== $branchOverride
         ) {
             throw $this->conflict('instance.placement_conflict', 'AppInstance placement is immutable.');
         }
@@ -202,10 +237,27 @@ final readonly class CreateAppInstanceAction
         $this->assertPlacement($recordedNode);
     }
 
+    private function assertDefaultIdentityAvailable(AppInstance $appInstance, OrbitApp $app): void
+    {
+        if (
+            $appInstance->name !== 'default'
+            || $appInstance->source_layout === AppInstanceSourceLayout::Checkout->value
+            && str_ends_with($appInstance->checkout_path, "/{$app->slug}/default")
+            && ! $appInstance->migration_required
+        ) {
+            return;
+        }
+
+        throw $this->conflict(
+            'instance.migration_conflict',
+            'The reserved default AppInstance identity is occupied by another source.',
+        );
+    }
+
     private function assertPersistedOwnership(AppInstance $appInstance): void
     {
-        if ($appInstance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
-            throw $this->conflict('instance.source_kind_conflict', 'AppInstance source ownership is invalid.');
+        if ($appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value) {
+            throw $this->conflict('instance.source_layout_conflict', 'AppInstance source ownership is invalid.');
         }
     }
 
@@ -214,7 +266,7 @@ final readonly class CreateAppInstanceAction
         DevelopmentSourceResolution $resolution,
     ): void {
         if (
-            $resolution->branch !== $appInstance->name
+            $resolution->branch !== $this->expectedBranch($appInstance)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $resolution->startingCommit) !== 1
         ) {
             throw $this->conflict('instance.source_identity_invalid', 'Resolved source identity is invalid.');
@@ -239,7 +291,7 @@ final readonly class CreateAppInstanceAction
     private function assertStoredResolutionEvidence(AppInstance $appInstance): void
     {
         if (
-            $appInstance->branch !== $appInstance->name
+            $appInstance->branch !== $this->expectedBranch($appInstance)
             || ! is_string($appInstance->starting_commit)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $appInstance->starting_commit) !== 1
         ) {
@@ -247,8 +299,53 @@ final readonly class CreateAppInstanceAction
         }
     }
 
+    private function expectedBranch(AppInstance $appInstance): string
+    {
+        if (is_string($appInstance->branch_override)) {
+            return $appInstance->branch_override;
+        }
+
+        if ($appInstance->name === 'default') {
+            return (string) $appInstance->app->default_branch;
+        }
+
+        return $appInstance->name;
+    }
+
     private function conflict(string $errorCode, string $message): ResourceOperationException
     {
         return new ResourceOperationException($errorCode, $message, 409);
+    }
+
+    private function recordFailure(AppInstance $appInstance, Throwable $exception): void
+    {
+        $appInstance->refresh();
+        $step = property_exists($exception, 'step') && is_string($exception->step)
+            ? $exception->step
+            : match ($appInstance->status) {
+                AppInstanceState::Reserved => 'source-prepare',
+                AppInstanceState::CheckoutPrepared => 'source-resolve',
+                default => 'provisioning',
+            };
+        $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
+            ? $exception->errorCode
+            : 'instance.provisioning_failed';
+
+        DB::transaction(static function () use ($appInstance, $step, $errorCode): void {
+            AppInstance::query()
+                ->whereKey($appInstance->id)
+                ->update([
+                    'failed_step' => $step,
+                    'error_code' => $errorCode,
+                ]);
+            Route::query()
+                ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstance->id))
+                ->where('status', '<>', RouteStatus::Active->value)
+                ->update([
+                    'status' => RouteStatus::Failed,
+                    'failed_step' => $step,
+                    'error_code' => $errorCode,
+                ]);
+        });
     }
 }

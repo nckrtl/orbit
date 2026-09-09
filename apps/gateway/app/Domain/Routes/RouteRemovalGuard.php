@@ -17,6 +17,10 @@ final readonly class RouteRemovalGuard
 {
     public function assertAppRemovable(OrbitApp $app): void
     {
+        if ($app->routes()->where('status', RouteStatus::Active)->exists()) {
+            new RouteReconciliationGuard()->refuse();
+        }
+
         if ($app->routes()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.has_routes',
@@ -28,6 +32,10 @@ final readonly class RouteRemovalGuard
 
     public function assertClusterRemovable(Cluster $cluster): void
     {
+        if ($cluster->routes()->where('status', RouteStatus::Active)->exists()) {
+            new RouteReconciliationGuard()->refuse();
+        }
+
         if ($cluster->routes()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'cluster.has_routes',
@@ -50,6 +58,15 @@ final readonly class RouteRemovalGuard
                 ->exists();
 
         if ($referenced) {
+            if (Route::query()->where('status', RouteStatus::Active)->where(static function ($query) use ($node): void {
+                $query
+                    ->where('node_id', $node->id)
+                    ->orWhere('generation_basis_node_id', $node->id)
+                    ->orWhereHas('targets.appInstance', static fn ($target) => $target->where('node_id', $node->id));
+            })->exists()) {
+                new RouteReconciliationGuard()->refuse();
+            }
+
             throw new ResourceOperationException(
                 errorCode: 'node.has_routes',
                 message: "Node [{$node->name}] is still referenced by Routes.",
@@ -77,6 +94,8 @@ final readonly class RouteRemovalGuard
 
     public function assertRouterRemovable(Cluster $cluster): void
     {
+        new RouteReconciliationGuard()->assertClusterRouterMutable($cluster->id);
+
         if (Route::query()->where('cluster_id', $cluster->id)->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'cluster.routes_require_router',

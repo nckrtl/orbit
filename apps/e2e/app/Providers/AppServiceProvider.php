@@ -12,6 +12,7 @@ use App\E2E\HostCapacity;
 use App\E2E\HostRelativeDeleter;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
+use App\E2E\IssueTopologyConstructor;
 use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
@@ -159,6 +160,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(IncusHost::class),
         ));
         $this->app->singleton(DiscoveryGuestPreparer::class);
+        $this->app->singleton(IssueTopologyConstructor::class);
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
@@ -172,6 +174,8 @@ final class AppServiceProvider extends ServiceProvider
             operation: $app->make(OperationId::class),
             topologySnapshotIdentity: $app->make(TopologySnapshotIdentity::class),
             repositoryRoot: $repositoryRoot,
+            converger: $app->make(TopologyConverger::class),
+            constructor: $app->make(IssueTopologyConstructor::class),
         ));
         $this->app->singleton(
             TopologyProofRunner::class,
@@ -190,6 +194,7 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(ProofInputManifestBuilder::class),
                 $app->make(ObservedPhpInputCollector::class),
                 $repositoryRoot,
+                constructor: $app->make(IssueTopologyConstructor::class),
             ),
         );
         $this->app->singleton(ProofEquivalenceEvaluator::class, fn (Application $app): ProofEquivalenceEvaluator => new ProofEquivalenceEvaluator(
@@ -197,6 +202,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(ProofInputManifestBuilder::class),
             $app->make(StatePaths::class),
             $app->make(OperationId::class),
+            $app->make(IncusHost::class),
             $repositoryRoot,
         ));
         $this->app->singleton(OrphanNetworkSweep::class, fn (Application $app): OrphanNetworkSweep => new OrphanNetworkSweep(

@@ -35,7 +35,7 @@ final readonly class NativeToolInspector implements ToolInspector
                 throw new ToolInspectionException;
             }
 
-            $manager = $this->registry->find($managerRecord->name->value);
+            $manager = $this->registry->find($managerRecord->name);
             if ($manager === null || ! $manager->supportsNode($node)) {
                 throw new ToolInspectionException;
             }

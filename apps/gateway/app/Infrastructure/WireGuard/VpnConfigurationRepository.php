@@ -6,9 +6,11 @@ namespace App\Infrastructure\WireGuard;
 
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
+use InvalidArgumentException;
 
 /** @mago-expect lint:cyclomatic-complexity */
 final readonly class VpnConfigurationRepository
@@ -32,20 +34,36 @@ final readonly class VpnConfigurationRepository
             throw $this->invalid("Node [{$peer->name}] has no WireGuard address.");
         }
 
-        $subnet = $this->settings->subnet();
-        $prefixLength = $this->prefixLength($subnet);
+        $subnet = $this->subnet();
+        $prefixLength = $subnet->prefixLength();
         $port = filter_var($this->settings->port(), FILTER_VALIDATE_INT);
 
         if (! is_int($port) || $port < 1 || $port > 65_535) {
             throw $this->invalid('The WireGuard port is invalid.');
         }
 
-        $serverPrivateKey = $this->key('private');
-        $serverPublicKey = $this->key('public');
         $serverAddress = $server->wireguard_ip;
         $peerAddress = $peer->wireguard_ip;
+
+        if (! $subnet->containsUsableAddress($serverAddress)) {
+            throw $this->invalid(
+                "Node [{$server->name}] has invalid WireGuard address [{$serverAddress}] for subnet [{$subnet->value()}].",
+            );
+        }
+
+        if (! $subnet->containsUsableAddress($peerAddress)) {
+            throw $this->invalid(
+                "Node [{$peer->name}] has invalid WireGuard address [{$peerAddress}] for subnet [{$subnet->value()}].",
+            );
+        }
+
+        $serverPrivateKey = $this->key('private');
+        $serverPublicKey = $this->key('public');
         $endpoint =
-            $peer->wireguard_endpoint_override ?? $this->settings->endpoint() ?? "{$server->public_ssh_host}:{$port}";
+            $peer->wireguard_endpoint_override ?? $this->settings->endpoint() ?? WireGuardEndpoint::format(
+                $server->public_ssh_host,
+                $port,
+            );
         $dnsServer = $peer->dns_server_override ?? $this->settings->dnsServer() ?? $serverAddress;
         $domain = $this->settings->domain();
 
@@ -63,12 +81,12 @@ final readonly class VpnConfigurationRepository
 
         return new VpnConfiguration(
             server: $server,
-            subnet: $subnet,
+            subnet: $subnet->value(),
             prefixLength: $prefixLength,
             port: $port,
             endpoint: $endpoint,
             dnsServer: $dnsServer,
-            dnsThroughWireGuard: $this->subnetContains($subnet, $prefixLength, $dnsServer),
+            dnsThroughWireGuard: $subnet->contains($dnsServer),
             domain: $domain,
             serverAddress: "{$serverAddress}/{$prefixLength}",
             peerAddress: "{$peerAddress}/{$prefixLength}",
@@ -77,30 +95,15 @@ final readonly class VpnConfigurationRepository
         );
     }
 
-    private function prefixLength(string $subnet): int
+    private function subnet(): Ipv4Subnet
     {
-        $parts = explode(separator: '/', string: $subnet, limit: 2);
-        $prefix = filter_var($parts[1] ?? null, FILTER_VALIDATE_INT);
+        $value = $this->settings->subnet();
 
-        if (! is_int($prefix) || $prefix < 8 || $prefix > 30 || ip2long($parts[0]) === false) {
-            throw $this->invalid("WireGuard subnet [{$subnet}] is invalid.");
+        try {
+            return Ipv4Subnet::from($value);
+        } catch (InvalidArgumentException) {
+            throw $this->invalid("WireGuard subnet [{$value}] is invalid.");
         }
-
-        return $prefix;
-    }
-
-    private function subnetContains(string $subnet, int $prefixLength, string $address): bool
-    {
-        $network = ip2long(explode(separator: '/', string: $subnet, limit: 2)[0]);
-        $candidate = ip2long($address);
-
-        if ($network === false || $candidate === false) {
-            return false;
-        }
-
-        $mask = -1 << (32 - $prefixLength);
-
-        return ($network & $mask) === ($candidate & $mask);
     }
 
     private function key(string $name): string

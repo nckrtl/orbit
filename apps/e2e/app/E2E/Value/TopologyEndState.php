@@ -32,19 +32,26 @@ final readonly class TopologyEndState
 
     private const string NODES = 'nodes';
 
-    /** @param list<string> $nodes The declared-present roles, in profile order. */
+    /**
+     * @param list<string> $nodes The declared-present roles, in profile order.
+     * @param list<string> $recipeNodes
+     */
     private function __construct(
         public array $nodes,
+        private array $recipeNodes,
     ) {}
 
     /** The implicit declaration of a plan that says nothing: every node of the profile stays. */
-    public static function complete(): self
+    public static function complete(?TopologyRecipe $recipe = null): self
     {
-        return new self(TopologyProfile::ROLES);
+        $nodes = ($recipe ?? TopologyRecipe::registered())->nodeKeys();
+
+        return new self($nodes, $nodes);
     }
 
-    public static function fromArray(mixed $declared): self
+    public static function fromArray(mixed $declared, ?TopologyRecipe $recipe = null): self
     {
+        $recipeNodes = ($recipe ?? TopologyRecipe::registered())->nodeKeys();
         if (! is_array($declared) || array_keys($declared) !== [self::NODES]) {
             throw new InvalidArgumentException(
                 'The proof plan key ends_with must be an object with exactly the key nodes.',
@@ -58,11 +65,9 @@ final readonly class TopologyEndState
         $declaredNodes = [];
         /** @mago-expect analysis:mixed-assignment Each declared node is validated before it joins the set. */
         foreach ($nodes as $node) {
-            if (! is_string($node) || ! in_array($node, TopologyProfile::ROLES, strict: true)) {
+            if (! is_string($node) || ! in_array($node, $recipeNodes, strict: true)) {
                 throw new InvalidArgumentException(
-                    'The proof plan key ends_with.nodes must name nodes from '
-                    .implode(', ', TopologyProfile::ROLES)
-                    .'.',
+                    'The proof plan key ends_with.nodes must name nodes from '.implode(', ', $recipeNodes).'.',
                 );
             }
             if (in_array($node, $declaredNodes, strict: true)) {
@@ -77,19 +82,19 @@ final readonly class TopologyEndState
         }
 
         // Profile order, so the record and the skip set never depend on how the plan was written.
-        return new self(self::inProfileOrder($declaredNodes));
+        return new self(self::inRecipeOrder($declaredNodes, $recipeNodes), $recipeNodes);
     }
 
     /** @return list<string> The roles the plan declares gone, in profile order. */
     public function absent(): array
     {
-        return self::inProfileOrder(array_values(array_diff(TopologyProfile::ROLES, $this->nodes)));
+        return self::inRecipeOrder(array_values(array_diff($this->recipeNodes, $this->nodes)), $this->recipeNodes);
     }
 
     /** @return list<string> The declared-present roles other than the gateway, in profile order. */
     public function peers(): array
     {
-        return self::inProfileOrder(array_values(array_diff($this->nodes, [self::REQUIRED_ROLE])));
+        return self::inRecipeOrder(array_values(array_diff($this->nodes, [self::REQUIRED_ROLE])), $this->recipeNodes);
     }
 
     public function declaresAbsence(): bool
@@ -102,6 +107,12 @@ final readonly class TopologyEndState
         return in_array($role, $this->nodes, strict: true);
     }
 
+    /** @return list<string> */
+    public function recipeNodes(): array
+    {
+        return $this->recipeNodes;
+    }
+
     /** @return array{nodes:list<string>} */
     public function toArray(): array
     {
@@ -110,12 +121,13 @@ final readonly class TopologyEndState
 
     /**
      * @param list<string> $roles
+     * @param list<string> $recipeNodes
      * @return list<string>
      */
-    private static function inProfileOrder(array $roles): array
+    private static function inRecipeOrder(array $roles, array $recipeNodes): array
     {
         return array_values(array_filter(
-            TopologyProfile::ROLES,
+            $recipeNodes,
             static fn (string $role): bool => in_array($role, $roles, strict: true),
         ));
     }

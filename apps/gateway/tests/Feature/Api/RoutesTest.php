@@ -36,7 +36,7 @@ beforeEach(function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     $this->node = route_node('dev-one', '10.44.0.2', 'one.test');
@@ -169,7 +169,7 @@ it('leaves the complete Route unchanged for invalid target proposals', function 
         'name' => 'Other',
         'slug' => 'other',
         'repository_url' => 'https://example.test/other.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     $foreign = route_instance($otherApp, $this->node, 'foreign');

@@ -15,7 +15,7 @@ final readonly class CreateAppData
         public string $name,
         public string $slug,
         public string $repositoryUrl,
-        public ?string $mainBranch,
+        public ?string $defaultBranch,
         public string $root,
         public ?array $defaults,
     ) {}

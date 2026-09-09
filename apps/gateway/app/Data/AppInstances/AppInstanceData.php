@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Data\AppInstances;
 
+use App\Data\Routes\RouteData;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
+use App\Models\Route;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** @mago-expect lint:excessive-parameter-list */
+/** @mago-expect lint:excessive-parameter-list The response includes its sole serving Route. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class AppInstanceData extends Data
 {
@@ -19,18 +22,32 @@ final class AppInstanceData extends Data
         public int $nodeId,
         public string $name,
         public string $environment,
-        public string $sourceKind,
+        public string $sourceLayout,
         public string $checkoutPath,
         public ?string $root,
         public ?string $effectiveRoot,
         public ?string $selectedBranch,
+        public ?string $branchOverride,
+        public bool $migrationRequired,
         public ?string $startingCommit,
         public string $status,
+        public ?RouteData $route,
+        public ?string $hostname,
+        public ?string $url,
+        public ?AppInstanceRemovalData $removal,
     ) {}
 
     public static function fromModel(AppInstance $appInstance): self
     {
-        $appInstance->loadMissing('app');
+        $appInstance->loadMissing(['app', 'routes.targets']);
+        $route = $appInstance->routes->first();
+        $removal = AppInstanceRemoval::query()
+            ->with('members')
+            ->whereHas('members', static fn ($query) => $query
+                ->where('app_instance_id', $appInstance->id)
+                ->whereNull('row_deleted_at'))
+            ->latest('created_at')
+            ->first();
 
         return new self(
             id: $appInstance->id,
@@ -38,13 +55,21 @@ final class AppInstanceData extends Data
             nodeId: $appInstance->node_id,
             name: $appInstance->name,
             environment: $appInstance->environment,
-            sourceKind: $appInstance->source_kind,
+            sourceLayout: $appInstance->source_layout,
             checkoutPath: $appInstance->checkout_path,
             root: $appInstance->root,
             effectiveRoot: $appInstance->effectiveRoot(),
             selectedBranch: $appInstance->branch,
+            branchOverride: $appInstance->branch_override,
+            migrationRequired: $appInstance->migration_required,
             startingCommit: $appInstance->starting_commit,
             status: $appInstance->status->value,
+            route: $route instanceof Route ? RouteData::fromModel($route) : null,
+            hostname: $route?->hostname,
+            url: $route instanceof Route ? "https://{$route->hostname}" : null,
+            removal: $removal instanceof AppInstanceRemoval
+                ? AppInstanceRemovalData::fromModel($removal)
+                : null,
         );
     }
 }

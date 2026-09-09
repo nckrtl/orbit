@@ -83,7 +83,7 @@ it('regenerates strict guidance while preserving project-owned sections', functi
             'The tool identity is node, manager, and package.',
             'Tool install input is limited to node_id, manager, package, and version_constraint.',
             'Do not expose manager argv, scripts, repositories, environment variables, or options.',
-            'The closed tool manager registry contains apt, vp, and composer.',
+            'The closed tool manager registry contains apt, vp, composer, and brew.',
             'Use Vite+ global packages instead of exposing npm as a manager.',
             'Never persist or return raw manager stdout or stderr.',
             'APT removal must remove only the exact recorded package.',

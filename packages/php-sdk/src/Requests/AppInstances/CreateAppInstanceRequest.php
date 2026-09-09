@@ -18,12 +18,14 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @mago-expect lint:excessive-parameter-list The request transports the complete bounded AppInstance creation contract. */
     public function __construct(
         private readonly int $appId,
         private readonly int $nodeId,
         private readonly string $name,
         private readonly ?string $root = null,
         private readonly ?string $hostname = null,
+        private readonly ?string $branch = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -54,6 +56,10 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
 
         if ($this->hostname !== null) {
             $body['hostname'] = $this->hostname;
+        }
+
+        if ($this->branch !== null) {
+            $body['branch'] = $this->branch;
         }
 
         return $body;

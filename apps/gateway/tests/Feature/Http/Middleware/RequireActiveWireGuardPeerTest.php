@@ -333,7 +333,7 @@ it('allows Gateway-scoped app creation from an active Gateway peer', function ()
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
         ]);
 

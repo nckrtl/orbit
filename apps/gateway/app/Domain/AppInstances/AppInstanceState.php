@@ -10,4 +10,5 @@ enum AppInstanceState: string
     case CheckoutPrepared = 'checkout_prepared';
     case SourceResolved = 'source_resolved';
     case Active = 'active';
+    case Removing = 'removing';
 }

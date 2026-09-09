@@ -56,16 +56,17 @@ it('runs one fixed remote operating-system preflight through WireGuard as orbit'
             '-seu',
             '--',
             'gateway',
-            '1',
+            'ubuntu',
             UbuntuRelease::unsupportedText(),
+            '1',
             'resolute',
         ])
         ->and($calls[0]['input'])
         ->toContain(
-            'if ! [ -r /etc/os-release ]; then',
-            'release_count=$1',
-            'unsupported_text=$1',
-            'supported_release=false',
+            'if [ ! -r /etc/os-release ]; then',
+            'expected_id=$1',
+            'unsupported_text=$2',
+            "selected_codename=''",
         );
 });
 

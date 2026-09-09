@@ -8,10 +8,15 @@ use Illuminate\Support\Facades\Schema;
 
 describe('cluster and node network migration', function (): void {
     it('preserves legacy node state and copies every WireGuard address to the canonical column', function (): void {
+        $obsoleteMigration = require
+            base_path('database/migrations/2026_09_07_091259_remove_obsolete_wireguard_address_from_nodes_table.php');
         $migration = require
             base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
         $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
+        $productionRoutesMigration = orb183_production_route_migration();
 
+        $productionRoutesMigration->down();
+        $obsoleteMigration->down();
         $ingressMigration->down();
         $migration->down();
 
@@ -27,6 +32,8 @@ describe('cluster and node network migration', function (): void {
 
         $migration->up();
         $ingressMigration->up();
+        $obsoleteMigration->up();
+        $productionRoutesMigration->up();
 
         $node = DB::table('nodes')->where('name', 'legacy-node')->first();
 
@@ -37,14 +44,12 @@ describe('cluster and node network migration', function (): void {
             ->and(Schema::hasColumn('nodes', 'wireguard_ip'))
             ->toBeTrue()
             ->and(Schema::hasColumn('nodes', 'wireguard_address'))
-            ->toBeTrue()
+            ->toBeFalse()
             ->and(Schema::hasColumn('nodes', 'lan_ip'))
             ->toBeTrue()
             ->and($node->cluster_id)
             ->toBeNull()
             ->and($node->wireguard_ip)
-            ->toBe('10.44.0.10')
-            ->and($node->wireguard_address)
             ->toBe('10.44.0.10')
             ->and(json_decode($node->settings, true, flags: JSON_THROW_ON_ERROR))
             ->toBe([
@@ -54,10 +59,15 @@ describe('cluster and node network migration', function (): void {
     });
 
     it('owns its rollback and leaves the preceding Cluster migration reversible', function (): void {
+        $obsoleteMigration = require
+            base_path('database/migrations/2026_09_07_091259_remove_obsolete_wireguard_address_from_nodes_table.php');
         $migration = require
             base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
         $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
+        $productionRoutesMigration = orb183_production_route_migration();
 
+        $productionRoutesMigration->down();
+        $obsoleteMigration->down();
         $ingressMigration->down();
 
         expect(
@@ -92,6 +102,8 @@ describe('cluster and node network migration', function (): void {
 
         $migration->up();
         $ingressMigration->up();
+        $obsoleteMigration->up();
+        $productionRoutesMigration->up();
     });
 
     it('enforces Cluster-scoped LAN and Router ownership constraints', function (): void {

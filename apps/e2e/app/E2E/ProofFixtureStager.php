@@ -9,7 +9,6 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofFixtures;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 use Throwable;
@@ -88,7 +87,7 @@ final readonly class ProofFixtureStager
         );
         $digest = ProofFixtures::digestOf($files);
         $instances = [];
-        foreach (TopologyProfile::ROLES as $role) {
+        foreach ($target->recipe->nodeKeys() as $role) {
             $instances[$role] = $target->instance($role);
         }
         $temporaryDirectory = $this->temporaryDirectory();

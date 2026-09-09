@@ -67,7 +67,7 @@ final readonly class RouteStateResolver
         }
     }
 
-    public function generatedHostname(string $appSlug, string $mainBranch, string $instanceName, ?string $tld): string
+    public function generatedHostname(string $appSlug, string $instanceName, ?string $tld): string
     {
         if ($tld === null) {
             throw new ResourceOperationException(
@@ -77,7 +77,7 @@ final readonly class RouteStateResolver
             );
         }
 
-        $prefix = $instanceName === $mainBranch ? $appSlug : "{$instanceName}.{$appSlug}";
+        $prefix = $instanceName === 'default' ? $appSlug : "{$instanceName}.{$appSlug}";
 
         return RouteHostname::validate("{$prefix}.{$tld}");
     }

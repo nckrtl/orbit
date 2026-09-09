@@ -13,8 +13,14 @@ final readonly class AppDevSite
         public string $scope,
         public string $checkoutPath,
         public string $documentRoot,
-        public string $phpVersion,
+        public ?string $phpVersion,
         public string $hostname,
+        public ?string $upstreamAddress = null,
+        /** @var list<string> */
+        public array $upstreamAddresses = [],
+        public bool $unavailable = false,
+        public string $environment = 'development',
+        public ?string $appSlug = null,
     ) {}
 
     public function poolName(): string
@@ -30,5 +36,34 @@ final readonly class AppDevSite
     public function certificateDirectory(): string
     {
         return "/etc/caddy/orbit-certificates/{$this->scope}/current";
+    }
+
+    public function isProxy(): bool
+    {
+        return $this->upstreamAddress !== null || $this->upstreamAddresses !== [];
+    }
+
+    /** @return list<string> */
+    public function proxyAddresses(): array
+    {
+        if ($this->upstreamAddresses !== []) {
+            return $this->upstreamAddresses;
+        }
+
+        return $this->upstreamAddress === null ? [] : [$this->upstreamAddress];
+    }
+
+    public function executionUser(string $developmentUser): string
+    {
+        return $this->environment === 'production' && is_string($this->appSlug)
+            ? "orbit-{$this->appSlug}"
+            : $developmentUser;
+    }
+
+    public function executionHome(string $developmentHome): string
+    {
+        return $this->environment === 'production' && is_string($this->appSlug)
+            ? "/var/www/{$this->appSlug}"
+            : $developmentHome;
     }
 }

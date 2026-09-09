@@ -34,7 +34,8 @@ it('renders the complete manager table and exact request id', function (): void 
         ListToolManagersRequest::class => MockResponse::make([
             'data' => [
                 manager_data(['id' => 1, 'name' => 'apt', 'installed_version' => '2.8.1']),
-                manager_data(['id' => 2, 'name' => 'composer']),
+                manager_data(['id' => null, 'name' => 'brew', 'status' => 'uninstalled']),
+                manager_data(['id' => null, 'name' => 'composer', 'status' => 'uninstalled']),
                 manager_data(['id' => 3, 'name' => 'vp', 'installed_version' => '1.4.0']),
                 manager_data([
                     'id' => 4,
@@ -50,10 +51,11 @@ it('renders the complete manager table and exact request id', function (): void 
     $this
         ->artisan('tool:manager:list', ['--node' => 12])
         ->expectsTable(['ID', 'Manager', 'Status', 'Version', 'Failed step', 'Error'], [
-            [1, 'apt',      'active', '2.8.1', '-',       '-'],
-            [2, 'composer', 'active', '-',     '-',       '-'],
-            [3, 'vp',       'active', '1.4.0', '-',       '-'],
-            [4, 'legacy',   'failed', '-',     'install', 'manager.failed'],
+            [1,   'apt',      'active',      '2.8.1', '-',       '-'],
+            ['-', 'brew',     'uninstalled', '-',     '-',       '-'],
+            ['-', 'composer', 'uninstalled', '-',     '-',       '-'],
+            [3,   'vp',       'active',      '1.4.0', '-',       '-'],
+            [4,   'legacy',   'failed',      '-',     'install', 'manager.failed'],
         ])
         ->expectsOutput("Request ID: {$id}")
         ->assertSuccessful();

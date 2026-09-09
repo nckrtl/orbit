@@ -153,7 +153,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(0);
     });
 
-    it('includes sorted manager retirement summaries in the last app role no-force preview', function (): void {
+    it('omits retained managers from the last app role preview', function (): void {
         [$node] = removal_role_fixture();
         $node->toolManagers()->create([
             'name' => ToolManagerName::Vp,
@@ -171,18 +171,12 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         expect(fn () => $action->execute($node, RoleName::AppDev, force: false))
             ->toThrow(function (NodeRoleValidationException $exception): void {
-                expect($exception->details['dependents'])->toBe([
-                    'Composer Tool manager will become unavailable',
-                    'VP Tool manager will become unavailable',
-                ]);
+                expect($exception->details['dependents'])->toBeEmpty();
             });
 
         $removed = $action->execute($node, RoleName::AppDev, force: true);
 
-        expect($removed->dependencies->summaries)->toBe([
-            'Composer Tool manager will become unavailable',
-            'VP Tool manager will become unavailable',
-        ]);
+        expect($removed->dependencies->summaries)->toBeEmpty();
     });
 
     it('omits manager retirement summaries while another supported app role remains', function (): void {
@@ -207,7 +201,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             });
     });
 
-    it('rejects removal of the last active app role with a sorted bounded Tool intent preview', function (): void {
+    it('allows removal of the last active app role while retaining Tool intent', function (): void {
         [$node, $assignment] = removal_role_fixture();
         $composer = $node->toolManagers()->create([
             'name' => ToolManagerName::Composer,
@@ -242,49 +236,20 @@ describe(RemoveNodeRoleAction::class, function (): void {
             new NodeSideResidue,
         );
 
-        expect($guard->preview($node, RoleName::AppDev))->toBe([
-            'composer:package-01',
-            'composer:package-03',
-            'composer:package-05',
-            'composer:package-07',
-            'composer:package-09',
-            'composer:package-11',
-            'vp:package-02',
-            'vp:package-04',
-            'vp:package-06',
-            'vp:package-08',
-        ]);
+        expect($guard->preview($node, RoleName::AppDev))->toBeEmpty();
 
-        expect(fn () => $action->execute($node, RoleName::AppDev, force: true))
-            ->toThrow(function (NodeRoleValidationException $exception): void {
-                expect($exception->getMessage())
-                    ->toBe('Remove app-scoped Tools before removing the last active app role.')
-                    ->and($exception->details)
-                    ->toBe([
-                        'field' => 'role',
-                        'reason' => 'tool_removal_required',
-                        'role' => 'app-dev',
-                        'tools' => [
-                            'composer:package-01',
-                            'composer:package-03',
-                            'composer:package-05',
-                            'composer:package-07',
-                            'composer:package-09',
-                            'composer:package-11',
-                            'vp:package-02',
-                            'vp:package-04',
-                            'vp:package-06',
-                            'vp:package-08',
-                        ],
-                    ]);
-            });
+        $action->execute($node, RoleName::AppDev, force: true);
 
-        expect($assignment->refresh()->status)
-            ->toBe(LifecycleStatus::Active)
+        expect(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
+            ->and($node->tools()->count())
+            ->toBe(12)
+            ->and($node->toolManagers()->count())
+            ->toBe(2)
             ->and($cleaner->calls)
-            ->toBe(0)
+            ->toBe(1)
             ->and($baseline->calls)
-            ->toBe(0);
+            ->toBe(1);
     });
 
     it('allows removal of the last active app role when app-scoped Tool intent is protected', function (): void {
@@ -319,7 +284,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(ToolStatus::Installed);
     });
 
-    it('allows removal with APT Tool intent and blocks failed VP Tool intent', function (): void {
+    it('allows removal with APT and failed VP Tool intent', function (): void {
         [$aptNode, $aptAssignment] = removal_role_fixture();
         removal_tool(node: $aptNode, managerName: ToolManagerName::Apt, package: 'jq', toolStatus: ToolStatus::Failed);
 
@@ -339,14 +304,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
             toolStatus: ToolStatus::Failed,
         );
 
-        expect(fn () => removal_action(
+        removal_action(
             new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
             new RemovalCleanerFake,
             new RemovalBaselineFake,
-        )->execute($vpNode, RoleName::AppDev, force: true))
-            ->toThrow(NodeRoleValidationException::class);
+        )->execute($vpNode, RoleName::AppDev, force: true);
 
-        expect($vpAssignment->refresh()->status)->toBe(LifecycleStatus::Active);
+        expect(NodeRole::query()->whereKey($vpAssignment->id)->exists())->toBeFalse();
     });
 
     it('allows app role removal while another active app role remains', function (): void {
@@ -445,7 +409,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
         expect(removal_dependency_rows_exist($dependencies))->toBeFalse();
     });
 
-    it('retires unsupported app managers while preserving every Tool and installed version', function (): void {
+    it('retains active managers and every Tool after final app role removal', function (): void {
         [$node, $assignment] = removal_role_fixture();
         [$aptManager, $aptTool] = removal_tool(
             node: $node,
@@ -483,15 +447,15 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and($aptManager->refresh()->status)
             ->toBe(LifecycleStatus::Active)
             ->and($vpManager->refresh()->status)
-            ->toBe(LifecycleStatus::Failed)
+            ->toBe(LifecycleStatus::Active)
             ->and($vpManager->failed_step)
-            ->toBe('app-role')
+            ->toBeNull()
             ->and($vpManager->error_code)
-            ->toBe('tool_manager.app_role_required')
+            ->toBeNull()
             ->and($vpManager->installed_version)
             ->toBe('1.2.3')
             ->and($composerManager->refresh()->status)
-            ->toBe(LifecycleStatus::Failed)
+            ->toBe(LifecycleStatus::Active)
             ->and($composerManager->installed_version)
             ->toBe('2.8.1')
             ->and($aptTool->refresh()->installed_version)
@@ -502,7 +466,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe('2.4.1');
     });
 
-    it('retires app managers when another app role is not supported', function (LifecycleStatus $status): void {
+    it('retains managers when another app role is failed or removing', function (LifecycleStatus $status): void {
         [$node] = removal_role_fixture();
         $node->roles()->create([
             'role' => RoleName::AppProd,
@@ -522,9 +486,9 @@ describe(RemoveNodeRoleAction::class, function (): void {
         )->execute($node, RoleName::AppDev, force: true);
 
         expect($manager->refresh()->status)
-            ->toBe(LifecycleStatus::Failed)
+            ->toBe(LifecycleStatus::Active)
             ->and($manager->failed_step)
-            ->toBe('app-role');
+            ->toBeNull();
     })->with([
         'failed assignment' => LifecycleStatus::Failed,
         'removing assignment' => LifecycleStatus::Removing,
@@ -644,10 +608,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and($removed->retained)
             ->toBe([])
             ->and($removed->dependencies->summaries)
-            ->toBe([
-                ...$dependencies->summaries,
-                'VP Tool manager will become unavailable',
-            ])
+            ->toBe($dependencies->summaries)
             ->and(NodeRole::query()->whereKey($assignment->id)->exists())
             ->toBeFalse()
             ->and(removal_dependency_rows_exist($dependencies))

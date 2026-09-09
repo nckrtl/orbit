@@ -32,6 +32,7 @@ final readonly class ProofEquivalenceEvaluator
         private ProofInputManifestBuilder $manifests,
         private StatePaths $hostPaths,
         private OperationId $operation,
+        private IncusHost $host,
         private string $repositoryRoot,
     ) {}
 
@@ -109,6 +110,16 @@ final readonly class ProofEquivalenceEvaluator
                 if ($manifest->fingerprint() !== $manifestSha256 || $manifest->provedSha !== $provedSha) {
                     $errors[] = 'The proof-input manifest does not match the retained proof.';
                 }
+                if ($manifest->construction->toArray() !== $topology->construction->toArray()) {
+                    $errors[] = 'The retained topology construction inputs differ from the proof-input manifest.';
+                }
+                if (
+                    $manifest->construction->imageAlias !== null
+                    && $this->host->imageFingerprint($manifest->construction->imageAlias)
+                        !== $manifest->construction->imageFingerprint
+                ) {
+                    $errors[] = 'The issue topology base-image fingerprint changed after proof.';
+                }
             } catch (Throwable $exception) {
                 $errors[] = $exception->getMessage();
             }
@@ -122,6 +133,7 @@ final readonly class ProofEquivalenceEvaluator
                     $request->issue,
                     $planPath,
                     $plan,
+                    $manifest->construction,
                     $manifest->observedInputs,
                 );
                 if ($expected->toArray() !== $manifest->toArray()) {
@@ -177,35 +189,6 @@ final readonly class ProofEquivalenceEvaluator
             $manifestSha256,
             $result,
             $changedPaths,
-            $result === ProofEquivalenceResult::Equivalent
-            && array_any(
-                $changedPaths,
-                static fn (array $change): bool => (
-                    $change['classification'] === ProofInputClassification::UnrelatedRuntime->value
-                ),
-            )
-                ? 'candidate-convergence'
-                : (
-                    in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
-                        ? 'retained-proof'
-                        : null
-                ),
-            match (true) {
-                $result === ProofEquivalenceResult::Equivalent
-                    && array_any(
-                        $changedPaths,
-                        static fn (array $change): bool => (
-                            $change['classification'] === ProofInputClassification::UnrelatedRuntime->value
-                        ),
-                    )
-                    => 'run-candidate-convergence',
-                in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
-                    => 'review-exact-head',
-                $result === ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
-                $result === ProofEquivalenceResult::Indeterminate
-                    => 'resolve-equivalence-failure-and-run-complete-reproof',
-                default => throw new \LogicException('The proof equivalence result is unsupported.'),
-            },
             $errors,
             gmdate('Y-m-d\TH:i:s\Z'),
         );

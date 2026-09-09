@@ -42,7 +42,7 @@ function install_payload(string $outcome = 'applied'): array
     ];
 }
 
-it('prompts with active sorted managers and renders applied output', function (): void {
+it('prompts with active and uninstalled sorted managers and renders applied output', function (): void {
     $id = '11111111-1111-4111-8111-111111111111';
     $mock = MockClient::global([
         ListToolManagersRequest::class => MockResponse::make([
@@ -66,10 +66,19 @@ it('prompts with active sorted managers and renders applied output', function ()
                     'error_code' => null,
                 ],
                 [
-                    'id' => 3,
+                    'id' => null,
                     'node_id' => 12,
                     'name' => 'composer',
-                    'status' => 'active',
+                    'status' => 'uninstalled',
+                    'installed_version' => null,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                [
+                    'id' => null,
+                    'node_id' => 12,
+                    'name' => 'brew',
+                    'status' => 'uninstalled',
                     'installed_version' => null,
                     'failed_step' => null,
                     'error_code' => null,
@@ -90,7 +99,7 @@ it('prompts with active sorted managers and renders applied output', function ()
     ]);
     $this
         ->artisan('tool:install', ['--node' => 12])
-        ->expectsChoice('Tool manager', 'vp', ['apt', 'composer', 'vp'])
+        ->expectsChoice('Tool manager', 'vp', ['apt', 'brew', 'composer', 'vp'])
         ->expectsQuestion('Package', '@openai/codex')
         ->expectsOutput('Tool [@openai/codex] installed with [vp].')
         ->expectsOutput("Request ID: {$id}")
@@ -260,7 +269,7 @@ it('renders manager lookup failures safely and does not install', function (): v
     $mock->assertSentCount(1, ListToolManagersRequest::class);
 });
 
-it('returns manager required when no active manager rows exist', function (): void {
+it('returns manager required when no supported manager states exist', function (): void {
     $mock = MockClient::global([
         ListToolManagersRequest::class => MockResponse::make([
             'data' => [],
@@ -269,7 +278,7 @@ it('returns manager required when no active manager rows exist', function (): vo
     ]);
     $this
         ->artisan('tool:install', ['--node' => 12])
-        ->expectsOutput('No active tool manager is available.')
+        ->expectsOutput('No supported tool manager is available.')
         ->assertExitCode(1);
     $mock->assertSentCount(1, ListToolManagersRequest::class);
 });

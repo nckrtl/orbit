@@ -7,6 +7,7 @@ namespace App\E2E;
 use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\CandidateConvergenceResult;
 use App\E2E\Value\FeatureTopology;
@@ -69,7 +70,7 @@ final readonly class TopologySnapshotPromoter
         private TopologySnapshotPromotionStore $promotions,
     ) {}
 
-    /** @return array{state:string,promotion_path:string,issue:string,attempt_id:string,generation_id:string,main_sha:string,proved_sha:string,accepted_sha:string,merged_sha:string,runtime_fingerprint:string,manifest_sha256:string,equivalence_sha256:?string,previous_generation_id:?string,released:list<string>,networks_reaped:list<string>} */
+    /** @return array{state:string,promotion_path:string,issue:string,attempt_id:string,generation_id:string,main_sha:string,proved_sha:string,accepted_sha:string,merged_sha:string,runtime_fingerprint:string,manifest_sha256:string,equivalence_sha256:?string,previous_generation_id:?string,cleanup_attempts:list<array{purpose:string,attempt_id:string,state:string}>,released:list<string>,networks_reaped:list<string>} */
     public function promote(TopologyRequest $request, ProofPlan $plan): array
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
@@ -106,6 +107,7 @@ final readonly class TopologySnapshotPromoter
         if (! $this->lock->acquire('standby-refresh', $this->operation, timeoutSeconds: 3600)) {
             throw new RuntimeException('Unable to acquire the topology snapshot refresh lock.');
         }
+        $cleanupAttempts = [];
         try {
             $this->withLock($this->generationLock, 'standby-generation', function () use (
                 $request,
@@ -115,6 +117,7 @@ final readonly class TopologySnapshotPromoter
                 $generation,
                 $candidate,
                 $manifest,
+                &$cleanupAttempts,
             ): void {
                 $issueLock = new OperationLock($this->hostPaths);
                 if (! $issueLock->acquire('topology-'.$request->issue, $this->operation)) {
@@ -126,7 +129,11 @@ final readonly class TopologySnapshotPromoter
                             'The promoted topology snapshot generation changed before promotion.',
                         );
                     }
-                    $state->requireTopology($promotionTopology->purpose);
+                    $current = $state->requireTopology($promotionTopology->purpose);
+                    if ($current->attempt->value !== $promotionTopology->attempt->value) {
+                        throw new RuntimeException('The promotion topology attempt changed before promotion.');
+                    }
+                    $cleanupAttempts = $this->captureCleanupAttempts($state, $promotionTopology);
                     $this->replaceTopologySnapshot($promotionTopology, $generation);
                 } finally {
                     $issueLock->release();
@@ -151,23 +158,13 @@ final readonly class TopologySnapshotPromoter
             $this->lock->release();
         }
 
-        $release = $this->releaser->release(
-            $request,
-            $candidate['promotion_path'] === 'candidate-convergence'
-                ? AttemptPurpose::CandidateConvergence
-                : AttemptPurpose::Proof,
-        );
-        $released = $release['released'];
-        $networksReaped = $release['networks_reaped'];
-        if ($state->hasAttempt(AttemptPurpose::Discovery)) {
-            $discovery = $this->releaser->release($request, AttemptPurpose::Discovery);
-            $released = [...$released, ...$discovery['released']];
-            $networksReaped = [...$networksReaped, ...$discovery['networks_reaped']];
-        }
-        if ($state->hasAttempt(AttemptPurpose::Proof)) {
-            $proofRelease = $this->releaser->release($request, AttemptPurpose::Proof);
-            $released = [...$released, ...$proofRelease['released']];
-            $networksReaped = [...$networksReaped, ...$proofRelease['networks_reaped']];
+        try {
+            $cleanup = $this->releaser->releaseExact($request, $cleanupAttempts);
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                "Topology snapshot generation {$generation->id} is installed, but captured attempt cleanup failed: {$exception->getMessage()}",
+                previous: $exception,
+            );
         }
 
         return [
@@ -184,9 +181,30 @@ final readonly class TopologySnapshotPromoter
             'manifest_sha256' => $manifest->fingerprint(),
             'equivalence_sha256' => $candidate['equivalence']?->fingerprint(),
             'previous_generation_id' => $generation->previousGenerationId,
-            'released' => $released,
-            'networks_reaped' => array_values(array_unique($networksReaped)),
+            'cleanup_attempts' => array_map(
+                static fn (array $attempt): array => [
+                    'purpose' => $attempt['purpose'],
+                    'attempt_id' => $attempt['attempt_id'],
+                    'state' => $attempt['state'],
+                ],
+                $cleanup['attempts'],
+            ),
+            'released' => $cleanup['released'],
+            'networks_reaped' => $cleanup['networks_reaped'],
         ];
+    }
+
+    /** @return array<string, AttemptId> */
+    private function captureCleanupAttempts(IssueState $state, FeatureTopology $promotionTopology): array
+    {
+        $attempts = [$promotionTopology->purpose->value => $promotionTopology->attempt];
+        foreach ([AttemptPurpose::Discovery, AttemptPurpose::Proof] as $purpose) {
+            if ($state->hasAttempt($purpose) && ! isset($attempts[$purpose->value])) {
+                $attempts[$purpose->value] = $state->attemptId($purpose);
+            }
+        }
+
+        return $attempts;
     }
 
     /** The proof must be proved and its plan must not mutate the topology. */
@@ -207,6 +225,11 @@ final readonly class TopologySnapshotPromoter
         if ($topology->purpose !== AttemptPurpose::Proof || ! $state->isProved()) {
             throw new RuntimeException(
                 "{$state->issue} attempt {$topology->attempt->value} is not proved; only a proved topology can be promoted.",
+            );
+        }
+        if ($plan->extension !== null || $topology->construction->extension !== null) {
+            throw new RuntimeException(
+                'An extended issue topology cannot become the shared topology snapshot; refresh from merged main.',
             );
         }
         if ($plan->mutates) {
@@ -254,6 +277,7 @@ final readonly class TopologySnapshotPromoter
         }
         if (
             $manifest->policyVersion !== StaticProofInputPolicy::VERSION
+            || $manifest->construction->toArray() !== $state->requireTopology(AttemptPurpose::Proof)->construction->toArray()
             || $plan->observedInputs !== ($manifest->observedInputs !== null)
             || in_array(false, $manifest->completeness, true)
         ) {

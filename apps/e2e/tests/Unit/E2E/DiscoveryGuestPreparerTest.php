@@ -198,6 +198,24 @@ describe('repair.identity', function () {
             ->each->toBe(['systemctl', 'restart', 'php8.5-fpm'])->and($execs)->toBe([]);
     });
 
+    it('repairs only the snapshot clones in an extended topology', function () {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests([], $batches, $execs);
+        $target = featureTarget('TST-123', recipe: \App\E2E\Value\TopologyRecipe::extendedAppProd());
+
+        new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity($target);
+
+        expect(array_column($batches, 'labels'))
+            ->toBe([
+                ['gateway', 'app-dev', 'app-prod'],
+                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
+                ['php-fpm.gateway', 'php-fpm.app-dev'],
+            ])
+            ->and(collect($batches)->flatMap(fn (array $batch): array => $batch['instances'])->all())
+            ->not->toContain('local:'.$target->instance('app-prod-2'));
+    });
+
     it('stops before the PHP-FPM restart when retargeting fails', function () {
         $batches = [];
         $execs = [];

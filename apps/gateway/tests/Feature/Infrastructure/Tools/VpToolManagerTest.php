@@ -32,7 +32,7 @@ describe(VpToolManager::class, function (): void {
         ))->toBeInstanceOf(ToolManager::class);
     });
 
-    it('supports only Linux nodes with active or provisioning app roles and identifies itself as VP', function (
+    it('supports Linux nodes independently of roles and identifies itself as VP', function (
         Node $node,
         bool $supported,
     ): void {
@@ -45,14 +45,14 @@ describe(VpToolManager::class, function (): void {
     })->with([
         'active app-dev' => [vp_tool_node('linux', [['app-dev', 'active']]), true],
         'provisioning app-prod' => [vp_tool_node('linux', [['app-prod', 'provisioning']]), true],
-        'failed app role' => [vp_tool_node('linux', [['app-dev', 'failed']]), false],
-        'removing app role' => [vp_tool_node('linux', [['app-prod', 'removing']]), false],
-        'gateway only' => [vp_tool_node('linux', [['gateway', 'active']]), false],
-        'roleless' => [vp_tool_node('linux', []), false],
+        'failed app role' => [vp_tool_node('linux', [['app-dev', 'failed']]), true],
+        'removing app role' => [vp_tool_node('linux', [['app-prod', 'removing']]), true],
+        'gateway only' => [vp_tool_node('linux', [['gateway', 'active']]), true],
+        'roleless' => [vp_tool_node('linux', []), true],
         'non-linux app role' => [vp_tool_node('darwin', [['app-dev', 'active']]), false],
     ]);
 
-    it('loads roles before rejecting a persisted non-linux node', function (): void {
+    it('does not load roles when checking the platform boundary', function (): void {
         [$manager] = vp_tool_manager([]);
         $node = Node::query()->create([
             'name' => 'vp-macos-node',
@@ -70,7 +70,7 @@ describe(VpToolManager::class, function (): void {
 
         expect($node->relationLoaded('roles'))->toBeFalse();
         expect($manager->supportsNode($node))->toBeFalse();
-        expect($node->relationLoaded('roles'))->toBeTrue();
+        expect($node->relationLoaded('roles'))->toBeFalse();
     });
 
     it('accepts only strict VP package coordinates', function (string $package, bool $valid): void {
@@ -99,9 +99,22 @@ describe(VpToolManager::class, function (): void {
         'oversized' => [str_repeat('a', times: 215), false],
     ]);
 
+    it('materializes the protected VP scope with fixed bootstrap input', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+
+        $manager->materialize(vp_tool_node('linux', []));
+
+        expect($ssh->arguments())
+            ->toBe([['sudo', 'bash', '-seu', '--', 'orbit']])
+            ->and($ssh->commands[0]->input)
+            ->toContain('curl -fsSL https://vite.plus | bash')
+            ->and($ssh->commands[0]->input)
+            ->toContain('/usr/local/bin/vp --version');
+    });
+
     it('rejects an unsupported node before any SSH I/O', function (Closure $operation): void {
         [$manager, $ssh] = vp_tool_manager([]);
-        $node = vp_tool_node('linux', [['gateway', 'active']]);
+        $node = vp_tool_node('darwin', [['app-dev', 'active']]);
 
         expect(fn () => $operation($manager, $node))
             ->toThrow(function (ToolManagerException $exception): void {
