@@ -17,6 +17,8 @@ it('parses dotenv syntax and expands only preceding file-local values', function
         ESCAPED="quote: \""
         MULTILINE="first
         second"
+        UNICODE=é
+        UNICODE_EXPANDED="é${UNICODE}"
 
         DOTENV;
 
@@ -29,6 +31,8 @@ it('parses dotenv syntax and expands only preceding file-local values', function
         'SINGLE' => 'literal ${BASE}',
         'ESCAPED' => 'quote: "',
         'MULTILINE' => "first\nsecond",
+        'UNICODE' => 'é',
+        'UNICODE_EXPANDED' => 'éé',
     ]);
 });
 

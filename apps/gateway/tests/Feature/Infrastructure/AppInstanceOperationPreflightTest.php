@@ -52,7 +52,25 @@ it('refuses failed truncated and malformed remote observations', function (Comma
     'failed command' => new CommandResult(42, 'arbitrary remote value', 'raw remote failure', 1, false),
     'truncated command' => new CommandResult(0, "OK\n", '', 1, true),
     'unexpected success output' => new CommandResult(0, "MAYBE\n", '', 1, false),
+    'unexpected success diagnostics' => new CommandResult(0, "OK\n", 'arbitrary remote diagnostic', 1, false),
 ]);
+
+it('refuses nonempty diagnostics while reading an otherwise valid remote value', function (): void {
+    $diagnostic = 'arbitrary remote read diagnostic';
+    $access = environment_remote_access(new EnvironmentObservationSshExecutor([
+        new CommandResult(0, base64_encode('arbitrary remote value'), $diagnostic, 1, false),
+    ]));
+
+    try {
+        $access->read(environment_access_context('/srv/apps/example'));
+        $this->fail('The observation unexpectedly passed.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)
+            ->toBe('env.import_preflight_failed')
+            ->and($exception->getMessage())
+            ->not->toContain($diagnostic, 'arbitrary remote value');
+    }
+});
 
 it('reads a maximum-size file through the explicit native output bound', function (): void {
     $directory = environment_access_directory();

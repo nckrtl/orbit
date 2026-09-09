@@ -39,7 +39,7 @@ final readonly class AppInstanceEnvironmentImporter
                 }
 
                 foreach ($value->get()->getVars() as $position) {
-                    $tail = substr($value->get()->getChars(), $position);
+                    $tail = mb_substr($value->get()->getChars(), $position, null, 'UTF-8');
 
                     if (preg_match('/\A\${([A-Za-z0-9_.]+)}/', $tail, $match) !== 1) {
                         $this->fail();

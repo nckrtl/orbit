@@ -81,7 +81,12 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements
     {
         $result = $this->execute($context, 'check', maximumOutputBytes: 64);
 
-        if (! $result->succeeded() || $result->truncated || $result->stdout !== "OK\n") {
+        if (
+            ! $result->succeeded()
+            || $result->truncated
+            || $result->stdout !== "OK\n"
+            || $result->stderr !== ''
+        ) {
             $this->fail();
         }
     }
@@ -90,7 +95,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements
     {
         $result = $this->execute($context, 'read', maximumOutputBytes: 1_398_104);
 
-        if (! $result->succeeded() || $result->truncated) {
+        if (! $result->succeeded() || $result->truncated || $result->stderr !== '') {
             $this->fail();
         }
 

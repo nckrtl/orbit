@@ -87,4 +87,5 @@ Verification: `composer docs-build` and `composer docs-lint` after the reference
 
 ## Review findings
 
-- none.
+- Resolved: dotenv expansion validation now uses UTF-8 character offsets and covers a multibyte prefix before a file-local expansion.
+- Resolved: remote check and read observations now reject nonempty stderr and cover bounded diagnostic redaction.
