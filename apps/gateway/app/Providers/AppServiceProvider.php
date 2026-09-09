@@ -74,6 +74,7 @@ use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -210,6 +211,7 @@ final class AppServiceProvider extends ServiceProvider
         ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,
         ProductionAppInstanceSourceLifecycle::class => RemoteProductionAppInstanceSourceLifecycle::class,
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
+        RouteHostnameProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,

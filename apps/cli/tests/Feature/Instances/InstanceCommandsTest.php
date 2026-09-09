@@ -506,6 +506,10 @@ function instance_route_payload(): array
         'status' => 'active',
         'failed_step' => null,
         'error_code' => null,
+        'hostname_change_previous' => null,
+        'hostname_change_target' => null,
+        'hostname_change_direction' => null,
+        'hostname_change_step' => null,
         'target' => ['id' => 9, 'app_instance_id' => 5, 'position' => 0],
     ];
 }

@@ -6,10 +6,15 @@ use App\Actions\Clusters\AttachClusterNodeAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Clusters\UpdateClusterData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteHostnameChangeStep;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
@@ -21,6 +26,7 @@ use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Workspace;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -381,6 +387,198 @@ it('rejects malformed input, caller-owned fields, arrays, and conflicting retrie
     expect(Route::query()->where('hostname', 'retry.test')->sole()->toArray())->toBe($before);
 });
 
+it('refuses invalid or occupied active explicit hostnames before Route or projection state changes', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'occupied.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'bad_name'])
+        ->assertUnprocessable();
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'occupied.example.test'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.hostname_conflict');
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+});
+
+it('updates an active explicit private development hostname through convergence', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector->shouldReceive('prepareWorkloadCertificate')->once();
+    $projector->shouldReceive('prepareWorkloadCaddy')->once();
+    $projector->shouldReceive('prepareRouterCertificate')->once();
+    $projector->shouldReceive('prepareFirewallPolicy')->once();
+    $projector->shouldReceive('verifyWorkload')->once();
+    $projector->shouldReceive('prepareRouterCaddy')->once();
+    $projector->shouldReceive('publishDns')->once();
+    $projector->shouldReceive('cleanup')->once();
+    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertOk()
+        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.failed_step', null)
+        ->assertJsonPath('data.hostname_change_target', null);
+
+    expect($this->target->refresh()->status)->toBe(AppInstanceState::Active);
+});
+
+it('keeps database cutover failures bounded through the Route update API', function (): void {
+    $route = route_api_active_development_route($this->orbitApp, $this->target);
+    app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(rollback: true));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    DB::unprepared(<<<'SQL'
+        CREATE TRIGGER route_api_hostname_change_cutover_failure
+        BEFORE UPDATE OF hostname ON routes
+        WHEN NEW.hostname = 'next.example.test'
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected database cutover failure.');
+        END
+        SQL);
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertInternalServerError()
+        ->assertJsonPath('error.code', 'gateway.unhandled');
+
+    expect($route
+        ->refresh()
+        ->only([
+            'hostname',
+            'hostname_change_previous',
+            'hostname_change_target',
+            'hostname_change_direction',
+            'hostname_change_step',
+            'failed_step',
+            'error_code',
+        ]))->toBe([
+        'hostname' => 'active.example.test',
+        'hostname_change_previous' => 'active.example.test',
+        'hostname_change_target' => 'next.example.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
+        'hostname_change_step' => RouteHostnameChangeStep::RolledBack,
+        'failed_step' => 'database-cutover',
+        'error_code' => 'route.hostname_change_failed',
+    ]);
+});
+
+it('keeps final cleanup failures bounded through the Route update API', function (): void {
+    $route = route_api_active_development_route($this->orbitApp, $this->target);
+    app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(cleanup: true));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    DB::unprepared(<<<'SQL'
+        CREATE TRIGGER route_api_hostname_change_cleanup_failure
+        BEFORE UPDATE OF hostname_change_target ON routes
+        WHEN OLD.hostname_change_step = 'database-cutover' AND NEW.hostname_change_target IS NULL
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected cleanup persistence failure.');
+        END
+        SQL);
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertInternalServerError()
+        ->assertJsonPath('error.code', 'gateway.unhandled');
+
+    expect($route
+        ->refresh()
+        ->only([
+            'hostname',
+            'hostname_change_previous',
+            'hostname_change_target',
+            'hostname_change_direction',
+            'hostname_change_step',
+            'failed_step',
+            'error_code',
+        ]))->toBe([
+        'hostname' => 'next.example.test',
+        'hostname_change_previous' => 'active.example.test',
+        'hostname_change_target' => 'next.example.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
+        'failed_step' => 'cleanup',
+        'error_code' => 'route.hostname_change_failed',
+    ]);
+});
+
+it('keeps production hostname changes behind the active reconciliation refusal', function (): void {
+    $this->target->update([
+        'environment' => 'production',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+    ]);
+    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'production.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+});
+
 function route_node(string $name, string $wireguardIp, ?string $tld): Node
 {
     return Node::query()->create([
@@ -427,6 +625,62 @@ function route_api_target_rows(): array
         ->get()
         ->map(static fn (RouteTarget $target): array => $target->getAttributes())
         ->all();
+}
+
+function route_api_active_development_route(OrbitApp $app, AppInstance $target): Route
+{
+    $target->update([
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+    ]);
+    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+        appId: $app->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+
+    return $route->refresh();
+}
+
+function route_api_hostname_projector(bool $rollback = false, bool $cleanup = false): RouteHostnameProjector
+{
+    $projector = Mockery::mock(RouteHostnameProjector::class);
+
+    foreach ([
+        'prepareWorkloadCertificate',
+        'prepareWorkloadCaddy',
+        'prepareRouterCertificate',
+        'prepareFirewallPolicy',
+        'verifyWorkload',
+        'prepareRouterCaddy',
+        'publishDns',
+    ] as $method) {
+        $projector->shouldReceive($method)->once();
+    }
+
+    if ($rollback) {
+        foreach (['rollbackDns', 'rollbackCaddy', 'rollbackCertificates'] as $method) {
+            $projector->shouldReceive($method)->once();
+        }
+    }
+
+    if ($cleanup) {
+        $projector->shouldReceive('cleanup')->once();
+    }
+
+    return $projector;
+}
+
+final readonly class RouteApiProjectionOwner implements DevelopmentProjectionOperationLock
+{
+    public function run(Closure $operation): mixed
+    {
+        return $operation();
+    }
 }
 
 /** @return array{Cluster, Node} */

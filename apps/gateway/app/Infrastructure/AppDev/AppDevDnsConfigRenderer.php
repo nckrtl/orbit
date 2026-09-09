@@ -21,6 +21,7 @@ final readonly class AppDevDnsConfigRenderer
         ?Node $pendingNode = null,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
+        ?Route $additionalRoute = null,
     ): string {
         $nodes = Node::query()
             ->where(static function (Builder $q) use ($pendingNode): void {
@@ -47,7 +48,7 @@ final readonly class AppDevDnsConfigRenderer
         $records = $nodes
             ->toBase()
             ->merge($this->sites
-                ->all($pendingRoute, $unavailableInstance)
+                ->all($pendingRoute, $unavailableInstance, $additionalRoute)
                 ->groupBy('hostname')
                 ->map(static function ($sites): string {
                     /** @var AppDevSite $site */

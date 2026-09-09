@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -23,6 +25,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property RouteStatus $status
  * @property string|null $failed_step
  * @property string|null $error_code
+ * @property string|null $hostname_change_previous
+ * @property string|null $hostname_change_target
+ * @property RouteHostnameChangeDirection|null $hostname_change_direction
+ * @property RouteHostnameChangeStep|null $hostname_change_step
  * @property-read App $app
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
@@ -50,6 +56,10 @@ final class Route extends Model
         'status',
         'failed_step',
         'error_code',
+        'hostname_change_previous',
+        'hostname_change_target',
+        'hostname_change_direction',
+        'hostname_change_step',
     ];
 
     /** @return BelongsTo<App, $this> */
@@ -89,6 +99,8 @@ final class Route extends Model
             'provenance' => RouteProvenance::class,
             'publication' => RoutePublication::class,
             'status' => RouteStatus::class,
+            'hostname_change_direction' => RouteHostnameChangeDirection::class,
+            'hostname_change_step' => RouteHostnameChangeStep::class,
         ];
     }
 }
