@@ -10,12 +10,6 @@ use App\Infrastructure\Processes\ProcessRunner;
 
 final readonly class NativeGatewayFpmConverger
 {
-    private const string CANDIDATE_DIRECTORY = '/etc/php/8.5/fpm/orbit-candidate.d';
-
-    private const string CANDIDATE_MAIN = '/etc/php/8.5/fpm/orbit-gateway-candidate.conf';
-
-    private const string CANDIDATE_POOL = '/etc/php/8.5/fpm/orbit-candidate.d/orbit-gateway.conf';
-
     private const string LIVE_POOL = '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf';
 
     public function __construct(
@@ -24,21 +18,26 @@ final readonly class NativeGatewayFpmConverger
 
     public function converge(string $generatedPool): void
     {
+        $version = bin2hex(random_bytes(8));
+        $candidateDirectory = "/etc/php/8.5/fpm/orbit-candidates/{$version}";
+        $candidateMain = $candidateDirectory.'/php-fpm.conf';
+        $candidatePool = $candidateDirectory.'/pool.d/orbit-gateway.conf';
+
         try {
-            $this->stage($generatedPool);
+            $this->stage($generatedPool, $candidateDirectory, $candidateMain, $candidatePool);
             $this->run(
                 step: 'gateway-fpm-validate',
                 errorCode: 'gateway.fpm_config_invalid',
-                arguments: ['sudo', 'php-fpm8.5', '--test', '--fpm-config', self::CANDIDATE_MAIN],
+                arguments: ['sudo', 'php-fpm8.5', '--test', '--fpm-config', $candidateMain],
             );
             $this->run(
                 step: 'gateway-fpm-install',
                 errorCode: 'gateway.fpm_config_install_failed',
-                arguments: ['sudo', 'mv', '-f', '--', self::CANDIDATE_POOL, self::LIVE_POOL],
+                arguments: ['sudo', 'mv', '-f', '--', $candidatePool, self::LIVE_POOL],
             );
-            $this->cleanup();
+            $this->cleanup($candidateDirectory);
         } catch (NodeProvisioningException $exception) {
-            $this->cleanup();
+            $this->cleanup($candidateDirectory);
 
             throw $exception;
         }
@@ -55,19 +54,34 @@ final readonly class NativeGatewayFpmConverger
         );
     }
 
-    private function stage(string $generatedPool): void
-    {
+    private function stage(
+        string $generatedPool,
+        string $candidateDirectory,
+        string $candidateMain,
+        string $candidatePool,
+    ): void {
         $this->run(
             step: 'gateway-fpm-stage',
             errorCode: 'gateway.fpm_config_install_failed',
-            arguments: ['sudo', 'bash', '-seu', '--', $generatedPool],
+            arguments: [
+                'sudo',
+                'bash',
+                '-seu',
+                '--',
+                $generatedPool,
+                $candidateDirectory,
+                $candidateMain,
+                $candidatePool,
+            ],
             input: <<<'BASH'
                 replacement=$1
-                candidate_directory=/etc/php/8.5/fpm/orbit-candidate.d
-                candidate_main=/etc/php/8.5/fpm/orbit-gateway-candidate.conf
+                candidate_directory=$2
+                candidate_main=$3
+                candidate_pool=$4
+                candidates_directory=$(dirname "$candidate_directory")
+                candidate_pool_directory=$(dirname "$candidate_pool")
                 live_main=/etc/php/8.5/fpm/php-fpm.conf
-                rm -rf -- "$candidate_directory"
-                install -d -o root -g root -m 0755 "$candidate_directory"
+                install -d -o root -g root -m 0755 "$candidates_directory" "$candidate_directory" "$candidate_pool_directory"
 
                 for pool in /etc/php/8.5/fpm/pool.d/*.conf; do
                     if [ ! -e "$pool" ]; then
@@ -79,14 +93,14 @@ final readonly class NativeGatewayFpmConverger
                         continue
                     fi
 
-                    cp --preserve=mode,ownership -- "$pool" "$candidate_directory/$pool_name"
+                    cp --preserve=mode,ownership -- "$pool" "$candidate_pool_directory/$pool_name"
                 done
 
-                install -o root -g root -m 0644 -- "$replacement" "$candidate_directory/orbit-gateway.conf"
-                awk '
+                install -o root -g root -m 0644 -- "$replacement" "$candidate_pool"
+                awk -v candidate_pool_pattern="$candidate_pool_directory/*.conf" '
                     BEGIN { replacement_count = 0 }
                     /^[[:space:]]*include[[:space:]]*=[[:space:]]*\/etc\/php\/8\.5\/fpm\/pool\.d\/\*\.conf[[:space:]]*$/ {
-                        print "include = /etc/php/8.5/fpm/orbit-candidate.d/*.conf"
+                        print "include = " candidate_pool_pattern
                         replacement_count++
                         next
                     }
@@ -99,16 +113,9 @@ final readonly class NativeGatewayFpmConverger
         );
     }
 
-    private function cleanup(): void
+    private function cleanup(string $candidateDirectory): void
     {
-        $this->processes->run(new ProcessInvocation([
-            'sudo',
-            'rm',
-            '-rf',
-            '--',
-            self::CANDIDATE_DIRECTORY,
-            self::CANDIDATE_MAIN,
-        ]));
+        $this->processes->run(new ProcessInvocation(['sudo', 'rm', '-rf', '--', $candidateDirectory]));
     }
 
     /** @param non-empty-list<string> $arguments */

@@ -13,9 +13,10 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\Workspace;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
-/** @mago-expect lint:cyclomatic-complexity One inventory composes legacy, AppInstance workload, and Router site eligibility. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect One inventory composes node-scoped legacy, workload, and Router eligibility. */
 final readonly class AppDevSiteRepository
 {
     /** @return Collection<int, AppDevSite> */
@@ -24,17 +25,33 @@ final readonly class AppDevSiteRepository
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
     ): Collection {
-        return $this->all($pendingRoute, $unavailableInstance)->where('nodeId', $node->id)->values();
+        return $this->sites($node, $pendingRoute, $unavailableInstance);
     }
 
     /** @return Collection<int, AppDevSite> */
     public function all(?Route $pendingRoute = null, ?AppInstance $unavailableInstance = null): Collection
     {
-        $instances = Instance::query()
+        return $this->sites(null, $pendingRoute, $unavailableInstance);
+    }
+
+    /** @return Collection<int, AppDevSite> */
+    private function sites(
+        ?Node $node,
+        ?Route $pendingRoute,
+        ?AppInstance $unavailableInstance,
+    ): Collection {
+        $instanceQuery = Instance::query()
             ->with(['node', 'workspaces'])
-            ->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value])
+            ->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value]);
+
+        if ($node instanceof Node) {
+            $instanceQuery->where('node_id', $node->id);
+        }
+
+        $instances = $instanceQuery
             ->latest('id')
             ->get();
+        /** @var Collection<int, Instance> $instances */
         $sites = collect();
 
         foreach ($instances as $instance) {
@@ -57,16 +74,51 @@ final readonly class AppDevSiteRepository
             }
         }
 
-        $routes = Route::query()
+        $routeQuery = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
-            ->where(static function ($query) use ($pendingRoute): void {
+            ->where(static function (Builder $query) use ($pendingRoute): void {
                 $query->where('status', RouteStatus::Active->value);
 
                 if ($pendingRoute instanceof Route) {
                     $query->orWhere('id', $pendingRoute->id);
                 }
-            })
-            ->get();
+            });
+
+        if ($node instanceof Node) {
+            $nodeId = $node->id;
+            $routeQuery->where(static function (Builder $query) use (
+                $nodeId,
+                $pendingRoute,
+                $unavailableInstance,
+            ): void {
+                $query->where(static function (Builder $query) use (
+                    $nodeId,
+                    $pendingRoute,
+                    $unavailableInstance,
+                ): void {
+                    $query
+                        ->whereHas(
+                            'targets.appInstance',
+                            static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
+                        )
+                        ->orWhereHas(
+                            'cluster.routerAssignment',
+                            static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
+                        );
+
+                    if (
+                        $pendingRoute instanceof Route
+                        && $unavailableInstance instanceof AppInstance
+                        && $unavailableInstance->node_id === $nodeId
+                    ) {
+                        $query->orWhere('routes.id', $pendingRoute->id);
+                    }
+                });
+            });
+        }
+
+        $routes = $routeQuery->get();
+        /** @var Collection<int, Route> $routes */
 
         foreach ($routes as $route) {
             $targets = $route
@@ -115,6 +167,10 @@ final readonly class AppDevSiteRepository
         }
 
         /** @var Collection<int, AppDevSite> $sites */
+        if ($node instanceof Node) {
+            return $sites->where('nodeId', $node->id)->values();
+        }
+
         return $sites->values();
     }
 

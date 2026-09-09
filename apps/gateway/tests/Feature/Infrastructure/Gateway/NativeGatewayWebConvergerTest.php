@@ -22,7 +22,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-/** @mago-expect lint:halstead The interaction test keeps each security-sensitive publication boundary observable. */
+/** @mago-expect lint:halstead,cyclomatic-complexity The interaction test keeps each security-sensitive publication boundary observable. */
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
     [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
 
@@ -30,13 +30,22 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
         $converger->converge('gateway.orbit', '10.44.0.1');
         $calls = Collection::make($processes->calls);
         $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
+        $fpmStage = $calls->first(
+            static fn (ProcessInvocation $invocation): bool => (
+                array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'bash', '-seu', '--']
+                && str_ends_with($invocation->arguments[4] ?? '', '/generated/gateway/php-fpm-pool.conf')
+            ),
+        );
+        $fpmCandidateDirectory = $fpmStage?->arguments[5] ?? null;
+        $fpmCandidateMain = $fpmStage?->arguments[6] ?? null;
+        $fpmCandidatePool = $fpmStage?->arguments[7] ?? null;
         $fpmValidationIndex = $commands->search(
             static fn (array $arguments): bool => $arguments === [
                 'sudo',
                 'php-fpm8.5',
                 '--test',
                 '--fpm-config',
-                '/etc/php/8.5/fpm/orbit-gateway-candidate.conf',
+                $fpmCandidateMain,
             ],
         );
         $fpmPublishIndex = $commands->search(
@@ -45,7 +54,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'mv',
                 '-f',
                 '--',
-                '/etc/php/8.5/fpm/orbit-candidate.d/orbit-gateway.conf',
+                $fpmCandidatePool,
                 '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
             ],
         );
@@ -68,13 +77,6 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             static fn (array $arguments): bool => (
                 array_slice(array: $arguments, offset: 0, length: 4) === ['sudo', 'mv', '-Tf', '--']
                 && end($arguments) === '/etc/caddy/orbit-cert-current'
-            ),
-        );
-        $fpmStage = $calls->first(
-            static fn (ProcessInvocation $invocation): bool => (
-                $invocation->arguments[0] === 'sudo'
-                && $invocation->arguments[1] === 'bash'
-                && str_contains($invocation->input ?? '', 'orbit-candidate.d')
             ),
         );
         $caddyStage = $calls->first(
@@ -114,11 +116,21 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->toBe(0o644)
             ->and(fileperms($orbitHome.'/generated/gateway') & 0o777)
             ->toBe(0o700)
+            ->and($fpmCandidateDirectory)
+            ->toMatch('#^/etc/php/8\.5/fpm/orbit-candidates/[a-f0-9]{16}$#')
+            ->and($fpmCandidateMain)
+            ->toBe($fpmCandidateDirectory.'/php-fpm.conf')
+            ->and($fpmCandidatePool)
+            ->toBe($fpmCandidateDirectory.'/pool.d/orbit-gateway.conf')
             ->and($fpmStage?->input)
             ->toContain(
+                'candidate_directory=$2',
+                'candidate_main=$3',
+                'candidate_pool=$4',
                 'for pool in /etc/php/8.5/fpm/pool.d/*.conf',
                 'if [ "$pool_name" = orbit-gateway.conf ]; then',
-                'cp --preserve=mode,ownership -- "$pool" "$candidate_directory/$pool_name"',
+                'cp --preserve=mode,ownership -- "$pool" "$candidate_pool_directory/$pool_name"',
+                'install -o root -g root -m 0644 -- "$replacement" "$candidate_pool"',
                 'replacement_count',
             )
             ->and($fpmValidationIndex)
@@ -152,6 +164,59 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
+});
+
+it('keeps staged FPM candidates bound to their invocation under contention', function (): void {
+    $processes = new GatewayFpmContentionProcessRunner;
+    $primary = new NativeGatewayFpmConverger($processes);
+    $processes->contender = new NativeGatewayFpmConverger($processes);
+
+    $primary->converge('/tmp/primary-gateway-pool.conf');
+
+    $calls = Collection::make($processes->calls);
+    $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
+    $primaryStage = $calls->firstOrFail(
+        static fn (ProcessInvocation $invocation): bool => (
+            ($invocation->arguments[4] ?? null) === '/tmp/primary-gateway-pool.conf'
+        ),
+    );
+    $contenderStage = $calls->firstOrFail(
+        static fn (ProcessInvocation $invocation): bool => (
+            ($invocation->arguments[4] ?? null) === '/tmp/contending-gateway-pool.conf'
+        ),
+    );
+    [$primaryDirectory, $primaryMain, $primaryPool] = array_slice($primaryStage->arguments, 5, 3);
+    [$contenderDirectory, $contenderMain, $contenderPool] = array_slice($contenderStage->arguments, 5, 3);
+    $contenderCleanupIndex = $commands->search(['sudo', 'rm', '-rf', '--', $contenderDirectory]);
+    $primaryPublishIndex = $commands->search(
+        ['sudo', 'mv', '-f', '--', $primaryPool, '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf'],
+    );
+
+    expect($primaryDirectory)
+        ->not->toBe($contenderDirectory)->and($primaryMain)
+        ->not->toBe($contenderMain)->and($primaryPool)
+        ->not->toBe($contenderPool)->and($commands->contains([
+            'sudo',
+            'php-fpm8.5',
+            '--test',
+            '--fpm-config',
+            $primaryMain,
+        ]))->toBeTrue()->and($commands->contains([
+            'sudo',
+            'php-fpm8.5',
+            '--test',
+            '--fpm-config',
+            $contenderMain,
+        ]))->toBeTrue()->and($commands->contains([
+            'sudo',
+            'mv',
+            '-f',
+            '--',
+            $contenderPool,
+            '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
+        ]))->toBeTrue()->and($contenderCleanupIndex)->toBeInt()->toBeLessThan(
+            $primaryPublishIndex,
+        )->and($commands->contains(['sudo', 'rm', '-rf', '--', $primaryDirectory]))->toBeTrue();
 });
 
 it('publishes one complete gateway file from distinct candidates under contention', function (): void {
@@ -275,20 +340,34 @@ it('preserves live FPM disk and does not reload when complete effective validati
                 expect($exception->step)
                     ->toBe('gateway-fpm-validate')
                     ->and($exception->errorCode)
-                    ->toBe('gateway.fpm_config_invalid');
+                    ->toBe('gateway.fpm_config_invalid')
+                    ->and($exception->result?->stderr)
+                    ->toBe('duplicate pool listener');
             });
 
-        $commands = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
+        $calls = Collection::make($processes->calls);
+        $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
+        $fpmStage = $calls->firstOrFail(
+            static fn (ProcessInvocation $invocation): bool => (
+                array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'bash', '-seu', '--']
+                && str_ends_with($invocation->arguments[4] ?? '', '/generated/gateway/php-fpm-pool.conf')
+            ),
+        );
+        $candidateDirectory = $fpmStage->arguments[5];
+        $candidatePool = $fpmStage->arguments[7];
 
         expect($commands->contains([
             'sudo',
             'mv',
             '-f',
             '--',
-            '/etc/php/8.5/fpm/orbit-candidate.d/orbit-gateway.conf',
+            $candidatePool,
             '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
         ]))
+            ->toBeFalse()
+            ->and($commands->contains(['sudo', 'rm', '-rf', '--', $candidateDirectory]))
+            ->toBeTrue()
+            ->and($commands->contains(['sudo', 'rm', '-rf', '--', '/etc/php/8.5/fpm/orbit-candidates']))
             ->toBeFalse()
             ->and($commands->contains(['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']))
             ->toBeFalse();
@@ -569,12 +648,11 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
 
             if (
                 $this->failure === 'fpm-validation'
-                && $arguments === [
+                && array_slice(array: $arguments, offset: 0, length: 4) === [
                     'sudo',
                     'php-fpm8.5',
                     '--test',
                     '--fpm-config',
-                    '/etc/php/8.5/fpm/orbit-gateway-candidate.conf',
                 ]
             ) {
                 return new CommandResult(1, '', 'duplicate pool listener', 2, false);
@@ -626,4 +704,34 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
         $issuer,
         $orbitHome,
     ];
+}
+
+final class GatewayFpmContentionProcessRunner implements ProcessRunner
+{
+    /** @var list<ProcessInvocation> */
+    public array $calls = [];
+
+    public ?NativeGatewayFpmConverger $contender = null;
+
+    private bool $contentionStarted = false;
+
+    public function run(ProcessInvocation $invocation): CommandResult
+    {
+        $this->calls[] = $invocation;
+
+        if (
+            ! $this->contentionStarted
+            && array_slice(array: $invocation->arguments, offset: 0, length: 4) === [
+                'sudo',
+                'php-fpm8.5',
+                '--test',
+                '--fpm-config',
+            ]
+        ) {
+            $this->contentionStarted = true;
+            $this->contender?->converge('/tmp/contending-gateway-pool.conf');
+        }
+
+        return new CommandResult(0, '', '', 2, false);
+    }
 }

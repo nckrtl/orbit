@@ -44,18 +44,15 @@ final readonly class NativeMetricsFirewallExpectationProvider implements Metrics
 
         $metricsNode = $assignments->sole()->node;
         $targets = [];
+        $item = $this->exporters->forNode($metricsNode, $node);
 
-        foreach ($this->exporters->for($metricsNode) as $item) {
-            if ($item->node->is($node) && $item->selection->selected) {
-                $targets[] = $this->target(
-                    $node,
-                    $this->catalog->metricsExporter($node, $metricsNode),
-                    MetricsFootprint::ExporterFirewallComment,
-                    'Metrics node exporter',
-                );
-
-                break;
-            }
+        if ($item !== null && $item->selection->selected) {
+            $targets[] = $this->target(
+                $node,
+                $this->catalog->metricsExporter($node, $metricsNode),
+                MetricsFootprint::ExporterFirewallComment,
+                'Metrics node exporter',
+            );
         }
 
         $gateway = $this->gateways->find();
