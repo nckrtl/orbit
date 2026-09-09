@@ -1198,6 +1198,19 @@
             ]
         },
         {
+            "path": "docs/reference/wireguard-endpoints.md",
+            "title": "WireGuard endpoints",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/solutions/README.md",
             "title": "Solutions",
             "kind": "solution",
