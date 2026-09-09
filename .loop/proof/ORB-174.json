@@ -1,0 +1,28 @@
+{
+    "setup": [
+        {
+            "id": "firewall-doctor-setup",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/firewall-doctor-single-observation.sh",
+                "setup"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "firewall-doctor-single-observation",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/firewall-doctor-single-observation.sh",
+                "acceptance"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": true
+}
