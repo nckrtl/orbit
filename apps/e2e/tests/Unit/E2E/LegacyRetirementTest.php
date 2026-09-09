@@ -92,8 +92,20 @@ function legacyFixture(): array
             'classification' => 'legacy',
             'content_sha256' => hash('sha256', 'locked'),
         ]],
-        'base_images' => [['name' => 'ubuntu-generic', 'classification' => 'preserve']],
-        'pools' => [['name' => 'orbit-e2e', 'identity' => 'pool-uuid-1', 'classification' => 'preserve']],
+        'base_images' => [[
+            'name' => 'ubuntu-generic',
+            'remote' => 'local',
+            'project' => 'default',
+            'fingerprint' => str_repeat('b', 64),
+            'classification' => 'preserve',
+        ]],
+        'pools' => [[
+            'name' => 'orbit-e2e',
+            'identity' => 'pool-uuid-1',
+            'remote' => 'local',
+            'project' => 'default',
+            'classification' => 'preserve',
+        ]],
         'new_namespace' => [['name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'classification' => 'preserve']],
         'evidence' => [[
             'path' => $root.'/evidence/proof.json',
@@ -521,9 +533,126 @@ describe('legacy retirement', function () {
             ->toBe(['database', 'orbit-e2e-topology-snapshot-gateway'])
             ->and($inventory->preserved['pools'][0]['identity'])
             ->toBe('pool-uuid-1')
+            ->and($inventory->toArray()['version'])
+            ->toBe(3)
+            ->and($inventory->preserved['pools'][0])
+            ->toHaveKeys(['remote', 'project', 'name', 'identity'])
+            ->and($inventory->preserved['base_images'][0])
+            ->toHaveKeys(['remote', 'project', 'name', 'fingerprint'])
+            ->and($inventory->preserved['base_images'][0]['fingerprint'])
+            ->toHaveLength(64)
             ->and($operations)
             ->toBe([]);
     });
+
+    it('orders and deduplicates preserved Incus resources by exact scoped selector', function () {
+        $observed = [
+            'base_images' => [
+                [
+                    'name' => 'display-z',
+                    'remote' => 'remote-b',
+                    'project' => 'project-a',
+                    'fingerprint' => str_repeat('a', 64),
+                    'classification' => 'preserve',
+                ],
+                [
+                    'name' => 'display-a',
+                    'remote' => 'remote-a',
+                    'project' => 'project-z',
+                    'fingerprint' => str_repeat('f', 64),
+                    'classification' => 'preserve',
+                ],
+            ],
+            'pools' => [
+                [
+                    'name' => 'pool-z',
+                    'identity' => 'display-a',
+                    'remote' => 'remote-a',
+                    'project' => 'project-a',
+                    'classification' => 'preserve',
+                ],
+                [
+                    'name' => 'pool-a',
+                    'identity' => 'display-z',
+                    'remote' => 'remote-a',
+                    'project' => 'project-a',
+                    'classification' => 'preserve',
+                ],
+            ],
+        ];
+        $operations = [];
+
+        $inventory = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory();
+
+        expect(array_column($inventory->preserved['base_images'], 'remote'))
+            ->toBe(['remote-a', 'remote-b'])
+            ->and(array_column($inventory->preserved['pools'], 'name'))
+            ->toBe(['pool-a', 'pool-z']);
+
+        $observed['pools'][] = [
+            'name' => 'pool-a',
+            'identity' => 'another-display',
+            'remote' => 'remote-a',
+            'project' => 'project-a',
+            'classification' => 'preserve',
+        ];
+
+        expect(fn () => retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory())
+            ->toThrow(InvalidArgumentException::class, 'unique');
+    });
+
+    it('rejects incomplete pool references and non-exact image fingerprints', function () {
+        $observed = legacyFixture();
+        $operations = [];
+        unset($observed['pools'][0]['project']);
+
+        expect(fn () => retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory())
+            ->toThrow(InvalidArgumentException::class);
+
+        $observed = legacyFixture();
+        $observed['base_images'][0]['fingerprint'] = str_repeat('A', 64);
+        expect(fn () => retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory())
+            ->toThrow(InvalidArgumentException::class, 'fingerprint');
+
+        $observed = legacyFixture();
+        $observed['base_images'][0]['fingerprint'] = str_repeat('a', 63);
+        expect(fn () => retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory())
+            ->toThrow(InvalidArgumentException::class, 'fingerprint');
+    });
+
+    it('refuses candidate mutation when an exact preserved selector or scope changes', function (
+        string $kind,
+        string $field,
+        string $replacement,
+    ): void {
+        $observed = legacyFixture();
+        $operations = [];
+        $evidence = temporaryFile('freeze-');
+        file_put_contents($evidence, 'frozen');
+        chmod($evidence, 0600);
+        $prepared = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
+        $inventory = $prepared->inventory();
+        $manifest = $prepared->quarantine($inventory, $inventory->sha256(), $evidence);
+        $operationCount = count($operations);
+        $observed[$kind][0][$field] = $replacement;
+
+        expect(fn () => retirementService($observed, $operations, '2026-09-05T10:00:00+00:00')->delete(
+            $manifest,
+            $manifest->sha256(),
+        ))
+            ->toThrow(RuntimeException::class, 'preserved resource drifted')
+            ->and($operations)
+            ->toHaveCount($operationCount);
+
+        unlink($evidence);
+    })->with([
+        'pool remote' => ['pools', 'remote', 'replacement'],
+        'pool project' => ['pools', 'project', 'replacement'],
+        'pool API name' => ['pools', 'name', 'replacement'],
+        'image remote' => ['base_images', 'remote', 'replacement'],
+        'image project' => ['base_images', 'project', 'replacement'],
+        'image fingerprint' => ['base_images', 'fingerprint', str_repeat('c', 64)],
+    ]);
 
     it('keeps content and resource digests distinct and content-sensitive', function () {
         $observed = legacyFixture();
@@ -595,6 +724,78 @@ describe('legacy retirement', function () {
             ->toThrow(RuntimeException::class, 'recovery journal is invalid');
 
         unlink($journal);
+        unlink($evidence);
+    });
+
+    it('keeps schema 2 artifacts readable and byte-identical but rejects their mutation authority', function () {
+        $observed = legacyFixture();
+        $operations = [];
+        $early = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
+        $inventory = $early->inventory();
+        $evidence = temporaryFile('freeze-');
+        file_put_contents($evidence, 'frozen');
+        chmod($evidence, 0600);
+        $manifest = $early->quarantine($inventory, $inventory->sha256(), $evidence);
+        $result = new \App\E2E\Value\RetirementResult(
+            true,
+            [],
+            [],
+            $manifest->preserved,
+            $manifest->sha256(),
+        );
+        $schema2Inventory = $inventory->toArray();
+        $schema2Inventory['version'] = 2;
+        $schema2Manifest = $manifest->toArray();
+        $schema2Manifest['version'] = 2;
+        $schema2Result = $result->toArray();
+        $schema2Result['version'] = 2;
+        $schema2Journal = [
+            'version' => 2,
+            'operation' => 'delete',
+            'phase' => 'pending',
+            'quarantine_sha256' => $manifest->sha256(),
+            'freeze_evidence' => $manifest->freezeEvidence,
+            'manifest' => $schema2Manifest,
+            'targets' => $manifest->targets,
+            'pending' => null,
+            'completed' => [],
+        ];
+        $artifacts = [
+            'inventory' => $schema2Inventory,
+            'quarantine' => $schema2Manifest,
+            'retirement' => $schema2Result,
+            'journal' => $schema2Journal,
+        ];
+        $paths = [];
+        $bytes = [];
+        foreach ($artifacts as $name => $artifact) {
+            $path = temporaryFile('legacy-schema2-'.$name.'-');
+            $early->write($path, $artifact);
+            $paths[$name] = $path;
+            $bytes[$name] = file_get_contents($path);
+            expect(LegacyRetirement::readProtectedJson($path))->toBe($artifact);
+        }
+
+        expect(fn () => \App\E2E\Value\RetirementInventory::fromArray($schema2Inventory))
+            ->toThrow(InvalidArgumentException::class);
+        expect(fn () => \App\E2E\Value\QuarantineManifest::fromArray($schema2Manifest))
+            ->toThrow(InvalidArgumentException::class);
+        expect(fn () => \App\E2E\Value\RetirementResult::fromArray($schema2Result))
+            ->toThrow(InvalidArgumentException::class);
+        $operationCount = count($operations);
+        expect(fn () => retirementService($observed, $operations, '2026-09-05T10:00:00+00:00')->delete(
+            $manifest,
+            $manifest->sha256(),
+            $paths['journal'],
+        ))
+            ->toThrow(RuntimeException::class, 'recovery journal is invalid')
+            ->and($operations)
+            ->toHaveCount($operationCount);
+
+        foreach ($paths as $name => $path) {
+            expect(file_get_contents($path))->toBe($bytes[$name]);
+            unlink($path);
+        }
         unlink($evidence);
     });
 
@@ -901,6 +1102,7 @@ describe('legacy retirement', function () {
         chmod($journal, 0600);
 
         $service->write($journal, [
+            'version' => 3,
             'operation' => 'delete',
             'phase' => 'pending',
             'quarantine_sha256' => $manifest->sha256(),
@@ -916,7 +1118,7 @@ describe('legacy retirement', function () {
             ->toThrow(RuntimeException::class);
 
         $service->write($journal, [
-            'version' => 2,
+            'version' => 3,
             'operation' => 'quarantine',
             'phase' => 'pending',
             'inventory_sha256' => $inventory->sha256(),
@@ -951,7 +1153,7 @@ describe('legacy retirement', function () {
         chmod($journal, 0600);
 
         $service->write($journal, [
-            'version' => 2,
+            'version' => 3,
             'operation' => 'delete',
             'phase' => 'broken',
             'quarantine_sha256' => $manifest->sha256(),
@@ -989,7 +1191,13 @@ describe('legacy retirement', function () {
         ];
         $smallObserved = [
             'source_paths' => [$source],
-            'pools' => [['name' => 'orbit-e2e', 'classification' => 'preserve']],
+            'pools' => [[
+                'name' => 'orbit-e2e',
+                'identity' => 'pool-uuid-1',
+                'remote' => 'local',
+                'project' => 'default',
+                'classification' => 'preserve',
+            ]],
         ];
         $smallOperations = [];
         mkdir($source['path'], 0700);

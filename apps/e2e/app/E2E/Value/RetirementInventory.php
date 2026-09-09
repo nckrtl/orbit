@@ -50,7 +50,7 @@ final readonly class RetirementInventory
         $preserved = $this->preserved;
 
         return [
-            'version' => 2,
+            'version' => 3,
             'created_at' => $this->createdAt,
             'candidates' => $this->candidates,
             'preserved' => $preserved,
@@ -62,7 +62,7 @@ final readonly class RetirementInventory
     {
         if (
             array_keys($value) !== ['version', 'created_at', 'candidates', 'preserved']
-            || ($value['version'] ?? null) !== 2
+            || ($value['version'] ?? null) !== 3
             || ! is_string($value['created_at'] ?? null)
             || ! is_array($value['candidates'] ?? null)
             || ! is_array($value['preserved'] ?? null)
@@ -136,26 +136,24 @@ final readonly class RetirementInventory
                 throw new InvalidArgumentException('The retirement inventory kinds or order are invalid.');
             }
             $lastKind = $position;
-            $lastIdentity = null;
+            $lastReference = null;
             foreach ($resources as $resource) {
                 if (! is_array($resource) || array_is_list($resource)) {
                     throw new InvalidArgumentException('Each retirement inventory resource must be an object.');
                 }
                 self::validateResource($kind, $resource);
-                $identity = $resource['identity'] ?? $resource['name'] ?? $resource['path'] ?? null;
+                $reference = self::resourceReference($kind, $resource);
                 if (
-                    ! is_string($identity)
-                    || $identity === ''
-                    || isset($seen[$kind."\0".$identity])
-                    || $lastIdentity !== null
-                    && strcmp($lastIdentity, $identity) >= 0
+                    isset($seen[$reference])
+                    || $lastReference !== null
+                    && strcmp($lastReference, $reference) >= 0
                 ) {
                     throw new InvalidArgumentException(
                         'The retirement inventory identities must be exact, unique, and ordered.',
                     );
                 }
-                $seen[$kind."\0".$identity] = true;
-                $lastIdentity = $identity;
+                $seen[$reference] = true;
+                $lastReference = $reference;
             }
         }
     }
@@ -195,8 +193,15 @@ final readonly class RetirementInventory
                 'content_sha256',
                 'resource_sha256',
             ],
-            'base_images' => ['name', 'identity', 'fingerprint', 'classification', 'resource_sha256'],
-            'pools' => ['name', 'identity', 'classification', 'resource_sha256'],
+            'base_images' => [
+                'name',
+                'remote',
+                'project',
+                'fingerprint',
+                'classification',
+                'resource_sha256',
+            ],
+            'pools' => ['name', 'identity', 'remote', 'project', 'classification', 'resource_sha256'],
             'new_namespace' => [
                 'name',
                 'identity',
@@ -291,6 +296,9 @@ final readonly class RetirementInventory
         ) {
             throw new InvalidArgumentException('An inventory instance has invalid status, metadata, or dependencies.');
         }
+        if (PreservedIncusReference::supports($kind)) {
+            PreservedIncusReference::fromResource($kind, $resource);
+        }
         $digestInput = $resource;
         unset($digestInput['resource_sha256']);
         if (! hash_equals($resource['resource_sha256'], hash('sha256', json_encode(
@@ -299,5 +307,20 @@ final readonly class RetirementInventory
         )))) {
             throw new InvalidArgumentException('A retirement inventory resource digest does not match.');
         }
+    }
+
+    /** @param array<string, mixed> $resource */
+    private static function resourceReference(string $kind, array $resource): string
+    {
+        if (PreservedIncusReference::supports($kind)) {
+            return PreservedIncusReference::fromResource($kind, $resource)->key();
+        }
+
+        $identity = $resource['identity'] ?? $resource['name'] ?? $resource['path'] ?? null;
+        if (! is_string($identity) || $identity === '') {
+            throw new InvalidArgumentException('A retirement resource has no exact identity.');
+        }
+
+        return $kind."\0".$identity;
     }
 }

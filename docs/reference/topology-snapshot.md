@@ -71,6 +71,29 @@ The rendered pools, Caddy fragments, firewall rules, and DNS records then match 
 
 A manifest that names snapshots or VMs the host does not hold is stale, not corrupt. `status` reports `state: stale` with the `recovery` command, and `refresh` and `restore` refuse before they mutate anything. `rebuild --main-sha=SHA` holds the refresh lock and refuses while any of the three instances, their `-next` copies, or the network exists. The refusal lists each present name and directs the operator to `recover-legacy`. When all are absent it deletes every manifest and `corrupt.json`, runs a cold build at `SHA`, and reports `instances_deleted`, `networks_deleted`, and the refresh result.
 
+## Retire legacy resources
+
+The `legacy:inventory`, `legacy:quarantine`, `legacy:delete`, and `legacy:verify` commands keep the topology snapshot pool, base image, current namespace, and evidence outside legacy deletion. [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs this exact and reversible retirement boundary.
+
+Every current retirement artifact uses schema 3. This version applies to the inventory, quarantine manifest, retirement result, and the quarantine and deletion journals that embed them. A quarantine or deletion retry accepts only a matching schema 3 journal with its exact inventory or quarantine digest, freeze evidence, targets, preserved references, acknowledgement, retention time, pending entry, and completed entries.
+
+The inventory records one scoped selector and one display field for each preserved Incus storage pool and base image.
+
+| Kind | Required scope | Exact API selector | Display field |
+| --- | --- | --- | --- |
+| Storage pool | `remote` and `project` | `name`, validated as the pool API name | `identity` |
+| Base image | `remote` and `project` | `fingerprint`, exactly 64 lowercase hexadecimal characters | `name` |
+
+The kind, remote, project, and selector form one reference. The harness uses that reference for ordering, uniqueness, selection from the reviewed observation, the native query, and live comparison. A pool display identity never selects the pool API path, and an image display name never replaces its fingerprint.
+
+Native revalidation runs `incus query --raw` through the same classifier for single and batch reads. A launched command with exit code zero and a `type: sync` envelope is present. A launched command with exit code zero and a `type: error` envelope whose integer `error_code` is `404` is absent. Launch failure, nonzero exit, plain standard error, empty or malformed output, any other error envelope, and disagreement between the exit code and envelope stop the operation before candidate mutation.
+
+Schema 2 files remain byte-for-byte audit evidence. The current commands can read their protected JSON bytes, but inventory, quarantine, result, and journal decoders reject them as mutation or resume authority. The harness never fills missing scope from host defaults, rewrites the file, replaces its digest, transfers its acknowledgement, or reuses its quarantine time.
+
+After a partial schema 2 retirement, the operator keeps every old file and runs `legacy:inventory` to a new path. The operator reviews and acknowledges the schema 3 inventory, uses its derived new quarantine, retirement, and journal paths, and waits a new full seven days before deletion. A remaining instance that is already stopped enters the new quarantine as `unchanged` and is not stopped again. When no candidate remains, the acknowledged inventory is the terminal audit; the operator does not create an empty quarantine or run deletion.
+
+The retained proof runs in the three standard Nodes and checks serialization and refusal without access to the host Incus socket. An issue-local host rehearsal complements it by using the production batch reader for the configured pool and exact base-image fingerprint. That rehearsal may mutate only its own temporary file candidates; every native Incus operation is read-only, and its receipt binds the candidate, plan, fixtures, discovery identity, resource identities, commands, file hashes, assertions, and exits.
+
 ## Locks and journal
 
 Two host locks under `<primary>/.e2e/locks/` serialize every topology snapshot mutation. Each lock file records the owning process, the operation ID, and the acquisition time.
