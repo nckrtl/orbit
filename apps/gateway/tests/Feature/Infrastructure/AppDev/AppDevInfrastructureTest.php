@@ -42,6 +42,7 @@ use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevCaddyPublisher;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
+use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
@@ -70,6 +71,7 @@ use App\Models\Node;
 use App\Models\Route;
 use App\Models\Workspace;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\AppDevCaddyPublishHarness;
 use Tests\Support\AppDevCaddyPublishScenario;
@@ -145,6 +147,88 @@ it('renders isolated pools and private Caddy listeners for every active scope', 
             ->toContain('0.0.0.0:443')
             ->not->toContain('127.0.0.1:443');
     }
+});
+
+it('hydrates only the requested Node legacy sites while global DNS keeps every eligible site', function (): void {
+    [$node, $instance, $workspace] = app_dev_runtime_models();
+    $unrelatedNode = Node::query()->create([
+        'name' => 'unrelated-app-dev',
+        'status' => LifecycleStatus::Active,
+        'tld' => 'unrelated.orbit',
+        'public_ssh_host' => '192.0.2.40',
+        'wireguard_ip' => '10.44.0.40',
+    ]);
+    $unrelatedInstance = Instance::query()->create([
+        'app_id' => $instance->app_id,
+        'node_id' => $unrelatedNode->id,
+        'name' => 'unrelated',
+        'environment' => 'development',
+        'checkout_path' => '/home/orbit/apps/unrelated',
+        'hostname' => 'unrelated.app-dev.orbit',
+        'certificate_mode' => CertificateMode::OrbitCa,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $unrelatedWorkspace = Workspace::query()->create([
+        'instance_id' => $unrelatedInstance->id,
+        'name' => 'unrelated-feature',
+        'branch' => 'unrelated-feature',
+        'checkout_path' => '/home/orbit/.orbit/worktrees/unrelated/feature',
+        'hostname' => 'feature.unrelated.app-dev.orbit',
+        'status' => LifecycleStatus::Active,
+    ]);
+    $failedWorkspace = Workspace::query()->create([
+        'instance_id' => $instance->id,
+        'name' => 'failed',
+        'branch' => 'failed',
+        'checkout_path' => '/home/orbit/.orbit/worktrees/acme/failed',
+        'hostname' => 'failed.acme.app-dev.orbit',
+        'status' => LifecycleStatus::Failed,
+    ]);
+    $sites = new AppDevSiteRepository;
+    $globalSites = $sites->all();
+    $globalDns = new AppDevDnsConfigRenderer($sites)->render();
+    $retrievedInstances = collect();
+    $retrievedWorkspaces = collect();
+    Event::listen(
+        'eloquent.retrieved: '.Instance::class,
+        static function (Instance $retrieved) use ($retrievedInstances): void {
+            $retrievedInstances->push($retrieved->id);
+        },
+    );
+    Event::listen(
+        'eloquent.retrieved: '.Workspace::class,
+        static function (Workspace $retrieved) use ($retrievedWorkspaces): void {
+            $retrievedWorkspaces->push($retrieved->id);
+        },
+    );
+
+    $nodeSites = $sites->forNode($node);
+
+    $siteIdentity = static fn (AppDevSite $site): array => [
+        $site->scope,
+        $site->hostname,
+        $site->phpVersion,
+        $site->nodeAddress,
+    ];
+    expect($nodeSites->map($siteIdentity)->all())
+        ->toBe($globalSites->where('nodeId', $node->id)->values()->map($siteIdentity)->all())
+        ->and($nodeSites->pluck('scope')->all())
+        ->toBe(["instance-{$instance->id}", "workspace-{$workspace->id}"])
+        ->and($nodeSites->last()?->phpVersion)
+        ->toBe($instance->php_version)
+        ->and($retrievedInstances->all())
+        ->toBe([$instance->id])
+        ->and($retrievedWorkspaces->all())
+        ->toHaveCount(2)
+        ->toContain($workspace->id, $failedWorkspace->id)
+        ->and($retrievedWorkspaces)
+        ->not->toContain($unrelatedWorkspace->id)->and($globalDns)->toContain(
+            "host-record={$instance->hostname},{$node->wireguard_ip}",
+            "host-record={$workspace->hostname},{$node->wireguard_ip}",
+            "host-record={$unrelatedInstance->hostname},{$unrelatedNode->wireguard_ip}",
+            "host-record={$unrelatedWorkspace->hostname},{$unrelatedNode->wireguard_ip}",
+        )
+        ->not->toContain($failedWorkspace->hostname);
 });
 
 it('uses only generated instance paths and registered Git worktrees for source removal', function (): void {

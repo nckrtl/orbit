@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property bool $migration_required
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
+ * @property bool|null $source_is_laravel
  * @property string|null $provisioning_step
  * @property string|null $failed_step
  * @property string|null $error_code
@@ -62,6 +63,7 @@ final class AppInstance extends Model
         'migration_required',
         'starting_commit',
         'selected_php_version',
+        'source_is_laravel',
         'provisioning_step',
         'failed_step',
         'error_code',
@@ -108,6 +110,7 @@ final class AppInstance extends Model
     {
         return [
             'migration_required' => 'boolean',
+            'source_is_laravel' => 'boolean',
             'status' => AppInstanceState::class,
         ];
     }
