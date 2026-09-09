@@ -21,16 +21,37 @@ final readonly class ProtectedFileWriter
         }
 
         chmod(filename: $directory, permissions: 0o700);
-        $temporaryPath = $path.'.tmp';
+        $candidatePath = tempnam(
+            directory: $directory,
+            prefix: basename($path).'.candidate.',
+        );
 
-        if (file_put_contents($temporaryPath, $contents, LOCK_EX) === false) {
-            throw new RuntimeException("Could not write protected file [{$temporaryPath}].");
+        if ($candidatePath === false) {
+            throw new RuntimeException("Could not create protected file candidate [{$path}].");
         }
 
-        chmod(filename: $temporaryPath, permissions: $permissions);
+        try {
+            if (realpath(dirname($candidatePath)) !== realpath($directory)) {
+                throw new RuntimeException("Could not create protected file candidate [{$path}].");
+            }
 
-        if (! rename($temporaryPath, $path)) {
-            throw new RuntimeException("Could not install protected file [{$path}].");
+            $written = file_put_contents($candidatePath, $contents, LOCK_EX);
+
+            if ($written !== strlen($contents)) {
+                throw new RuntimeException("Could not write protected file [{$candidatePath}].");
+            }
+
+            if (! chmod(filename: $candidatePath, permissions: $permissions)) {
+                throw new RuntimeException("Could not protect file candidate [{$candidatePath}].");
+            }
+
+            if (! rename($candidatePath, $path)) {
+                throw new RuntimeException("Could not install protected file [{$path}].");
+            }
+        } finally {
+            if (is_file($candidatePath)) {
+                unlink($candidatePath);
+            }
         }
     }
 }
