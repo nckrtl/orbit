@@ -177,7 +177,22 @@ it('constructs an extended discovery without adopting proof resources or sharing
     $discoveryTarget = featureTarget('TST-123', 'a', $recipe);
     $proofTarget = featureTarget('TST-123', 'b', $recipe);
     $events = [];
-    fakePinnedWorktreeProcesses($discoveryTarget, $events);
+    $leaseAtNetworkCreation = null;
+    fakePinnedWorktreeProcesses(
+        $discoveryTarget,
+        $events,
+        observe: static function (array $command) use ($worktree, &$leaseAtNetworkCreation): void {
+            if (($command[3] ?? null) !== 'network' || ($command[4] ?? null) !== 'create') {
+                return;
+            }
+            $leaseAtNetworkCreation = json_decode(
+                (string) file_get_contents($worktree.'/.e2e/'.IssueState::ATTEMPT),
+                true,
+                8,
+                JSON_THROW_ON_ERROR,
+            );
+        },
+    );
     $host = new IncusHost(pool: 'default');
     $operation = new OperationId(str_repeat('f', 32));
     $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
@@ -204,6 +219,10 @@ it('constructs an extended discovery without adopting proof resources or sharing
     );
     expect($topology->purpose)
         ->toBe(AttemptPurpose::Discovery)
+        ->and($leaseAtNetworkCreation['extension'] ?? null)
+        ->toBe('app-prod')
+        ->and($leaseAtNetworkCreation['attempt_id'] ?? null)
+        ->toBe($discoveryTarget->requireAttempt()->value)
         ->and($topology->target->recipe->nodeKeys())
         ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
         ->and(array_keys($topology->instances))
@@ -243,6 +262,8 @@ it('constructs an extended discovery without adopting proof resources or sharing
     $state = IssueState::forWorktree('TST-123', $worktree);
     expect($state->requireTopology(AttemptPurpose::Discovery)->toArray())
         ->toBe($topology->toArray())
+        ->and($state->attempt(AttemptPurpose::Discovery)['extension'])
+        ->toBe('app-prod')
         ->and($state->hasAttempt(AttemptPurpose::Proof))
         ->toBeFalse();
 });

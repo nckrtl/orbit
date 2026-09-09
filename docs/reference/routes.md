@@ -133,6 +133,16 @@ AppInstance removal is the coordinated target-clear exception. After complete so
 
 During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed hostnames with one operation-local index of all Route hostname owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. Full reconciliation of an existing active Route is a separate contract.
 
+### Router transition ownership
+
+The Gateway gives each Cluster one Router operation owner. Router set and clear hold that owner from fresh validation through baseline work, promotion, and ordered cleanup. A Cluster state or TLD update also holds it while validating and reconciling Router-dependent state. Different Clusters use different owners.
+
+A same-Cluster contender waits for at most 30 seconds or the shorter remaining command deadline. If the current transition still owns the Cluster, the Gateway returns `cluster.router_busy` with HTTP 409 before validation or mutation. A retry enters from current Cluster, Node, Router assignment, and Route state after the previous owner releases.
+
+The owner has no expiry during remote work and releases after success or failure. Router baseline work can reenter the same request owner. Replacement keeps the current Router active until its candidate is ready, promotes the candidate before obsolete cleanup, and keeps failure evidence for an identical retry. Clear removes non-active assignments first and the active assignment last, then resumes retained cleanup on retry.
+
+Operations acquire owners in this order when they need more than one: node lifecycle or role, app-dev source, Cluster Router, Metrics lifecycle or credential, development projection, then remote host. Projection and remote host callbacks do not acquire an earlier owner, and no database transaction remains open during remote work.
+
 ## Guard removal
 
 Route ownership prevents deletion from leaving an invalid retained record.

@@ -13,6 +13,7 @@ use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\LeaseTargetRecovery;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
@@ -33,7 +34,7 @@ use Illuminate\Support\Facades\Process;
  * A host holding the attempt's VMs and network with the given metadata; every
  * mutation is recorded and reflected in later reads.
  *
- * @mago-expect lint:cyclomatic-complexity The fake answers each Incus read and mutation kind.
+ * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The fake answers each Incus read and mutation kind.
  *
  * @param array<string, string> $metadata
  * @param list<string> $commands
@@ -44,12 +45,26 @@ function fakeReleaseHost(
     array &$commands,
     bool $network = true,
     ?array $presentNames = null,
+    ?string $failCommandContaining = null,
 ): void {
     $present = $presentNames ?? array_map($target->instance(...), $target->recipe->nodeKeys());
-    Process::fake(function (PendingProcess $process) use ($target, $metadata, &$commands, &$present, &$network) {
+    Process::fake(function (PendingProcess $process) use (
+        $target,
+        $metadata,
+        &$commands,
+        &$present,
+        &$network,
+        $failCommandContaining,
+    ) {
         $command = $process->command;
         assert(is_array($command));
         $commands[] = implode(' ', array_slice($command, 3));
+        if (
+            $failCommandContaining !== null
+            && str_contains(implode(' ', $command), $failCommandContaining)
+        ) {
+            return Process::result(errorOutput: 'injected cleanup failure', exitCode: 1);
+        }
         if (($command[0] ?? null) === 'git') {
             $gitCommand = ['git', '-C', $process->path ?? getcwd(), ...array_slice($command, 1)];
             $output = [];
@@ -176,7 +191,10 @@ describe('TopologyReleaser', function () {
             $commands,
         );
 
-        $result = releaserForTest($paths)->release(new TopologyRequest('TST-12', $worktree));
+        $result = releaserForTest($paths)->release(
+            new TopologyRequest('TST-12', $worktree),
+            AttemptPurpose::Proof,
+        );
 
         expect($result['state'])
             ->toBe('released')
@@ -254,7 +272,12 @@ describe('TopologyReleaser', function () {
         $target = TopologyTarget::feature('AUX-132', $attempt, TopologyRecipe::extendedAppProd());
         $state = IssueState::forWorktree('AUX-132', $worktree);
         $topology = extendedReleaseTopology($target, AttemptPurpose::Discovery);
-        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $state->writeAttempt(
+            $attempt,
+            AttemptPurpose::Discovery,
+            new OperationId(str_repeat('c', 32)),
+            TopologyExtension::AppProd,
+        );
         $state->writeTopology($topology);
         $generation = $topology->generation->toArray();
         $commands = [];
@@ -301,7 +324,12 @@ describe('TopologyReleaser', function () {
         $attempt = new AttemptId(str_repeat('a', 32));
         $target = TopologyTarget::feature('AUX-132', $attempt, TopologyRecipe::extendedAppProd());
         $state = IssueState::forWorktree('AUX-132', $worktree);
-        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $state->writeAttempt(
+            $attempt,
+            AttemptPurpose::Discovery,
+            new OperationId(str_repeat('c', 32)),
+            TopologyExtension::AppProd,
+        );
         $state->writeTopology(extendedReleaseTopology($target, AttemptPurpose::Discovery));
         $commands = [];
         fakeReleaseHost(
@@ -340,6 +368,211 @@ describe('TopologyReleaser', function () {
                 $target->instance('gateway'),
                 $target->network(),
             ])
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))
+            ->toBeFalse();
+    });
+
+    it('releases a current extended lease without a topology and retains its target across partial failure', function (): void {
+        $worktree = temporaryPath('orbit-release-lease-target-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $proof = new AttemptId(str_repeat('b', 32));
+        $target = TopologyTarget::feature('AUX-7', $attempt, TopologyRecipe::extendedAppProd());
+        $state = IssueState::forWorktree('AUX-7', $worktree);
+        $state->writeAttempt(
+            $attempt,
+            AttemptPurpose::Discovery,
+            new OperationId(str_repeat('c', 32)),
+            TopologyExtension::AppProd,
+        );
+        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
+        $proofLease = $state->attempt(AttemptPurpose::Proof);
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => $attempt->value],
+            $commands,
+            failCommandContaining: 'network delete',
+        );
+
+        expect(fn () => releaserForTest($paths)->release(new TopologyRequest('AUX-7', $worktree)))
+            ->toThrow(RuntimeException::class, 'injected cleanup failure')
+            ->and($state->attempt(AttemptPurpose::Discovery)['extension'])
+            ->toBe('app-prod')
+            ->and($state->attempt(AttemptPurpose::Proof))
+            ->toBe($proofLease);
+
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => $attempt->value],
+            $commands,
+            presentNames: [],
+        );
+        $result = releaserForTest($paths)->release(new TopologyRequest('AUX-7', $worktree));
+
+        expect($result['already_absent'])
+            ->toContain(
+                $target->instance('gateway'),
+                $target->instance('app-dev'),
+                $target->instance('app-prod'),
+                $target->instance('app-prod-2'),
+            )
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))
+            ->toBeFalse()
+            ->and($state->attempt(AttemptPurpose::Proof))
+            ->toBe($proofLease);
+    });
+
+    it('uses a complete matching legacy topology and refuses an ambiguous legacy lease before Incus', function (): void {
+        $completeWorktree = temporaryPath('orbit-release-complete-legacy-', 4);
+        mkdir($completeWorktree, 0700);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $target = TopologyTarget::feature('AUX-7', $attempt, TopologyRecipe::extendedAppProd());
+        $completeState = IssueState::forWorktree('AUX-7', $completeWorktree);
+        $completeState->writeAttempt(
+            $attempt,
+            AttemptPurpose::Discovery,
+            new OperationId(str_repeat('b', 32)),
+            TopologyExtension::AppProd,
+        );
+        $completeState->writeTopology(extendedReleaseTopology($target, AttemptPurpose::Discovery));
+        $leasePath = $completeWorktree.'/.e2e/'.IssueState::ATTEMPT;
+        $legacy = json_decode((string) file_get_contents($leasePath), true, 8, JSON_THROW_ON_ERROR);
+        unset($legacy['extension']);
+        file_put_contents($leasePath, json_encode($legacy, JSON_THROW_ON_ERROR));
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => $attempt->value],
+            $commands,
+        );
+
+        expect(
+            releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+                ->release(new TopologyRequest('AUX-7', $completeWorktree))['released'],
+        )
+            ->toContain('deleted:'.$target->instance('app-prod-2'));
+
+        $ambiguousWorktree = temporaryPath('orbit-release-ambiguous-legacy-', 4);
+        mkdir($ambiguousWorktree, 0700);
+        $ambiguousState = IssueState::forWorktree('AUX-7', $ambiguousWorktree);
+        $ambiguousState->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('b', 32)));
+        $ambiguousPath = $ambiguousWorktree.'/.e2e/'.IssueState::ATTEMPT;
+        $ambiguous = json_decode((string) file_get_contents($ambiguousPath), true, 8, JSON_THROW_ON_ERROR);
+        unset($ambiguous['extension']);
+        file_put_contents($ambiguousPath, json_encode($ambiguous, JSON_THROW_ON_ERROR));
+        $before = file_get_contents($ambiguousPath);
+        $ambiguousCommands = [];
+        Process::fake(function (PendingProcess $process) use (&$ambiguousCommands) {
+            $ambiguousCommands[] = $process->command;
+
+            return Process::result('[]');
+        });
+
+        expect(fn () => releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->release(new TopologyRequest('AUX-7', $ambiguousWorktree)))
+            ->toThrow(RuntimeException::class, 'extension target is ambiguous')
+            ->and(file_get_contents($ambiguousPath))
+            ->toBe($before)
+            ->and($ambiguousCommands)
+            ->toBe([]);
+    });
+
+    it('recovers one exact legacy target idempotently and refuses stale, conflicting, or unsafe none input', function (): void {
+        $worktree = temporaryPath('orbit-release-recovery-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $target = TopologyTarget::feature('AUX-7', $attempt, TopologyRecipe::extendedAppProd());
+        $state = IssueState::forWorktree('AUX-7', $worktree);
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('b', 32)));
+        $leasePath = $worktree.'/.e2e/'.IssueState::ATTEMPT;
+        $legacy = json_decode((string) file_get_contents($leasePath), true, 8, JSON_THROW_ON_ERROR);
+        unset($legacy['extension']);
+        file_put_contents($leasePath, json_encode($legacy, JSON_THROW_ON_ERROR));
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => $attempt->value],
+            $commands,
+            network: false,
+            presentNames: [$target->instance('app-prod-2')],
+        );
+
+        expect(fn () => releaserForTest($paths)->release(
+            new TopologyRequest('AUX-7', $worktree),
+            AttemptPurpose::Discovery,
+            LeaseTargetRecovery::fromOptions('none', $attempt->value),
+        ))
+            ->toThrow(RuntimeException::class, 'conflicts with the exact app-prod-2 VM')
+            ->and($state->leaseHasExtension(AttemptPurpose::Discovery))
+            ->toBeFalse()
+            ->and(array_filter($commands, static fn (string $command): bool => str_starts_with($command, 'delete')))
+            ->toBe([]);
+
+        $staleCommands = [];
+        Process::fake(function (PendingProcess $process) use (&$staleCommands) {
+            $staleCommands[] = $process->command;
+
+            return Process::result('[]');
+        });
+        expect(fn () => releaserForTest($paths)->release(
+            new TopologyRequest('AUX-7', $worktree),
+            AttemptPurpose::Discovery,
+            LeaseTargetRecovery::fromOptions('app-prod', str_repeat('c', 32)),
+        ))
+            ->toThrow(RuntimeException::class, 'does not match the active lease')
+            ->and($staleCommands)
+            ->toBe([]);
+
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => str_repeat('f', 32)],
+            $commands,
+        );
+        expect(fn () => releaserForTest($paths)->release(
+            new TopologyRequest('AUX-7', $worktree),
+            AttemptPurpose::Discovery,
+            LeaseTargetRecovery::fromOptions('app-prod', $attempt->value),
+        ))
+            ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt');
+        $recovered = $state->attempt(AttemptPurpose::Discovery);
+        expect($recovered)
+            ->toMatchArray($legacy)
+            ->and($recovered['extension'])
+            ->toBe('app-prod');
+
+        $conflictCommands = [];
+        Process::fake(function (PendingProcess $process) use (&$conflictCommands) {
+            $conflictCommands[] = $process->command;
+
+            return Process::result('[]');
+        });
+        expect(fn () => releaserForTest($paths)->release(
+            new TopologyRequest('AUX-7', $worktree),
+            AttemptPurpose::Discovery,
+            LeaseTargetRecovery::fromOptions('none', $attempt->value),
+        ))
+            ->toThrow(RuntimeException::class, 'cannot replace')
+            ->and($conflictCommands)
+            ->toBe([]);
+
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => $attempt->value],
+            $commands,
+        );
+        $result = releaserForTest($paths)->release(
+            new TopologyRequest('AUX-7', $worktree),
+            AttemptPurpose::Discovery,
+            LeaseTargetRecovery::fromOptions('app-prod', $attempt->value),
+        );
+        expect($result['released'])
+            ->toContain('deleted:'.$target->instance('app-prod-2'))
             ->and($state->hasAttempt(AttemptPurpose::Discovery))
             ->toBeFalse();
     });
@@ -440,7 +673,12 @@ describe('TopologyReleaser', function () {
         $replacementProof = new AttemptId(str_repeat('b', 32));
         $discovery = new AttemptId(str_repeat('c', 32));
         $state = IssueState::forWorktree('AUX-99', $worktree);
-        $state->writeAttempt($replacementProof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
+        $state->writeAttempt(
+            $replacementProof,
+            AttemptPurpose::Proof,
+            new OperationId(str_repeat('d', 32)),
+            TopologyExtension::AppProd,
+        );
         $state->writeTopology(extendedReleaseTopology(
             TopologyTarget::feature('AUX-99', $replacementProof, TopologyRecipe::extendedAppProd()),
             AttemptPurpose::Proof,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -19,13 +20,24 @@ final readonly class SetClusterRouterAction
 {
     public function __construct(
         private RoleBaselineConverger $baselines,
+        private ClusterRouterOperationLock $operations,
         private ?RouteReconciliationGuard $routes = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
     {
+        return $this->operations->run(
+            $cluster->id,
+            fn (): Cluster => $this->executeOwned($cluster->id, $node->id),
+        );
+    }
+
+    private function executeOwned(int $clusterId, int $nodeId): Cluster
+    {
+        $cluster = Cluster::query()->findOrFail($clusterId);
+        $node = Node::query()->findOrFail($nodeId);
+
         ($this->routes ?? app(RouteReconciliationGuard::class))->assertClusterRouterMutable($cluster->id);
-        $node->refresh();
 
         if ($node->cluster_id !== $cluster->id || $node->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException(

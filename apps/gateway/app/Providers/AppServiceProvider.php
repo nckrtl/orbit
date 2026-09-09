@@ -36,6 +36,7 @@ use App\Domain\AppProd\AppProdSourceManager;
 use App\Domain\AppProd\AppProdUserManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
@@ -106,6 +107,7 @@ use App\Infrastructure\AppProd\RemoteAppProdUserManager;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
+use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
@@ -251,6 +253,13 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
+        $this->app->scoped(
+            ClusterRouterOperationLock::class,
+            static fn (): ClusterRouterOperationLock => new NativeClusterRouterOperationLock(
+                directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/cluster-router',
+                deadline: app(CommandDeadline::class),
+            ),
+        );
         $this->app->scoped(
             DevelopmentProjectionOperationLock::class,
             static fn (): DevelopmentProjectionOperationLock => new NativeDevelopmentProjectionOperationLock(

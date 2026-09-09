@@ -198,7 +198,12 @@ final readonly class TopologyAcquirer
             'user.orbit.e2e.attempt' => $attempt->value,
             'user.orbit.e2e.operation' => $this->operation->value,
         ];
-        $state->writeAttempt($attempt, AttemptPurpose::Discovery, $this->operation);
+        $state->writeAttempt(
+            $attempt,
+            AttemptPurpose::Discovery,
+            $this->operation,
+            $proofPlan?->extension,
+        );
         $instances = array_map($target->instance(...), $recipe->nodeKeys());
         try {
             $construction = $this->issueConstructor()->construct(
