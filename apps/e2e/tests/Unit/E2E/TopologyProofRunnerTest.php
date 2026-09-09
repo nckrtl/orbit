@@ -11,6 +11,7 @@ use App\E2E\ObservedPhpInputCollector;
 use App\E2E\ProofFixtureStager;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\StaticProofInputPolicy;
 use App\E2E\TopologyConverger;
@@ -459,6 +460,124 @@ function candidateConvergenceRunner(
         static fn (): AttemptId => $attempt,
     );
 }
+
+/**
+ * Run candidate convergence behind a real issue-lock waiter while changing its authorization state.
+ *
+ * @param array{paths:StatePaths,operation:OperationId} $fixture
+ */
+function contendCandidateAuthorization(array $fixture, Closure $mutation, Closure $convergence): void
+{
+    $blocker = new OperationLock($fixture['paths']);
+    expect($blocker->acquire('topology-TST-123', new OperationId(str_repeat('9', 32))))->toBeTrue();
+    $asyncSignals = pcntl_async_signals(true);
+    $signalHandler = pcntl_signal_get_handler(SIGALRM);
+    pcntl_signal(SIGALRM, static function () use ($blocker, $mutation): void {
+        $blocker->release();
+        $mutation();
+    });
+    pcntl_alarm(1);
+
+    try {
+        $convergence();
+    } finally {
+        pcntl_alarm(0);
+        $blocker->release();
+        pcntl_signal(SIGALRM, $signalHandler);
+        pcntl_async_signals($asyncSignals);
+    }
+}
+
+/** @param list<list<mixed>> $commands */
+function fakeCandidateAuthorizationProcesses(array &$commands): void
+{
+    Process::fake(function (PendingProcess $process) use (&$commands) {
+        $command = $process->command;
+        assert(is_array($command));
+        if (($command[0] ?? null) === 'git') {
+            $gitCommand = ['git', '-C', $process->path ?? getcwd(), ...array_slice($command, 1)];
+            $output = [];
+            $exitCode = 0;
+            exec(implode(' ', array_map(escapeshellarg(...), $gitCommand)).' 2>&1', $output, $exitCode);
+
+            return Process::result(implode("\n", $output), exitCode: $exitCode);
+        }
+        $commands[] = $command;
+
+        return Process::result();
+    });
+}
+
+it('rejects candidate convergence when proof release completes during issue-lock contention', function (): void {
+    $fixture = candidateConvergenceFixture();
+    $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
+    $commands = [];
+    fakeCandidateAuthorizationProcesses($commands);
+
+    expect(fn () => contendCandidateAuthorization(
+        $fixture,
+        static fn () => $state->forgetAttempt(AttemptPurpose::Proof),
+        static fn () => candidateConvergenceRunner($fixture, new AttemptId(str_repeat('c', 32)))
+            ->convergeCandidate($fixture['request']),
+    ))
+        ->toThrow(RuntimeException::class, 'has no retained proof for candidate convergence')
+        ->and($state->hasAttempt(AttemptPurpose::CandidateConvergence))
+        ->toBeFalse()
+        ->and($commands)
+        ->toBe([]);
+});
+
+it('rejects candidate convergence when the equivalence pointer changes during issue-lock contention', function (): void {
+    $fixture = candidateConvergenceFixture();
+    $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
+    $proof = $state->proof();
+    $commands = [];
+    fakeCandidateAuthorizationProcesses($commands);
+
+    expect(fn () => contendCandidateAuthorization(
+        $fixture,
+        static fn () => new AtomicJsonStore(StatePaths::forWorktree($fixture['worktree']))
+            ->write(IssueState::EQUIVALENCE, ['fingerprint' => str_repeat('f', 64)]),
+        static fn () => candidateConvergenceRunner($fixture, new AttemptId(str_repeat('c', 32)))
+            ->convergeCandidate($fixture['request']),
+    ))
+        ->toThrow(RuntimeException::class, 'The equivalence report is missing')
+        ->and($state->proof())
+        ->toBe($proof)
+        ->and($state->hasAttempt(AttemptPurpose::CandidateConvergence))
+        ->toBeFalse()
+        ->and($commands)
+        ->toBe([]);
+
+    $next = new OperationLock($fixture['paths']);
+    expect($next->acquire('topology-TST-123', new OperationId(str_repeat('8', 32)), timeoutSeconds: 0.05))
+        ->toBeTrue();
+    $next->release();
+});
+
+it('rejects candidate convergence when the linked manifest changes during issue-lock contention', function (): void {
+    $fixture = candidateConvergenceFixture();
+    $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
+    $proof = $state->proof();
+    assert(is_string($proof['manifest_sha256'] ?? null));
+    $commands = [];
+    fakeCandidateAuthorizationProcesses($commands);
+
+    expect(fn () => contendCandidateAuthorization(
+        $fixture,
+        static fn () => new AtomicJsonStore(StatePaths::forWorktree($fixture['worktree']))
+            ->write('proof-inputs/'.$proof['manifest_sha256'].'.json', ['changed' => true]),
+        static fn () => candidateConvergenceRunner($fixture, new AttemptId(str_repeat('c', 32)))
+            ->convergeCandidate($fixture['request']),
+    ))
+        ->toThrow(RuntimeException::class, 'requires a valid observed-input manifest')
+        ->and($state->proof())
+        ->toBe($proof)
+        ->and($state->hasAttempt(AttemptPurpose::CandidateConvergence))
+        ->toBeFalse()
+        ->and($commands)
+        ->toBe([]);
+});
 
 /** @return array{id:string,node:string,exit_code:int,stdout:string,stderr:string} */
 function runProofAction(
