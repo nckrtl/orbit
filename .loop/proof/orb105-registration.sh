@@ -185,7 +185,7 @@ path=$1
 test "$(sha256sum "$path/.env" | cut -d' ' -f1)" = "$(cat /tmp/orb105-env-before)"
 grep -Fx ORB105_SENTINEL=retained "$path/.env"
 BASH
-        output=$(register_source "$source")
+        output=$(register_source "$destination")
         remove_instance "$(json_field "$output" app_instance.id)"
         ;;
     manual-default-migration)
