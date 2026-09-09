@@ -106,6 +106,85 @@ describe('GitRepository', function (): void {
             ->toHaveCount(1);
     });
 
+    it('resolves the canonical root once for each nested multi-file overlay operation', function (): void {
+        mkdir($this->path.'/one/two/three', 0700, true);
+        file_put_contents($this->path.'/one/two/three/executable.sh', "#!/bin/sh\nprintf before\\n\n");
+        chmod($this->path.'/one/two/three/executable.sh', 0755);
+        git($this->path, ['add', '.']);
+        git($this->path, ['commit', '--quiet', '-m', 'overlay base']);
+        file_put_contents($this->path.'/one/two/three/executable.sh', "#!/bin/sh\nprintf after\\n\n");
+        file_put_contents($this->path.'/one/two/three/untracked.txt', "untracked\n");
+
+        $real = new ProcessFactory;
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use ($real, &$commands) {
+            $commands[] = $process->command;
+
+            return $real
+                ->path((string) $process->path)
+                ->env($process->environment)
+                ->input($process->input)
+                ->run($process->command);
+        });
+        $repository = new GitRepository($this->path);
+
+        $firstOverlay = $repository->dirtyOverlay();
+        $inventoryRootResolutions = rootResolutionCount($commands);
+        $commands = [];
+        $archive = $this->path.'/overlay.tar';
+        $repository->createOverlayArchive($archive, $firstOverlay?->paths ?? []);
+        $archiveRootResolutions = rootResolutionCount($commands);
+        $commands = [];
+        unlink($archive);
+        file_put_contents($this->path.'/one/two/three/fresh.txt', "fresh\n");
+        $secondOverlay = $repository->dirtyOverlay();
+
+        expect($firstOverlay?->paths)
+            ->toBe([
+                'one/two/three/executable.sh',
+                'one/two/three/untracked.txt',
+            ])
+            ->and($inventoryRootResolutions)
+            ->toBe(1)
+            ->and($archiveRootResolutions)
+            ->toBe(1)
+            ->and(rootResolutionCount($commands))
+            ->toBe(1)
+            ->and($secondOverlay?->paths)
+            ->toBe([
+                'one/two/three/executable.sh',
+                'one/two/three/fresh.txt',
+                'one/two/three/untracked.txt',
+            ])
+            ->and($secondOverlay?->treeHash)
+            ->not->toBe($firstOverlay?->treeHash);
+    });
+
+    it('retains unsafe overlay path refusals', function (string $path): void {
+        expect(fn () => new GitRepository($this->path)->createOverlayArchive(
+            $this->path.'/overlay.tar',
+            [$path],
+        ))
+            ->toThrow(InvalidArgumentException::class);
+    })->with([
+        'traversal' => '../outside.txt',
+        /** @mago-expect lint:no-literal-password The fixture verifies secret-path rejection. */
+        'secret' => 'nested/.env.production',
+    ]);
+
+    it('retains the submodule overlay refusal', function (): void {
+        file_put_contents($this->path.'/tracked.txt', "tracked\n");
+        git($this->path, ['add', '.']);
+        git($this->path, ['commit', '--quiet', '-m', 'base']);
+        $commit = git($this->path, ['rev-parse', 'HEAD']);
+        git($this->path, ['update-index', '--add', '--cacheinfo', '160000,'.$commit.',module']);
+        git($this->path, ['commit', '--quiet', '-m', 'gitlink']);
+        file_put_contents($this->path.'/module', "regular file\n");
+
+        expect(fn (): ?\App\E2E\Value\DirtyOverlay => new GitRepository($this->path)->dirtyOverlay())
+            ->toThrow(InvalidArgumentException::class, 'Submodules cannot be synchronized.');
+    });
+
     it('rejects unsafe or unmatched selectors and non-blob tree entries', function (string $selector): void {
         file_put_contents($this->path.'/tracked.txt', "tracked\n");
         git($this->path, ['add', '.']);
@@ -270,4 +349,13 @@ function configureProcessFacade(): void
     Facade::clearResolvedInstances();
     /** @mago-expect analysis:possibly-invalid-argument The process facade only needs the container contract. */
     Facade::setFacadeApplication($container);
+}
+
+/** @param list<array<array-key, string>|string|null> $commands */
+function rootResolutionCount(array $commands): int
+{
+    return count(array_filter(
+        $commands,
+        static fn (array|string|null $command): bool => $command === ['git', 'rev-parse', '--show-toplevel'],
+    ));
 }

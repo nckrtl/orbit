@@ -124,11 +124,16 @@ describe('worktree source preparation', function () {
 
         try {
             file_put_contents($host.'/deleted.txt', "remove me\n");
+            mkdir($host.'/nested/source', 0700, true);
+            file_put_contents($host.'/nested/source/run.sh', "#!/bin/sh\nprintf before\\n\n");
             syncGit($host, 'add', 'deleted.txt');
+            syncGit($host, 'add', 'nested/source/run.sh');
             syncGit($host, 'commit', '--quiet', '-m', 'Overlay base');
             unlink($host.'/deleted.txt');
             file_put_contents($host.'/tracked.txt', "overlay\n");
-            file_put_contents($host.'/untracked.txt', "new\n");
+            file_put_contents($host.'/nested/source/run.sh', "#!/bin/sh\nprintf after\\n\n");
+            chmod($host.'/nested/source/run.sh', 0755);
+            file_put_contents($host.'/nested/source/untracked.txt', "new\n");
 
             $repository = new GitRepository($host);
             $overlay = $repository->dirtyOverlay();
@@ -142,6 +147,7 @@ describe('worktree source preparation', function () {
             $deletions = $transfer.'/overlay.deletions';
             $repository->createBundle($bundle, $sha);
             $repository->createOverlayArchive($archive, $overlay?->paths ?? []);
+            $archivedRun = new PharData($archive)['nested/source/run.sh'];
             file_put_contents($manifest, implode("\0", $overlay?->paths ?? [])."\0");
             file_put_contents(
                 $deletions,
@@ -161,16 +167,22 @@ describe('worktree source preparation', function () {
 
             expect($evidence)
                 ->toEqual(['sha' => $sha, 'tree_hash' => $expectedTree])
+                ->and($archivedRun->getPerms() & 0777)
+                ->toBe(0755)
                 ->and(new GitRepository($guest)->effectiveTreeHash())
                 ->toBe($expectedTree)
                 ->and(file_exists($guest.'/deleted.txt'))
                 ->toBeFalse()
                 ->and(file_get_contents($guest.'/tracked.txt'))
                 ->toBe("overlay\n")
-                ->and(file_get_contents($guest.'/untracked.txt'))
+                ->and(file_get_contents($guest.'/nested/source/run.sh'))
+                ->toBe("#!/bin/sh\nprintf after\\n\n")
+                ->and(fileperms($guest.'/nested/source/run.sh') & 0777)
+                ->toBe(0700)
+                ->and(file_get_contents($guest.'/nested/source/untracked.txt'))
                 ->toBe("new\n");
 
-            unlink($host.'/untracked.txt');
+            unlink($host.'/nested/source/untracked.txt');
             file_put_contents($host.'/second.txt', "second\n");
             $overlay = $repository->dirtyOverlay();
             $repository->createOverlayArchive($archive, $overlay?->paths ?? []);
@@ -180,7 +192,7 @@ describe('worktree source preparation', function () {
 
             expect($result['exitCode'])
                 ->toBe(0)
-                ->and(file_exists($guest.'/untracked.txt'))
+                ->and(file_exists($guest.'/nested/source/untracked.txt'))
                 ->toBeFalse()
                 ->and(file_get_contents($guest.'/second.txt'))
                 ->toBe("second\n");
