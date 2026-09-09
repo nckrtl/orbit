@@ -144,18 +144,20 @@ describe('instance:register', function (): void {
             'hostname' => 'feature.test',
         ]);
     });
+});
 
+describe('credential-bearing registration origins', function (): void {
     it('refuses a credential-bearing discovered origin without printing it', function (bool $json): void {
-        $secret = 'orb105-user:orb105-token';
+        $userinfo = Str::random(12).':'.Str::random(24);
         $this->registrationGit->facts = new GitRegistrationFacts(
             path: '/work/acme',
-            repositoryUrl: "https://{$secret}@example.test/acme.git",
+            repositoryUrl: "https://{$userinfo}@example.test/acme.git",
             slug: 'acme',
             defaultBranch: 'main',
             branch: 'main',
             root: 'public',
             layout: 'checkout',
-            commit: str_repeat('a', 40),
+            commit: str_repeat(string: 'a', times: 40),
         );
         $mockClient = MockClient::global();
 
@@ -165,7 +167,7 @@ describe('instance:register', function (): void {
                 '--no-interaction' => true,
             ])
             ->expectsOutputToContain('not a supported Git checkout or worktree')
-            ->doesntExpectOutputToContain($secret)
+            ->doesntExpectOutputToContain($userinfo)
             ->assertExitCode(1);
 
         expect($mockClient->getLastPendingRequest())->toBeNull();
@@ -173,6 +175,7 @@ describe('instance:register', function (): void {
 
     it('rejects a credential-bearing native Git origin during local discovery', function (): void {
         $directory = sys_get_temp_dir().'/orbit-cli-origin-'.Str::uuid();
+        $userinfo = Str::random(12).':'.Str::random(24);
         $files = new Filesystem;
         $files->ensureDirectoryExists($directory);
 
@@ -182,7 +185,7 @@ describe('instance:register', function (): void {
                 ['git', '-C',   $directory,              'config',   'user.email', 'orb105@example.test'],
                 ['git', '-C',   $directory,              'config',   'user.name',  'ORB-105'],
             ];
-            file_put_contents($directory.'/README.md', "test\n");
+            file_put_contents(filename: $directory.'/README.md', data: "test\n");
             $commands[] = ['git', '-C', $directory, 'add', 'README.md'];
             $commands[] = ['git', '-C', $directory, 'commit', '-m', 'Initial'];
             $commands[] = [
@@ -192,7 +195,7 @@ describe('instance:register', function (): void {
                 'remote',
                 'add',
                 'origin',
-                'https://orb105-user:orb105-token@example.test/acme.git',
+                "https://{$userinfo}@example.test/acme.git",
             ];
 
             foreach ($commands as $command) {
