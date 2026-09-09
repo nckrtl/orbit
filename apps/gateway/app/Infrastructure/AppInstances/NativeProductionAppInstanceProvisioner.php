@@ -18,6 +18,7 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -33,11 +34,13 @@ use Throwable;
  */
 final readonly class NativeProductionAppInstanceProvisioner implements ProductionAppInstanceProvisioner
 {
+    /** @mago-expect lint:excessive-parameter-list The coordinator names each source, legacy, Route, and projection boundary explicitly. */
     public function __construct(
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceSourceLifecycle $source,
         private CreateRouteAction $routes,
         private RouteStateResolver $routeState,
+        private AppProdSiteRepository $appProdSites,
         private ProductionRouteProjector $projection,
     ) {}
 
@@ -45,6 +48,7 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
     public function execute(CreateAppInstanceData $data, App $app, Node $node, ?string $root): array
     {
         $this->assertPlacement($node);
+        $this->preflightLegacyProduction($node);
         $this->preflightHostname($app, $node, $data);
         [$appInstance, $created] = $this->reserve($app, $node, $data, $root);
 
@@ -86,6 +90,18 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
                 'Production AppInstance creation currently requires a standalone Node.',
             );
         }
+    }
+
+    private function preflightLegacyProduction(Node $node): void
+    {
+        if (! $this->appProdSites->hasLivePublicFootprint($node)) {
+            return;
+        }
+
+        throw $this->conflict(
+            'instance.legacy_production_conflict',
+            'The selected Node still serves a legacy public production Instance.',
+        );
     }
 
     private function preflightHostname(App $app, Node $node, CreateAppInstanceData $data): void

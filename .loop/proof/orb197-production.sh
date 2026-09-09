@@ -116,12 +116,54 @@ inspect_single() {
     '
 }
 
+legacy_snapshot() {
+    local instance_id=$1 public_rules=$2
+    remote_script app-prod "$instance_id" "$public_rules" <<'REMOTE'
+instance=$1
+public_rules=$2
+user=orbit-orb197-legacy-coexistence
+checkout=/var/www/orb197-legacy-coexistence/production
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+fragment=$(dirname "$live")/fragments/app-prod.caddy
+pool=/etc/php/8.5/fpm/pool.d/orbit-prod-scopes.conf
+socket=/run/php/orbit-prod-instance-$instance.sock
+sudo test -f "$fragment"
+test -f "$pool"
+test -S "$socket"
+sudo grep -Fq -- 'https://orb197-legacy.localhost' "$fragment"
+sudo grep -Fq -- "[orbit-prod-instance-$instance]" "$pool"
+test "$(getent passwd "$user" | cut -d: -f6-7)" = /var/www/orb197-legacy-coexistence:/usr/sbin/nologin
+sudo -u "$user" -H test -d "$checkout/.git"
+test -z "$(sudo -u "$user" -H git -C "$checkout" status --porcelain)"
+status=$(sudo ufw status numbered)
+if [ "$public_rules" = present ]; then
+    grep -Fq 'orbit:app-prod-http' <<<"$status"
+    grep -Fq 'orbit:app-prod-https' <<<"$status"
+else
+    test "$public_rules" = absent
+    ! grep -Fq 'orbit:app-prod-http' <<<"$status"
+    ! grep -Fq 'orbit:app-prod-https' <<<"$status"
+fi
+printf '%s\n' \
+    "$(sudo readlink /etc/caddy/Caddyfile)" \
+    "$(sudo sha256sum -- "$fragment")" \
+    "$(sudo sha256sum -- "$pool")" \
+    "$(sudo stat -c %d:%i:%U:%G:%a -- "$socket")" \
+    "$(getent passwd "$user")" \
+    "$(sudo stat -c %d:%i:%U:%G:%a -- "$checkout/.git")" \
+    "$(sudo -u "$user" -H git -C "$checkout" remote get-url origin)" \
+    "$(sudo -u "$user" -H git -C "$checkout" branch --show-current)" \
+    "$(sudo -u "$user" -H git -C "$checkout" rev-parse HEAD)" \
+    "$(grep -F 'orbit:app-prod-' <<<"$status" | sort || true)"
+REMOTE
+}
+
 case "$scenario" in
     setup-node)
         [[ $# -eq 2 && "$2" =~ ^app-prod(-2)?$ && "$(id -u)" -eq 1000 ]]
         base=/var/www/orb197
         sudo install -d -o orbit -g orbit -m 0755 "$base"
-        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-existing-repeat safety-root unresolved ownership retry retry-recovery retry-recovery-marker active remove remove-inactive nested-exposure; do
+        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-existing-repeat safety-root unresolved ownership retry retry-recovery retry-recovery-marker active remove remove-inactive nested-exposure legacy-coexistence coexistence-private; do
             work=$(mktemp -d)
             trap 'rm -rf -- "$work"' EXIT
             git -C "$work" init --initial-branch=main --quiet
@@ -179,6 +221,12 @@ case "$scenario" in
         fragments=$(dirname "$live")/fragments
         candidate=$(mktemp)
         cat > "$candidate" <<'CADDY'
+{
+    servers {
+        protocols h1 h2
+    }
+}
+
 https://localhost {
     bind 0.0.0.0
     tls internal
@@ -189,7 +237,7 @@ CADDY
         sudo install -o root -g caddy -m 0640 "$candidate" "$fragments/01-orb197-source.caddy"
         rm -f -- "$candidate"
         sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
-        sudo systemctl reload caddy
+        sudo systemctl restart caddy
         curl --fail --silent --show-error --insecure --retry 10 --retry-delay 1 --retry-all-errors https://localhost/orb197/create.git/HEAD >/dev/null
         ca=/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
         sudo test -s "$ca"
@@ -212,6 +260,107 @@ CADDY
     setup-observation)
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
         orbit app:list --json | php -r '$v=json_decode(stream_get_contents(STDIN),true,64,JSON_THROW_ON_ERROR); if(!is_array($v["apps"]??null)) exit(65);'
+        ;;
+
+    legacy-coexistence)
+        [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
+        node_id=$(fixture_node_field app-prod id)
+        node_ip=$(fixture_node_field app-prod wireguard_ip)
+        app_id=$(fixture_app_id orb197-coexistence-private)
+        private_user=orbit-app-$app_id
+        gateway_fixture legacy-coexistence remove >/dev/null
+        cleanup_legacy_coexistence() {
+            gateway_fixture legacy-coexistence remove >/dev/null || true
+        }
+        trap cleanup_legacy_coexistence EXIT
+        remote_script app-prod "$private_user" <<'REMOTE'
+user=$1
+test ! -e "/home/$user"
+! getent passwd "$user" >/dev/null
+status=$(sudo ufw status numbered)
+! grep -Fq 'orbit:app-prod-http' <<<"$status"
+! grep -Fq 'orbit:app-prod-https' <<<"$status"
+REMOTE
+        legacy=$(gateway_fixture legacy-coexistence on)
+        legacy_id=$(json_field id <<<"$legacy")
+        [[ "$(json_field status <<<"$legacy")" == active ]]
+        private_count=$(json_field private_count <<<"$legacy")
+        public_rules=present
+        [[ "$private_count" == 0 ]] || public_rules=absent
+        before=$(legacy_snapshot "$legacy_id" "$public_rules")
+        legacy_body_before=$(curl --fail --silent --show-error --insecure --retry 10 --retry-delay 1 --retry-all-errors --resolve "orb197-legacy.localhost:443:$node_ip" https://orb197-legacy.localhost/)
+        grep -Fq orb197-legacy-coexistence <<<"$legacy_body_before"
+
+        set +e
+        refusal=$(orbit instance:new "$app_id" "$node_id" production --hostname=orb197-coexistence-private.test --json 2>&1)
+        status=$?
+        set -e
+        [[ "$status" -ne 0 ]]
+        php -r '
+            $value=json_decode($argv[1], true, 64, JSON_THROW_ON_ERROR);
+            $error=$value["error"] ?? null;
+            if(!is_array($error) || ($error["code"] ?? null)!=="instance.legacy_production_conflict" || ($error["message"] ?? null)!=="The selected Node still serves a legacy public production Instance." || !is_string($error["request_id"] ?? null) || $error["request_id"]==="") exit(65);
+        ' "$refusal"
+        evidence=$(gateway_fixture inspect orb197-coexistence-private)
+        [[ "$(json_field route_count <<<"$evidence")" == 0 ]]
+        [[ "$(php -r '$v=json_decode($argv[1],true,64,JSON_THROW_ON_ERROR); echo count($v["instances"]);' "$evidence")" == 0 ]]
+        remote_script app-prod "$private_user" <<'REMOTE'
+user=$1
+test ! -e "/home/$user"
+! getent passwd "$user" >/dev/null
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+! sudo grep -R -Fq -- 'orb197-coexistence-private.test' "$(dirname "$live")/fragments"
+REMOTE
+        after=$(legacy_snapshot "$legacy_id" "$public_rules")
+        [[ "$after" == "$before" ]]
+        legacy_body_after=$(curl --fail --silent --show-error --insecure --resolve "orb197-legacy.localhost:443:$node_ip" https://orb197-legacy.localhost/)
+        [[ "$legacy_body_after" == "$legacy_body_before" ]]
+
+        disabled=$(gateway_fixture legacy-coexistence off)
+        [[ "$(json_field status <<<"$disabled")" == failed ]]
+        remote_script app-prod "$legacy_id" <<'REMOTE'
+instance=$1
+user=orbit-orb197-legacy-coexistence
+checkout=/var/www/orb197-legacy-coexistence/production
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+fragment=$(dirname "$live")/fragments/app-prod.caddy
+sudo test -f "$fragment"
+! sudo grep -Fq -- 'orb197-legacy.localhost' "$fragment"
+! sudo grep -R -Fq -- "[orbit-prod-instance-$instance]" /etc/php/*/fpm/pool.d
+test ! -S "/run/php/orbit-prod-instance-$instance.sock"
+getent passwd "$user" >/dev/null
+sudo -u "$user" -H test -d "$checkout/.git"
+status=$(sudo ufw status numbered)
+! grep -Fq 'orbit:app-prod-http' <<<"$status"
+! grep -Fq 'orbit:app-prod-https' <<<"$status"
+REMOTE
+
+        output=$(orbit instance:new "$app_id" "$node_id" production --hostname=orb197-coexistence-private.test --json)
+        assert_instance "$output" "$app_id" "$node_id" production orb197-coexistence-private.test main null null
+        private_body=$(curl --fail --silent --show-error --retry 10 --retry-delay 1 --retry-all-errors --cacert /home/orbit/.orbit/ca/root.pem --resolve "orb197-coexistence-private.test:443:$node_ip" https://orb197-coexistence-private.test/)
+        grep -Fq orb197-coexistence-private <<<"$private_body"
+        remote_script app-prod <<'REMOTE'
+status=$(sudo ufw status numbered)
+! grep -Fq 'orbit:app-prod-http' <<<"$status"
+! grep -Fq 'orbit:app-prod-https' <<<"$status"
+REMOTE
+
+        gateway_fixture legacy-coexistence remove >/dev/null
+        trap - EXIT
+        remote_script app-prod <<'REMOTE'
+test ! -e /var/www/orb197-legacy-coexistence
+! getent passwd orbit-orb197-legacy-coexistence >/dev/null
+status=$(sudo ufw status numbered)
+! grep -Fq 'orbit:app-prod-http' <<<"$status"
+! grep -Fq 'orbit:app-prod-https' <<<"$status"
+REMOTE
+        final_private_body=$(curl --fail --silent --show-error --cacert /home/orbit/.orbit/ca/root.pem --resolve "orb197-coexistence-private.test:443:$node_ip" https://orb197-coexistence-private.test/)
+        [[ "$final_private_body" == "$private_body" ]]
+        if [[ "$public_rules" == present ]]; then
+            printf 'legacy-only runtime and public firewall stayed live through preflight refusal, then retired before private production creation\n'
+        else
+            printf 'legacy runtime stayed live through preflight refusal while existing private production kept public firewall rules retired\n'
+        fi
         ;;
 
     standalone-create)

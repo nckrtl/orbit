@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -11,6 +14,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 it('preserves public SSH before enabling inactive UFW', function (): void {
@@ -159,6 +165,78 @@ it('retires only Orbit-owned public app production rules and preserves operator 
         ->each->toBe('nckrtl');
 });
 
+it('keeps public app production rules while a live legacy ACME footprint is alone', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $node = orb197_persisted_firewall_node('legacy-public');
+    orb197_firewall_legacy_instance($node, LifecycleStatus::Active);
+    $ssh->seed(['orbit:app-prod-http', 'orbit:app-prod-https']);
+
+    role_firewall_manager($ssh)->converge($node, RoleName::AppProd, 'nckrtl');
+
+    expect($ssh->comments())
+        ->toContain(
+            'orbit:app-prod-http',
+            'orbit:app-prod-https',
+        )
+        ->and($ssh->operatorWebRulesPresent)
+        ->toBeTrue();
+});
+
+it('retires stale public app production rules around inactive and other Node legacy data', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $node = orb197_persisted_firewall_node('stale-public');
+    orb197_firewall_legacy_instance($node, LifecycleStatus::Failed);
+    $otherNode = orb197_persisted_firewall_node('other-public');
+    orb197_firewall_legacy_instance($otherNode, LifecycleStatus::Active);
+    $ssh->seed(['orbit:app-prod-http', 'orbit:app-prod-https']);
+
+    role_firewall_manager($ssh)->converge($node, RoleName::AppProd, 'nckrtl');
+
+    expect($ssh->comments())
+        ->not
+        ->toContain(
+            'orbit:app-prod-http',
+            'orbit:app-prod-https',
+        )
+        ->and($ssh->operatorWebRulesPresent)
+        ->toBeTrue();
+});
+
+it('keeps a conflicting private production footprint private during role convergence', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $node = orb197_persisted_firewall_node('private-conflict');
+    orb197_firewall_legacy_instance($node, LifecycleStatus::Provisioning);
+    $app = OrbitApp::query()->create([
+        'name' => 'Private production',
+        'slug' => 'private-production',
+        'repository_url' => 'https://example.test/private-production.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'primary',
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-app-private',
+        'production_user' => 'orbit-app-private',
+        'production_home' => '/home/orbit-app-private',
+        'status' => AppInstanceState::Reserved,
+    ]);
+    $ssh->seed(['orbit:app-prod-http', 'orbit:app-prod-https']);
+
+    role_firewall_manager($ssh)->converge($node, RoleName::AppProd, 'nckrtl');
+
+    expect($ssh->comments())
+        ->not
+        ->toContain(
+            'orbit:app-prod-http',
+            'orbit:app-prod-https',
+        )
+        ->and($ssh->operatorWebRulesPresent)
+        ->toBeTrue();
+});
+
 it('fails closed without mutation when an owned comment has drifted', function (): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
 
@@ -194,6 +272,45 @@ function role_firewall_node(): Node
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
         'wireguard_ip' => '10.44.0.2',
+    ]);
+}
+
+function orb197_persisted_firewall_node(string $name): Node
+{
+    $addressSuffix = Node::query()->count() + 2;
+
+    return Node::query()->create([
+        'name' => $name,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => "192.0.2.{$addressSuffix}",
+        'public_ssh_port' => 22,
+        'wireguard_ip' => "10.44.0.{$addressSuffix}",
+        'user' => 'nckrtl',
+    ]);
+}
+
+function orb197_firewall_legacy_instance(Node $node, LifecycleStatus $status): Instance
+{
+    $app = OrbitApp::query()->create([
+        'name' => "Legacy {$node->name}",
+        'slug' => "legacy-{$node->name}",
+        'repository_url' => "https://example.test/legacy-{$node->name}.git",
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+
+    return Instance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => "/var/www/legacy-{$node->name}",
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'hostname' => "legacy-{$node->name}.example.test",
+        'certificate_mode' => CertificateMode::Acme,
+        'status' => $status,
     ]);
 }
 

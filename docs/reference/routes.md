@@ -99,6 +99,8 @@ Active WireGuard membership trusts a Node to reach every other active WireGuard 
 
 Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. A standalone production Route is private and terminates Orbit-CA TLS on its workload Node. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 
+Legacy production Instances with ACME certificates still use direct public HTTP and HTTPS on an app-prod Node. Orbit keeps those firewall rules while such an Instance is provisioning or active and the Node has no private production AppInstance. New private production creation refuses that coexistence before mutation. When no live legacy public Instance remains, the next app-prod firewall convergence removes the public rules. If legacy and private records already coexist, private publication takes priority and convergence removes the public rules.
+
 ### Publication ownership
 
 The Gateway serializes app-dev Caddy and private Domain Name System (DNS) publication with Metrics publication. It acquires one owner before it refreshes Route, target, Cluster, and Router facts or renders an aggregate. The owner remains held through Caddy publication, DNS-last publication, and the transaction that marks the Route and AppInstance active. Nested publication calls in the same request share that owner, and a failed operation releases it for a fresh retry.

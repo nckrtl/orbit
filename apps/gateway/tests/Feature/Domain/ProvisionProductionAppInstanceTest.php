@@ -11,12 +11,16 @@ use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionRouteProjector;
+use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
+use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -136,6 +140,7 @@ beforeEach(function (): void {
         $this->source,
         app(CreateRouteAction::class),
         app(RouteStateResolver::class),
+        new AppProdSiteRepository,
         $this->projection,
     );
     $this->data = new CreateAppInstanceData(
@@ -146,6 +151,68 @@ beforeEach(function (): void {
         hostname: null,
         branch: null,
     );
+});
+
+it('refuses a live legacy public production footprint before reserving or mutating', function (
+    LifecycleStatus $status,
+): void {
+    $legacy = orb197_legacy_production_instance($this->node, $status);
+
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('instance.legacy_production_conflict')
+                ->and($exception->status)
+                ->toBe(409)
+                ->and($exception->getMessage())
+                ->toBe('The selected Node still serves a legacy public production Instance.');
+        });
+
+    expect(AppInstance::query()->exists())
+        ->toBeFalse()
+        ->and(Route::query()->exists())
+        ->toBeFalse()
+        ->and($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->projection->calls)
+        ->toBeEmpty()
+        ->and($legacy->refresh()->status)
+        ->toBe($status);
+})->with([
+    'provisioning legacy Instance' => LifecycleStatus::Provisioning,
+    'active legacy Instance' => LifecycleStatus::Active,
+]);
+
+it('allows creation after the selected Node has no live legacy public footprint', function (): void {
+    $inactive = orb197_legacy_production_instance($this->node, LifecycleStatus::Failed);
+    $otherNode = Node::query()->create([
+        'name' => 'other-production',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'tld' => 'other.test',
+        'public_ssh_host' => '192.0.2.41',
+        'wireguard_ip' => '10.44.0.41',
+        'user' => 'orbit',
+    ]);
+    orb197_legacy_production_instance($otherNode, LifecycleStatus::Active);
+    $unrelated = orb197_legacy_production_instance($this->node, LifecycleStatus::Active);
+    $unrelated->update(['certificate_mode' => CertificateMode::OrbitCa]);
+
+    $result = $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null);
+
+    expect($result['appInstance']->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($result['created'])
+        ->toBeTrue()
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(1)
+        ->and($inactive->refresh()->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($this->source->calls)
+        ->not->toBeEmpty()->and($this->projection->calls)
+        ->not->toBeEmpty();
 });
 
 it('resumes each failed production boundary from its durable checkpoint without duplicate records', function (
@@ -213,3 +280,28 @@ it('uses the actual signed 64-bit App ID in a valid persisted Linux identity', f
         ->and($result['appInstance']->production_home)
         ->toBe('/home/orbit-app-9223372036854775807');
 });
+
+function orb197_legacy_production_instance(Node $node, LifecycleStatus $status): Instance
+{
+    $slug = 'legacy-production-'.OrbitApp::query()->count();
+    $app = OrbitApp::query()->create([
+        'name' => 'Legacy production',
+        'slug' => $slug,
+        'repository_url' => "https://example.test/{$slug}.git",
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+
+    return Instance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => "/var/www/{$app->slug}",
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'hostname' => "{$app->slug}.example.test",
+        'certificate_mode' => CertificateMode::Acme,
+        'status' => $status,
+    ]);
+}

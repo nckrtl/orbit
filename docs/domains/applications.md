@@ -72,6 +72,8 @@ Production source preparation retains the same `reserved`, `checkout_prepared`, 
 
 Production creation requires an explicit Route hostname or a TLD from the standalone Node. A Node in an active Cluster is outside this creation path. Both refusals happen before production source or runtime mutation.
 
+A standalone Node cannot accept a private production AppInstance while it still serves a provisioning or active legacy public production Instance. The Gateway returns `instance.legacy_production_conflict` with HTTP 409 before it reserves an AppInstance or changes a Route, source checkout, runtime, certificate, or firewall. Mark or remove the legacy Instance through its existing lifecycle, then repeat the production creation request.
+
 An identical retry resumes only incomplete Orbit-owned preparation. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, or other operator content. The operator or deployment agent owns every later production source change and must follow the [production PHP reload contract](../reference/php-runtime.md#production-deploy-contract).
 
 ## Complete a required source migration

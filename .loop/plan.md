@@ -52,6 +52,7 @@ Reported: none.
 | User, home, source, root, and ownership safety | Remote production placement and source lifecycle | `app-prod-source-safety`; `app-prod-ownership-retry` |
 | Failure and retry boundaries | Durable production coordinator checkpoints | Coordinator tests; `app-prod-standalone-retry` retained-clone recovery; `app-prod-ownership-retry` |
 | Active creation idempotency | Active terminal gate before Git | Coordinator tests; `app-prod-creation-after-deployment` |
+| Legacy public coexistence | Production placement preflight and app-prod firewall transition | Coordinator and firewall tests; `app-prod-legacy-coexistence` |
 | Private-only exposure | Orbit-CA workload projection and app-prod firewall retirement | Firewall tests; `app-prod-standalone-exposure` |
 | Removal compatibility | Existing removal coordinator with recorded production identity | API/removal tests; `app-prod-create-and-remove` on inactive Cluster Node scope |
 | Maintained documentation | Scoped documentation pages and generated context | `composer docs-lint` |
@@ -93,3 +94,4 @@ Reported: none.
 - Resolved: apply the same active-Cluster placement boundary to production removal as creation; covered by the creation/removal API regression and inactive-membership phase of `app-prod-create-and-remove`.
 - Resolved: require a root-owned, operation-specific clone marker before a retry can adopt existing source; covered by the source lifecycle regression and two repeated refusals with unchanged operator source in `app-prod-source-safety`.
 - Resolved: grant execute-only Caddy access to validated ancestors of an existing nested document root; covered by the source lifecycle regression and private HTTPS serving plus outside-root denial in `app-prod-standalone-exposure`.
+- Resolved: refuse private production placement before reservation while the selected Node has a live legacy ACME production Instance, retain direct public firewall rules for the legacy-only footprint, and retire them when that footprint ends or conflicts with an existing private production AppInstance; covered by coordinator and firewall regressions plus `app-prod-legacy-coexistence`.

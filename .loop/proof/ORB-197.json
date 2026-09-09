@@ -41,6 +41,15 @@
     ],
     "acceptance": [
         {
+            "id": "app-prod-legacy-coexistence",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "legacy-coexistence"
+            ],
+            "timeout_seconds": 300
+        },
+        {
             "id": "app-prod-standalone-create",
             "node": "app-dev",
             "argv": [

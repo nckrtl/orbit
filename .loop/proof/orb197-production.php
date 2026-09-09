@@ -3,9 +3,15 @@
 declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
+use App\Domain\AppProd\AppProdRuntimeConverger;
+use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Contracts\Console\Kernel;
@@ -48,6 +54,8 @@ function definitions(): array
         'remove',
         'remove-inactive',
         'nested-exposure',
+        'legacy-coexistence',
+        'coexistence-private',
     ];
     $definitions = [];
 
@@ -266,6 +274,66 @@ switch ($command) {
                 SQL);
         }
         writeJson(['source_checkpoint_fault' => $arguments[0]]);
+        break;
+
+    case 'legacy-coexistence':
+        if (count($arguments) !== 1 || ! in_array($arguments[0], ['on', 'off', 'remove'], true)) {
+            exit(64);
+        }
+        $state = currentState($statePath);
+        $node = Node::query()->findOrFail(nodeId($state, 'app-prod'));
+        $app = OrbitApp::query()->findOrFail(appId($state, 'orb197-legacy-coexistence'));
+        $instance = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('node_id', $node->id)
+            ->where('name', 'production')
+            ->first();
+        if ($arguments[0] === 'on') {
+            if (! $instance instanceof Instance) {
+                $instance = Instance::query()->create([
+                    'app_id' => $app->id,
+                    'node_id' => $node->id,
+                    'name' => 'production',
+                    'environment' => 'production',
+                    'checkout_path' => '/var/www/orb197-legacy-coexistence/production',
+                    'document_root' => 'public',
+                    'php_version' => '8.5',
+                    'hostname' => 'orb197-legacy.localhost',
+                    'certificate_mode' => CertificateMode::Acme,
+                    'status' => LifecycleStatus::Provisioning,
+                ]);
+            } else {
+                $instance->update(['status' => LifecycleStatus::Provisioning]);
+            }
+            $laravel->make(AppProdRuntimeConverger::class)->convergeInstance($instance);
+            $instance->update(['status' => LifecycleStatus::Active]);
+            $laravel->make(NodeRoleFirewallManager::class)->converge($node, RoleName::AppProd, $node->user);
+            writeJson([
+                'id' => $instance->id,
+                'status' => $instance->refresh()->status->value,
+                'private_count' => AppInstance::query()
+                    ->where('node_id', $node->id)
+                    ->where('environment', 'production')
+                    ->count(),
+            ]);
+            break;
+        }
+        if (! $instance instanceof Instance) {
+            $laravel->make(NodeRoleFirewallManager::class)->converge($node, RoleName::AppProd, $node->user);
+            writeJson(['removed' => true]);
+            break;
+        }
+        $instance->update(['status' => LifecycleStatus::Failed]);
+        if ($arguments[0] === 'off') {
+            $laravel->make(AppProdRuntimeConverger::class)->unpublishInstance($instance);
+            $laravel->make(NodeRoleFirewallManager::class)->converge($node, RoleName::AppProd, $node->user);
+            writeJson(['id' => $instance->id, 'status' => $instance->refresh()->status->value]);
+            break;
+        }
+        $laravel->make(AppProdRuntimeConverger::class)->removeInstance($instance);
+        $instance->delete();
+        $laravel->make(NodeRoleFirewallManager::class)->converge($node, RoleName::AppProd, $node->user);
+        writeJson(['removed' => true]);
         break;
 
     case 'inactive-membership':
