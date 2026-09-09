@@ -16,7 +16,7 @@ final class CreateInstanceCommand extends GatewayCommand
     protected $signature = 'instance:new
         {app : Numeric app ID}
         {node : Numeric node ID}
-        {name : Development AppInstance name; default is reserved for the App default source}
+        {name : AppInstance name; default is reserved for the default development source}
         {--root= : Optional relative web-root override}
         {--hostname= : Optional explicit Route hostname}
         {--branch= : Optional explicit source branch}
@@ -24,7 +24,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create a development AppInstance on an app-dev node.';
+    protected $description = 'Create an AppInstance on an app-dev or standalone app-prod node.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -80,6 +80,11 @@ final class CreateInstanceCommand extends GatewayCommand
 
         $this->info("Instance [{$instance->name}] is {$instance->status}.");
         $this->line("Source layout: {$instance->sourceLayout}");
+        if ($instance->productionUser !== null) {
+            $this->line("Production user: {$instance->productionUser}");
+            $this->line("Production home: {$instance->productionHome}");
+        }
+        $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
         $this->line('Selected branch: '.($instance->selectedBranch ?? '-'));
         $this->line('Branch override: '.($instance->branchOverride ?? '-'));
         $this->line('Migration required: '.($instance->migrationRequired ? 'yes' : 'no'));

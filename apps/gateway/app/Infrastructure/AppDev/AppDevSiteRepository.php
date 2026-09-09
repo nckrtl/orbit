@@ -272,10 +272,12 @@ final readonly class AppDevSiteRepository
             nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "app-instance-{$instance->id}",
             checkoutPath: $instance->checkout_path,
-            documentRoot: $instance->effectiveRoot() ?? '',
+            documentRoot: $instance->root ?? $instance->app->root ?? '',
             phpVersion: $instance->selected_php_version,
             hostname: $route->hostname,
             environment: $instance->environment,
+            productionUser: $instance->production_user,
+            productionHome: $instance->production_home,
             appSlug: $instance->app->slug,
             certificateScope: $hostnameChange ? "app-instance-{$instance->id}-hostname-change" : null,
         );

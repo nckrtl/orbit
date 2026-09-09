@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $environment
  * @property string $source_layout
  * @property string $checkout_path
+ * @property string|null $production_user
+ * @property string|null $production_home
  * @property string|null $root
  * @property string|null $branch
  * @property string|null $branch_override
@@ -79,6 +81,8 @@ final class AppInstance extends Model
         'environment',
         'source_layout',
         'checkout_path',
+        'production_user',
+        'production_home',
         'root',
         'branch',
         'branch_override',
@@ -143,7 +147,13 @@ final class AppInstance extends Model
 
     public function effectiveRoot(): ?string
     {
-        return $this->root ?? $this->app->root;
+        $root = $this->root ?? $this->app->root;
+
+        if ($this->environment === 'production' && is_string($this->production_home) && is_string($root)) {
+            return "{$this->production_home}/{$root}";
+        }
+
+        return $root;
     }
 
     /** @return array<string, class-string> */

@@ -60,14 +60,13 @@ it('returns typed exact firewall rules', function (): void {
         ->toBe('orbit:public-ssh-recovery');
 });
 
-it('keeps public app-production rules independent of a WireGuard address', function (): void {
+it('keeps app-production workload ports private', function (): void {
     $rules = new NodeFirewallRuleCatalog()->forRole(
         new Node(['public_ssh_port' => 22, 'wireguard_ip' => null]),
         RoleName::AppProd,
     );
 
-    expect(array_map(static fn (UfwManagedRule $rule): ?string => $rule->shape->destination, $rules))
-        ->toBe(['any', 'any']);
+    expect($rules)->toBe([]);
 });
 
 it('matches the gateway writer exact shape independently of a WireGuard address', function (): void {

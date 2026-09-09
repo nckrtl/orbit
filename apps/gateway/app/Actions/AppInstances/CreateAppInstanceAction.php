@@ -12,6 +12,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -47,6 +48,7 @@ final readonly class CreateAppInstanceAction
         private AppDevSourceOperationLock $sourceLock,
         private DevelopmentAppInstanceSourceLifecycle $source,
         private DevelopmentAppInstanceProvisioner $provisioner,
+        private ProductionAppInstanceProvisioner $productionProvisioner,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -56,6 +58,17 @@ final readonly class CreateAppInstanceAction
         $this->assertCompleteSourceDefaults($app);
         $requestedNode = Node::query()->findOrFail($data->nodeId);
         $root = $data->root === null ? null : RelativeWebRoot::validate($data->root);
+
+        if (
+            $requestedNode
+                ->roles()
+                ->where('role', RoleName::AppProd)
+                ->where('status', LifecycleStatus::Active)
+                ->exists()
+        ) {
+            return $this->productionProvisioner->execute($data, $app, $requestedNode, $root);
+        }
+
         $existing = AppInstance::query()
             ->where('app_id', $app->id)
             ->where('name', $data->name)

@@ -319,7 +319,7 @@ it('keeps generated and development Routes single-target', function (string $kin
         ->toBe(1);
 })->with(['generated', 'development']);
 
-it('refuses a shared production target on a wrong Cluster, inactive role, or duplicate Node', function (string $invalid): void {
+it('refuses a shared production target on a wrong Cluster or inactive role', function (string $invalid): void {
     [$app, $cluster, $one, $two] = production_route_constraint_fixture();
 
     if ($invalid === 'cluster') {
@@ -333,8 +333,6 @@ it('refuses a shared production target on a wrong Cluster, inactive role, or dup
             ->update([
                 'status' => LifecycleStatus::Provisioning->value,
             ]);
-    } else {
-        $two->update(['node_id' => $one->node_id]);
     }
 
     $route = Route::query()->create([
@@ -351,7 +349,7 @@ it('refuses a shared production target on a wrong Cluster, inactive role, or dup
         ->toThrow(QueryException::class)
         ->and($route->targets()->count())
         ->toBe(1);
-})->with(['cluster', 'role', 'duplicate Node']);
+})->with(['cluster', 'role']);
 
 /** @return array{AppInstance, Route} */
 function app_instance_route_constraint_fixture(): array

@@ -536,14 +536,17 @@ final readonly class RegisterAppInstanceAction
                     $this->destinationGuard->assertUnoccupied($node, $destination);
                 }
             } else {
+                $this->assertRetryRequest(
+                    $instance,
+                    $fact === $primary,
+                    $data->includeWorktrees,
+                );
                 $this->assertRetry(
                     $instance,
                     $app,
                     $fact,
                     $destination,
                     $rootOverride,
-                    $fact === $primary,
-                    $data->includeWorktrees,
                 );
             }
 
@@ -698,16 +701,9 @@ final readonly class RegisterAppInstanceAction
         RegistrationSourceFacts $facts,
         StoragePath $destination,
         ?string $root,
-        bool $primary,
-        bool $includeWorktrees,
     ): void {
         if (
-            $instance->registration_request_id === null
-            && ! $instance->migration_required
-            || $instance->registration_request_id !== null
-            && ($instance->registration_primary !== $primary
-            || $instance->registration_include_worktrees !== $includeWorktrees)
-            || $instance->app_id !== $app->id
+            $instance->app_id !== $app->id
             || $instance->source_layout !== $facts->layout->value
             || $instance->registration_repository_identity !== null
             && $instance->registration_repository_identity !== $facts->repositoryIdentity
@@ -718,6 +714,25 @@ final readonly class RegisterAppInstanceAction
             || ! $app->wasRecentlyCreated
             && $root !== null
             && $instance->root !== $root
+        ) {
+            throw $this->conflict(
+                'instance.registration_conflict',
+                'Registration retry input conflicts with retained evidence.',
+            );
+        }
+    }
+
+    private function assertRetryRequest(
+        AppInstance $instance,
+        bool $primary,
+        bool $includeWorktrees,
+    ): void {
+        if (
+            $instance->registration_request_id === null
+            && ! $instance->migration_required
+            || $instance->registration_request_id !== null
+            && ($instance->registration_primary !== $primary
+            || $instance->registration_include_worktrees !== $includeWorktrees)
         ) {
             throw $this->conflict(
                 'instance.registration_conflict',
