@@ -62,9 +62,11 @@ final readonly class UpdateClusterAction
                 $updates['state'] = $data->state;
             }
 
-            ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(clusterOverrides: [
-                $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
-            ]);
+            if ($proposedTld !== $locked->tld || $proposedState !== $locked->state) {
+                ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(clusterOverrides: [
+                    $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
+                ]);
+            }
 
             $locked->update($updates);
 

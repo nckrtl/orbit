@@ -752,6 +752,44 @@ it('refuses Cluster activation that would change an active AppInstance Route', f
         ->toBeEmpty();
 });
 
+it('renames a Cluster and accepts unchanged placement input despite an unrelated failed checkout', function (): void {
+    $this->source->fail = 'resolve';
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'failed',
+        ])
+        ->assertUnprocessable();
+    $instanceBefore = AppInstance::query()->sole()->getAttributes();
+    $routeBefore = Route::query()->sole()->getAttributes();
+    $targetBefore = RouteTarget::query()->sole()->getAttributes();
+    $cluster = Cluster::query()->create([
+        'name' => 'routing',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster',
+    ]);
+
+    $this
+        ->patchJson("/api/v1/clusters/{$cluster->id}", ['name' => 'renamed'])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'renamed');
+    $this
+        ->patchJson("/api/v1/clusters/{$cluster->id}", [
+            'state' => 'inactive',
+            'tld' => 'cluster',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'renamed');
+
+    expect(AppInstance::query()->sole()->getAttributes())
+        ->toBe($instanceBefore)
+        ->and(Route::query()->sole()->getAttributes())
+        ->toBe($routeBefore)
+        ->and(RouteTarget::query()->sole()->getAttributes())
+        ->toBe($targetBefore);
+});
+
 it('transports a root override and returns it as the effective root', function (): void {
     $this
         ->postJson('/api/v1/instances', [
