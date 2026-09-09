@@ -72,9 +72,9 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | `equivalence ISSUE [--plan=PATH]` | Compares the clean HEAD with the retained proof using the plan that defaults to `.loop/proof/ISSUE.json`, then writes an immutable report; see [Equivalence outcomes](proof-plans.md#equivalence-outcomes) |
 | `candidate ISSUE` | Converges and verifies the accepted head on a candidate-convergence topology after an `equivalent` report that requires it |
 | `status ISSUE` | Reports the state files without touching Incus |
-| `release ISSUE [--proof\|--candidate] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases discovery, or the selected retained topology, verifies absence, and sweeps orphaned networks; the paired recovery options add missing target evidence to one exact legacy lease |
+| `release ISSUE [--proof\|--candidate] [--capture] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. `--proof --capture` preserves acceptance evidence first. Recovery options identify one exact legacy lease. |
 
-`bin/worktree-remove ISSUE slug` releases the proof topology, then discovery, then removes the worktree. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the tracked plan and fixture lifecycle on an issue branch.
+`bin/worktree-remove ISSUE slug` releases the proof topology, then discovery, then removes the worktree. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs candidate-bound artifact refs. Capture successful proof evidence before removing its worktree.
 
 ### Guest commands
 

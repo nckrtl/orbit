@@ -45,7 +45,14 @@ final readonly class ProofInputManifestBuilder
         if (! $repository->isAncestor($includedMainSha, $provedSha)) {
             throw new InvalidArgumentException('The proof candidate does not include current origin/main.');
         }
-        $entries = $repository->entries($provedSha);
+        $artifact = $repository->loopCommit($issue, $provedSha);
+        if ($artifact !== $provedSha) {
+            $committed = ProofPlan::fromJson($repository->blobs($artifact, [$planPath])[$planPath]);
+            if ($committed->fingerprint() !== $plan->fingerprint()) {
+                throw new InvalidArgumentException('The working proof plan differs from the bound artifact plan.');
+            }
+        }
+        $entries = $repository->entries($artifact);
         $contractPaths = $this->contractPaths($entries, $issue, $planPath, $plan);
         $featureRuntimePaths = $this->featureRuntimePaths($repository, $includedMainSha, $provedSha);
         $unknown = [];
@@ -132,7 +139,14 @@ final readonly class ProofInputManifestBuilder
         if (! $repository->isAncestor($includedMainSha, $provedSha)) {
             throw new InvalidArgumentException('The proof candidate does not include current origin/main.');
         }
-        $entries = $repository->entries($provedSha);
+        $artifact = $repository->loopCommit($issue, $provedSha);
+        if ($artifact !== $provedSha) {
+            $committed = ProofPlan::fromJson($repository->blobs($artifact, [$planPath])[$planPath]);
+            if ($committed->fingerprint() !== $plan->fingerprint()) {
+                throw new InvalidArgumentException('The working proof plan differs from the bound artifact plan.');
+            }
+        }
+        $entries = $repository->entries($artifact);
         $contractPaths = $this->contractPaths($entries, $issue, $planPath, $plan);
         foreach (array_keys($entries) as $path) {
             if (

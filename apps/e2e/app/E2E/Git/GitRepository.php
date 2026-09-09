@@ -131,6 +131,36 @@ final readonly class GitRepository
         }
     }
 
+    /** Resolve immutable delivery inputs while retaining support for existing tracked plans. */
+    public function loopCommit(string $issue, string $candidate): string
+    {
+        TopologyTarget::assertIssue($issue);
+        $this->validateSha($candidate);
+        $entries = $this->entries($candidate);
+        if (isset($entries['.loop/proof/'.$issue.'.json'])) {
+            return $candidate;
+        }
+        $ref = 'refs/tags/loop/'.strtolower($issue).'/'.$candidate;
+        $artifact = $this->commit($ref);
+        $parents = trim($this->run(['rev-list', '--parents', '-n', '1', $artifact]));
+        if ($parents !== $artifact.' '.$candidate) {
+            throw new InvalidArgumentException('The loop artifact is not bound to the exact candidate.');
+        }
+        $changes = $this->changes($candidate, $artifact);
+        if (
+            $changes === []
+            || array_any(
+                $changes,
+                static fn (array $change): bool => $change['change'] !== 'added'
+                || ! str_starts_with($change['path'], '.loop/'),
+            )
+        ) {
+            throw new InvalidArgumentException('The loop artifact changes paths outside its delivery workspace.');
+        }
+
+        return $artifact;
+    }
+
     /** Keep a successful proof candidate reachable across a later rebase. */
     public function pinProof(string $issue, AttemptId $attempt, string $commit): void
     {

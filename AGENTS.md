@@ -50,23 +50,24 @@ invoke any one directly; no private orchestration order is implied.
   repository-owner-approved behavior and issue-specific proof.
 - The `proof:incus` label uses the repository's disposable topology and proof commands.
   Automated-only changes use project checks and CI.
-- Proof plans live in `.loop/proof/<ISSUE>.json`; optional fixtures live beside
-  the plan under `.loop/proof/`. Per-worktree harness state lives in `<worktree>/.e2e/`.
+- Proof plans and fixtures live locally under ignored `.loop/proof/` and are
+  published with `bin/loop-artifacts` on immutable candidate-bound refs. Per-worktree harness state lives in `<worktree>/.e2e/`.
 - Discovery remains the default development target while a separate fresh
   proof topology runs. Retain a failed proof for explicit unprivileged
   debugging and release it independently before the next proof.
-- A proved topology is immutable evidence for one exact commit and issue. Never
-  reuse proof resources across issues.
+- Proof evidence is immutable for one exact commit and issue. Never reuse proof
+  resources across issues. Capture successful evidence before releasing its VMs.
 - Every proof action must exit `0`. Promotion requires the exact proved commit,
   exact proof plan, and complete zero-exit action evidence.
-- Promotion releases both the successful proof topology and retained discovery
-  topology after replacing the promoted topology snapshot.
+- Release successful proof with `release <ISSUE> --proof --capture` and idle
+  discovery before review. Closeout refreshes the snapshot from merged main.
 - Production release is separate from development proof and never reuses a
   disposable proof topology.
 
 ## Verification
 
-- Run `bin/test` for all full Pest suites without TIA.
+- Run focused Pest tests locally. CI runs all full Pest suites without TIA.
+- Use `bin/test` only for an explicit full local run or failure diagnosis.
 - Run the nearest project's `composer check` for changed PHP code.
 - Run `composer docs-lint` when maintained documentation changes.
 - GitHub Actions runs each project as an independent matrix job.

@@ -40,10 +40,8 @@ business logic and performs explicit infrastructure actions over SSH.
 ## Verification
 
 ```bash
-composer test
 composer check
 ```
 
-Run focused Pest tests during TDD. Run the full Pest suite in parallel without
-TIA, Rector, Mago format/lint/analyse, and `git diff --check -- apps/gateway` from the
-monorepo root before handoff.
+Run focused Pest tests during TDD. Run changed-project checks with Rector and Mago format/lint/analyse, and `git diff --check -- apps/gateway` from the
+monorepo root before handoff. CI runs the full parallel suites without TIA.

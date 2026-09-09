@@ -74,10 +74,9 @@ final readonly class ProofEquivalenceEvaluator
         ProofPlan $plan,
         string $planPath,
     ): ProofEquivalenceReport {
-        if (! $state->isProved()) {
-            throw new RuntimeException("{$request->issue} has no active immutable proved topology.");
-        }
-        $topology = $state->requireTopology(AttemptPurpose::Proof);
+        $topology = $state->proofTopology() ?? throw new RuntimeException(
+            "{$request->issue} has no immutable proof evidence.",
+        );
         $proof = $state->proof() ?? [];
         $provedSha = $proof['candidate_sha'] ?? null;
         $planSha256 = $proof['plan_sha256'] ?? null;
@@ -97,6 +96,27 @@ final readonly class ProofEquivalenceEvaluator
         }
 
         $errors = [];
+        if (! $state->isProved()) {
+            try {
+                ProofEvidence::capture($state, $plan);
+            } catch (Throwable $exception) {
+                $errors[] = $exception->getMessage();
+            }
+        }
+        try {
+            $provedArtifacts = $repository->loopCommit($request->issue, $provedSha);
+            if ($provedArtifacts !== $provedSha) {
+                $currentArtifacts = $repository->loopCommit($request->issue, $acceptedSha);
+                $oldInputs = $repository->directoryBlobs($provedArtifacts, ProofPlanFile::DIRECTORY);
+                $newInputs = $repository->directoryBlobs($currentArtifacts, ProofPlanFile::DIRECTORY);
+                if ($oldInputs !== $newInputs) {
+                    $errors[] = 'The committed proof artifacts changed after proof.';
+                }
+            }
+        } catch (Throwable $exception) {
+            $errors[] = $exception->getMessage();
+        }
+
         $manifest = null;
         if ($plan->fingerprint() !== $planSha256) {
             $errors[] = 'The current normalized proof plan differs from the proved plan.';

@@ -77,13 +77,15 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 
-    it('uses the full parallel no-TIA suite for normal SDK checks', function (): void {
+    it('keeps full suites explicit and delegates candidate suites to CI', function (): void {
         /** @var array{scripts: array<string, string|list<string>>} $composer */
         $composer = json_decode(
             repository_guidance_contents('composer.json'),
             associative: true,
             flags: JSON_THROW_ON_ERROR,
         );
+
+        expect($composer['scripts']['check'])->not->toContain('@test');
 
         expect($composer['scripts']['test'] ?? null)
             ->toBe('vendor/bin/pest --parallel --no-tia --compact')
@@ -96,7 +98,7 @@ describe('repository guidance bootstrap', function (): void {
             ->not->toContain('local TIA');
 
         expect(repository_guidance_contents('AGENTS.md'))
-            ->toContain('Use Pest 5 with full parallel no-TIA runs for the normal workflow.');
+            ->toContain('Use focused Pest tests locally; CI owns full parallel no-TIA suites.');
 
         foreach ([
             '.ai/rules/index.md',

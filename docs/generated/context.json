@@ -1212,6 +1212,18 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/implementation-loop.md",
+            "title": "Implementation loop",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0049"
+            ]
+        },
+        {
             "path": "docs/reference/incus-topologies.md",
             "title": "Incus topology registry",
             "kind": "reference",
@@ -1234,8 +1246,8 @@
                 "0005",
                 "0006",
                 "0019",
-                "0022",
-                "0040"
+                "0040",
+                "0049"
             ]
         },
         {
@@ -1298,7 +1310,8 @@
             ],
             "governing_adrs": [
                 "0015",
-                "0022"
+                "0049",
+                "0050"
             ]
         },
         {
@@ -1371,9 +1384,10 @@
             ],
             "governing_adrs": [
                 "0005",
-                "0022",
                 "0028",
-                "0035"
+                "0035",
+                "0049",
+                "0050"
             ]
         },
         {

@@ -35,7 +35,6 @@
             "@guidance:check",
             "@docs:lint",
             "@rector",
-            "@test",
             "@format:check",
             "@lint",
             "@analyse"

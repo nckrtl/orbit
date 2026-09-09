@@ -50,6 +50,15 @@ final readonly class ProofPlanFile
         }
 
         $repository = new GitRepository($request->worktree);
+        $candidate = $repository->commit();
+        try {
+            $artifact = $repository->loopCommit($request->issue, $candidate);
+            $content = $repository->blobs($artifact, [$path])[$path];
+
+            return new self($path, ProofPlan::fromJson($content));
+        } catch (\Throwable) {
+            // Legacy removal heads recover the plan from their proved candidate below.
+        }
         if (array_any(
             array_keys($repository->entries($repository->commit())),
             static fn (string $entry): bool => str_starts_with($entry, '.loop/'),
@@ -67,7 +76,7 @@ final readonly class ProofPlanFile
             );
         }
         try {
-            $content = $repository->blobs($provedSha, [$path])[$path] ?? null;
+            $content = $repository->blobs($repository->loopCommit($request->issue, $provedSha), [$path])[$path] ?? null;
             if (! is_string($content)) {
                 throw new InvalidArgumentException('The retained proof plan blob is missing.');
             }

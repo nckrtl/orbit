@@ -46,7 +46,7 @@ the project rule set.
 
 ## Verification
 
-- Use focused Pest 5 tests during development and the full parallel no-TIA suite through `composer test`.
+- Use focused Pest 5 tests locally. CI owns full parallel no-TIA suites; `composer test` remains an explicit full local run.
 - Run `composer check` before delivery. Mago and Rector are the configured PHP quality tools.
 
 === .ai/spatie rules ===

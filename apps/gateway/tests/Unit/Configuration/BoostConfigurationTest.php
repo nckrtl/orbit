@@ -436,13 +436,13 @@ it('preserves project and installed testing guidance', function (): void {
             'Require exact Orbit ownership before mutation.',
             'Linux privilege escalation',
             'legacy project is optional research',
-            'full Pest suite in parallel without',
+            'CI runs the full parallel suites without TIA',
             'Mago format/lint/analyse',
         )
         ->not->toContain('with TIA', 'test:full');
 
     expect($readProjectFile('.ai/rules/boost/tests.md'))
-        ->toContain('full parallel suite without TIA')
+        ->toContain('green CI full suites without TIA')
         ->not->toContain('with TIA', 'test:full');
 });
 

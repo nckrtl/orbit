@@ -241,8 +241,9 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         ->and($composer['scripts']['test:full'] ?? null)
         ->toBeNull()
         ->and($composer['scripts']['check'] ?? null)
+        ->not
         ->toContain('@test')
-        ->not->toContain('@guidance:check');
+        ->toContain('@guidance:check');
     foreach ([
         'AGENTS.md',
         'README.md',
@@ -261,7 +262,7 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         if ($guidanceFile === '.ai/skills/orbit-cli-development/SKILL.md') {
             expect(substr_count(
                 haystack: (string) $guidance,
-                needle: '`composer test`',
+                needle: '`composer check`',
             ))->toBe(1);
         }
     }

@@ -31,7 +31,6 @@
         "check": [
             "@guidance:check",
             "@rector",
-            "@test",
             "@format:check",
             "@lint",
             "@analyse"
