@@ -30,8 +30,9 @@ it('initializes one current feature-plan artifact', function () use ($read): voi
         ->not->toContain('## Reconciliation notes');
     expect($ignore)
         ->toContain('/.e2e/')
-        ->not->toContain('/.orbit/')
-        ->not->toContain('/.loop/');
+        ->not
+        ->toContain('/.orbit/')
+        ->toContain('/.loop/');
 });
 
 it('reads complete worktree listings without early-exit SIGPIPE', function () use ($read): void {
@@ -156,7 +157,7 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('exact remote PR head')
         ->toContain('must not merge or rebase `main`')
         ->toContain('stop until the candidate is updated and pushed')
-        ->toContain('retained immutable proof')
+        ->toContain('captured immutable proof')
         ->toContain('repository-owner-approved behavior')
         ->toContain('issue-specific proof')
         ->not->toContain('validation-clone lifecycle')
@@ -170,25 +171,15 @@ it('binds review and merge to one exact remote head', function () use ($read): v
     expect($merge)
         ->toContain('Close out one independently approved pull request')
         ->toContain('external orchestrator merges it')
-        ->toContain('Do not run a merge command')
-        ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
-        ->toContain('Do not substitute a refresh when `main` differs')
-        ->toContain('For every candidate, if `main` moved after approval')
-        ->toContain('Never integrate `main`')
-        ->toContain('after the `.loop/` removal')
-        ->toContain('declares `mutates: true`')
-        ->toContain('A normalized extended proof plan')
-        ->toContain('always declares `mutates: true` and is refresh-only')
+        ->toContain('green CI for it')
+        ->toContain('current main included in that head')
+        ->toContain('A changed head needs fresh approval, CI, and an evidence decision')
+        ->toContain('Never substitute snapshot refresh for missing acceptance proof')
         ->toContain('bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>')
-        ->toContain('bin/e2e-topology release <ISSUE> --proof')
-        ->toContain('If refresh fails, leave both the')
-        ->toContain('proof and discovery attempts active and stop')
-        ->toContain('Release neither')
-        ->toContain('attempt before successful refresh')
-        ->toContain('ADR 0035')
+        ->toContain('A failed refresh retains captured evidence and requires retry')
+        ->toContain('bin/e2e-topology release <ISSUE> --proof --capture')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
-        ->toContain('verify GitHub, `origin/main`')
-        ->toContain('topology snapshot identity, and cleanup state directly');
+        ->toContain('GitHub evidence is read-only');
 
     expect($read('.agents/skills/developing-features/SKILL.md'))
         ->toContain('repository-owner-approved behavior')
@@ -240,8 +231,8 @@ it('keeps one external-orchestrator lifecycle', function () use ($read): void {
     expect($merger)
         ->toContain('after the external orchestrator merges it')
         ->toContain('authoritative read-only GitHub state')
-        ->toContain('Do not run a merge command')
-        ->toContain('only mutations are proof promotion and resource cleanup');
+        ->toContain('This task does not review, approve, or merge')
+        ->toContain('GitHub evidence is read-only');
 
     expect($developerManifest)
         ->toContain('Todo or In Progress')
@@ -252,8 +243,8 @@ it('keeps one external-orchestrator lifecycle', function () use ($read): void {
         ->toContain('without mutating GitHub');
     expect($mergerManifest)
         ->toContain('external orchestrator merges')
-        ->toContain('exact second-approved removal head')
-        ->toContain('promote its proof, and clean up');
+        ->toContain('exact approved candidate')
+        ->toContain('refresh the snapshot, and clean up');
 
     foreach ([$developer, $reviewer, $merger, $developerManifest, $reviewerManifest, $mergerManifest] as $contract) {
         expect($contract)
@@ -276,27 +267,26 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
 
     expect($developer)
         ->toContain('complete `.loop/` workspace')
-        ->toContain('pushes one commit that deletes `.loop/` and changes nothing else')
-        ->toContain('evaluates retained-proof equivalence')
-        ->toContain('returns the removal head for a fresh second approval');
+        ->toContain('bin/loop-artifacts publish <ISSUE>')
+        ->toContain('no removal commit or second approval')
+        ->toContain('release <ISSUE> --proof --capture')
+        ->toContain('CI owns full suites');
     expect($reviewer)
-        ->toContain('sole parent to be the approved workspace head')
-        ->toContain('only deletions below `.loop/`')
-        ->toContain('retained proof to be `exact` or `equivalent`')
-        ->toContain('fresh review bound to the exact removal-head SHA');
+        ->toContain('verify its SHA against the handoff')
+        ->toContain('only parent to be the candidate')
+        ->toContain('diff to add only `.loop/` paths')
+        ->toContain('candidate must carry no `.loop/` entries');
     expect($merger)
-        ->toContain('exact independently approved head')
-        ->toContain('still carries `.loop/`')
-        ->toContain("Require the entire parent-to-head difference to be\n   deletions below `.loop/`")
-        ->toContain('second independent `Approved.` review bound to the removal head')
+        ->toContain('one independent `Approved.` review bound to the exact head and published artifact SHA')
         ->toContain('Verify the external merge')
-        ->toContain('exact second parent')
-        ->toContain('tree to equal the accepted head')
-        ->toContain('absence of `.loop/` from the merged tree')
-        ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
+        ->toContain('exact second parent and the same tree')
+        ->toContain('absence of `.loop/` from main')
+        ->toContain('complete acceptance proof')
+        ->toContain('Keep artifact refs and the primary checkout')
         ->toContain('bin/worktree-remove <ISSUE> <slug>');
     expect($planReviewer)
-        ->toContain('Commit the reviewed `.loop/plan.md` and no other change with a message beginning `plan:`');
+        ->toContain('bin/loop-artifacts save <ISSUE>')
+        ->toContain('Do not commit `.loop/` to the feature branch');
 });
 
 it('keeps issue creation current, dependency-aware, atomic, and proof feasible', function () use ($read): void {
@@ -495,7 +485,7 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     expect($agents)->not->toContain('Builder');
     expect($agents)->not->toContain('after plan approval');
     expect($agents)->toContain('Product feature branches never modify the harness')->toContain('are not harness code');
-    expect($agents)->toContain('A proved topology is immutable evidence');
+    expect($agents)->toContain('Proof evidence is immutable');
     expect($agents)->toContain('Production release is separate from development proof');
 
     expect($readme)

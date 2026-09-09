@@ -211,7 +211,13 @@ describe('topology commands', function () {
         $this->withoutMockingConsoleOutput()->artisan('topology:status', ['issue' => 'TST-12', '--json' => true]);
 
         expect(json_decode(Artisan::output(), true, 8, JSON_THROW_ON_ERROR))
-            ->toBe(['state' => 'absent', 'issue' => 'TST-12', 'worktree' => $worktree, 'proof' => null]);
+            ->toBe([
+                'state' => 'absent',
+                'issue' => 'TST-12',
+                'worktree' => $worktree,
+                'proof' => null,
+                'captured_topology' => null,
+            ]);
     });
 
     it('reports the active proof attempt and its result from the worktree state', function () {
