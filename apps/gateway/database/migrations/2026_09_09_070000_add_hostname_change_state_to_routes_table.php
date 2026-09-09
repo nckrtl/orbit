@@ -28,6 +28,19 @@ return new class extends Migration {
 
     public function down(): void
     {
+        $unfinished = DB::table('routes')
+            ->whereNotNull('hostname_change_target')
+            ->orderBy('id')
+            ->pluck('id');
+
+        if ($unfinished->isNotEmpty()) {
+            throw new RuntimeException(
+                'Cannot remove Route hostname change state while operations are unfinished: '
+                .$unfinished->implode(', ')
+                .'.',
+            );
+        }
+
         DB::statement('DROP TRIGGER IF EXISTS routes_contract_insert');
         DB::statement('DROP TRIGGER IF EXISTS routes_contract_update');
 

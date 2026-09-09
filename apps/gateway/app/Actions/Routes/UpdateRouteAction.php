@@ -23,73 +23,77 @@ final readonly class UpdateRouteAction
 
     public function execute(Route $route, UpdateRouteData $data): Route
     {
-        try {
-            $route->refresh();
-            $hostname = $data->hostnameProvided && $data->hostname !== null
-                ? RouteHostname::validate($data->hostname)
-                : null;
-            $publicationChanges =
-                $data->publicationProvided && $data->publication !== null && $route->publication !== $data->publication;
+        $route->refresh();
+        $hostname = $data->hostnameProvided && $data->hostname !== null
+            ? RouteHostname::validate($data->hostname)
+            : null;
+        $publicationChanges =
+            $data->publicationProvided && $data->publication !== null && $route->publication !== $data->publication;
 
-            if ($route->status === \App\Domain\Routes\RouteStatus::Active && $publicationChanges) {
-                $this->reconciliation->refuse();
-            }
-
-            if ($route->status === \App\Domain\Routes\RouteStatus::Active && $hostname !== null) {
-                return $this->converge->execute($route, $hostname);
-            }
-
-            /** @var Route $updated */
-            $updated = DB::transaction(function () use ($route, $data): Route {
-                $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
-                $attributes = [];
-
-                if ($data->hostnameProvided) {
-                    if ($locked->provenance !== RouteProvenance::Explicit || $data->hostname === null) {
-                        throw new ResourceOperationException(
-                            errorCode: 'route.hostname_immutable',
-                            message: 'Only an explicit Route hostname can be updated.',
-                            status: 409,
-                        );
-                    }
-
-                    $attributes['hostname'] = RouteHostname::validate($data->hostname);
-                }
-
-                if ($data->publicationProvided && $data->publication !== null) {
-                    $attributes['publication'] = $data->publication;
-                }
-
-                $changed = array_filter(
-                    $attributes,
-                    static function (mixed $value, string $key) use ($locked): bool {
-                        $current = $locked->getAttribute($key);
-
-                        return (
-                            ($current instanceof \BackedEnum ? $current->value : $current)
-                            !== ($value instanceof \BackedEnum ? $value->value : $value)
-                        );
-                    },
-                    ARRAY_FILTER_USE_BOTH,
-                );
-
-                if ($changed !== []) {
-                    $this->reconciliation->assertRouteMutable($locked);
-                }
-
-                $locked->update($attributes);
-
-                return $locked->refresh()->load('targets');
-            });
-
-            return $updated;
-        } catch (QueryException $exception) {
-            throw new ResourceOperationException(
-                errorCode: 'route.hostname_conflict',
-                message: 'The Route hostname is already owned.',
-                status: 409,
-                previous: $exception,
-            );
+        if ($route->status === \App\Domain\Routes\RouteStatus::Active && $publicationChanges) {
+            $this->reconciliation->refuse();
         }
+
+        if ($route->status === \App\Domain\Routes\RouteStatus::Active && $hostname !== null) {
+            return $this->converge->execute($route, $hostname);
+        }
+
+        /** @var Route $updated */
+        $updated = DB::transaction(function () use ($route, $data): Route {
+            $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+            $attributes = [];
+
+            if ($data->hostnameProvided) {
+                if ($locked->provenance !== RouteProvenance::Explicit || $data->hostname === null) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.hostname_immutable',
+                        message: 'Only an explicit Route hostname can be updated.',
+                        status: 409,
+                    );
+                }
+
+                $attributes['hostname'] = RouteHostname::validate($data->hostname);
+            }
+
+            if ($data->publicationProvided && $data->publication !== null) {
+                $attributes['publication'] = $data->publication;
+            }
+
+            $changed = array_filter(
+                $attributes,
+                static function (mixed $value, string $key) use ($locked): bool {
+                    $current = $locked->getAttribute($key);
+
+                    return (
+                        ($current instanceof \BackedEnum ? $current->value : $current)
+                        !== ($value instanceof \BackedEnum ? $value->value : $value)
+                    );
+                },
+                ARRAY_FILTER_USE_BOTH,
+            );
+
+            if ($changed !== []) {
+                $this->reconciliation->assertRouteMutable($locked);
+            }
+
+            try {
+                $locked->update($attributes);
+            } catch (QueryException $exception) {
+                if (! array_key_exists('hostname', $changed)) {
+                    throw $exception;
+                }
+
+                throw new ResourceOperationException(
+                    errorCode: 'route.hostname_conflict',
+                    message: 'The Route hostname is already owned.',
+                    status: 409,
+                    previous: $exception,
+                );
+            }
+
+            return $locked->refresh()->load('targets');
+        });
+
+        return $updated;
     }
 }

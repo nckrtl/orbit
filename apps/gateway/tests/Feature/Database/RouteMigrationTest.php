@@ -21,6 +21,14 @@ function production_route_target_set_migration(): Illuminate\Database\Migrations
         );
 }
 
+function route_hostname_change_migration(): Illuminate\Database\Migrations\Migration
+{
+    return require
+        base_path(
+            'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
+        );
+}
+
 it('stores exclusive Route scope, immutable provenance, basis, and pending lifecycle', function (): void {
     expect(Schema::hasColumns('routes', [
         'app_id',
@@ -168,6 +176,37 @@ it('keeps canonical and candidate hostname ownership exclusive across Routes', f
         'status' => RouteStatus::Pending,
     ]))
         ->toThrow(QueryException::class);
+});
+
+it('refuses hostname change rollback before discarding unfinished recovery evidence', function (): void {
+    $route = route_migration_hostname_change_route('rollback-evidence');
+    DB::table('routes')
+        ->where('id', $route->id)
+        ->update([
+            ...route_migration_hostname_change_attributes(
+                'rollback-evidence-next.example.test',
+                $route->hostname,
+            ),
+            'failed_step' => 'workload-caddy',
+            'error_code' => 'route.test_failure',
+        ]);
+    $evidenceBefore = $route->refresh()->getAttributes();
+    $schemaBefore = route_migration_hostname_change_schema();
+
+    expect(fn () => route_hostname_change_migration()->down())
+        ->toThrow(RuntimeException::class, "operations are unfinished: {$route->id}");
+
+    expect(route_migration_hostname_change_schema())
+        ->toBe($schemaBefore)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($evidenceBefore)
+        ->and(Schema::hasColumns('routes', [
+            'hostname_change_previous',
+            'hostname_change_target',
+            'hostname_change_direction',
+            'hostname_change_step',
+        ]))
+        ->toBeTrue();
 });
 
 it('enforces multi-target storage with compatible Cluster-scoped production rows', function (): void {
@@ -396,6 +435,19 @@ function route_migration_target_schema(): array
         FROM sqlite_master
         WHERE type IN ('table', 'index', 'trigger')
             AND tbl_name IN ('nodes', 'node_roles', 'routes', 'route_targets', 'active_app_prod_nodes')
+        ORDER BY type, name
+        SQL))
+        ->map(static fn (object $entry): array => (array) $entry)
+        ->all();
+}
+
+/** @return list<array<string, mixed>> */
+function route_migration_hostname_change_schema(): array
+{
+    return collect(DB::select(<<<'SQL'
+        SELECT type, name, tbl_name, sql
+        FROM sqlite_master
+        WHERE tbl_name = 'routes'
         ORDER BY type, name
         SQL))
         ->map(static fn (object $entry): array => (array) $entry)
