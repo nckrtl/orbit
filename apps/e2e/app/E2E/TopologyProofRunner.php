@@ -84,6 +84,33 @@ final readonly class TopologyProofRunner
         $candidateSha = $repository->commit();
         $candidateTree = $repository->tree($candidateSha);
         $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = new OperationLock($this->hostPaths);
+        if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
+            throw new RuntimeException('The issue topology is locked by another harness command.');
+        }
+        try {
+            if ($state->hasAttempt(AttemptPurpose::CandidateConvergence)) {
+                throw new RuntimeException('A candidate-convergence attempt already exists; release it first.');
+            }
+            $report = $this->candidateAuthorization($request, $state, $candidateSha);
+
+            return $this->convergeCandidateLocked(
+                $request,
+                $state,
+                $candidateSha,
+                $candidateTree,
+                $report,
+            );
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function candidateAuthorization(
+        TopologyRequest $request,
+        IssueState $state,
+        string $candidateSha,
+    ): ProofEquivalenceReport {
         if (! $state->isProved()) {
             throw new RuntimeException("{$request->issue} has no retained proof for candidate convergence.");
         }
@@ -121,25 +148,7 @@ final readonly class TopologyProofRunner
             throw new RuntimeException('The equivalence report does not authorize candidate convergence.');
         }
 
-        $lock = new OperationLock($this->hostPaths);
-        if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
-            throw new RuntimeException('The issue topology is locked by another harness command.');
-        }
-        try {
-            if ($state->hasAttempt(AttemptPurpose::CandidateConvergence)) {
-                throw new RuntimeException('A candidate-convergence attempt already exists; release it first.');
-            }
-
-            return $this->convergeCandidateLocked(
-                $request,
-                $state,
-                $candidateSha,
-                $candidateTree,
-                $report,
-            );
-        } finally {
-            $lock->release();
-        }
+        return $report;
     }
 
     public function prove(TopologyRequest $request, ProofPlan $plan, string $planPath): ProofResult
