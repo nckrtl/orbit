@@ -18,6 +18,7 @@ use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -83,6 +84,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
+use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
@@ -250,6 +252,13 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
+        $this->app->scoped(
+            DevelopmentProjectionOperationLock::class,
+            static fn (): DevelopmentProjectionOperationLock => new NativeDevelopmentProjectionOperationLock(
+                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                deadline: app(CommandDeadline::class),
+            ),
+        );
         // Shared for one request so the Metrics baseline's removal outcome
         // reaches the disable response instead of being inferred a second time.
         $this->app->scoped(MetricsPublicationReport::class);

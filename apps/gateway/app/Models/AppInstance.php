@@ -42,6 +42,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property \Illuminate\Support\Carbon|null $registration_completed_at
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
+ * @property bool|null $source_is_laravel
  * @property string|null $provisioning_step
  * @property string|null $failed_step
  * @property string|null $error_code
@@ -97,6 +98,7 @@ final class AppInstance extends Model
         'registration_completed_at',
         'starting_commit',
         'selected_php_version',
+        'source_is_laravel',
         'provisioning_step',
         'failed_step',
         'error_code',
@@ -148,6 +150,7 @@ final class AppInstance extends Model
             'registration_include_worktrees' => 'boolean',
             'registration_worktree_paths' => 'array',
             'registration_completed_at' => 'immutable_datetime',
+            'source_is_laravel' => 'boolean',
             'status' => AppInstanceState::class,
         ];
     }

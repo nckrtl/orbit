@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCaddyManager;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
@@ -16,21 +17,22 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         private AppDevCaddyConfigRenderer $renderer,
         private AppDevSshExecutor $ssh,
         private AppDevCaddyPublisher $publisher = new AppDevCaddyPublisher,
+        private ?DevelopmentProjectionOperationLock $projection = null,
     ) {}
 
     public function converge(Node $node): void
     {
-        $this->convergeSites($node);
+        $this->owner()->run(fn () => $this->convergeSites($node));
     }
 
     public function convergeRoute(Node $node, Route $route): void
     {
-        $this->convergeSites($node, $route);
+        $this->owner()->run(fn () => $this->convergeSites($node, $route));
     }
 
     public function convergeUnavailableRoute(Node $node, Route $route, AppInstance $appInstance): void
     {
-        $this->convergeSites($node, $route, $appInstance);
+        $this->owner()->run(fn () => $this->convergeSites($node, $route, $appInstance));
     }
 
     private function convergeSites(
@@ -58,11 +60,16 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
 
     public function remove(Node $node): void
     {
-        $this->ssh->execute(
+        $this->owner()->run(fn () => $this->ssh->execute(
             $node,
             $this->publisher->removeCommand(bin2hex(random_bytes(8))),
             step: 'caddy-config',
             errorCode: 'app-dev.caddy_config_failed',
-        );
+        ));
+    }
+
+    private function owner(): DevelopmentProjectionOperationLock
+    {
+        return $this->projection ?? app(DevelopmentProjectionOperationLock::class);
     }
 }

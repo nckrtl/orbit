@@ -170,7 +170,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:list' => [[], ['json' => false]],
         'instance:new' => [
             ['app', 'node', 'name'],
-            ['root' => null, 'hostname' => null, 'branch' => null, 'json' => false],
+            [
+                'root' => null,
+                'hostname' => null,
+                'branch' => null,
+                'recover-source-profile' => false,
+                'json' => false,
+            ],
         ],
         'instance:register' => [
             [],

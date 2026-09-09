@@ -166,6 +166,39 @@ describe('AppInstance requests', function (): void {
             ->toBe(['source_path' => '/work/orbit-docs']);
     });
 
+    it('transports explicit source profile recovery intent and preserves ordinary omission', function (): void {
+        $recover = new CreateAppInstanceRequest(
+            appId: 3,
+            nodeId: 4,
+            name: 'default',
+            recoverSourceProfile: true,
+        );
+        $explicitFalse = new CreateAppInstanceRequest(
+            appId: 3,
+            nodeId: 4,
+            name: 'default',
+            recoverSourceProfile: false,
+        );
+        $ordinary = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'default');
+
+        expect($recover->body()->all())
+            ->toBe([
+                'app_id' => 3,
+                'node_id' => 4,
+                'name' => 'default',
+                'recover_source_profile' => true,
+            ])
+            ->and($explicitFalse->body()->all())
+            ->toBe([
+                'app_id' => 3,
+                'node_id' => 4,
+                'name' => 'default',
+                'recover_source_profile' => false,
+            ])
+            ->and($ordinary->body()->all())
+            ->not->toHaveKey('recover_source_profile');
+    });
+
     it('lists instances through the explicit collection route', function (): void {
         $mockClient = new MockClient([
             ListAppInstancesRequest::class => MockResponse::make([

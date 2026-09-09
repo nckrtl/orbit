@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\AppInstances;
 
-/** @mago-expect lint:excessive-parameter-list The request carries six independent creation inputs. */
+/** @mago-expect lint:excessive-parameter-list The request carries seven independent creation inputs. */
 final readonly class CreateAppInstanceData
 {
     public function __construct(
@@ -14,5 +14,6 @@ final readonly class CreateAppInstanceData
         public ?string $root,
         public ?string $hostname,
         public ?string $branch,
+        public bool $recoverSourceProfile = false,
     ) {}
 }
