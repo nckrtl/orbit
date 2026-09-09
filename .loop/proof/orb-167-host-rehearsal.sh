@@ -157,7 +157,7 @@ attempt_network() {
 }
 
 attempt_names_json() {
-    local short=${1:0:12}
+    local short=${1:0:8}
 
     jq -cn \
         --arg prefix "orbit-e2e-orb-167-$short-" \
