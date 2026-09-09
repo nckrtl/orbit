@@ -26,6 +26,7 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
         private readonly ?string $root = null,
         private readonly ?string $hostname = null,
         private readonly ?string $branch = null,
+        private readonly ?bool $recoverSourceProfile = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -41,7 +42,7 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array<string, int|string> */
+    /** @return array<string, bool|int|string> */
     protected function defaultBody(): array
     {
         $body = [
@@ -60,6 +61,10 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
 
         if ($this->branch !== null) {
             $body['branch'] = $this->branch;
+        }
+
+        if ($this->recoverSourceProfile !== null) {
+            $body['recover_source_profile'] = $this->recoverSourceProfile;
         }
 
         return $body;

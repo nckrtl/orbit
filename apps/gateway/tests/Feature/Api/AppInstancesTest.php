@@ -72,17 +72,37 @@ beforeEach(function (): void {
 
         public function removeUnreachable(Node $node, NodeRole $assignment): void {}
     });
-    app()->instance(DevelopmentAppInstanceConfigurator::class, new class implements DevelopmentAppInstanceConfigurator {
+    $this->configuration = new class implements DevelopmentAppInstanceConfigurator {
+        public int $inspections = 0;
+
+        public int $configurations = 0;
+
+        public ?string $phpVersion = '8.5';
+
+        public bool $laravel = false;
+
         public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
         {
-            return new DevelopmentSourceProfile('8.5', false);
+            $this->inspections++;
+
+            return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
-        public function configureLaravelUrl(AppInstance $appInstance, string $url): void {}
-    });
-    app()->instance(DevelopmentRouteProjector::class, new class implements DevelopmentRouteProjector {
-        public function converge(AppInstance $appInstance, Route $route): void {}
-    });
+        public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+        {
+            $this->configurations++;
+        }
+    };
+    app()->instance(DevelopmentAppInstanceConfigurator::class, $this->configuration);
+    $this->projection = new class implements DevelopmentRouteProjector {
+        public int $convergences = 0;
+
+        public function converge(AppInstance $appInstance, Route $route): void
+        {
+            $this->convergences++;
+        }
+    };
+    app()->instance(DevelopmentRouteProjector::class, $this->projection);
     app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
         public function resolve(Node $node): ManagedUserAccount
         {
@@ -379,6 +399,23 @@ beforeEach(function (): void {
     ]);
 });
 
+/** @return array{AppInstance, Route} */
+function retain_legacy_source_profile_checkpoint(string $checkpoint): array
+{
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $route->update(['status' => RouteStatus::Pending]);
+    $instance->update([
+        'status' => AppInstanceState::SourceResolved,
+        'source_is_laravel' => null,
+        'provisioning_step' => $checkpoint,
+        'failed_step' => null,
+        'error_code' => null,
+    ]);
+
+    return [$instance->refresh(), $route->refresh()];
+}
+
 it('bounds AppInstance response relationship queries for one and several visible rows', function (): void {
     $secondVisibleNode = Node::query()->create([
         'name' => 'second-visible-node',
@@ -597,6 +634,8 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe([false])
         ->and(AppInstance::query()->sole()->source_layout)
         ->toBe(AppInstanceSourceLayout::Checkout->value)
+        ->and(AppInstance::query()->sole()->only(['selected_php_version', 'source_is_laravel']))
+        ->toBe(['selected_php_version' => '8.5', 'source_is_laravel' => false])
         ->and(Activity::query()->where('request_id', $requestId)->sole()->subject_type)
         ->toBe(AppInstance::class)
         ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('source_layout'))
@@ -624,6 +663,206 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ])
         ->and(Route::query()->sole()->targets()->sole()->app_instance_id)
         ->toBe(AppInstance::query()->sole()->id);
+});
+
+it('validates source profile recovery as an optional boolean before persistence', function (): void {
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'dev',
+            'recover_source_profile' => 'yes',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath(
+            'error.details.recover_source_profile.0',
+            'The recover source profile field must be true or false.',
+        );
+
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0);
+});
+
+it('fails closed for legacy incomplete profile evidence on an ordinary API retry', function (
+    string $checkpoint,
+): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    [$instance] = retain_legacy_source_profile_checkpoint($checkpoint);
+    $before = $instance->only([
+        'id',
+        'app_id',
+        'node_id',
+        'checkout_path',
+        'branch',
+        'starting_commit',
+        'selected_php_version',
+        'source_is_laravel',
+        'provisioning_step',
+    ]);
+    $this->configuration->inspections = 0;
+    $this->configuration->configurations = 0;
+    $this->projection->convergences = 0;
+
+    $this
+        ->postJson('/api/v1/instances', $payload)
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'app-dev.source_evidence_changed');
+
+    expect($instance->refresh()->only(array_keys($before)))
+        ->toBe($before)
+        ->and($this->configuration->inspections)
+        ->toBe(0)
+        ->and($this->configuration->configurations)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0);
+})->with(['php-selected', 'url-configured']);
+
+it('recovers a legacy incomplete profile without replacing source or Route identity', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    [$instance, $route] = retain_legacy_source_profile_checkpoint('url-configured');
+    $instance->update(['selected_php_version' => '8.4']);
+    $identity = $instance->only([
+        'id',
+        'app_id',
+        'node_id',
+        'source_layout',
+        'checkout_path',
+        'branch',
+        'starting_commit',
+    ]);
+    $this->configuration->phpVersion = '8.5';
+    $this->configuration->laravel = true;
+    $this->configuration->inspections = 0;
+    $this->configuration->configurations = 0;
+    $this->projection->convergences = 0;
+    $this->source->calls = [];
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertOk()
+        ->assertJsonPath('data.id', $instance->id)
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.route.id', $route->id);
+
+    expect($instance->refresh()->only(array_keys($identity)))
+        ->toBe($identity)
+        ->and($instance->only(['selected_php_version', 'source_is_laravel', 'provisioning_step']))
+        ->toBe([
+            'selected_php_version' => '8.5',
+            'source_is_laravel' => true,
+            'provisioning_step' => 'active',
+        ])
+        ->and($instance->routes()->sole()->id)
+        ->toBe($route->id)
+        ->and($this->source->calls)
+        ->toBe(['inspect-prepared:source_resolved', 'inspect-resolved:source_resolved'])
+        ->and($this->configuration->configurations)
+        ->toBe(1)
+        ->and($this->projection->convergences)
+        ->toBe(1);
+});
+
+it('reuses stored Git revalidation before explicit profile recovery', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    [$instance] = retain_legacy_source_profile_checkpoint('php-selected');
+    $profileFields = [
+        'id',
+        'app_id',
+        'node_id',
+        'source_layout',
+        'checkout_path',
+        'branch',
+        'starting_commit',
+        'selected_php_version',
+        'source_is_laravel',
+        'provisioning_step',
+    ];
+    $before = $instance->only($profileFields);
+    $this->source->resolution = new DevelopmentSourceResolution('dev', str_repeat('b', 40));
+    $this->configuration->inspections = 0;
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_identity_changed');
+
+    expect($instance->refresh()->only($profileFields))
+        ->toBe($before)
+        ->and($this->configuration->inspections)
+        ->toBe(0);
+});
+
+it('does not let source profile recovery bypass known complete drift', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    [$instance] = retain_legacy_source_profile_checkpoint('php-selected');
+    $instance->update(['source_is_laravel' => false]);
+    $this->configuration->laravel = true;
+    $this->configuration->configurations = 0;
+    $this->projection->convergences = 0;
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'app-dev.source_evidence_changed');
+
+    expect($instance->refresh()->only(['source_is_laravel', 'provisioning_step']))
+        ->toBe(['source_is_laravel' => false, 'provisioning_step' => 'php-selected'])
+        ->and($this->configuration->configurations)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0);
+});
+
+it('keeps Active creation terminal when source profile recovery is requested', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $before = $instance->getAttributes();
+    $this->configuration->inspections = 0;
+    $this->projection->convergences = 0;
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertOk()
+        ->assertJsonPath('data.id', $created->json('data.id'));
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and($instance->routes()->sole()->id)
+        ->toBe($route->id)
+        ->and($this->configuration->inspections)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0);
 });
 
 it('keeps explicit branch selection separate from default identity and Route identity', function (): void {
@@ -1053,15 +1292,18 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
             $this->native->reserve($appInstance, $hostname);
         }
 
-        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
-        {
+        public function complete(
+            AppInstance $appInstance,
+            ?string $hostname,
+            bool $recoverSourceProfile = false,
+        ): AppInstance {
             $this->completions++;
 
             if ($this->completions === 1) {
                 throw new ResourceOperationException('instance.first_attempt_failed', 'The first attempt failed.');
             }
 
-            return $this->native->complete($appInstance, $hostname);
+            return $this->native->complete($appInstance, $hostname, $recoverSourceProfile);
         }
     };
     app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
@@ -1123,8 +1365,11 @@ it('persists unexpected provisioning failures before releasing the lease', funct
             $this->native->reserve($appInstance, $hostname);
         }
 
-        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
-        {
+        public function complete(
+            AppInstance $appInstance,
+            ?string $hostname,
+            bool $recoverSourceProfile = false,
+        ): AppInstance {
             throw new \LogicException('Unexpected provisioning failure.');
         }
     });
@@ -1162,8 +1407,11 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
             $this->reservations++;
         }
 
-        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
-        {
+        public function complete(
+            AppInstance $appInstance,
+            ?string $hostname,
+            bool $recoverSourceProfile = false,
+        ): AppInstance {
             return $appInstance;
         }
     };
@@ -1234,8 +1482,11 @@ it('persists reservation conflicts before releasing the lease', function (): voi
             throw new ResourceOperationException('route.hostname_taken', 'The hostname is unavailable.', 409);
         }
 
-        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
-        {
+        public function complete(
+            AppInstance $appInstance,
+            ?string $hostname,
+            bool $recoverSourceProfile = false,
+        ): AppInstance {
             return $appInstance;
         }
     };

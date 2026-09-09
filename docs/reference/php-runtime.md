@@ -16,7 +16,9 @@ Orbit's code-owned development candidate set is PHP 8.5 followed by PHP 8.4. The
 | Invalid PHP platform constraint, or a constraint below, between, or above all candidates | The Gateway stops at PHP selection. | `app-dev.php_version_unsupported` |
 | Selected candidate is unavailable from the pinned Sury source | The Gateway stops when it verifies the runtime source. | `app-dev.php_package_source_unavailable` |
 
-Both failures happen before runtime or DNS publication. The Gateway retains the prepared source and pending Route evidence so the same creation request can retry without another source or Route.
+Both failures happen before runtime or DNS publication. At its first provisioning checkpoint, the Gateway stores the selected version together with the Laravel classification as one complete source profile. A retry at a retained checkpoint requires both values to match before Laravel URL configuration or runtime and Route projection. A changed version, a change between PHP and non-PHP, or a Laravel-classification change returns `app-dev.source_evidence_changed`.
+
+The Gateway does not infer missing Laravel evidence for a legacy retained checkpoint. An ordinary retry fails closed. The explicit recovery contract, including URL-reconciliation consent, rollback refusal, active-state behavior, and unchanged removal boundaries, is described in [Applications](../domains/applications.md#provision-the-application-endpoint).
 
 AppInstance input, persisted AppInstance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
 
