@@ -11,6 +11,7 @@ use Closure;
 use LogicException;
 use RuntimeException;
 
+/** @mago-expect lint:cyclomatic-complexity The owner keeps acquisition, bounded waiting, reentry, and release in one lock lifecycle. */
 final class NativeClusterRouterOperationLock implements ClusterRouterOperationLock
 {
     /** @var array<int, positive-int> */
