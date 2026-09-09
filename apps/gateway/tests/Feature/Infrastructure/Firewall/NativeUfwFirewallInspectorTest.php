@@ -33,12 +33,12 @@ it('inspects an exact active rule with the fixed read-only command', function ()
         ),
     );
 
-    $result = inspector($ssh)->inspect(inspector_target());
+    $result = inspector($ssh)->inspect([inspector_target()]);
 
     expect($result->backend)
         ->toBe(FirewallBackendStatus::Active)
-        ->and($result->rule)
-        ->toBe(FirewallRuleInspectionStatus::Exact)
+        ->and($result->rules)
+        ->toBe([FirewallRuleInspectionStatus::Exact])
         ->and($ssh->arguments)
         ->toBe([['sudo', 'ufw', 'status', 'numbered']])
         ->and($ssh->connections[0])
@@ -73,46 +73,106 @@ it('inspects a non-persisted Metrics target from its exact typed shape', functio
         resourceName: 'Metrics node exporter',
     );
 
-    $result = inspector($ssh)->inspect($target);
+    $result = inspector($ssh)->inspect([$target]);
 
     expect($result->backend)
         ->toBe(FirewallBackendStatus::Active)
-        ->and($result->rule)
-        ->toBe(FirewallRuleInspectionStatus::Exact)
+        ->and($result->rules)
+        ->toBe([FirewallRuleInspectionStatus::Exact])
         ->and($ssh->arguments)
         ->toBe([['sudo', 'ufw', 'status', 'numbered']]);
+});
+
+it('inspects stored and synthetic targets from one UFW observation', function (): void {
+    $ssh = new InspectorFakeSsh(new CommandResult(
+        0,
+        "Status: active\n\nTo Action From\n[ 1] 443/tcp ALLOW IN Anywhere # orbit:node:7:firewall:web\n[ 2] 443/tcp (v6) ALLOW IN Anywhere (v6) # orbit:node:7:firewall:web\n[ 3] 10.44.0.3 9100/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter\n",
+        '',
+        1,
+        false,
+    ));
+
+    $result = inspector($ssh)->inspect([inspector_target(), inspector_metrics_target()]);
+
+    expect($result->backend)
+        ->toBe(FirewallBackendStatus::Active)
+        ->and($result->rules)
+        ->toBe([FirewallRuleInspectionStatus::Exact, FirewallRuleInspectionStatus::Exact])
+        ->and($ssh->arguments)
+        ->toBe([['sudo', 'ufw', 'status', 'numbered']]);
+});
+
+it('performs fresh observations for separate inspections and nodes', function (): void {
+    $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: active\n", '', 1, false));
+    $inspector = inspector($ssh);
+
+    $first = $inspector->inspect([inspector_target()]);
+    $ssh->result = new CommandResult(
+        0,
+        "Status: active\n[ 1] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter\n",
+        '',
+        1,
+        false,
+    );
+    $second = $inspector->inspect([inspector_metrics_target(8, '10.44.0.4')]);
+
+    expect($first->rules)
+        ->toBe([FirewallRuleInspectionStatus::Missing])
+        ->and($second->rules)
+        ->toBe([FirewallRuleInspectionStatus::Exact])
+        ->and($ssh->arguments)
+        ->toBe([
+            ['sudo', 'ufw', 'status', 'numbered'],
+            ['sudo', 'ufw', 'status', 'numbered'],
+        ])
+        ->and(array_map(static fn (SshConnection $connection): string => $connection->host, $ssh->connections))
+        ->toBe(['10.44.0.3', '10.44.0.4']);
+});
+
+it('rejects targets from different nodes before observing UFW', function (): void {
+    $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: active\n", '', 1, false));
+
+    expect(fn (): mixed => inspector($ssh)->inspect([
+        inspector_target(),
+        inspector_metrics_target(8, '10.44.0.4'),
+    ]))
+        ->toThrow(DoctorInspectionException::class, '')
+        ->and($ssh->arguments)
+        ->toBe([]);
 });
 
 it('does not mutate persisted firewall rule attributes', function (): void {
     $rule = inspector_rule();
     $before = $rule->getAttributes();
     inspector(new InspectorFakeSsh(new CommandResult(0, "Status: inactive\n", '', 1, false)))
-        ->inspect(FirewallInspectionTarget::fromRule($rule));
+        ->inspect([FirewallInspectionTarget::fromRule($rule)]);
     expect($rule->getAttributes())->toBe($before);
 });
 
 it('fails closed for a timed out command result', function (): void {
     $ssh = new InspectorFakeSsh(new CommandResult(124, '', 'timeout secret', 30_000, true));
-    expect(fn (): mixed => inspector($ssh)->inspect(inspector_target()))->toThrow(DoctorInspectionException::class, '');
+    expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
+        ->toThrow(DoctorInspectionException::class, '');
 });
 
 it('fails closed for truncated successful output', function (): void {
     $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: active\n", '', 1, true));
-    expect(fn (): mixed => inspector($ssh)->inspect(inspector_target()))->toThrow(DoctorInspectionException::class, '');
+    expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
+        ->toThrow(DoctorInspectionException::class, '');
 });
 
 it('maps absent backend and rejects malformed output without leaking details', function (): void {
     $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: absent\nsecret-config\n", 'secret-stderr', 1, false));
 
-    $result = inspector($ssh)->inspect(inspector_target());
+    $result = inspector($ssh)->inspect([inspector_target()]);
 
     expect($result->backend)
         ->toBe(FirewallBackendStatus::Absent)
-        ->and($result->rule)
-        ->toBe(FirewallRuleInspectionStatus::Missing);
+        ->and($result->rules)
+        ->toBe([FirewallRuleInspectionStatus::Missing]);
 
     $ssh->result = new CommandResult(0, 'secret-output', 'secret-error', 1, false);
-    expect(fn (): mixed => inspector($ssh)->inspect(inspector_target()))
+    expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
         ->toThrow(DoctorInspectionException::class, '');
 });
 
@@ -122,8 +182,8 @@ it('maps missing, drift, and inactive observations', function (
     FirewallRuleInspectionStatus $status,
 ): void {
     $result = inspector(new InspectorFakeSsh(new CommandResult(0, $output, '', 1, false)))
-        ->inspect(inspector_target());
-    expect($result->backend)->toBe($backend)->and($result->rule)->toBe($status);
+        ->inspect([inspector_target()]);
+    expect($result->backend)->toBe($backend)->and($result->rules)->toBe([$status]);
 })->with([
     ["Status: active\n\nTo Action From\n", FirewallBackendStatus::Active, FirewallRuleInspectionStatus::Missing],
     [
@@ -136,9 +196,11 @@ it('maps missing, drift, and inactive observations', function (
 
 it('fails closed for command errors and transport timeouts without redaction leaks', function (): void {
     $ssh = new InspectorFakeSsh(new CommandResult(1, 'secret-output', 'secret-stderr', 1, false));
-    expect(fn (): mixed => inspector($ssh)->inspect(inspector_target()))->toThrow(DoctorInspectionException::class, '');
+    expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
+        ->toThrow(DoctorInspectionException::class, '');
     $ssh->throws = true;
-    expect(fn (): mixed => inspector($ssh)->inspect(inspector_target()))->toThrow(DoctorInspectionException::class, '');
+    expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
+        ->toThrow(DoctorInspectionException::class, '');
     expect($ssh->arguments)->toBe([
         ['sudo', 'ufw', 'status', 'numbered'],
         ['sudo', 'ufw', 'status', 'numbered'],
@@ -166,6 +228,30 @@ function inspector_rule(): FirewallRule
 function inspector_target(): FirewallInspectionTarget
 {
     return FirewallInspectionTarget::fromRule(inspector_rule());
+}
+
+function inspector_metrics_target(int $nodeId = 7, string $wireguardIp = '10.44.0.3'): FirewallInspectionTarget
+{
+    $node = new Node(['platform' => 'linux', 'user' => 'nckrtl', 'wireguard_ip' => $wireguardIp]);
+    $node->id = $nodeId;
+
+    return new FirewallInspectionTarget(
+        node: $node,
+        shape: new FirewallInspectionShape(
+            comment: 'orbit:metrics-node-exporter',
+            action: 'allow',
+            direction: 'in',
+            source: '10.44.0.2',
+            destination: $wireguardIp,
+            port: '9100',
+            protocol: 'tcp',
+            inInterface: 'orbit',
+            outInterface: null,
+            family: 'v4',
+        ),
+        resourceId: 'orbit:metrics-node-exporter',
+        resourceName: 'Metrics node exporter',
+    );
 }
 
 function inspector(InspectorFakeSsh $ssh): NativeUfwFirewallInspector
