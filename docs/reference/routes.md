@@ -99,6 +99,16 @@ Active WireGuard membership trusts a Node to reach every other active WireGuard 
 
 Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 
+### Publication ownership
+
+The Gateway serializes app-dev Caddy and private Domain Name System (DNS) publication with Metrics publication. It acquires one owner before it refreshes Route, target, Cluster, and Router facts or renders an aggregate. The owner remains held through Caddy publication, DNS-last publication, and the transaction that marks the Route and AppInstance active. Nested publication calls in the same request share that owner, and a failed operation releases it for a fresh retry.
+
+A concurrent publisher waits for at most 30 seconds or the shorter remaining command deadline. If the current operation still owns publication, the Gateway returns `app-dev.projection_busy` with HTTP 409 before rendering, remote publication, or activation. A retry reads current state after it acquires the owner.
+
+### Gateway worker rollout
+
+Deploy the shared publication owner by stopping admission of new Gateway mutations, draining requests that run the old code, restarting every Gateway worker, and resuming mutations. Keep `$ORBIT_HOME/.dnsmasq-projections.lock` in place throughout the rollout. The deployment deletes no lock file and runs no stored-data migration.
+
 ## Guard later reconciliation
 
 Initial projection does not implement general later reconciliation. After it rejects a standalone change that would violate an AppInstance-to-Route association with `route.target_conflict`, the Gateway returns `route.reconciliation_required` before another mutation that would change an active Route's hostname, target, Node-or-Cluster scope, runtime projection, or Laravel URL. It preserves source, application configuration, Route records, and the serving path.
