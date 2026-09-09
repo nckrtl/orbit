@@ -3,6 +3,8 @@ set -euo pipefail
 
 issue=ORB-167
 mode=${1:-authoritative}
+incus_remote=${ORBIT_E2E_INCUS_REMOTE:-local}
+incus_project=${ORBIT_E2E_INCUS_PROJECT:-default}
 
 if [[ "$mode" != diagnostic && "$mode" != authoritative ]]; then
     echo "usage: bash .loop/proof/orb-167-host-rehearsal.sh [diagnostic|authoritative]" >&2
@@ -174,9 +176,9 @@ capture_target() {
 
     names=$(attempt_names_json "$attempt")
     network=$(attempt_network "$attempt")
-    run_recorded "$label-instances" 0 incus --project default list local: --format=json
+    run_recorded "$label-instances" 0 incus --project "$incus_project" list "$incus_remote:" --format=json
     cp "$last_stdout" "$instances_json"
-    run_recorded "$label-networks" 0 incus --project default network list local: --format=json
+    run_recorded "$label-networks" 0 incus --project "$incus_project" network list "$incus_remote:" --format=json
     cp "$last_stdout" "$networks_json"
 
     jq -n \
@@ -282,6 +284,7 @@ started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 jq -e '.extension == "app-prod" and .mutates == true and .observed_inputs == false' "$plan" >/dev/null \
     || fail 'the current proof plan does not declare the required host boundary'
 record_assertion candidate-clean "HEAD=$candidate_sha tree=$candidate_tree"
+record_assertion incus-scope "remote=$incus_remote project=$incus_project"
 record_assertion fixture-bindings \
     "plan_raw=$plan_raw_sha plan_normalized=$plan_sha guest=$guest_fixture_sha host=$host_fixture_sha"
 
@@ -314,8 +317,44 @@ if [[ "$mode" == authoritative ]]; then
         || fail 'retained proof topology does not bind the exact extended proof attempt'
     [[ "$(git rev-parse "refs/orbit/e2e-proof/orb-167/$proof_attempt")" == "$candidate_sha" ]] \
         || fail 'retained proof Git ref does not point to the exact candidate'
+    manifest_sha=$(jq -er '.manifest_sha256' "$state_dir/proof.json")
+    manifest_path="$state_dir/proof-inputs/$manifest_sha.json"
+    [[ -f "$manifest_path" ]] || fail 'retained proof input manifest is absent'
+    run_recorded authoritative-proof-manifest 0 php -r '
+        require "apps/e2e/vendor/autoload.php";
+        $value = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+        $manifest = App\E2E\Value\ProofInputManifest::fromArray($value);
+        if (
+            $manifest->fingerprint() !== $argv[2]
+            || $manifest->provedSha !== $argv[3]
+            || $manifest->proofPlanPath !== $argv[4]
+            || $manifest->construction->target->issue !== "ORB-167"
+            || $manifest->construction->target->requireAttempt()->value !== $argv[5]
+            || $manifest->construction->extension?->value !== "app-prod"
+        ) {
+            exit(1);
+        }
+        echo "manifest binding valid\n";
+    ' "$manifest_path" "$manifest_sha" "$candidate_sha" "$plan" "$proof_attempt"
+    plan_blob=$(git hash-object "$plan")
+    guest_fixture_blob=$(git hash-object "$guest_fixture")
+    host_fixture_blob=$(git hash-object "$host_fixture")
+    jq -e \
+        --arg plan "$plan" \
+        --arg plan_blob "$plan_blob" \
+        --arg guest "$guest_fixture" \
+        --arg guest_blob "$guest_fixture_blob" \
+        --arg host "$host_fixture" \
+        --arg host_blob "$host_fixture_blob" \
+        'any(.static_inputs[]; .path == $plan and .classification == "proof-contract" and .blob == $plan_blob)
+            and any(.static_inputs[]; .path == $guest and .classification == "proof-contract" and .blob == $guest_blob)
+            and any(.static_inputs[]; .path == $host and .classification == "proof-contract" and .blob == $host_blob)' \
+        "$manifest_path" >/dev/null \
+        || fail 'retained proof manifest does not bind every current proof fixture blob'
     record_assertion authoritative-proof-binding \
-        "proof attempt=$proof_attempt candidate=$candidate_sha plan=$plan_sha action exit=0"
+        "proof attempt=$proof_attempt candidate=$candidate_sha plan=$plan_sha manifest=$manifest_sha action exit=0"
+    record_assertion authoritative-fixture-blobs \
+        "plan=$plan_blob guest=$guest_fixture_blob host=$host_fixture_blob"
 fi
 
 proof_evidence_manifest "$scratch/proof-before"
@@ -395,6 +434,8 @@ jq -n \
     --arg finished_at "$finished_at" \
     --arg candidate_sha "$candidate_sha" \
     --arg candidate_tree "$candidate_tree" \
+    --arg incus_remote "$incus_remote" \
+    --arg incus_project "$incus_project" \
     --arg plan_path "$plan" \
     --arg plan_raw_sha256 "$plan_raw_sha" \
     --arg plan_sha256 "$plan_sha" \
@@ -418,6 +459,7 @@ jq -n \
         started_at: $started_at,
         finished_at: $finished_at,
         candidate: {sha: $candidate_sha, tree: $candidate_tree},
+        incus_scope: {remote: $incus_remote, project: $incus_project},
         inputs: {
             plan: {path: $plan_path, raw_sha256: $plan_raw_sha256, normalized_sha256: $plan_sha256},
             guest_fixture: {path: $guest_fixture_path, sha256: $guest_fixture_sha256},
