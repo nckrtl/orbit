@@ -110,10 +110,47 @@ it('parses managed interface rules when a full target column leaves one action s
     );
     $parser = new UfwStatusParser;
 
-    expect($parser->ownership($output, $http))
-        ->toBe(UfwRuleOwnership::Exact)
-        ->and($parser->ownership($output, $https))
-        ->toBe(UfwRuleOwnership::Exact);
+    expect($parser->ownerships($output, [$http, $https]))
+        ->toBe([UfwRuleOwnership::Exact, UfwRuleOwnership::Exact]);
+});
+
+it('resolves exact, drifted, malformed, and missing comments from one output parse', function (): void {
+    $output = <<<'OUTPUT'
+        Status: active
+
+             To                         Action      From
+             --                         ------      ----
+        [ 1] 10.44.0.3 80/tcp on orbit  ALLOW IN    Anywhere                   # orbit:app-dev-http
+        [ 2] 10.44.0.3 443/tcp on orbit ALLOW IN    192.0.2.0/24              # orbit:app-dev-https
+        [ 3] OpenSSH                     ALLOW IN    Anywhere                   # orbit:malformed
+        [ 4] 80/tcp                      ALLOW IN    Anywhere                   # operator-owned
+        OUTPUT;
+    $expected = static fn (string $comment, string $port): UfwRuleShape => new UfwRuleShape(
+        comment: $comment,
+        action: 'allow',
+        direction: 'in',
+        source: 'any',
+        destination: '10.44.0.3',
+        port: $port,
+        protocol: 'tcp',
+        inInterface: 'orbit',
+        outInterface: null,
+        family: 'v4',
+    );
+
+    $ownerships = new UfwStatusParser()->ownerships($output, [
+        $expected('orbit:app-dev-http', '80'),
+        $expected('orbit:app-dev-https', '443'),
+        $expected('orbit:malformed', '22'),
+        $expected('orbit:missing', '8080'),
+    ]);
+
+    expect($ownerships)->toBe([
+        UfwRuleOwnership::Exact,
+        UfwRuleOwnership::Drift,
+        UfwRuleOwnership::Drift,
+        UfwRuleOwnership::Missing,
+    ]);
 });
 
 it('requires the exact managed forwarding interfaces and endpoints', function (): void {

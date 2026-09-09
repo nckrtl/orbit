@@ -6,7 +6,7 @@ A proof of the verify-only Doctor runs on the `gateway_app-dev_app-prod` proof t
 
 ## Cause
 
-Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Instance and Workspace inspectors run `sudo bash`, and the role inspector is the only one that runs `sudo ufw`. A file inventory of the Gateway home also sees SQLite's `-wal` and `-shm` sidecars appear and disappear. SQLite creates and removes them for any connection, including a read-only one.
+Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Instance and Workspace inspectors run `sudo bash`. The role inspector runs `sudo ufw`, and the firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. A file inventory of the Gateway home also sees SQLite's `-wal` and `-shm` sidecars appear and disappear. SQLite creates and removes them for any connection, including a read-only one.
 
 ## Solution
 
@@ -22,7 +22,7 @@ Change `pm.max_children` inside the `[orbit-instance-1]` pool block of `/etc/php
 
 ### Unverifiable condition
 
-Add a sudoers drop-in on `app-prod` that keeps `NOPASSWD:ALL` for the Orbit user and denies `/usr/sbin/ufw`. The role inspector is the only Doctor inspector that runs `sudo ufw`, so Doctor reports exactly one `role.inspection_failed`. Removing the file restores the baseline.
+Add a sudoers drop-in on `app-prod` that keeps `NOPASSWD:ALL` for the Orbit user and denies `/usr/sbin/ufw`. Run `orbit doctor --node=<node-id> --family=role` to produce exactly one `role.inspection_failed`. A full-family request isolates the same failure only when the selected Node has no persisted firewall rules and no synthetic Metrics firewall targets. Removing the file restores the baseline.
 
 ### Mutation scan
 
