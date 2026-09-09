@@ -118,6 +118,18 @@ assert_same_file() {
     record_assertion "$label" "byte-identical sha256=$(sha256sum "$actual" | cut -d ' ' -f 1)"
 }
 
+assert_native_drift_detected() {
+    local snapshot=$1
+    local changed="$scratch/native-negative-changed.json"
+
+    jq '.[0].envelope.metadata.name += "-changed"' "$snapshot" > "$changed"
+    if cmp -s "$snapshot" "$changed"; then
+        fail 'the native resource comparison accepted a changed instance name'
+    fi
+    record_assertion native-resource-negative \
+        'the native comparison rejects a changed captured instance name'
+}
+
 normalized_plan_sha() {
     php -r \
         'require "apps/e2e/vendor/autoload.php"; echo App\E2E\Value\ProofPlan::fromFile($argv[1])->fingerprint();' \
@@ -153,13 +165,25 @@ capture_native() {
     local label command_label path name envelope
     : > "$entries"
 
+    # Incus returns used_by, locations, and aliases as unordered sets. Sort only
+    # those arrays; retain every other raw envelope field for byte comparison.
     while IFS= read -r name; do
         label="instance-$name"
         command_label="$phase-$label"
         path="$incus_remote:/1.0/instances/$name?project=$incus_project"
         run_recorded "$command_label" 0 "$real_incus" query --raw "$path"
         envelope="$scratch/$command_label.json"
-        jq -Se '.type == "sync" and .status_code == 200 and (.metadata.name | type == "string")' "$last_stdout" > "$envelope" \
+        jq -Se '
+            if .type == "sync" and .status_code == 200 and (.metadata.name | type == "string")
+            then .
+                | if (.metadata.used_by? | type) == "array" then .metadata.used_by |= sort else . end
+                | if (.metadata.locations? | type) == "array" then .metadata.locations |= sort else . end
+                | if (.metadata.aliases? | type) == "array"
+                  then .metadata.aliases |= sort_by(.name, .description)
+                  else . end
+            else error("invalid raw instance envelope")
+            end
+        ' "$last_stdout" > "$envelope" \
             || fail "[$command_label] did not return a valid raw sync envelope"
         jq -cn --arg label "$label" --slurpfile envelope "$envelope" \
             '{label: $label, envelope: $envelope[0]}' >> "$entries"
@@ -173,7 +197,17 @@ capture_native() {
         path=${specification#*|}
         run_recorded "$phase-$label" 0 "$real_incus" query --raw "$path"
         envelope="$scratch/$phase-$label.json"
-        jq -Se '.type == "sync" and .status_code == 200 and (.metadata | type == "object")' "$last_stdout" > "$envelope" \
+        jq -Se '
+            if .type == "sync" and .status_code == 200 and (.metadata | type == "object")
+            then .
+                | if (.metadata.used_by? | type) == "array" then .metadata.used_by |= sort else . end
+                | if (.metadata.locations? | type) == "array" then .metadata.locations |= sort else . end
+                | if (.metadata.aliases? | type) == "array"
+                  then .metadata.aliases |= sort_by(.name, .description)
+                  else . end
+            else error("invalid raw resource envelope")
+            end
+        ' "$last_stdout" > "$envelope" \
             || fail "[$phase-$label] did not return a valid raw sync envelope"
         jq -cn --arg label "$label" --slurpfile envelope "$envelope" \
             '{label: $label, envelope: $envelope[0]}' >> "$entries"
@@ -381,6 +415,7 @@ fi
 
 proof_evidence_manifest "$scratch/proof-before"
 capture_native before "$scratch/native-before.json"
+assert_native_drift_detected "$scratch/native-before.json"
 
 wrapper_dir="$scratch/wrapper"
 mkdir "$wrapper_dir"
