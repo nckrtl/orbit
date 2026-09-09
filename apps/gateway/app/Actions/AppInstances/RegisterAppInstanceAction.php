@@ -64,15 +64,7 @@ final readonly class RegisterAppInstanceAction
         }
 
         return $this->sourceLock->synchronized($caller->id, function () use ($caller, $data): array {
-            $retainedMember = AppInstance::query()
-                ->where('node_id', $caller->id)
-                ->whereNotNull('registration_request_id')
-                ->where(static function ($query) use ($data): void {
-                    $query
-                        ->where('registration_original_path', $data->sourcePath)
-                        ->orWhere('checkout_path', $data->sourcePath);
-                })
-                ->first();
+            $retainedMember = $this->retainedMember($caller, $data);
 
             if (
                 $retainedMember instanceof AppInstance
@@ -97,7 +89,7 @@ final readonly class RegisterAppInstanceAction
                 ? $facts[0]
                 : $this->primaryFacts($facts, $data->sourcePath);
             [$app, $appCreated] = $this->resolveApp($primaryFacts, $data);
-            $this->preflightSources($caller, $app, $facts, $retainedPrimary instanceof AppInstance);
+            $this->preflightSources($caller, $app, $facts, $retainedPrimary, $data->sourcePath);
             $members = $this->reserveMembers($caller, $app, $facts, $primaryFacts, $data);
 
             try {
@@ -144,6 +136,108 @@ final readonly class RegisterAppInstanceAction
         });
     }
 
+    private function retainedMember(Node $node, RegisterAppInstanceData $data): ?AppInstance
+    {
+        $member = AppInstance::query()
+            ->where('node_id', $node->id)
+            ->whereNotNull('registration_request_id')
+            ->where(static function ($query) use ($data): void {
+                $query
+                    ->where('registration_original_path', $data->sourcePath)
+                    ->orWhere('checkout_path', $data->sourcePath);
+            })
+            ->first();
+
+        if (! $member instanceof AppInstance) {
+            $member = $this->migrationAtPlannedDestination($node, $data);
+        }
+
+        if (! $member instanceof AppInstance) {
+            return null;
+        }
+
+        if (! $member->registration_primary) {
+            throw $this->conflict(
+                'instance.registration_conflict',
+                'Registration retry input conflicts with retained evidence.',
+            );
+        }
+
+        $this->assertRetainedEntryPath($node, $member, $data->sourcePath);
+
+        return $member;
+    }
+
+    private function migrationAtPlannedDestination(Node $node, RegisterAppInstanceData $data): ?AppInstance
+    {
+        if ($data->appId === null) {
+            return null;
+        }
+
+        $matches = AppInstance::query()
+            ->with('app')
+            ->where('node_id', $node->id)
+            ->where('app_id', $data->appId)
+            ->whereNotNull('registration_request_id')
+            ->where('registration_primary', true)
+            ->where('migration_required', true)
+            ->whereIn('registration_relocation_state', [
+                'reserved',
+                'relocating',
+                'destination_verified',
+                'original_cleanup',
+                'relocated',
+            ])
+            ->get()
+            ->filter(
+                fn (AppInstance $instance): bool => $this->retainedDestination($node, $instance) === $data->sourcePath,
+            );
+
+        if ($matches->count() > 1) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Several retained manual migrations identify the requested managed destination.',
+            );
+        }
+
+        return $matches->first();
+    }
+
+    private function assertRetainedEntryPath(Node $node, AppInstance $instance, string $submittedPath): void
+    {
+        if ($submittedPath === $instance->registration_original_path) {
+            return;
+        }
+
+        $destination = $this->retainedDestination($node, $instance);
+        $state = $instance->registration_relocation_state;
+
+        if (
+            $submittedPath !== $destination
+            || ! in_array(
+                $state,
+                ['relocating', 'destination_verified', 'original_cleanup', 'relocated'],
+                strict: true,
+            )
+        ) {
+            throw $this->conflict(
+                'instance.registration_conflict',
+                'Registration retry input conflicts with retained relocation evidence.',
+            );
+        }
+
+        $expectedAuthority = $state === 'relocating'
+            ? $instance->registration_original_path
+            : $destination;
+
+        if ($instance->registration_authoritative_path !== $expectedAuthority) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Retained registration evidence identifies an invalid authoritative source path.',
+            );
+        }
+    }
+
     /** @param list<RegistrationSourceFacts> $facts */
     private function assertSourcesNotRetained(Node $node, array $facts): void
     {
@@ -170,18 +264,30 @@ final readonly class RegisterAppInstanceAction
     }
 
     /** @param list<RegistrationSourceFacts> $facts */
-    private function preflightSources(Node $node, OrbitApp $app, array $facts, bool $retained): void
-    {
+    private function preflightSources(
+        Node $node,
+        OrbitApp $app,
+        array $facts,
+        ?AppInstance $retainedPrimary,
+        string $submittedPath,
+    ): void {
         foreach ($facts as $fact) {
             $instance = AppInstance::query()
                 ->where('node_id', $node->id)
                 ->where('registration_original_path', $fact->path)
                 ->first();
-            $path = $this->authoritativeSourcePath($instance, $fact);
+            $path = $this->authoritativeSourcePath($node, $instance, $fact);
 
-            if ($retained) {
+            if ($retainedPrimary instanceof AppInstance) {
                 if ($instance instanceof AppInstance && $instance->registration_relocation_state === 'relocating') {
-                    $path = $this->relocatingSourcePath($node, $instance, $fact);
+                    $path = $this->relocatingSourcePath(
+                        $node,
+                        $instance,
+                        $fact,
+                        $instance->is($retainedPrimary) && $submittedPath !== $instance->registration_original_path
+                            ? $submittedPath
+                            : null,
+                    );
                 } else {
                     $this->sources->validateRetained($node, $fact, $path);
                 }
@@ -198,8 +304,11 @@ final readonly class RegisterAppInstanceAction
         }
     }
 
-    private function authoritativeSourcePath(?AppInstance $instance, RegistrationSourceFacts $facts): string
-    {
+    private function authoritativeSourcePath(
+        Node $node,
+        ?AppInstance $instance,
+        RegistrationSourceFacts $facts,
+    ): string {
         if (! $instance instanceof AppInstance) {
             return $facts->path;
         }
@@ -209,7 +318,9 @@ final readonly class RegisterAppInstanceAction
             ['destination_verified', 'original_cleanup', 'relocated'],
             strict: true,
         );
-        $expected = $destinationIsAuthoritative ? $instance->checkout_path : $facts->path;
+        $expected = $destinationIsAuthoritative
+            ? $this->retainedDestination($node, $instance)
+            : $facts->path;
 
         if ($instance->registration_authoritative_path !== $expected) {
             throw $this->conflict(
@@ -225,16 +336,24 @@ final readonly class RegisterAppInstanceAction
         Node $node,
         AppInstance $instance,
         RegistrationSourceFacts $facts,
+        ?string $submittedPath,
     ): string {
+        if ($submittedPath !== null) {
+            $this->sources->validateRelocationRecovery($node, $facts, $submittedPath);
+
+            return $submittedPath;
+        }
+
         try {
             $this->sources->validateRelocationRecovery($node, $facts, $facts->path);
 
             return $facts->path;
         } catch (Throwable) {
             try {
-                $this->sources->validateRelocationRecovery($node, $facts, $instance->checkout_path);
+                $destination = $this->retainedDestination($node, $instance);
+                $this->sources->validateRelocationRecovery($node, $facts, $destination);
 
-                return $instance->checkout_path;
+                return $destination;
             } catch (Throwable $destinationFailure) {
                 throw new ResourceOperationException(
                     'instance.registration_conflict',
@@ -327,46 +446,108 @@ final readonly class RegisterAppInstanceAction
         $facts = [];
 
         foreach ($instances as $instance) {
-            $layout = AppInstanceSourceLayout::tryFrom($instance->source_layout);
-            $worktreePaths = $instance->registration_worktree_paths;
-
-            if (
-                ! $layout instanceof AppInstanceSourceLayout
-                || $instance->registration_original_path === null
-                || $instance->registration_repository_url === null
-                || $instance->registration_repository_identity === null
-                || $instance->registration_source_digest === null
-                || $instance->registration_inferred_slug === null
-                || $instance->registration_common_repository_path === null
-                || $instance->starting_commit === null
-                || ! is_array($worktreePaths)
-                || array_filter($worktreePaths, static fn (mixed $path): bool => ! is_string($path)) !== []
-            ) {
-                throw $this->conflict(
-                    'instance.registration_evidence_invalid',
-                    'Retained registration evidence is incomplete.',
-                );
-            }
-
-            /** @var list<string> $worktreePaths */
-            $facts[] = new RegistrationSourceFacts(
-                path: $instance->registration_original_path,
-                layout: $layout,
-                repositoryUrl: $instance->registration_repository_url,
-                repositoryIdentity: $instance->registration_repository_identity,
-                branch: $instance->branch,
-                detached: $instance->registration_detached,
-                commit: $instance->starting_commit,
-                defaultBranch: $instance->registration_default_branch,
-                inferredSlug: $instance->registration_inferred_slug,
-                inferredRoot: $instance->registration_inferred_root,
-                commonRepositoryPath: $instance->registration_common_repository_path,
-                worktreePaths: array_values($worktreePaths),
-                sourceDigest: $instance->registration_source_digest,
-            );
+            $facts[] = $this->retainedFact($instance);
         }
 
         return $facts;
+    }
+
+    private function retainedFact(AppInstance $instance): RegistrationSourceFacts
+    {
+        $layout = AppInstanceSourceLayout::tryFrom($instance->source_layout);
+        $worktreePaths = $instance->registration_worktree_paths;
+
+        if (
+            ! $layout instanceof AppInstanceSourceLayout
+            || $instance->registration_original_path === null
+            || $instance->registration_repository_url === null
+            || $instance->registration_repository_identity === null
+            || $instance->registration_source_digest === null
+            || $instance->registration_inferred_slug === null
+            || $instance->registration_common_repository_path === null
+            || $instance->starting_commit === null
+            || ! is_array($worktreePaths)
+            || array_filter($worktreePaths, static fn (mixed $path): bool => ! is_string($path)) !== []
+        ) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Retained registration evidence is incomplete.',
+            );
+        }
+
+        /** @var list<string> $worktreePaths */
+        return new RegistrationSourceFacts(
+            path: $instance->registration_original_path,
+            layout: $layout,
+            repositoryUrl: $instance->registration_repository_url,
+            repositoryIdentity: $instance->registration_repository_identity,
+            branch: $instance->branch,
+            detached: $instance->registration_detached,
+            commit: $instance->starting_commit,
+            defaultBranch: $instance->registration_default_branch,
+            inferredSlug: $instance->registration_inferred_slug,
+            inferredRoot: $instance->registration_inferred_root,
+            commonRepositoryPath: $instance->registration_common_repository_path,
+            worktreePaths: array_values($worktreePaths),
+            sourceDigest: $instance->registration_source_digest,
+        );
+    }
+
+    private function retainedDestination(Node $node, AppInstance $instance): string
+    {
+        if (! $instance->migration_required) {
+            return $instance->checkout_path;
+        }
+
+        $app = $instance->relationLoaded('app') ? $instance->app : $instance->app()->firstOrFail();
+
+        if (! $app instanceof OrbitApp) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Retained manual migration App evidence is incomplete.',
+            );
+        }
+
+        $facts = $this->retainedFact($instance);
+        $recovery = $instance->registration_migration_recovery;
+        $planned = is_array($recovery) ? $recovery['planned'] ?? null : null;
+
+        if (
+            $planned !== null
+            && (! is_array($planned)
+            || ! is_string($planned['name'] ?? null)
+            || ! is_string($planned['checkout_path'] ?? null))
+        ) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Retained manual migration planned placement is incomplete or conflicting.',
+            );
+        }
+
+        $plannedName = is_array($planned) ? $planned['name'] : null;
+        $plannedCheckoutPath = is_array($planned) ? $planned['checkout_path'] : null;
+        assert(is_string($plannedName) || $plannedName === null);
+        assert(is_string($plannedCheckoutPath) || $plannedCheckoutPath === null);
+        $name = $this->instanceName(
+            $app,
+            $facts,
+            $plannedName,
+        );
+        $account = $this->accounts->resolve($node);
+        $roots = $this->storageRoots->resolveApps(
+            $this->nodeSettings->fromStored($node->settings),
+            $this->nodeSettings->legacyFromStored($node->settings),
+            $account,
+        );
+        $destination = $roots->instance->append($app->slug, $name)->value;
+        if ($plannedName !== null && ($plannedName !== $name || $plannedCheckoutPath !== $destination)) {
+            throw $this->conflict(
+                'instance.registration_evidence_invalid',
+                'Retained manual migration planned placement is incomplete or conflicting.',
+            );
+        }
+
+        return $destination;
     }
 
     /** @return array{OrbitApp, bool} */
@@ -569,13 +750,32 @@ final readonly class RegisterAppInstanceAction
 
                 if ($instance instanceof AppInstance) {
                     if ($instance->registration_request_id === null) {
+                        $recovery = $instance->migration_required
+                            ? $this->captureMigrationRecovery(
+                                $instance,
+                                $proposal['name'],
+                                $proposal['destination']->value,
+                            )
+                            : null;
                         $instance->fill($this->registrationEvidence(
                             $fact,
                             requestId: $requestId,
                             primary: $proposal['primary'],
                             includeWorktrees: $data->includeWorktrees,
                         ));
+                        $instance->registration_migration_recovery = $recovery;
                         $instance->save();
+                    } elseif (
+                        $instance->migration_required
+                        && $instance->registration_migration_recovery === null
+                    ) {
+                        $instance->update([
+                            'registration_migration_recovery' => $this->captureMigrationRecovery(
+                                $instance,
+                                $proposal['name'],
+                                $proposal['destination']->value,
+                            ),
+                        ]);
                     }
                     $instance->name = $proposal['name'];
                     $instance->checkout_path = $proposal['destination']->value;
@@ -761,7 +961,11 @@ final readonly class RegisterAppInstanceAction
         $provisioningHostname = $hostname;
 
         if ($migration && $recovery === null) {
-            $recovery = $this->captureMigrationRecovery($instance);
+            $recovery = $this->captureMigrationRecovery(
+                $instance,
+                $instance->name,
+                $instance->checkout_path,
+            );
         }
 
         if ($recovery !== null && $provisioningHostname === null) {
@@ -850,9 +1054,18 @@ final readonly class RegisterAppInstanceAction
         return $completed->refresh()->load('routes.targets');
     }
 
-    /** @return array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}} */
-    private function captureMigrationRecovery(AppInstance $instance): array
-    {
+    /**
+     * @return array{
+     *     app_instance: array<string, mixed>,
+     *     route: array{id: int, hostname: string, provenance: string},
+     *     planned: array{name: string, checkout_path: string}
+     * }
+     */
+    private function captureMigrationRecovery(
+        AppInstance $instance,
+        string $plannedName,
+        string $plannedCheckoutPath,
+    ): array {
         $route = $instance->routes()->sole();
         $fields = [
             'name',
@@ -881,10 +1094,20 @@ final readonly class RegisterAppInstanceAction
                 'hostname' => $route->hostname,
                 'provenance' => $route->provenance->value,
             ],
+            'planned' => [
+                'name' => $plannedName,
+                'checkout_path' => $plannedCheckoutPath,
+            ],
         ];
     }
 
-    /** @return array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}}|null */
+    /**
+     * @return array{
+     *     app_instance: array<string, mixed>,
+     *     route: array{id: int, hostname: string, provenance: string},
+     *     planned?: array{name: string, checkout_path: string}
+     * }|null
+     */
     private function migrationRecovery(AppInstance $instance): ?array
     {
         $recovery = $instance->registration_migration_recovery;
@@ -895,6 +1118,7 @@ final readonly class RegisterAppInstanceAction
 
         $original = $recovery['app_instance'] ?? null;
         $routeIntent = $recovery['route'] ?? null;
+        $planned = $recovery['planned'] ?? null;
         $route = is_array($routeIntent) && is_int($routeIntent['id'] ?? null)
             ? $instance->routes()->whereKey($routeIntent['id'])->first()
             : null;
@@ -908,6 +1132,10 @@ final readonly class RegisterAppInstanceAction
                 [RouteProvenance::Explicit->value, RouteProvenance::Generated->value],
                 strict: true,
             )
+            || $planned !== null
+            && (! is_array($planned)
+            || ! is_string($planned['name'] ?? null)
+            || ! is_string($planned['checkout_path'] ?? null))
             || $route === null
             || $route->hostname !== $routeIntent['hostname']
             || $route->provenance->value !== $routeIntent['provenance']
@@ -932,7 +1160,7 @@ final readonly class RegisterAppInstanceAction
             );
         }
 
-        /** @var array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}} $recovery */
+        /** @var array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}, planned?: array{name: string, checkout_path: string}} $recovery */
         return $recovery;
     }
 

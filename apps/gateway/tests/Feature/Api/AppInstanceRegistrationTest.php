@@ -1106,6 +1106,213 @@ it('recovers a same-filesystem move that outran its relocation checkpoint', func
         ]);
 });
 
+it('refuses a future managed primary path before relocation makes it a candidate', function (
+    bool $migration,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $original = '/work/acme';
+    $destination = '/srv/orbit/apps/acme/default';
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => $migration ? 'main' : 'default',
+        'source_layout' => 'checkout',
+        'checkout_path' => $migration ? $original : $destination,
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'migration_required' => $migration,
+        ...registration_evidence_for_test($original),
+        'registration_relocation_state' => 'reserved',
+        'registration_authoritative_path' => $original,
+        'status' => $migration ? AppInstanceState::Active : AppInstanceState::Reserved,
+    ]);
+    $before = $instance->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $destination,
+            'app_id' => $app->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->registrationSource->calls)
+        ->toBe([]);
+})->with([
+    'ordinary registration' => false,
+    'manual migration' => true,
+]);
+
+it('resumes an interrupted manual migration through its validated planned destination', function (
+    string $state,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $original = '/work/acme';
+    $destination = '/srv/orbit/apps/acme/default';
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'source_layout' => 'checkout',
+        'checkout_path' => $original,
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'migration_required' => true,
+        ...registration_evidence_for_test($original),
+        'registration_relocation_state' => $state,
+        'registration_authoritative_path' => $state === 'relocating' ? $original : $destination,
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'preserved.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update([
+        'registration_migration_recovery' => [
+            ...registration_migration_recovery($instance, $route),
+            'planned' => [
+                'name' => 'default',
+                'checkout_path' => $destination,
+            ],
+        ],
+    ]);
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $destination,
+        'app_id' => $app->id,
+    ])->assertOk();
+
+    expect($response->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($response->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($response->json('data.app_instance.checkout_path'))
+        ->toBe($destination)
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(1)
+        ->and($this->registrationSource->calls)
+        ->not->toContain('inspect');
+
+    if ($state === 'relocating') {
+        expect($this->registrationSource->calls)
+            ->toContain('validate-relocation:'.$destination);
+    } else {
+        expect($this->registrationSource->calls)
+            ->toContain('validate:'.$destination);
+    }
+})->with([
+    'rename before checkpoint' => 'relocating',
+    'verified destination' => 'destination_verified',
+    'original cleanup' => 'original_cleanup',
+    'relocated before publication' => 'relocated',
+]);
+
+it('refuses mismatched migration evidence at every managed recovery boundary without mutation', function (
+    string $state,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $original = '/work/acme';
+    $destination = '/srv/orbit/apps/acme/default';
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'source_layout' => 'checkout',
+        'checkout_path' => $original,
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'migration_required' => true,
+        ...registration_evidence_for_test($original),
+        'registration_relocation_state' => $state,
+        'registration_authoritative_path' => $state === 'relocating' ? $original : $destination,
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'preserved.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update([
+        'registration_migration_recovery' => [
+            ...registration_migration_recovery($instance, $route),
+            'planned' => [
+                'name' => 'default',
+                'checkout_path' => $destination,
+            ],
+        ],
+    ]);
+    $instanceBefore = $instance->refresh()->getAttributes();
+    $routeBefore = $route->refresh()->getAttributes();
+    $this->registrationSource->retainedInvalid = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $destination,
+            'app_id' => $app->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($instanceBefore)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($routeBefore)
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(1)
+        ->and($this->registrationSource->calls)
+        ->not->toContain('inspect', 'relocate-set:1');
+})->with([
+    'rename before checkpoint' => 'relocating',
+    'verified destination' => 'destination_verified',
+    'original cleanup' => 'original_cleanup',
+    'relocated before publication' => 'relocated',
+]);
+
 it('refuses to adopt an AppInstance already owned through instance new', function (): void {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',

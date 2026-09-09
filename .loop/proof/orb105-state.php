@@ -86,6 +86,68 @@ if ($command === 'migration-state') {
     exit(0);
 }
 
+if ($command === 'set-migration-rename-interruption') {
+    $id = (int) ($argv[2] ?? 0);
+    $destination = $argv[3] ?? '';
+    $instance = AppInstance::query()->with('routes')->findOrFail($id);
+    $route = $instance->routes->sole();
+
+    if (
+        ! $instance->migration_required
+        || $instance->registration_request_id === null
+        || ! $instance->registration_primary
+        || ! in_array($instance->registration_relocation_state, ['reserved', 'relocated'], strict: true)
+        || $instance->registration_authoritative_path !== $instance->registration_original_path
+        || $instance->checkout_path !== $instance->registration_original_path
+        || $instance->registration_migration_recovery !== null
+        || $destination !== '/home/orbit/apps/laravel-typed/default'
+    ) {
+        fwrite(STDERR, "Invalid ORB-105 migration interruption boundary.\n");
+        exit(64);
+    }
+
+    $fields = [
+        'name',
+        'source_layout',
+        'checkout_path',
+        'root',
+        'branch',
+        'branch_override',
+        'migration_required',
+        'starting_commit',
+        'selected_php_version',
+        'source_is_laravel',
+        'provisioning_step',
+        'status',
+    ];
+    $original = [];
+
+    foreach ($fields as $field) {
+        $original[$field] = $instance->getRawOriginal($field);
+    }
+
+    $instance->update([
+        'registration_migration_recovery' => [
+            'app_instance' => $original,
+            'route' => [
+                'id' => $route->id,
+                'hostname' => $route->hostname,
+                'provenance' => $route->provenance->value,
+            ],
+            'planned' => [
+                'name' => 'default',
+                'checkout_path' => $destination,
+            ],
+        ],
+        'registration_relocation_state' => 'relocating',
+        'registration_authoritative_path' => $instance->registration_original_path,
+        'registration_source_device' => null,
+        'registration_source_inode' => null,
+    ]);
+    echo "ok\n";
+    exit(0);
+}
+
 if ($command === 'registration-by-original') {
     $path = $argv[2] ?? '';
     $instance = AppInstance::query()
@@ -217,9 +279,10 @@ if ($command === 'seed-owned-active') {
         'hostname' => 'orb105-owned-new.laravel-typed.orbit',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Active,
+        'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
     echo json_encode(['id' => $instance->id, 'route_id' => $route->id], JSON_THROW_ON_ERROR)."\n";
     exit(0);
 }

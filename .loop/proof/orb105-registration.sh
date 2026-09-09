@@ -410,7 +410,23 @@ assert isinstance(after["error_code"], str) and after["error_code"]' "$before" "
         remote_command test ! -e /home/orbit/apps/laravel-typed/default
         assert_source_snapshot "$source" /tmp/orb105-migration-before
 
-        output=$(register_source "$source")
+        destination=/home/orbit/apps/laravel-typed/default
+        gateway_state set-migration-rename-interruption "$id" "$destination" >/dev/null
+        remote_script "$source" "$destination" <<'BASH'
+source=$1
+destination=$2
+test -d "$source"
+test ! -e "$destination"
+mv "$source" "$destination"
+BASH
+        interrupted=$(gateway_state migration-state "$id")
+        test "$(json_field "$interrupted" id)" = "$id"
+        test "$(json_field "$interrupted" name)" = 13.x
+        test "$(json_field "$interrupted" path)" = "$source"
+        test "$(json_field "$interrupted" migration_required)" = true
+        test "$(json_field "$interrupted" relocation_state)" = relocating
+        test "$(json_field "$interrupted" authoritative_path)" = "$source"
+        output=$(register_source "$destination")
         test "$(json_field "$output" app_instance.id)" = "$id"
         state=$(gateway_state migration-state "$id")
         test "$(json_field "$state" name)" = default
