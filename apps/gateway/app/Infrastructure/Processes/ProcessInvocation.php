@@ -12,5 +12,6 @@ final readonly class ProcessInvocation
         public float $timeout = 900.0,
         public ?string $input = null,
         public ?ProtectedInput $protectedInput = null,
+        public ?int $maxOutputBytes = null,
     ) {}
 }

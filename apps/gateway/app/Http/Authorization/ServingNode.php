@@ -10,6 +10,7 @@ enum ServingNode
     case Target;
     case AppOwning;
     case InstanceOwning;
+    case EnvironmentInstanceOwning;
     case WorkspaceOwning;
     case ProcessOwning;
     case ToolOwning;

@@ -17,7 +17,7 @@ final readonly class TopLevelJsonObjectInspector
      * @throws UnexpectedValueException
      * @mago-expect analysis:mixed-assignment JSON decoding is an untyped transport boundary.
      */
-    public function inspect(string $json, array $allowedKeys): array
+    public function inspect(#[\SensitiveParameter] string $json, array $allowedKeys): array
     {
         if (trim($json) === '') {
             return [];
@@ -57,7 +57,7 @@ final readonly class TopLevelJsonObjectInspector
      * @return list<string>
      * @mago-expect analysis:mixed-assignment JSON string decoding is an untyped transport boundary.
      */
-    private function topLevelKeys(string $json): array
+    private function topLevelKeys(#[\SensitiveParameter] string $json): array
     {
         $keys = [];
         $length = strlen($json);
@@ -118,7 +118,7 @@ final readonly class TopLevelJsonObjectInspector
         return $keys;
     }
 
-    private function stringEnd(string $json, int $index): int
+    private function stringEnd(#[\SensitiveParameter] string $json, int $index): int
     {
         $length = strlen($json);
         $escaped = false;

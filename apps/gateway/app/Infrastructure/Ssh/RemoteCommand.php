@@ -14,6 +14,7 @@ final readonly class RemoteCommand
         public array $arguments,
         public ?string $input = null,
         public ?ProtectedInput $protectedInput = null,
+        public ?int $maxOutputBytes = null,
     ) {
         if ($arguments === []) {
             throw new InvalidArgumentException('A remote command needs at least one argument.');

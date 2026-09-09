@@ -25,6 +25,8 @@ use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
+use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionRouteProjector;
@@ -102,6 +104,7 @@ use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
 use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
+use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
@@ -196,6 +199,8 @@ final class AppServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         AppInstanceDestinationGuard::class => RemoteAppInstanceDestinationGuard::class,
+        AppInstanceEnvironmentReader::class => RemoteAppInstanceEnvironmentAccess::class,
+        AppInstanceOperationPreflight::class => RemoteAppInstanceEnvironmentAccess::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevCertificateManager::class => RemoteAppDevCertificateManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,

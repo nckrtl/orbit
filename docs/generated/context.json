@@ -1056,6 +1056,22 @@
             ]
         },
         {
+            "path": "docs/reference/environment-variables.md",
+            "title": "AppInstance environment variables",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0044"
+            ]
+        },
+        {
             "path": "docs/reference/gateway-trust.md",
             "title": "Gateway trust",
             "kind": "reference",

@@ -6,6 +6,7 @@ namespace App\Http\Authorization;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -15,6 +16,7 @@ use App\Models\Process;
 use App\Models\Route;
 use App\Models\Tool;
 use App\Models\Workspace;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
 /**
@@ -32,6 +34,7 @@ final readonly class ServingNodeResolver
             ServingNode::Target => $this->target($request),
             ServingNode::AppOwning => $this->appOwning($request),
             ServingNode::InstanceOwning => $this->instanceOwning($request),
+            ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
@@ -135,6 +138,49 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($nodeId)];
+    }
+
+    /** @return list<Node> */
+    private function environmentInstanceOwning(Request $request): array
+    {
+        $target = $request->route('instance');
+
+        if ($target instanceof AppInstance) {
+            return [Node::query()->findOrFail($target->node_id)];
+        }
+
+        if (! is_string($target) || $target === '') {
+            return [];
+        }
+
+        $numeric = $this->positiveInteger($target);
+
+        if ($numeric !== null) {
+            $instances = AppInstance::query()->whereKey($numeric)->limit(2)->get();
+        } else {
+            $instances = AppInstance::query()
+                ->whereHas('routes', static fn ($query) => $query->where('hostname', $target))
+                ->orderBy('id')
+                ->limit(2)
+                ->get();
+        }
+
+        if ($instances->count() > 1) {
+            throw new ResourceOperationException(
+                errorCode: 'env.target_ambiguous',
+                message: 'The environment target matches multiple AppInstances.',
+                status: 409,
+            );
+        }
+
+        if ($instances->isEmpty()) {
+            throw new ModelNotFoundException()->setModel(AppInstance::class, [$target]);
+        }
+
+        $instance = $instances->sole();
+        $request->route()?->setParameter('instance', $instance);
+
+        return [Node::query()->findOrFail($instance->node_id)];
     }
 
     /** @return list<Node> */

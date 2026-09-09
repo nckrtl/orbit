@@ -25,20 +25,22 @@ final readonly class NativeProcessRunner implements ProcessRunner
             $stdout = '';
             $stderr = '';
             $truncated = false;
+            $maxOutputBytes = $invocation->maxOutputBytes ?? $this->maxOutputBytes;
             $startedAt = microtime(true);
 
             $exitCode = $process->run(function (string $type, string $buffer) use (
                 &$stdout,
                 &$stderr,
                 &$truncated,
+                $maxOutputBytes,
             ): void {
                 if ($type === SymfonyProcess::OUT) {
-                    $stdout = $this->appendBounded($stdout, $buffer, $truncated);
+                    $stdout = $this->appendBounded($stdout, $buffer, $truncated, $maxOutputBytes);
 
                     return;
                 }
 
-                $stderr = $this->appendBounded($stderr, $buffer, $truncated);
+                $stderr = $this->appendBounded($stderr, $buffer, $truncated, $maxOutputBytes);
             });
 
             return new CommandResult(
@@ -53,16 +55,16 @@ final readonly class NativeProcessRunner implements ProcessRunner
         }
     }
 
-    private function appendBounded(string $current, string $buffer, bool &$truncated): string
+    private function appendBounded(string $current, string $buffer, bool &$truncated, int $maxOutputBytes): string
     {
         $combined = $current.$buffer;
 
-        if (strlen($combined) <= $this->maxOutputBytes) {
+        if (strlen($combined) <= $maxOutputBytes) {
             return $combined;
         }
 
         $truncated = true;
 
-        return substr($combined, -$this->maxOutputBytes);
+        return substr($combined, -$maxOutputBytes);
     }
 }

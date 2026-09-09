@@ -6,6 +6,7 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
+use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
@@ -34,6 +35,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         FirewallRule::class => DoctorFamily::Firewall,
     ];
     $ownerInputs = [
+        AppInstanceEnvironmentValue::class,
         ToolManagerRecord::class,
         Setting::class,
         Cluster::class,
