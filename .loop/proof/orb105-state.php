@@ -49,9 +49,10 @@ if ($command === 'seed-migration') {
         'hostname' => 'orb105-migration.orbit',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Active,
+        'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
     echo json_encode(['id' => $instance->id, 'route_id' => $route->id, 'hostname' => $route->hostname], JSON_THROW_ON_ERROR)."\n";
     exit(0);
 }
@@ -66,9 +67,67 @@ if ($command === 'migration-state') {
         'path' => $instance->checkout_path,
         'migration_required' => $instance->migration_required,
         'status' => $instance->status->value,
+        'branch' => $instance->branch,
+        'selected_php_version' => $instance->selected_php_version,
+        'source_is_laravel' => $instance->source_is_laravel,
+        'failed_step' => $instance->failed_step,
+        'error_code' => $instance->error_code,
+        'relocation_state' => $instance->registration_relocation_state,
+        'authoritative_path' => $instance->registration_authoritative_path,
         'route_id' => $route->id,
         'hostname' => $route->hostname,
+        'route_status' => $route->status->value,
+        'route_provenance' => $route->provenance->value,
+        'route_publication' => $route->publication->value,
+        'route_target_instance_id' => $route->targets()->sole()->app_instance_id,
     ], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+if ($command === 'registration-by-original') {
+    $path = $argv[2] ?? '';
+    $instance = AppInstance::query()
+        ->with('routes')
+        ->where('registration_original_path', $path)
+        ->where('registration_primary', true)
+        ->sole();
+    $route = $instance->routes->first();
+    echo json_encode([
+        'id' => $instance->id,
+        'request_id' => $instance->registration_request_id,
+        'route_id' => $route?->id,
+        'path' => $instance->checkout_path,
+        'relocation_state' => $instance->registration_relocation_state,
+        'authoritative_path' => $instance->registration_authoritative_path,
+        'source_digest' => $instance->registration_source_digest,
+        'commit' => $instance->starting_commit,
+        'branch' => $instance->branch,
+        'detached' => $instance->registration_detached,
+    ], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+if ($command === 'set-relocation-checkpoint') {
+    $id = (int) ($argv[2] ?? 0);
+    $state = $argv[3] ?? '';
+    $authoritativePath = $argv[4] ?? '';
+    $instance = AppInstance::query()->findOrFail($id);
+
+    if (
+        $instance->registration_request_id === null
+        || $state !== 'relocating'
+        || ! str_starts_with($authoritativePath, '/dev/shm/orb105-')
+        || $authoritativePath !== $instance->registration_original_path
+    ) {
+        fwrite(STDERR, "Invalid ORB-105 relocation checkpoint.\n");
+        exit(64);
+    }
+
+    $instance->update([
+        'registration_relocation_state' => $state,
+        'registration_authoritative_path' => $authoritativePath,
+    ]);
+    echo "ok\n";
     exit(0);
 }
 

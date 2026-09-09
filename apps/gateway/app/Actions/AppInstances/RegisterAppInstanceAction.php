@@ -20,6 +20,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -482,6 +483,14 @@ final readonly class RegisterAppInstanceAction
 
         $migration = $instance->migration_required;
         $original = $migration ? $instance->getOriginal() : [];
+        $provisioningHostname = $hostname;
+
+        if ($migration && $provisioningHostname === null) {
+            $existingRoute = $instance->routes()->sole();
+            $provisioningHostname = $existingRoute->provenance === RouteProvenance::Explicit
+                ? $existingRoute->hostname
+                : null;
+        }
 
         DB::transaction(static function () use ($instance, $facts): void {
             $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
@@ -507,8 +516,8 @@ final readonly class RegisterAppInstanceAction
         $this->sources->prepareLaravelRollback($instance);
 
         try {
-            $this->provisioner->reserve($instance, $hostname);
-            $completed = $this->provisioner->complete($instance, $hostname);
+            $this->provisioner->reserve($instance, $provisioningHostname);
+            $completed = $this->provisioner->complete($instance, $provisioningHostname);
             $completed->update(['registration_completed_at' => now()]);
             $this->sources->discardLaravelRollback($completed);
 

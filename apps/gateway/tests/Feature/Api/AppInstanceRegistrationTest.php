@@ -12,6 +12,9 @@ use App\Domain\AppInstances\Registration\RegistrationSourceManager;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
@@ -268,6 +271,115 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         ->assertConflict()
         ->assertJsonPath('error.code', 'app.identity_conflict');
     expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
+});
+
+it('restores a failed default migration and completes the identical retry with stable identities', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/work/acme',
+        'branch' => 'main',
+        'migration_required' => true,
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'status' => 'active',
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'generation_basis_node_id' => null,
+        'hostname' => 'acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $payload = ['source_path' => '/work/acme', 'app_id' => $app->id];
+    $authoritativeBefore = $instance->only([
+        'name',
+        'source_layout',
+        'checkout_path',
+        'root',
+        'branch',
+        'migration_required',
+        'starting_commit',
+        'selected_php_version',
+        'source_is_laravel',
+        'status',
+    ]);
+    $routeBefore = $route->only([
+        'id',
+        'node_id',
+        'cluster_id',
+        'generation_basis_node_id',
+        'hostname',
+        'provenance',
+        'publication',
+        'status',
+    ]);
+    $this->projection->fail = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', $payload)
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete');
+
+    expect($instance->refresh()->only(array_keys($authoritativeBefore)))
+        ->toBe($authoritativeBefore)
+        ->and($route->refresh()->only(array_keys($routeBefore)))
+        ->toBe($routeBefore)
+        ->and($route->targets()->sole()->app_instance_id)
+        ->toBe($instance->id)
+        ->and($instance->failed_step)
+        ->toBe('registration')
+        ->and($instance->error_code)
+        ->toBe('instance.projection_failed')
+        ->and($this->registrationSource->calls)
+        ->toBe(['inspect', 'relocate-set:1', 'url-prepare', 'url-restore', 'restore-original']);
+
+    $this->projection->fail = false;
+    $response = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+
+    expect($response->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($response->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($response->json('data.app_instance.name'))
+        ->toBe('default')
+        ->and($response->json('data.app_instance.checkout_path'))
+        ->toBe('/srv/orbit/apps/acme/default')
+        ->and($response->json('data.app_instance.migration_required'))
+        ->toBeFalse()
+        ->and($instance->refresh()->selected_php_version)
+        ->toBe('8.5')
+        ->and($route->refresh()->hostname)
+        ->toBe('acme.test')
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(1)
+        ->and($this->registrationSource->calls)
+        ->toBe([
+            'inspect',
+            'relocate-set:1',
+            'url-prepare',
+            'url-restore',
+            'restore-original',
+            'relocate-set:1',
+            'url-prepare',
+            'url-discard',
+        ]);
 });
 
 function registration_facts(string $digest = ''): RegistrationSourceFacts

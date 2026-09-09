@@ -115,10 +115,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             ];
 
             if ($instance->registration_relocation_state !== 'relocated') {
-                $instance->update([
-                    'registration_relocation_state' => 'relocating',
-                    'registration_authoritative_path' => $facts->path,
-                ]);
+                AppInstance::query()
+                    ->whereKey($instance->id)
+                    ->update([
+                        'registration_relocation_state' => 'relocating',
+                        'registration_authoritative_path' => $facts->path,
+                    ]);
             }
         }
 
@@ -136,10 +138,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         );
 
         foreach ($members as $member) {
-            $member['appInstance']->update([
-                'registration_relocation_state' => 'relocated',
-                'registration_authoritative_path' => $member['appInstance']->checkout_path,
-            ]);
+            AppInstance::query()
+                ->whereKey($member['appInstance']->id)
+                ->update([
+                    'registration_relocation_state' => 'relocated',
+                    'registration_authoritative_path' => $member['appInstance']->checkout_path,
+                ]);
         }
     }
 
@@ -299,9 +303,10 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
             requested = sys.argv[1]
             include_worktrees = sys.argv[2] == '1'
+            git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
 
             def git(path, *args):
-                return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL).decode().strip()
+                return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
 
             def digest(path):
                 root = pathlib.Path(path)
@@ -313,11 +318,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     ('config', '--local', '--null', '--list'),
                     ('show-ref', '--head'),
                 ]:
-                    try: value = subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL)
+                    try: value = subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env)
                     except subprocess.CalledProcessError as error: value = error.output
                     h.update(b'git\0' + b'\0'.join(a.encode() for a in args) + b'\0' + value)
                 for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
                     if pathlib.Path(current) == root and '.git' in dirs: dirs.remove('.git')
+                    dirs.sort()
                     for name in sorted(dirs + files):
                         entry = pathlib.Path(current) / name
                         relative = entry.relative_to(root).as_posix()
@@ -378,16 +384,18 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         return <<<'PYTHON'
             import errno, hashlib, json, os, pathlib, shutil, stat, subprocess, sys
             members = json.loads(sys.argv[1])
+            git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
 
-            def git(path, *args): return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL).decode().strip()
+            def git(path, *args): return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
             def digest(path):
                 root = pathlib.Path(path); h = hashlib.sha256()
                 for args in [('rev-parse','HEAD'),('symbolic-ref','-q','HEAD'),('status','--porcelain=v2','--untracked-files=all'),('config','--local','--null','--list'),('show-ref','--head')]:
-                    try: value = subprocess.check_output(['git','-C',path,*args], stderr=subprocess.DEVNULL)
+                    try: value = subprocess.check_output(['git','-C',path,*args], stderr=subprocess.DEVNULL, env=git_env)
                     except subprocess.CalledProcessError as error: value = error.output
                     h.update(b'git\0'+b'\0'.join(a.encode() for a in args)+b'\0'+value)
                 for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
                     if pathlib.Path(current) == root and '.git' in dirs: dirs.remove('.git')
+                    dirs.sort()
                     for name in sorted(dirs+files):
                         entry=pathlib.Path(current)/name; relative=entry.relative_to(root).as_posix()
                         if relative == '.git': continue
@@ -406,6 +414,9 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 except subprocess.CalledProcessError: branch=None
                 if branch != member['branch'] or (branch is None) != member['detached']: raise SystemExit(42)
                 if digest(path) != member['digest']: raise SystemExit(42)
+            def remove_stage(path):
+                if os.path.islink(path) or os.path.isfile(path): os.unlink(path)
+                else: shutil.rmtree(path)
             def move(member):
                 source=member['source']; destination=member['destination']; stage=destination+'.orbit-stage-'+str(member['id'])
                 if source == destination: verify(destination, member); return
@@ -415,16 +426,21 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     if os.path.exists(source):
                         verify(source, member)
                         shutil.rmtree(source)
-                    if os.path.lexists(stage): shutil.rmtree(stage)
+                    if os.path.lexists(stage): remove_stage(stage)
                     return
                 if os.path.lexists(stage):
-                    verify(stage, member)
-                    os.rename(stage, destination)
-                    verify(destination, member)
-                    if os.path.exists(source):
+                    try: verify(stage, member)
+                    except SystemExit:
+                        if not os.path.exists(source): raise
                         verify(source, member)
-                        shutil.rmtree(source)
-                    return
+                        remove_stage(stage)
+                    else:
+                        os.rename(stage, destination)
+                        verify(destination, member)
+                        if os.path.exists(source):
+                            verify(source, member)
+                            shutil.rmtree(source)
+                        return
                 if os.path.exists(source): verify(source, member)
                 else: raise SystemExit(42)
                 try: os.rename(source, destination)
@@ -459,20 +475,26 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             root=pathlib.Path(sys.argv[1]); instance=sys.argv[2]; operation=sys.argv[3]
             receipt=root.parent/('.orbit-registration-url-'+instance)
             paths=[root/'.env', root/'bootstrap'/'cache'/'config.php']
+            directories=[root, root/'bootstrap', root/'bootstrap'/'cache']
             if operation == 'prepare':
                 if receipt.exists(): shutil.rmtree(receipt)
                 receipt.mkdir(mode=0o700)
-                manifest=[]
+                manifest={'files': [], 'directories': []}
                 for index,path in enumerate(paths):
                     exists=path.is_file() and not path.is_symlink()
-                    manifest.append(exists)
+                    manifest['files'].append(exists)
                     if exists: shutil.copy2(path, receipt/str(index))
+                for path in directories:
+                    info=path.stat() if path.is_dir() and not path.is_symlink() else None
+                    manifest['directories'].append(None if info is None else [info.st_atime_ns,info.st_mtime_ns])
                 (receipt/'manifest').write_text(json.dumps(manifest)); os.chmod(receipt/'manifest',0o600)
             elif operation == 'restore':
                 manifest=json.loads((receipt/'manifest').read_text())
                 for index,path in enumerate(paths):
-                    if manifest[index]: path.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(receipt/str(index),path)
+                    if manifest['files'][index]: path.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(receipt/str(index),path)
                     elif path.exists() and not path.is_symlink(): path.unlink()
+                for path,times in reversed(list(zip(directories,manifest['directories']))):
+                    if times is not None and path.is_dir() and not path.is_symlink(): os.utime(path,ns=tuple(times))
                 shutil.rmtree(receipt)
             elif operation == 'discard':
                 if receipt.exists(): shutil.rmtree(receipt)
