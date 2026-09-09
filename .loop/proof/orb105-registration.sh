@@ -231,6 +231,23 @@ case "$scenario" in
         remote_command git -C "$root" status --porcelain >/dev/null
         remove_instance "$(json_field "$output" app_instance.id)"
         cleanup_path "$root" "$child"
+
+        source=/home/orbit/orb105-owned-new
+        create_checkout "$source" orb105-owned-new
+        commit=$(remote_command git -C "$source" rev-parse HEAD)
+        seeded=$(gateway_state seed-owned-active "$source" "$commit")
+        id=$(json_field "$seeded" id)
+        before=$(gateway_state owned-state "$id")
+        set +e
+        failure=$(register_source "$source" 2>&1)
+        status=$?
+        set -e
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = instance.source_conflict
+        after=$(gateway_state owned-state "$id")
+        test "$after" = "$before"
+        gateway_state delete-owned-active "$id" >/dev/null
+        cleanup_path "$source"
         ;;
     register-preserves-git-state)
         source=/home/orbit/orb105-preserve
@@ -256,6 +273,35 @@ BASH
         assert_source_snapshot "$destination" /tmp/orb105-preserve-before
         remote_command rm -f /tmp/orb105-preserve-before
         remove_instance "$(json_field "$output" app_instance.id)"
+
+        source=/home/orbit/orb105-rename-window
+        create_checkout "$source" orb105-rename-window
+        snapshot_source "$source" /tmp/orb105-rename-before
+        install_projection_fault
+        trap clear_projection_fault EXIT
+        set +e
+        failure=$(register_request "$source" 2>&1)
+        status=$?
+        set -e
+        clear_projection_fault
+        trap - EXIT
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = instance.registration_incomplete
+        destination=/home/orbit/apps/laravel-typed/orb105-rename-window
+        retained=$(gateway_state registration-by-original "$source")
+        id=$(json_field "$retained" id)
+        route_id=$(json_field "$retained" route_id)
+        assert_source_snapshot "$destination" /tmp/orb105-rename-before
+        gateway_state set-relocation-checkpoint "$id" relocating "$source" >/dev/null
+        recovered=$(register_source "$destination")
+        test "$(json_field "$recovered" app_instance.id)" = "$id"
+        test "$(json_field "$recovered" app_instance.route.id)" = "$route_id"
+        recovered_state=$(gateway_state registration-by-original "$source")
+        test "$(json_field "$recovered_state" completed)" = true
+        test "$(json_field "$recovered_state" relocation_state)" = relocated
+        remote_command test ! -e "$source"
+        remote_command rm -f /tmp/orb105-rename-before
+        remove_instance "$id"
         ;;
     registered-source-provisioning)
         source=/home/orbit/orb105-provision
@@ -272,22 +318,31 @@ BASH
 path=$1
 printf '%s\n' 'normal edit after registration' >> "$path/README.md"
 BASH
-        retry=$(register_request "$source")
+        retry=$(register_source "$destination")
         test "$(json_field "$retry" app_instance.id)" = "$id"
         test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
         remote_script "$destination" <<'BASH'
 path=$1
 grep -Fx 'normal edit after registration' "$path/README.md" >/dev/null
 BASH
+        gateway_state set-registration-incomplete "$id" >/dev/null
+        interrupted=$(gateway_state registration-by-original "$source")
+        test "$(json_field "$interrupted" completed)" = false
+        test "$(json_field "$interrupted" status)" = active
+        test "$(json_field "$interrupted" provisioning_step)" = active
+        retry=$(register_source "$destination")
+        test "$(json_field "$retry" app_instance.id)" = "$id"
+        test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
+        test "$(json_field "$(gateway_state registration-by-original "$source")" completed)" = true
         remote_command git -C "$destination" remote set-url origin https://github.com/acme/replacement.git
         set +e
-        conflict=$(register_request "$source" 2>&1)
+        conflict=$(register_source "$destination" 2>&1)
         conflict_status=$?
         set -e
         test "$conflict_status" -ne 0
         test "$(json_field "$conflict" error.code)" = instance.registration_conflict
         remote_command git -C "$destination" remote set-url origin https://github.com/laravel/laravel.git
-        retry=$(register_request "$source")
+        retry=$(register_source "$destination")
         test "$(json_field "$retry" app_instance.id)" = "$id"
         test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
         remove_instance "$id"
@@ -371,6 +426,13 @@ assert isinstance(after["error_code"], str) and after["error_code"]' "$before" "
         test "$(json_field "$state" authoritative_path)" = /home/orbit/apps/laravel-typed/default
         test "$(json_field "$state" route_target_instance_id)" = "$id"
         remote_command test ! -e "$source"
+        gateway_state set-registration-incomplete "$id" >/dev/null
+        retry=$(register_source "/home/orbit/apps/laravel-typed/default")
+        test "$(json_field "$retry" app_instance.id)" = "$id"
+        test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
+        state=$(gateway_state migration-state "$id")
+        test "$(json_field "$state" status)" = active
+        test "$(json_field "$state" provisioning_step)" = active
         remote_command rm -f /tmp/orb105-migration-before
         remove_instance "$id"
         cleanup_path "$root"
@@ -399,7 +461,7 @@ value=json.loads(sys.argv[1]); members={member["name"]:member for member in valu
 assert members["orb105-set-root"]["hostname"] == "orb105-primary.orbit"
 assert members["orb105-set-child"]["hostname"] != "orb105-primary.orbit"
 assert members["orb105-set-root"]["route"]["id"] != members["orb105-set-child"]["route"]["id"]' "$output"
-        retry=$(register_request "$root" true orb105-primary.orbit)
+        retry=$(register_source "/home/orbit/apps/laravel-typed/orb105-set-root" --include-worktrees --hostname=orb105-primary.orbit)
         test "$(json_field "$retry" source_count)" = 2
         test "$(json_field "$retry" completed_count)" = 2
         remove_instance "$(json_field "$output" app_instance.id)"
@@ -419,6 +481,33 @@ assert members["orb105-set-root"]["route"]["id"] != members["orb105-set-child"][
         test "$(json_field "$state" instances)" = 0
         test "$(json_field "$state" routes)" = 0
         remote_command sudo chown orbit:orbit "$child/composer.json"
+        cleanup_path "$root" "$child"
+
+        root=/home/orbit/orb105-metadata-root
+        child=/home/orbit/orb105-metadata-child
+        create_graph "$root" "$child"
+        remote_command sudo chown root:root "$child"
+        set +e
+        failure=$(register_source "$root" --include-worktrees 2>&1)
+        status=$?
+        set -e
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = instance.source_invalid
+        state=$(gateway_state registration-set-count "$root" "$child")
+        test "$(json_field "$state" instances)" = 0
+        test "$(json_field "$state" routes)" = 0
+        remote_command sudo chown orbit:orbit "$child"
+        remote_command chmod 0666 "$child/.git"
+        set +e
+        failure=$(register_source "$root" --include-worktrees 2>&1)
+        status=$?
+        set -e
+        test "$status" -ne 0
+        test "$(json_field "$failure" error.code)" = instance.source_invalid
+        state=$(gateway_state registration-set-count "$root" "$child")
+        test "$(json_field "$state" instances)" = 0
+        test "$(json_field "$state" routes)" = 0
+        remote_command chmod 0644 "$child/.git"
         cleanup_path "$root" "$child"
 
         source=/home/orbit/orb105-credential
@@ -599,7 +688,7 @@ BASH
         test "$(remote_command find "$destination/orb105-cleanup" -type f | wc -l)" = 30001
 
         set +e
-        completed=$(register_request "$source" 2>&1)
+        completed=$(register_source "$destination" 2>&1)
         retry_status=$?
         set -e
         if [ "$retry_status" -ne 0 ]; then

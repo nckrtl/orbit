@@ -64,14 +64,35 @@ final readonly class RegisterAppInstanceAction
         }
 
         return $this->sourceLock->synchronized($caller->id, function () use ($caller, $data): array {
-            $retainedPrimary = AppInstance::query()
+            $retainedMember = AppInstance::query()
                 ->where('node_id', $caller->id)
-                ->where('registration_original_path', $data->sourcePath)
-                ->where('registration_primary', true)
+                ->whereNotNull('registration_request_id')
+                ->where(static function ($query) use ($data): void {
+                    $query
+                        ->where('registration_original_path', $data->sourcePath)
+                        ->orWhere('checkout_path', $data->sourcePath);
+                })
                 ->first();
+
+            if (
+                $retainedMember instanceof AppInstance
+                && ! $retainedMember->registration_primary
+            ) {
+                throw $this->conflict(
+                    'instance.registration_conflict',
+                    'Registration retry input conflicts with retained evidence.',
+                );
+            }
+
+            $retainedPrimary = $retainedMember;
             $facts = $retainedPrimary instanceof AppInstance
                 ? $this->retainedFacts($retainedPrimary, $data)
                 : $this->sources->inspect($caller, $data->sourcePath, $data->includeWorktrees);
+
+            if (! $retainedPrimary instanceof AppInstance) {
+                $this->assertSourcesNotRetained($caller, $facts);
+            }
+
             $primaryFacts = $retainedPrimary instanceof AppInstance
                 ? $facts[0]
                 : $this->primaryFacts($facts, $data->sourcePath);
@@ -121,6 +142,31 @@ final readonly class RegisterAppInstanceAction
                 'created' => $appCreated,
             ];
         });
+    }
+
+    /** @param list<RegistrationSourceFacts> $facts */
+    private function assertSourcesNotRetained(Node $node, array $facts): void
+    {
+        $retained = AppInstance::query()
+            ->where('node_id', $node->id)
+            ->whereNotNull('registration_request_id')
+            ->where(static function ($query) use ($facts): void {
+                $paths = array_map(
+                    static fn (RegistrationSourceFacts $fact): string => $fact->path,
+                    $facts,
+                );
+                $query
+                    ->whereIn('registration_original_path', $paths)
+                    ->orWhereIn('checkout_path', $paths);
+            })
+            ->exists();
+
+        if ($retained) {
+            throw $this->conflict(
+                'instance.registration_conflict',
+                'Registration retry input conflicts with retained evidence.',
+            );
+        }
     }
 
     /** @param list<RegistrationSourceFacts> $facts */
@@ -490,7 +536,15 @@ final readonly class RegisterAppInstanceAction
                     $this->destinationGuard->assertUnoccupied($node, $destination);
                 }
             } else {
-                $this->assertRetry($instance, $app, $fact, $destination, $rootOverride);
+                $this->assertRetry(
+                    $instance,
+                    $app,
+                    $fact,
+                    $destination,
+                    $rootOverride,
+                    $fact === $primary,
+                    $data->includeWorktrees,
+                );
             }
 
             $proposals[] = [
@@ -644,10 +698,15 @@ final readonly class RegisterAppInstanceAction
         RegistrationSourceFacts $facts,
         StoragePath $destination,
         ?string $root,
+        bool $primary,
+        bool $includeWorktrees,
     ): void {
         if (
             $instance->registration_request_id === null
             && ! $instance->migration_required
+            || $instance->registration_request_id !== null
+            && ($instance->registration_primary !== $primary
+            || $instance->registration_include_worktrees !== $includeWorktrees)
             || $instance->app_id !== $app->id
             || $instance->source_layout !== $facts->layout->value
             || $instance->registration_repository_identity !== null

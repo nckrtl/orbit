@@ -469,6 +469,244 @@ it('refuses retained registration evidence that omits one requested worktree', f
     expect($this->registrationSource->calls)->toBe([]);
 });
 
+it('returns 409 for a retained secondary request and keeps the complete primary retry resumable', function (
+    bool $includeWorktrees,
+    bool $relatedMemberDiscovery,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $paths = ['/work/acme', '/work/feature'];
+    $facts = registration_set_facts($paths);
+    $requestId = (string) Illuminate\Support\Str::uuid();
+    $instances = collect($facts)->map(function (RegistrationSourceFacts $fact, int $index) use (
+        $app,
+        $requestId,
+    ): AppInstance {
+        return AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $this->node->id,
+            'name' => $index === 0 ? 'default' : 'feature',
+            'source_layout' => $fact->layout,
+            'checkout_path' => $index === 0
+                ? '/srv/orbit/apps/acme/default'
+                : '/srv/orbit/apps/acme/feature',
+            'branch' => $fact->branch,
+            'starting_commit' => $fact->commit,
+            'registration_original_path' => $fact->path,
+            'registration_request_id' => $requestId,
+            'registration_primary' => $index === 0,
+            'registration_include_worktrees' => true,
+            'registration_repository_url' => $fact->repositoryUrl,
+            'registration_repository_identity' => $fact->repositoryIdentity,
+            'registration_source_digest' => $fact->sourceDigest,
+            'registration_detached' => $fact->detached,
+            'registration_default_branch' => $fact->defaultBranch,
+            'registration_inferred_slug' => $fact->inferredSlug,
+            'registration_inferred_root' => $fact->inferredRoot,
+            'registration_common_repository_path' => $fact->commonRepositoryPath,
+            'registration_worktree_paths' => $fact->worktreePaths,
+            'registration_relocation_state' => 'reserved',
+            'registration_authoritative_path' => $fact->path,
+            'status' => AppInstanceState::Reserved,
+        ]);
+    });
+    $before = AppInstance::query()
+        ->orderBy('id')
+        ->get()
+        ->mapWithKeys(
+            static fn (AppInstance $instance): array => [$instance->id => $instance->getAttributes()],
+        )
+        ->all();
+    $submittedPath = $paths[1];
+
+    if ($relatedMemberDiscovery) {
+        $submittedPath = '/work/new-primary';
+        $this->registrationSource->facts = registration_set_facts([$submittedPath, $paths[1]]);
+    }
+
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $submittedPath,
+            'include_worktrees' => $includeWorktrees,
+            'app_id' => $app->id,
+            'instance_name' => 'intruder',
+            'hostname' => 'intruder.test',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect(
+        AppInstance::query()
+            ->orderBy('id')
+            ->get()
+            ->mapWithKeys(
+                static fn (AppInstance $instance): array => [$instance->id => $instance->getAttributes()],
+            )
+            ->all(),
+    )
+        ->toBe($before)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->registrationSource->calls)
+        ->toBe($relatedMemberDiscovery ? ['inspect'] : []);
+    $this->registrationSource->calls = [];
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $paths[0],
+        'include_worktrees' => true,
+        'app_id' => $app->id,
+        'instance_name' => 'default',
+        'hostname' => 'primary.test',
+    ])->assertOk();
+    $completed = collect($response->json('data.app_instances'))->keyBy('name');
+
+    expect($response->json('data.source_count'))
+        ->toBe(2)
+        ->and($response->json('data.completed_count'))
+        ->toBe(2)
+        ->and($completed['default']['id'])
+        ->toBe($instances[0]->id)
+        ->and($completed['default']['route']['hostname'])
+        ->toBe('primary.test')
+        ->and($completed['feature']['id'])
+        ->toBe($instances[1]->id)
+        ->and($completed['feature']['route']['hostname'])
+        ->toBe('feature.acme.test')
+        ->and(Route::query()->count())
+        ->toBe(2)
+        ->and($this->registrationSource->calls)
+        ->not->toContain('inspect');
+})->with([
+    'secondary without include-worktrees' => [false, false],
+    'secondary with include-worktrees' => [true, false],
+    'new graph containing a retained secondary' => [true, true],
+]);
+
+it('accepts evidence-backed managed primary retries after completion and interruption', function (
+    bool $includeWorktrees,
+    bool $completed,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $originalPaths = $includeWorktrees
+        ? ['/work/acme', '/work/feature']
+        : ['/work/acme'];
+    $facts = $includeWorktrees
+        ? registration_set_facts($originalPaths)
+        : [registration_facts()];
+    $destinations = $includeWorktrees
+        ? ['/srv/orbit/apps/acme/default', '/srv/orbit/apps/acme/feature']
+        : ['/srv/orbit/apps/acme/default'];
+    $requestId = (string) Illuminate\Support\Str::uuid();
+    $routeIds = [];
+    $instances = collect($facts)->map(function (RegistrationSourceFacts $fact, int $index) use (
+        $app,
+        $completed,
+        $destinations,
+        $includeWorktrees,
+        $originalPaths,
+        $requestId,
+        &$routeIds,
+    ): AppInstance {
+        $instance = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $this->node->id,
+            'name' => $index === 0 ? 'default' : 'feature',
+            'source_layout' => $fact->layout,
+            'checkout_path' => $destinations[$index],
+            'branch' => $fact->branch,
+            'starting_commit' => $fact->commit,
+            'selected_php_version' => '8.5',
+            'source_is_laravel' => true,
+            'provisioning_step' => 'active',
+            'registration_original_path' => $fact->path,
+            'registration_request_id' => $requestId,
+            'registration_primary' => $index === 0,
+            'registration_include_worktrees' => $includeWorktrees,
+            'registration_repository_url' => $fact->repositoryUrl,
+            'registration_repository_identity' => $fact->repositoryIdentity,
+            'registration_source_digest' => $fact->sourceDigest,
+            'registration_detached' => $fact->detached,
+            'registration_default_branch' => $fact->defaultBranch,
+            'registration_inferred_slug' => $fact->inferredSlug,
+            'registration_inferred_root' => $fact->inferredRoot,
+            'registration_common_repository_path' => $fact->commonRepositoryPath,
+            'registration_worktree_paths' => $originalPaths,
+            'registration_relocation_state' => 'relocated',
+            'registration_authoritative_path' => $destinations[$index],
+            'registration_completed_at' => $completed ? now() : null,
+            'status' => AppInstanceState::Active,
+        ]);
+        $route = Route::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $this->node->id,
+            'generation_basis_node_id' => $index === 0 ? null : $this->node->id,
+            'hostname' => $index === 0 ? 'primary.test' : 'feature.acme.test',
+            'provenance' => $index === 0 ? RouteProvenance::Explicit : RouteProvenance::Generated,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+        $routeIds[$instance->name] = $route->id;
+
+        return $instance;
+    });
+
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $destinations[0],
+        'include_worktrees' => $includeWorktrees,
+        'app_id' => $app->id,
+        'hostname' => 'primary.test',
+    ])->assertOk();
+    $retried = collect($response->json('data.app_instances'))->keyBy('name');
+    $instanceIds = $instances->mapWithKeys(
+        static fn (AppInstance $instance): array => [$instance->name => $instance->id],
+    )->all();
+
+    expect($response->json('data.source_count'))
+        ->toBe(count($facts))
+        ->and($response->json('data.completed_count'))
+        ->toBe(count($facts))
+        ->and(
+            $retried->mapWithKeys(
+                static fn (array $instance): array => [$instance['name'] => $instance['id']],
+            )->all(),
+        )
+        ->toBe($instanceIds)
+        ->and(
+            $retried->mapWithKeys(
+                static fn (array $instance): array => [$instance['name'] => $instance['route']['id']],
+            )->all(),
+        )
+        ->toBe($routeIds)
+        ->and(
+            AppInstance::query()
+                ->whereIn('id', $instances->pluck('id'))
+                ->whereNotNull(
+                    'registration_completed_at',
+                )
+                ->count(),
+        )
+        ->toBe(count($facts))
+        ->and($this->registrationSource->calls)
+        ->not->toContain('inspect', 'relocate-set:1', 'relocate-set:2');
+})->with([
+    'completed single source' => [false, true],
+    'interrupted single source' => [false, false],
+    'interrupted included source set' => [true, false],
+]);
+
 it('restores a failed default migration and completes the identical retry with stable identities', function (): void {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',

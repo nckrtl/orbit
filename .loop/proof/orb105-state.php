@@ -41,6 +41,8 @@ if ($command === 'seed-migration') {
         'migration_required' => true,
         'starting_commit' => $commit,
         'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
@@ -105,7 +107,29 @@ if ($command === 'registration-by-original') {
         'commit' => $instance->starting_commit,
         'branch' => $instance->branch,
         'detached' => $instance->registration_detached,
+        'status' => $instance->status->value,
+        'provisioning_step' => $instance->provisioning_step,
+        'completed' => $instance->registration_completed_at !== null,
     ], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+if ($command === 'set-registration-incomplete') {
+    $id = (int) ($argv[2] ?? 0);
+    $instance = AppInstance::query()->findOrFail($id);
+
+    if (
+        $instance->registration_request_id === null
+        || $instance->registration_completed_at === null
+        || $instance->status !== AppInstanceState::Active
+        || $instance->provisioning_step !== 'active'
+    ) {
+        fwrite(STDERR, "Invalid ORB-105 published registration boundary.\n");
+        exit(64);
+    }
+
+    $instance->update(['registration_completed_at' => null]);
+    echo "ok\n";
     exit(0);
 }
 
@@ -118,7 +142,10 @@ if ($command === 'set-relocation-checkpoint') {
     if (
         $instance->registration_request_id === null
         || $state !== 'relocating'
-        || ! str_starts_with($authoritativePath, '/dev/shm/orb105-')
+        || (
+            ! str_starts_with($authoritativePath, '/dev/shm/orb105-')
+            && ! str_starts_with($authoritativePath, '/home/orbit/orb105-')
+        )
         || $authoritativePath !== $instance->registration_original_path
     ) {
         fwrite(STDERR, "Invalid ORB-105 relocation checkpoint.\n");
@@ -155,6 +182,98 @@ if ($command === 'registration-set-count') {
             ->whereHas('targets', static fn ($query) => $query->whereIn('app_instance_id', $instances->modelKeys()))
             ->count(),
     ], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+if ($command === 'seed-owned-active') {
+    $path = $argv[2] ?? '';
+    $commit = $argv[3] ?? '';
+
+    if (! str_starts_with($path, '/home/orbit/orb105-') || preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1) {
+        fwrite(STDERR, "Invalid ORB-105 owned AppInstance source.\n");
+        exit(64);
+    }
+
+    $app = OrbitApp::query()->where('slug', 'laravel-typed')->sole();
+    $node = Node::query()->where('name', 'app-dev')->sole();
+    $cluster = Cluster::query()->where('state', 'active')->sole();
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'orb105-owned-new',
+        'environment' => 'development',
+        'source_layout' => 'checkout',
+        'checkout_path' => $path,
+        'branch' => 'orb105-owned-new',
+        'starting_commit' => $commit,
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => 'orb105-owned-new.laravel-typed.orbit',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Active,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    echo json_encode(['id' => $instance->id, 'route_id' => $route->id], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+if ($command === 'owned-state') {
+    $identifier = $argv[2] ?? '';
+    $instance = AppInstance::query()->with('routes')
+        ->when(
+            ctype_digit($identifier),
+            static fn ($query) => $query->whereKey((int) $identifier),
+            static fn ($query) => $query->where('checkout_path', $identifier),
+        )
+        ->sole();
+    $route = $instance->routes->sole();
+    echo json_encode([
+        'id' => $instance->id,
+        'path' => $instance->checkout_path,
+        'status' => $instance->status->value,
+        'provisioning_step' => $instance->provisioning_step,
+        'registration_request_id' => $instance->registration_request_id,
+        'registration_original_path' => $instance->registration_original_path,
+        'route_id' => $route->id,
+        'route_status' => $route->status->value,
+        'hostname' => $route->hostname,
+    ], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+if ($command === 'delete-owned-active') {
+    $identifier = $argv[2] ?? '';
+    $instance = AppInstance::query()
+        ->when(
+            ctype_digit($identifier),
+            static fn ($query) => $query->whereKey((int) $identifier),
+            static fn ($query) => $query->where('checkout_path', $identifier),
+        )
+        ->sole();
+
+    if (
+        $instance->name !== 'orb105-owned-new'
+        || ! str_starts_with($instance->checkout_path, '/home/orbit/orb105-')
+        || $instance->registration_request_id !== null
+        || $instance->registration_original_path !== null
+    ) {
+        fwrite(STDERR, "Invalid ORB-105 owned AppInstance cleanup.\n");
+        exit(64);
+    }
+
+    $routes = Route::query()
+        ->where('hostname', 'orb105-owned-new.laravel-typed.orbit')
+        ->get();
+    $instance->delete();
+    $routes->each(static fn (Route $route) => $route->delete());
+    echo "ok\n";
     exit(0);
 }
 
