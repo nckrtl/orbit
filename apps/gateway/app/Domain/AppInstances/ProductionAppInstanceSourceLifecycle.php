@@ -15,4 +15,6 @@ interface ProductionAppInstanceSourceLifecycle
     public function resolve(AppInstance $appInstance): DevelopmentSourceResolution;
 
     public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile;
+
+    public function prepareCaddyAccess(AppInstance $appInstance): void;
 }

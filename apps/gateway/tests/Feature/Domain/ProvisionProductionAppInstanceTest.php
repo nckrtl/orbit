@@ -68,6 +68,11 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile('8.5', false);
         }
 
+        public function prepareCaddyAccess(AppInstance $appInstance): void
+        {
+            $this->record('access');
+        }
+
         private function record(string $operation): void
         {
             $this->calls[] = $operation;
@@ -148,7 +153,7 @@ it('resumes each failed production boundary from its durable checkpoint without 
     ?string $checkpoint,
     bool $routeExists,
 ): void {
-    if (in_array($failure, ['user', 'source', 'resolve', 'profile'], strict: true)) {
+    if (in_array($failure, ['user', 'source', 'resolve', 'profile', 'access'], strict: true)) {
         $this->source->fail = $failure;
     } else {
         $this->projection->fail = $failure;
@@ -179,6 +184,7 @@ it('resumes each failed production boundary from its durable checkpoint without 
     'source' => ['source', 'user-prepared', false],
     'branch' => ['resolve', 'source-prepared', false],
     'classification' => ['profile', 'source-resolved', false],
+    'Caddy source access' => ['access', 'source-classified', false],
     'runtime' => ['runtime', 'source-classified', true],
     'certificate' => ['certificate', 'runtime-prepared', true],
     'firewall' => ['firewall', 'certificate-prepared', true],

@@ -133,8 +133,8 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     source_ref="refs/remotes/origin/$branch"
                     sudo -u "$user" -H git -C "$home" fetch --prune -- origin
                     sudo -u "$user" -H git -C "$home" show-ref --verify --quiet "$source_ref"
-                    sudo -u "$user" -H git -C "$home" checkout -B "$branch" "$source_ref"
-                    sudo -u "$user" -H git -C "$home" branch --set-upstream-to="origin/$branch" "$branch"
+                    sudo -u "$user" -H git -C "$home" checkout -B "$branch" "$source_ref" >/dev/null
+                    sudo -u "$user" -H git -C "$home" branch --set-upstream-to="origin/$branch" "$branch" >/dev/null
                     commit=$(sudo -u "$user" -H git -C "$home" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$branch" "$commit"
                     BASH,
@@ -172,35 +172,35 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     composer="$home/composer.json"
                     artisan="$home/artisan"
                     candidate="$home/$relative_root"
-                    resolved=$(realpath -m -- "$candidate")
+                    resolved=$(sudo -u "$user" -H realpath -m -- "$candidate")
 
                     case "$resolved" in
                         "$home"/*) ;;
                         *) printf 'UNSAFE\n'; exit 0 ;;
                     esac
-                    test -z "$(find -P "$home" -xdev ! -user "$user" -print -quit)" || { printf 'UNSAFE\n'; exit 0; }
-                    test -z "$(find -P "$home" -xdev ! -group "$user" -print -quit)" || { printf 'UNSAFE\n'; exit 0; }
-                    if [ -e "$resolved" ] || [ -L "$resolved" ]; then
-                        test "$(stat -c %U -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
-                        test "$(stat -c %G -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
+                    test -z "$(sudo -u "$user" -H find -P "$home" -xdev ! -user "$user" -print -quit)" || { printf 'UNSAFE\n'; exit 0; }
+                    test -z "$(sudo -u "$user" -H find -P "$home" -xdev ! -group "$user" -print -quit)" || { printf 'UNSAFE\n'; exit 0; }
+                    if sudo -u "$user" -H test -e "$resolved" || sudo -u "$user" -H test -L "$resolved"; then
+                        test "$(sudo -u "$user" -H stat -c %U -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
+                        test "$(sudo -u "$user" -H stat -c %G -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
                     fi
 
-                    if [ -L "$composer" ] || { [ -e "$composer" ] && [ ! -f "$composer" ]; }; then
+                    if sudo -u "$user" -H test -L "$composer" || { sudo -u "$user" -H test -e "$composer" && ! sudo -u "$user" -H test -f "$composer"; }; then
                         printf 'UNSAFE\n'
                         exit 0
                     fi
-                    if [ ! -e "$composer" ]; then
-                        if [ -e "$artisan" ] || [ -L "$artisan" ]; then printf 'PARTIAL\n'; else printf 'NONE\n'; fi
+                    if ! sudo -u "$user" -H test -e "$composer"; then
+                        if sudo -u "$user" -H test -e "$artisan" || sudo -u "$user" -H test -L "$artisan"; then printf 'PARTIAL\n'; else printf 'NONE\n'; fi
                         exit 0
                     fi
-                    test "$(stat -c %U -- "$composer")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
-                    if [ -L "$artisan" ]; then artisan_kind=unsafe
-                    elif [ -f "$artisan" ]; then artisan_kind=regular
-                    elif [ -e "$artisan" ]; then artisan_kind=unsafe
+                    test "$(sudo -u "$user" -H stat -c %U -- "$composer")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
+                    if sudo -u "$user" -H test -L "$artisan"; then artisan_kind=unsafe
+                    elif sudo -u "$user" -H test -f "$artisan"; then artisan_kind=regular
+                    elif sudo -u "$user" -H test -e "$artisan"; then artisan_kind=unsafe
                     else artisan_kind=absent
                     fi
                     printf 'COMPOSER\t%s\t' "$artisan_kind"
-                    base64 --wrap=0 -- "$composer"
+                    sudo -u "$user" -H base64 --wrap=0 -- "$composer"
                     printf '\n'
                     BASH,
             ),
@@ -209,6 +209,50 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         );
 
         return $this->profile(trim($result->stdout));
+    }
+
+    public function prepareCaddyAccess(AppInstance $appInstance): void
+    {
+        $appInstance->loadMissing(['app', 'node']);
+        [$user, $home] = $this->identity($appInstance);
+        $root = $appInstance->root ?? $appInstance->app->root;
+
+        if (! is_string($root)) {
+            throw $this->failure('production-caddy-access', 'app-prod.source_metadata_unsafe');
+        }
+
+        $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $home, $user, $root],
+                input: <<<'BASH'
+                    home=$1
+                    user=$2
+                    relative_root=$3
+                    document_root="$home/$relative_root"
+                    test "$home" = "/home/$user"
+                    sudo -u "$user" -H test -d "$home"
+                    sudo -u "$user" -H test ! -L "$home"
+                    home_real=$(sudo -u "$user" -H realpath -e -- "$home")
+                    test "$home_real" = "$home"
+                    sudo -u "$user" -H test -d "$document_root"
+                    sudo -u "$user" -H test ! -L "$document_root"
+                    document_root_real=$(sudo -u "$user" -H realpath -e -- "$document_root")
+                    case "$document_root_real" in
+                        "$home"|"$home"/*) ;;
+                        *) exit 1 ;;
+                    esac
+                    test -z "$(sudo -u "$user" -H find -P "$document_root_real" -type l -print -quit)"
+                    sudo setfacl -P -R -m u:caddy:--- "$home"
+                    sudo find -P "$home" -type d -exec setfacl -m d:u:caddy:--- -- {} +
+                    sudo setfacl -m u:caddy:--x /home "$home"
+                    sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"
+                    sudo find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    BASH,
+            ),
+            step: 'production-caddy-access',
+            errorCode: 'app-prod.source_metadata_unsafe',
+        );
     }
 
     /** @return array{string, string} */

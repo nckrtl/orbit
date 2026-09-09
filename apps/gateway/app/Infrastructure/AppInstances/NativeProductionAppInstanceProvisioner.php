@@ -218,6 +218,10 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
             );
         }
 
+        if ($appInstance->provisioning_step === 'source-classified') {
+            $this->source->prepareCaddyAccess($appInstance);
+        }
+
         $route = $this->routes->ensureForAppInstance($appInstance, $hostname);
 
         if ($route->status === RouteStatus::Failed) {

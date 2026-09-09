@@ -168,12 +168,13 @@ case "$scenario" in
             rm -rf -- "$work"
             trap - EXIT
         done
-        live=$(readlink -f /etc/caddy/Caddyfile)
+        live=$(sudo readlink -f /etc/caddy/Caddyfile)
         case "$live" in /etc/caddy/orbit-versions/*/Caddyfile) ;; *) exit 65 ;; esac
         fragments=$(dirname "$live")/fragments
         candidate=$(mktemp)
         cat > "$candidate" <<'CADDY'
 https://localhost {
+    bind 0.0.0.0
     tls internal
     root * /var/www
     file_server
@@ -183,7 +184,7 @@ CADDY
         rm -f -- "$candidate"
         sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
         sudo systemctl reload caddy
-        curl --fail --silent --show-error --insecure --retry 10 --retry-delay 1 https://localhost/orb197/create.git/HEAD >/dev/null
+        curl --fail --silent --show-error --insecure --retry 10 --retry-delay 1 --retry-all-errors https://localhost/orb197/create.git/HEAD >/dev/null
         ca=/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
         sudo test -s "$ca"
         sudo install -o root -g root -m 0644 "$ca" /usr/local/share/ca-certificates/orb197-source.crt
@@ -232,8 +233,8 @@ home=/home/$user
 test "$(sudo -u "$user" -H git -C "$home" branch --show-current)" = release
 test "$(sudo -u "$user" -H git -C "$home" rev-parse HEAD)" = "$expected"
 test "$(sudo -u "$user" -H git -C "$home" remote get-url origin)" = https://localhost/orb197/initial.git
-test "$(cat "$home/branch.txt")" = initial-release
-test -z "$(find -P "$home" -xdev ! -user "$user" -print -quit)"
+test "$(sudo -u "$user" -H cat "$home/branch.txt")" = initial-release
+test -z "$(sudo -u "$user" -H find -P "$home" -xdev ! -user "$user" -print -quit)"
 REMOTE
         printf 'explicit production branch and initial source evidence passed\n'
         ;;
@@ -298,7 +299,7 @@ REMOTE
         expect_error app-prod.laravel_activation_unavailable orbit instance:new "$laravel_app" "$node_id" default --hostname=orb197-laravel.test
         instance=$(inspect_single orb197-laravel)
         [[ "$(json_field provisioning_step <<<"$instance")" == source-classified ]]
-        [[ "$(json_field source_is_laravel <<<"$instance")" == true ]]
+        [[ "$(json_field source_is_laravel <<<"$instance")" == 1 ]]
         [[ "$(gateway_fixture inspect orb197-laravel | json_field route_count)" == 0 ]]
         printf 'cluster and Laravel gates passed without an active Route\n'
         ;;
@@ -387,8 +388,8 @@ REMOTE
         instance_id=$(json_field id <<<"$create")
         remote_script app-prod "$instance_id" <<'REMOTE'
 instance=$1
-live=$(readlink -f /etc/caddy/Caddyfile)
-grep -Fq -- "orb197-create.test" "$(dirname "$live")/fragments/app-dev.caddy"
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+sudo grep -Fq -- "orb197-create.test" "$(dirname "$live")/fragments/app-dev.caddy"
 sudo test -s "/etc/caddy/orbit-certificates/app-instance-$instance/current/cert.pem"
 status=$(sudo ufw status numbered)
 grep -Fq 'operator:orb197' <<<"$status"
@@ -410,8 +411,7 @@ REMOTE
         removed=$(orbit instance:remove "$instance_id" --json)
         php -r '
             $value=json_decode($argv[1],true,64,JSON_THROW_ON_ERROR);
-            $removal=$value["removal"] ?? null;
-            if(!is_array($removal) || ($removal["app_instance_id"] ?? null)!==(int)$argv[2] || ($removal["completed"] ?? null)!==($removal["total"] ?? null) || ($removal["remaining"] ?? null)!==0 || ($removal["failed_step"] ?? null)!==null || ($removal["error_code"] ?? null)!==null || !is_string($value["request_id"] ?? null) || $value["request_id"]==="") exit(65);
+            if(($value["id"] ?? null)!==(int)$argv[2] || ($value["status"] ?? null)!=="completed" || ($value["completed"] ?? null)!==($value["total"] ?? null) || ($value["remaining"] ?? null)!==0 || ($value["failed_step"] ?? null)!==null || ($value["error_code"] ?? null)!==null || !is_string($value["request_id"] ?? null) || $value["request_id"]==="") exit(65);
         ' "$removed" "$instance_id"
         gateway_fixture assert-removed orb197-remove >/dev/null
         remote_script app-prod-2 "$user" <<'REMOTE'
@@ -419,7 +419,7 @@ user=$1
 home=/home/$user
 getent passwd "$user" >/dev/null
 test -d "$home"
-test -d "$home/.git"
+sudo -u "$user" -H test -d "$home/.git"
 test "$(stat -c %U:%G "$home")" = "$user:$user"
 test "$(sudo -u "$user" -H git -C "$home" remote get-url origin)" = https://localhost/orb197/remove.git
 REMOTE

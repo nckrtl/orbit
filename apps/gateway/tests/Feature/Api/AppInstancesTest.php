@@ -198,6 +198,11 @@ beforeEach(function (): void {
 
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
+
+        public function prepareCaddyAccess(AppInstance $appInstance): void
+        {
+            $this->calls[] = 'access';
+        }
     };
     app()->instance(ProductionAppInstanceSourceLifecycle::class, $this->productionSource);
     $this->productionProjection = new class implements ProductionRouteProjector {
@@ -775,7 +780,7 @@ it('creates an active standalone production AppInstance with stable placement an
         ->assertJsonPath('data.hostname', 'release-name.acme.app-prod.test');
 
     expect($this->productionSource->calls)
-        ->toBe(['user', 'source:new', 'resolve', 'profile'])
+        ->toBe(['user', 'source:new', 'resolve', 'profile', 'access'])
         ->and($this->productionProjection->calls)
         ->toBe(['runtime', 'certificate', 'firewall', 'route'])
         ->and(AppInstance::query()->sole()->only(['production_user', 'production_home']))

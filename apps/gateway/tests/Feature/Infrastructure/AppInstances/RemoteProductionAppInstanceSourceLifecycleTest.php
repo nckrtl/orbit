@@ -21,12 +21,14 @@ it('prepares the recorded user and home and resolves only the App default branch
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, "main\t".str_repeat('a', 40)."\n", '', 1, false),
         new CommandResult(0, "NONE\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
     ]);
 
     $source->prepareUser($instance);
     $source->prepareSource($instance, false);
     $resolution = $source->resolve($instance);
     $profile = $source->inspectProfile($instance);
+    $source->prepareCaddyAccess($instance);
 
     expect($ssh->commands[0]->arguments)
         ->toBe(['bash', '-seu', '--', 'orbit-app-1', '/home/orbit-app-1'])
@@ -52,6 +54,23 @@ it('prepares the recorded user and home and resolves only the App default branch
         ->toBe('main')
         ->and($resolution->startingCommit)
         ->toBe(str_repeat('a', 40))
+        ->and($ssh->commands[3]->input)
+        ->toContain(
+            'resolved=$(sudo -u "$user" -H realpath',
+            'sudo -u "$user" -H find -P "$home"',
+            'sudo -u "$user" -H test -e "$composer"',
+            'sudo -u "$user" -H test -f "$artisan"',
+            'sudo -u "$user" -H base64',
+        )
+        ->and($ssh->commands[4]->arguments)
+        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public'])
+        ->and($ssh->commands[4]->input)
+        ->toContain(
+            'sudo -u "$user" -H realpath -e -- "$document_root"',
+            'sudo -u "$user" -H find -P "$document_root_real" -type l',
+            'sudo setfacl -m u:caddy:--x /home "$home"',
+            'sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"',
+        )
         ->and($profile->phpVersion)
         ->toBeNull()
         ->and($profile->laravel)
