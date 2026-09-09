@@ -4,7 +4,7 @@ In the context of independent feature review, facing a second approval and conti
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md). Supersedes [ADR 0006](0006-topology-led-feature-development.md) for delivery artifact storage and removal before merge.
+Accepted on 2026-09-10. Extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md). Supersedes [ADR 0022](0022-track-the-issue-workspace-and-delete-it-before-merge.md) for branch storage, removal, and second approval.
 
 ## Context
 
@@ -33,6 +33,6 @@ The delivery skills require a review of the workspace head, a commit that remove
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md); supersedes [ADR 0006](0006-topology-led-feature-development.md) for delivery artifact storage and removal
+- ADRs: extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md); supersedes [ADR 0022](0022-track-the-issue-workspace-and-delete-it-before-merge.md) for branch storage, removal, and second approval
 - Detail: docs/reference/implementation-loop.md
 - Verify: artifact publication and proof input tests; `composer docs-lint`
