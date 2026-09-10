@@ -65,6 +65,16 @@ On the typed `app_instances` envelope, sample convergence uses the Orbit CLI to 
 
 The rendered pools, Caddy fragments, firewall rules, and DNS records then match the checkout. When `create-resources` returns no typed checkout path, `internal-tls` on `app-prod` runs before reproject and places the `local_certs` global block as `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version behind `/etc/caddy/Caddyfile`; the product publisher carries unmanaged fragments forward, so Doctor reports no Caddy drift.
 
+### Sample compatibility
+
+The sample adapter selects its production creation contract before it changes sample state. When the complete candidate-clone and explicit-deployment command set is available, it creates production from the development candidate and deploys it explicitly. Otherwise it uses direct production creation. A failure after selection stops convergence and never switches to the older contract.
+
+Hydration derives each checkout, persistent environment file, optional SQLite database, production user, and active release from the AppInstance's recorded placement. It imports and synchronizes environment configuration only when the complete public command set is available. A repeated convergence keeps stored and local environment keys, database contents, sample identities, and the selected release.
+
+Verification accepts two exact production layouts during this compatibility period. A flat placement uses the recorded home and web root with the shared PHP-FPM service and socket. A release placement uses the recorded persistent paths and `current` release with the recorded dedicated service and socket. A missing or mismatched home, web root, environment file, database, service, socket, owner, or current target fails verification; the verifier does not substitute the flat expectation for a malformed release placement.
+
+The compatibility period ends when the supported sample contract always includes candidate cloning, explicit deployment, release placement, environment synchronization, and a dedicated production PHP service. The later sample convergence change removes direct production creation, flat placement, and shared production PHP verification together.
+
 `--allow-cold` permits construction only when no promoted generation, `corrupt.json`, topology snapshot network, or topology snapshot VM exists. It never replaces a promoted generation.
 
 ## Rebuild
