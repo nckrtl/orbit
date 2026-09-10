@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
+use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -32,8 +33,43 @@ use App\Models\NodeRole;
 beforeEach(function (): void {
     $this->dns = new RemoveNodeFakeDnsManager;
     $this->peers = new RemoveNodeFakePeerProjection;
+    $this->metricsAccess = new RemoveNodeFakeMetricsAccessRevoker;
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
+    app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
+});
+
+it('retries Grafana stream revocation before removing membership', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    $this->metricsAccess->failure = new RuntimeException('private Caddy detail');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'node.grafana_access_revocation_failed')
+        ->assertJsonPath('error.details.step', 'grafana-access-revocation')
+        ->assertJsonMissing(['private Caddy detail']);
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty();
+
+    $this->metricsAccess->failure = null;
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertOk();
+
+    expect($this->metricsAccess->calls)
+        ->toBe(2)
+        ->and($target->fresh())
+        ->toBeNull();
 });
 
 it('refuses Node removal around an AppInstance for ordinary and forced offline paths', function (array $body): void {
@@ -730,6 +766,22 @@ final class RemoveNodeFakeDnsManager implements PrivateDnsManager
     public function converge(?Node $pendingNode = null): void
     {
         $this->convergences++;
+
+        if ($this->failure instanceof Throwable) {
+            throw $this->failure;
+        }
+    }
+}
+
+final class RemoveNodeFakeMetricsAccessRevoker implements MetricsAccessRevoker
+{
+    public int $calls = 0;
+
+    public ?Throwable $failure = null;
+
+    public function revoke(): void
+    {
+        $this->calls++;
 
         if ($this->failure instanceof Throwable) {
             throw $this->failure;

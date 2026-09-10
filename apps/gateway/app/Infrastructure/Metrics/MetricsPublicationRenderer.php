@@ -6,6 +6,13 @@ namespace App\Infrastructure\Metrics;
 
 final readonly class MetricsPublicationRenderer
 {
+    private string $gatewayCheckoutPath;
+
+    public function __construct(?string $gatewayCheckoutPath = null)
+    {
+        $this->gatewayCheckoutPath = $gatewayCheckoutPath ?? dirname(__DIR__, 3);
+    }
+
     public function caddy(
         string $metricsAddress,
         ?string $gatewayAddress = null,
@@ -17,9 +24,10 @@ final readonly class MetricsPublicationRenderer
         $this->validateAddress($gatewayAddress);
         $this->validatePath($certificatePath);
         $this->validatePath($privateKeyPath);
+        $this->validateCheckoutPath($this->gatewayCheckoutPath);
 
         return
-            "# Managed by Orbit: metrics\nmetrics.orbit {$gatewayAddress}:443 {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  reverse_proxy http://{$metricsAddress}:"
+            "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  forward_auth unix//run/php/orbit-gateway.sock {\n    uri /api/v1/metrics/grafana/authorize\n    transport fastcgi {\n      env SCRIPT_FILENAME {$this->gatewayCheckoutPath}/public/index.php\n      env SCRIPT_NAME /index.php\n      env REQUEST_URI /api/v1/metrics/grafana/authorize\n      env REMOTE_ADDR {remote_host}\n    }\n  }\n  reverse_proxy http://{$metricsAddress}:"
             .MetricsFootprint::PublicationPort
             ."\n}\n";
     }
@@ -40,6 +48,18 @@ final readonly class MetricsPublicationRenderer
             || ! str_starts_with($path, '/etc/caddy/')
         ) {
             throw new \InvalidArgumentException('Metrics certificate paths must be absolute Caddy paths.');
+        }
+    }
+
+    private function validateCheckoutPath(string $path): void
+    {
+        if (
+            $path === ''
+            || ! str_starts_with($path, '/')
+            || str_contains($path, "\0")
+            || preg_match('/[\r\n{}]/', $path) === 1
+        ) {
+            throw new \InvalidArgumentException('Gateway checkout path must be an absolute path.');
         }
     }
 }

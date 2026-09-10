@@ -60,6 +60,7 @@ use App\Domain\Firewall\FirewallManager;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterLifecycle;
@@ -152,6 +153,7 @@ use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
 use App\Infrastructure\Metrics\MetricsRuntimeHost;
 use App\Infrastructure\Metrics\MetricsSshExecutor;
+use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
@@ -243,6 +245,7 @@ final class AppServiceProvider extends ServiceProvider
         HostKeyScanner::class => SshHostKeyScanner::class,
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
+        MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
         MetricsCredentialRuntime::class => MetricsSshExecutor::class,
         MetricsExporterLifecycle::class => NativeMetricsExporterLifecycle::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,

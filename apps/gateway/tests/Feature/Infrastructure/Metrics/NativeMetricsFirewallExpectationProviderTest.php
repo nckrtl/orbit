@@ -32,7 +32,11 @@ it('projects selected exporter and Gateway-only publication expectations in cata
     );
 
     expect(array_column($provider->for($metrics), 'resourceId'))
-        ->toBe(['orbit:metrics-node-exporter', 'orbit:metrics-grafana-upstream'])
+        ->toBe([
+            'orbit:metrics-node-exporter',
+            'orbit:metrics-grafana-upstream',
+            'orbit:metrics-grafana-isolation',
+        ])
         ->and(array_column($provider->for($gateway), 'resourceId'))
         ->toBe(['orbit:metrics-node-exporter'])
         ->and(array_column($provider->for($app), 'resourceId'))
