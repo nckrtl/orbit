@@ -34,6 +34,7 @@ final readonly class ScenarioSuiteRunner
         string $candidate,
         string $repository,
         string $primary,
+        string $lane,
         array $selected = [],
         ?Closure $output = null,
     ): ScenarioAggregate {
@@ -46,7 +47,7 @@ final readonly class ScenarioSuiteRunner
 
         // Resolve and validate the complete catalog and requested selection before
         // creating run state or allowing a child process to reach Incus.
-        $definitions = $this->catalog->select($candidate, $selected);
+        $definitions = $this->catalog->select($candidate, $selected, $lane);
         $run = ScenarioRunId::generate();
         $startedAt = self::now();
         $this->runs->beginRun($run, $candidate, $definitions, $startedAt);

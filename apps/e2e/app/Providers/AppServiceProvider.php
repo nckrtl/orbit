@@ -27,6 +27,7 @@ use App\E2E\ProofFixtureStager;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\ProofReviewService;
 use App\E2E\ScenarioPestProcess;
+use App\E2E\SnapshotScenarioRunner;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
@@ -73,6 +74,7 @@ final class AppServiceProvider extends ServiceProvider
             ScenarioPestProcess::class,
             fn (): ScenarioPestProcess => new ScenarioPestProcess(dirname(__DIR__, 2)),
         );
+        $this->app->singleton(SnapshotScenarioRunner::class);
         // Host-wide state (topology snapshot generation, locks) lives in the primary checkout's `.e2e/`.
         $this->app->singleton(
             StatePaths::class,

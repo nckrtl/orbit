@@ -6,11 +6,12 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 usage() {
     cat >&2 <<'USAGE'
 usage: bin/e2e-scenarios cold [CANDIDATE_SHA] [--scenario=ID ...]
+       bin/e2e-scenarios snapshot [CANDIDATE_SHA] [--scenario=ID ...]
        bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID
 
-Runs explicitly requested cold Incus scenarios or retries one exact retained
-cleanup. Scenario runs are not part of feature development, proof, review,
-merge, promotion, or CI.
+Runs explicitly requested cold or snapshot Incus scenarios, or retries one
+exact retained cleanup. Scenario runs are not part of feature development,
+proof, review, merge, promotion, or CI.
 USAGE
     exit 64
 }
@@ -35,7 +36,7 @@ if [[ "$command" == cleanup ]]; then
     exec composer --working-dir="$root/apps/e2e" scenario:cleanup -- "$1" "$2" "$3"
 fi
 
-if [[ "$command" != cold ]]; then
+if [[ "$command" != cold && "$command" != snapshot ]]; then
     usage
 fi
 
@@ -77,4 +78,4 @@ fi
 
 export ORBIT_SCENARIO_CANDIDATE_SHA=$candidate
 
-exec composer --working-dir="$root/apps/e2e" scenario:cold -- "${scenario_arguments[@]}"
+exec composer --working-dir="$root/apps/e2e" "scenario:$command" -- "${scenario_arguments[@]}"

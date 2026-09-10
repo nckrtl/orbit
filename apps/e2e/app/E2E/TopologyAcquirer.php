@@ -14,12 +14,9 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
-use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
@@ -62,6 +59,7 @@ final readonly class TopologyAcquirer
         private ?Closure $attempts = null,
         private ?TopologyConverger $converger = null,
         private ?IssueTopologyConstructor $constructor = null,
+        private ?PromotedTopologySnapshotResolver $snapshotResolver = null,
     ) {}
 
     public function acquire(TopologyRequest $request): FeatureTopology
@@ -91,11 +89,9 @@ final readonly class TopologyAcquirer
         $lock = $this->issueLock($request->issue);
         try {
             $topology = $this->mutableTopology($state, AttemptPurpose::Discovery);
-            $this->assertColdBaseMatchesMain(
+            $this->promotedSnapshotResolver()->assertExistingGenerationColdBase(
                 $request->worktree,
-                DeliveryFlow::forWorktree($request->worktree) === 'discovery'
-                    ? $this->fingerprints->forCommit($topology->generation->mainSha)
-                    : null,
+                $topology->generation,
             );
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
@@ -183,7 +179,7 @@ final readonly class TopologyAcquirer
     {
         $proofPlan = ProofPlanFile::forAcquisition($request)?->plan;
         $recipe = $proofPlan?->recipe() ?? TopologyRecipe::registered();
-        $generation = $this->promotedGeneration($request->worktree);
+        $generation = $this->promotedSnapshotResolver()->resolve($request->worktree);
         $this->assertMountableWorktree($request->worktree);
         $this->assertVendorHydrated($request->worktree);
 
@@ -341,39 +337,6 @@ final readonly class TopologyAcquirer
         );
     }
 
-    private function promotedGeneration(string $worktree): TopologySnapshotGeneration
-    {
-        $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
-            'No promoted topology snapshot generation is available.',
-        );
-        if ($generation->isLegacy()) {
-            throw new RuntimeException(
-                'The promoted topology snapshot generation is legacy; refresh it before acquisition.',
-            );
-        }
-        $expectedId = substr($generation->mainSha, 0, 12).'-'.substr($generation->preparedFingerprint, 0, 12);
-        if ($generation->id !== $expectedId) {
-            throw new RuntimeException('The promoted topology snapshot fingerprint is stale or corrupt.');
-        }
-        $baseline = DeliveryFlow::forWorktree($worktree) === 'discovery' ? $generation->mainSha : 'main';
-        $structural = $this->fingerprints->forCommit($baseline);
-        $main = $this->fingerprints->withLaravel($structural, $generation->laravel);
-        if (
-            $structural->value !== $generation->structuralFingerprint
-            || $generation->preparedFingerprint !== $main->value
-        ) {
-            throw new RuntimeException('The promoted topology snapshot is stale; refresh it from main first.');
-        }
-        $this->assertColdBaseMatchesMain($worktree, $main);
-        $topologySnapshotTarget = TopologyTarget::topologySnapshot($this->topologySnapshotIdentity);
-        $this->host->assertOwnedSnapshots(array_combine(
-            array_map($topologySnapshotTarget->instance(...), TopologyProfile::ROLES),
-            $generation->snapshots,
-        ));
-
-        return $generation;
-    }
-
     private function issueLock(string $issue): OperationLock
     {
         $lock = new OperationLock($this->hostPaths);
@@ -406,6 +369,15 @@ final readonly class TopologyAcquirer
                 $this->topologySnapshot,
                 $this->topologySnapshotIdentity,
             );
+    }
+
+    private function promotedSnapshotResolver(): PromotedTopologySnapshotResolver
+    {
+        return $this->snapshotResolver ?? new PromotedTopologySnapshotResolver(
+            $this->fingerprints,
+            $this->topologySnapshot,
+            new TopologySnapshotAvailability($this->host, $this->topologySnapshotIdentity),
+        );
     }
 
     /** The worktree becomes an Incus disk source verbatim, so it must satisfy the mount path rule. */
@@ -442,18 +414,6 @@ final readonly class TopologyAcquirer
         }
         if (function_exists('posix_geteuid') && fileowner($request->worktree) !== posix_geteuid()) {
             throw new InvalidArgumentException('The worktree ownership does not match the current user.');
-        }
-    }
-
-    private function assertColdBaseMatchesMain(string $worktree, ?PreparedFingerprint $main = null): void
-    {
-        $main ??= $this->fingerprints->forCommit('main');
-        $feature = new PreparedStateFingerprint(new GitRepository($worktree))->forCommit();
-        if (
-            ($feature->manifest['cold_epoch'] ?? null) !== ($main->manifest['cold_epoch'] ?? null)
-            || ($feature->manifest['base_image_alias'] ?? null) !== ($main->manifest['base_image_alias'] ?? null)
-        ) {
-            throw new RuntimeException('The feature prepared state changes the cold base contract.');
         }
     }
 }

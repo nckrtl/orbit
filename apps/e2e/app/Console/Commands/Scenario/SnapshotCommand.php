@@ -6,15 +6,16 @@ namespace App\Console\Commands\Scenario;
 
 use App\E2E\ScenarioSuiteRunner;
 use Illuminate\Console\Command;
+use InvalidArgumentException;
 use Throwable;
 
-final class ColdCommand extends Command
+final class SnapshotCommand extends Command
 {
     #[\Override]
-    protected $signature = 'scenario:cold {--scenario=* : Select one committed scenario ID; repeat to select more} {--json}';
+    protected $signature = 'scenario:snapshot {--scenario=* : Select one committed scenario ID; repeat to select more} {--json}';
 
     #[\Override]
-    protected $description = 'Run selected committed cold scenarios serially for one exact candidate';
+    protected $description = 'Run selected committed snapshot scenarios serially for one exact candidate';
 
     public function handle(ScenarioSuiteRunner $runner): int
     {
@@ -24,14 +25,14 @@ final class ColdCommand extends Command
             $primary = $this->environment('ORBIT_SCENARIO_PRIMARY_ROOT');
             $selected = $this->option('scenario');
             if (! array_all($selected, static fn (?string $id): bool => is_string($id))) {
-                throw new \InvalidArgumentException('The scenario selection is invalid.');
+                throw new InvalidArgumentException('The scenario selection is invalid.');
             }
             $selected = array_values($selected);
             $aggregate = $runner->run(
                 $candidate,
                 $repository,
                 $primary,
-                'cold',
+                'snapshot',
                 $selected,
                 fn (string $output) => $this->output->write($output),
             );
@@ -52,7 +53,7 @@ final class ColdCommand extends Command
     {
         $value = getenv($name);
         if (! is_string($value) || $value === '') {
-            throw new \InvalidArgumentException("Scenario environment [{$name}] is absent.");
+            throw new InvalidArgumentException("Scenario environment [{$name}] is absent.");
         }
 
         return $value;

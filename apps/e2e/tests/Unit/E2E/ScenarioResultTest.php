@@ -66,6 +66,31 @@ it('round trips complete identity, inputs, timings, actions, verification, diagn
         ]);
 });
 
+it('round trips a snapshot-lane result', function (): void {
+    $cold = scenarioResult(ScenarioStatus::Passed);
+    $snapshot = new ScenarioResult(
+        $cold->candidate,
+        $cold->run,
+        new ScenarioId('snapshot-scenario-lifecycle'),
+        $cold->attempt,
+        'snapshot',
+        $cold->primaryStatus,
+        $cold->status,
+        $cold->definition,
+        $cold->definitionFingerprint,
+        $cold->recipeFingerprint,
+        $cold->actions,
+        $cold->phaseTimings,
+        $cold->verification,
+        $cold->diagnostics,
+        $cold->cleanup,
+        $cold->startedAt,
+        $cold->finishedAt,
+    );
+
+    expect(ScenarioResult::fromArray($snapshot->toArray())->lane)->toBe('snapshot');
+});
+
 it('serializes each supported primary outcome', function (ScenarioStatus $status): void {
     expect(scenarioResult($status)->toArray()['status'])->toBe($status->value);
 })->with(ScenarioStatus::cases());

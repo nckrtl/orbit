@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\ColdTopologyConstructor;
+use App\E2E\SnapshotScenarioRunner;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\ScenarioRunStore;
 use App\E2E\State\StatePaths;
@@ -21,7 +22,12 @@ uses(TestCase::class)->beforeEach(function (): void {
     }
 
     $this->app->instance(StatePaths::class, StatePaths::forPrimary($primary));
-    foreach ([AtomicJsonStore::class, ScenarioRunStore::class, ColdTopologyConstructor::class] as $service) {
+    foreach ([
+        AtomicJsonStore::class,
+        ScenarioRunStore::class,
+        ColdTopologyConstructor::class,
+        SnapshotScenarioRunner::class,
+    ] as $service) {
         $this->app->forgetInstance($service);
     }
 })->in('Scenario');
