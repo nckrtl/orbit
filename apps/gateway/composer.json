@@ -42,6 +42,8 @@
         ]
     },
     "scripts": {
+        "pre-autoload-dump": "@php ../../bin/pest-setup",
+        "test:affected": "vendor/bin/pest --parallel --processes=2 --tia --compact",
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",

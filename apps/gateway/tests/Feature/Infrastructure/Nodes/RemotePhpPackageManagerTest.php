@@ -836,6 +836,64 @@ it('does not request or enable PCOV for a pure app-prod node', function (): void
         ->not->toContain('pcov');
 });
 
+it('installs production packages for a dedicated master without mutating the shared service', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+
+    new RemotePhpPackageManager()->installPackagesOnlyForAppProd(
+        php_package_node(RoleName::AppProd),
+        collect(['8.5']),
+        php_package_app_prod_ssh($transport),
+    );
+
+    expect($transport->commands)->toHaveCount(2);
+
+    $install = $transport->commands[1];
+
+    expect($install->arguments[4])
+        ->toBe('0')
+        ->and($install->input)
+        ->toContain(
+            'apt-get -o DPkg::Lock::Timeout=300 install',
+            'policy_path=/usr/sbin/policy-rc.d',
+            "printf '#!/bin/sh\\nexit 101\\n'",
+            'DEB_SYSTEMD_INVOKE=0',
+            'sudo cp -a -- "$policy_backup" "$policy_path"',
+            '/usr/sbin/php-fpm"$version" -v',
+            'fpm_modules=$(/usr/sbin/php-fpm"$version" -m',
+        )
+        ->not->toContain(
+            'orbit-runtime',
+            'phpenmod',
+            'phpdismod',
+            'systemctl',
+            'php$version-fpm.service',
+        );
+});
+
+it('accepts existing CLI PCOV for dedicated convergence on a dual-role node without managing either SAPI', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    $node = php_package_node(RoleName::AppProd);
+    $node->roles()->create(['role' => RoleName::AppDev]);
+
+    new RemotePhpPackageManager()->installPackagesOnlyForAppProd(
+        $node->load('roles'),
+        collect(['8.5']),
+        php_package_app_prod_ssh($transport),
+    );
+
+    $install = $transport->commands[1];
+
+    expect($install->arguments[4])
+        ->toBe('1')
+        ->and($install->input)
+        ->toContain(
+            'allow_cli_pcov=$2',
+            'if [ "$allow_cli_pcov" = 1 ]; then',
+            "printf '%s\\n' \"\$cli_modules\" | grep -qxF pcov",
+        )
+        ->not->toContain('phpenmod', 'phpdismod', 'systemctl');
+});
+
 it('keeps PCOV when app-prod convergence targets a dual-role node', function (): void {
     $transport = new AppDevFakeSshExecutor;
     $node = php_package_node(RoleName::AppProd);

@@ -30,6 +30,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
@@ -111,6 +112,7 @@ use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
+use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
 use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
@@ -221,6 +223,7 @@ final class AppServiceProvider extends ServiceProvider
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,
         ProductionAppInstanceSourceLifecycle::class => RemoteProductionAppInstanceSourceLifecycle::class,
+        ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
         RouteHostnameProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,

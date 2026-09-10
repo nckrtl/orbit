@@ -13,6 +13,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteStateResolver;
@@ -216,9 +217,13 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
 
         if ($appInstance->provisioning_step === 'source-resolved') {
             $profile = $this->source->inspectProfile($appInstance);
+            $runtimeAttributes = is_string($profile->phpVersion)
+                ? ProductionPhpRuntimeIdentity::forProvisioning($appInstance, $profile->phpVersion)->attributes()
+                : [];
             $this->checkpoint($appInstance, 'source-classified', attributes: [
                 'selected_php_version' => $profile->phpVersion,
                 'source_is_laravel' => $profile->laravel,
+                ...$runtimeAttributes,
             ]);
         }
 

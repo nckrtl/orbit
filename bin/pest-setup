@@ -1,0 +1,97 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+function failPestSetup(string $message): never
+{
+    fwrite(STDERR, "Pest setup: {$message}\n");
+    exit(1);
+}
+
+/** @param array<string, array{upstream:?string,patched:?string}> $files */
+function pestFilesMatch(string $root, array $files, string $state): bool
+{
+    foreach ($files as $path => $hashes) {
+        $file = $root . '/' . $path;
+        if (is_link($file)) {
+            return false;
+        }
+        $actual = is_file($file) ? hash_file('sha256', $file) : null;
+        if ($actual !== $hashes[$state]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/** @param list<string> $arguments */
+function applyPestPatch(string $root, string $patch, array $arguments = []): void
+{
+    $process = proc_open(
+        ['git', 'apply', '--unsafe-paths', '--directory=' . $root, ...$arguments, $patch],
+        [STDIN, STDOUT, STDERR],
+        $pipes,
+        sys_get_temp_dir(),
+    );
+    if (!is_resource($process) || proc_close($process) !== 0) {
+        failPestSetup('could not apply the pinned monorepo patch; reinstall pestphp/pest and retry.');
+    }
+}
+
+$project = realpath($argv[1] ?? getcwd());
+if ($project === false || !is_file($project . '/composer.json')) {
+    failPestSetup('run from a Composer project, or pass its directory.');
+}
+
+$vendor = getenv('COMPOSER_VENDOR_DIR') ?: 'vendor';
+if (!str_starts_with($vendor, '/')) {
+    $vendor = $project . '/' . $vendor;
+}
+$installedFile = $vendor . '/composer/installed.json';
+if (!is_file($installedFile)) {
+    failPestSetup('install Composer dependencies first.');
+}
+$installed = json_decode(file_get_contents($installedFile), true, flags: JSON_THROW_ON_ERROR);
+$pest = null;
+foreach ($installed['packages'] as $package) {
+    if ($package['name'] === 'pestphp/pest') {
+        $pest = $package;
+        break;
+    }
+}
+if ($pest === null) {
+    exit(0);
+}
+
+$bundle = __DIR__ . '/pest-support';
+$manifest = json_decode(file_get_contents($bundle . '/manifest.json'), true, flags: JSON_THROW_ON_ERROR);
+if (ltrim($pest['version'], 'v') !== $manifest['version']) {
+    failPestSetup('unsupported Pest version; update the pinned patch before upgrading Pest.');
+}
+$root = $vendor . '/pestphp/pest';
+$patch = $bundle . '/monorepo.patch';
+if (hash_file('sha256', $patch) !== $manifest['patch_sha256']) {
+    failPestSetup('the pinned patch checksum does not match.');
+}
+$lock = fopen($vendor . '/.orbit-pest-setup.lock', 'c');
+if ($lock === false || !flock($lock, LOCK_EX)) {
+    failPestSetup('could not lock the project installation.');
+}
+if (pestFilesMatch($root, $manifest['files'], 'patched')) {
+    fwrite(STDOUT, "Pest monorepo TIA ready (5.1.3, Orbit patch).\n");
+    exit(0);
+}
+if (is_link($root)) {
+    failPestSetup('refusing to modify a linked Pest checkout; install the locked distribution first.');
+}
+if (!pestFilesMatch($root, $manifest['files'], 'upstream')) {
+    failPestSetup('Pest files differ from the pinned upstream and patched builds; reinstall pestphp/pest.');
+}
+applyPestPatch($root, $patch, ['--check']);
+applyPestPatch($root, $patch);
+if (!pestFilesMatch($root, $manifest['files'], 'patched')) {
+    failPestSetup('patched files failed verification; reinstall pestphp/pest.');
+}
+fwrite(STDOUT, "Pest monorepo TIA ready (5.1.3, Orbit patch).\n");

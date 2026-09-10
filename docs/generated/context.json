@@ -1183,7 +1183,8 @@
                 "0027",
                 "0028",
                 "0031",
-                "0041"
+                "0041",
+                "0045"
             ]
         },
         {
@@ -1234,7 +1235,10 @@
             "path": "docs/reference/implementation-loop.md",
             "title": "Implementation loop",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "App",
                 "Gateway",
@@ -1316,7 +1320,8 @@
             ],
             "governing_adrs": [
                 "0021",
-                "0034"
+                "0034",
+                "0045"
             ]
         },
         {

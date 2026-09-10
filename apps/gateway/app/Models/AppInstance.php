@@ -23,6 +23,9 @@ use Illuminate\Support\Carbon;
  * @property string $checkout_path
  * @property string|null $production_user
  * @property string|null $production_home
+ * @property string|null $production_php_service
+ * @property string|null $production_php_pool
+ * @property string|null $production_php_socket
  * @property string|null $root
  * @property string|null $branch
  * @property string|null $branch_override
@@ -87,6 +90,9 @@ final class AppInstance extends Model
         'checkout_path',
         'production_user',
         'production_home',
+        'production_php_service',
+        'production_php_pool',
+        'production_php_socket',
         'root',
         'branch',
         'branch_override',

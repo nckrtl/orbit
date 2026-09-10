@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
@@ -25,6 +26,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         private RemoteAppDevPhpFpmManager $php,
         private DnsmasqPrivateDnsManager $dns,
         private RemoteAppDevRouteFirewallManager $firewall,
+        private ?ProductionPhpRuntimeManager $productionPhp = null,
     ) {}
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
@@ -104,9 +106,18 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
-        $this->php->converge($appInstance->node);
+        if ($appInstance->environment === 'production' && $appInstance->production_php_service !== null) {
+            $this->productionPhp()->remove($appInstance);
+        } else {
+            $this->php->converge($appInstance->node);
+        }
         $this->caddy->converge($appInstance->node);
         $this->certificates->removeAppInstance($appInstance);
+    }
+
+    private function productionPhp(): ProductionPhpRuntimeManager
+    {
+        return $this->productionPhp ?? app(ProductionPhpRuntimeManager::class);
     }
 
     private function publishRoute(Route $route, AppInstance $departing): void

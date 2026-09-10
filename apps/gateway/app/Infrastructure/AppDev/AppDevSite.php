@@ -23,6 +23,7 @@ final readonly class AppDevSite
         public ?string $productionHome = null,
         public ?string $appSlug = null,
         public ?string $certificateScope = null,
+        public ?string $productionPhpSocket = null,
     ) {}
 
     public function poolName(): string
@@ -32,7 +33,12 @@ final readonly class AppDevSite
 
     public function socketPath(): string
     {
-        return "/run/php/{$this->poolName()}.sock";
+        return $this->productionPhpSocket ?? "/run/php/{$this->poolName()}.sock";
+    }
+
+    public function usesDedicatedPhpRuntime(): bool
+    {
+        return $this->productionPhpSocket !== null;
     }
 
     public function certificateDirectory(): string

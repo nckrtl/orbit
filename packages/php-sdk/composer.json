@@ -28,6 +28,8 @@
         }
     },
     "scripts": {
+        "pre-autoload-dump": "@php ../../bin/pest-setup",
+        "test:affected": "vendor/bin/pest --parallel --processes=2 --tia --compact",
         "analyse": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check": [
             "@guidance:check",
