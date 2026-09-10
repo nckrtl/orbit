@@ -232,6 +232,7 @@ class MainCacheTest(unittest.TestCase):
         calls = root / 'calls'
         for name, script in {
             'composer': '#!/bin/sh\necho "composer $*" >> "$TIA_TEST_CALLS"\n',
+            'worktree-cache': '#!/bin/sh\nexit 0\n',
             'tia-cache': '#!/bin/sh\necho "cache $*" >> "$TIA_TEST_CALLS"\nexit 1\n',
         }.items():
             path = root / 'bin' / name
