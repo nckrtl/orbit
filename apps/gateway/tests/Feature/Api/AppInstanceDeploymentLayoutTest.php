@@ -26,7 +26,6 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceDeploymentLayout;
 use App\Models\Node;
 use App\Models\Route;
-use Closure;
 
 beforeEach(function (): void {
     [$this->caller, $this->instance, $this->route] = orb217_deployment_api_fixture();

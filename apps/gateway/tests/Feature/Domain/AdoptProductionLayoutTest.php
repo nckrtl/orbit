@@ -31,7 +31,6 @@ use App\Models\AppInstanceDeploymentLayout;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
-use Closure;
 
 beforeEach(function (): void {
     $this->instance = orb217_domain_instance();
