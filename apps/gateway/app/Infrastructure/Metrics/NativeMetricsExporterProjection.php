@@ -77,9 +77,9 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
 
         $selection = $this->selector->select(
             $roles,
+            $this->eligibility->allows($node),
             $this->preferences->get($node->id),
             $node->is($metricsNode),
-            $this->eligibility->allows($node),
         );
 
         return $selection->reason === ExporterSelectionReason::Ineligible

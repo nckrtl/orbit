@@ -107,7 +107,7 @@ it('uses the direct node projection and retains its firewall expectations', func
 
             return new MetricsExporterProjectionItem(
                 $node,
-                new ExporterSelector()->select([RoleName::AppProd]),
+                new ExporterSelector()->select([RoleName::AppProd], eligible: true),
             );
         }
     };

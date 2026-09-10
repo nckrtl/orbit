@@ -11,16 +11,39 @@ describe(ExporterSelector::class, function (): void {
     it('selects exporters from tri-state preference and role state', function (): void {
         $selector = new ExporterSelector;
 
-        expect($selector->select([RoleName::AppDev])->reason)
+        expect($selector->select([RoleName::AppDev], eligible: true)->reason)
             ->toBe(ExporterSelectionReason::RoleDefault)
-            ->and($selector->select([])->reason)
+            ->and($selector->select([], eligible: true)->reason)
             ->toBe(ExporterSelectionReason::RolelessDefaultExcluded)
-            ->and($selector->select([], ExporterPreference::Enabled)->selected)
+            ->and($selector->select([], true, ExporterPreference::Enabled)->selected)
             ->toBeTrue()
-            ->and($selector->select([RoleName::AppDev], ExporterPreference::Disabled)->selected)
+            ->and($selector->select([RoleName::AppDev], true, ExporterPreference::Disabled)->selected)
             ->toBeFalse()
-            ->and($selector->select([RoleName::Metrics], ExporterPreference::Disabled, true)->reason)
+            ->and($selector->select([RoleName::Metrics], true, ExporterPreference::Disabled, true)->reason)
             ->toBe(ExporterSelectionReason::MetricsNode);
+    });
+
+    it('requires eligibility for the Gateway role default and Metrics on the Gateway', function (): void {
+        $selector = new ExporterSelector;
+
+        expect($selector->select([RoleName::Gateway], eligible: true)->reason)
+            ->toBe(ExporterSelectionReason::RoleDefault)
+            ->and($selector->select([RoleName::Gateway], eligible: false)->reason)
+            ->toBe(ExporterSelectionReason::Ineligible)
+            ->and($selector->select(
+                [RoleName::Gateway, RoleName::Metrics],
+                true,
+                ExporterPreference::Disabled,
+                isMetricsNode: true,
+            )->reason)
+            ->toBe(ExporterSelectionReason::MetricsNode)
+            ->and($selector->select(
+                [RoleName::Gateway, RoleName::Metrics],
+                false,
+                ExporterPreference::Disabled,
+                isMetricsNode: true,
+            )->reason)
+            ->toBe(ExporterSelectionReason::Ineligible);
     });
 
     it('excludes an ineligible node for every preference and default', function (
@@ -29,9 +52,9 @@ describe(ExporterSelector::class, function (): void {
     ): void {
         $selection = new ExporterSelector()->select(
             [RoleName::AppProd],
+            false,
             $preference,
             $isMetricsNode,
-            eligible: false,
         );
 
         expect($selection->selected)

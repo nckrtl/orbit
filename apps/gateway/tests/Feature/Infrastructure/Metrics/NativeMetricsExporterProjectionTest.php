@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\DB;
 it('projects active nodes from prospective roles and explicit preferences once', function (): void {
     $metrics = metricsExporterProjectionNode('metrics');
     $metrics->roles()->create(['role' => 'metrics', 'status' => 'provisioning']);
+    $metrics->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $gateway = metricsExporterProjectionNode('gateway');
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
     $active = metricsExporterProjectionNode('active-role');
     $active->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $provisioning = metricsExporterProjectionNode('provisioning-role');
@@ -25,11 +28,20 @@ it('projects active nodes from prospective roles and explicit preferences once',
     $unsupported->update(['platform' => 'darwin']);
     $unmanaged = metricsExporterProjectionNode('unmanaged');
     $unmanaged->update(['ssh_host_fingerprint' => null]);
+    $unmanagedGateway = metricsExporterProjectionNode('unmanaged-gateway');
+    $unmanagedGateway->update(['ssh_host_fingerprint' => null]);
+    $unmanagedGateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $unmanagedMetricsGateway = metricsExporterProjectionNode('unmanaged-metrics-gateway');
+    $unmanagedMetricsGateway->update(['ssh_host_fingerprint' => null]);
+    $unmanagedMetricsGateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $unmanagedMetricsGateway->roles()->create(['role' => 'metrics', 'status' => 'active']);
     $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($metrics->id, ExporterPreference::Disabled);
     $preferences->put($active->id, ExporterPreference::Disabled);
     $preferences->put($explicit->id, ExporterPreference::Enabled);
     $preferences->put($unsupported->id, ExporterPreference::Enabled);
     $preferences->put($unmanaged->id, ExporterPreference::Disabled);
+    $preferences->put($unmanagedMetricsGateway->id, ExporterPreference::Enabled);
 
     $projection = new NativeMetricsExporterProjection(new ExporterSelector, $preferences);
     $items = $projection->for($metrics);
@@ -43,6 +55,7 @@ it('projects active nodes from prospective roles and explicit preferences once',
         $items,
     ))->toBe([
         ['metrics',           true,  'metrics_node'],
+        ['gateway',           true,  'role_default'],
         ['active-role',       false, 'explicit_disabled'],
         ['provisioning-role', true,  'role_default'],
         ['failed-role',       false, 'roleless_default_excluded'],
@@ -70,6 +83,10 @@ it('projects active nodes from prospective roles and explicit preferences once',
     expect($projection->forNode($metrics, $unsupported))
         ->toBeNull()
         ->and($projection->forNode($metrics, $unmanaged))
+        ->toBeNull()
+        ->and($projection->forNode($metrics, $unmanagedGateway))
+        ->toBeNull()
+        ->and($projection->forNode($unmanagedMetricsGateway, $unmanagedMetricsGateway))
         ->toBeNull();
 });
 

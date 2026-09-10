@@ -86,7 +86,7 @@ orbit metrics:disable --force --purge-data
 
 Interactive disable asks for confirmation. Non-interactive disable requires `--force`. Purge also requires `--force`.
 
-After a disable without `--purge-data`, the Metrics node runs neither container, `/etc/orbit/metrics` and the Grafana upstream firewall rule are gone, every exporter drop-in and exporter firewall rule is gone, and the Gateway has removed the `metrics.orbit` route, its certificate, and its DNS record. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
+After a disable without `--purge-data`, the Metrics node runs neither container. The Gateway removes `/etc/orbit/metrics`, the Grafana upstream firewall rule, every exporter drop-in and exporter firewall rule on an eligible managed Node, and the `metrics.orbit` route, certificate, and DNS record. Exporter state that was converged before a Node became ineligible remains unchanged because the Gateway does not inspect or change it. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
 
 With `--purge-data`, the Gateway also deletes both volumes and the active and pending password settings, and nothing else. When a volume of either name lacks the Orbit ownership labels, the Gateway deletes neither volume nor password, leaves the assignment failed at step `remove:baseline`, and answers `node_role.remove_failed` (HTTP 502).
 
