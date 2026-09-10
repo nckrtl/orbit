@@ -1,0 +1,628 @@
+diff --git a/bin/pest b/bin/pest
+index a6f87492..c5c39909 100755
+--- a/bin/pest
++++ b/bin/pest
+@@ -1,8 +1,6 @@
+ #!/usr/bin/env php
+ <?php
+-
+ declare(strict_types=1);
+-
+ use Pest\Contracts\Restarter;
+ use Pest\Kernel;
+ use Pest\Panic;
+@@ -17,110 +15,89 @@ use Pest\TestCaseMethodFilters\TodoTestCaseFilter;
+ use Pest\TestSuite;
+ use Symfony\Component\Console\Input\ArgvInput;
+ use Symfony\Component\Console\Output\ConsoleOutput;
+-
+ (static function () {
+     // Ensures Collision's Printer is registered.
+     $_SERVER['COLLISION_PRINTER'] = 'DefaultPrinter';
+ 
+     $arguments = $originalArguments = $_SERVER['argv'];
+-
+     $dirty = false;
+     $todo = false;
+     $flaky = false;
+     $notes = false;
+ 
+     foreach ($arguments as $key => $value) {
+-
+         if ($value === '--compact') {
+             $_SERVER['COLLISION_PRINTER_COMPACT'] = 'true';
+             unset($arguments[$key]);
+         }
+-
+         if ($value === '--profile') {
+             $_SERVER['COLLISION_PRINTER_PROFILE'] = 'true';
+             unset($arguments[$key]);
+         }
+-
+         if (str_contains($value, '--test-directory=')) {
+             unset($arguments[$key]);
+         } elseif ($value === '--test-directory') {
+             unset($arguments[$key]);
+-
+             if (isset($arguments[$key + 1])) {
+                 unset($arguments[$key + 1]);
+             }
+         }
+-
+         if ($value === '--dirty') {
+             $dirty = true;
+             unset($arguments[$key]);
+         }
+-
+         if (in_array($value, ['--todo', '--todos'], true)) {
+             $todo = true;
+             unset($arguments[$key]);
+         }
+-
+         if ($value === '--flaky') {
+             $flaky = true;
+             unset($arguments[$key]);
+         }
+-
+         if ($value === '--notes') {
+             $notes = true;
+             unset($arguments[$key]);
+         }
+-
+         if (str_contains($value, '--assignee=')) {
+             unset($arguments[$key]);
+         } elseif ($value === '--assignee') {
+             unset($arguments[$key]);
+-
+             if (isset($arguments[$key + 1])) {
+                 unset($arguments[$key + 1]);
+             }
+         }
+-
+         if (str_contains($value, '--issue=')) {
+             unset($arguments[$key]);
+         } elseif ($value === '--issue') {
+             unset($arguments[$key]);
+-
+             if (isset($arguments[$key + 1])) {
+                 unset($arguments[$key + 1]);
+             }
+         }
+-
+         if (str_contains($value, '--ticket=')) {
+             unset($arguments[$key]);
+         } elseif ($value === '--ticket') {
+             unset($arguments[$key]);
+-
+             if (isset($arguments[$key + 1])) {
+                 unset($arguments[$key + 1]);
+             }
+         }
+-
+         if (str_contains($value, '--pr=')) {
+             unset($arguments[$key]);
+         } elseif ($value === '--pr') {
+             unset($arguments[$key]);
+-
+             if (isset($arguments[$key + 1])) {
+                 unset($arguments[$key + 1]);
+             }
+         }
+-
+         if (str_contains($value, '--pull-request=')) {
+             unset($arguments[$key]);
+         } elseif ($value === '--pull-request') {
+             unset($arguments[$key]);
+-
+             if (isset($arguments[$key + 1])) {
+                 unset($arguments[$key + 1]);
+             }
+         }
+-
+         if (str_contains($value, '--teamcity')) {
+             unset($arguments[$key]);
+             $arguments[] = '--no-output';
+@@ -128,25 +105,60 @@ use Symfony\Component\Console\Output\ConsoleOutput;
+         }
+     }
+ 
+-    // Used when Pest is required using composer.
+-    $vendorPath = dirname(__DIR__, 4).'/vendor/autoload.php';
++    // Resolve Composer autoload. Prefer the path set by Composer's bin proxy
++    // ($GLOBALS['_composer_autoload_path']), then walk up for vendor-dir layouts
++    // including custom names (e.g. third_party/) not only vendor/.
++    $autoloadCandidates = [];
+ 
+-    // Used when Pest maintainers are running Pest tests.
+-    $localPath = dirname(__DIR__).'/vendor/autoload.php';
++    if (isset($GLOBALS['_composer_autoload_path']) && is_string($GLOBALS['_composer_autoload_path'])) {
++        $autoloadCandidates[] = $GLOBALS['_composer_autoload_path'];
++    }
++
++    // Pest maintainers running from a local clone (pestphp/pest/vendor).
++    $autoloadCandidates[] = dirname(__DIR__).'/vendor/autoload.php';
++
++    // Installed as vendor/{vendor}/{package}/bin → vendor/autoload.php
++    // (also works when vendor-dir is "third_party": third_party/autoload.php).
++    $autoloadCandidates[] = dirname(__DIR__, 3).'/autoload.php';
++
++    // Legacy fixed depths when vendor-dir is still named "vendor".
++    $autoloadCandidates[] = dirname(__DIR__, 4).'/vendor/autoload.php';
++    $autoloadCandidates[] = dirname(__DIR__, 4).'/third_party/autoload.php';
++
++    // Walk up a few levels for non-standard install trees.
++    $walk = dirname(__DIR__);
++    for ($i = 0; $i < 6; $i++) {
++        $autoloadCandidates[] = $walk.'/autoload.php';
++        $autoloadCandidates[] = $walk.'/vendor/autoload.php';
++        $autoloadCandidates[] = $walk.'/third_party/autoload.php';
++        $parent = dirname($walk);
++        if ($parent === $walk) {
++            break;
++        }
++        $walk = $parent;
++    }
++
++    $autoloadPath = null;
++    foreach (array_unique($autoloadCandidates) as $candidate) {
++        if (! is_string($candidate) || $candidate === '' || ! file_exists($candidate)) {
++            continue;
++        }
+ 
+-    if (file_exists($vendorPath)) {
+-        include_once $vendorPath;
+-        $autoloadPath = $vendorPath;
+-    } else {
+-        include_once $localPath;
+-        $autoloadPath = $localPath;
++        include_once $candidate;
++        // realpath() so paths with ".." from Composer's bin proxy do not break dirname().
++        $autoloadPath = realpath($candidate) ?: $candidate;
++        break;
+     }
+ 
+-    // Get $rootPath based on $autoloadPath
++    if ($autoloadPath === null) {
++        fwrite(STDERR, "Pest: Autoloader not found. Please run `composer install`.\n");
++        exit(1);
++    }
++
++    // Project root is the parent of the Composer vendor directory that owns autoload.php.
+     $rootPath = dirname($autoloadPath, 2);
+ 
+     $input = new ArgvInput;
+-
+     $testSuite = TestSuite::getInstance(
+         $rootPath,
+         $input->getParameterOption('--test-directory', 'tests'),
+@@ -155,57 +167,43 @@ use Symfony\Component\Console\Output\ConsoleOutput;
+     if ($dirty) {
+         $testSuite->tests->addTestCaseFilter(new GitDirtyTestCaseFilter($rootPath));
+     }
+-
+     if ($todo) {
+         $testSuite->tests->addTestCaseMethodFilter(new TodoTestCaseFilter);
+     }
+-
+     if ($flaky) {
+         $testSuite->tests->addTestCaseMethodFilter(new FlakyTestCaseFilter);
+     }
+-
+     if ($notes) {
+         $testSuite->tests->addTestCaseMethodFilter(new NotesTestCaseFilter);
+     }
+-
+     if ($assignee = $input->getParameterOption('--assignee')) {
+         $testSuite->tests->addTestCaseMethodFilter(new AssigneeTestCaseFilter((string) $assignee));
+     }
+-
+     if ($issue = $input->getParameterOption('--issue')) {
+         $testSuite->tests->addTestCaseMethodFilter(new IssueTestCaseFilter((int) $issue));
+     }
+-
+     if ($issue = $input->getParameterOption('--ticket')) {
+         $testSuite->tests->addTestCaseMethodFilter(new IssueTestCaseFilter((int) $issue));
+     }
+-
+     if ($pr = $input->getParameterOption('--pr')) {
+         $testSuite->tests->addTestCaseMethodFilter(new PrTestCaseFilter((int) $pr));
+     }
+-
+     if ($pr = $input->getParameterOption('--pull-request')) {
+         $testSuite->tests->addTestCaseMethodFilter(new PrTestCaseFilter((int) $pr));
+     }
+ 
+     $isDecorated = $input->getParameterOption('--colors', 'always') !== 'never';
+-
+     $output = new ConsoleOutput(ConsoleOutput::VERBOSITY_NORMAL, $isDecorated);
+ 
+     try {
+         $kernel = Kernel::boot($testSuite, $input, $output);
+-
+         $container = Container::getInstance();
+-
+         foreach (Kernel::RESTARTERS as $restarterClass) {
+             $restarter = $container->get($restarterClass);
+             assert($restarter instanceof Restarter);
+-
+             $restarter->maybeRestart($rootPath, $originalArguments);
+         }
+-
+         $result = $kernel->handle($originalArguments, $arguments);
+-
+         $kernel->terminate();
+     } catch (Throwable|Error $e) {
+         Panic::with($e);
+diff --git a/bin/worker.php b/bin/worker.php
+index 8a4574db..b456696d 100644
+--- a/bin/worker.php
++++ b/bin/worker.php
+@@ -44,6 +44,7 @@ $bootPest = (static function (): void {
+     ]);
+ 
+     $composerAutoloadFiles = [
++        getcwd().DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php',
+         dirname(__DIR__, 3).DIRECTORY_SEPARATOR.'autoload.php',
+         dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php',
+         dirname(__DIR__).DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php',
+diff --git a/src/Exceptions/TiaRequiresRepositoryRoot.php b/src/Exceptions/TiaRequiresRepositoryRoot.php
+deleted file mode 100644
+index 8ded003f..00000000
+--- a/src/Exceptions/TiaRequiresRepositoryRoot.php
++++ /dev/null
+@@ -1,44 +0,0 @@
+-<?php
+-
+-declare(strict_types=1);
+-
+-namespace Pest\Exceptions;
+-
+-use NunoMaduro\Collision\Contracts\RenderlessEditor;
+-use NunoMaduro\Collision\Contracts\RenderlessTrace;
+-use Pest\Contracts\Panicable;
+-use RuntimeException;
+-use Symfony\Component\Console\Exception\ExceptionInterface;
+-use Symfony\Component\Console\Output\OutputInterface;
+-
+-/**
+- * @internal
+- */
+-final class TiaRequiresRepositoryRoot extends RuntimeException implements ExceptionInterface, Panicable, RenderlessEditor, RenderlessTrace
+-{
+-    public function __construct(private readonly string $subdirectoryPrefix)
+-    {
+-        parent::__construct(sprintf(
+-            'Tia mode requires the project root to be the git repository root, but this project sits in the subdirectory [%s] of a larger repository. Please give it its own repository to use Tia.',
+-            $this->subdirectoryPrefix,
+-        ));
+-    }
+-
+-    public function render(OutputInterface $output): void
+-    {
+-        $output->writeln([
+-            '',
+-            '  <fg=white;options=bold;bg=red> ERROR </> Tia mode requires the git repository root.',
+-            '',
+-            sprintf('  This project sits in a subdirectory of a larger repo <fg=yellow>%s</>.', $this->subdirectoryPrefix),
+-            '',
+-            '  Give the project its own git repository to use Tia.',
+-            '',
+-        ]);
+-    }
+-
+-    public function exitCode(): int
+-    {
+-        return 1;
+-    }
+-}
+diff --git a/src/Plugins/Tia.php b/src/Plugins/Tia.php
+index dda0f52d..4c155f17 100644
+--- a/src/Plugins/Tia.php
++++ b/src/Plugins/Tia.php
+@@ -15,7 +15,6 @@ use Pest\Exceptions\NoAffectedTestsFound;
+ use Pest\Exceptions\TiaRequiresCommit;
+ use Pest\Exceptions\TiaRequiresDefaultBranch;
+ use Pest\Exceptions\TiaRequiresRemote;
+-use Pest\Exceptions\TiaRequiresRepositoryRoot;
+ use Pest\Panic;
+ use Pest\Plugins\Concerns\HandleArguments;
+ use Pest\Plugins\Tia\BaselineSync;
+@@ -33,7 +32,6 @@ use Pest\Plugins\Tia\Storage;
+ use Pest\Plugins\Tia\TableExtractor;
+ use Pest\Plugins\Tia\WatchPatterns;
+ use Pest\Support\Container;
+-use Pest\Support\Git;
+ use Pest\Support\View;
+ use Pest\TestCaseFilters\TiaTestCaseFilter;
+ use Pest\TestSuite;
+@@ -824,12 +822,6 @@ final class Tia implements AddsOutput, HandlesArguments, HandlesOriginalArgument
+     {
+         $this->watchPatterns->useDefaults($projectRoot);
+ 
+-        $subdirectoryPrefix = $this->gitSubdirectoryPrefix($projectRoot);
+-
+-        if ($subdirectoryPrefix !== null) {
+-            Panic::with(new TiaRequiresRepositoryRoot($subdirectoryPrefix));
+-        }
+-
+         try {
+             $this->resolveBranch($projectRoot);
+         } catch (MissingDependency $missingGit) {
+@@ -2158,11 +2150,6 @@ final class Tia implements AddsOutput, HandlesArguments, HandlesOriginalArgument
+         return implode(', ', array_keys($seen));
+     }
+ 
+-    private function gitSubdirectoryPrefix(string $projectRoot): ?string
+-    {
+-        return new Git($projectRoot)->subdirectoryPrefix();
+-    }
+-
+     private function composerLockDelta(string $projectRoot, string $sha): string
+     {
+         $current = @file_get_contents($projectRoot.'/composer.lock');
+@@ -2170,7 +2157,7 @@ final class Tia implements AddsOutput, HandlesArguments, HandlesOriginalArgument
+             return '';
+         }
+ 
+-        $baseline = new Git($projectRoot)->show($sha, 'composer.lock');
++        $baseline = new ChangedFiles($projectRoot)->contentAtSha($sha, 'composer.lock');
+ 
+         if ($baseline === null) {
+             return '';
+diff --git a/src/Plugins/Tia/BaselineSync.php b/src/Plugins/Tia/BaselineSync.php
+index 1f4d63ce..52ef9ba5 100644
+--- a/src/Plugins/Tia/BaselineSync.php
++++ b/src/Plugins/Tia/BaselineSync.php
+@@ -183,9 +183,9 @@ final readonly class BaselineSync
+ 
+     private function detectGitHubRepo(string $projectRoot): ?string
+     {
+-        $gitConfig = $projectRoot.DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR.'config';
++        $gitConfig = GitRepository::configPath($projectRoot);
+ 
+-        if (! is_file($gitConfig)) {
++        if ($gitConfig === null) {
+             return null;
+         }
+ 
+diff --git a/src/Plugins/Tia/ChangedFiles.php b/src/Plugins/Tia/ChangedFiles.php
+index 4e2d9d45..85ed4c95 100644
+--- a/src/Plugins/Tia/ChangedFiles.php
++++ b/src/Plugins/Tia/ChangedFiles.php
+@@ -14,9 +14,17 @@ final readonly class ChangedFiles
+ {
+     private Git $git;
+ 
++    private string $repoPrefix;
++
+     public function __construct(private string $projectRoot)
+     {
+         $this->git = new Git($projectRoot);
++        $this->repoPrefix = $this->detectRepoPrefix();
++    }
++
++    public function repoPrefix(): string
++    {
++        return $this->repoPrefix;
+     }
+ 
+     /**
+@@ -158,9 +166,9 @@ final readonly class ChangedFiles
+         return $remaining;
+     }
+ 
+-    private function contentAtSha(string $sha, string $path): ?string
++    public function contentAtSha(string $sha, string $path): ?string
+     {
+-        return $this->git->show($sha, $path);
++        return $this->git->show($sha, $this->repoPrefix.$path);
+     }
+ 
+     /**
+@@ -305,13 +313,15 @@ final readonly class ChangedFiles
+      */
+     private function diffSinceSha(string $sha): array
+     {
+-        $output = $this->scan()->raw(['diff', '--name-only', '--no-renames', $sha.'..HEAD']);
++        $output = $this->scan()->raw(['diff', '--name-only', '-z', '--no-renames', $sha.'..HEAD']);
+ 
+         if ($output === null) {
+             throw new MissingDependency('Tia mode', 'git');
+         }
+ 
+-        return $this->splitLines($output);
++        $paths = explode("\x00", rtrim($output, "\x00"));
++
++        return $this->toProjectRelative(array_values(array_filter($paths, static fn (string $path): bool => $path !== '')));
+     }
+ 
+     /**
+@@ -357,7 +367,7 @@ final readonly class ChangedFiles
+             $files[] = $path;
+         }
+ 
+-        return $files;
++        return $this->toProjectRelative($files);
+     }
+ 
+     public function currentSha(): ?string
+@@ -373,6 +383,44 @@ final readonly class ChangedFiles
+         return $sha === '' ? null : $sha;
+     }
+ 
++    /**
++     * @param  array<int, string>  $repoRelativePaths
++     * @return array<int, string>
++     */
++    private function toProjectRelative(array $repoRelativePaths): array
++    {
++        if ($this->repoPrefix === '') {
++            return $repoRelativePaths;
++        }
++
++        $projectRelative = [];
++
++        foreach ($repoRelativePaths as $path) {
++            if (str_starts_with($path, $this->repoPrefix)) {
++                $projectRelative[] = substr($path, strlen($this->repoPrefix));
++            }
++        }
++
++        return $projectRelative;
++    }
++
++    private function detectRepoPrefix(): string
++    {
++        static $cache = [];
++
++        if (isset($cache[$this->projectRoot])) {
++            return $cache[$this->projectRoot];
++        }
++
++        $prefix = $this->git->subdirectoryPrefix();
++
++        if ($prefix === null || $prefix === '') {
++            return $cache[$this->projectRoot] = '';
++        }
++
++        return $cache[$this->projectRoot] = $prefix.'/';
++    }
++
+     /**
+      * @return array<int, string>
+      */
+diff --git a/src/Plugins/Tia/Fingerprint.php b/src/Plugins/Tia/Fingerprint.php
+index 39e56239..b7044360 100644
+--- a/src/Plugins/Tia/Fingerprint.php
++++ b/src/Plugins/Tia/Fingerprint.php
+@@ -275,7 +275,7 @@ final readonly class Fingerprint
+             return $cache[$key];
+         }
+ 
+-        if (! is_dir($projectRoot.'/.git') && ! is_file($projectRoot.'/.git')) {
++        if (GitRepository::locate($projectRoot) === null) {
+             return $cache[$key] = true;
+         }
+ 
+diff --git a/src/Plugins/Tia/GitRepository.php b/src/Plugins/Tia/GitRepository.php
+new file mode 100644
+index 00000000..3acbdfaf
+--- /dev/null
++++ b/src/Plugins/Tia/GitRepository.php
+@@ -0,0 +1,85 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Pest\Plugins\Tia;
++
++/**
++ * Locates the git repository governing a path, which for projects living in
++ * a subdirectory of a monorepo sits in an ancestor directory rather than the
++ * project root itself. Paths are walked as strings, so callers pass
++ * canonical (realpath'd) roots.
++ *
++ * @internal
++ */
++final class GitRepository
++{
++    /**
++     * The nearest ancestor `.git` entry governing the given path — a
++     * directory for regular repositories, a file for worktrees and
++     * submodules — or `null` when the path is not inside a repository.
++     */
++    public static function locate(string $path): ?string
++    {
++        $dir = $path;
++
++        while (true) {
++            $dotGit = $dir.DIRECTORY_SEPARATOR.'.git';
++
++            if (is_dir($dotGit) || is_file($dotGit)) {
++                return $dotGit;
++            }
++
++            $parent = dirname($dir);
++
++            if ($parent === $dir) {
++                return null;
++            }
++
++            $dir = $parent;
++        }
++    }
++
++    /**
++     * The governing repository's config file, or `null` when there is none
++     * or it cannot be resolved by static inspection.
++     */
++    public static function configPath(string $path): ?string
++    {
++        $dotGit = self::locate($path);
++
++        if ($dotGit === null || ! is_dir($dotGit)) {
++            return null;
++        }
++
++        $config = $dotGit.DIRECTORY_SEPARATOR.'config';
++
++        return is_file($config) ? $config : null;
++    }
++
++    /**
++     * The project's path relative to the governing repository's root, with a
++     * trailing slash (`apps/api/`), or an empty string when the project is
++     * the repository root or sits outside any repository.
++     */
++    public static function subdirectoryPrefix(string $projectRoot): string
++    {
++        $dotGit = self::locate($projectRoot);
++
++        if ($dotGit === null) {
++            return '';
++        }
++
++        $repoRoot = dirname($dotGit);
++        $realRepoRoot = @realpath($repoRoot);
++        $realProjectRoot = @realpath($projectRoot);
++
++        if ($realRepoRoot === false || $realProjectRoot === false || $realRepoRoot === $realProjectRoot) {
++            return '';
++        }
++
++        $prefix = substr($realProjectRoot, strlen(rtrim($realRepoRoot, DIRECTORY_SEPARATOR)) + 1);
++
++        return str_replace(DIRECTORY_SEPARATOR, '/', rtrim($prefix, DIRECTORY_SEPARATOR)).'/';
++    }
++}
+diff --git a/src/Plugins/Tia/Storage.php b/src/Plugins/Tia/Storage.php
+index e0674314..f4e471c7 100644
+--- a/src/Plugins/Tia/Storage.php
++++ b/src/Plugins/Tia/Storage.php
+@@ -99,6 +99,14 @@ final class Storage
+     {
+         $origin = self::originIdentity($projectRoot);
+ 
++        if ($origin !== null) {
++            $prefix = GitRepository::subdirectoryPrefix($projectRoot);
++
++            if ($prefix !== '') {
++                $origin .= '#'.$prefix;
++            }
++        }
++
+         $realpath = @realpath($projectRoot);
+         $input = $origin ?? ($realpath === false ? $projectRoot : $realpath);
+ 
+@@ -131,9 +139,9 @@ final class Storage
+ 
+     private static function rawOriginUrl(string $projectRoot): ?string
+     {
+-        $config = $projectRoot.DIRECTORY_SEPARATOR.'.git'.DIRECTORY_SEPARATOR.'config';
++        $config = GitRepository::configPath($projectRoot);
+ 
+-        if (! is_file($config)) {
++        if ($config === null) {
+             return null;
+         }
+ 

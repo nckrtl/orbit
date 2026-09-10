@@ -19,6 +19,7 @@ Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](
 
 - The issue in the `creating-issues` shape: outcome, `Scope`, `Acceptance` checklist, labels, attached ADRs, and relations.
 - A worktree from `bin/worktree-create <ISSUE> <slug>` on the branch `<issue-lowercase>-<slug>`, bootstrapped from `main`.
+- Work from the whole-repository worktree; run Composer and Pest in each affected app or package directory. Bootstrap installs the pinned Pest monorepo fixes. Use `composer test:affected` for optional TIA feedback with two workers, and focused explicit-path tests for acceptance. A cold TIA baseline can run the full project suite; do not use root `bin/test` as its fallback.
 - The plan when one exists, with its acceptance map, `Must preserve` list, and the `docs:` commits the planner made.
 
 Stop if the issue is in a lifecycle state other than exactly `Todo` or `In Progress`, still has a `Readiness` section, has an unfinished `blocked by` relation, has sub-issues, or does not follow the `creating-issues` template; if an attached ADR's Status is not `Accepted on`; if an `Acceptance` item requires guessing product behavior; if a change would cross an `Out` bullet or an attached ADR `Decision` bullet; if a boundary needs a component the issue is not labeled with, where a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`; or if product work would touch the harness.

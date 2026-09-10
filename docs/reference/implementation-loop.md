@@ -51,6 +51,21 @@ The proof flow uses the same worktree, preflight, documentation, review, artifac
 
 Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, formatting, lint, and analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. Continuous integration (CI) runs all five full suites without test impact analysis. The submitted candidate requires green CI. Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
 
+Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and test impact analysis (TIA) baselines. Run checks in each project that a change affects.
+
+Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. A modified or unsupported Pest build fails setup. Installations without development dependencies skip Pest setup.
+
+Use these commands from the affected project directory.
+
+| Command | Result |
+| --- | --- |
+| `vendor/bin/pest --compact tests/Unit/ExampleTest.php` | Runs the selected file directly; an explicit path or filter bypasses TIA |
+| `composer test:affected` | Runs TIA with two parallel workers; selects affected tests when a valid baseline exists |
+| `composer check` | Runs project quality checks without the full test suite |
+| `composer test` | Runs the full project suite with TIA disabled |
+
+TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and full CI remain required. A TIA skip or zero selected tests is not new acceptance evidence. Baselines stay separate between projects. Linked worktrees keep their own baseline, so a new worktree may need an initial recording run. Discovery and proof flow selection do not change test-runner setup.
+
 ## Artifact references
 
 The local `.loop/` directory is ignored. It holds the flow selection, plan, plan review, development notes, and any proof plan and fixtures for one issue. The product candidate contains no `.loop/` paths. The commands use a temporary Git index and leave the feature head and its real index unchanged.
