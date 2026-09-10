@@ -1,0 +1,42 @@
+{
+    "setup": [
+        {
+            "id": "prepare-environment-cli-fixtures",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/environment-cli-prepare.sh"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "observe-environment-app-dev-cli",
+            "node": "app-dev",
+            "argv": [
+                "/home/orbit/orbit/apps/cli/orbit",
+                "app:list",
+                "--json"
+            ],
+            "timeout_seconds": 60
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "environment-cli-lifecycle",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/environment-cli-lifecycle.sh"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "environment-cli-production",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/environment-cli-production.sh"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": true
+}
