@@ -9,6 +9,10 @@ Independently review one `.loop/plan.md` and the documentation commits the plann
 
 Review the plan in the planner's worktree. After recording the verdict and findings, run `bin/loop-artifacts save <ISSUE>` and return the artifact SHA. Do not commit `.loop/` to the feature branch.
 
+When externally orchestrated, the orchestrator assigns this formal reviewer.
+The planner and helpers that contributed to the plan cannot fill this role.
+An advisory review requested by the planner does not satisfy this gate.
+
 ## Delivery flow
 
 Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.

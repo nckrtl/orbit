@@ -11,6 +11,10 @@ The plan, proof plan, and fixtures are versioned on the PR's candidate-bound art
 
 The external orchestrator owns review publication and every other pull-request mutation. The reviewer must not invoke `gh` or create, edit, comment on, review, approve, merge, or otherwise mutate any GitHub surface.
 
+The external orchestrator assigns the formal reviewer independently of the
+implementation lead and its helpers. Advisory checks within implementation do
+not replace this review or approve the candidate.
+
 ## Delivery flow
 
 Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.

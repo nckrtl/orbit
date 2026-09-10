@@ -9,6 +9,13 @@ Turn one Linear issue into `.loop/plan.md`, the separately versioned implementat
 
 This is an independently invokable planning task. It does not assume who implements the plan or what lifecycle surrounds it.
 
+You may use read-only helpers for bounded fact-finding within this planning task.
+Their findings inform your plan; they are not its independent review. Return the
+completed plan, documentation commit, artifact SHA, checks, and any stop to the
+caller. When externally orchestrated, stop there: the orchestrator dispatches
+the independent plan reviewer and authorizes any later implementation. Do not
+start that reviewer or continue into development from a planning assignment.
+
 ## Delivery flow
 
 Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.

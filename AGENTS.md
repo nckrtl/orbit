@@ -20,6 +20,11 @@ SDK, and Incus E2E harness.
 The skills under `.agents/skills/` are standalone task guides. A contributor may
 invoke any one directly; no private orchestration order is implied.
 
+When an external orchestrator assigns a role, finish that role and return its
+handoff. Helpers may work within the assigned role's scope, but they cannot
+replace its independent review or authorize the next delivery phase. The
+orchestrator assigns the formal reviewers and coordinates phase transitions.
+
 - `grilling` — interview the user until every material design branch is settled, without changing project state.
 - `domain-modeling` — sharpen Orbit terms, relationships, and decision boundaries against current evidence.
 - `grill-with-docs` — explicitly run both shaping disciplines and produce a confirmed handoff before issue creation.

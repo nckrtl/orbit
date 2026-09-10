@@ -11,6 +11,25 @@ This task may be invoked directly. A supplied `.loop/plan.md` is the implementat
 
 The external orchestrator owns pull-request creation, updates, review requests, review publication, and merge. The developer must not invoke `gh` or mutate any pull-request or GitHub surface.
 
+## Coordinate implementation helpers
+
+You may act as the implementation lead and delegate bounded coding, testing,
+research, or advisory inspection to subagents when useful work can proceed in
+parallel. Each helper inherits this issue, the selected flow, the assigned
+phase, its scope and exclusions, and all role restrictions. Helper findings
+inform your work; they never supply the official plan or pull-request approval.
+The external orchestrator dispatches those independent reviewers and controls
+delivery phase transitions. Return a missing review or other phase prerequisite
+to that orchestrator instead of creating the next delivery role yourself.
+
+Assign disjoint files to editing helpers; serialize changes to shared files.
+Keep Git index changes, commits, artifact publication, topology operations, and
+final project checks under your control. Coordinate checks that share a project's
+test state or caches. Inspect and integrate helper results, verify the combined
+candidate, and finish or stop every helper before returning one complete handoff.
+Report what was delegated and any unresolved limitations. You remain responsible
+for every acceptance item and the final candidate.
+
 ## Delivery flow
 
 Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
@@ -58,7 +77,7 @@ Harness code is everything under `apps/e2e` and `bin/e2e-*`, except `apps/e2e/te
 
 ## Rules
 
-- One issue per worktree, and one writer per worktree at a time: the planner, the plan reviewer, and the implementer take turns in it.
+- One issue and one integration owner per worktree: planning, formal review, and implementation take turns. During implementation, helpers may edit disjoint files under the implementation lead's coordination; no two agents edit the same file concurrently.
 - Product feature branches never touch harness code as defined above.
 - Proof actions are read-only unless the proof plan sets `"mutates": true`. A plan that removes a node declares the expected final node set.
 - Discovery and proof use separate topologies and never share resources across issues.
