@@ -42,7 +42,7 @@ Each topology is one attempt with a purpose, a lease, and a record under `<workt
 
 A lease names the issue, attempt ID, purpose, operation ID, acquisition time, and topology extension. The extension is `null` or `app-prod` and is stored before the harness creates a network or VM. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved.
 
-A successful proof becomes reviewable only after the harness captures its complete evidence. Its proof topology then stays alive through review and closeout. The proof result, captured evidence, review records, `proof-inputs/`, `equivalence/`, and the `log` file survive release.
+A successful proof becomes reviewable only after the harness captures its complete evidence. Its proof topology then stays alive through review and closeout. The proof result, captured evidence, review records, `proof-inputs/`, `equivalence/`, and the `log` file survive release. [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md) governs this retained-proof review lifecycle.
 
 `status` reports each active purpose and the proof's capture and review-evaluation state. An issue holds at most one attempt per purpose: `acquire` refuses a second discovery, `prove` refuses while a proof attempt exists, and `candidate` refuses while a candidate-convergence attempt exists.
 
