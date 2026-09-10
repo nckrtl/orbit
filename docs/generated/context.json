@@ -1299,6 +1299,21 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/appinstance-cloning.md",
+            "title": "AppInstance cloning",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0047"
+            ]
+        },
+        {
             "path": "docs/reference/appinstance-removal.md",
             "title": "AppInstance removal",
             "kind": "reference",
