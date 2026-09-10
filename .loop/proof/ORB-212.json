@@ -1,0 +1,62 @@
+{
+    "setup": [
+        {
+            "id": "environment-sync-fixture-setup",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb212-environment.sh",
+                "setup"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "environment-sync-observation-setup",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb212-environment.sh",
+                "setup-observations"
+            ],
+            "timeout_seconds": 120
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "environment-sync-placement-and-preflight",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb212-environment.sh",
+                "environment-sync-placement-and-preflight"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "environment-sync-complete-file",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb212-environment.sh",
+                "environment-sync-complete-file"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "environment-sync-retry-and-repeat",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb212-environment.sh",
+                "environment-sync-retry-and-repeat"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "environment-sync-without-application-bootstrap",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb212-environment.sh",
+                "environment-sync-without-application-bootstrap"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": true
+}
