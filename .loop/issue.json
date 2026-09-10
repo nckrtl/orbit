@@ -1,0 +1,137 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md"
+      },
+      {
+        "title": "ADR 0038: Cascade AppInstance removal through processes and schedules",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md"
+      },
+      {
+        "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+      },
+      {
+        "title": "ADR 0031: Clone initial production source during provisioning",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0031-clone-initial-production-source-during-provisioning.md"
+      },
+      {
+        "title": "ADR 0047: Create production AppInstances from candidates",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+      },
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An operator explicitly converts an existing production AppInstance to dedicated PHP services and release placement without losing its source, environment, database, or local tuning.\n\n## Scope\n\n* In: a recoverable existing-placement conversion and its Gateway, SDK, and CLI surfaces.\n* Out: database schema conversion, a new candidate requirement for existing instances, automatic fleet migration, application commands, and legacy Instance or Workspace conversion.\n\n## Acceptance\n\n- [ ] `POST /instances/{instance}/deployment-layout` and `orbit instance:prepare-deployment INSTANCE` convert one authorized existing production AppInstance, with optional `sqlite_source_path`; preflight inventories existing source, environment ownership, runtime tuning, path conflicts, and serving associations before mutation. Proof: `apps/gateway/tests/Feature/Api/AppInstanceDeploymentLayoutTest.php` and Incus action `production-adoption-preflight`.\n- [ ] The existing checkout becomes a retained release selected by `current` without fetching newer code; file content, ignored files, executable modes, and Git state are preserved, and existing `.env` and explicitly selected SQLite content remain durable outside releases. Proof: Incus action `production-adoption-content`.\n- [ ] An unmanaged existing environment file must first be explicitly imported through Orbit; missing ownership or disagreement with stored values refuses conversion before mutation rather than silently replacing local values. Proof: `apps/gateway/tests/Feature/Domain/AdoptProductionLayoutTest.php`.\n- [ ] PHP conversion preserves local tuning in the new runtime\u2019s local configuration, verifies its effective identity, then moves only this workload to its dedicated socket; another user\u2019s shared or dedicated service is never restarted or reset as a side effect. Proof: Incus action `production-adoption-runtime`.\n- [ ] Interruption at file movement, persistent-state placement, runtime publication, or Route projection leaves recorded resumable conversion progress; retry preserves exact retained content and never reports completion until the recorded layout and serving path agree. Proof: Incus action `production-adoption-retry`.\n- [ ] Unsupported tuning or a conflicting destination refuses conversion with the old workload unchanged; repeated completed conversion preserves the selected release and all subsequent local edits, and converted content remains covered by normal removal retention. Proof: Incus action `production-adoption-conflict`.\n- [ ] The SDK sends typed conversion inputs and the CLI uses HTTP only, presents bounded failures, and supports deterministic human and JSON responses. Proof: `packages/php-sdk/tests/Unit/Requests/AppInstances/AppInstanceDeploymentLayoutRequestTest.php` and `apps/cli/tests/Feature/Instances/PrepareDeploymentCommandTest.php`.\n- [ ] Maintained documentation describes explicit conversion, environment import prerequisites, retained content, and recovery, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, `cd packages/php-sdk && composer check`, `cd apps/cli && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.\n- [ ] Relocating an existing SQLite database requires the operating agent to quiesce the existing application first; active owned application processes or an open database prevent relocation, and Orbit infers no application shutdown, queue, or migration commands. Proof: Incus action `production-adoption-sqlite-precondition`.",
+  "id": "4051bbba-f5cd-4c70-8447-c6fa618446e8",
+  "identifier": "ORB-217",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-212",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-216",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "packages/php-sdk"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "apps/cli"
+      },
+      {
+        "name": "Improvement"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Prepare existing production instances for Orbit deployments",
+  "updatedAt": "2026-09-10T21:25:32.299Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-217/prepare-existing-production-instances-for-orbit-deployments"
+}
