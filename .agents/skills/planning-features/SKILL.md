@@ -29,6 +29,15 @@ Resolve the issue's `incus` requirement separately from its flow, using that pag
 - A worktree from `bin/worktree-create <ISSUE>` on the branch `<issue-lowercase>`, with `.loop/plan.md` scaffolded and `.loop/proof/` created; create the same workspace by hand in another checkout workflow.
 - Nearby code, tests, and the proof commands the issue's `Proof:` actions name.
 
+Start from the assigned issue worktree and read its branch, `HEAD`, and existing
+changes locally, as the implementation loop describes. Planning does not require
+a caller-supplied candidate SHA. Treat a copied startup SHA as context unless
+the task explicitly requests work on that revision; record a discrepancy and
+continue in the verified issue worktree. Do not reset, rebase, recreate the
+worktree, or require current main to match it. Preserve existing work and report
+an actual checkout, merge-conflict, or writer-ownership problem. Return the
+observed revision and produced artifact binding with the completed plan.
+
 Stop, and report the gap instead of planning around it, when:
 
 - the issue is in a lifecycle state other than exactly `Todo` or `In Progress`, still has a `Readiness` section, has an unfinished `blocked by` relation, or has sub-issues;

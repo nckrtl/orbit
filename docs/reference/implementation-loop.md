@@ -36,6 +36,14 @@ Apply `incus` when acceptance depends on a real operating system, service manage
 
 Retained issue snapshots and plans may call this label `proof:incus`; interpret that name as the same Incus requirement. A label rename alone does not change acceptance or the selected flow and does not require new candidate artifacts or another preflight. Publish new issues and handoffs with `incus`.
 
+## Start planning or implementation
+
+The orchestrator assigns an issue, registered worktree, phase, Incus requirement, selected flow, and any prior handoff. The planner or implementer reads its branch, `HEAD`, and working changes from that worktree. A startup SHA copied into a prompt is context, not a candidate gate, unless the task explicitly requests work on a particular revision. A stale or mistyped startup SHA does not require stopping, changing the checkout, or fetching main to find a matching object. Record the observed revision in the handoff.
+
+Verify that the worktree belongs to the assigned issue and preserve existing work. Resolve a wrong checkout, unresolved merge conflicts, or an unexpected writer before editing. Keep delivery phases serialized within each issue worktree; separate issue worktrees can progress independently. Main movement does not restart discovery planning or implementation. When correcting review findings, use the reviewed SHA as the findings' reference and assess them against the current worktree.
+
+Exact binding starts with produced review inputs: the plan reviewer checks the actual plan and documentation artifacts, and the PR reviewer checks the pushed candidate, its artifacts, and the local gate receipt. The orchestrator copies these identifiers from verified Git or repository-tool output and merges only the approved candidate. A working revision is discovered locally; an approval remains bound to the revision reviewed.
+
 ## Discovery-only delivery
 
 The discovery flow follows this order.

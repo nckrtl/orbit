@@ -41,6 +41,15 @@ Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](
 - Work from the whole-repository worktree; run Composer and Pest in each affected app or package directory. Bootstrap installs the pinned Pest monorepo fixes and seeds absent private TIA caches from compatible published main baselines. Check its per-project seed results; never copy a feature graph back to main. Use `composer test:affected` for optional TIA feedback with two workers, and focused explicit-path tests for acceptance. A cold TIA baseline can run the full project suite; do not use root `bin/test` as its fallback.
 - The plan when one exists, with its acceptance map, `Must preserve` list, and the `docs:` commits the planner made.
 
+Work in the assigned issue worktree and discover its branch, `HEAD`, and changes
+locally. A copied startup SHA is context unless the task explicitly requests
+work on that revision; it is not a precondition for implementation. Preserve
+existing work and report an actual checkout, merge-conflict, or unexpected-writer
+problem. Review correction SHAs identify the findings' original revision; assess
+their applicability to the current worktree without rewinding it. Record actual
+Git identifiers in the handoff. Candidate, artifact, review, and merge bindings
+remain exact when submitting the completed work.
+
 Stop if the issue is in a lifecycle state other than exactly `Todo` or `In Progress`, still has a `Readiness` section, has an unfinished `blocked by` relation, has sub-issues, or does not follow the `creating-issues` template; if an attached ADR's Status is not `Accepted on`; if an `Acceptance` item requires guessing product behavior; if a change would cross an `Out` bullet or an attached ADR `Decision` bullet; if a boundary needs a component the issue is not labeled with, where a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`; or if product work would touch the harness.
 
 ## Steps
