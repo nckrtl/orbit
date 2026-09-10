@@ -350,6 +350,10 @@ final readonly class RecordCommandActivity
             return [];
         }
 
+        if ($command === 'instance:deployment-config:update') {
+            return [];
+        }
+
         if ($command === 'node:role:remove') {
             return $this->inputSanitizer->sanitizeProperties(
                 $this->removeNodeRoleInputParser->safeActivityInput(
@@ -631,6 +635,18 @@ final readonly class RecordCommandActivity
                 }
 
                 $values[] = $value;
+            }
+        }
+
+        $steps = $request->input('steps');
+
+        if (is_array($steps)) {
+            foreach ($steps as $step) {
+                $command = is_array($step) ? $step['command'] ?? null : null;
+
+                if (is_string($command) && $command !== '') {
+                    $values[] = $command;
+                }
             }
         }
 
