@@ -1,0 +1,65 @@
+# Development record
+
+Issue: ORB-226
+Flow: discovery
+Discovery attempt: `240d7d4848e6c0adf0c12e44b936b59d`
+
+## Discovery observations
+
+### sqlite-seed-preflight
+
+- Relative, symlink, unreadable, and non-SQLite source paths each returned `sqlite.seed_preflight_failed` before transfer. The target remained absent and no source snapshot or attempt state remained.
+- A 97 MB source database on a temporary 16 MB source `/tmp` returned `sqlite.seed_preflight_failed`. The original 912.9 MB `/tmp` mount was restored immediately; the target remained absent and no source attempt state remained.
+- The same source against a temporary 16 MB target-home filesystem returned `sqlite.seed_preflight_failed`. The target filesystem was unmounted immediately; the target remained absent and no target or source attempt state remained.
+
+### sqlite-live-snapshot
+
+- Final-code live run completed in 21.9 seconds while a WAL writer, queue sentinel, and schedule sentinel ran under the recorded source identity.
+- Source rows advanced from 90,029 before the seed to 97,925 after it. Both sentinels advanced. The source inode stayed `41644`, journal mode stayed `wal`, and `PRAGMA integrity_check` returned `ok`.
+- The installed snapshot represented an intermediate committed point with 95,063 rows and `PRAGMA integrity_check=ok`.
+- A recording SSH decorator observed only `source:prepare`, `target:prepare`, `target:install`, and `source:cleanup`, each as fixed `sudo -n -- python3 -c` argv. It found no process, queue, schedule, or checkpoint command.
+
+### sqlite-seed-install
+
+- The final target was `/home/orb226live/database.sqlite`, owned by `orb226live`, mode `0600`, with `PRAGMA integrity_check=ok` and the database-byte sentinel present once.
+- No target-home candidate, SQLite sidecar, target `/tmp` incoming file, or source snapshot remained after confirmation.
+- Gateway Activity contained zero matches and Gateway log files contained zero matches for `orb226-database-byte-sentinel` and `orb226-secret-payload-sentinel`.
+
+### sqlite-seed-retry
+
+- An injected protected-transfer interruption returned `sqlite.seed_transfer_failed`. The identical retry resumed the owned source snapshot and target incoming file, then returned `confirmed=true, changed=true`.
+- The retry target was owned by `orb226retry`, mode `0600`, with `PRAGMA integrity_check=ok`, one database-byte sentinel row, and no candidate, incoming, WAL, or SHM files.
+- After a new source write, an identical completed retry returned `confirmed=true, changed=false`; target inode `40767` and SHA-256 `3bccad05119c8bb58f03a5646c55bd7f121d7252eab16b5e22e3086d4033c243` stayed unchanged while source rows advanced from 87,387 to 87,388.
+- A foreign target remained at inode `40785` and SHA-256 `cb6e4f179847b60747d23bc7685f11363a7bf00634284734232a49e16a0f0a17`; its `keep-me` row and unrelated sentinel file were unchanged, and the seed returned `sqlite.seed_preflight_failed` with no owned temporary state left.
+
+## Development findings
+
+- Live validation first exposed WAL/SHM sidecars beside a transferred WAL-mode file. Target validation now uses immutable read-only SQLite URIs, and the focused test requires every incoming sidecar to be absent.
+- The hardened discovery `/tmp` refused a root truncate of the transport-owned retry file. Retry truncation now runs as the recorded transport identity with `O_NOFOLLOW` and inode revalidation.
+- An unconfirmed target-preparation receipt originally removed the source snapshot. The state machine now retains both owned sides after an unconfirmed interruption, while a confirmed refusal cleans the source and creates no empty target state directory.
+
+## Resource state
+
+- `bin/e2e-topology sync ORB-226`: `ready 240d7d4848e6c0adf0c12e44b936b59d`
+- `bin/e2e-topology verify ORB-226`: `verified 240d7d4848e6c0adf0c12e44b936b59d`
+- Temporary writer and sentinel services are inactive.
+- Discovery remains acquired for reviewer inspection. It has not been released.
+
+## Checks
+
+- `cd apps/gateway && vendor/bin/pest --no-tia --compact tests/Feature/Infrastructure/AppInstances/SqliteSeedTest.php`: 21 passed, 177 assertions.
+- Focused SQLite test plus adjacent AppInstance operation preflight, environment writer, production release layout, and removal-retention tests: 55 passed, 312 assertions.
+- `cd apps/gateway && composer check`: passed; guidance 12 passed with 267 assertions, Rector, Pint, and PHPStan passed.
+- `composer docs-build`: passed.
+- `composer docs-lint`: passed with 0 issues, errors, or warnings.
+- `cd apps/cli && composer test`: 645 passed, 3,813 assertions.
+- `cd apps/gateway && composer test`: 2,996 passed, 17,220 assertions.
+- `cd apps/docs && composer test`: 32 passed, 75 assertions.
+- `cd apps/e2e && composer test`: 1,231 passed, 6,456 assertions.
+- `cd packages/php-sdk && composer test`: 422 passed, 1,674 assertions.
+- Final `bin/e2e-topology sync ORB-226`: `ready 240d7d4848e6c0adf0c12e44b936b59d`.
+- Final `bin/e2e-topology verify ORB-226`: `verified 240d7d4848e6c0adf0c12e44b936b59d`.
+
+## Deviations
+
+- none
