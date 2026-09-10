@@ -57,7 +57,10 @@ it('reports typed gateway provisioning failures without leaking command output',
         },
         selfAccess: new class implements GatewaySelfAccessConverger
         {
-            public function converge(Node $node): void {}
+            public function converge(Node $node): string
+            {
+                return 'SHA256:gateway';
+            }
         },
         orbitHome: $orbitHome,
     ));
@@ -121,7 +124,10 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
         },
         selfAccess: new class implements GatewaySelfAccessConverger
         {
-            public function converge(Node $node): void {}
+            public function converge(Node $node): string
+            {
+                return 'SHA256:gateway';
+            }
         },
         orbitHome: $orbitHome,
     ));

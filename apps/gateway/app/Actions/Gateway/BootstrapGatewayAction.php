@@ -80,7 +80,9 @@ final readonly class BootstrapGatewayAction
 
             $this->ensureDirectories();
             $this->ensureSshKeys();
-            $this->selfAccess->converge($node);
+            $node->update([
+                'ssh_host_fingerprint' => $this->selfAccess->converge($node),
+            ]);
             $wireGuardPublicKey = $this->ensureWireGuardKeys();
             $node->update(['wireguard_public_key' => $wireGuardPublicKey]);
             $this->ensureCertificateAuthority();

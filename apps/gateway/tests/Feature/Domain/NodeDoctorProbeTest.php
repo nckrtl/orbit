@@ -127,13 +127,15 @@ it('reports a healthy node with bounded values', function (): void {
     expect($report->status->value)->toBe('healthy')->and($report->checked)->toBe(1)->and($report->issues)->toBeEmpty();
 });
 
-it('suppresses managed SSH expectations for an ineligible record', function (): void {
+it('redacts an unsupported stored architecture for an eligible node', function (): void {
     $sentinel = 'credential=doctor-secret';
     $node = new Node([
         'name' => 'edge',
         'status' => LifecycleStatus::Active,
-        'platform' => $sentinel,
+        'platform' => 'linux',
         'architecture' => $sentinel,
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 
     $report = new NodeDoctorProbe()->inspect(
@@ -141,9 +143,17 @@ it('suppresses managed SSH expectations for an ineligible record', function (): 
     );
 
     expect($report->status->value)
-        ->toBe('healthy')
+        ->toBe('unverifiable')
         ->and($report->issues)
-        ->toBeEmpty()
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('node.inspection_failed')
+        ->and($report->issues[0]->kind->value)
+        ->toBe('unverifiable')
+        ->and($report->issues[0]->expected)
+        ->toBe('supported')
+        ->and($report->issues[0]->observed)
+        ->toBe('unsupported')
         ->and(json_encode($report, JSON_THROW_ON_ERROR))
         ->not->toContain($sentinel);
 });
