@@ -47,7 +47,7 @@ Before the acceptance map, run `auditing-documentation` in its default issue sco
 
 ## Write the plan
 
-In `discovery`, map existing issue `Proof:` venues to focused tests, CI, and reproducible discovery observations without changing acceptance outcomes. Do not require a proof plan, fixtures, observed inputs, exact-commit proof, or main-freshness checks. Record `Incus observations: not applicable; discovery flow`. Preflight and its independent review precede discovery acquisition. Optional topology extension declarations reuse the existing format; they do not require running proof actions.
+In `discovery`, map existing issue `Proof:` venues to focused tests, the local review gate, and reproducible discovery observations without changing acceptance outcomes. Do not require a proof plan, fixtures, observed inputs, exact-commit proof, or main-freshness checks. Record `Incus observations: not applicable; discovery flow`. Preflight and its independent review precede discovery acquisition. Optional topology extension declarations reuse the existing format; they do not require running proof actions.
 
 Fill every section of `.loop/plan.md` without copying the issue into it:
 

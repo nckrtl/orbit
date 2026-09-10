@@ -491,7 +491,7 @@ it('keeps repository guidance and agent manifests current', function () use ($re
 
     expect($readme)
         ->toContain('bin/worktree-create ')
-        ->toContain(' concise-feature-name')
+        ->toContain('/fast/worktrees/orbit/orb-217')
         ->toContain('independently invokable')
         ->toContain('optional task guides')
         ->toContain('contributors and coding')

@@ -2,6 +2,9 @@
 """Seed missing, portable quality caches from compatible Git worktrees."""
 
 import argparse
+import base64
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -58,6 +61,51 @@ def copy_missing(source, destination):
         os.unlink(temporary)
 
 
+def seed_publication(root, project, tool, config, destination):
+    """Prefer durable main publications, including after their feature worktrees leave."""
+    try:
+        common = Path(subprocess.check_output(
+            ['git', '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+            text=True, stderr=subprocess.DEVNULL).strip())
+        path = common / 'orbit-tia/v1/quality' / project.replace('/', '-') / (tool.lower() + '.json')
+        snapshot = json.loads(path.read_text())
+        if (snapshot.get('schema') != 1 or snapshot.get('project') != project
+                or snapshot.get('tool') != tool.lower()):
+            return False
+        expected = fingerprint(root / project, config)
+        if expected is None:
+            return False
+        runtime = subprocess.check_output(
+            ['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'], text=True).strip()
+        identity = hashlib.sha256(expected[0] + b'\0' + expected[1] + b'\0' + runtime.encode()).hexdigest()
+        if snapshot.get('fingerprint') != identity:
+            return False
+        commit = snapshot['tested_commit']
+        if not isinstance(commit, str) or len(commit) not in (40, 64) or any(c not in '0123456789abcdef' for c in commit):
+            return False
+        if subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', commit, 'HEAD'],
+                          capture_output=True).returncode:
+            return False
+        data = base64.b64decode(snapshot['data'], validate=True)
+        if not data or hashlib.sha256(data).hexdigest() != snapshot['sha256']:
+            return False
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(prefix='.cache-publication-', dir=destination.parent)
+        try:
+            with os.fdopen(descriptor, 'wb') as output:
+                output.write(data)
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                return True
+        finally:
+            os.unlink(temporary)
+        print(f'[{project}] seeded {tool} cache from published main {commit[:12]}')
+        return True
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.CalledProcessError):
+        return False
+
+
 def seed(root):
     sources = [source for source in worktrees(root) if source != root]
     for relative_project in PROJECTS:
@@ -65,6 +113,8 @@ def seed(root):
         for tool, config, relative_cache in CACHES:
             destination = project / relative_cache
             if os.path.lexists(destination):
+                continue
+            if seed_publication(root, relative_project, tool, config, destination):
                 continue
             expected = fingerprint(project, config)
             if expected is None:

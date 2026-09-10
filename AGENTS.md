@@ -82,8 +82,13 @@ invoke any one directly; no private orchestration order is implied.
 - Run `composer docs-lint` when maintained documentation changes.
 - GitHub CI is disabled and is not a merge gate. Retain the reviewer's exact-head local check receipt.
 - Before creating a feature worktree, fetch and fast-forward clean primary main,
-  refresh its TIA baselines, then bootstrap and seed the new worktree with
-  `bin/worktree-create`. Preserve unrelated edits before advancing main.
+  then bootstrap and seed the new worktree with `bin/worktree-create`. It queues
+  cache maintenance in the background and uses compatible successful publications
+  immediately. Preserve unrelated edits before advancing main.
+- One maintenance owner covers all five projects. Routine warming uses repository
+  scripts; `maintaining-monorepo` handles failures. Cache availability does not
+  gate delivery. A failed correctness check on main holds unrelated feature
+  merges until a reviewed repair or revert is verified on main.
 
 ## Durable knowledge
 
