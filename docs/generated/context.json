@@ -1217,6 +1217,19 @@
             ]
         },
         {
+            "path": "docs/decisions/0058-separate-incus-requirements-from-delivery-flow.md",
+            "title": "ADR 0058: Separate Incus requirements from delivery flow",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0051",
+                "0058"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
