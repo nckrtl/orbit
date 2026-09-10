@@ -7,6 +7,7 @@ namespace App\Actions\Nodes;
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -26,6 +27,7 @@ final readonly class RemoveNodeAction
         private PrivateDnsManager $dns,
         private GatewayPeerProjectionManager $peers,
         private MetricsFleetReconciler $metrics,
+        private MetricsAccessRevoker $metricsAccess,
         private NodeReachabilityProbe $reachability,
         private RemoveNodeRoleAction $roles,
         private NodeSideResidue $residue,
@@ -60,6 +62,19 @@ final readonly class RemoveNodeAction
             followUp: $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),
         );
         $node->update(['status' => LifecycleStatus::Removing]);
+
+        try {
+            $this->metricsAccess->revoke();
+        } catch (Throwable $exception) {
+            $node->update(['status' => LifecycleStatus::Active]);
+
+            throw $this->failure(
+                step: 'grafana-access-revocation',
+                errorCode: 'node.grafana_access_revocation_failed',
+                message: "Could not revoke Grafana access for node [{$node->name}].",
+                previous: $exception,
+            );
+        }
 
         try {
             $this->metrics->retire($node);

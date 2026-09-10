@@ -19,7 +19,7 @@ use App\Http\Controllers\Api\MetricsController;
 use App\Models\Node;
 use Illuminate\Routing\Route;
 
-it('exposes the seven focused metrics routes with stable methods', function (): void {
+it('exposes the eight focused metrics routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
         ->filter(static fn (Route $route): bool => str_starts_with(
             (string) $route->getName(),
@@ -31,6 +31,7 @@ it('exposes the seven focused metrics routes with stable methods', function (): 
         ->all();
 
     expect($routes)->toBe([
+        'metrics:grafana:authorize' => ['api/v1/metrics/grafana/authorize', ['GET', 'HEAD']],
         'metrics:enable' => ['api/v1/metrics', ['POST']],
         'metrics:remove' => ['api/v1/metrics', ['DELETE']],
         'metrics:status' => ['api/v1/metrics/status', ['GET', 'HEAD']],

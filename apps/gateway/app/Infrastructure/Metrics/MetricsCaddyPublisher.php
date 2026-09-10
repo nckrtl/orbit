@@ -151,8 +151,20 @@ final readonly class MetricsCaddyPublisher
 
     public function remove(): void
     {
+        $this->withdrawForCutover();
+    }
+
+    /**
+     * Unloads the Metrics route before its authorization boundary changes.
+     *
+     * Only a fragment with the current authorization marker is eligible for
+     * restoration. A legacy fragment is removed fail-closed and never revived
+     * by rollback.
+     */
+    public function withdrawForCutover(): MetricsPublicationReceipt
+    {
         $version = bin2hex(random_bytes(8));
-        $this->run(new ProcessInvocation(
+        $result = $this->run(new ProcessInvocation(
             arguments: [
                 'sudo',
                 'bash',
@@ -178,8 +190,15 @@ final readonly class MetricsCaddyPublisher
                 source_main=$(readlink -f "$live_caddyfile")
                 test -f "$source_main"
                 current_fragments=$(dirname "$source_main")/fragments
-                test ! -f "$current_fragments/$owned_fragment" && exit 0
+                if [ ! -f "$current_fragments/$owned_fragment" ]; then
+                    printf 'orbit-metrics-publication:unchanged\n'
+                    exit 0
+                fi
                 head -n 1 -- "$current_fragments/$owned_fragment" | grep -Fqx -- "# Managed by Orbit: metrics"
+                previous_configuration=
+                if sed -n '2p' -- "$current_fragments/$owned_fragment" | grep -Fqx -- "# Orbit Metrics authorization: 1"; then
+                    previous_configuration=$(base64 -w 0 -- "$current_fragments/$owned_fragment")
+                fi
                 candidate="$versions/$version.candidate"
                 published="$versions/$version"
                 candidate_link="$(dirname "$live_caddyfile")/.Caddyfile.orbit-$version"
@@ -220,7 +239,30 @@ final readonly class MetricsCaddyPublisher
                     rm -rf -- "$published"
                     exit 1
                 fi
+                if [ -n "$previous_configuration" ]; then
+                    printf 'orbit-metrics-publication:replaced:%s\n' "$previous_configuration"
+                else
+                    printf 'orbit-metrics-publication:created\n'
+                fi
                 BASH,
+        ));
+
+        try {
+            return MetricsPublicationReceipt::fromProcessOutput($result->stdout);
+        } catch (InvalidArgumentException) {
+            throw new ResourceOperationException(
+                'metrics.caddy_publication_failed',
+                'Metrics Caddy publication did not complete.',
+                502,
+            );
+        }
+    }
+
+    public function reload(): void
+    {
+        $this->run(new ProcessInvocation(
+            arguments: ['sudo', 'systemctl', 'reload', 'caddy'],
+            timeout: 60.0,
         ));
     }
 

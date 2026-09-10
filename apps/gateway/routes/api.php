@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
+use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeRolesController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\WorkspacesController;
+use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +33,13 @@ Route::prefix('v1')->group(function (): void {
         ->name('gateway:status');
     Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
         ->name('gateway:trust');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
+    ])->get('metrics/grafana/authorize', [GrafanaAccessAuthorizationController::class, 'show'])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('metrics:grafana:authorize');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,

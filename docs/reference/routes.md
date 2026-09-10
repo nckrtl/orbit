@@ -95,7 +95,7 @@ The Router uses the workload Node's configured LAN address. It uses WireGuard on
 
 Publication exposes the Route only after every required private projection is ready.
 
-Active WireGuard membership trusts a Node to reach every other active WireGuard member over all protocols and ports. Node grants do not limit ordinary private Node traffic; they authorize only Orbit commands and Gateway API actions. A configured LAN path can carry Router-to-workload traffic only when it preserves the same registered-Node trust boundary.
+Active WireGuard membership trusts a Node to reach every other active WireGuard member over all protocols and ports. Node grants do not limit ordinary private Node traffic; they authorize only Orbit commands and Gateway API actions. Grafana is the exception: [`metrics.orbit`](metrics.md#private-access-and-credentials) requires Gateway authority, and the Metrics node refuses direct Grafana traffic from other peers. A configured LAN path can carry Router-to-workload traffic only when it preserves the same registered-Node trust boundary.
 
 Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. A standalone production Route is private and terminates Orbit-CA TLS on its workload Node. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 

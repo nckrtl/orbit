@@ -82,6 +82,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'metrics:enable' => ServingNode::Gateway,
         'metrics:exporter:disable' => ServingNode::Gateway,
         'metrics:exporter:enable' => ServingNode::Gateway,
+        'metrics:grafana:authorize' => ServingNode::Gateway,
         'metrics:remove' => ServingNode::Gateway,
         'metrics:status' => ServingNode::Gateway,
         'node:access:add' => ServingNode::Gateway,

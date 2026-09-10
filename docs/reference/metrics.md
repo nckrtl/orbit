@@ -1,8 +1,8 @@
 # Metrics role
 
-This page tells an operator what the `metrics` role runs, how to enable, inspect, and disable it, and what each command answers. [ADR 0003](../decisions/0003-singleton-metrics-role.md) records the role contract, and [ADR 0057](../decisions/0057-limit-metrics-exporters-to-managed-nodes.md) limits exporter service management to eligible managed Nodes; this page states what the operator observes.
+This page tells an operator what the `metrics` role runs, how to enable, inspect, and disable it, and what each command answers. [ADR 0003](../decisions/0003-singleton-metrics-role.md) records the role contract, [ADR 0055](../decisions/0055-restrict-grafana-access-to-authorized-gateway-peers.md) records the Grafana access boundary, and [ADR 0057](../decisions/0057-limit-metrics-exporters-to-managed-nodes.md) limits exporter service management to eligible managed Nodes; this page states what the operator observes.
 
-The role runs two Docker containers on one node, `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and the packaged `prometheus-node-exporter` unit on every selected node. Both containers use Docker host networking. Prometheus binds `127.0.0.1:9090` and has no firewall rule, so only a process on the Metrics node reaches it. Grafana binds the node's WireGuard address on port 3000, and a UFW rule the Metrics role owns admits that port only from the Gateway's WireGuard address. Both containers log through the `json-file` driver, capped at 10 MB per file and three files.
+The role runs two Docker containers on one node, `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and the packaged `prometheus-node-exporter` unit on every selected node. Both containers use Docker host networking. Prometheus binds `127.0.0.1:9090` and has no firewall rule, so only a process on the Metrics node reaches it. Grafana binds the node's WireGuard address on port 3000. Two UFW rules that the Metrics role owns admit the Gateway's WireGuard address and deny every other WireGuard peer before the general member-trust rule. Both containers log through the `json-file` driver, capped at 10 MB per file and three files.
 
 ## Placement and recovery
 
@@ -54,7 +54,13 @@ Doctor does not expect an exporter service, exporter firewall rule, or exporter 
 
 ## Private access and credentials
 
-An operator opens Grafana at `https://metrics.orbit` from any WireGuard peer. Private DNS answers with the Gateway's WireGuard address, and the Gateway's Caddy presents an Orbit-CA certificate and proxies the request over WireGuard to Grafana on the Metrics node. Grafana then asks for its own login.
+An operator opens Grafana at `https://metrics.orbit` from the active Gateway node or an active WireGuard peer with a directed access grant to that Gateway. A grant only to the Metrics node does not allow dashboard access. Private DNS answers with the Gateway's WireGuard address, and the Gateway's Caddy presents an Orbit certificate-authority (CA) certificate. Caddy identifies the caller from the connection address, ignores caller-supplied forwarding and identity headers, checks current Gateway authority before each browser, API, or streaming request, and then proxies admitted traffic over WireGuard to Grafana on the Metrics node.
+
+The Gateway refuses an unknown, inactive, ungranted, or public caller and refuses traffic when caller identity or authorization state is unavailable. Removing the peer from WireGuard membership or removing its Gateway grant refuses later requests and closes existing streaming connections. Repeating the revocation keeps access closed.
+
+Only `metrics.orbit` publishes Grafana to users. The Gateway refuses an alternate host or direct Gateway-address request for Grafana. The Metrics node firewall refuses direct Grafana traffic from every peer except the Gateway proxy, including when the Gateway and Metrics roles share one node. This Grafana exception does not change WireGuard reachability for other private services.
+
+Gateway authorization does not sign in to Grafana. Grafana asks every admitted caller for its own login, and ordinary Grafana and Metrics responses do not contain the stored administrator password.
 
 Every Metrics route, reads included, and every `node:role:add` or `node:role:remove` call for `metrics` requires one active Gateway, and the Gateway authorizes the caller against that Gateway node. The Gateway node passes. Any other caller needs a directed access grant to the Gateway node; a caller that holds a grant only to the Metrics node or to an exporter node gets `node_access.required` (HTTP 403).
 
@@ -86,7 +92,7 @@ orbit metrics:disable --force --purge-data
 
 Interactive disable asks for confirmation. Non-interactive disable requires `--force`. Purge also requires `--force`.
 
-After a disable without `--purge-data`, the Metrics node runs neither container. The Gateway removes `/etc/orbit/metrics`, the Grafana upstream firewall rule, every exporter drop-in and exporter firewall rule on an eligible managed Node, and the `metrics.orbit` route, certificate, and DNS record. Exporter state that was converged before a Node became ineligible remains unchanged because the Gateway does not inspect or change it. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
+After a disable without `--purge-data`, the Metrics node runs neither container. The Gateway removes `/etc/orbit/metrics`, both Grafana firewall rules, every exporter drop-in and exporter firewall rule on an eligible managed Node, and the `metrics.orbit` route, certificate, and DNS record. Exporter state that was converged before a Node became ineligible remains unchanged because the Gateway does not inspect or change it. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
 
 With `--purge-data`, the Gateway also deletes both volumes and the active and pending password settings, and nothing else. When a volume of either name lacks the Orbit ownership labels, the Gateway deletes neither volume nor password, leaves the assignment failed at step `remove:baseline`, and answers `node_role.remove_failed` (HTTP 502).
 
@@ -116,5 +122,6 @@ The Metrics API exposes these routes on the active Gateway.
 | `GET` | `/api/v1/metrics/status` | Read status. |
 | `GET` | `/api/v1/metrics/credentials` | Read verified credentials. |
 | `POST` | `/api/v1/metrics/credentials/reset` | Reset credentials. |
+| `GET` | `/api/v1/metrics/grafana/authorize` | Authorize one Caddy Grafana request from its connection address. |
 | `PUT` | `/api/v1/metrics/exporters/{node}` | Enable one exporter. |
 | `DELETE` | `/api/v1/metrics/exporters/{node}` | Disable one exporter. |
