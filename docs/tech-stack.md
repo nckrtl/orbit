@@ -40,5 +40,4 @@ Orbit uses these tools to keep its code and documentation consistent:
 - Librarian checks documentation.
 - Incus creates temporary Linux machines for end-to-end testing.
 
-GitHub Actions tests each project separately. Scripts at the repository root
-let you install and test everything together.
+Project scripts run focused tests and local quality checks. An independent reviewer runs the root `composer check` gate across every project with test impact analysis before approval. GitHub continuous integration is disabled.

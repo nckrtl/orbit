@@ -1,6 +1,6 @@
 # Metrics role
 
-This page tells an operator what the `metrics` role runs, how to enable, inspect, and disable it, and what each command answers. [ADR 0003](../decisions/0003-singleton-metrics-role.md) records the decisions behind the role; this page states what the operator observes.
+This page tells an operator what the `metrics` role runs, how to enable, inspect, and disable it, and what each command answers. [ADR 0003](../decisions/0003-singleton-metrics-role.md) records the role contract, and [ADR 0057](../decisions/0057-limit-metrics-exporters-to-managed-nodes.md) limits exporter service management to eligible managed Nodes; this page states what the operator observes.
 
 The role runs two Docker containers on one node, `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and the packaged `prometheus-node-exporter` unit on every selected node. Both containers use Docker host networking. Prometheus binds `127.0.0.1:9090` and has no firewall rule, so only a process on the Metrics node reaches it. Grafana binds the node's WireGuard address on port 3000, and a UFW rule the Metrics role owns admits that port only from the Gateway's WireGuard address. Both containers log through the `json-file` driver, capped at 10 MB per file and three files.
 
@@ -28,15 +28,16 @@ The Gateway converges each container against the files it reads: Prometheus agai
 
 ## Exporter selection
 
-The Gateway evaluates every active node against its stored exporter preference and its role assignments that are active or still provisioning:
+The Gateway selects exporters only on active Nodes that use the supported managed-node platform and have a managed WireGuard address and pinned SSH host identity. Within that eligible managed fleet, it evaluates the stored exporter preference and role assignments that are active or still provisioning:
 
 | Preference | Node state | Result |
 | --- | --- | --- |
 | absent | carries an active or provisioning role | selected |
 | absent | carries no role | excluded |
-| enabled | any active node | selected |
-| disabled | any node except the Metrics node | excluded |
-| any value | the Metrics node | selected |
+| enabled | eligible Node with or without a role | selected |
+| disabled | eligible Node except the Metrics Node | excluded |
+| any value | ineligible record | excluded |
+| any value | the Metrics Node | selected |
 
 Set an explicit preference with:
 
@@ -45,9 +46,11 @@ orbit metrics:exporter:enable <node>
 orbit metrics:exporter:disable <node>
 ```
 
-Both commands answer `metrics.exporter_node_inactive` for a node that is not active, and `metrics:exporter:disable` answers `node.role_conflict` for the Metrics node.
+Both commands answer `metrics.exporter_node_inactive` for a Node that is not active, and `metrics:exporter:disable` answers `node.role_conflict` for the Metrics Node. The enable command refuses a Node outside Gateway-owned SSH management before it saves the preference or starts remote work. A stored enabled preference cannot make an ineligible record an exporter target.
 
 A selected node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in at `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the node's WireGuard address on port 9100, and a UFW rule that the Metrics role owns admits that port only from the Metrics node's WireGuard address.
+
+Doctor does not expect an exporter service, exporter firewall rule, or exporter SSH reachability on an ineligible record. It keeps the managed-Node findings for eligible exporters, and a temporary SSH failure on an eligible managed Node remains an unverifiable managed-Node observation.
 
 ## Private access and credentials
 

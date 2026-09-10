@@ -37,6 +37,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Proof topology",
                 "Route",
                 "Router",
                 "Workspace"
@@ -1442,12 +1443,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Route"
             ],
             "governing_adrs": [
-                "0003"
+                "0003",
+                "0057"
             ]
         },
         {
