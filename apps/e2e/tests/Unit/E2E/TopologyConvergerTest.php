@@ -104,6 +104,7 @@ function task7_process_result(
     array &$recorded,
     bool $typed = false,
     ?TopologyTarget $target = null,
+    bool $typedProduction = false,
 ): ProcessResult {
     $command = $process->command;
     assert(is_array($command));
@@ -144,7 +145,7 @@ function task7_process_result(
             $nested = new PendingProcess(app(ProcessFactory::class));
             $nested->command = $argv;
             $nestedRecorded = [];
-            $result = task7_process_result($nested, $nestedRecorded, $typed, $target);
+            $result = task7_process_result($nested, $nestedRecorded, $typed, $target, $typedProduction);
             $results[] = [
                 'label' => $request['label'],
                 'stdout' => $result->output(),
@@ -175,15 +176,19 @@ function task7_process_result(
     }
 
     if ($typed && in_array('create-resources', $command, true)) {
-        return Process::result(json_encode([
+        $state = [
             'shape' => 'app_instances',
             'app_id' => 1,
             'node_id' => 2,
             'name' => 'e2e-dev',
             'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
             'effective_root' => 'public',
-        ], JSON_THROW_ON_ERROR)
-            ."\n");
+        ];
+        if ($typedProduction) {
+            $state['production'] = task7_production_placement();
+        }
+
+        return Process::result(json_encode($state, JSON_THROW_ON_ERROR)."\n");
     }
 
     if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
@@ -249,8 +254,59 @@ function task7_process_result(
     return Process::result();
 }
 
+/** @return array<string, mixed> */
+function task7_production_placement(): array
+{
+    return [
+        'layout' => 'release',
+        'instance_id' => 9,
+        'user' => 'orbit-laravel',
+        'home' => '/var/www/laravel',
+        'checkout_path' => '/var/www/laravel/current',
+        'effective_root' => '/var/www/laravel/current/public',
+        'environment_path' => '/var/www/laravel/.env',
+        'database_path' => '/var/www/laravel/database/database.sqlite',
+        'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
+        'socket' => '/run/php/orbit-laravel.sock',
+        'current_target' => '/var/www/laravel/releases/20260910T120000Z',
+        'hostname' => 'e2e-prod.orbit.test',
+    ];
+}
+
 /** @mago-expect lint:cyclomatic-complexity The fixture preserves one complete ordered convergence contract. */
 describe('TopologyConverger', function () {
+    it('hydrates both recorded typed placements without changing the topology', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result($process, $recorded, typed: true, typedProduction: true);
+        });
+
+        $commit = str_repeat('b', 40);
+        new TopologyConverger(task7_host())->converge(
+            featureTarget('TST-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', $commit),
+        );
+
+        $commands = array_map(
+            static fn (array $command): string => implode(' ', array_map(strval(...), $command)),
+            $recorded,
+        );
+        $encoded = base64_encode(json_encode(task7_production_placement(), JSON_THROW_ON_ERROR));
+        expect($commands)
+            ->toContain(
+                'incus --project orbit exec lab:orbit-e2e-tst-123-aaaaaaaa-app-dev -- '
+                .'/usr/local/bin/converge-sample-app.sh hydrate '
+                .$commit
+                .' app-dev /srv/orbit/apps/laravel-typed/e2e-dev',
+                'incus --project orbit exec lab:orbit-e2e-tst-123-aaaaaaaa-app-prod -- '
+                .'/usr/local/bin/converge-sample-app.sh hydrate '
+                .$commit
+                .' app-prod '
+                .$encoded,
+            );
+    });
+
     it('provisions both app-prod Nodes but keeps the sole typed sample on app-dev', function (): void {
         $recorded = [];
         $target = featureTarget('TST-123', 'a', TopologyRecipe::extendedAppProd());

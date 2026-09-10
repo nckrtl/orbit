@@ -13,6 +13,7 @@ case "$1" in
   source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
   role.app-dev|laravel.dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 || $# -eq 5 ]] ;;
   wireguard.reachability) [[ $# -ge 5 ]] ;;
   role.assignments|metrics.publication) [[ $# -eq 5 ]] ;;
   *) [[ $# -eq 4 ]] ;;
@@ -23,13 +24,16 @@ identity=$3
 instance=$4
 expected_pointer=
 typed_checkout=
+production_placement=
 case "$probe" in
   source.gateway|source.app-dev) [[ $# -eq 4 ]] || expected_pointer=$5 ;;
   source.manifest) [[ $# -eq 6 ]] || expected_pointer=$7 ;;
   role.app-dev|laravel.dev) [[ $# -eq 4 ]] || typed_checkout=$5 ;;
+  role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 ]] || production_placement=$5 ;;
 esac
 [[ -z "$expected_pointer" || "$expected_pointer" =~ ^[0-9a-f]{64}$ ]]
 [[ -z "$typed_checkout" || "$typed_checkout" == /* ]]
+[[ -z "$production_placement" || "$production_placement" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
 [[ "$mode" == readiness || "$mode" == proof ]]
 [[ "$identity" =~ ^[0-9a-f]{40}$ ]]
 [[ "$instance" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
@@ -49,6 +53,56 @@ if [[ "$probe" == role.assignments || "$probe" == metrics.publication ]]; then
 fi
 expected=healthy
 observed=healthy
+production=()
+if [[ -n "$production_placement" ]]; then
+  mapfile -t production < <(/usr/bin/php -r '$value=json_decode(base64_decode($argv[1], true), true, 16, JSON_THROW_ON_ERROR); $keys=["layout","instance_id","user","home","checkout_path","effective_root","environment_path","database_path","service","socket","current_target","hostname"]; if(!is_array($value) || array_is_list($value) || array_keys($value)!==$keys || !in_array($value["layout"], ["flat","release"], true) || !is_int($value["instance_id"]) || $value["instance_id"]<1 || !is_string($value["user"]) || preg_match("/\\A[a-z_][a-z0-9_-]{0,31}\\z/D", $value["user"])!==1 || !is_string($value["service"]) || preg_match("/\\A[a-zA-Z0-9@_.-]{1,128}\\z/D", $value["service"])!==1 || !is_string($value["hostname"]) || preg_match("/\\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\\z/D", $value["hostname"])!==1) exit(65); $path=function(mixed $path, bool $nullable=false): string { if($nullable && $path===null) return ""; if(!is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || str_contains($path, "\\n") || str_contains($path, "\\r") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1) exit(65); return $path; }; if(($value["layout"]==="flat")!==($value["current_target"]===null)) exit(65); echo $value["layout"], "\n", $value["instance_id"], "\n", $value["user"], "\n", $path($value["home"]), "\n", $path($value["checkout_path"]), "\n", $path($value["effective_root"]), "\n", $path($value["environment_path"]), "\n", $path($value["database_path"], true), "\n", $value["service"], "\n", $path($value["socket"]), "\n", $path($value["current_target"], true), "\n", $value["hostname"], "\n";' -- "$production_placement")
+  [[ "${#production[@]}" -eq 12 ]]
+  production_layout=${production[0]}
+  production_instance_id=${production[1]}
+  production_user=${production[2]}
+  production_home=${production[3]}
+  production_checkout=${production[4]}
+  production_root=${production[5]}
+  production_environment=${production[6]}
+  production_database=${production[7]}
+  production_service=${production[8]}
+  production_socket=${production[9]}
+  production_current=${production[10]}
+  production_hostname=${production[11]}
+fi
+assert_production_placement() {
+  [[ -n "$production_placement" ]]
+  [[ -d "$production_home" && -d "$production_checkout" && -d "$production_root" ]]
+  [[ -f "$production_checkout/artisan" && -f "$production_environment" ]]
+  [[ "$(stat -c %U -- "$production_home")" == "$production_user" ]]
+  if [[ "$production_layout" == flat ]]; then
+    [[ -z "$production_current" && ! -L "$production_checkout" ]]
+  else
+    [[ -n "$production_current" && -L "$production_checkout" ]]
+    [[ "$(readlink -f -- "$production_checkout")" == "$production_current" ]]
+    case "$production_current" in "$production_home"/releases/*) ;; *) return 1 ;; esac
+    [[ "$production_environment" == "$production_home/.env" ]]
+    if [[ -n "$production_database" ]]; then
+      [[ "$production_database" == "$production_home/database/database.sqlite" && -f "$production_database" ]]
+    fi
+  fi
+}
+assert_production_runtime() {
+  assert_production_placement
+  [[ "$(systemctl is-active "$production_service" 2>/dev/null)" == active ]]
+  [[ -S "$production_socket" ]]
+  [[ "$(stat -c %U -- "$production_socket")" == "$production_user" ]]
+}
+assert_production_caddy() {
+  assert_production_runtime
+  caddy_state=$(systemctl is-active caddy 2>/dev/null)
+  [[ "$caddy_state" == active ]]
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
+  caddy_root=$(dirname "$(readlink -f -- /etc/caddy/Caddyfile)")
+  [[ "$(grep -RFl -- "https://$production_hostname {" "$caddy_root" | wc -l)" -eq 1 ]]
+  [[ "$(grep -RFl -- "root * $production_root" "$caddy_root" | wc -l)" -eq 1 ]]
+  [[ "$(grep -RFl -- "php_fastcgi unix/$production_socket" "$caddy_root" | wc -l)" -eq 1 ]]
+}
 repo_git() {
   if [[ "$(id -u)" -eq 0 ]]; then
     sudo -u orbit -- env HOME=/home/orbit "$@"
@@ -160,7 +214,16 @@ case "$probe" in
     fi
     observed=$expected
     ;;
-  role.app-prod) [[ -d /var/www/laravel/e2e-prod ]]; expected='app-prod:prepared'; observed=$expected ;;
+  role.app-prod)
+    if [[ -n "$production_placement" ]]; then
+      assert_production_placement
+      expected="app-prod:$production_layout:prepared"
+    else
+      [[ -d /var/www/laravel/e2e-prod ]]
+      expected='app-prod:prepared'
+    fi
+    observed=$expected
+    ;;
   role.app-prod-2) [[ -d /var/www && -f /etc/caddy/Caddyfile ]]; expected='app-prod-2:services-prepared'; observed=$expected ;;
   service.gateway) caddy_state=$(systemctl is-active caddy 2>/dev/null); php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='caddy=active,php8.5-fpm=active'; observed="caddy=$caddy_state,php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
   service.vpn) vpn_state=$(systemctl is-active wg-quick@orbit 2>/dev/null); expected='wg-quick@orbit=active'; observed="wg-quick@orbit=$vpn_state"; [[ "$observed" == "$expected" ]] ;;
@@ -209,15 +272,44 @@ case "$probe" in
     observed="https://gateway.orbit/up:vpn-dns+reachable,tries=$dns_tries"
     ;;
   php.app-prod-2) php -r 'exit(PHP_VERSION_ID >= 80500 ? 0 : 1);'; expected='php>=8.5:usable'; observed=$expected ;;
-  php-fpm.app-dev|php-fpm.app-prod|php-fpm.app-prod-2) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
-  caddy.app-dev|caddy.app-prod|caddy.app-prod-2) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
+  php-fpm.app-prod)
+    if [[ -n "$production_placement" ]]; then
+      assert_production_runtime
+      expected="$production_service=active,socket=$production_socket,owner=$production_user"
+      observed=$expected
+    else
+      php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]]
+    fi
+    ;;
+  php-fpm.app-dev|php-fpm.app-prod-2) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
+  caddy.app-prod)
+    if [[ -n "$production_placement" ]]; then
+      assert_production_caddy
+      expected="caddy=active,hostname=$production_hostname,root=$production_root,socket=$production_socket"
+      observed=$expected
+    else
+      caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]]
+    fi
+    ;;
+  caddy.app-dev|caddy.app-prod-2) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
   laravel.dev)
     laravel_checkout=${typed_checkout:-/home/orbit/apps/laravel}
     [[ -f "$laravel_checkout/artisan" ]] && php "$laravel_checkout/artisan" --version >/dev/null
     expected='app-dev-laravel:operational'
     observed=$expected
     ;;
-  laravel.prod) [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null; expected='app-prod-laravel:https-operational'; observed=$expected ;;
+  laravel.prod)
+    if [[ -n "$production_placement" ]]; then
+      assert_production_caddy
+      sudo -u "$production_user" -- env HOME="$production_home" php "$production_checkout/artisan" --version >/dev/null
+      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve "$production_hostname:443:127.0.0.1" "https://$production_hostname/" >/dev/null
+      expected="app-prod-laravel:$production_layout:https-operational"
+      observed=$expected
+    else
+      [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
+      expected='app-prod-laravel:https-operational'; observed=$expected
+    fi
+    ;;
   workspace.app-dev) [[ -d /home/orbit/.orbit/worktrees/laravel/e2e && -f /home/orbit/.orbit/worktrees/laravel/e2e/artisan ]]; expected='app-dev-workspace:operational'; observed=$expected ;;
   source.gateway|source.app-dev)
     if [[ -n "$expected_pointer" ]]; then

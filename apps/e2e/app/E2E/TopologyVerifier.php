@@ -145,9 +145,13 @@ final readonly class TopologyVerifier
         }
         $this->host->assertTopologyNetworkIdentity($inventory, $target->network(), $target, requireRunning: true);
         $appDevNode = $target->recipe->nodeForRole('app-dev')->key;
-        $typedCheckoutPath = $this->typedCheckoutPath($instances[$appDevNode]);
-        if ($typedCheckoutPath !== null) {
+        $sample = $this->sampleState($instances[$appDevNode]);
+        $typedCheckoutPath = $sample['checkout_path'];
+        $productionPlacement = $sample['production'];
+        if ($typedCheckoutPath !== null && $productionPlacement === null) {
             unset($probes['role.app-prod'], $probes['workspace.app-dev'], $probes['laravel.prod']);
+        } elseif ($typedCheckoutPath !== null) {
+            unset($probes['workspace.app-dev']);
         }
 
         $results = [];
@@ -185,6 +189,16 @@ final readonly class TopologyVerifier
                 }
                 if ($typedCheckoutPath !== null && in_array($name, ['role.app-dev', 'laravel.dev'], true)) {
                     $arguments[] = $typedCheckoutPath;
+                }
+                if (
+                    $productionPlacement !== null
+                    && in_array(
+                        $name,
+                        ['role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'],
+                        true,
+                    )
+                ) {
+                    $arguments[] = base64_encode(json_encode($productionPlacement, JSON_THROW_ON_ERROR));
                 }
                 // A mounted source adds the expected `.git` pointer hash: the guest
                 // must hash the pointer file it sees through the mount itself.
@@ -238,7 +252,26 @@ final readonly class TopologyVerifier
         return new VerificationReport($passed, $results);
     }
 
-    private function typedCheckoutPath(string $appDevInstance): ?string
+    /**
+     * @return array{
+     *     checkout_path: ?string,
+     *     production: null|array{
+     *         layout:string,
+     *         instance_id:int,
+     *         user:string,
+     *         home:string,
+     *         checkout_path:string,
+     *         effective_root:string,
+     *         environment_path:string,
+     *         database_path:?string,
+     *         service:string,
+     *         socket:string,
+     *         current_target:?string,
+     *         hostname:string
+     *     }
+     * }
+     */
+    private function sampleState(string $appDevInstance): array
     {
         $results = $this->host->execAll([
             'sample-app-state' => [
@@ -258,11 +291,13 @@ final readonly class TopologyVerifier
         }
 
         if ($state === ['shape' => 'instances']) {
-            return null;
+            return ['checkout_path' => null, 'production' => null];
         }
+        $keys = array_keys(is_array($state) ? $state : []);
+        $baseKeys = ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root'];
         if (
             ! is_array($state)
-            || array_keys($state) !== ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root']
+            || ! in_array($keys, [$baseKeys, [...$baseKeys, 'production']], true)
             || ($state['shape'] ?? null) !== 'app_instances'
             || ! is_int($state['app_id'] ?? null)
             || ! is_int($state['node_id'] ?? null)
@@ -274,7 +309,105 @@ final readonly class TopologyVerifier
             throw new RuntimeException('Sample App convergence state is invalid.');
         }
 
-        return $state['checkout_path'];
+        $production = $state['production'] ?? null;
+        if ($production !== null) {
+            $production = $this->productionPlacement($production);
+        }
+
+        return ['checkout_path' => $state['checkout_path'], 'production' => $production];
+    }
+
+    /**
+     * @return array{
+     *     layout:string,
+     *     instance_id:int,
+     *     user:string,
+     *     home:string,
+     *     checkout_path:string,
+     *     effective_root:string,
+     *     environment_path:string,
+     *     database_path:?string,
+     *     service:string,
+     *     socket:string,
+     *     current_target:?string,
+     *     hostname:string
+     * }
+     */
+    private function productionPlacement(mixed $placement): array
+    {
+        if (
+            ! is_array($placement)
+            || array_keys($placement) !== [
+                'layout',
+                'instance_id',
+                'user',
+                'home',
+                'checkout_path',
+                'effective_root',
+                'environment_path',
+                'database_path',
+                'service',
+                'socket',
+                'current_target',
+                'hostname',
+            ]
+            || ! in_array($placement['layout'] ?? null, ['flat', 'release'], true)
+            || ! is_int($placement['instance_id'] ?? null)
+            || $placement['instance_id'] < 1
+            || ! is_string($placement['user'] ?? null)
+            || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $placement['user']) !== 1
+            || ! is_string($placement['home'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['home'] ?? null)
+            || ! is_string($placement['checkout_path'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['checkout_path'] ?? null)
+            || ! is_string($placement['effective_root'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['effective_root'] ?? null)
+            || ! is_string($placement['environment_path'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['environment_path'] ?? null)
+            || $placement['database_path'] !== null
+            && (! is_string($placement['database_path'])
+            || ! $this->isAbsolutePlacementPath($placement['database_path']))
+            || ! is_string($placement['service'] ?? null)
+            || preg_match('/\A[a-zA-Z0-9@_.-]{1,128}\z/D', $placement['service']) !== 1
+            || ! is_string($placement['socket'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['socket'] ?? null)
+            || $placement['current_target'] !== null
+            && (! is_string($placement['current_target'])
+            || ! $this->isAbsolutePlacementPath($placement['current_target']))
+            || ! is_string($placement['hostname'] ?? null)
+            || preg_match('/\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\z/D', $placement['hostname']) !== 1
+            || $placement['layout'] === 'flat'
+            && $placement['current_target'] !== null
+            || $placement['layout'] === 'release'
+            && $placement['current_target'] === null
+        ) {
+            throw new RuntimeException('Sample production placement is invalid.');
+        }
+
+        return [
+            'layout' => $placement['layout'],
+            'instance_id' => $placement['instance_id'],
+            'user' => $placement['user'],
+            'home' => $placement['home'],
+            'checkout_path' => $placement['checkout_path'],
+            'effective_root' => $placement['effective_root'],
+            'environment_path' => $placement['environment_path'],
+            'database_path' => $placement['database_path'],
+            'service' => $placement['service'],
+            'socket' => $placement['socket'],
+            'current_target' => $placement['current_target'],
+            'hostname' => $placement['hostname'],
+        ];
+    }
+
+    private function isAbsolutePlacementPath(mixed $path): bool
+    {
+        return (
+            is_string($path)
+            && str_starts_with($path, '/')
+            && ! str_contains($path, '//')
+            && preg_match('#(?:\A|/)\.\.?(/|\z)#D', $path) !== 1
+        );
     }
 
     /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string}|null */

@@ -62,6 +62,18 @@ case ${1-} in
     initial_instances=$("$orbit" instance:list --json)
     instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; $items=$v->{$key}; if(!is_array($items)) exit(65); $targets=[]; foreach($items as $item) { if(!is_object($item)) exit(65); $name=$item->name ?? null; if(in_array($name, ["e2e-dev", "e2e-prod"], true)) { if(isset($targets[$name])) exit(65); $targets[$name]=true; } } echo $key;' <<<"$initial_instances")
     if [[ "$instance_shape" == app_instances ]]; then
+      # Select one complete mutation contract after the read-only shape
+      # preflight and before changing cluster, App, or sample state.
+      command_surface=$("$orbit" list --raw)
+      has_command() { grep -Fxq -- "$1" <<<"$command_surface"; }
+      candidate_contract=0
+      environment_contract=0
+      if has_command instance:clone && has_command instance:deploy; then
+        candidate_contract=1
+      fi
+      if has_command env:import && has_command env:update && has_command env:sync; then
+        environment_contract=1
+      fi
       typed_cluster_name=e2e-development
       typed_dev_name=$2
       typed_node_cluster_id() {
@@ -78,6 +90,9 @@ case ${1-} in
       }
       typed_app_instance_id() {
         php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || !is_array($v["app_instances"] ?? null) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null) || $m[0]["id"]<1) exit(65); echo $m[0]["id"];' e2e-dev
+      }
+      typed_production_state() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || !is_array($v["app_instances"] ?? null) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1) exit(65); $x=$m[0]; $id=$x["id"] ?? null; $home=$x["production_home"] ?? null; $user=$x["production_user"] ?? null; $checkout=$x["checkout_path"] ?? null; $root=$x["effective_root"] ?? null; $hostname=$x["hostname"] ?? ($x["route"]["hostname"] ?? null); $layout=(($x["source_layout"] ?? null)==="release" || ($x["source_layout"] ?? null)==="releases" || is_string($checkout) && str_ends_with($checkout, "/current")) ? "release" : "flat"; $path=static fn(mixed $p): bool => is_string($p) && str_starts_with($p, "/") && !str_contains($p, "//") && preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $p)!==1; if(!is_int($id) || $id<1 || ($x["app_id"] ?? null)!==(int)$argv[2] || ($x["node_id"] ?? null)!==(int)$argv[3] || ($x["environment"] ?? null)!=="production" || ($x["status"] ?? null)!=="active" || !is_string($user) || preg_match("/\\A[a-z_][a-z0-9_-]{0,31}\\z/D", $user)!==1 || !$path($home) || !$path($checkout) || !$path($root) || !is_string($hostname) || $hostname==="") exit(65); $version=is_string($x["php_version"] ?? null) ? $x["php_version"] : "8.5"; if(preg_match("/\\A[0-9]+\\.[0-9]+\\z/D", $version)!==1) exit(65); $release=$layout==="release" ? ($x["current_target"] ?? null) : null; if($layout==="release" && (!$path($release) || !str_starts_with($release, $home."/releases/"))) exit(65); $service=$layout==="release" ? "orbit-".$user."-php".$version."-fpm.service" : "php".$version."-fpm.service"; $socket=$layout==="release" ? "/run/php/".$user.".sock" : "/run/php/orbit-prod-instance-".$id.".sock"; echo json_encode(["layout"=>$layout,"instance_id"=>$id,"user"=>$user,"home"=>$home,"checkout_path"=>$checkout,"effective_root"=>$root,"environment_path"=>$home."/.env","database_path"=>null,"service"=>$service,"socket"=>$socket,"current_target"=>$release,"hostname"=>$hostname], JSON_THROW_ON_ERROR);' e2e-prod "$app_id" "$prod_id"
       }
       typed_route_id() {
         php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $list=$argv[4]==="list"; if($list) { if(!is_array($v) || array_is_list($v) || !is_array($v["routes"] ?? null) || !array_is_list($v["routes"]) || !is_string($v["request_id"] ?? null) || $v["request_id"]==="") exit(65); $routes=$v["routes"]; } else { if(!is_array($v) || array_is_list($v) || !is_string($v["request_id"] ?? null) || $v["request_id"]==="") exit(65); $routes=[$v]; } $matches=[]; foreach($routes as $route) { if(!is_array($route) || array_is_list($route)) exit(65); foreach(["id","app_id","node_id","cluster_id","generation_basis_node_id","hostname","provenance","publication","status","failed_step","error_code","target"] as $key) if(!array_key_exists($key, $route)) exit(65); $target=$route["target"]; if(!is_int($route["id"]) || $route["id"]<1 || !is_int($route["app_id"]) || $route["app_id"]<1 || (!is_int($route["node_id"]) && $route["node_id"]!==null) || (!is_int($route["cluster_id"]) && $route["cluster_id"]!==null) || (($route["node_id"]===null)===($route["cluster_id"]===null)) || (!is_int($route["generation_basis_node_id"]) && $route["generation_basis_node_id"]!==null) || !is_string($route["hostname"]) || $route["hostname"]==="" || !in_array($route["provenance"], ["generated","explicit"], true) || !in_array($route["publication"], ["private","public"], true) || !is_string($route["status"]) || (!is_string($route["failed_step"]) && $route["failed_step"]!==null) || (!is_string($route["error_code"]) && $route["error_code"]!==null)) exit(65); if($target!==null && (!is_array($target) || array_is_list($target) || !is_int($target["id"] ?? null) || $target["id"]<1 || !is_int($target["app_instance_id"] ?? null) || $target["app_instance_id"]<1 || !is_int($target["position"] ?? null) || $target["position"]<0)) exit(65); $targetsInstance=is_array($target) && $target["app_instance_id"]===(int)$argv[2]; if($route["hostname"]==="e2e-dev.orbit" || $targetsInstance) $matches[]=$route; } if($list && $matches===[]) { echo "missing"; exit; } if(count($matches)!==1) exit(65); $route=$matches[0]; $target=$route["target"]; if($route["app_id"]!==(int)$argv[1] || $route["node_id"]!==null || $route["cluster_id"]!==(int)$argv[3] || $route["generation_basis_node_id"]!==null || $route["hostname"]!=="e2e-dev.orbit" || $route["provenance"]!=="explicit" || $route["publication"]!=="private" || !is_array($target) || $target["app_instance_id"]!==(int)$argv[2] || $target["position"]!==0) exit(65); echo $route["id"];' "$app_id" "$1" "$cluster_id" "$2"
@@ -161,6 +176,33 @@ case ${1-} in
         typed_route=$(typed_route_id "$typed_instance_id" list <<<"$typed_routes")
         [[ "$created_route" == "$typed_route" ]]
       fi
+      production_state=
+      if [[ "$candidate_contract" -eq 1 ]]; then
+        previous_production=
+        if [[ -f "$sample_state" ]]; then
+          previous_production=$(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); if(is_array($v["production"] ?? null)) echo json_encode($v["production"], JSON_THROW_ON_ERROR);' "$sample_state")
+        fi
+        if [[ -z "$previous_production" ]]; then
+          development_checkout=$(php -r '$v=json_decode($argv[1], true, 16, JSON_THROW_ON_ERROR); echo $v["checkout_path"];' "$typed_state")
+          if [[ "$environment_contract" -eq 1 && -f "$development_checkout/.env" ]]; then
+            "$orbit" env:import --instance="$typed_instance_id" --json >/dev/null
+          fi
+          # These operations are deliberately unguarded. A selected supported
+          # operation failure must never enter the older direct-create path.
+          "$orbit" instance:clone "$typed_instance_id" "$prod_id" e2e-prod --preview-name=e2e-prod --json >/dev/null
+          typed_instances=$("$orbit" instance:list --json)
+          prod_instance_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-prod")); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' <<<"$typed_instances")
+          if [[ "$environment_contract" -eq 1 ]]; then
+            "$orbit" env:sync --instance="$prod_instance_id" --json >/dev/null
+          fi
+          "$orbit" instance:deploy "$prod_instance_id" --json >/dev/null
+          typed_instances=$("$orbit" instance:list --json)
+          production_state=$(typed_production_state <<<"$typed_instances")
+        else
+          production_state=$previous_production
+        fi
+        typed_state=$(php -r '$state=json_decode($argv[1], true, 16, JSON_THROW_ON_ERROR); $production=json_decode($argv[2], true, 16, JSON_THROW_ON_ERROR); $state["production"]=$production; echo json_encode($state, JSON_THROW_ON_ERROR);' "$typed_state" "$production_state")
+      fi
       state_tmp=$(mktemp "$sample_state.XXXXXX")
       printf '%s\n' "$typed_state" >"$state_tmp"
       mv -f "$state_tmp" "$sample_state"
@@ -200,7 +242,7 @@ case ${1-} in
       printf '{"shape":"instances"}\n'
       exit 0
     fi
-    php -r '$s=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$s["checkout_path"] ?? null; if(array_keys($s)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $s["shape"]!=="app_instances" || !is_int($s["app_id"]) || !is_int($s["node_id"]) || $s["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $s["effective_root"]!=="public") exit(65); $v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$s["app_id"] || ($x["node_id"] ?? null)!==$s["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode($s, JSON_THROW_ON_ERROR), "\n";' "$sample_state" < <("$orbit" instance:list --json)
+    php -r '$s=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$s["checkout_path"] ?? null; $base=["shape","app_id","node_id","name","checkout_path","effective_root"]; if(!in_array(array_keys($s), [$base,[...$base,"production"]], true) || array_key_exists("production", $s) && !is_array($s["production"]) || $s["shape"]!=="app_instances" || !is_int($s["app_id"]) || !is_int($s["node_id"]) || $s["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $s["effective_root"]!=="public") exit(65); $v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$s["app_id"] || ($x["node_id"] ?? null)!==$s["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode($s, JSON_THROW_ON_ERROR), "\n";' "$sample_state" < <("$orbit" instance:list --json)
     ;;
   metrics)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
@@ -280,7 +322,7 @@ case ${1-} in
     instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; if(!is_array($v->{$key})) exit(65); echo $key;' <<<"$instances")
     if [[ "$instance_shape" == app_instances ]]; then
       [[ -f "$sample_state" ]]
-      read -r app_id node_id checkout_path < <(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; if(array_keys($v)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $v["effective_root"]!=="public") exit(65); echo $v["app_id"], " ", $v["node_id"], " ", $path, "\n";' "$sample_state")
+      read -r app_id node_id checkout_path < <(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; $base=["shape","app_id","node_id","name","checkout_path","effective_root"]; if(!in_array(array_keys($v), [$base,[...$base,"production"]], true) || array_key_exists("production", $v) && !is_array($v["production"]) || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $v["effective_root"]!=="public") exit(65); echo $v["app_id"], " ", $v["node_id"], " ", $path, "\n";' "$sample_state")
       php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==(int)$argv[1] || ($x["node_id"] ?? null)!==(int)$argv[2] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$argv[3] || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65);' "$app_id" "$node_id" "$checkout_path" <<<"$instances"
       exit 0
     fi
@@ -290,7 +332,7 @@ case ${1-} in
     ;;
   hydrate)
     [[ "$2" =~ ^[0-9a-f]{40}$ ]]
-    [[ $# -eq 3 || ( $# -eq 4 && "$3" == app-dev ) ]]
+    [[ $# -eq 3 || ( $# -eq 4 && ( "$3" == app-dev || "$3" == app-prod ) ) ]]
     [[ $# -eq 4 && "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
     if [[ $# -eq 4 ]]; then
       [[ -f "$sample_state" ]]
@@ -329,7 +371,9 @@ case ${1-} in
       else
         exit $?
       fi
-      php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; if(array_keys($v)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $path!==$argv[2] || $v["effective_root"]!=="public") exit(65); $r=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($r) || array_key_exists("instances", $r) || !array_key_exists("app_instances", $r) || !is_array($r["app_instances"]) || !array_is_list($r["app_instances"])) exit(65); $m=array_values(array_filter($r["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$v["app_id"] || ($x["node_id"] ?? null)!==$v["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65);' "$sample_state" "$4" <<<"$typed_instances"
+      if [[ "$3" == app-dev ]]; then
+        php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; $base=["shape","app_id","node_id","name","checkout_path","effective_root"]; if(!in_array(array_keys($v), [$base,[...$base,"production"]], true) || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $path!==$argv[2] || $v["effective_root"]!=="public") exit(65); $r=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($r) || array_key_exists("instances", $r) || !array_key_exists("app_instances", $r) || !is_array($r["app_instances"]) || !array_is_list($r["app_instances"])) exit(65); $m=array_values(array_filter($r["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$v["app_id"] || ($x["node_id"] ?? null)!==$v["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65);' "$sample_state" "$4" <<<"$typed_instances"
+      fi
       # Once the preflight boundary passes, remap the reserved retry status from
       # any later hydration command so callers never retry work that may have
       # already mutated the checkout.
@@ -341,7 +385,23 @@ case ${1-} in
         runtime_home=/home/orbit
         if [[ $# -eq 4 ]]; then checkouts=("$4"); else checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e); fi
         ;;
-      app-prod) runtime_user=orbit-laravel; runtime_home=/var/www/laravel; checkouts=(/var/www/laravel/e2e-prod) ;;
+      app-prod)
+        if [[ $# -eq 4 ]]; then
+          mapfile -t placement < <(php -r '$v=json_decode(base64_decode($argv[1], true), true, 16, JSON_THROW_ON_ERROR); if(!is_array($v) || !is_string($v["user"] ?? null) || !is_string($v["home"] ?? null) || !is_string($v["checkout_path"] ?? null) || !is_string($v["hostname"] ?? null) || !in_array($v["layout"] ?? null, ["flat","release"], true) || ($v["current_target"] ?? null)!==null && !is_string($v["current_target"])) exit(65); echo $v["layout"], "\n", $v["user"], "\n", $v["home"], "\n", $v["checkout_path"], "\n", ($v["current_target"] ?? ""), "\n", $v["hostname"], "\n";' "$4")
+          [[ "${#placement[@]}" -eq 6 ]]
+          production_layout=${placement[0]}
+          runtime_user=${placement[1]}
+          runtime_home=${placement[2]}
+          checkouts=("${placement[3]}")
+          production_current=${placement[4]}
+          production_hostname=${placement[5]}
+        else
+          production_layout=flat
+          runtime_user=orbit-laravel
+          runtime_home=/var/www/laravel
+          checkouts=(/var/www/laravel/e2e-prod)
+        fi
+        ;;
       *) exit 64 ;;
     esac
     run_as_runtime() {
@@ -371,11 +431,16 @@ case ${1-} in
     for checkout in "${checkouts[@]}"; do
       [[ -d "$checkout/.git" || -f "$checkout/.git" ]] || exit 66
       [[ "$(run_as_runtime git -C "$checkout" remote get-url origin)" == https://github.com/laravel/laravel.git ]]
-      if ! run_as_runtime git -C "$checkout" cat-file -e "$2^{commit}"; then
-        run_as_runtime git -C "$checkout" fetch --quiet origin "$2"
+      if [[ "${production_layout:-flat}" == release ]]; then
+        [[ -L "$checkout" && "$(readlink -f -- "$checkout")" == "$production_current" ]]
+        [[ "$(run_as_runtime git -C "$checkout" rev-parse HEAD)" =~ ^[0-9a-f]{40}$ ]]
+      else
+        if ! run_as_runtime git -C "$checkout" cat-file -e "$2^{commit}"; then
+          run_as_runtime git -C "$checkout" fetch --quiet origin "$2"
+        fi
+        run_as_runtime git -C "$checkout" reset --hard --quiet "$2"
+        [[ "$(run_as_runtime git -C "$checkout" rev-parse HEAD)" == "$2" ]]
       fi
-      run_as_runtime git -C "$checkout" reset --hard --quiet "$2"
-      [[ "$(run_as_runtime git -C "$checkout" rev-parse HEAD)" == "$2" ]]
       [[ -f "$checkout/.env" ]] || run_as_runtime cp "$checkout/.env.example" "$checkout/.env"
       hydrate_composer_dependencies "$checkout"
       run_as_runtime grep -q '^APP_KEY=base64:' "$checkout/.env" || run_as_runtime php "$checkout/artisan" key:generate --force --no-interaction
@@ -392,7 +457,11 @@ case ${1-} in
       # `internal-tls` placed inside the managed version.
       ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
       [[ -s "$ca" ]]
-      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
+      if [[ $# -eq 4 ]]; then
+        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve "$production_hostname:443:127.0.0.1" "https://$production_hostname/" >/dev/null
+      else
+        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
+      fi
     fi
     ;;
   *) exit 64 ;;
