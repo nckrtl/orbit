@@ -95,13 +95,13 @@ The Gateway records one dedicated system user and `/home/<app-user>` home for th
 
 A given App can have one production AppInstance per app-prod Node. The same App can use another app-prod Node, where it receives an independent user home and runtime. The recorded user and home do not change when the App slug changes.
 
-Production source preparation retains the same `reserved`, `checkout_prepared`, and `source_resolved` checkpoints. The Gateway records the complete source profile before runtime work. A plain PHP source gets the selected PHP-FPM pool and socket. A non-PHP source gets no PHP runtime. Detected Laravel source stops at its safely recorded initial-source checkpoint until the separate Laravel production contract is available; Orbit does not change Laravel files or publish its Route in this state.
+Production source preparation retains the same `reserved`, `checkout_prepared`, and `source_resolved` checkpoints. The Gateway records the complete source profile before runtime work. A plain PHP source gets a dedicated PHP-FPM service, pool, socket, and OPcache instance for its recorded production user while sharing the installed version packages. A non-PHP source gets no PHP runtime. Detected Laravel source stops at its safely recorded initial-source checkpoint until the separate Laravel production contract is available; Orbit does not change Laravel files or publish its Route in this state.
 
 Production creation requires an explicit Route hostname or a TLD from the standalone Node. A Node in an active Cluster is outside this creation path. Both refusals happen before production source or runtime mutation.
 
 A standalone Node cannot accept a private production AppInstance while it still serves a provisioning or active legacy public production Instance. The Gateway returns `instance.legacy_production_conflict` with HTTP 409 before it reserves an AppInstance or changes a Route, source checkout, runtime, certificate, or firewall. Mark or remove the legacy Instance through its existing lifecycle, then repeat the production creation request.
 
-An identical retry resumes only incomplete Orbit-owned preparation. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, or other operator content. The operator or deployment agent owns every later production source change and must follow the [production PHP reload contract](../reference/php-runtime.md#production-deploy-contract).
+An identical retry resumes only incomplete Orbit-owned preparation, including its recorded production PHP service association. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, local PHP-FPM tuning, or other operator content. The operator or deployment agent owns every later production source change; the [PHP runtime reference](../reference/php-runtime.md#production-cache-boundary) defines the separate cache boundary.
 
 ## Complete a required source migration
 

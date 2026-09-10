@@ -1,6 +1,6 @@
 # PHP runtimes
 
-Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a unix socket. This page tells an operator or deployer which runtime values Orbit publishes for the `app-dev` and `app-prod` roles, where each value lives on a Node, and how to verify them. The deployer must end every production deploy with `systemctl reload php<version>-fpm`; the [production deploy contract](#production-deploy-contract) below states the obligation. [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records why the values differ per role and which alternatives it rejected.
+Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a Unix socket. This page tells an operator or deployer how development and production services differ, where generated identity and local tuning live on a Node, and how to verify each runtime. [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) owns the shared package source and role defaults, while [ADR 0045](../decisions/0045-isolate-production-php-fpm-by-unix-user.md) owns production service isolation and tuning ownership.
 
 ## Select an AppInstance runtime
 
@@ -22,22 +22,34 @@ The Gateway does not infer missing Laravel evidence for a legacy retained checkp
 
 AppInstance input, persisted AppInstance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
 
-## Where each setting lives
+## Runtime ownership
 
-Orbit publishes the runtime in two layers: one module per PHP-FPM service for sizing and one directive set per pool for timestamp validation.
+Development sites for one PHP version share the distribution PHP-FPM service. Each new production PHP AppInstance uses the service, pool, socket, and OPcache instance recorded for its production Unix user. Production users on the same Node share the installed PHP version packages but do not share a PHP-FPM master.
 
-| Layer | Path | Owner | Scope |
+The production identity follows fixed names that an operator can inspect.
+
+| Projection | Name or path | Owner | Lifecycle |
 | --- | --- | --- | --- |
-| Runtime module | `/etc/php/<version>/mods-available/orbit-runtime.ini`, enabled for the fpm SAPI as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini` through `phpenmod` | The Gateway's PHP package manager | One PHP-FPM service |
-| Pool directives | `php_admin_value[opcache.*]` inside `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf` (app-dev) and `orbit-prod-scopes.conf` (app-prod) | The Gateway's pool renderer for each role | One site pool |
+| Service | `orbit-<production-user>-php<version>-fpm.service` | Gateway | Created and activated for the recorded production user; removed with that AppInstance's runtime projection. |
+| Socket | `/run/php/<production-user>.sock` | Gateway | Created by the owning service and removed when that service stops. |
+| Generated identity | Generated PHP-FPM files below `/etc/orbit/php-fpm/<production-user>/generated/`, including the service-specific `master.ini` | Gateway | Replaced only after the complete candidate validates against the recorded user, service, pool, socket, version, home, source paths, and effective master settings. |
+| Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operating agent | Seeded with Orbit defaults for a new runtime and then preserved byte-for-byte by provisioning, retry, and cleanup. |
 
-The runtime module is a normal Debian PHP module: it carries the `; priority=99` header and is enabled only for `fpm`. On every convergence the Gateway renders the module, compares it with the installed file, writes the file only when it differs, and repairs a missing or wrong `conf.d` link. It then verifies through `php-fpm<version> -i` that every managed directive has its rendered value for the FPM Server Application Programming Interface (SAPI).
+The generated configuration establishes runtime identity and includes the separate local tuning file. Before activation or an Orbit-owned reload, the Gateway validates the effective configuration and refuses a local or conflicting file that changes the recorded user, service, pool, socket, PHP version, home, or application path. It does not adopt an existing user, service, socket, generated directory, or file whose identity or ownership conflicts with the AppInstance record.
 
-The Gateway reloads a running service when the file, its enablement, or the FPM PCOV enablement changed. When a publication fails, the Gateway restores the previous module file, or removes the file when none existed, removes the link when the publication created it, and reloads a running service before the command fails. The CLI SAPI keeps stock defaults (`opcache.enable_cli=0`).
+An interrupted publication resumes from the recorded production identity. A failed candidate activation restores the exact generated files and service state captured before publication. It never replaces the local tuning file during recovery.
 
-## Runtime module
+Existing production placements without a dedicated service association remain on their recorded shared runtime. New dedicated runtime preparation, retry, and removal do not rewrite or adopt those placements. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
 
-The module sets these directives for every pool of one PHP version; [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records the reason for each value.
+## Shared runtime module
+
+Development and existing shared placements use a normal Debian PHP module at `/etc/php/<version>/mods-available/orbit-runtime.ini`, enabled for the FPM Server Application Programming Interface (SAPI) as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini` through `phpenmod`. On every shared-runtime convergence the Gateway compares the rendered module with the installed file, repairs a missing or wrong `conf.d` link, and verifies the effective managed directives through `php-fpm<version> -i`.
+
+The Gateway reloads the shared service only when its managed shared module, enablement, or FPM PCOV enablement changes. A dedicated production operation does not use this publication path. The command-line interface (CLI) SAPI keeps stock defaults (`opcache.enable_cli=0`).
+
+## Runtime defaults
+
+The shared development module and each generated dedicated production master profile apply these directives; [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records the reason for each value.
 
 | Directive | app-dev | app-prod |
 | --- | --- | --- |
@@ -47,7 +59,7 @@ The module sets these directives for every pool of one PHP version; [ADR 0021](.
 | `opcache.max_accelerated_files` | 65407 | 65407 |
 | `opcache.jit` / `opcache.jit_buffer_size` | disable / 0 | disable / 0 |
 
-A Node that carries both roles receives the app-dev profile for every PHP version. The Gateway's PHP package manager selects the app-dev package profile, with PCOV enabled for the CLI SAPI, whenever the app-dev role is present, so production pools on such a Node share the app-dev sizing. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off.
+A shared service on a Node that carries both roles receives the app-dev profile for every PHP version. Each dedicated production master keeps its own app-prod allocation regardless of other Node roles. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off in Orbit defaults.
 
 ## Pool policy
 
@@ -58,25 +70,17 @@ php_admin_value[opcache.validate_timestamps] = 1
 php_admin_value[opcache.revalidate_freq] = 0
 ```
 
-An `app-prod` pool never revalidates a cached file, so compiled code stays in shared memory until the service reloads:
+An `app-prod` service sets timestamp validation in its generated service-specific `master.ini`, so compiled code stays in its owning master's memory until a verified cache refresh:
 
 ```ini
-php_admin_value[opcache.validate_timestamps] = 0
+opcache.validate_timestamps = 0
 ```
 
 [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records why each role gets its policy.
 
-## Production deploy contract
+## Production cache boundary
 
-A production pool serves compiled code from shared memory until PHP-FPM reloads, so a changed file on disk stays invisible until then. The deployer must end every production deploy with:
-
-```sh
-sudo systemctl reload php<version>-fpm
-```
-
-`reload` re-executes the FPM master, which recreates the OPcache segment; in-flight requests finish on the old workers. The Gateway's own pool publication runs `systemctl reload-or-restart`, so a convergence that changes a pool also flushes the cache. Editing files under a production checkout by hand without the reload is unsupported.
-
-Laravel's `php artisan optimize` caches (config, route, event, and view) are an application deploy step outside Orbit.
+Runtime provisioning establishes the dedicated master and its isolated OPcache instance. Production deployment and verified cache refresh are separate operations. A generic reload of the distribution `php<version>-fpm` service does not target a dedicated production runtime, and Orbit does not use it as a fallback. Laravel's `php artisan optimize` caches remain application deployment work.
 
 ## Process management
 
@@ -98,11 +102,13 @@ Laravel's Vite plugin fingerprints every file under `public/build/assets`, so br
 
 ## Verification
 
-On a Node, an operator checks the service-level values and the pool-level values separately:
+On a Node, an operator checks a dedicated service, socket, generated identity, and local tuning separately:
 
 ```sh
-/usr/sbin/php-fpm8.5 -i | grep -E '^opcache\.(enable|memory_consumption|max_accelerated_files|jit) '
-grep opcache /etc/php/8.5/fpm/pool.d/orbit-*scopes.conf
+systemctl is-active orbit-<production-user>-php8.5-fpm.service
+systemctl cat orbit-<production-user>-php8.5-fpm.service
+stat /run/php/<production-user>.sock
+find /etc/orbit/php-fpm/<production-user> -maxdepth 2 -type f -print
 ```
 
-Effective per-pool values are visible from inside a request with `ini_get('opcache.validate_timestamps')` or `opcache_get_configuration()['directives']`.
+Effective PHP values are visible from inside a request with `ini_get('opcache.validate_timestamps')` or `opcache_get_configuration()['directives']`. A service PID and OPcache instance belong only to the recorded production user; inspecting another production user must show a different master, service, socket, and cache.

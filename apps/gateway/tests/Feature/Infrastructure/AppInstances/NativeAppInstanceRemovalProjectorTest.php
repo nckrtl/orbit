@@ -6,6 +6,8 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -227,6 +229,34 @@ it('deletes a final production Route after cleanup without publishing developmen
         ->toBeFalse();
 });
 
+it('removes only the dedicated runtime for an associated production AppInstance', function (): void {
+    [$member, , $departing] = orb183_projector_production_member(shared: false);
+    $user = "orbit-app-{$departing->app_id}";
+    $departing->update([
+        'checkout_path' => "/home/{$user}",
+        'production_user' => $user,
+        'production_home' => "/home/{$user}",
+        'root' => 'public',
+    ]);
+    $identity = ProductionPhpRuntimeIdentity::forProvisioning($departing->refresh(), '8.5');
+    $departing->update($identity->attributes());
+    $dedicated = new Orb214RemovalPhpRuntimeManager;
+    [$projector, $ssh] = orb181_removal_projector($this, $dedicated);
+
+    $projector->cleanupRuntime($member);
+
+    expect($dedicated->removed)
+        ->toBe([$departing->id])
+        ->and(collect($ssh->commands)
+            ->contains(
+                static fn (RemoteCommand $command): bool => str_contains(
+                    $command->input ?? '',
+                    'orbit-scopes.conf',
+                ),
+            ))
+        ->toBeFalse();
+});
+
 it('retries shared and final production cleanup without restoring targets or Routes', function (bool $shared): void {
     [$member, $route, , $survivor] = orb183_projector_production_member($shared);
     [$projector, $ssh, $processes] = orb181_removal_projector($this);
@@ -315,8 +345,10 @@ function orb183_projector_production_member(bool $shared): array
 }
 
 /** @return array{NativeAppInstanceRemovalProjector, Orb181RemovalSshExecutor, Orb181RemovalProcessRunner} */
-function orb181_removal_projector(object $test): array
-{
+function orb181_removal_projector(
+    object $test,
+    ?ProductionPhpRuntimeManager $productionPhp = null,
+): array {
     $ssh = new Orb181RemovalSshExecutor;
     $keys = new class implements SshKeyProvider {
         public function privateKeyPath(): string
@@ -379,10 +411,24 @@ function orb181_removal_projector(object $test): array
             ),
             new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites)),
             new RemoteAppDevRouteFirewallManager($executor),
+            $productionPhp,
         ),
         $ssh,
         $processes,
     ];
+}
+
+final class Orb214RemovalPhpRuntimeManager implements ProductionPhpRuntimeManager
+{
+    /** @var list<int> */
+    public array $removed = [];
+
+    public function converge(AppInstance $appInstance): void {}
+
+    public function remove(AppInstance $appInstance): void
+    {
+        $this->removed[] = $appInstance->id;
+    }
 }
 
 /** @return array{AppInstanceRemovalMember, Route} */

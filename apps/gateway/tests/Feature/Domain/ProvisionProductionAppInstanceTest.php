@@ -11,6 +11,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
@@ -196,7 +197,26 @@ it('publishes fresh facts and activates while holding the source-ordered project
         ->and($activeBeforeOwnerRelease)
         ->toBeTrue()
         ->and($result['appInstance']->routes->sole()->hostname)
-        ->toBe('fresh-production.test');
+        ->toBe('fresh-production.test')
+        ->and(ProductionPhpRuntimeIdentity::from($result['appInstance']))
+        ->toEqual(ProductionPhpRuntimeIdentity::forProvisioning($result['appInstance'], '8.5'));
+});
+
+it('records the dedicated runtime identity before the first remote runtime attempt', function (): void {
+    $this->projection->fail = 'runtime';
+
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+        ->toThrow(RuntimeConvergenceException::class);
+
+    $appInstance = AppInstance::query()->sole();
+    $identity = ProductionPhpRuntimeIdentity::from($appInstance);
+
+    expect($appInstance->provisioning_step)
+        ->toBe('source-classified')
+        ->and($identity->service)
+        ->toBe("orbit-{$appInstance->production_user}-php8.5-fpm.service")
+        ->and($identity->socket)
+        ->toBe("/run/php/{$appInstance->production_user}.sock");
 });
 
 it('republishes a route-published retry after an aggregate excludes the pending Route', function (): void {
