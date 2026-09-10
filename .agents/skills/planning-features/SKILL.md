@@ -9,6 +9,10 @@ Turn one Linear issue into `.loop/plan.md`, the separately versioned implementat
 
 This is an independently invokable planning task. It does not assume who implements the plan or what lifecycle surrounds it.
 
+## Delivery flow
+
+Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a legacy artifact without this file implies `proof`, never `discovery`. Existing unselected worktrees use `proof`; select a different flow explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
+
 ## Inputs
 
 - The issue in the `creating-issues` shape: outcome paragraph, `Scope` In and Out bullets, `Acceptance` checklist, and its labels, attachments, and relations.
@@ -21,7 +25,7 @@ Stop, and report the gap instead of planning around it, when:
 - the issue is in a lifecycle state other than exactly `Todo` or `In Progress`, still has a `Readiness` section, has an unfinished `blocked by` relation, or has sub-issues;
 - the issue does not follow the `creating-issues` template; it is refined through `creating-issues` first;
 - an attached ADR's Status is not `Accepted on`, or an attached ADR contradicts the issue;
-- an `Acceptance` item has no proof action the current machinery can run;
+- an `Acceptance` item has no test, command, or development observation the selected flow can run;
 - an `In` bullet needs a component the issue is not labeled with, where a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`;
 - the outcome changes documented behavior and the issue has no `docs` label; report it for relabeling; or
 - a page cannot be written without guessing product behavior.
@@ -43,13 +47,15 @@ Before the acceptance map, run `auditing-documentation` in its default issue sco
 
 ## Write the plan
 
+In `discovery`, map existing issue `Proof:` venues to focused tests, CI, and reproducible discovery observations without changing acceptance outcomes. Do not require a proof plan, fixtures, observed inputs, exact-commit proof, or main-freshness checks. Record `Incus observations: not applicable; discovery flow`. Preflight and its independent review precede discovery acquisition. Optional topology extension declarations reuse the existing format; they do not require running proof actions.
+
 Fill every section of `.loop/plan.md` without copying the issue into it:
 
 - **Outcome:** the issue's outcome in one sentence.
 - **Code boundaries:** for each `In` bullet, the files or directories that change. For each `Out` bullet, the exclusion that keeps it unchanged. Pages under `docs/` belong to the Documentation section and `.loop/proof/<ISSUE>.json` to the acceptance map; neither is a code boundary or a component.
 - **Documentation:** the pages under `docs/` this task changed and what each now states, plus every audit finding it reported instead of fixing, each with its owner. When the label is absent and no drift was found, `none: <why the outcome changes no documented behavior>`. When the label is present and the pages already state the outcome, say so; that is not a stop, and the label is corrected through `creating-issues` afterwards.
 - **Acceptance map:** one row per `Acceptance` item, in the issue's order, mapped to its code boundary, or to the page from the Documentation section when documentation is what the item delivers, and the exact focused proof: a test file, a command, or an Incus proof action.
-- **Incus observations:** for `proof:incus`, plan `observed_inputs: true` when the actions support complete PHP observations on the required surfaces. Otherwise record why instrumentation is unsuitable or incomplete. Keep this decision in the plan; the implementer creates the proof file. See [proof plans](../../../docs/reference/proof-plans.md) for collection and cleanup requirements.
+- **Incus observations:** in the `proof` flow with `proof:incus`, plan `observed_inputs: true` when the actions support complete PHP observations on the required surfaces. Otherwise record why instrumentation is unsuitable or incomplete. Keep this decision in the plan; the implementer creates the proof file. See [proof plans](../../../docs/reference/proof-plans.md) for collection and cleanup requirements.
 - **Implementation order:** the smallest coherent ordered changes.
 - **Must preserve:** every attached ADR `Decision` bullet the change touches, plus the existing tests and invariants that protect adjacent behavior.
 - **Open questions:** facts the implementer cannot verify from the repository. A product decision is not an open question; it is a stop.

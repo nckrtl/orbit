@@ -267,3 +267,52 @@ it('constructs an extended discovery without adopting proof resources or sharing
         ->and($state->hasAttempt(AttemptPurpose::Proof))
         ->toBeFalse();
 });
+
+it('uses the saved snapshot for discovery after main changes while proof flow still requires freshness', function (): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-flow-acquisition-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'discovery-flow');
+    $processes = new ProcessFactory;
+    $manifest = $root.'/apps/e2e/resources/prepared-state.json';
+    $data = json_decode((string) file_get_contents($manifest), true, 512, JSON_THROW_ON_ERROR);
+    $data['cold_epoch'] = 'ubuntu-26.04-amd64-v99';
+    file_put_contents($manifest, json_encode($data, JSON_THROW_ON_ERROR));
+    expect(
+        $processes->run(['git', '-C', $root, 'commit', '-am', 'Main changes cold contract'])->successful(),
+    )->toBeTrue();
+    expect($processes->run(['git', '-C', $root, 'branch', '-f', 'main', 'HEAD'])->successful())->toBeTrue();
+    $events = [];
+    fakePinnedWorktreeProcesses(featureTarget('TST-123'), $events);
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
+    $acquirer = new TopologyAcquirer(
+        $host,
+        new IncusNetworkLifecycle($host),
+        new PreparedStateFingerprint(new GitRepository($root)),
+        $manifests,
+        new WorktreeSynchronizer($host, $root, $operation),
+        new TopologyVerifier($host, 1, 0),
+        new DiscoveryGuestPreparer($host),
+        new HostCapacity($host, 24),
+        $paths,
+        $operation,
+        TopologySnapshotIdentity::primary(),
+        $root,
+        fn () => attemptId(),
+    );
+    $request = new TopologyRequest('TST-123', $worktree);
+    expect(fn () => $acquirer->acquire($request))->toThrow(RuntimeException::class, 'snapshot is stale');
+    expect($events)->toBeEmpty();
+    mkdir($worktree.'/.loop', 0700, true);
+    file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"discovery"}');
+
+    $topology = $acquirer->acquire($request);
+    $synced = $acquirer->sync($request);
+
+    expect($topology->purpose)->toBe(AttemptPurpose::Discovery);
+    expect($synced->generation->id)->toBe($topology->generation->id);
+    expect(IssueState::forWorktree('TST-123', $worktree)->hasAttempt(AttemptPurpose::Proof))->toBeFalse();
+    expect(file_exists($worktree.'/.loop/proof/TST-123.json'))->toBeFalse();
+});

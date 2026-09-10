@@ -92,7 +92,12 @@ final readonly class TopologyAcquirer
         $lock = $this->issueLock($request->issue);
         try {
             $topology = $this->mutableTopology($state, AttemptPurpose::Discovery);
-            $this->assertColdBaseMatchesMain($request->worktree);
+            $this->assertColdBaseMatchesMain(
+                $request->worktree,
+                DeliveryFlow::forWorktree($request->worktree) === 'discovery'
+                    ? $this->fingerprints->forCommit($topology->generation->mainSha)
+                    : null,
+            );
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
             $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree);
@@ -351,7 +356,8 @@ final readonly class TopologyAcquirer
         if ($generation->id !== $expectedId) {
             throw new RuntimeException('The promoted topology snapshot fingerprint is stale or corrupt.');
         }
-        $structural = $this->fingerprints->forCommit('main');
+        $baseline = DeliveryFlow::forWorktree($worktree) === 'discovery' ? $generation->mainSha : 'main';
+        $structural = $this->fingerprints->forCommit($baseline);
         $main = $this->fingerprints->withLaravel($structural, $generation->laravel);
         if (
             $structural->value !== $generation->structuralFingerprint

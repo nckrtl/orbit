@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
+use App\E2E\DeliveryFlow;
 use App\E2E\ProofPlanFile;
 use App\E2E\TopologyProofRunner;
 use App\E2E\Value\ProofResult;
@@ -25,6 +26,7 @@ final class ProveCommand extends E2ECommand
     {
         try {
             $request = $this->request();
+            DeliveryFlow::requireProof($request->worktree);
             $plan = ProofPlanFile::current($request, $this->option('plan'));
             $result = $runner->prove(
                 $request,

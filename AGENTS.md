@@ -37,6 +37,12 @@ invoke any one directly; no private orchestration order is implied.
 
 ## Repository rules
 
+- Resolve the worktree's delivery flow with `bin/loop-flow status`. Read
+  [implementation loop](docs/reference/implementation-loop.md) before planning,
+  developing, reviewing, or closing out. Requirements below for isolated proof and snapshot closeout apply only to
+  the `proof` flow. ADR 0051 governs the `discovery` alternative: preflight and
+  preflight review, discovery as a development tool, code review, CI, and merge;
+  no proof, main-freshness, or snapshot-closeout gate. Each handoff names its flow.
 - An explicit user instruction for the current task overrides any conflicting
   rule in this repository, including an agent-role skill or workflow boundary.
   It does not override system or platform safety requirements.

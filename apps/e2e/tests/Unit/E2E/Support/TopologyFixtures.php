@@ -274,7 +274,11 @@ function pinnedWorktreeInventoryResult(
     if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
         return Process::result(json_encode([[
             'name' => $target->network(),
-            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
+            'config' => [
+                'user.orbit.e2e.owner' => 'orbit-e2e',
+                'ipv4.address' => "10.232.{$slot}.1/24",
+                'ipv4.dhcp.ranges' => "10.232.{$slot}.10-10.232.{$slot}.".(9 + count($target->recipe->nodeKeys())),
+            ],
         ]], JSON_THROW_ON_ERROR));
     }
     if (($command[3] ?? null) === 'list') {

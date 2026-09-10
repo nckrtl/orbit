@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
+use App\E2E\DeliveryFlow;
 use App\E2E\TopologyProofRunner;
 use Throwable;
 
@@ -20,6 +21,7 @@ final class CandidateCommand extends E2ECommand
     {
         try {
             $request = $this->request();
+            DeliveryFlow::requireProof($request->worktree);
             $result = $runner->convergeCandidate($request);
             $status = $result['status'] ?? null;
             $attempt = $result['attempt_id'] ?? null;

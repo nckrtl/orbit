@@ -244,7 +244,7 @@ it('keeps one external-orchestrator lifecycle', function () use ($read): void {
     expect($mergerManifest)
         ->toContain('external orchestrator merges')
         ->toContain('exact approved candidate')
-        ->toContain('refresh the snapshot, and clean up');
+        ->toContain('snapshot refresh applies only to proof flow');
 
     foreach ([$developer, $reviewer, $merger, $developerManifest, $reviewerManifest, $mergerManifest] as $contract) {
         expect($contract)
@@ -279,7 +279,8 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
     expect($merger)
         ->toContain('one independent `Approved.` review bound to the exact head and published artifact SHA')
         ->toContain('Verify the external merge')
-        ->toContain('exact second parent and the same tree')
+        ->toContain('exact second parent')
+        ->toContain('conflict-free Git merge tree')
         ->toContain('absence of `.loop/` from main')
         ->toContain('complete acceptance proof')
         ->toContain('Keep artifact refs and the primary checkout')
