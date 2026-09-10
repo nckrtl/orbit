@@ -9,11 +9,10 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 53 public Gateway operations (the original 38 plus
-seven Tool and Doctor operations, seven Metrics operations, and node settings). It preserves
-manager, package, nullable version constraints, outcomes, structured errors,
-and request IDs without applying policy. It does not define CLI presentation
-or manager command behavior.
+The SDK exposes exactly 72 public Gateway operations. It preserves typed
+payloads, bounded responses, structured errors, and request IDs without
+applying Gateway policy. It does not define command-line presentation or
+remote execution behavior.
 
 For example, typed Tool transport stays small and explicit:
 
@@ -27,6 +26,15 @@ $response = $connector
 
 assert($response instanceof ToolResponse);
 ```
+
+## AppInstance environment
+
+The SDK exposes typed import, update, and synchronization requests for
+AppInstance environment configuration. Import preserves omission and explicit
+`false` for its optional replacement flag. Update preserves the exact string
+value, and synchronization sends an empty JSON object. Each response contains
+only the AppInstance ID, operation, changed flag, bounded key count, and request
+ID. Environment values remain outside normal SDK diagnostics and errors.
 
 ## Doctor
 
@@ -45,5 +53,5 @@ order, issues, and summary aggregates without applying Doctor policy.
 ```bash
 composer test       # full Pest suite (parallel, no TIA)
 composer format     # Mago formatter
-composer check      # full parallel no-TIA tests and all Mago checks
+composer check      # guidance, Rector, and Mago checks
 ```

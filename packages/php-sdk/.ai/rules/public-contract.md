@@ -1,13 +1,13 @@
 # Public contract
 
-The SDK models exactly 69 concrete public Gateway API operations:
+The SDK models exactly 72 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
 - Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, and remove.
-- AppInstance: list, show, create, register, and remove through the concise Instance routes.
+- AppInstance: list, show, create, register, remove, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Workspace: list, show, create, remove, and update PHP.
 - Process: list, add, start, stop, restart, logs, and remove.
@@ -24,10 +24,14 @@ operations. Keep the public API typed and small.
   for identifiers.
 - Send `host_key_fingerprint` in a node provision request. Parse
   `ssh_host_fingerprint` from a node response.
-- Keep AppInstance transport limited to App, Node, name, optional root, optional
-  Route hostname, optional creation branch, explicit source-profile recovery,
-  and explicit force intent.
+- Keep AppInstance lifecycle transport limited to App, Node, name, optional
+  root, optional Route hostname, optional creation branch, explicit
+  source-profile recovery, and explicit force intent.
   The Gateway owns placement, source, and Route policy.
+- Keep AppInstance environment transport limited to an ID-or-hostname selector,
+  optional import replacement, one key and string value for update, an empty
+  synchronization body, and the bounded value-free operation result. The
+  Gateway owns lookup, validation, references, storage, and synchronization.
 - Keep Route transport limited to App, hostname, publication intent, exclusive
   Node-or-Cluster scope, and at most one scalar AppInstance target. The Gateway
   owns hostname, scope, basis, relationship, and lifecycle policy.
