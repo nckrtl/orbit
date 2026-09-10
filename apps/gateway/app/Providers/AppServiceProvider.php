@@ -76,7 +76,6 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
-use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -181,7 +180,6 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
-use App\Infrastructure\Tools\EloquentNodeRoleToolIntentGuard;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
@@ -258,7 +256,6 @@ final class AppServiceProvider extends ServiceProvider
         ProcessStateInspector::class => NativeProcessStateInspector::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
-        NodeRoleToolIntentGuard::class => EloquentNodeRoleToolIntentGuard::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
