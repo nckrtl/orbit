@@ -36,7 +36,10 @@ final readonly class ProofInputManifestBuilder
         if ($plan->observedInputs !== ($observedInputs !== null)) {
             throw new InvalidArgumentException('The observed PHP inputs do not match the proof plan.');
         }
-        if ($construction->extension !== $plan->extension) {
+        if (
+            $construction->extension !== $plan->extension
+            || $construction->snapshotReplacement !== $plan->snapshotReplacement
+        ) {
             throw new InvalidArgumentException('The topology construction inputs do not match the proof plan.');
         }
         TopologyTarget::assertIssue($issue);

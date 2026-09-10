@@ -156,7 +156,7 @@ function extendedReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose
     );
 }
 
-function releaserForTest(StatePaths $paths): TopologyReleaser
+function releaserForTest(StatePaths $paths, ?Closure $abandonReplacement = null): TopologyReleaser
 {
     $host = new IncusHost;
     $operation = new OperationId(str_repeat('b', 32));
@@ -167,6 +167,7 @@ function releaserForTest(StatePaths $paths): TopologyReleaser
         $paths,
         $operation,
         new OrphanNetworkSweep($host, new IncusNetworkLifecycle($host), $paths, $operation),
+        $abandonReplacement ?? static function (): void {},
     );
 }
 
@@ -280,6 +281,68 @@ describe('TopologyReleaser', function () {
         'replacement' => ProofReleaseReason::Replacement,
         'abandonment' => ProofReleaseReason::Abandonment,
     ]);
+
+    it('cleans replacement state before releasing an explicitly abandoned proof', function (): void {
+        $worktree = temporaryPath('orbit-release-abandonment-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        [$state, $target] = capturedReleaseState($worktree, $paths);
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
+            $commands,
+        );
+        $abandoned = [];
+        $releaser = releaserForTest(
+            $paths,
+            function (TopologyRequest $request, CapturedProof $capture) use (&$abandoned): void {
+                $abandoned = [$request->issue, $capture->attempt->value];
+            },
+        );
+
+        $result = $releaser->release(
+            new TopologyRequest('AUX-99', $worktree),
+            AttemptPurpose::Proof,
+            reason: ProofReleaseReason::Abandonment,
+        );
+
+        expect($abandoned)
+            ->toBe(['AUX-99', str_repeat('a', 32)])
+            ->and($result['state'])
+            ->toBe('released')
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeFalse();
+    });
+
+    it('retains proof resources when replacement abandonment fails', function (): void {
+        $worktree = temporaryPath('orbit-release-abandonment-failed-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        [$state, $target] = capturedReleaseState($worktree, $paths);
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
+            $commands,
+        );
+
+        expect(fn () => releaserForTest(
+            $paths,
+            static function (): void {
+                throw new RuntimeException('replacement cleanup failed');
+            },
+        )->release(
+            new TopologyRequest('AUX-99', $worktree),
+            AttemptPurpose::Proof,
+            reason: ProofReleaseReason::Abandonment,
+        ))
+            ->toThrow(RuntimeException::class, 'replacement cleanup failed')
+            ->and($commands)
+            ->toBe([])
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeTrue();
+    });
 
     it('protects a captured active proof when mutable proof result state is missing or mismatched', function (
         string $proofState,

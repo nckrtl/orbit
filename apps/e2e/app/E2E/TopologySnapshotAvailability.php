@@ -8,6 +8,7 @@ use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -24,11 +25,14 @@ final readonly class TopologySnapshotAvailability
     public function __construct(
         private IncusHost $host,
         private TopologySnapshotIdentity $identity,
+        private ?TopologySnapshotReplacementStore $replacements = null,
     ) {}
 
     /** @throws StaleTopologySnapshotManifest when the manifest names resources the host does not hold. */
     public function assertAvailable(TopologySnapshotGeneration $generation): void
     {
+        $this->assertReplacementAllows($generation);
+
         try {
             $this->host->assertOwnedSnapshots($this->snapshots($generation));
         } catch (Throwable $exception) {
@@ -41,6 +45,28 @@ final readonly class TopologySnapshotAvailability
             throw new StaleTopologySnapshotManifest(
                 $this->recoveryMessage($generation, $exception),
                 previous: $exception,
+            );
+        }
+    }
+
+    private function assertReplacementAllows(TopologySnapshotGeneration $generation): void
+    {
+        $recovery = $this->replacements?->active();
+        if ($recovery === null) {
+            return;
+        }
+        $installation = $recovery->installation;
+        $expected = $recovery->manifestPromoted
+            ? $installation->newGeneration
+            : $installation->oldGeneration;
+        $swapInProgress = ! $recovery->manifestPromoted
+            && ($recovery->oldRenamedRoles !== [] || $recovery->newRenamedRoles !== []);
+        $forwardIncomplete = $recovery->manifestPromoted
+            && $recovery->newRenamedRoles !== TopologyProfile::ROLES;
+        if ($generation->toArray() !== $expected->toArray() || $swapInProgress || $forwardIncomplete) {
+            throw new RuntimeException(
+                'Topology snapshot replacement recovery is incomplete; retry the exact '
+                .'`bin/e2e-topology closeout '.$installation->issue.'` command.',
             );
         }
     }

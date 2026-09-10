@@ -117,6 +117,7 @@ final readonly class TopologyVerifier
         SourceState $source,
         ?TopologyEndState $endState = null,
         ?array $requiredAssignments = null,
+        bool $nativeSamplesOnly = false,
     ): VerificationReport {
         $declared = $endState ?? TopologyEndState::complete($target->recipe);
         $requiredAssignments ??= $target->recipe->assignments();
@@ -144,7 +145,7 @@ final readonly class TopologyVerifier
         }
         $this->host->assertTopologyNetworkIdentity($inventory, $target->network(), $target, requireRunning: true);
         $appDevNode = $target->recipe->nodeForRole('app-dev')->key;
-        $sample = $this->sampleState($instances[$appDevNode]);
+        $sample = $this->sampleState($instances[$appDevNode], $nativeSamplesOnly);
         $typedCheckoutPath = $sample['checkout_path'];
         $productionPlacement = $sample['production'];
         if ($typedCheckoutPath !== null && $productionPlacement === null) {
@@ -271,12 +272,16 @@ final readonly class TopologyVerifier
      *     }
      * }
      */
-    private function sampleState(string $appDevInstance): array
+    private function sampleState(string $appDevInstance, bool $nativeSamplesOnly): array
     {
+        $arguments = ['/usr/local/bin/converge-sample-app.sh', 'inspect-state'];
+        if ($nativeSamplesOnly) {
+            $arguments[] = 'native';
+        }
         $results = $this->host->execAll([
             'sample-app-state' => [
                 'instance' => $appDevInstance,
-                'command' => new GuestCommand(['/usr/local/bin/converge-sample-app.sh', 'inspect-state'], 30),
+                'command' => new GuestCommand($arguments, 30),
             ],
         ]);
         $result = $results['sample-app-state'] ?? null;
@@ -291,6 +296,10 @@ final readonly class TopologyVerifier
         }
 
         if ($state === ['shape' => 'instances']) {
+            if ($nativeSamplesOnly) {
+                throw new RuntimeException('Declared replacement verification requires native AppInstance samples.');
+            }
+
             return ['checkout_path' => null, 'production' => null];
         }
         $keys = array_keys(is_array($state) ? $state : []);

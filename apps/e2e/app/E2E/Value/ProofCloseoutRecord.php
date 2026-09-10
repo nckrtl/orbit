@@ -6,7 +6,7 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** Retry-safe refresh and exact-cleanup state for one retained proof attempt. */
+/** Retry-safe snapshot installation and exact-cleanup state for one retained proof attempt. */
 final readonly class ProofCloseoutRecord
 {
     public const int SCHEMA = 1;
@@ -26,7 +26,11 @@ final readonly class ProofCloseoutRecord
         public string $recordedAt,
     ) {
         $this->status = $state;
-        if (! in_array($state, ['refresh-failed', 'refresh-succeeded', 'complete'], true)) {
+        if (! in_array(
+            $state,
+            ['refresh-failed', 'refresh-succeeded', 'replacement-failed', 'replacement-succeeded', 'complete'],
+            true,
+        )) {
             throw new InvalidArgumentException('The proof closeout state is invalid.');
         }
         TopologyTarget::assertIssue($issue);
@@ -44,11 +48,12 @@ final readonly class ProofCloseoutRecord
         if (preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $recordedAt) !== 1) {
             throw new InvalidArgumentException('The proof closeout time is invalid.');
         }
-        if ($state === 'refresh-failed' && (! is_string($error) || $error === '')) {
-            throw new InvalidArgumentException('A failed proof closeout refresh requires an error.');
+        $failed = in_array($state, ['refresh-failed', 'replacement-failed'], true);
+        if ($failed && (! is_string($error) || $error === '')) {
+            throw new InvalidArgumentException('A failed proof closeout snapshot operation requires an error.');
         }
-        if ($state !== 'refresh-failed' && ($generationId === null || $error !== null)) {
-            throw new InvalidArgumentException('A successful proof closeout refresh requires its generation.');
+        if (! $failed && ($generationId === null || $error !== null)) {
+            throw new InvalidArgumentException('A successful proof closeout snapshot operation requires its generation.');
         }
     }
 
@@ -67,7 +72,15 @@ final readonly class ProofCloseoutRecord
 
         return match ($existing->state) {
             'refresh-failed' => in_array($this->state, ['refresh-failed', 'refresh-succeeded'], true),
+            'replacement-failed' => in_array(
+                $this->state,
+                ['replacement-failed', 'replacement-succeeded'],
+                true,
+            ),
             'refresh-succeeded' => in_array($this->state, ['refresh-succeeded', 'complete'], true)
+                && $this->mainSha === $existing->mainSha
+                && $this->generationId === $existing->generationId,
+            'replacement-succeeded' => in_array($this->state, ['replacement-succeeded', 'complete'], true)
                 && $this->mainSha === $existing->mainSha
                 && $this->generationId === $existing->generationId,
             'complete' => $this->mainSha === $existing->mainSha

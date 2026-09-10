@@ -76,7 +76,7 @@ final readonly class IssueState
     }
 
     /**
-     * @return array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,extension?:null|string}
+     * @return array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,extension?:null|string,snapshot_replacement?:bool}
      */
     public function attempt(?AttemptPurpose $purpose = null): array
     {
@@ -100,11 +100,15 @@ final readonly class IssueState
             || array_key_exists('extension', $lease)
             && $lease['extension'] !== null
             && $lease['extension'] !== TopologyExtension::AppProd->value
+            || array_key_exists('snapshot_replacement', $lease)
+            && ! is_bool($lease['snapshot_replacement'])
+            || ($lease['snapshot_replacement'] ?? false) === true
+            && ($purpose !== AttemptPurpose::Proof || ($lease['extension'] ?? null) !== null)
         ) {
             throw new RuntimeException("The {$this->issue} attempt lease is invalid.");
         }
 
-        /** @var array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,extension?:null|string} $lease */
+        /** @var array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,extension?:null|string,snapshot_replacement?:bool} $lease */
         return $lease;
     }
 
@@ -123,7 +127,13 @@ final readonly class IssueState
         AttemptPurpose $purpose,
         OperationId $operation,
         ?TopologyExtension $extension = null,
+        bool $snapshotReplacement = false,
     ): void {
+        if ($snapshotReplacement && ($purpose !== AttemptPurpose::Proof || $extension !== null)) {
+            throw new RuntimeException(
+                'Only a standard proof attempt can declare snapshot replacement before construction.',
+            );
+        }
         if ($purpose === AttemptPurpose::Discovery) {
             $this->migrateLegacyProof();
         }
@@ -134,6 +144,7 @@ final readonly class IssueState
             'operation_id' => $operation->value,
             'acquired_at' => gmdate('Y-m-d\TH:i:s\Z'),
             'extension' => $extension?->value,
+            'snapshot_replacement' => $snapshotReplacement,
         ]);
     }
 
@@ -150,6 +161,13 @@ final readonly class IssueState
         }
 
         return $lease['extension'] === null ? null : TopologyExtension::AppProd;
+    }
+
+    public function leaseSnapshotReplacement(AttemptPurpose $purpose): bool
+    {
+        $lease = $this->attempt($purpose);
+
+        return ($lease['snapshot_replacement'] ?? false) === true;
     }
 
     /** Add only the missing target evidence after the caller validates external recovery constraints. */
@@ -204,6 +222,14 @@ final readonly class IssueState
                 && $topology->construction->extension?->value !== $lease['extension']
             ) {
                 throw new RuntimeException('The attempt lease and the topology record name different extensions.');
+            }
+            if (
+                array_key_exists('snapshot_replacement', $lease)
+                && $topology->construction->snapshotReplacement !== $lease['snapshot_replacement']
+            ) {
+                throw new RuntimeException(
+                    'The attempt lease and the topology record name different snapshot replacement declarations.',
+                );
             }
         }
 

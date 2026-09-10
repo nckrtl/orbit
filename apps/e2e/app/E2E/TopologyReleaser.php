@@ -16,6 +16,7 @@ use App\E2E\Value\ProofReleaseReason;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
+use Closure;
 use RuntimeException;
 use Throwable;
 
@@ -35,6 +36,8 @@ final readonly class TopologyReleaser
         private StatePaths $hostPaths,
         private OperationId $operation,
         private ?OrphanNetworkSweep $sweep = null,
+        /** @var (Closure(TopologyRequest, CapturedProof): void)|null */
+        private ?Closure $abandonReplacement = null,
     ) {}
 
     /** @return array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
@@ -59,6 +62,12 @@ final readonly class TopologyReleaser
             }
             $attempt = $state->attemptId($purpose);
             $this->assertReleaseAllowed($state, $purpose, $attempt, $reason);
+            if ($purpose === AttemptPurpose::Proof && $reason === ProofReleaseReason::Abandonment) {
+                if ($this->abandonReplacement === null) {
+                    throw new RuntimeException('Snapshot replacement abandonment is not configured.');
+                }
+                ($this->abandonReplacement)($request, $this->capturedProof($state, $attempt));
+            }
 
             return $this->releaseAttempt($request, $state, $purpose, $attempt);
         } finally {
@@ -292,6 +301,19 @@ final readonly class TopologyReleaser
                 'A successful proof remains retained; select explicit replacement or abandonment, or use closeout.',
             );
         }
+    }
+
+    private function capturedProof(IssueState $state, AttemptId $attempt): CapturedProof
+    {
+        $local = $state->capturedProof($attempt);
+        $raw = new AtomicJsonStore($this->hostPaths)->read(
+            'proof-evidence/'.$state->issue.'/'.$attempt->value.'.json',
+        );
+        $archived = is_array($raw) ? CapturedProof::fromStoredArray($raw) : null;
+
+        return $local ?? $archived ?? throw new RuntimeException(
+            'A successful proof must be captured before its replacement can be abandoned.',
+        );
     }
 
     private function recoverLeaseTarget(

@@ -43,10 +43,12 @@ final readonly class TopologySnapshotRefresher
         private TopologySnapshotIdentity $identity,
         private TopologySnapshotAvailability $availability,
         private int $refreshLockTimeoutSeconds = 3600,
+        private ?TopologySnapshotReplacementStore $replacements = null,
     ) {}
 
     public function request(string $mainSha, bool $allowCold = false): RefreshResult
     {
+        $this->assertNoActiveReplacement();
         if (preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1) {
             throw new RuntimeException('The refresh SHA is invalid.');
         }
@@ -79,6 +81,7 @@ final readonly class TopologySnapshotRefresher
         LegacyTopologySnapshotRecovery $recovery,
         TopologySnapshotRebuilder $rebuilder,
     ): RefreshResult {
+        $this->assertNoActiveReplacement();
         if (preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1) {
             throw new RuntimeException('The legacy recovery SHA is invalid.');
         }
@@ -187,6 +190,7 @@ final readonly class TopologySnapshotRefresher
 
     public function restore(): TopologySnapshotGeneration
     {
+        $this->assertNoActiveReplacement();
         if (! $this->lock->acquire(
             'standby-refresh',
             $this->operation,
@@ -213,6 +217,17 @@ final readonly class TopologySnapshotRefresher
             return $generation;
         } finally {
             $this->lock->release();
+        }
+    }
+
+    private function assertNoActiveReplacement(): void
+    {
+        $active = $this->replacements?->active();
+        if ($active !== null) {
+            throw new RuntimeException(
+                'Topology snapshot replacement recovery is active; retry the exact '
+                .'`bin/e2e-topology closeout '.$active->installation->issue.'` command.',
+            );
         }
     }
 

@@ -164,7 +164,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional extension, mutates, ends_with, inputs, and observed_inputs.',
+                .'plus optional extension, mutates, ends_with, inputs, observed_inputs, and snapshot_replacement.',
             );
     });
 
@@ -206,7 +206,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional extension, mutates, ends_with, inputs, and observed_inputs.',
+                .'plus optional extension, mutates, ends_with, inputs, observed_inputs, and snapshot_replacement.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {
@@ -555,5 +555,46 @@ describe('ProofPlan app-prod extension', function (): void {
                 ],
             ))
             ->toThrow(InvalidArgumentException::class, 'must keep app-prod-2');
+    });
+});
+
+describe('ProofPlan snapshot replacement', function (): void {
+    it('normalizes an explicit cold replacement into the proof fingerprint', function (): void {
+        $ordinary = ProofPlan::fromArray(proofPlanFixture());
+        $replacement = ProofPlan::fromArray(proofPlanFixture() + ['snapshot_replacement' => true]);
+        $explicitFalse = ProofPlan::fromArray(proofPlanFixture() + ['snapshot_replacement' => false]);
+
+        expect($ordinary->snapshotReplacement)
+            ->toBeFalse()
+            ->and($replacement->snapshotReplacement)
+            ->toBeTrue()
+            ->and($replacement->toArray()['snapshot_replacement'] ?? null)
+            ->toBeTrue()
+            ->and($replacement->fingerprint())
+            ->not->toBe($ordinary->fingerprint())
+            ->and($explicitFalse->toArray())
+            ->toBe($ordinary->toArray());
+    });
+
+    it('rejects a non-boolean cold replacement declaration', function (mixed $value): void {
+        expect(fn () => ProofPlan::fromArray(proofPlanFixture() + ['snapshot_replacement' => $value]))
+            ->toThrow(
+                InvalidArgumentException::class,
+                'The proof plan key snapshot_replacement must be a boolean.',
+            );
+    })->with(['string' => ['true'], 'integer' => [1], 'null' => [null]]);
+
+    it('rejects extensions and absent Nodes for a cold replacement', function (): void {
+        expect(fn () => ProofPlan::fromArray(
+            proofPlanFixture() + ['extension' => 'app-prod', 'snapshot_replacement' => true],
+        ))
+            ->toThrow(InvalidArgumentException::class, 'cannot declare a topology extension')
+            ->and(fn () => ProofPlan::fromArray(
+                proofPlanFixture() + [
+                    'ends_with' => ['nodes' => ['gateway', 'app-dev']],
+                    'snapshot_replacement' => true,
+                ],
+            ))
+            ->toThrow(InvalidArgumentException::class, 'must keep the complete registered topology');
     });
 });

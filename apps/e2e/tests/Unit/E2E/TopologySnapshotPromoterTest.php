@@ -655,6 +655,18 @@ function fakePromotionHost(
 }
 
 describe('TopologySnapshotPromoter', function (): void {
+    it('refuses a declared replacement before any Incus command', function (): void {
+        $fixture = promotableFixture();
+        $plan = ProofPlan::fromArray($fixture['plan']->toArray() + ['snapshot_replacement' => true]);
+        Process::fake();
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $plan))
+            ->toThrow(RuntimeException::class, 'cannot be promoted directly');
+
+        Process::assertNothingRan();
+    });
+
     it('refuses a durable review action recorded after the initial promotion check', function (): void {
         $fixture = promotableFixture();
         $events = [];

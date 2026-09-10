@@ -101,6 +101,9 @@ final readonly class ProofEquivalenceEvaluator
             $errors[] = 'The current normalized proof plan differs from the proved plan.';
         }
         $manifest = ProofInputManifest::fromArray($captured->manifest);
+        if ($manifest->construction->snapshotReplacement !== $plan->snapshotReplacement) {
+            $errors[] = 'The proof construction differs from the current snapshot replacement declaration.';
+        }
         if (
             $manifest->construction->imageAlias !== null
             && $this->host->imageFingerprint($manifest->construction->imageAlias)

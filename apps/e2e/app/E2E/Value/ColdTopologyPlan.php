@@ -21,6 +21,7 @@ final readonly class ColdTopologyPlan
         public OperationId $operation,
         public array $metadata,
         public ?int $fixedSlot = null,
+        public bool $snapshotReplacement = false,
     ) {
         $requiredNodes = [];
         foreach (TopologyProfile::ROLES as $role) {
@@ -58,6 +59,16 @@ final readonly class ColdTopologyPlan
         }
         if ($fixedSlot !== null && $fixedSlot < 1) {
             throw new InvalidArgumentException('Persistent cold topology construction requires a fixed slot.');
+        }
+        if (
+            $snapshotReplacement
+            && ($fixedSlot !== null
+            || $target->recipe->id !== TopologyProfile::NAME
+            || $target->recipe->nodeKeys() !== TopologyProfile::ROLES)
+        ) {
+            throw new InvalidArgumentException(
+                'A cold snapshot replacement must use the disposable registered three-Node recipe.',
+            );
         }
     }
 

@@ -10,6 +10,7 @@ use App\E2E\Value\ColdTopologyCleanupResult;
 use App\E2E\Value\ColdTopologyPlan;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyTarget;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
@@ -32,10 +33,39 @@ final readonly class ColdTopologyConstructor
 
     public function construct(ColdTopologyPlan $plan): SourceState
     {
+        if ($plan->snapshotReplacement) {
+            throw new RuntimeException('Snapshot replacement construction requires its recorded-input result.');
+        }
+
+        return $this->constructWithSlot($plan)['source'];
+    }
+
+    public function constructReplacement(ColdTopologyPlan $plan): TopologyConstructionInputs
+    {
+        if (! $plan->snapshotReplacement) {
+            throw new RuntimeException('Cold topology construction has no snapshot replacement declaration.');
+        }
+        $result = $this->constructWithSlot($plan);
+        $imageAlias = array_key_first($plan->imageFingerprints);
+        if (! is_string($imageAlias)) {
+            throw new RuntimeException('The snapshot replacement base-image identity is absent.');
+        }
+
+        return TopologyConstructionInputs::forSnapshotReplacement(
+            $plan->target,
+            $result['slot'],
+            $imageAlias,
+            $plan->imageFingerprints[$imageAlias],
+        );
+    }
+
+    /** @return array{source:SourceState,slot:int} */
+    private function constructWithSlot(ColdTopologyPlan $plan): array
+    {
         $this->preflight($plan);
 
         try {
-            $this->createResources($plan);
+            $slot = $this->createResources($plan);
             $instances = array_map($plan->target->instance(...), $plan->target->recipe->nodeKeys());
             $this->host->startAll($instances);
             $this->host->prepareClonedHostStates($instances);
@@ -58,9 +88,14 @@ final readonly class ColdTopologyConstructor
                 throw new RuntimeException('Cold topology source is not the requested clean commit.');
             }
 
-            $this->converger->converge($plan->target, $source, $plan->laravel);
+            $this->converger->converge(
+                $plan->target,
+                $source,
+                $plan->laravel,
+                nativeSamplesOnly: $plan->snapshotReplacement,
+            );
 
-            return $source;
+            return ['source' => $source, 'slot' => $slot];
         } catch (Throwable $constructionFailure) {
             $cleanup = $this->cleanup($plan->target, $plan->operation);
             if (! $cleanup->successful()) {

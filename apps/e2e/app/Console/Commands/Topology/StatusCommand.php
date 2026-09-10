@@ -6,6 +6,7 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\IssueState;
+use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\Value\AttemptPurpose;
 use Throwable;
 
@@ -18,7 +19,7 @@ final class StatusCommand extends E2ECommand
     #[\Override]
     protected $description = 'Report the issue discovery and proof topologies without touching infrastructure';
 
-    public function handle(): int
+    public function handle(TopologySnapshotReplacementStore $replacements): int
     {
         try {
             $request = $this->request();
@@ -32,7 +33,7 @@ final class StatusCommand extends E2ECommand
                         'worktree' => $request->worktree,
                         'proof' => $state->proof(),
                         'captured_topology' => $captured?->topology->toArray(),
-                        ...($captured === null ? [] : $this->proofLifecycle($state)),
+                        ...($captured === null ? [] : $this->proofLifecycle($state, $replacements)),
                     ],
                     $captured !== null ? 'captured '.$captured->attempt->value : 'absent',
                 );
@@ -49,7 +50,7 @@ final class StatusCommand extends E2ECommand
                     'candidate-convergence',
                 ]));
                 $candidate = $state->attempt(AttemptPurpose::CandidateConvergence);
-                $proofLifecycle = $this->proofLifecycle($state);
+                $proofLifecycle = $this->proofLifecycle($state, $replacements);
                 $this->outputJson(
                     [
                         'state' => implode('+', $purposes),
@@ -91,7 +92,7 @@ final class StatusCommand extends E2ECommand
                     'topology' => $state->topology(AttemptPurpose::Discovery)?->toArray(),
                     'proof_topology' => $state->topology(AttemptPurpose::Proof)?->toArray(),
                     'proof' => $proof,
-                    ...$this->proofLifecycle($state),
+                    ...$this->proofLifecycle($state, $replacements),
                 ], "discovery {$discovery['attempt_id']}; proof {$proofAttempt['attempt_id']} {$proofStatus}");
 
                 return self::SUCCESS;
@@ -111,7 +112,7 @@ final class StatusCommand extends E2ECommand
                     'proof' => $state->proof(),
                     ...(
                         $purpose === AttemptPurpose::Proof
-                            ? $this->proofLifecycle($state)
+                            ? $this->proofLifecycle($state, $replacements)
                             : []
                     ),
                 ],
@@ -127,8 +128,10 @@ final class StatusCommand extends E2ECommand
     }
 
     /** @return array<string, mixed> */
-    private function proofLifecycle(IssueState $state): array
-    {
+    private function proofLifecycle(
+        IssueState $state,
+        TopologySnapshotReplacementStore $replacements,
+    ): array {
         $attempt = $state->hasAttempt(AttemptPurpose::Proof)
             ? $state->attemptId(AttemptPurpose::Proof)
             : null;
@@ -141,6 +144,13 @@ final class StatusCommand extends E2ECommand
             && $state->attemptId(AttemptPurpose::Proof)->value === $captured->attempt->value
                 ? $state->topology(AttemptPurpose::Proof)
                 : null;
+        $activeReplacement = $replacements->active();
+        if ($activeReplacement?->installation->issue !== $state->issue) {
+            $activeReplacement = null;
+        }
+        $archivedReplacement = $captured === null
+            ? null
+            : $replacements->archived($captured->attempt);
 
         return [
             'capture' => $captured === null ? null : [
@@ -156,6 +166,7 @@ final class StatusCommand extends E2ECommand
             'review_record' => $review?->toArray(),
             'review_evaluation' => $evaluation?->toArray(),
             'closeout' => $closeout?->toArray(),
+            'snapshot_replacement' => $activeReplacement?->toArray() ?? $archivedReplacement?->toArray(),
         ];
     }
 }

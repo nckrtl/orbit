@@ -22,8 +22,12 @@ final readonly class TopologyConverger
         private int $instanceApiReadinessRetryDelayMicroseconds = 1_000_000,
     ) {}
 
-    public function converge(TopologyTarget $target, SourceState $source, LaravelRelease $laravel): ConvergenceReport
-    {
+    public function converge(
+        TopologyTarget $target,
+        SourceState $source,
+        LaravelRelease $laravel,
+        bool $nativeSamplesOnly = false,
+    ): ConvergenceReport {
         $nodes = array_combine(
             $target->recipe->nodeKeys(),
             array_map($target->instance(...), $target->recipe->nodeKeys()),
@@ -130,13 +134,17 @@ final readonly class TopologyConverger
         $steps['authorize.app-dev-operator'] = true;
         $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['configure-cli', '10.44.0.1']);
         $steps['configure.app-dev-cli'] = true;
-        $sampleResources = $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
+        $sampleArguments = [
             'create-resources',
             $appDevNode,
             $appProdNode,
             $laravel->commit,
-        ]);
-        $sample = $this->sampleState($sampleResources);
+        ];
+        if ($nativeSamplesOnly) {
+            $sampleArguments[] = 'native';
+        }
+        $sampleResources = $this->run($instances[$appDevNode], 'converge-sample-app.sh', $sampleArguments);
+        $sample = $this->sampleState($sampleResources, $nativeSamplesOnly);
         $typedCheckoutPath = $sample['checkout_path'];
         $productionPlacement = $sample['production'];
         $steps['create.sample-resources'] = true;
@@ -332,9 +340,13 @@ final readonly class TopologyConverger
     }
 
     /** @return array{checkout_path:?string,production:?array<string,mixed>} */
-    private function sampleState(GuestCommandResult $result): array
+    private function sampleState(GuestCommandResult $result, bool $nativeSamplesOnly): array
     {
         if ($result->stdout === '') {
+            if ($nativeSamplesOnly) {
+                throw new RuntimeException('Declared replacement convergence requires native AppInstance samples.');
+            }
+
             return ['checkout_path' => null, 'production' => null];
         }
 

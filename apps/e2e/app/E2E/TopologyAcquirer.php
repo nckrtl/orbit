@@ -16,7 +16,6 @@ use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
@@ -62,6 +61,7 @@ final readonly class TopologyAcquirer
         private ?Closure $attempts = null,
         private ?TopologyConverger $converger = null,
         private ?IssueTopologyConstructor $constructor = null,
+        private ?TopologySnapshotAvailability $availability = null,
     ) {}
 
     public function acquire(TopologyRequest $request): FeatureTopology
@@ -365,11 +365,10 @@ final readonly class TopologyAcquirer
             throw new RuntimeException('The promoted topology snapshot is stale; refresh it from main first.');
         }
         $this->assertColdBaseMatchesMain($worktree, $main);
-        $topologySnapshotTarget = TopologyTarget::topologySnapshot($this->topologySnapshotIdentity);
-        $this->host->assertOwnedSnapshots(array_combine(
-            array_map($topologySnapshotTarget->instance(...), TopologyProfile::ROLES),
-            $generation->snapshots,
-        ));
+        ($this->availability ?? new TopologySnapshotAvailability(
+            $this->host,
+            $this->topologySnapshotIdentity,
+        ))->assertAvailable($generation);
 
         return $generation;
     }
