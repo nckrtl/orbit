@@ -98,6 +98,8 @@ function snapshotRunnerFixture(
     bool $promote = true,
     string $scenario = 'snapshot-lifecycle',
     bool $failExercise = false,
+    bool $realRecovery = false,
+    ?string $foreignResource = null,
 ): array {
     $root = preparedTopologyRepository();
     $repository = pinnedFeatureWorktree($root, $scenario);
@@ -148,11 +150,13 @@ function snapshotRunnerFixture(
     $recovery = new ScenarioRecovery(
         $runs,
         $cold,
-        static fn (): ColdTopologyCleanupResult => new ColdTopologyCleanupResult(
-            [$target->instance('gateway'), $target->network()],
-            [],
-            [],
-        ),
+        $realRecovery
+            ? null
+            : static fn (): ColdTopologyCleanupResult => new ColdTopologyCleanupResult(
+                [$target->instance('gateway'), $target->network()],
+                [],
+                [],
+            ),
     );
     $runner = new SnapshotScenarioRunner(
         new ScenarioCatalog(new GitRepository($repository), static fn (): array => [$definition]),
@@ -173,28 +177,32 @@ function snapshotRunnerFixture(
     );
     $events = [];
     if ($promote) {
-        $candidateTree = (new GitRepository($repository))->tree($candidate);
-        fakePinnedWorktreeProcesses(
-            $target,
-            $events,
-            guestOverride: static function (array $guest) use ($candidate, $candidateTree, $failExercise) {
-                if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
-                    return Process::result($candidate."\n");
-                }
-                if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{tree}']) {
-                    return Process::result($candidateTree."\n");
-                }
-                if ($guest === ['git', '-C', '/home/orbit/orbit', 'status', '--porcelain=v1', '--untracked-files=all']) {
-                    return Process::result();
-                }
-                if ($failExercise && in_array('timeout', $guest, true) && end($guest) === 'true') {
-                    return Process::result('', 'injected exercise failure', 1);
-                }
+        if ($foreignResource !== null) {
+            fakeSnapshotRunnerForeignResource($target, $events, $foreignResource);
+        } else {
+            $candidateTree = (new GitRepository($repository))->tree($candidate);
+            fakePinnedWorktreeProcesses(
+                $target,
+                $events,
+                guestOverride: static function (array $guest) use ($candidate, $candidateTree, $failExercise) {
+                    if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
+                        return Process::result($candidate."\n");
+                    }
+                    if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{tree}']) {
+                        return Process::result($candidateTree."\n");
+                    }
+                    if ($guest === ['git', '-C', '/home/orbit/orbit', 'status', '--porcelain=v1', '--untracked-files=all']) {
+                        return Process::result();
+                    }
+                    if ($failExercise && in_array('timeout', $guest, true) && end($guest) === 'true') {
+                        return Process::result('', 'injected exercise failure', 1);
+                    }
 
-                return null;
-            },
-            operationId: $operation->value,
-        );
+                    return null;
+                },
+                operationId: $operation->value,
+            );
+        }
     }
 
     return compact(
@@ -210,6 +218,77 @@ function snapshotRunnerFixture(
         'manifests',
         'events',
     );
+}
+
+/** @param list<array<array-key, mixed>> $events */
+function fakeSnapshotRunnerForeignResource(
+    TopologyTarget $target,
+    array &$events,
+    string $foreignResource,
+): void {
+    $realProcess = new ProcessFactory;
+    Process::fake(function (PendingProcess $process) use ($target, &$events, $foreignResource, $realProcess) {
+        $command = $process->command;
+        if (($command[0] ?? null) === 'git') {
+            return $realProcess
+                ->path((string) ($process->path ?: getcwd()))
+                ->input($process->input)
+                ->run($command);
+        }
+
+        $events[] = $command;
+        if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+            if ($foreignResource !== 'network') {
+                return Process::result('[]');
+            }
+
+            return Process::result(json_encode([[
+                'name' => $target->network(),
+                'config' => [
+                    'user.orbit.e2e.owner' => 'foreign-owner',
+                    'user.orbit.e2e.operation' => str_repeat('0', 32),
+                ],
+                'used_by' => [],
+            ]], JSON_THROW_ON_ERROR));
+        }
+        if (($command[3] ?? null) === 'list' && ($command[4] ?? null) === 'local:') {
+            $instances = json_decode(topologySnapshotVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR);
+            if ($foreignResource === 'vm') {
+                $instances[] = json_decode(topologyVmJson(
+                    $target->instance('app-prod-2'),
+                    [
+                        'user.orbit.e2e.owner' => 'foreign-owner',
+                        'user.orbit.e2e.operation' => str_repeat('0', 32),
+                    ],
+                    $target->network(),
+                    recipe: $target->recipe,
+                ), true, 16, JSON_THROW_ON_ERROR)[0];
+            }
+
+            return Process::result(json_encode($instances, JSON_THROW_ON_ERROR));
+        }
+        if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'list') {
+            $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
+
+            return Process::result(topologySnapshotSnapshotInventoryJson($instance));
+        }
+
+        return Process::result();
+    });
+}
+
+/**
+ * @param  list<array<array-key, mixed>>  $events
+ * @return list<array<array-key, mixed>>
+ */
+function snapshotResourceMutationCommands(array $events): array
+{
+    return array_values(array_filter(
+        $events,
+        static fn (array $command): bool => (($command[3] ?? null) === 'network'
+            && in_array($command[4] ?? null, ['create', 'delete'], true))
+            || in_array($command[3] ?? null, ['init', 'copy', 'delete'], true),
+    ));
 }
 
 /** @param array<string, mixed> $fixture */
@@ -303,6 +382,51 @@ it('records a product failure when bounded exercise fails after preparation', fu
     expect($result->cleanup['remaining'])->toBe([]);
 });
 
+it('refuses a pre-existing foreign network without adopting or deleting it', function (): void {
+    $fixture = snapshotRunnerFixture(
+        scenario: 'snapshot-extension',
+        realRecovery: true,
+        foreignResource: 'network',
+    );
+
+    $result = executeSnapshotRunner($fixture);
+
+    expect($result->primaryStatus)->toBe(ScenarioStatus::InfrastructureError);
+    expect($result->status)->toBe(ScenarioStatus::InfrastructureError);
+    expect(array_column($result->actions, 'phase'))->toBe(['setup']);
+    expect($result->diagnostics)->toBe(['The issue topology network already exists and cannot be adopted.']);
+    expect($result->cleanup['removed'])->toBe([]);
+    expect($result->cleanup['refused'])->toBe([
+        "Cold topology resource {$fixture['target']->network()} ownership identity does not match.",
+    ]);
+    expect($result->cleanup['remaining'])->toBe([$fixture['target']->network()]);
+    expect(snapshotResourceMutationCommands($fixture['events']))->toBe([]);
+});
+
+it('refuses a pre-existing foreign extension VM without adopting or deleting it', function (): void {
+    $fixture = snapshotRunnerFixture(
+        scenario: 'snapshot-extension',
+        realRecovery: true,
+        foreignResource: 'vm',
+    );
+
+    $result = executeSnapshotRunner($fixture);
+
+    expect($result->primaryStatus)->toBe(ScenarioStatus::InfrastructureError);
+    expect($result->status)->toBe(ScenarioStatus::InfrastructureError);
+    expect(array_column($result->actions, 'phase'))->toBe(['setup']);
+    expect($result->diagnostics)->toBe(['An issue topology VM already exists and cannot be adopted.']);
+    expect($result->cleanup['removed'])->toBe([]);
+    expect($result->cleanup['refused'])->toBe([
+        "Cold topology resource {$fixture['target']->instance('app-prod-2')} ownership identity does not match.",
+    ]);
+    expect($result->cleanup['remaining'])->toBe([
+        $fixture['target']->instance('app-prod-2'),
+        $fixture['target']->network(),
+    ]);
+    expect(snapshotResourceMutationCommands($fixture['events']))->toBe([]);
+});
+
 it('accepts a fully recorded extension physical identity and capacity reservation', function (): void {
     $fixture = snapshotRunnerFixture(false, 'snapshot-extension');
     $construction = TopologyConstructionInputs::forGeneration(
@@ -357,9 +481,27 @@ it('refuses an extension whose physical identity does not match its attempt reco
         TopologyExtension::AppProd,
         str_repeat('a', 64),
     );
-    Process::fake([
-        '*' => Process::result('[]'),
-    ]);
+    $metadata = [
+        'user.orbit.e2e.owner' => 'orbit-e2e',
+        'user.orbit.e2e.issue' => 'SCN-1',
+        'user.orbit.e2e.run' => $fixture['run']->value,
+        'user.orbit.e2e.scenario' => $fixture['definition']->id->value,
+        'user.orbit.e2e.attempt' => $fixture['attempt']->value,
+        'user.orbit.e2e.operation' => str_repeat('0', 32),
+    ];
+    Process::fake(static function (PendingProcess $process) use ($fixture, $metadata) {
+        if (($process->command[3] ?? null) === 'list') {
+            return Process::result(topologyVmJson(
+                $fixture['target']->instance('app-prod-2'),
+                $metadata,
+                $fixture['target']->network(),
+                true,
+                $fixture['target']->recipe,
+            ));
+        }
+
+        return Process::result();
+    });
     $method = new ReflectionMethod($fixture['runner'], 'assertExtension');
 
     expect(fn () => $method->invoke(
