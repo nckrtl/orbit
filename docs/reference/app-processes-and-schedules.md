@@ -45,7 +45,7 @@ Adding or starting a Process requires an active, available AppInstance and reach
 
 Every runtime mutation rechecks exact Orbit ownership. Systemd replacement uses a validated candidate and restores the previous owned unit when activation fails. Docker replacement retains or restores exact-owned canonical and rollback containers. Orbit does not overwrite, adopt, or delete a colliding unit, container, or recovery artifact.
 
-Process responses and activity records identify the owning AppInstance and its Node. Docker environment values and credential-shaped runtime data are redacted from responses, activity, errors, debug output, and bounded logs.
+Process responses identify the owning AppInstance. Activity records identify that AppInstance and its target Node. Docker environment values and credential-shaped runtime data are redacted from responses, activity, errors, debug output, and bounded logs.
 
 ## Inspect and remove owned state
 
