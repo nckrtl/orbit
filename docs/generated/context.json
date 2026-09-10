@@ -1402,6 +1402,7 @@
                 "AppInstance",
                 "Effective web root",
                 "Gateway",
+                "Node",
                 "Route"
             ],
             "governing_adrs": [
