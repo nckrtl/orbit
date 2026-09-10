@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
@@ -16,8 +17,10 @@ use App\Models\Route;
 
 final readonly class NativeProductionRouteProjector implements ProductionRouteProjector
 {
+    /** @mago-expect lint:excessive-parameter-list The shared fallback and dedicated runtime are separate compatibility boundaries. */
     public function __construct(
-        private RemoteAppDevPhpFpmManager $php,
+        private ProductionPhpRuntimeManager $productionPhp,
+        private RemoteAppDevPhpFpmManager $sharedPhp,
         private RemoteAppDevCertificateManager $certificates,
         private NodeRoleFirewallManager $firewall,
         private RemoteAppDevCaddyManager $caddy,
@@ -27,7 +30,13 @@ final readonly class NativeProductionRouteProjector implements ProductionRoutePr
     public function prepareRuntime(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
-        $this->php->convergeRoute($appInstance->node, $route);
+        if ($appInstance->production_php_service !== null) {
+            $this->productionPhp->converge($appInstance);
+
+            return;
+        }
+
+        $this->sharedPhp->convergeRoute($appInstance->node, $route);
     }
 
     public function prepareCertificate(AppInstance $appInstance, Route $route): void

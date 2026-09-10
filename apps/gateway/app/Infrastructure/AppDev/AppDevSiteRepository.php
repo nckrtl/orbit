@@ -280,6 +280,7 @@ final readonly class AppDevSiteRepository
             productionHome: $instance->production_home,
             appSlug: $instance->app->slug,
             certificateScope: $hostnameChange ? "app-instance-{$instance->id}-hostname-change" : null,
+            productionPhpSocket: $instance->production_php_socket,
         );
     }
 

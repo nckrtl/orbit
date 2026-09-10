@@ -97,6 +97,35 @@ final readonly class RemotePhpPackageManager
         $this->install($node, $versions, $ssh, RoleName::AppProd, $profile);
     }
 
+    /** @param Collection<int, string> $versions */
+    public function installPackagesOnlyForAppProd(Node $node, Collection $versions, AppProdSshExecutor $ssh): void
+    {
+        if ($versions->isEmpty()) {
+            return;
+        }
+
+        /** @var array<string, list<string>> $profiles */
+        $profiles = [];
+
+        foreach ($versions as $version) {
+            $profiles[$version] = $this->packages($version, 'app-prod');
+        }
+
+        $allPackages = array_values(array_unique(array_merge(...array_values($profiles))));
+        $allowCliPcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
+        $this->convergeSource(
+            $node,
+            $allPackages,
+            $ssh,
+            self::APP_PROD_FAILURE_CONTRACT,
+            RoleName::AppProd,
+        );
+
+        foreach ($profiles as $version => $packages) {
+            $this->installPackagesOnlyProfile($node, $version, $packages, $allowCliPcov, $ssh);
+        }
+    }
+
     /**
      * @param Collection<int, string> $versions
      */
@@ -459,10 +488,36 @@ final readonly class RemotePhpPackageManager
                     done
 
                     if [ "${#missing_packages[@]}" -gt 0 ]; then
+                        policy_path=/usr/sbin/policy-rc.d
+                        policy_work=$(mktemp -d)
+                        policy_backup="$policy_work/policy-rc.d"
+                        policy_had_file=0
+                        if [ -e "$policy_path" ] || [ -L "$policy_path" ]; then
+                            test -f "$policy_path"
+                            test ! -L "$policy_path"
+                            cp -a -- "$policy_path" "$policy_backup"
+                            policy_had_file=1
+                        fi
+                        restore_policy() {
+                            status=$?
+                            trap - EXIT
+                            if [ "$policy_had_file" = 1 ]; then
+                                sudo cp -a -- "$policy_backup" "$policy_path"
+                            else
+                                sudo rm -f -- "$policy_path"
+                            fi
+                            rm -rf -- "$policy_work"
+                            return "$status"
+                        }
+                        trap restore_policy EXIT
+                        printf '#!/bin/sh\nexit 101\n' > "$policy_work/policy-rc.d"
+                        sudo install -o root -g root -m 0755 -- "$policy_work/policy-rc.d" "$policy_path"
                         sudo env DEBIAN_FRONTEND=noninteractive \
+                            DEB_SYSTEMD_INVOKE=0 \
                             apt-get -o DPkg::Lock::Timeout=300 install \
                             --yes --no-install-recommends -- \
                             "${missing_packages[@]}"
+                        restore_policy
                     fi
 
                     for package in "$@"; do
@@ -563,6 +618,112 @@ final readonly class RemotePhpPackageManager
             ),
             step: $failure['install_step'],
             errorCode: $failure['install_error'],
+        );
+    }
+
+    /** @param list<string> $packages */
+    private function installPackagesOnlyProfile(
+        Node $node,
+        string $version,
+        array $packages,
+        bool $allowCliPcov,
+        AppProdSshExecutor $ssh,
+    ): void {
+        $ssh->execute(
+            $node,
+            new RemoteCommand(
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $version,
+                    $allowCliPcov ? '1' : '0',
+                    self::EXPECTED_DISTRIBUTION,
+                    UbuntuRelease::unsupportedText(),
+                    (string) count(UbuntuRelease::forRole(RoleName::AppProd)),
+                    ...array_map(
+                        static fn (UbuntuRelease $release): string => $release->value,
+                        UbuntuRelease::forRole(RoleName::AppProd),
+                    ),
+                    ...$packages,
+                ],
+                input: <<<'BASH'
+                    version=$1
+                    allow_cli_pcov=$2
+                    shift 2
+                    BASH."\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
+                    missing_packages=()
+                    for package in "$@"; do
+                        case "$package" in
+                            "php$version-"*) ;;
+                            *) exit 1 ;;
+                        esac
+
+                        if ! dpkg-query -W -f='${Status}' -- "$package" 2>/dev/null \
+                            | grep -qxF 'install ok installed'
+                        then
+                            missing_packages+=("$package")
+                        fi
+                    done
+
+                    if [ "${#missing_packages[@]}" -gt 0 ]; then
+                        policy_path=/usr/sbin/policy-rc.d
+                        policy_work=$(mktemp -d)
+                        policy_backup="$policy_work/policy-rc.d"
+                        policy_had_file=0
+                        if [ -e "$policy_path" ] || [ -L "$policy_path" ]; then
+                            test -f "$policy_path"
+                            test ! -L "$policy_path"
+                            cp -a -- "$policy_path" "$policy_backup"
+                            policy_had_file=1
+                        fi
+                        restore_policy() {
+                            status=$?
+                            trap - EXIT
+                            if [ "$policy_had_file" = 1 ]; then
+                                sudo cp -a -- "$policy_backup" "$policy_path"
+                            else
+                                sudo rm -f -- "$policy_path"
+                            fi
+                            rm -rf -- "$policy_work"
+                            return "$status"
+                        }
+                        trap restore_policy EXIT
+                        printf '#!/bin/sh\nexit 101\n' > "$policy_work/policy-rc.d"
+                        sudo install -o root -g root -m 0755 -- "$policy_work/policy-rc.d" "$policy_path"
+                        sudo env DEBIAN_FRONTEND=noninteractive \
+                            DEB_SYSTEMD_INVOKE=0 \
+                            apt-get -o DPkg::Lock::Timeout=300 install \
+                            --yes --no-install-recommends -- \
+                            "${missing_packages[@]}"
+                        restore_policy
+                    fi
+
+                    for package in "$@"; do
+                        dpkg-query -W -f='${Status}' -- "$package" \
+                            | grep -qxF 'install ok installed'
+                    done
+
+                    /usr/bin/php"$version" -v >/dev/null
+                    /usr/sbin/php-fpm"$version" -v >/dev/null
+                    cli_modules=$(/usr/bin/php"$version" -m | tr '[:upper:]' '[:lower:]')
+                    fpm_modules=$(/usr/sbin/php-fpm"$version" -m | tr '[:upper:]' '[:lower:]')
+                    for module in bcmath curl gd imagick intl mbstring mysqli pdo_mysql pdo_pgsql redis pdo_sqlite simplexml xml zip; do
+                        printf '%s\n' "$cli_modules" | grep -qxF "$module"
+                        printf '%s\n' "$fpm_modules" | grep -qxF "$module"
+                    done
+                    if [ "$allow_cli_pcov" = 1 ]; then
+                        printf '%s\n' "$cli_modules" | grep -qxF pcov
+                    elif printf '%s\n' "$cli_modules" | grep -qxF pcov; then
+                        exit 1
+                    fi
+                    if printf '%s\n' "$fpm_modules" | grep -qxF pcov; then
+                        exit 1
+                    fi
+                    BASH,
+            ),
+            step: self::APP_PROD_FAILURE_CONTRACT['install_step'],
+            errorCode: self::APP_PROD_FAILURE_CONTRACT['install_error'],
         );
     }
 

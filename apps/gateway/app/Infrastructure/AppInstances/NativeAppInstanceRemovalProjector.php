@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
@@ -17,15 +18,20 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:cyclomatic-complexity Projection distinguishes shared and final Routes across resumable checkpoints. */
+/**
+ * @mago-expect lint:cyclomatic-complexity Projection distinguishes shared and final Routes across resumable checkpoints.
+ * @mago-expect lint:kan-defect The score reflects explicit shared Route and dedicated runtime cleanup branches.
+ */
 final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRemovalProjector
 {
+    /** @mago-expect lint:excessive-parameter-list Each projection owner remains explicit at the removal boundary. */
     public function __construct(
         private RemoteAppDevCaddyManager $caddy,
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevPhpFpmManager $php,
         private DnsmasqPrivateDnsManager $dns,
         private RemoteAppDevRouteFirewallManager $firewall,
+        private ?ProductionPhpRuntimeManager $productionPhp = null,
     ) {}
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
@@ -105,9 +111,18 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
-        $this->php->converge($appInstance->node);
+        if ($appInstance->environment === 'production' && $appInstance->production_php_service !== null) {
+            $this->productionPhp()->remove($appInstance);
+        } else {
+            $this->php->converge($appInstance->node);
+        }
         $this->caddy->converge($appInstance->node);
         $this->certificates->removeAppInstance($appInstance);
+    }
+
+    private function productionPhp(): ProductionPhpRuntimeManager
+    {
+        return $this->productionPhp ?? app(ProductionPhpRuntimeManager::class);
     }
 
     private function publishRoute(Route $route, AppInstance $departing): void
