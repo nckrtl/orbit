@@ -6,6 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Data\Nodes\NodeAccessNodeData;
 use App\Data\Nodes\RemovedNodeAccessData;
+use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
@@ -16,6 +17,7 @@ final readonly class RemoveNodeAccessAction
 {
     public function __construct(
         private NodeAccessAuthorizer $access,
+        private MetricsAccessRevoker $metricsAccess,
     ) {}
 
     public function execute(Node $consumer, Node $serving, Node $caller): RemovedNodeAccessData
@@ -27,6 +29,11 @@ final readonly class RemoveNodeAccessAction
             ->where('consumer_node_id', $consumer->id)
             ->where('serving_node_id', $serving->id)
             ->delete() === 1;
+
+        if ($this->access->isGatewayNode($serving)) {
+            $this->metricsAccess->revoke();
+        }
+
         $selfLockout = $wasDeleted && $caller->is($consumer) && $this->access->isGatewayNode($serving);
 
         return new RemovedNodeAccessData(

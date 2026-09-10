@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
+use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
+use App\E2E\Value\CapturedProof;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofInputClassification;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
@@ -71,35 +75,14 @@ final readonly class ProofEquivalenceEvaluator
         ProofPlan $plan,
         string $planPath,
     ): ProofEquivalenceReport {
-        $topology = $state->proofTopology() ?? throw new RuntimeException(
-            "{$request->issue} has no immutable proof evidence.",
-        );
-        $proof = $state->proof() ?? [];
-        $provedSha = $proof['candidate_sha'] ?? null;
-        $planSha256 = $proof['plan_sha256'] ?? null;
-        $manifestSha256 = $proof['manifest_sha256'] ?? null;
-        if (
-            ! is_string($provedSha)
-            || preg_match('/\A[0-9a-f]{40}\z/D', $provedSha) !== 1
-            || ! is_string($planSha256)
-            || preg_match('/\A[0-9a-f]{64}\z/D', $planSha256) !== 1
-            || ! is_string($manifestSha256)
-            || preg_match('/\A[0-9a-f]{64}\z/D', $manifestSha256) !== 1
-        ) {
-            throw new RuntimeException('The retained proof identity is incomplete.');
-        }
-        if ($topology->source->hostSha !== $provedSha || $topology->source->guestSha !== $provedSha) {
-            throw new RuntimeException('The retained topology does not hold the proved candidate.');
-        }
+        $captured = $this->capturedProof($request, $state);
+        $topology = $captured->topology;
+        $provedSha = $captured->candidateSha;
+        $planSha256 = $captured->planSha256;
+        $manifestSha256 = $captured->manifestSha256;
+        $reviewed = $this->reviewRecord($state, $captured)?->hasActions() ?? false;
 
         $errors = [];
-        if (! $state->isProved()) {
-            try {
-                ProofEvidence::capture($state, $plan);
-            } catch (Throwable $exception) {
-                $errors[] = $exception->getMessage();
-            }
-        }
         try {
             $provedArtifacts = $repository->loopCommit($request->issue, $provedSha);
             if ($provedArtifacts !== $provedSha) {
@@ -114,34 +97,18 @@ final readonly class ProofEquivalenceEvaluator
             $errors[] = $exception->getMessage();
         }
 
-        $manifest = null;
         if ($plan->fingerprint() !== $planSha256) {
             $errors[] = 'The current normalized proof plan differs from the proved plan.';
         }
-        $rawManifest = $state->proofInputManifest($manifestSha256);
-        if ($rawManifest === null) {
-            $errors[] = 'The proof-input manifest is missing.';
-        } else {
-            try {
-                $manifest = ProofInputManifest::fromArray($rawManifest);
-                if ($manifest->fingerprint() !== $manifestSha256 || $manifest->provedSha !== $provedSha) {
-                    $errors[] = 'The proof-input manifest does not match the retained proof.';
-                }
-                if ($manifest->construction->toArray() !== $topology->construction->toArray()) {
-                    $errors[] = 'The retained topology construction inputs differ from the proof-input manifest.';
-                }
-                if (
-                    $manifest->construction->imageAlias !== null
-                    && $this->host->imageFingerprint($manifest->construction->imageAlias)
-                        !== $manifest->construction->imageFingerprint
-                ) {
-                    $errors[] = 'The issue topology base-image fingerprint changed after proof.';
-                }
-            } catch (Throwable $exception) {
-                $errors[] = $exception->getMessage();
-            }
+        $manifest = ProofInputManifest::fromArray($captured->manifest);
+        if (
+            $manifest->construction->imageAlias !== null
+            && $this->host->imageFingerprint($manifest->construction->imageAlias)
+                !== $manifest->construction->imageFingerprint
+        ) {
+            $errors[] = 'The issue topology base-image fingerprint changed after proof.';
         }
-        if ($manifest !== null && $plan->fingerprint() === $planSha256) {
+        if ($plan->fingerprint() === $planSha256) {
             try {
                 $expected = $this->manifests->build(
                     $repository,
@@ -164,16 +131,10 @@ final readonly class ProofEquivalenceEvaluator
             $errors[] = 'The accepted candidate does not include current origin/main.';
         }
 
-        $provedEntries = [];
-        $acceptedEntries = [];
-        $provedMainEntries = [];
-        $acceptedMainEntries = [];
-        if ($manifest !== null) {
-            $provedEntries = $repository->entries($provedSha);
-            $acceptedEntries = $repository->entries($acceptedSha);
-            $provedMainEntries = $repository->entries($manifest->includedMainSha);
-            $acceptedMainEntries = $repository->entries($includedMainSha);
-        }
+        $provedEntries = $repository->entries($provedSha);
+        $acceptedEntries = $repository->entries($acceptedSha);
+        $provedMainEntries = $repository->entries($manifest->includedMainSha);
+        $acceptedMainEntries = $repository->entries($includedMainSha);
         $loopRemoved = ! array_any(
             array_keys($acceptedEntries),
             static fn (string $path): bool => str_starts_with($path, '.loop/'),
@@ -191,6 +152,9 @@ final readonly class ProofEquivalenceEvaluator
                 $acceptedMainEntries,
                 $loopRemoved,
             );
+            if ($reviewed && $classification === ProofInputClassification::UnrelatedRuntime) {
+                $classification = ProofInputClassification::Runtime;
+            }
             $changedPaths[] = [...$change, 'classification' => $classification->value];
             if ($classification === ProofInputClassification::Indeterminate) {
                 $errors[] = "Changed path [{$change['path']}] has no safe proof-input classification.";
@@ -212,6 +176,59 @@ final readonly class ProofEquivalenceEvaluator
         $state->writeEquivalence($report->fingerprint(), $report->toArray());
 
         return $report;
+    }
+
+    private function capturedProof(TopologyRequest $request, IssueState $state): CapturedProof
+    {
+        $proof = $state->proof() ?? [];
+        $attemptValue = $proof['attempt_id'] ?? null;
+        if (! is_string($attemptValue)) {
+            throw new RuntimeException("{$request->issue} has no immutable proof evidence.");
+        }
+        $attempt = new AttemptId($attemptValue);
+        $local = $state->capturedProof($attempt);
+        $raw = new AtomicJsonStore($this->hostPaths)->read(
+            'proof-evidence/'.$request->issue.'/'.$attempt->value.'.json',
+        );
+        if (! is_array($raw)) {
+            throw new RuntimeException('The retained proof archive is missing.');
+        }
+        $archived = CapturedProof::fromStoredArray($raw);
+        if ($local === null) {
+            $state->captureProof($archived);
+
+            return $archived;
+        }
+        if ($local->toArray() !== $archived->toArray()) {
+            throw new RuntimeException('The retained proof archive and worktree capture differ.');
+        }
+
+        return $local;
+    }
+
+    private function reviewRecord(IssueState $state, CapturedProof $capture): ?ProofReviewRecord
+    {
+        $local = $state->reviewRecord($capture->attempt);
+        $raw = new AtomicJsonStore($this->hostPaths)->read(
+            'proof-review/'.$capture->issue.'/'.$capture->attempt->value.'.json',
+        );
+        $archived = is_array($raw) ? ProofReviewRecord::fromArray($raw) : null;
+        if ($local === null && $archived === null) {
+            return null;
+        }
+        if ($archived === null) {
+            throw new RuntimeException('The retained proof review archive is missing.');
+        }
+        if ($local === null) {
+            $state->writeReviewRecord($archived);
+
+            return $archived;
+        }
+        if ($local->toArray() !== $archived->toArray()) {
+            throw new RuntimeException('The retained proof review archive and worktree record differ.');
+        }
+
+        return $local;
     }
 
     /**

@@ -37,6 +37,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Proof topology",
                 "Route",
                 "Router",
                 "Workspace"
@@ -90,7 +91,8 @@
                 "0023",
                 "0024",
                 "0026",
-                "0042"
+                "0042",
+                "0056"
             ]
         },
         {
@@ -1217,6 +1219,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0058-separate-incus-requirements-from-delivery-flow.md",
+            "title": "ADR 0058: Separate Incus requirements from delivery flow",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0051",
+                "0058"
+            ]
+        },
+        {
+            "path": "docs/decisions/0059-make-the-builder-own-the-candidate-quality-gate.md",
+            "title": "ADR 0059: Make the Builder own the candidate quality gate",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [],
+            "governing_adrs": [
+                "0053",
+                "0059"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1284,6 +1312,21 @@
                 "Tool"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/appinstance-cloning.md",
+            "title": "AppInstance cloning",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0047"
+            ]
         },
         {
             "path": "docs/reference/appinstance-removal.md",
@@ -1381,6 +1424,9 @@
             "concepts": [
                 "App",
                 "Gateway",
+                "Node",
+                "Proof topology",
+                "Route",
                 "Tool",
                 "Workspace"
             ],
@@ -1389,7 +1435,9 @@
                 "0051",
                 "0052",
                 "0053",
-                "0054"
+                "0054",
+                "0056",
+                "0058"
             ]
         },
         {
@@ -1409,7 +1457,6 @@
                 "Node",
                 "Proof topology",
                 "Route",
-                "Tool",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -1418,7 +1465,9 @@
                 "0019",
                 "0040",
                 "0049",
-                "0051"
+                "0051",
+                "0056",
+                "0058"
             ]
         },
         {
@@ -1427,12 +1476,15 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Route"
             ],
             "governing_adrs": [
-                "0003"
+                "0003",
+                "0055",
+                "0057"
             ]
         },
         {
@@ -1483,7 +1535,7 @@
             "governing_adrs": [
                 "0015",
                 "0049",
-                "0050"
+                "0056"
             ]
         },
         {
@@ -1558,7 +1610,7 @@
                 "0028",
                 "0035",
                 "0049",
-                "0050"
+                "0056"
             ]
         },
         {

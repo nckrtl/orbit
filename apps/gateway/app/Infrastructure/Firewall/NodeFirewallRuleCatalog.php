@@ -135,6 +135,44 @@ final readonly class NodeFirewallRuleCatalog
         );
     }
 
+    public function metricsGrafanaIsolation(Node $metricsNode): UfwManagedRule
+    {
+        $destination = $this->metricsPublicationAddress($metricsNode);
+
+        return new UfwManagedRule(
+            new UfwRuleShape(
+                comment: MetricsFootprint::PublicationFirewallDenyComment,
+                action: 'deny',
+                direction: 'in',
+                source: 'any',
+                destination: $destination,
+                port: MetricsFootprint::PublicationPort,
+                protocol: 'tcp',
+                inInterface: MetricsFootprint::WireGuardInterface,
+                outInterface: null,
+                family: 'v4',
+            ),
+            [
+                'sudo',
+                'ufw',
+                'deny',
+                'in',
+                'on',
+                MetricsFootprint::WireGuardInterface,
+                'proto',
+                'tcp',
+                'from',
+                'any',
+                'to',
+                $destination,
+                'port',
+                MetricsFootprint::PublicationPort,
+                'comment',
+                MetricsFootprint::PublicationFirewallDenyComment,
+            ],
+        );
+    }
+
     private function rule(
         string $comment,
         string $port,

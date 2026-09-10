@@ -18,52 +18,10 @@ initialize_feature_plan() {
         return
     fi
 
-    cat > "$plan" <<EOF
-# Feature plan
-
-Issue: $linear_id
-Review verdict: PENDING
-
-## Outcome
-
-## Code boundaries
-
-In:
--
-
-Out:
--
-
-## Documentation
-
-none
-
-## Acceptance map
-
-| Criterion | Boundary | Focused proof |
-| --- | --- | --- |
-| | | |
-
-## Implementation order
-
-1.
-
-## Must preserve
-
--
-
-## Open questions
-
--
-
-## Deviations
-
--
-
-## Review findings
-
--
-EOF
+    local selected_flow
+    selected_flow=$("$script_root/bin/loop-flow" status "--worktree=$worktree")
+    sed -e "s/{{ISSUE}}/${linear_id^^}/g" -e "s/{{FLOW}}/$selected_flow/g" \
+        "$script_root/.agents/skills/planning-features/template.md" > "$plan"
 }
 
 [[ $# -eq 1 || $# -eq 2 ]] || usage

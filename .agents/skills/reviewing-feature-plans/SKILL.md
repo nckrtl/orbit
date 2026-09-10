@@ -5,9 +5,9 @@ description: Use when independently reviewing the plan for one Orbit issue of an
 
 # Reviewing Feature Plans
 
-Independently review one `.loop/plan.md` and the documentation commits the planner made, before any code exists. This role reports plan quality only. It never edits planning content, documentation, product code, tests, proof, Git history, Linear, or GitHub; it may update only `Review verdict` and `## Review findings` in the plan and save that review record on the separate artifact ref. Never approve a plan you authored, and never decide lifecycle transitions.
+Independently review one `.loop/plan.md` and the documentation commits the planner made, before any code exists. This role reports plan quality only. It never edits planning content, documentation, product code, tests, proof, Git history, Linear, or GitHub; it may update only `Review verdict` and `## Review findings` in the plan and regenerate the lint receipt before saving that review record on the separate artifact ref. Never approve a plan you authored, and never decide lifecycle transitions.
 
-Review the plan in the planner's worktree. After recording the verdict and findings, run `bin/loop-artifacts save <ISSUE>` and return the artifact SHA. Do not commit `.loop/` to the feature branch.
+Review the plan in the planner's worktree. After recording the verdict and findings, run `bin/plan-lint record <ISSUE>`, then `bin/loop-artifacts save <ISSUE>` and return the artifact SHA. Do not commit `.loop/` to the feature branch.
 
 When externally orchestrated, the orchestrator assigns this formal reviewer.
 The planner and helpers that contributed to the plan cannot fill this role.
@@ -23,10 +23,20 @@ Read the same sources the planner had: the issue with its labels, attachments, a
 
 ## Check
 
-Judge runnable evidence under the selected flow. In `discovery`, existing Incus proof venues mean development observations, focused tests, and the local review gate with TIA. Verify that the plan maps stale generic full no-TIA CI wording to the implementation loop's current check policy and returns any issue text correction to the orchestrator. That policy alignment does not weaken a product outcome or require a new preflight cycle. Missing proof plans or instrumentation are not findings in this flow. Require the plan to acquire discovery after this review and preserve every acceptance outcome. The selected flow must match the plan and handoff.
+For a new or revised plan, first run
+`bin/plan-lint verify <ISSUE> --artifact=<submitted-artifact-sha>` in its worktree.
+When invoked directly without a saved artifact, use `bin/plan-lint verify <ISSUE>`.
+On failure, return the exact error for correction; do not create the planner's
+missing receipt or treat it as a semantic review attempt. On success, trust the
+format, required sections, and table structure. Do not repeat those checks with
+extra tool calls. Still make every judgment below independently. Lint success
+never grants `Review verdict: PASS`. Completed reviews from before this command
+remain valid until the plan itself needs revision.
+
+Judge runnable evidence under the selected flow. In `discovery`, existing Incus proof venues mean development observations, focused tests, and the local review gate with TIA. Verify that the plan maps stale generic full no-TIA CI wording to the implementation loop's current check policy and returns any issue text correction to the orchestrator. That policy alignment does not weaken a product outcome or require a new preflight cycle. Missing proof plans or instrumentation are not findings in this flow. Require the plan to acquire discovery after this review for an `incus` issue and preserve every acceptance outcome in either case. The selected flow must match the plan and handoff.
 
 - **Coverage:** every `Acceptance` item has one row, in order, with a concrete boundary, or the page from the Documentation section when documentation is what the item delivers, and a proof that exists and can run today.
-- **Labels:** every boundary is inside a component the issue is labeled with, where a component is one of the five Composer projects, pages under `docs/` and files under `.loop/proof/` are not components, a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`. A boundary in an unlabeled component is a finding, not a silent expansion.
+- **Labels:** verify the `incus` classification against acceptance and the implementation loop's topology table. The label never selects proof. Require discovery acquisition after this review only when Incus is required; missing topology steps are not findings for automated-only issues. Every boundary is inside a component the issue is labeled with, where a component is one of the five Composer projects, pages under `docs/` and files under `.loop/proof/` are not components, a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`. A boundary in an unlabeled component is a finding, not a silent expansion.
 - **Exclusions:** every `Out` bullet has an exclusion, and no boundary or order step crosses one.
 - **Documentation:** the changed pages state the behavior the `Acceptance` items deliver, judged against the issue and its ADRs rather than against code that does not exist yet; they follow `writing-documentation`, restate no ADR bullet, and pass `composer docs-lint`; every change under `docs/` is committed; the audit in the issue's scope found no drift that is neither fixed nor reported with an owner; pages written for the outcome exist when the `docs` label is present unless the Documentation section states the pages already describe the outcome, which is accepted as written, and every other changed page is a drift fix the audit found.
 - **ADRs:** `Must preserve` names every attached ADR `Decision` bullet the boundaries touch, and no step contradicts one.

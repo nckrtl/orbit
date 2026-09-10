@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeAccess;
 
@@ -199,6 +201,35 @@ describe('node access API', function (): void {
             ->assertNotFound()
             ->assertJsonPath('error.code', 'http.404');
     });
+
+    it('retries stream revocation after removing a Gateway grant and never restores the grant', function (): void {
+        $revoker = new NodeAccessMetricsRevokerFake;
+        app()->instance(MetricsAccessRevoker::class, $revoker);
+        $gateway = $this->markAsGateway(node_access_api_node('gateway'));
+        $caller = node_access_api_node('caller');
+        $caller->accessibleNodes()->attach($gateway);
+        $revoker->fail = true;
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+            ->deleteJson("/api/v1/nodes/{$gateway->id}/access/{$caller->id}")
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'metrics.caddy_publication_failed');
+
+        expect($caller->accessibleNodes()->whereKey($gateway->id)->exists())->toBeFalse();
+
+        $revoker->fail = false;
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+            ->deleteJson("/api/v1/nodes/{$gateway->id}/access/{$caller->id}")
+            ->assertOk()
+            ->assertJsonPath('data.already_absent', true);
+
+        expect($revoker->calls)->toBe(2)
+            ->and($caller->accessibleNodes()->whereKey($gateway->id)->exists())
+            ->toBeFalse();
+    });
 });
 
 function node_access_api_node(
@@ -211,4 +242,24 @@ function node_access_api_node(
         'public_ssh_host' => $name.'.example.test',
         'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 2),
     ]);
+}
+
+final class NodeAccessMetricsRevokerFake implements MetricsAccessRevoker
+{
+    public int $calls = 0;
+
+    public bool $fail = false;
+
+    public function revoke(): void
+    {
+        $this->calls++;
+
+        if ($this->fail) {
+            throw new ResourceOperationException(
+                'metrics.caddy_publication_failed',
+                'Metrics Caddy publication did not complete.',
+                502,
+            );
+        }
+    }
 }

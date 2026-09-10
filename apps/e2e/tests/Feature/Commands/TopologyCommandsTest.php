@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Console\Commands\Topology\AcquireCommand;
 use App\Console\Commands\Topology\CandidateCommand;
+use App\Console\Commands\Topology\CaptureCommand;
+use App\Console\Commands\Topology\CloseoutCommand;
 use App\Console\Commands\Topology\EquivalenceCommand;
 use App\Console\Commands\Topology\ExecCommand;
 use App\Console\Commands\Topology\ProveCommand;
 use App\Console\Commands\Topology\ReleaseCommand;
+use App\Console\Commands\Topology\ReviewCommand;
 use App\Console\Commands\Topology\ShellCommand;
 use App\Console\Commands\Topology\StatusCommand;
 use App\Console\Commands\Topology\SyncCommand;
@@ -19,6 +22,7 @@ use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\IssueTopologyConstructor;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
@@ -26,10 +30,16 @@ use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CapturedProof;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofCloseoutRecord;
+use App\E2E\Value\ProofInputManifest;
+use App\E2E\Value\ProofReviewAction;
+use App\E2E\Value\ProofReviewEvaluation;
+use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyExtension;
@@ -75,8 +85,11 @@ describe('topology commands', function () {
             new SyncCommand()->getName(),
             new VerifyCommand()->getName(),
             new ProveCommand()->getName(),
+            new CaptureCommand()->getName(),
+            new ReviewCommand()->getName(),
             new EquivalenceCommand()->getName(),
             new CandidateCommand()->getName(),
+            new CloseoutCommand()->getName(),
             new StatusCommand()->getName(),
             new ReleaseCommand()->getName(),
         ])->toBe([
@@ -86,8 +99,11 @@ describe('topology commands', function () {
             'topology:sync',
             'topology:verify',
             'topology:prove',
+            'topology:capture',
+            'topology:review',
             'topology:equivalence',
             'topology:candidate',
+            'topology:closeout',
             'topology:status',
             'topology:release',
         ]);
@@ -110,9 +126,15 @@ describe('topology commands', function () {
             ->toBe(['issue'])
             ->and($arguments(new ProveCommand))
             ->toBe(['issue'])
+            ->and($arguments(new CaptureCommand))
+            ->toBe(['issue'])
+            ->and($arguments(new ReviewCommand))
+            ->toBe(['issue'])
             ->and($arguments(new EquivalenceCommand))
             ->toBe(['issue'])
             ->and($arguments(new CandidateCommand))
+            ->toBe(['issue'])
+            ->and($arguments(new CloseoutCommand))
             ->toBe(['issue'])
             ->and($arguments(new StatusCommand))
             ->toBe(['issue'])
@@ -131,6 +153,54 @@ describe('topology commands', function () {
             )
             ->toBeFalse()
             ->and(
+                new CaptureCommand()
+                    ->getDefinition()
+                    ->hasOption('plan'),
+            )
+            ->toBeTrue()
+            ->and(
+                new ReviewCommand()
+                    ->getDefinition()
+                    ->hasOption('complete'),
+            )
+            ->toBeTrue()
+            ->and(
+                new ReviewCommand()
+                    ->getDefinition()
+                    ->hasOption('result'),
+            )
+            ->toBeTrue()
+            ->and(
+                new ReviewCommand()
+                    ->getDefinition()
+                    ->hasOption('finding'),
+            )
+            ->toBeTrue()
+            ->and(
+                new CloseoutCommand()
+                    ->getDefinition()
+                    ->hasOption('candidate'),
+            )
+            ->toBeTrue()
+            ->and(
+                new CloseoutCommand()
+                    ->getDefinition()
+                    ->hasOption('artifact'),
+            )
+            ->toBeTrue()
+            ->and(
+                new CloseoutCommand()
+                    ->getDefinition()
+                    ->hasOption('merge'),
+            )
+            ->toBeTrue()
+            ->and(
+                new CloseoutCommand()
+                    ->getDefinition()
+                    ->hasOption('main-sha'),
+            )
+            ->toBeTrue()
+            ->and(
                 new ExecCommand()
                     ->getDefinition()
                     ->hasOption('argv-file'),
@@ -147,6 +217,18 @@ describe('topology commands', function () {
                     ->getDefinition()
                     ->hasOption('proof'),
             )
+            ->toBeTrue()
+            ->and(new ExecCommand()->getDefinition()->hasOption('review-action'))
+            ->toBeTrue()
+            ->and(new ExecCommand()->getDefinition()->hasOption('required'))
+            ->toBeTrue()
+            ->and(new ShellCommand()->getDefinition()->hasOption('review-action'))
+            ->toBeTrue()
+            ->and(new ShellCommand()->getDefinition()->hasOption('required'))
+            ->toBeTrue()
+            ->and(new ReleaseCommand()->getDefinition()->hasOption('replace'))
+            ->toBeTrue()
+            ->and(new ReleaseCommand()->getDefinition()->hasOption('abandon'))
             ->toBeTrue()
             ->and(
                 new ReleaseCommand()
@@ -179,8 +261,11 @@ describe('topology commands', function () {
             new SyncCommand,
             new VerifyCommand,
             new ProveCommand,
+            new CaptureCommand,
+            new ReviewCommand,
             new EquivalenceCommand,
             new CandidateCommand,
+            new CloseoutCommand,
             new StatusCommand,
             new ReleaseCommand,
         ] as $command) {
@@ -257,18 +342,98 @@ describe('topology commands', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
         $state = IssueState::forWorktree('TST-12', $worktree);
         $topology = commandTopologyFixture('TST-12', attemptId());
-        $proof = ['status' => 'proved', 'attempt_id' => attemptId()->value];
-        $state->writeProof($proof);
-        $state->captureProof(['proof' => $proof, 'topology' => $topology->toArray()]);
+        $capture = commandCapturedProofFixture($topology);
+        $state->writeProof($capture->proof);
+        $state->captureProof($capture);
 
         $this
             ->artisan('topology:status', ['issue' => 'TST-12'])
             ->expectsOutput('captured '.attemptId()->value)
             ->assertSuccessful();
-        $this
-            ->artisan('topology:status', ['issue' => 'TST-12', '--json' => true])
-            ->expectsOutputToContain('"state":"captured"')
-            ->assertSuccessful();
+        $this->withoutMockingConsoleOutput()->artisan('topology:status', [
+            'issue' => 'TST-12',
+            '--json' => true,
+        ]);
+        $output = json_decode(Artisan::output(), true, 8, JSON_THROW_ON_ERROR);
+
+        expect($output['state'])
+            ->toBe('captured')
+            ->and($output['capture']['fingerprint'])
+            ->toBe($capture->fingerprint())
+            ->and($output['retained_topology'])
+            ->toBeNull();
+    });
+
+    it('reports retained capture, review evaluation, and closeout state separately', function (): void {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $state = IssueState::forWorktree('TST-12', $worktree);
+        $topology = commandTopologyFixture('TST-12', attemptId());
+        $capture = commandCapturedProofFixture($topology);
+        $state->writeAttempt(attemptId(), AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
+        $state->writeTopology($topology);
+        $state->writeProof($capture->proof);
+        $state->captureProof($capture);
+        $action = ProofReviewAction::incomplete(
+            'inspect-runtime',
+            'exec',
+            'app-dev',
+            true,
+            ['orbit', 'doctor'],
+            null,
+            '2026-09-10T10:01:00Z',
+        )->complete('failed', 1, '', 'doctor failed', 'Fix required.', '2026-09-10T10:02:00Z');
+        $review = ProofReviewRecord::empty(
+            'TST-12',
+            $capture->candidateSha,
+            $capture->attempt,
+            '2026-09-10T10:01:00Z',
+        )->withAction($action, '2026-09-10T10:02:00Z');
+        $state->writeReviewRecord($review);
+        $state->writeReviewEvaluation(ProofReviewEvaluation::forRecord($review, '2026-09-10T10:03:00Z'));
+        $state->writeCloseoutRecord(new ProofCloseoutRecord(
+            'refresh-failed',
+            'TST-12',
+            $capture->attempt,
+            $capture->candidateSha,
+            str_repeat('a', 40),
+            str_repeat('b', 40),
+            str_repeat('c', 40),
+            null,
+            'Snapshot refresh failed.',
+            '2026-09-10T10:04:00Z',
+        ));
+
+        $this->withoutMockingConsoleOutput()->artisan('topology:status', [
+            'issue' => 'TST-12',
+            '--json' => true,
+        ]);
+
+        $output = json_decode(Artisan::output(), true, 8, JSON_THROW_ON_ERROR);
+
+        expect($output['state'])
+            ->toBe('proof')
+            ->and($output['capture']['attempt_id'])
+            ->toBe(attemptId()->value)
+            ->and($output['capture']['candidate_sha'])
+            ->toBe($capture->candidateSha)
+            ->and($output['capture']['fingerprint'])
+            ->toBe($capture->fingerprint())
+            ->and($output['retained_topology']['attempt_id'])
+            ->toBe(attemptId()->value)
+            ->and($output['review_record']['attempt_id'])
+            ->toBe(attemptId()->value)
+            ->and($output['review_record']['actions'][0]['id'])
+            ->toBe('inspect-runtime')
+            ->and($output['review_record']['actions'][0]['status'])
+            ->toBe('failed')
+            ->and($output['review_evaluation']['status'])
+            ->toBe('blocked')
+            ->and($output['review_evaluation']['required_failed'])
+            ->toBe(['inspect-runtime'])
+            ->and($output['closeout']['state'])
+            ->toBe('refresh-failed')
+            ->and($output['closeout']['attempt_id'])
+            ->toBe(attemptId()->value);
     });
 
     it('reports the active proof attempt and its result from the worktree state', function () {
@@ -461,6 +626,61 @@ describe('topology commands', function () {
 
         expect(array_filter($commands, static fn (array $command): bool => ($command[0] ?? null) === 'incus'))
             ->toBe([]);
+    });
+
+    it('executes captured successful proof through a redacted review action', function (): void {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        mkdir($worktree.'/.loop', 0700, true);
+        file_put_contents($worktree.'/.loop/flow.json', "{\"schema\":1,\"flow\":\"proof\"}\n");
+        $state = IssueState::forWorktree('TST-12', $worktree);
+        $topology = commandTopologyFixture('TST-12', attemptId());
+        $capture = commandCapturedProofFixture($topology);
+        $state->writeAttempt(attemptId(), AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
+        $state->writeTopology($topology);
+        $state->writeProof($capture->proof);
+        $state->captureProof($capture);
+        $hostPaths = new StatePaths(temporaryPath('orbit-command-review-host-', 6));
+        app()->instance(StatePaths::class, $hostPaths);
+        new AtomicJsonStore($hostPaths)->write(
+            'proof-evidence/TST-12/'.attemptId()->value.'.json',
+            $capture->toArray(),
+        );
+        Process::fake(function (PendingProcess $process) use ($topology) {
+            $command = $process->command;
+            assert(is_array($command));
+            if (($command[3] ?? null) === 'list') {
+                return Process::result(json_encode([
+                    commandInstanceFixture($topology, 'gateway'),
+                ], JSON_THROW_ON_ERROR));
+            }
+
+            return Process::result("review-ok\n");
+        });
+
+        $this
+            ->artisan('topology:exec', [
+                'issue' => 'TST-12',
+                'role' => 'gateway',
+                '--argv' => '["printf","--token=secret-value"]',
+                '--proof' => true,
+                '--review-action' => 'inspect-gateway',
+                '--required' => true,
+            ])
+            ->expectsOutput("review-ok\n")
+            ->assertSuccessful();
+        $this
+            ->artisan('topology:review', ['issue' => 'TST-12'])
+            ->expectsOutput('review ready')
+            ->assertSuccessful();
+
+        expect($state->reviewRecord()?->action('inspect-gateway')?->status)
+            ->toBe('passed')
+            ->and($state->reviewRecord()?->action('inspect-gateway')?->argv)
+            ->toBe(['printf', '--token=[REDACTED]'])
+            ->and((string) file_get_contents($worktree.'/.e2e/log'))
+            ->not->toContain('secret-value')
+            ->and($state->capturedProof()?->fingerprint())
+            ->toBe($capture->fingerprint());
     });
 
     it('executes on app-prod-2 and rejects an unrecorded physical Node key', function (): void {
@@ -693,6 +913,51 @@ function commandTopologyFixture(
         $generation,
         new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
         new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
+    );
+}
+
+function commandCapturedProofFixture(FeatureTopology $topology): CapturedProof
+{
+    $candidateSha = $topology->source->hostSha;
+    $planSha256 = str_repeat('1', 64);
+    $manifest = new ProofInputManifest(
+        3,
+        $candidateSha,
+        $topology->generation->mainSha,
+        [],
+        [],
+        '.loop/proof/'.$topology->target->issue.'.json',
+        [],
+        $topology->construction,
+        null,
+        [
+            'static_classification' => true,
+            'proof_contract' => true,
+            'checkout_literals' => true,
+            'observed_processes' => true,
+            'observed_paths' => true,
+            'pcov_cleanup' => true,
+        ],
+    );
+    $proof = [
+        'status' => 'proved',
+        'issue' => $topology->target->issue,
+        'attempt_id' => $topology->attempt->value,
+        'candidate_sha' => $candidateSha,
+        'plan_sha256' => $planSha256,
+        'manifest_sha256' => $manifest->fingerprint(),
+    ];
+
+    return new CapturedProof(
+        $topology->target->issue,
+        $topology->attempt,
+        $candidateSha,
+        $planSha256,
+        $manifest->fingerprint(),
+        $proof,
+        $topology,
+        $manifest->toArray(),
+        '2026-09-10T10:00:00Z',
     );
 }
 

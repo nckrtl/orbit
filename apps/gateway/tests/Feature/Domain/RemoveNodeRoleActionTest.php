@@ -13,7 +13,6 @@ use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleOperationException;
-use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -204,8 +203,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
             });
     });
 
-    it('allows removal of the last active app role while retaining Tool intent', function (): void {
-        [$node, $assignment] = removal_role_fixture();
+    it('removes either final app role while retaining Tool intent', function (RoleName $role): void {
+        [$node, $assignment] = removal_role_fixture(role: $role);
         $composer = $node->toolManagers()->create([
             'name' => ToolManagerName::Composer,
             'status' => LifecycleStatus::Active,
@@ -227,21 +226,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
         }
         $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
-        $guard = app(NodeRoleToolIntentGuard::class);
-        $action = new RemoveNodeRoleAction(
+        $action = removal_action(
             new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
             $cleaner,
             $baseline,
-            app(RoleRegistry::class),
-            $guard,
-            app(ToolManagerScopeLock::class),
-            new RemovalReachabilityFake(null),
-            new NodeSideResidue,
         );
 
-        expect($guard->preview($node, RoleName::AppDev))->toBeEmpty();
-
-        $action->execute($node, RoleName::AppDev, force: true);
+        $action->execute($node, $role, force: true);
 
         expect(NodeRole::query()->whereKey($assignment->id)->exists())
             ->toBeFalse()
@@ -253,7 +244,10 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(1)
             ->and($baseline->calls)
             ->toBe(1);
-    });
+    })->with([
+        'app-dev' => RoleName::AppDev,
+        'app-prod' => RoleName::AppProd,
+    ]);
 
     it('allows removal of the last active app role when app-scoped Tool intent is protected', function (): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
@@ -268,15 +262,10 @@ describe(RemoveNodeRoleAction::class, function (): void {
             'status' => ToolStatus::Installed,
             'installed_version' => '2.4.1',
         ]);
-        $action = new RemoveNodeRoleAction(
+        $action = removal_action(
             new RemovalInspectorFake($dependencies),
             new RemovalCleanerFake,
             new RemovalBaselineFake,
-            app(RoleRegistry::class),
-            app(NodeRoleToolIntentGuard::class),
-            app(ToolManagerScopeLock::class),
-            new RemovalReachabilityFake(null),
-            new NodeSideResidue,
         );
 
         $action->execute($node, RoleName::AppDev, force: true);
@@ -333,15 +322,10 @@ describe(RemoveNodeRoleAction::class, function (): void {
             'status' => ToolStatus::Installed,
             'installed_version' => '2.4.1',
         ]);
-        $action = new RemoveNodeRoleAction(
+        $action = removal_action(
             new RemovalInspectorFake($dependencies),
             new RemovalCleanerFake,
             new RemovalBaselineFake,
-            app(RoleRegistry::class),
-            app(NodeRoleToolIntentGuard::class),
-            app(ToolManagerScopeLock::class),
-            new RemovalReachabilityFake(null),
-            new NodeSideResidue,
         );
 
         $action->execute($node, RoleName::AppDev, force: true);
@@ -497,70 +481,9 @@ describe(RemoveNodeRoleAction::class, function (): void {
         'removing assignment' => LifecycleStatus::Removing,
     ]);
 
-    it('rechecks Tool intent under the claim lock before remote mutation', function (): void {
-        [$node, $assignment] = removal_role_fixture();
-        $cleaner = new RemovalCleanerFake;
-        $baseline = new RemovalBaselineFake;
-        $guard = new RemovalToolIntentGuardFake;
-        $guard->onAssert = function (int $call) use ($node): void {
-            if ($call === 2) {
-                expect(DB::transactionLevel())->toBeGreaterThan(0);
-                removal_tool(node: $node, managerName: ToolManagerName::Composer, package: 'laravel/installer');
-                throw new NodeRoleValidationException('Tool intent appeared under lock.');
-            }
-        };
-        $action = removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            $cleaner,
-            $baseline,
-            $guard,
-        );
-
-        expect(fn () => $action->execute($node, RoleName::AppDev, force: true))
-            ->toThrow(NodeRoleValidationException::class, 'Tool intent appeared under lock.');
-
-        expect($assignment->refresh()->status)
-            ->toBe(LifecycleStatus::Active)
-            ->and($cleaner->calls)
-            ->toBe(0)
-            ->and($baseline->calls)
-            ->toBe(0);
-    });
-
-    it('rolls back finalization when Tool intent appears after role deletion', function (): void {
-        [$node, $assignment] = removal_role_fixture();
-        $guard = new RemovalToolIntentGuardFake;
-        $roleExistsDuringFinalCheck = null;
-        $guard->onAssert = function (int $call) use ($node, &$roleExistsDuringFinalCheck): void {
-            if ($call === 3) {
-                $roleExistsDuringFinalCheck = $node->roles()->where('role', RoleName::AppDev)->exists();
-                removal_tool(node: $node, managerName: ToolManagerName::Vp, package: '@openai/codex');
-                throw new NodeRoleValidationException('Tool intent raced finalization.');
-            }
-        };
-        $action = removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
-            new RemovalBaselineFake,
-            $guard,
-        );
-
-        expect(fn () => $action->execute($node, RoleName::AppDev, force: true))
-            ->toThrow(NodeRoleOperationException::class);
-
-        expect($roleExistsDuringFinalCheck)
-            ->toBeFalse()
-            ->and($assignment->refresh()->status)
-            ->toBe(LifecycleStatus::Failed)
-            ->and($assignment->failed_step)
-            ->toBe('remove:dependency-race')
-            ->and($node->tools()->exists())
-            ->toBeFalse();
-    });
-
     it('keeps every row retryable when a remote stage fails', function (string $step): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
-        [$manager] = removal_tool(
+        [$manager, $tool] = removal_tool(
             node: $node,
             managerName: ToolManagerName::Vp,
             package: '@openai/codex',
@@ -596,6 +519,11 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and(removal_dependency_rows_exist($dependencies))
             ->toBeTrue();
 
+        expect($tool->refresh()->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($tool->installed_version)
+            ->toBe('2.4.1');
+
         $cleaner->failure = null;
         $baseline->failure = null;
         $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
@@ -616,6 +544,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBeFalse()
             ->and(removal_dependency_rows_exist($dependencies))
             ->toBeFalse();
+
+        expect($manager->refresh()->status)->toBe(LifecycleStatus::Active);
+
+        expect($tool->refresh()->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($tool->installed_version)
+            ->toBe('2.4.1');
     })->with([
         'process runtime' => 'process-runtime',
         'workspace publication' => 'workspace-runtime',
@@ -838,7 +773,6 @@ function removal_action(
     NodeRoleDependencyInspector $inspector,
     NodeRoleDependentCleaner $cleaner,
     RoleBaselineConverger $baseline,
-    ?NodeRoleToolIntentGuard $toolIntentGuard = null,
     ?NodeReachabilityProbe $reachability = null,
 ): RemoveNodeRoleAction {
     return new RemoveNodeRoleAction(
@@ -846,7 +780,6 @@ function removal_action(
         $cleaner,
         $baseline,
         app(RoleRegistry::class),
-        $toolIntentGuard ?? app(NodeRoleToolIntentGuard::class),
         app(ToolManagerScopeLock::class),
         $reachability ?? new RemovalReachabilityFake(null),
         new NodeSideResidue,
@@ -1010,36 +943,6 @@ final class RemovalInspectorFake implements NodeRoleDependencyInspector
     {
         return $this->dependencies;
     }
-}
-
-final class RemovalToolIntentGuardFake implements NodeRoleToolIntentGuard
-{
-    public int $assertCalls = 0;
-
-    public ?Closure $onAssert = null;
-
-    /** @return list<string> */
-    public function preview(Node $node, RoleName $role): array
-    {
-        return [];
-    }
-
-    /** @return list<string> */
-    public function retirementPreview(Node $node, RoleName $role): array
-    {
-        return [];
-    }
-
-    public function assertRemovalSafe(Node $node, RoleName $role): void
-    {
-        $this->assertCalls++;
-
-        if ($this->onAssert instanceof Closure) {
-            ($this->onAssert)($this->assertCalls);
-        }
-    }
-
-    public function retireUnsupportedManagers(Node $node): void {}
 }
 
 final class RemovalCleanerFake implements NodeRoleDependentCleaner

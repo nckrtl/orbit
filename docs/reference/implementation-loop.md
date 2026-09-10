@@ -21,6 +21,39 @@ Discovery is the built-in default for new clones and unselected worktrees. Proof
 
 The default uses repository-local Git configuration `orbit.loopFlow`, shared across linked worktrees. It does not change selections already saved in worktrees. Selection commands also accept `--worktree=PATH`. A malformed selection fails instead of falling back. A flow switch changes reviewed artifacts: update the plan, publish for a new candidate, and review under the new flow. Switching flows never creates or deletes topology resources.
 
+## Incus requirement
+
+The `incus` issue label identifies acceptance that needs real machines. [ADR 0058](../decisions/0058-separate-incus-requirements-from-delivery-flow.md) separates that requirement from the selected flow. The implementer resolves the label and flow before acquiring resources; preflight and independent plan review precede acquisition.
+
+| Issue label | Selected flow | Required topology |
+| --- | --- | --- |
+| No `incus` | `discovery` | None; use focused local tests and the local review gate |
+| `incus` | `discovery` | Discovery for development and acceptance observations |
+| No `incus` | Explicit `proof` | None for automated-only acceptance; the other selected-flow rules still apply |
+| `incus` | Explicit `proof` | Discovery for development plus a separate proof topology for isolated acceptance evidence |
+
+Apply `incus` when acceptance depends on a real operating system, service manager, privilege boundary, network, certificate, filesystem ownership, or multiple machines. Planning and review check this classification. An acceptance item that needs Incus without the label is a contract mismatch to correct, not permission to omit its machine checks. The label never changes `.loop/flow.json` or the repository default.
+
+Retained issue snapshots and plans may call this label `proof:incus`; interpret that name as the same Incus requirement. A label rename alone does not change acceptance or the selected flow and does not require new candidate artifacts or another preflight. Publish new issues and handoffs with `incus`.
+
+## Scripted orchestration
+
+An installed external controller can expose one command through `bin/loop ISSUE`. Set repository-local Git configuration `orbit.deliveryDriver` to its absolute executable path. The entry point works from primary main or a linked issue worktree and passes the primary repository to that driver. Orbit owns worktree preparation, checks, plan validation, artifact validation, and the role processes; the external controller owns worker prompts, identities, dispatch, retries, and merge decisions under its orchestration contract.
+
+The Hermes controller starts new discovery issues by creating and bootstrapping the worktree, running root `composer check` once before planning, saving the Linear issue snapshot under `.loop/issue.json`, and starting a retained Builder in Herdr. This startup check validates the prepared dependencies and warms private caches. It does not replace the independent reviewer's check on the finished candidate. Existing worktrees without a controller journal retain their current orchestration, and explicit proof delivery retains its existing process.
+
+Tom repeats `bin/loop ISSUE` on worker events. The controller validates the completed phase receipt, starts an independent plan or PR reviewer, resumes the retained Builder with findings or implementation authority, or lands an independently approved candidate. An idle worker is only a wake signal. Structural receipt validation does not decide review quality. `bin/loop ISSUE status` reports the recorded phase, worker identities, and any owned wait or error. Long preparation runs have a retained process, journal, and log; an accepted background command reports its process instead of claiming the phase completed.
+
+Mutable session state and worker completion receipts live under `.loop/runtime/`, with the controller's durable journal in the Git common directory. Artifact save and publication exclude exactly `.loop/runtime/`. Plans, issue snapshots, development evidence, and proof inputs outside that directory remain in the artifact snapshot. The controller retains its review and completion records after worktree cleanup; recording a session or receipt never requires changing an already published candidate artifact.
+
+## Start planning or implementation
+
+The orchestrator assigns an issue, registered worktree, phase, Incus requirement, selected flow, and any prior handoff. The planner or implementer reads its branch, `HEAD`, and working changes from that worktree. A startup SHA copied into a prompt is context, not a candidate gate, unless the task explicitly requests work on a particular revision. A stale or mistyped startup SHA does not require stopping, changing the checkout, or fetching main to find a matching object. Record the observed revision in the handoff.
+
+Verify that the worktree belongs to the assigned issue and preserve existing work. Resolve a wrong checkout, unresolved merge conflicts, or an unexpected writer before editing. Keep delivery phases serialized within each issue worktree; separate issue worktrees can progress independently. Main movement does not restart discovery planning or implementation. When correcting review findings, use the reviewed SHA as the findings' reference and assess them against the current worktree.
+
+Exact binding starts with produced review inputs: the plan reviewer checks the actual plan and documentation artifacts, and the PR reviewer checks the pushed candidate, its artifacts, and the local gate receipt. The orchestrator copies these identifiers from verified Git or repository-tool output and merges only the approved candidate. A working revision is discovered locally; an approval remains bound to the revision reviewed.
+
 ## Discovery-only delivery
 
 The discovery flow follows this order.
@@ -28,10 +61,10 @@ The discovery flow follows this order.
 1. Run `bin/worktree-create` to update clean primary main and bootstrap the selected flow using compatible caches. Cache maintenance runs in the background.
 2. Run preflight through `planning-features`, including the documentation audit and acceptance map.
 3. Obtain an independent preflight review through `reviewing-feature-plans`.
-4. Acquire discovery with `bin/e2e-topology acquire ISSUE WORKTREE` after preflight passes.
-5. Implement using `shell`, `exec`, `sync`, and `verify` on discovery as development tools. Run focused local tests and project checks.
+4. For an `incus` issue, acquire discovery with `bin/e2e-topology acquire ISSUE WORKTREE` after preflight passes. Otherwise proceed without a topology.
+5. Implement and run focused local tests and project checks. For an `incus` issue, use `shell`, `exec`, `sync`, and `verify` on discovery as development tools.
 6. Commit and push the candidate, publish the artifacts, and obtain independent code review with a passing local review gate.
-7. Merge the approved candidate, then release discovery and remove the worktree.
+7. Merge the approved candidate, then release any discovery resources and remove the worktree.
 
 The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, focused tests, and the local review gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
 
@@ -41,11 +74,17 @@ An advance of main alone does not require integration, another approval, proof, 
 
 GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0053](../decisions/0053-use-local-review-checks-for-feature-landing.md) governs the local review gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
 
-Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases discovery, and runs `bin/worktree-remove ISSUE`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
+Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases any discovery resources, and runs `bin/worktree-remove ISSUE`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
 
 ## Proof delivery
 
-The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `proof:incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](proof-plans.md). Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. Successful proof resources are captured and released before review, and closeout refreshes the shared snapshot from merged main. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
+The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](proof-plans.md). Release idle discovery resources before handing the candidate to review. Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
+
+After every declared proof action and general verification exits `0`, the harness captures the proof result, action evidence, topology inventory, input manifest, and candidate identity before it permits successful-proof inspection. It retains every standard or declared extended proof Node through review. Reviewers may use proof `shell` and `exec` access with the ordinary guest privilege boundary, including commands that change live application or machine state. The harness records review actions, results, required-check status, and findings separately from the immutable captured proof. [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md) governs this retained-proof review lifecycle.
+
+A required review check that fails or has an incomplete record prevents approval. An exploratory command failure remains distinct and does not replace a required result. A code or configuration fix requires a new candidate and fresh proof from declared inputs; an edit left on a reviewed machine and an equivalence report for the old proof cannot establish the fix. The old attempt may be released before replacement or explicit abandonment, but its captured proof and review record remain available.
+
+After the approved candidate merges, `bin/e2e-topology closeout` verifies the accepted merge and refreshes the shared snapshot from merged main without promoting reviewer-modified live state. A failed refresh keeps the complete retained proof topology, captured evidence, and review record for retry. Only a successful refresh permits the command to release the retained topology. Failed proof keeps its diagnosis and explicit release path.
 
 ## Local checks
 
@@ -106,12 +145,12 @@ The implementer returns one proposed PR body. The orchestrator publishes its evi
 
 | Body field | Required content |
 | --- | --- |
-| Binding | `Issue: <ID>`, selected flow, candidate SHA, artifact ref and SHA |
+| Binding | `Issue: <ID>`, Incus required or not required, selected flow, candidate SHA, artifact ref and SHA |
 | Acceptance | One row per item, in order: item number or brief outcome, test or discovery check, observed result, and precise artifact path or log reference for details |
 | Checks | Focused tests and changed-project checks with results; mark the independent root gate pending until the reviewer supplies its receipt |
 | Documentation | Every changed maintained page with its purpose, audit findings and owners, or the applicable reason for unchanged documentation |
 | Deviations and limits | Actual deviations and unverified behavior, or `none` |
-| Discovery | Actual observations and resource state, plus `Discovery development only; isolated acceptance proof not run` |
+| Discovery | Observations and resource state for `incus` issues, or `Incus: not required`; include `Discovery development only; isolated acceptance proof not run` for discovery flow |
 
 One check can support several acceptance rows. A test count alone does not identify which outcome was checked. Discovery observations need enough context to inspect or repeat the check; they do not require a separate proof plan or immutable runtime capture. The reviewer assesses the evidence and performs additional focused checks when a concrete uncertainty warrants them.
 
@@ -156,6 +195,43 @@ A nonzero test, formatting, or analysis command is a correctness signal requirin
 
 One maintenance owner covers all five projects. Routine warming uses scripts; failures needing investigation use [maintaining-monorepo](../../.agents/skills/maintaining-monorepo/SKILL.md). The agent diagnoses the exact failed commit, preserves evidence, and performs source repairs in a separate worktree. It returns verification to the orchestrator instead of approving its own change or mutating primary main. Feature development can continue during a correctness hold. Cache freshness alone never holds creation, merge, or cleanup.
 
+## Plan validation
+
+The [plan template](../../.agents/skills/planning-features/template.md) is the
+source for new worktrees and revised plans. Change the template, format number,
+linter, and fixtures together when the format changes. Completed reviews and
+saved artifacts do not need migration merely because the format advances.
+
+| Command | Result |
+| --- | --- |
+| `bin/plan-lint check ISSUE` | Checks current format, issue, flow, required sections, filled acceptance cells, and unfinished scaffold text without writing |
+| `bin/plan-lint record ISSUE` | Runs the same checks and writes `.loop/plan-lint.json` on success; removes old success before an attempted replacement |
+| `bin/plan-lint verify ISSUE --artifact=SHA` | Rechecks the plan, requires its receipt, and compares local inputs with the submitted saved artifact |
+
+All three commands accept `--worktree=PATH`. An existing worktree can use the
+command and template from updated primary main without merging main into its
+feature branch. Use the same tool version for recording and verification.
+Verification without `--artifact` checks only the local plan and receipt.
+
+The planner records after its final edit, saves with `bin/loop-artifacts save`,
+then verifies that exact artifact before returning a completed handoff. The
+orchestrator runs that verification before dispatching independent plan review.
+A missing, failed, or stale receipt returns to the planner with the command's
+error. An idle worker alone is not a completed plan. A real planning stop still
+returns its classification and evidence through the existing resolution route.
+
+The deterministic receipt binds the plan bytes, issue, selected flow, and
+validator with its template. It is carried in the existing ignored `.loop/`
+artifact snapshot. A plan edit, including review findings or verdict, requires
+recording again before the next save. Unrelated main movement does not invalidate
+it. The reviewer refreshes the receipt after recording its independent verdict.
+
+Agents trust these structural checks and skip duplicate format inspections.
+Reviewers still judge acceptance coverage, design, scope, ADRs, and proof quality.
+The linter does not test code, require future files to exist, approve a plan,
+or authorize development. Orbit owns this validation contract; the external
+orchestrator owns dispatch and recovery.
+
 ## Artifact references
 
 The local `.loop/` directory is ignored. It holds the flow selection, plan, plan review, development notes, and any proof plan and fixtures for one issue. The product candidate contains no `.loop/` paths. The commands use a temporary Git index and leave the feature head and its real index unchanged.
@@ -163,14 +239,22 @@ The local `.loop/` directory is ignored. It holds the flow selection, plan, plan
 | Command | Result |
 | --- | --- |
 | `bin/loop-artifacts save ISSUE` | Saves the local workspace at `refs/orbit/loop/<issue-lowercase>/draft` for planning and plan review |
-| `bin/loop-artifacts publish ISSUE` | Creates and pushes `refs/tags/loop/<issue-lowercase>/<candidate-sha>`; prints the candidate, ref, and artifact SHA |
-| `bin/loop-artifacts fetch ISSUE --candidate=SHA` | Fetches that candidate's artifact ref and prints its binding |
+| `bin/loop-artifacts publish ISSUE` | Creates or reuses the artifact, validates it, then pushes `refs/tags/loop/<issue-lowercase>/<candidate-sha>` and prints the binding |
+| `bin/loop-artifacts fetch ISSUE --candidate=SHA --expected-artifact=SHA` | Fetches the artifact ref, validates its structure and expected commit, then prints the binding |
 | `git show <artifact-sha>:.loop/plan.md` | Reads the exact plan from the submitted snapshot |
 | `git diff <candidate-sha> <artifact-sha> -- .loop/` | Shows the plan and every fixture for independent review |
 
-Each published artifact commit has the candidate as its only parent. Its tree adds only `.loop/` paths. Repeating publication with identical contents succeeds. Different artifacts for an already published candidate require a new candidate commit. A symlink or special file causes publication to fail. Proof reads the committed artifact snapshot and refuses a working plan that differs from it.
+Publication and retrieval use the same validator. Each artifact commit has the candidate as its sole parent and adds at least one regular file under `.loop/`. The candidate contains no `.loop` entry, and every product entry stays unchanged. Artifact files may use regular or executable mode; symlinks and gitlinks inside `.loop/` fail validation. Existing product symlinks remain valid. The validator reads immutable Git objects without interpreting or executing their contents.
 
-The developer includes the artifact ref and SHA in the pull request body. The reviewer fetches that ref, verifies its SHA and candidate binding, and reads the plan and every fixture. Approval binds both SHAs. The orchestrator merges that exact candidate after approval and the local review gate. Main integration creates a new candidate and requires artifact publication, local review checks, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
+Repeating publication with identical valid contents succeeds. Different artifacts for an already published candidate require a new candidate commit. Validation failure returns a nonzero exit and a specific error without a success binding; publication does not push an invalid artifact. Git fetch errors remain distinct from validation failures. A failed fetch validation can leave the downloaded ref and objects locally; their presence is not successful validation. Proof reads the committed artifact snapshot and refuses a working plan that differs from it.
+
+The optional `--expected-artifact` argument accepts a full artifact commit SHA and applies only to `fetch`. Review and closeout require it to match the handoff. Callers that omit it still receive structural validation, but no comparison with a submitted artifact SHA. Successful output retains the `candidate`, `ref`, and `artifacts` fields. Draft plan review continues to use `save`.
+
+Run the command from the assigned issue worktree. When that worktree has an older helper, invoke `bin/loop-artifacts` by its absolute path in the current primary main checkout while keeping the issue worktree as the working directory. The helper validates objects in the caller's repository. No main integration or worktree recreation is needed to use it.
+
+The developer includes the artifact ref and SHA in the pull request body. The reviewer fetches and validates the submitted binding with the command, then reads the plan and every fixture. Successful validation establishes the parent, file-boundary, file-type, and expected-SHA checks; agents do not repeat them manually. Validate again when either SHA changes and investigate failures before continuing. Artifact validation establishes no plan quality, acceptance, selected-flow evidence, quality-gate result, or approval.
+
+Approval binds both SHAs. The orchestrator merges that exact candidate after approval and the local review gate. Main integration creates a new candidate and requires artifact publication, local review checks, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
 
 ## Existing worktrees
 

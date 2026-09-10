@@ -29,6 +29,8 @@ use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\ProofReviewAction;
+use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyExtension;
@@ -384,6 +386,7 @@ function fakePromotionHost(
     ?TopologyTarget $discoveryTarget = null,
     ?TopologyTarget $retainedProofTarget = null,
     ?Closure $afterSwap = null,
+    ?Closure $afterVerification = null,
 ): void {
     $topologySnapshot = TopologyTarget::topologySnapshot();
     $instances = [];
@@ -465,6 +468,7 @@ function fakePromotionHost(
         ]];
     }
     $realProcess = new ProcessFactory;
+    $verificationObserved = false;
     $vm = static function (string $name, array $instance): array {
         $role = str_ends_with($name, '-gateway')
             ? 'gateway'
@@ -498,6 +502,8 @@ function fakePromotionHost(
         $failAt,
         $failAssignments,
         $afterSwap,
+        $afterVerification,
+        &$verificationObserved,
     ): ProcessResult {
         $command = $process->command;
         assert(is_array($command));
@@ -517,6 +523,10 @@ function fakePromotionHost(
                 if (($guestEvent[6] ?? null) === 'rm') {
                     $events[] = 'exec:'.$guestEvent[4].':'.$guestEvent[6];
                 }
+            }
+            if (! $verificationObserved) {
+                $verificationObserved = true;
+                $afterVerification?->__invoke();
             }
 
             return $batch;
@@ -645,6 +655,41 @@ function fakePromotionHost(
 }
 
 describe('TopologySnapshotPromoter', function (): void {
+    it('refuses a durable review action recorded after the initial promotion check', function (): void {
+        $fixture = promotableFixture();
+        $events = [];
+        $record = ProofReviewRecord::empty(
+            'TST-123',
+            $fixture['candidate'],
+            $fixture['target']->requireAttempt(),
+            '2026-09-10T10:00:00Z',
+        )->withAction(ProofReviewAction::incomplete(
+            'inspect-runtime',
+            'shell',
+            'gateway',
+            true,
+            [],
+            null,
+            '2026-09-10T10:00:00Z',
+        ), '2026-09-10T10:00:00Z');
+        fakePromotionHost(
+            $fixture['target'],
+            $events,
+            afterVerification: static function () use ($fixture, $record): void {
+                new AtomicJsonStore($fixture['paths'])->write(
+                    'proof-review/TST-123/'.$fixture['target']->requireAttempt()->value.'.json',
+                    $record->toArray(),
+                );
+            },
+        );
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'used for interactive review')
+            ->and($events)
+            ->toBe([]);
+    });
+
     it('refuses an extended proved topology before any Incus command', function (): void {
         $fixture = promotableFixture(extended: true);
         Process::fake();

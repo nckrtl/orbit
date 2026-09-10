@@ -35,10 +35,11 @@ final readonly class NativeGatewaySelfAccessConverger implements GatewaySelfAcce
         private string $hostPublicKeyPath = '/etc/ssh/ssh_host_ed25519_key.pub',
     ) {}
 
-    public function converge(Node $node): void
+    public function converge(Node $node): string
     {
         $this->ensureAuthorizedKey($node);
-        $this->pinHostKey($node);
+
+        return $this->pinHostKey($node);
     }
 
     private function ensureAuthorizedKey(Node $node): void
@@ -95,7 +96,7 @@ final readonly class NativeGatewaySelfAccessConverger implements GatewaySelfAcce
         chmod(filename: $authorizedKeys, permissions: 0o600);
     }
 
-    private function pinHostKey(Node $node): void
+    private function pinHostKey(Node $node): string
     {
         $address = $node->wireguard_ip;
 
@@ -140,6 +141,8 @@ final readonly class NativeGatewaySelfAccessConverger implements GatewaySelfAcce
             value: $value,
             fingerprint: $matches[1],
         ));
+
+        return $matches[1];
     }
 
     private function fail(string $message): never

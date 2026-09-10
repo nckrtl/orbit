@@ -38,6 +38,8 @@ use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
+use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
+use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\AppProd\AppProdRuntimeConverger;
@@ -58,6 +60,7 @@ use App\Domain\Firewall\FirewallManager;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterLifecycle;
@@ -76,7 +79,6 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
-use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -106,9 +108,11 @@ use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
+use App\Infrastructure\AppInstances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
+use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
@@ -149,6 +153,7 @@ use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
 use App\Infrastructure\Metrics\MetricsRuntimeHost;
 use App\Infrastructure\Metrics\MetricsSshExecutor;
+use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
@@ -181,7 +186,6 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
-use App\Infrastructure\Tools\EloquentNodeRoleToolIntentGuard;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
@@ -207,6 +211,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceEnvironmentReader::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceEnvironmentWriter::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceOperationPreflight::class => RemoteAppInstanceEnvironmentAccess::class,
+        AppInstanceSqliteSeeder::class => RemoteAppInstanceSqliteSeeder::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevCertificateManager::class => RemoteAppDevCertificateManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
@@ -240,6 +245,7 @@ final class AppServiceProvider extends ServiceProvider
         HostKeyScanner::class => SshHostKeyScanner::class,
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
+        MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
         MetricsCredentialRuntime::class => MetricsSshExecutor::class,
         MetricsExporterLifecycle::class => NativeMetricsExporterLifecycle::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
@@ -256,9 +262,9 @@ final class AppServiceProvider extends ServiceProvider
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
+        SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
-        NodeRoleToolIntentGuard::class => EloquentNodeRoleToolIntentGuard::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,

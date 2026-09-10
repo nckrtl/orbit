@@ -35,7 +35,7 @@ final class DeliveryFlow
     {
         if (self::forWorktree($worktree) !== 'proof') {
             throw new RuntimeException(
-                'The discovery flow disables proof, equivalence, and candidate convergence. '
+                'The discovery flow disables proof, capture, review, equivalence, candidate convergence, and closeout. '
                 .'Use bin/loop-flow select --flow=proof to switch explicitly.',
             );
         }

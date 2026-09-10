@@ -88,13 +88,55 @@ it('rejects unsafe metrics publication inputs', function (): void {
 });
 
 it('renders publication bound to the gateway address and private certificate pair', function (): void {
-    $config = new MetricsPublicationRenderer()->caddy('10.44.0.2', '10.44.0.1');
+    $config = new MetricsPublicationRenderer('/home/orbit/gateway')->caddy('10.44.0.2', '10.44.0.1');
 
     expect($config)
         ->toStartWith("# Managed by Orbit: metrics\n")
+        ->toContain("# Orbit Metrics authorization: 1\nmetrics.orbit {\n")
+        ->not->toContain('metrics.orbit 10.44.0.1:443')
         ->toContain('bind 10.44.0.1')
         ->and($config)
         ->toContain('/etc/caddy/orbit-metrics-cert-current/metrics.pem')
         ->and($config)
+        ->toContain('forward_auth unix//run/php/orbit-gateway.sock')
+        ->and($config)
+        ->toContain('uri /api/v1/metrics/grafana/authorize')
+        ->and($config)
+        ->toContain('env SCRIPT_FILENAME /home/orbit/gateway/public/index.php')
+        ->and($config)
+        ->toContain('env REQUEST_URI /api/v1/metrics/grafana/authorize')
+        ->and($config)
+        ->toContain('env REMOTE_ADDR {remote_host}')
+        ->and(strpos($config, 'forward_auth'))
+        ->toBeLessThan(strpos($config, 'reverse_proxy'))
+        ->and($config)
         ->toContain('reverse_proxy http://10.44.0.2:3000');
+});
+
+it('defaults authorization to the checkout that contains the renderer', function (): void {
+    $configuration = new MetricsPublicationRenderer()->caddy('10.44.0.2', '10.44.0.1');
+
+    expect($configuration)->toContain(
+        'env SCRIPT_FILENAME '.dirname(__DIR__, 4).'/public/index.php',
+    );
+});
+
+it('renders one valid authorization-first route for every Grafana request shape', function (): void {
+    $configuration = new MetricsPublicationRenderer('/home/orbit/gateway')->caddy(
+        '10.44.0.3',
+        '10.44.0.1',
+    );
+
+    $adapted = caddy_adapt($configuration);
+
+    expect($adapted->exitCode)
+        ->toBe(0)
+        ->and($adapted->stdout)
+        ->toContain('"host":["metrics.orbit"]')
+        ->and(substr_count($adapted->stdout, 'forward_auth'))
+        ->toBe(0)
+        ->and(substr_count($configuration, 'forward_auth'))
+        ->toBe(1)
+        ->and($configuration)
+        ->not->toContain('Authorization', 'Cookie');
 });

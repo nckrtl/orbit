@@ -20,9 +20,12 @@ use App\E2E\LegacyRetirementHost;
 use App\E2E\ObservedPhpInputCollector;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\ProofCaptureService;
+use App\E2E\ProofCloseoutService;
 use App\E2E\ProofEquivalenceEvaluator;
 use App\E2E\ProofFixtureStager;
 use App\E2E\ProofInputManifestBuilder;
+use App\E2E\ProofReviewService;
 use App\E2E\ScenarioPestProcess;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
@@ -211,6 +214,8 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(IncusHost::class),
             $repositoryRoot,
         ));
+        $this->app->singleton(ProofCaptureService::class);
+        $this->app->singleton(ProofReviewService::class);
         $this->app->singleton(OrphanNetworkSweep::class, fn (Application $app): OrphanNetworkSweep => new OrphanNetworkSweep(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
@@ -268,6 +273,15 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(TopologySnapshotAvailability::class, fn (Application $app): TopologySnapshotAvailability => new TopologySnapshotAvailability(
             $app->make(IncusHost::class),
             $app->make(TopologySnapshotIdentity::class),
+        ));
+        $this->app->singleton(ProofCloseoutService::class, fn (Application $app): ProofCloseoutService => new ProofCloseoutService(
+            new GitRepository(self::primaryCheckout($repositoryRoot)),
+            $app->make(StatePaths::class),
+            $app->make(OperationId::class),
+            $app->make(SecretRedactor::class),
+            $app->make(TopologySnapshotRefresher::class)->request(...),
+            fn ($request, $capture): array => $app->make(TopologyReleaser::class)
+                ->releaseCapturedProof($request, $capture, issueLockHeld: true),
         ));
         $this->app->singleton(TopologySnapshotRebuilder::class, fn (Application $app): TopologySnapshotRebuilder => new TopologySnapshotRebuilder(
             $app->make(IncusHost::class),

@@ -4,7 +4,7 @@ This page is for a contributor or agent who proves an issue on Incus. It answers
 
 ## Discovery and proof
 
-An issue with the `proof:incus` label gets disposable topologies, each a proof topology as [Concepts](../concepts.md) defines the term. [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs the rolling topology snapshot they are copied from. [ADR 0006](../decisions/0006-topology-led-feature-development.md) separates discovery from proof and requires fresh proof, immutable proved attempts. Those fresh-proof requirements apply to the `proof` delivery flow. The `discovery` flow uses only discovery as a development tool, including for automated-only issues. [Implementation loop](implementation-loop.md) describes selection under [ADR 0051](../decisions/0051-select-discovery-only-feature-delivery.md).
+An issue with the `incus` label uses a disposable discovery topology for development. Explicit `proof` delivery adds a separate proof topology; the label itself does not select that flow. Automated-only issues without the label need no topology. [Implementation loop](implementation-loop.md#incus-requirement) describes this selection under [ADR 0058](../decisions/0058-separate-incus-requirements-from-delivery-flow.md). [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs the rolling topology snapshot they are copied from. [ADR 0006](../decisions/0006-topology-led-feature-development.md) separates discovery from proof. Its fresh-proof requirements apply only to explicit proof delivery under [ADR 0051](../decisions/0051-select-discovery-only-feature-delivery.md).
 
 ## Registered profile and issue extension
 
@@ -37,10 +37,14 @@ Each topology is one attempt with a purpose, a lease, and a record under `<workt
 | Purpose | Created by | Files | Ends with |
 | --- | --- | --- | --- |
 | `discovery` | `acquire` | `attempt.json`, `topology.json` | `release`, `promote`, or `bin/worktree-remove` |
-| `proof` | `prove` | `proof-attempt.json`, `proof-topology.json`, `proof.json` | `release --proof`, `promote`, or `bin/worktree-remove` |
+| `proof` | `prove` | `proof-attempt.json`, `proof-topology.json`, `proof.json`, captured evidence, and review records | Exact release after replacement, abandonment, or successful closeout refresh |
 | `candidate-convergence` | `candidate` | `candidate-attempt.json`, `candidate-topology.json`, `candidate-convergence.json` | `release --candidate` or `promote` |
 
-A lease names the issue, attempt ID, purpose, operation ID, acquisition time, and topology extension. The extension is `null` or `app-prod` and is stored before the harness creates a network or VM. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved. The results, `proof-inputs/`, `equivalence/`, and the `log` file survive release. `status` reports `absent`, one purpose, or the active purposes joined with `+`. An issue holds at most one attempt per purpose: `acquire` refuses a second discovery, `prove` refuses while a proof attempt exists, and `candidate` refuses while a candidate-convergence attempt exists.
+A lease names the issue, attempt ID, purpose, operation ID, acquisition time, and topology extension. The extension is `null` or `app-prod` and is stored before the harness creates a network or VM. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved.
+
+A successful proof becomes reviewable only after the harness captures its complete evidence. Its proof topology then stays alive through review and closeout. The proof result, captured evidence, review records, `proof-inputs/`, `equivalence/`, and the `log` file survive release. [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md) governs this retained-proof review lifecycle.
+
+`status` reports each active purpose and the proof's capture and review-evaluation state. An issue holds at most one attempt per purpose: `acquire` refuses a second discovery, `prove` refuses while a proof attempt exists, and `candidate` refuses while a candidate-convergence attempt exists.
 
 ## Capacity budget and leases
 
@@ -64,23 +68,28 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | Command | What it does |
 | --- | --- |
 | `acquire ISSUE WORKTREE` | Creates discovery and verifies readiness; when the issue plan exists, validates its extension before resource creation; refuses a second discovery, a worktree without `vendor/`, or a generation whose fingerprint differs from `main` |
-| `shell ISSUE NODE [--proof]` | Opens a login shell as `orbit` on one physical Node key of discovery, or of a `diagnosis` proof |
-| `exec ISSUE NODE --argv=JSON [--proof]` | Runs one argument vector as `orbit` on one physical Node key; `--argv-file=PATH` replaces `--argv` |
+| `shell ISSUE NODE [--proof --review-action=ID --required]` | Opens a login shell as `orbit` on one physical Node key of discovery, a retained diagnosis, or a captured successful proof; successful-proof use starts a separate interactive review action |
+| `exec ISSUE NODE --argv=JSON [--proof --review-action=ID --required]` | Runs one argument vector as `orbit` on one physical Node key; `--argv-file=PATH` replaces `--argv`; successful-proof use records its result as a required or exploratory review action |
 | `sync ISSUE` | Proves the mount, re-verifies the mounted source identity, and verifies readiness |
 | `verify ISSUE` | Verifies discovery readiness and records the report |
 | `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; the plan defaults to `.loop/proof/ISSUE.json` |
+| `capture ISSUE [--plan=PATH]` | Captures and archives complete successful proof evidence without releasing the topology, then permits interactive review |
+| `review ISSUE [--complete=ACTION --result=passed\|failed --finding=TEXT]` | Completes an interactive action when supplied, then evaluates required and exploratory review records |
 | `equivalence ISSUE [--plan=PATH]` | Compares the clean HEAD with the retained proof using the plan that defaults to `.loop/proof/ISSUE.json`, then writes an immutable report; see [Equivalence outcomes](proof-plans.md#equivalence-outcomes) |
 | `candidate ISSUE` | Converges and verifies the accepted head on a candidate-convergence topology after an `equivalent` report that requires it |
-| `status ISSUE` | Reports the state files without touching Incus |
-| `release ISSUE [--proof\|--candidate] [--capture] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. `--proof --capture` preserves acceptance evidence first. Recovery options identify one exact legacy lease. |
+| `closeout ISSUE --candidate=SHA --artifact=SHA --merge=SHA --main-sha=SHA` | Verifies the accepted merge, refreshes the snapshot from that merged main, records closeout, and releases the exact retained proof topology only after refresh succeeds |
+| `status ISSUE` | Reports the state files, capture identity, retained topology, and review evaluation without touching Incus |
+| `release ISSUE [--proof\|--candidate] [--replace\|--abandon] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. A successful proof requires explicit replacement or abandonment; ordinary closeout owns post-refresh release. Recovery options identify one exact legacy lease. |
 
-`bin/worktree-remove ISSUE` releases the proof topology, then discovery, then removes the worktree. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs candidate-bound artifact refs. Capture successful proof evidence before removing its worktree.
+`bin/worktree-remove ISSUE` releases the proof topology only after its closeout guard permits cleanup, then releases discovery and removes the worktree. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs candidate-bound artifact refs. Captured proof evidence and review records remain in the primary archive after worktree removal.
 
 ### Guest commands
 
 `exec` prints `{"state":"executed","exit_code":N,"stdout":"...","stderr":"..."}` with `--json` and the guest stdout without it, and exits `0` only when the guest command does. `--argv='["orbit","doctor","--json"]'` is an inline JSON array of strings; `--argv-file=PATH` names a file holding `{"argv":[...],"stdin":null}` when the vector needs stdin. The harness refuses both at once. Commands select physical Node keys, so `app-prod` selects the cloned Node and `app-prod-2` selects the constructed Node of an extended attempt. A shared role name never selects multiple Nodes.
 
-The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite PROGRAM ARGS`. No shell profile loads: `argv[0]` must resolve on the guest `PATH` or be absolute, and it cannot start with `-` or carry `=`. The harness links the checkout's `apps/cli/orbit` to `/usr/local/bin/orbit` on every checkout Node, so `orbit` resolves by name. Wrap a pipeline in `["sh","-c","..."]` and root work in `["sudo","..."]`. `shell` opens the same environment with `bash -l`, in `/home/orbit/orbit` on a checkout Node and in `/home/orbit` on either app-prod Node; `exec` always runs in `/home/orbit`. `exec --proof` and `shell --proof` accept only a `diagnosis` proof; the harness refuses a proved topology.
+The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite PROGRAM ARGS`. No shell profile loads: `argv[0]` must resolve on the guest `PATH` or be absolute, and it cannot start with `-` or carry `=`. The harness links the checkout's `apps/cli/orbit` to `/usr/local/bin/orbit` on every checkout Node, so `orbit` resolves by name. Wrap a pipeline in `["sh","-c","..."]` and root work in `["sudo","..."]`. `shell` opens the same environment with `bash -l`, in `/home/orbit/orbit` on a checkout Node and in `/home/orbit` on either app-prod Node; `exec` always runs in `/home/orbit`.
+
+`exec --proof` and `shell --proof` accept a `diagnosis` proof under its existing debugging path. They accept a proved topology only after complete capture and bind each successful-proof action to its issue, candidate, and attempt in the separate review record. The harness records whether an action is required or exploratory and its result. An interactive shell action stays incomplete until `review` records its result and finding. Required failures and incomplete required records prevent approval; exploratory failures remain distinct.
 
 ## Discovery mount
 
@@ -92,9 +101,11 @@ The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit
 
 An operator recovers an ambiguous lease with both `--recover-extension=none|app-prod` and `--expected-attempt=ID`. Discovery is the default; `--proof` or `--candidate` selects that purpose. The harness requires the full 32-character attempt ID and matching issue, purpose, attempt, and existing target evidence. Before it accepts `none`, it also requires the exact attempt-derived `app-prod-2` VM to be absent. Matching recovery atomically adds only the extension to the lease, and the same input can retry after partial cleanup. Conflicting input cannot replace the stored target.
 
-After target selection, `release` checks each VM against the attempt's ownership metadata, force-stops the running ones, deletes them, and verifies they are gone. It then checks the network's ownership immediately before it deletes the network, drops the lease and record, and unpins a proved commit's Git ref. A retry continues from the same exact target after partial cleanup. An ownership conflict preserves every unrelated resource and keeps the attempt record for diagnosis. The output lists `released`, `already_absent`, and `networks_reaped`.
+After target selection, `release` checks each VM against the attempt's ownership metadata, force-stops the running ones, deletes them, and verifies they are gone. It then checks the network's ownership immediately before it deletes the network, drops the lease and record, and unpins a proved commit's Git ref only when no retained evidence refers to it.
 
-The retained proof topology can exercise lease files, identity validation, and refusal before transport from inside a guest. Actual Incus deletion is a host boundary: an issue that changes release selection uses a separately reviewed host rehearsal bound to the same proved candidate and leaves the retained proof evidence unchanged.
+A successful proved attempt also requires a lifecycle guard: explicit replacement, explicit abandonment, or release by `closeout` after successful snapshot refresh from the verified merge. A failed refresh keeps every proof Node and the complete attempt lease for retry. A retry continues from the same exact target after partial cleanup. An ownership conflict preserves every unrelated resource and keeps the attempt record for diagnosis. The output lists `released`, `already_absent`, and `networks_reaped`.
+
+The retained proof topology can exercise lease files, identity validation, capture and review records, and refusal before transport from inside a guest. Actual Incus deletion is a host boundary: an issue that changes release selection uses a separately reviewed host rehearsal bound to the same candidate and leaves the captured proof and review evidence unchanged.
 
 Every Incus network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep that deletes each harness network in the configured Incus project with an empty `used_by`, except `oe-topo-snap` and `oe-standby`. The sweep holds the `topology-create` lock, so a network created moments before its first VM is never swept.
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
+use App\E2E\ProofReviewService;
+use App\E2E\State\SecretRedactor;
 use App\E2E\TopologyAcquirer;
 use App\E2E\Value\AttemptPurpose;
 use InvalidArgumentException;
@@ -17,20 +19,37 @@ final class ExecCommand extends E2ECommand
     protected $signature =
         'topology:exec {issue} {role} '
         .self::WORKTREE_OPTION
-        .' {--argv=} {--argv-file=} {--proof : Run against the retained failed proof topology} {--json}';
+        .' {--argv=} {--argv-file=} {--proof : Run against a retained proof topology}'
+        .' {--review-action= : Record this action against captured successful proof}'
+        .' {--required : Mark the recorded review action as required}'
+        .' {--json}';
 
     #[\Override]
-    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one discovery or failed-proof role';
+    protected $description = 'Execute exact argv as orbit on discovery, failed proof, or captured proof review';
 
-    public function handle(TopologyAcquirer $acquirer): int
-    {
+    public function handle(
+        TopologyAcquirer $acquirer,
+        ProofReviewService $review,
+        SecretRedactor $redactor,
+    ): int {
         try {
             [$argv, $stdin] = $this->commandInput();
             $request = $this->request();
             $role = (string) $this->argument('role');
             $purpose = $this->option('proof') ? AttemptPurpose::Proof : AttemptPurpose::Discovery;
-            $result = $acquirer->execute($request, $role, $argv, $stdin, $purpose);
-            $this->log($request, "role={$role} exit={$result->exitCode} argv=".json_encode($argv, JSON_THROW_ON_ERROR));
+            $action = $this->stringOption('review-action');
+            if ($this->option('required') && $action === null) {
+                throw new InvalidArgumentException('--required needs --review-action.');
+            }
+            if ($action !== null && ! $this->option('proof')) {
+                throw new InvalidArgumentException('--review-action needs --proof.');
+            }
+            $result = $action === null
+                ? $acquirer->execute($request, $role, $argv, $stdin, $purpose)
+                : $review->execute($request, $action, $role, $argv, (bool) $this->option('required'), $stdin);
+            $redactedArgv = json_encode($redactor->redactArgv($argv), JSON_THROW_ON_ERROR);
+            $reviewIdentity = $action === null ? '' : " action={$action}";
+            $this->log($request, "role={$role}{$reviewIdentity} exit={$result->exitCode} argv={$redactedArgv}");
             $payload = [
                 'state' => 'executed',
                 'exit_code' => $result->exitCode,
@@ -49,6 +68,13 @@ final class ExecCommand extends E2ECommand
 
             return self::FAILURE;
         }
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

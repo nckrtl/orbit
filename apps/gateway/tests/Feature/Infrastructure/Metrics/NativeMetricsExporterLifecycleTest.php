@@ -73,7 +73,7 @@ it('returns stable targets from explicit defaults and prospective roles', functi
     ]);
 });
 
-it('fails closed when a selected node has no valid WireGuard address', function (): void {
+it('does not project a selected node without managed identity', function (): void {
     $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.3');
     $metrics
         ->roles()
@@ -102,8 +102,77 @@ it('fails closed when a selected node has no valid WireGuard address', function 
         degradations: app(ExporterDegradationRepository::class),
     );
 
-    expect(fn () => $lifecycle->targets($metrics))
-        ->toThrow(ResourceOperationException::class, 'valid WireGuard address');
+    expect($lifecycle->targets($metrics))->toBe([
+        ['name' => 'metrics', 'address' => '10.44.0.3'],
+    ]);
+});
+
+it('fails closed with a bounded error for an eligible exporter with an invalid address', function (): void {
+    $sentinel = 'credential=metrics-secret';
+    $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.3');
+    $metrics->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $invalid = metricsExporterLifecycleNode('invalid-target', $sentinel);
+    $invalid->roles()->create([
+        'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $lifecycle = new NativeMetricsExporterLifecycle(
+        executor: new MetricsExporterSshExecutor(
+            ssh: app(SshExecutor::class),
+            keys: app(SshKeyProvider::class),
+            knownHosts: app(KnownHostsStore::class),
+        ),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
+        degradations: app(ExporterDegradationRepository::class),
+    );
+
+    try {
+        $lifecycle->targets($metrics);
+        $this->fail('Expected the invalid exporter address to be refused.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)
+            ->toBe('metrics.exporter_address_invalid')
+            ->and($exception->status)
+            ->toBe(409)
+            ->and($exception->getMessage())
+            ->not->toContain($sentinel);
+    }
+});
+
+it('never inspects or mutates an ineligible exporter while eligible nodes converge', function (): void {
+    $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.1');
+    $assignment = $metrics->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $eligible = metricsExporterLifecycleNode('eligible', '10.44.0.2');
+    $eligible->roles()->create([
+        'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $ineligible = metricsExporterLifecycleNode('ineligible', '10.44.0.3');
+    $ineligible->update(['ssh_host_fingerprint' => null]);
+    app(ExporterPreferenceRepository::class)->put($ineligible->id, ExporterPreference::Enabled);
+    $runtime = new MetricsExporterFleetRuntimeFake('never');
+
+    new NativeMetricsExporterLifecycle(
+        executor: $runtime,
+        projection: app(NativeMetricsExporterProjection::class),
+        degradations: app(ExporterDegradationRepository::class),
+    )->converge($metrics, $assignment);
+
+    expect($runtime->events)->toBe([
+        'snapshot:metrics',
+        'snapshot:eligible',
+        'converge:metrics',
+        'converge:eligible',
+    ]);
 });
 
 it('restores every earlier exporter mutation when a later fleet node fails', function (): void {
@@ -332,6 +401,7 @@ function metricsExporterLifecycleNode(string $name, string $address): Node
         'public_ssh_host' => "192.0.2.{$name}",
         'ssh_user' => 'orbit',
         'wireguard_ip' => $address,
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 }
 

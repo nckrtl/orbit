@@ -62,19 +62,29 @@ orchestrator assigns the formal reviewers and coordinates phase transitions.
   `bin/e2e-*`; the tests under `apps/e2e/tests/Feature/**` and
   `apps/e2e/tests/Unit/**` are not harness code. Harness changes require a dedicated issue with
   repository-owner-approved behavior and issue-specific proof.
-- The `proof:incus` label uses the repository's disposable topology and proof commands.
-  Automated-only changes use project checks and the local review gate.
+- The `incus` label requires real-machine verification; it does not select a
+  delivery flow. Use discovery for labeled issues, adding a separate proof
+  topology only when `proof` is explicitly selected. Automated-only issues
+  without the label use local checks without a required topology. ADR 0058
+  governs this distinction. Planning and review check the label against acceptance.
+- New or revised feature plans use the planning template and `bin/plan-lint`.
+  A completed plan handoff includes a receipt verified against its saved artifact;
+  structural validation does not replace independent plan review.
 - Proof plans and fixtures live locally under ignored `.loop/proof/` and are
   published with `bin/loop-artifacts` on immutable candidate-bound refs. Per-worktree harness state lives in `<worktree>/.e2e/`.
 - Discovery remains the default development target while a separate fresh
   proof topology runs. Retain a failed proof for explicit unprivileged
   debugging and release it independently before the next proof.
 - Proof evidence is immutable for one exact commit and issue. Never reuse proof
-  resources across issues. Capture successful evidence before releasing its VMs.
+  resources across issues. Capture successful evidence before interactive review.
 - Every proof action must exit `0`. Promotion requires the exact proved commit,
   exact proof plan, and complete zero-exit action evidence.
-- Release successful proof with `release <ISSUE> --proof --capture` and idle
-  discovery before review. Closeout refreshes the snapshot from merged main.
+- In proof flow, release idle discovery before review but retain every captured
+  successful proof Node. Review actions and findings stay separate from immutable
+  proof evidence, and a code or configuration fix requires fresh proof.
+- After the verified merge, closeout refreshes the snapshot from merged main and
+  then releases the exact retained successful proof topology. A failed refresh
+  keeps that topology and its evidence for retry.
 - Production release is separate from development proof and never reuses a
   disposable proof topology.
 

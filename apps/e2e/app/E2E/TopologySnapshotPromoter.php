@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
+use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
@@ -21,6 +22,7 @@ use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofPromotionRecord;
 use App\E2E\Value\ProofResult;
+use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
@@ -72,6 +74,7 @@ final readonly class TopologySnapshotPromoter
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $topology = $this->provedTopology($state, $plan);
+        $this->assertNotReviewed($state, $topology->attempt);
         $manifest = $this->assertProofEvidence($state, $plan);
         $candidate = $this->promotionCandidate($request, $state, $topology, $manifest, $plan);
         $promotionTopology = $candidate['promotion_path'] === 'candidate-convergence'
@@ -109,6 +112,7 @@ final readonly class TopologySnapshotPromoter
             $this->withLock($this->generationLock, 'standby-generation', function () use (
                 $request,
                 $state,
+                $topology,
                 $promotionTopology,
                 $promoted,
                 $generation,
@@ -121,6 +125,7 @@ final readonly class TopologySnapshotPromoter
                     throw new RuntimeException('The issue topology is locked by another harness command.');
                 }
                 try {
+                    $this->assertNotReviewed($state, $topology->attempt);
                     if ($this->manifests->promoted()?->toArray() !== $promoted->toArray()) {
                         throw new RuntimeException(
                             'The promoted topology snapshot generation changed before promotion.',
@@ -189,6 +194,23 @@ final readonly class TopologySnapshotPromoter
             'released' => $cleanup['released'],
             'networks_reaped' => $cleanup['networks_reaped'],
         ];
+    }
+
+    private function assertNotReviewed(IssueState $state, AttemptId $attempt): void
+    {
+        $local = $state->reviewRecord($attempt);
+        $raw = new AtomicJsonStore($this->hostPaths)->read(
+            'proof-review/'.$state->issue.'/'.$attempt->value.'.json',
+        );
+        $archived = is_array($raw) ? ProofReviewRecord::fromArray($raw) : null;
+        if ($local !== null && $archived !== null && $local->toArray() !== $archived->toArray()) {
+            throw new RuntimeException('The proof review archive and worktree record differ.');
+        }
+        if ($local?->hasActions() === true || $archived?->hasActions() === true) {
+            throw new RuntimeException(
+                'A proof topology used for interactive review cannot become the shared topology snapshot.',
+            );
+        }
     }
 
     /** @return array<string, AttemptId> */

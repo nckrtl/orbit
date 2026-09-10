@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Data\Metrics\MetricsMutationData;
 use App\Data\Metrics\MetricsStatusData;
+use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsCredentialManager;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsStatusReader;
@@ -17,7 +19,7 @@ use App\Http\Controllers\Api\MetricsController;
 use App\Models\Node;
 use Illuminate\Routing\Route;
 
-it('exposes the seven focused metrics routes with stable methods', function (): void {
+it('exposes the eight focused metrics routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
         ->filter(static fn (Route $route): bool => str_starts_with(
             (string) $route->getName(),
@@ -29,6 +31,7 @@ it('exposes the seven focused metrics routes with stable methods', function (): 
         ->all();
 
     expect($routes)->toBe([
+        'metrics:grafana:authorize' => ['api/v1/metrics/grafana/authorize', ['GET', 'HEAD']],
         'metrics:enable' => ['api/v1/metrics', ['POST']],
         'metrics:remove' => ['api/v1/metrics', ['DELETE']],
         'metrics:status' => ['api/v1/metrics/status', ['GET', 'HEAD']],
@@ -330,6 +333,35 @@ it('refuses to disable the exporter on the Metrics node with a stable error code
         ->assertStatus(422)
         ->assertJsonPath('error.code', 'node.role_conflict')
         ->assertJsonPath('error.message', 'The metrics node exporter cannot be disabled.');
+});
+
+it('refuses exporter enablement for an unmanaged node before side effects', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.1',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+    $this->markAsGateway($gateway);
+    $target = Node::query()->create([
+        'name' => 'client',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => null,
+    ]);
+    $fleet = Mockery::mock(MetricsFleetReconciler::class);
+    $fleet->shouldNotReceive('reconcile');
+    app()->instance(MetricsFleetReconciler::class, $fleet);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->putJson("/api/v1/metrics/exporters/{$target->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'metrics.exporter_node_ineligible');
+
+    expect(app(ExporterPreferenceRepository::class)->get($target->id))->toBeNull();
 });
 
 it('refuses a second Metrics claim through the generic role route with a stable error code', function (): void {
