@@ -1,0 +1,116 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Enforce managed-Node eligibility for Metrics exporters",
+        "url": "https://github.com/nckrtl/orbit/pull/252"
+      },
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      },
+      {
+        "title": "ADR 0057",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0057-limit-metrics-exporters-to-managed-nodes.md"
+      },
+      {
+        "title": "ADR 0004",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0004-verify-only-doctor-boundary.md"
+      },
+      {
+        "title": "ADR 0012 (platform support withdrawn)",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0012-ubuntu-24-04-roleless-operator-clients.md"
+      },
+      {
+        "title": "ADR 0003",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0003-singleton-metrics-role.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "Metrics enables exporters only on eligible managed Nodes, including managed Nodes without roles. Ineligible records cannot acquire Gateway service management through an exporter preference.\n\n## Scope\n\n* In: exporter eligibility, enable-request validation, persisted preference interpretation, fleet projection, convergence, Doctor expectations, and Metrics guidance.\n* Out: client enrollment or platform expansion, converting clients into managed Nodes, Grafana access, credential lifecycle, and harness changes.\n\n## Acceptance\n\n- [ ] An active Ubuntu 26.04 Node managed by the Gateway over SSH remains eligible; a managed Node without roles can opt in explicitly. Inactive, unsupported-platform, and non-managed policy fixtures remain excluded with absent, enabled, or disabled stored preference. Proof: `apps/gateway/tests/Unit/Domain/Metrics/ExporterSelectorTest.php` and `apps/gateway/tests/Feature/Infrastructure/Metrics/NativeMetricsExporterProjectionTest.php`.\n- [ ] Enabling an exporter for an ineligible record returns a bounded refusal before preference mutation or any SSH or remote command attempt; a stored enabled preference cannot bypass eligibility or select the record for scraping. Proof: Gateway Metrics API tests with ineligible fixtures and assertions that no remote operation runs.\n- [ ] Fleet reconciliation does not install, configure, start, or require an exporter on a non-managed policy fixture; that fixture cannot block eligible managed-Node convergence. Proof: `apps/gateway/tests/Feature/Infrastructure/Metrics/NativeMetricsExporterLifecycleTest.php` with transport spies.\n- [ ] Doctor reports neither missing exporter nor missing exporter SSH as drift for a non-managed policy fixture, preserves managed-Node exporter findings, and makes no changes. Temporary SSH failure on a managed Node remains a managed-Node observation failure rather than changing its eligibility. Proof: `apps/gateway/tests/Feature/Domain/NodeDoctorProbeTest.php` and the Metrics Doctor suites.\n- [ ] A supported managed Node without roles can enable its exporter, appears in the Metrics projection, and produces host metrics; disabling it removes its selection. Proof: Incus action `managed-roleless-exporter-lifecycle` on the existing Ubuntu 26.04 topology.\n- [ ] Existing role and Metrics-Node defaults, explicit disable behavior, and retry semantics remain valid within the eligible managed fleet. Proof: the Gateway Metrics selector and lifecycle suites.\n- [ ] Metrics guidance explains supported managed-Node eligibility without promising client enrollment or another supported platform, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Gateway checks pass. Proof: `cd apps/gateway && composer check`.",
+  "id": "ec584fe9-1be5-49b3-92e5-f36fcd68efbc",
+  "identifier": "ORB-232",
+  "inverseRelations": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Enforce managed-Node eligibility for Metrics exporters",
+  "updatedAt": "2026-09-10T17:33:10.886Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-232/enforce-managed-node-eligibility-for-metrics-exporters"
+}
