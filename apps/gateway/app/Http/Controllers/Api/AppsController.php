@@ -23,7 +23,6 @@ final class AppsController extends Controller
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function index(Request $request, ListAppsAction $action): JsonResponse
     {
-        /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
         $consumer = $request->user();
         assert($consumer instanceof Node, description: 'Authenticated peer must be a Node.');
 

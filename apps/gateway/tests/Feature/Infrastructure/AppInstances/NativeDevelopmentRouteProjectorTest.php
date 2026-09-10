@@ -630,10 +630,11 @@ function orb127_route_projection_models(
 }
 
 /** @return array{NativeDevelopmentRouteProjector, Orb127RouteSshExecutor, Orb127RouteProcessRunner, string} */
-function orb127_route_projector(?\Closure $failSsh = null, bool $failDns = false): array
+function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false): array
 {
     $ssh = new Orb127RouteSshExecutor($failSsh);
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-test-key';
@@ -644,7 +645,8 @@ function orb127_route_projector(?\Closure $failSsh = null, bool $failDns = false
             return 'ssh-ed25519 AAAA';
         }
     };
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-test-known-hosts';
@@ -654,7 +656,8 @@ function orb127_route_projector(?\Closure $failSsh = null, bool $failDns = false
     };
     $executor = new AppDevSshExecutor($ssh, $keys, $knownHosts);
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-    $accounts = new class($account) implements ManagedUserAccountResolver {
+    $accounts = new class($account) implements ManagedUserAccountResolver
+    {
         public function __construct(
             private readonly ManagedUserAccount $account,
         ) {}
@@ -664,7 +667,8 @@ function orb127_route_projector(?\Closure $failSsh = null, bool $failDns = false
             return $this->account;
         }
     };
-    $signer = new class implements LeafCertificateSigner {
+    $signer = new class implements LeafCertificateSigner
+    {
         public function sign(string $hostname, string $certificateRequest): string
         {
             return "LEAF CERTIFICATE\n";

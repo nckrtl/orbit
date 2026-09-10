@@ -9,6 +9,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
@@ -23,7 +24,6 @@ use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\Support\ImmediateToolOperationLock;
 
-/** @mago-expect lint:halstead The install matrix keeps every required state transition and failure contract visible. */
 describe(InstallToolAction::class, function (): void {
     it('rejects an unsupported manager before node I/O', function (): void {
         [$action, $manager, $lock] = tool_install_action();
@@ -176,7 +176,7 @@ describe(InstallToolAction::class, function (): void {
                 new ToolManagerRegistry([$manager]),
                 new NativeToolManagerScopeLock,
             ),
-            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
+            eligibility: new ToolNodeEligibility,
         );
 
         $failure = tool_operation_exception(fn () => $action->execute(tool_install_data(
@@ -740,7 +740,7 @@ function tool_install_action(ToolManagerName $name = ToolManagerName::Apt): arra
             constraints: new VersionConstraint,
             lock: $lock,
             materializer: $materializer,
-            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
+            eligibility: new ToolNodeEligibility,
         ),
         $manager,
         $lock,
@@ -782,7 +782,6 @@ function tool_action_manager_record(
     ]);
 }
 
-/** @mago-expect lint:excessive-parameter-list The fixture exposes every persisted retry field used by the matrix. */
 function tool_action_tool(
     Node $node,
     ToolManagerRecord $record,

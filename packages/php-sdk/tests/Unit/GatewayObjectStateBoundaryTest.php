@@ -16,7 +16,6 @@ use Orbit\Sdk\Responses\Tools\ToolsResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead Security-boundary assertions stay visible together. */
 describe('gateway object-state boundary', function (): void {
     it('hides invalid Doctor family credentials while preserving the transport body', function (): void {
         $credential = gateway_object_state_credential('doctor-family');
@@ -451,7 +450,6 @@ function gateway_object_state_credential(string $label): string
 function gateway_object_state_debug_outputs(object $value): array
 {
     ob_start();
-    /** @mago-expect lint:no-debug-symbols Executing regression captures the diagnostic boundary. */
     var_dump($value);
     $varDump = ob_get_clean();
 
@@ -538,7 +536,6 @@ function gateway_object_state_connector_operation(string $operation, string $gat
 {
     match ($operation) {
         'print_r' => print_r(new GatewayConnector($gatewayUrl), return: true),
-        /** @mago-expect lint:no-debug-symbols Executing regression exercises pre-diagnostic rejection. */
         'var_dump' => var_dump(new GatewayConnector($gatewayUrl)),
         'serialize' => serialize(new GatewayConnector($gatewayUrl)),
         default => throw new InvalidArgumentException('Unknown connector diagnostic operation.'),
@@ -574,8 +571,8 @@ function gateway_object_state_sdk_trace(Throwable $exception): string
 }
 
 /**
- * @param array<string, string> $surfaces
- * @param array<string, string> $needles
+ * @param  array<string, string>  $surfaces
+ * @param  array<string, string>  $needles
  * @return list<string>
  */
 function gateway_object_state_leaks(array $surfaces, array $needles): array

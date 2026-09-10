@@ -6,7 +6,6 @@ namespace App\Domain\Doctor;
 
 final readonly class WorkspaceInspectionData
 {
-    /** @mago-expect lint:excessive-parameter-list The value keeps the complete bounded workspace projection. */
     public function __construct(
         public bool $checkoutExists,
         public bool $worktreeRegistered,

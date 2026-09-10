@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
@@ -18,7 +19,6 @@ use App\Models\ToolManagerRecord;
 use Tests\Support\FakeToolManager;
 use Tests\Support\ImmediateToolOperationLock;
 
-/** @mago-expect lint:halstead The removal matrix keeps every required plan, retry, and verification contract visible. */
 describe(RemoveToolAction::class, function (): void {
     it('rejects protected intent before the lock or manager calls', function (): void {
         [$tool] = removal_tool_fixture(protected: true);
@@ -320,7 +320,7 @@ function removal_tool_action(): array
         new RemoveToolAction(
             managers: new ToolManagerRegistry([$manager]),
             lock: $lock,
-            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
+            eligibility: new ToolNodeEligibility,
         ),
         $manager,
         $lock,
@@ -328,7 +328,6 @@ function removal_tool_action(): array
 }
 
 /** @return array{Tool, ToolManagerRecord} */
-/** @mago-expect lint:excessive-parameter-list The fixture exposes every persisted removal state used by the matrix. */
 function removal_tool_fixture(
     LifecycleStatus $nodeStatus = LifecycleStatus::Active,
     LifecycleStatus $managerStatus = LifecycleStatus::Active,
@@ -373,7 +372,6 @@ function removal_tool_manager(Node $node, LifecycleStatus $status = LifecycleSta
     ]);
 }
 
-/** @mago-expect lint:excessive-parameter-list The fixture exposes the complete persisted removal intent. */
 function removal_tool_record(
     Node $node,
     ToolManagerRecord $manager,

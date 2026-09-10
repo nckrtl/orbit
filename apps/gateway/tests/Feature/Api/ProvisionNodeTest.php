@@ -18,11 +18,11 @@ use App\Models\NodeRole;
 use Illuminate\Support\Str;
 use Tests\Support\FakeToolManagerMaterializer;
 
-/** @mago-expect lint:halstead The API matrix keeps registration, recovery, and activity contracts together. */
 describe('POST /api/v1/nodes', function (): void {
     beforeEach(function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+        {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
@@ -40,7 +40,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('provisions a node through the gateway action', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -105,7 +106,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('returns 502 and redacts role convergence command output in activity', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -113,7 +115,8 @@ describe('POST /api/v1/nodes', function (): void {
                 bool $rolelessOperator = false,
             ): void {}
         });
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+        {
             public function converge(Node $node, NodeRole $assignment): void
             {
                 throw new NodeProvisioningException(
@@ -154,7 +157,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('reuses the stored public SSH host when an existing Linux node omits it', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public ?string $publicSshHost = null;
@@ -204,7 +208,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('returns a stable validation error when a new Linux node omits its public SSH host', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -241,7 +246,8 @@ describe('POST /api/v1/nodes', function (): void {
 
     it('uses the request pin as the expectation and returns the observed stored fingerprint', function (): void {
         $observedFingerprint = 'SHA256:'.str_repeat(string: 'B', times: 43);
-        $converger = new class($observedFingerprint) implements NodeConverger {
+        $converger = new class($observedFingerprint) implements NodeConverger
+        {
             public ?string $expectedFingerprint = null;
 
             public function __construct(
@@ -282,7 +288,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('requires a unique valid TLD for app-dev nodes', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -333,7 +340,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('rejects a non-member Node TLD owned by an active Cluster before convergence', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -372,7 +380,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('allows a proposed member Node to share its active Cluster TLD', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -408,7 +417,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('preserves an existing non-member Node when an active Cluster owns its proposed TLD', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -567,7 +577,8 @@ describe('POST /api/v1/nodes', function (): void {
     it('returns a bounded 502 mismatch error without echoing either fingerprint', function (): void {
         $expectedFingerprint = 'SHA256:'.str_repeat(string: 'A', times: 43);
         $observedFingerprint = 'SHA256:'.str_repeat(string: 'B', times: 43);
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public ?string $expectedFingerprint = null;
 
             public function converge(
@@ -616,14 +627,16 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('keeps an active reprovisioning caller authorized after convergence failure', function (): void {
-        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager
+        {
             public function converge(Node $node): void {}
 
             public function remove(Node $node): void {}
 
             public function restore(Node $node): void {}
         });
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -661,7 +674,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('persists a stable host key scan failure before first-contact SSH', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -728,7 +742,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('keeps empty-string normalization for other nullable node fields', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -758,7 +773,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('rejects invalid and assigned WireGuard peer addresses before convergence', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -853,7 +869,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('records bounded native failure metadata', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -902,7 +919,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
     it('passes default and explicit Linux user identities', function (): void {
         $identities = [];
-        app()->instance(NodeConverger::class, new class($identities) implements NodeConverger {
+        app()->instance(NodeConverger::class, new class($identities) implements NodeConverger
+        {
             public function __construct(
                 private array &$identities,
             ) {}
@@ -933,7 +951,8 @@ describe('POST /api/v1/nodes', function (): void {
 
     it('rejects invalid user values before convergence', function (): void {
         $calls = 0;
-        app()->instance(NodeConverger::class, new class($calls) implements NodeConverger {
+        app()->instance(NodeConverger::class, new class($calls) implements NodeConverger
+        {
             public function __construct(
                 private int &$calls,
             ) {}

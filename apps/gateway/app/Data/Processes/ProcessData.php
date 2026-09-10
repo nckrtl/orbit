@@ -11,7 +11,6 @@ use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** @mago-expect lint:excessive-parameter-list */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ProcessData extends Data
 {
@@ -58,8 +57,6 @@ final class ProcessData extends Data
 
     /**
      * @return array<string, mixed>
-     *
-     * @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary.
      */
     private static function redactedRuntimeConfig(#[SensitiveParameter] Process $process): array
     {

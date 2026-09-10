@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteStatus;
@@ -18,7 +17,6 @@ use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect One inventory composes node-scoped legacy, workload, and Router eligibility. */
 final readonly class AppDevSiteRepository
 {
     /** @return Collection<int, AppDevSite> */
@@ -127,7 +125,6 @@ final readonly class AppDevSiteRepository
 
         $routes = $routeQuery->get();
         /** @var Collection<int, Route> $routes */
-
         foreach ($routes as $route) {
             $targets = $route
                 ->targets
@@ -153,13 +150,11 @@ final readonly class AppDevSiteRepository
             );
 
             foreach ($targets as $target) {
-                assert($target instanceof AppInstance);
 
                 $sites->push($this->appInstanceSite($target, $route));
             }
 
             if ($hasRouterSite) {
-                assert($router instanceof Node);
 
                 $sites->push($this->routerSite(array_values($targets->all()), $route, $router));
             }
@@ -218,7 +213,6 @@ final readonly class AppDevSiteRepository
         $router = $route->cluster?->routerAssignment?->node;
 
         foreach ($targets as $target) {
-            assert($target instanceof AppInstance);
             $sites->push($this->appInstanceSite($target, $route, hostnameChange: true));
         }
 

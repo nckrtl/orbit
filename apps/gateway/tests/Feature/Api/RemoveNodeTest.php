@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\RemoveNodeAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
@@ -659,7 +660,7 @@ it('enforces consent in the action itself, not only at the request boundary', fu
     remove_node_offline_probe($target);
     remove_node_role_fixture($target, RoleName::AppProd);
 
-    expect(fn () => app(App\Actions\Nodes\RemoveNodeAction::class)->execute($target, $caller, offline: true))
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller, offline: true))
         ->toThrow(ResourceOperationException::class);
 
     expect($target->fresh())
@@ -736,7 +737,6 @@ final class RemoveNodeFakeDnsManager implements PrivateDnsManager
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
 final class RemoveNodeFakePeerProjection implements GatewayPeerProjectionManager
 {
     /** @var list<int> */
@@ -770,7 +770,6 @@ final class RemoveNodeFakePeerProjection implements GatewayPeerProjectionManager
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
 final class RemoveNodeFakeMetricsRuntime implements MetricsRuntimeLifecycle
 {
     public function converge(Node $node, NodeRole $assignment): void {}
@@ -783,7 +782,6 @@ final class RemoveNodeFakeMetricsRuntime implements MetricsRuntimeLifecycle
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
 final class RemoveNodeUnreachableExporterRuntime implements MetricsExporterRuntime
 {
     /** @var list<string> */
@@ -838,7 +836,6 @@ final class RemoveNodeUnreachableExporterRuntime implements MetricsExporterRunti
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
 final class RemoveNodeFakeReachability implements NodeReachabilityProbe
 {
     public function __construct(
@@ -851,7 +848,6 @@ final class RemoveNodeFakeReachability implements NodeReachabilityProbe
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
 final class RemoveNodeCountingCleaner implements NodeRoleDependentCleaner
 {
     public int $calls = 0;

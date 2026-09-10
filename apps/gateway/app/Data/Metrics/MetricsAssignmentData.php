@@ -8,7 +8,6 @@ use App\Models\NodeRole;
 
 final readonly class MetricsAssignmentData
 {
-    /** @mago-expect lint:excessive-parameter-list The value preserves the complete bounded assignment projection. */
     public function __construct(
         public int $id,
         public int $nodeId,

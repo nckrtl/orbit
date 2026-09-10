@@ -29,6 +29,7 @@ final class StoreAppRequest extends FormRequest
         ];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

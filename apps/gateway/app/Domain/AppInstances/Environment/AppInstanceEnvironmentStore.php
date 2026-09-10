@@ -10,7 +10,6 @@ use App\Models\AppInstanceEnvironmentValue;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:cyclomatic-complexity The store keeps complete configuration validation and each atomic storage operation together. */
 final readonly class AppInstanceEnvironmentStore
 {
     public function __construct(
@@ -168,7 +167,6 @@ final readonly class AppInstanceEnvironmentStore
     /** @return array<string, string> */
     private function storedValues(int $appInstanceId): array
     {
-        /** @var array<string, string> $values */
         try {
             $values = AppInstanceEnvironmentValue::query()
                 ->where('app_instance_id', $appInstanceId)

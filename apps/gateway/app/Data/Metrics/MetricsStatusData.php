@@ -7,8 +7,7 @@ namespace App\Data\Metrics;
 final readonly class MetricsStatusData
 {
     /**
-     * @param list<MetricsExporterData> $exporters
-     * @mago-expect lint:excessive-parameter-list The value preserves the complete bounded Metrics status projection.
+     * @param  list<MetricsExporterData>  $exporters
      */
     public function __construct(
         public bool $enabled,

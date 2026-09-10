@@ -1280,7 +1280,9 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "App",
                 "Gateway",
+                "Tool",
                 "Workspace"
             ],
             "governing_adrs": [

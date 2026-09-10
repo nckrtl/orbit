@@ -9,7 +9,6 @@ use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead Security-boundary assertions stay visible together. */
 describe('gateway exception boundary', function (): void {
     it('preserves Tool error outcomes through the transport boundary', function (
         string $errorCode,
@@ -284,15 +283,15 @@ describe('gateway exception boundary', function (): void {
 
         expect($diagnostics)
             ->not->toContain(
-            $appKey,
-            $apiToken,
-            $password,
-            $privateKey,
-            $confirmation,
-            $authorization,
-            $bearer,
-            $pem,
-        );
+                $appKey,
+                $apiToken,
+                $password,
+                $privateKey,
+                $confirmation,
+                $authorization,
+                $bearer,
+                $pem,
+            );
     });
 
     it('uses null for an invalid error code', function (?string $errorCode): void {

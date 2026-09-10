@@ -11,7 +11,6 @@ use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead Response safety assertions stay visible together. */
 describe('AppInstance environment response', function (): void {
     it('exposes one immutable bounded correlated operation result', function (): void {
         $mock = new MockClient([

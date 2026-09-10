@@ -6,7 +6,6 @@ namespace App\Services\Git;
 
 use Symfony\Component\Process\Process;
 
-/** @mago-expect lint:cyclomatic-complexity Git discovery rejects each incomplete or unsafe repository fact independently. */
 final readonly class NativeGitRegistrationDiscovery implements GitRegistrationDiscovery
 {
     public function inspect(string $path): ?GitRegistrationFacts

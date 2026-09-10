@@ -34,7 +34,6 @@ final class NodeAccessController extends Controller
         Node $consumerNode,
         RemoveNodeAccessAction $action,
     ): JsonResponse {
-        /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
         $caller = $request->user();
         assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
 

@@ -6,8 +6,6 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutPathOrigin;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -17,7 +15,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Workspace;
 
-/** @mago-expect lint:kan-defect,too-many-methods,cyclomatic-complexity Instance and workspace source scripts keep containment and ACL accounting together. */
 final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
 {
     public function __construct(
@@ -487,7 +484,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $account->group,
                 $account->home,
                 $allowedRoot->value,
-                $grouping?->value ?? '-',
+                $grouping->value ?? '-',
                 (string) count($recognized),
             ];
             foreach ($recognized as $path) {
@@ -924,14 +921,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         }
 
         $releasePaths = array_diff($this->checkoutTraversalPaths($checkout), $remaining);
-        $ordered = [];
 
-        foreach (array_reverse($releasePaths) as $path) {
-            if (is_string($path)) {
-                $ordered[] = $path;
-            }
-        }
-
-        return $ordered;
+        return array_values(array_reverse($releasePaths));
     }
 }

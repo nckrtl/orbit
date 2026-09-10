@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\AppInstances;
 
-/** @mago-expect lint:excessive-parameter-list The request carries seven independent creation inputs. */
 final readonly class CreateAppInstanceData
 {
     public function __construct(

@@ -34,7 +34,7 @@ final class DoctorCommand extends GatewayCommand
             }
         }
 
-        $families = $this->option('family');
+        $families = $this->input->getOption('family');
         $families = is_array($families) && $families !== [] ? array_values(array_map(strval(...), $families)) : null;
         $connector = $this->gatewayConnector($repository, $connectors);
         if ($connector === null) {
@@ -58,6 +58,7 @@ final class DoctorCommand extends GatewayCommand
                 $issues = $family->issues;
                 if ($issues === []) {
                     $rows[] = [$nodeReport->nodeName, $family->family, $family->status, $family->checked, '—'];
+
                     continue;
                 }
                 foreach ($issues as $issue) {

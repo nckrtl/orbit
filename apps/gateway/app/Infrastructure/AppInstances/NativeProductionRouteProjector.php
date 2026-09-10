@@ -17,7 +17,6 @@ use App\Models\Route;
 
 final readonly class NativeProductionRouteProjector implements ProductionRouteProjector
 {
-    /** @mago-expect lint:excessive-parameter-list The shared fallback and dedicated runtime are separate compatibility boundaries. */
     public function __construct(
         private ProductionPhpRuntimeManager $productionPhp,
         private RemoteAppDevPhpFpmManager $sharedPhp,

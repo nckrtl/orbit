@@ -15,7 +15,6 @@ use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Bounded readiness retries and fail-closed evidence validation form one verification boundary. */
 final readonly class TopologyVerifier
 {
     private const array PROBES = [
@@ -105,13 +104,13 @@ final readonly class TopologyVerifier
     /** @return array<string, string> */
     private static function probes(TopologyEndState $endState): array
     {
-        return (
+        return
             in_array('app-prod-2', $endState->recipeNodes(), true)
                 ? [...self::PROBES, ...self::EXTENDED_APP_PROD_PROBES]
-                : self::PROBES
-        );
+                : self::PROBES;
     }
 
+    /** @param array<string, list<string>>|null $requiredAssignments */
     public function verify(
         TopologyTarget $target,
         VerificationMode $mode,
@@ -220,6 +219,7 @@ final readonly class TopologyVerifier
                     if ($evidence !== null) {
                         $results[$name] = $evidence;
                         unset($pending[$name]);
+
                         continue;
                     }
                     $results[$name] = $this->failedProbe(
@@ -357,20 +357,20 @@ final readonly class TopologyVerifier
             || ! is_string($placement['user'] ?? null)
             || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $placement['user']) !== 1
             || ! is_string($placement['home'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['home'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['home'])
             || ! is_string($placement['checkout_path'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['checkout_path'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['checkout_path'])
             || ! is_string($placement['effective_root'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['effective_root'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['effective_root'])
             || ! is_string($placement['environment_path'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['environment_path'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['environment_path'])
             || $placement['database_path'] !== null
             && (! is_string($placement['database_path'])
             || ! $this->isAbsolutePlacementPath($placement['database_path']))
             || ! is_string($placement['service'] ?? null)
             || preg_match('/\A[a-zA-Z0-9@_.-]{1,128}\z/D', $placement['service']) !== 1
             || ! is_string($placement['socket'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['socket'] ?? null)
+            || ! $this->isAbsolutePlacementPath($placement['socket'])
             || $placement['current_target'] !== null
             && (! is_string($placement['current_target'])
             || ! $this->isAbsolutePlacementPath($placement['current_target']))
@@ -402,12 +402,11 @@ final readonly class TopologyVerifier
 
     private function isAbsolutePlacementPath(mixed $path): bool
     {
-        return (
+        return
             is_string($path)
             && str_starts_with($path, '/')
             && ! str_contains($path, '//')
-            && preg_match('#(?:\A|/)\.\.?(/|\z)#D', $path) !== 1
-        );
+            && preg_match('#(?:\A|/)\.\.?(/|\z)#D', $path) !== 1;
     }
 
     /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string}|null */

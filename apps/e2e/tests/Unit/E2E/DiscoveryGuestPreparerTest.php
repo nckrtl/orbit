@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\IncusHost;
+use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+use Tests\TestCase;
 
-uses(Tests\TestCase::class);
+uses(TestCase::class);
 
 /**
  * Every guest command reaches the fake through the host batch helper or one
  * direct `incus exec`; a failure map names the batch label (or `environment`
  * for the direct gateway `.env` placement) that must fail.
  *
- * @param array<string, int> $failures
- * @param list<array{labels:list<string>,instances:list<string>,argv:list<list<string>>}> $batches
- * @param list<array{instance:string,argv:list<string>}> $execs
+ * @param  array<string, int>  $failures
+ * @param  list<array{labels:list<string>,instances:list<string>,argv:list<list<string>>}>  $batches
+ * @param  list<array{instance:string,argv:list<string>}>  $execs
  */
 function fakePreparerGuests(array $failures, array &$batches, array &$execs): void
 {
@@ -55,7 +58,7 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs): vo
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                     'devices' => ['root' => ['pool' => 'default']],
                 ],
-                \App\E2E\Value\TopologyProfile::ROLES,
+                TopologyProfile::ROLES,
             ), JSON_THROW_ON_ERROR));
         }
         expect($command[3] ?? null)->toBe('exec');
@@ -202,7 +205,7 @@ describe('repair.identity', function () {
         $batches = [];
         $execs = [];
         fakePreparerGuests([], $batches, $execs);
-        $target = featureTarget('TST-123', recipe: \App\E2E\Value\TopologyRecipe::extendedAppProd());
+        $target = featureTarget('TST-123', recipe: TopologyRecipe::extendedAppProd());
 
         new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity($target);
 

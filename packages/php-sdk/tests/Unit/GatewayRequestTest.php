@@ -8,7 +8,6 @@ use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead Security-sensitive envelope assertions stay visible together. */
 describe('gateway error envelope', function (): void {
     it('throws a typed exception with stable error details', function (): void {
         expect(class_exists(GatewayApiException::class))->toBeTrue();
@@ -159,11 +158,11 @@ describe('gateway error envelope', function (): void {
         $exception = new GatewayApiException(
             message: 'The gateway is unavailable.',
             errorCode: 'gateway.unavailable',
-            previous: new \RuntimeException("Connection failed for https://alice:{$credential}@example.test."),
+            previous: new RuntimeException("Connection failed for https://alice:{$credential}@example.test."),
         );
 
         expect($exception->getPrevious())
-            ->toBeInstanceOf(\RuntimeException::class)
+            ->toBeInstanceOf(RuntimeException::class)
             ->and($exception->getPrevious()?->getMessage())
             ->toBe('Connection failed for https://[REDACTED]@example.test.')
             ->and((string) $exception)

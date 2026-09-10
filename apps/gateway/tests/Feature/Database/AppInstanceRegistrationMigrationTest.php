@@ -8,6 +8,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 it('refuses to discard base registration evidence while an operation is incomplete', function (): void {
     $instance = orb105_registration_migration_instance('reserved');
@@ -126,7 +127,7 @@ function orb105_registration_migration_instance(string $checkpoint): AppInstance
         'name' => 'default',
         'checkout_path' => '/srv/orbit/apps/acme/default',
         'registration_original_path' => '/work/acme',
-        'registration_request_id' => (string) Illuminate\Support\Str::uuid(),
+        'registration_request_id' => (string) Str::uuid(),
         'registration_relocation_state' => $checkpoint,
         'registration_authoritative_path' => $checkpoint === 'reserved'
             ? '/work/acme'
@@ -139,24 +140,21 @@ function orb105_registration_migration_instance(string $checkpoint): AppInstance
 
 function orb105_registration_evidence_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_000000_add_app_instance_registration_evidence.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_000000_add_app_instance_registration_evidence.php',
+    );
 }
 
 function orb105_cleanup_identity_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_104800_add_registration_cleanup_identity_to_app_instances.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_104800_add_registration_cleanup_identity_to_app_instances.php',
+    );
 }
 
 function orb105_migration_recovery_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_120000_add_registration_migration_recovery_to_app_instances.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_120000_add_registration_migration_recovery_to_app_instances.php',
+    );
 }

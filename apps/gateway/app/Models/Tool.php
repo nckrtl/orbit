@@ -31,7 +31,7 @@ final class Tool extends Model
         'protected' => false,
     ];
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'node_id',

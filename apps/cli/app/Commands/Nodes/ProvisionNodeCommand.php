@@ -11,7 +11,6 @@ use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-/** @mago-expect lint:cyclomatic-complexity,halstead Provision keeps closed setting and network parsing beside the identity gates. */
 final class ProvisionNodeCommand extends GatewayCommand
 {
     #[\Override]
@@ -42,11 +41,11 @@ final class ProvisionNodeCommand extends GatewayCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $name = $this->argument('name');
-        $host = $this->argument('host');
+        $name = $this->input->getArgument('name');
+        $host = $this->input->getArgument('host');
         $sshPort = $this->option('ssh-port');
         $user = $this->option('user');
-        $roles = $this->option('role');
+        $roles = $this->input->getOption('role');
 
         if (
             ! is_string($name)
@@ -88,7 +87,7 @@ final class ProvisionNodeCommand extends GatewayCommand
         }
 
         $clusterId = null;
-        $cluster = $this->option('cluster');
+        $cluster = $this->input->getOption('cluster');
 
         if ($cluster !== null) {
             if (! is_string($cluster) || preg_match('/\A[1-9]\d*\z/D', $cluster) !== 1) {
@@ -101,8 +100,8 @@ final class ProvisionNodeCommand extends GatewayCommand
             $clusterId = (int) $cluster;
         }
 
-        $canonicalWireguardIp = $this->option('wireguard-ip');
-        $legacyWireguardIp = $this->option('wireguard-address');
+        $canonicalWireguardIp = $this->input->getOption('wireguard-ip');
+        $legacyWireguardIp = $this->input->getOption('wireguard-address');
 
         if (
             $canonicalWireguardIp !== null
@@ -136,7 +135,7 @@ final class ProvisionNodeCommand extends GatewayCommand
             );
         }
 
-        $lanIp = $this->option('lan-ip');
+        $lanIp = $this->input->getOption('lan-ip');
 
         if (
             $lanIp !== null

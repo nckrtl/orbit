@@ -18,13 +18,8 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Projection distinguishes shared and final Routes across resumable checkpoints.
- * @mago-expect lint:kan-defect The score reflects explicit shared Route and dedicated runtime cleanup branches.
- */
 final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRemovalProjector
 {
-    /** @mago-expect lint:excessive-parameter-list Each projection owner remains explicit at the removal boundary. */
     public function __construct(
         private RemoteAppDevCaddyManager $caddy,
         private RemoteAppDevCertificateManager $certificates,

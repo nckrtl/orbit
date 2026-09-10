@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Ssh;
 
-/** @mago-expect lint:excessive-parameter-list */
 final readonly class SshConnection
 {
     public function __construct(

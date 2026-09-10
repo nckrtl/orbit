@@ -24,7 +24,6 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-/** @mago-expect lint:halstead The feature group locks the complete status output and failure contract. */
 describe(GatewayStatusCommand::class, function (): void {
     it('reports the active gateway through the SDK', function (): void {
         expect(class_exists(GatewayStatusCommand::class))->toBeTrue();

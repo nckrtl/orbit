@@ -58,7 +58,6 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         printf '%s\n' "$active"
         BASH;
 
-    /** @mago-expect lint:excessive-parameter-list The inspector receives each read-only boundary and requirement owner. */
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,

@@ -11,14 +11,14 @@ use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Models\Node;
 
-/** @mago-expect lint:too-many-methods One catalog owns the exact firewall rule shapes shared by every projector. */
 final readonly class NodeFirewallRuleCatalog
 {
     public function __construct(
         private AppProdSiteRepository $appProdSites = new AppProdSiteRepository,
     ) {}
 
-    /** @return list<UfwManagedRule> */ public function forNode(Node $node): array
+    /** @return list<UfwManagedRule> */
+    public function forNode(Node $node): array
     {
         return [
             $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
@@ -26,7 +26,8 @@ final readonly class NodeFirewallRuleCatalog
         ];
     }
 
-    /** @return list<UfwManagedRule> */ public function forRole(Node $node, RoleName $role): array
+    /** @return list<UfwManagedRule> */
+    public function forRole(Node $node, RoleName $role): array
     {
         return match ($role) {
             RoleName::Gateway => [

@@ -14,6 +14,7 @@ final class FingerprintCommand extends Command
 {
     #[\Override]
     protected $signature = 'topology-snapshot:fingerprint {--main-sha=HEAD} {--json}';
+
     #[\Override]
     protected $description = 'Compute the desired prepared topology snapshot fingerprint';
 

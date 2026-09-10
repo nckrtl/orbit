@@ -6,6 +6,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -33,8 +34,10 @@ it('extracts the home field from the remote passwd record', function (): void {
 });
 
 it('resolves the managed account over the node WireGuard address', function (): void {
-    $executor = new class implements SshExecutor {
+    $executor = new class implements SshExecutor
+    {
         public ?SshConnection $connection = null;
+
         public ?RemoteCommand $command = null;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -48,7 +51,8 @@ it('resolves the managed account over the node WireGuard address', function (): 
     $node = new Node(['user' => 'deploy', 'wireguard_ip' => '10.44.0.8']);
     $account = new SshManagedUserAccountResolver(
         $executor,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/key';
@@ -59,13 +63,14 @@ it('resolves the managed account over the node WireGuard address', function (): 
                 return 'key';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/tmp/hosts';
             }
 
-            public function put(string $host, int $port, App\Infrastructure\Ssh\HostKey $key): void {}
+            public function put(string $host, int $port, HostKey $key): void {}
         },
     )->resolve($node);
     expect($account->user)
@@ -86,7 +91,8 @@ it('resolves the managed account over the node WireGuard address', function (): 
 });
 
 it('rejects malformed output with a safe provisioning error', function (): void {
-    $executor = new class implements SshExecutor {
+    $executor = new class implements SshExecutor
+    {
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             return new CommandResult(0, "deploy\n../bad\ndeploy\n", 'secret stderr', 1, false);
@@ -96,7 +102,8 @@ it('rejects malformed output with a safe provisioning error', function (): void 
     expect(
         fn () => new SshManagedUserAccountResolver(
             $executor,
-            new class implements SshKeyProvider {
+            new class implements SshKeyProvider
+            {
                 public function privateKeyPath(): string
                 {
                     return '/tmp/key';
@@ -107,13 +114,14 @@ it('rejects malformed output with a safe provisioning error', function (): void 
                     return 'key';
                 }
             },
-            new class implements KnownHostsStore {
+            new class implements KnownHostsStore
+            {
                 public function path(): string
                 {
                     return '/tmp/hosts';
                 }
 
-                public function put(string $host, int $port, App\Infrastructure\Ssh\HostKey $key): void {}
+                public function put(string $host, int $port, HostKey $key): void {}
             },
         )->resolve($node),
     )
@@ -131,7 +139,8 @@ it('rejects every malformed or failed remote result safely', function (
     string $stdout,
     bool $truncated,
 ): void {
-    $executor = new class($exitCode, $stdout, $truncated) implements SshExecutor {
+    $executor = new class($exitCode, $stdout, $truncated) implements SshExecutor
+    {
         public function __construct(
             private int $exitCode,
             private string $stdout,
@@ -147,7 +156,8 @@ it('rejects every malformed or failed remote result safely', function (
     expect(
         fn () => new SshManagedUserAccountResolver(
             $executor,
-            new class implements SshKeyProvider {
+            new class implements SshKeyProvider
+            {
                 public function privateKeyPath(): string
                 {
                     return '/tmp/key';
@@ -158,13 +168,14 @@ it('rejects every malformed or failed remote result safely', function (
                     return 'key';
                 }
             },
-            new class implements KnownHostsStore {
+            new class implements KnownHostsStore
+            {
                 public function path(): string
                 {
                     return '/tmp/hosts';
                 }
 
-                public function put(string $host, int $port, App\Infrastructure\Ssh\HostKey $key): void {}
+                public function put(string $host, int $port, HostKey $key): void {}
             },
         )->resolve($node),
     )
@@ -193,7 +204,8 @@ it('rejects every malformed or failed remote result safely', function (
 ]);
 
 it('bounds dependency exceptions and is registered as a singleton', function (): void {
-    $executor = new class implements SshExecutor {
+    $executor = new class implements SshExecutor
+    {
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             throw new NodeProvisioningException('dependency', 'secret.code', 'secret-sentinel');
@@ -202,7 +214,8 @@ it('bounds dependency exceptions and is registered as a singleton', function ():
     $node = new Node(['user' => 'deploy', 'wireguard_ip' => '10.44.0.8']);
     $resolver = new SshManagedUserAccountResolver(
         $executor,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/key';
@@ -213,13 +226,14 @@ it('bounds dependency exceptions and is registered as a singleton', function ():
                 return 'key';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/tmp/hosts';
             }
 
-            public function put(string $host, int $port, App\Infrastructure\Ssh\HostKey $key): void {}
+            public function put(string $host, int $port, HostKey $key): void {}
         },
     );
     expect(fn () => $resolver->resolve($node))

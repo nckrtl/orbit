@@ -59,7 +59,7 @@ final readonly class TopologySnapshotAvailability
 
     private function recoveryMessage(TopologySnapshotGeneration $generation, Throwable $exception): string
     {
-        return (
+        return
             rtrim($exception->getMessage(), ' ')
             .' The promoted generation '
             .$generation->id
@@ -67,7 +67,6 @@ final readonly class TopologySnapshotAvailability
             .' Run `'
             .StaleTopologySnapshotManifest::RECOVERY_COMMAND
             .'` with the SHA main holds to rebuild it from the'
-            .' base image; the topology snapshot is not corrupt and needs no manual incus delete.'
-        );
+            .' base image; the topology snapshot is not corrupt and needs no manual incus delete.';
     }
 }

@@ -12,9 +12,6 @@ namespace App\Infrastructure\WireGuard;
  * The systemd stub listener is skipped: pointing dnsmasq at 127.0.0.53 can
  * loop once the mesh listener is bound. When no uplink resolvers are visible,
  * the documented public recursive fallback is used.
- *
- * @mago-expect lint:cyclomatic-complexity The reader keeps uplink and DHCP host-file branches explicit.
- * @mago-expect lint:kan-defect The score reflects guarded parsing of two host-file formats.
  */
 final readonly class UplinkDnsResolvers
 {
@@ -52,8 +49,6 @@ final readonly class UplinkDnsResolvers
     }
 
     /**
-     * @mago-expect lint:cyclomatic-complexity Default-route selection and lease parsing stay in one host-file path.
-     *
      * @return list<string>
      */
     private function fromDefaultRouteDhcpLease(): array

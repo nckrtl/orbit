@@ -33,7 +33,6 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
-/** @mago-expect lint:excessive-parameter-list Explicit fixture dependencies keep this test boundary configurable. */
 function topologySnapshotRefresherForPowerTests(
     IncusHost $host,
     ?AtomicJsonStore $state = null,
@@ -102,9 +101,9 @@ it('waits for the generation mutation lock for the shared pin window', function 
     expect($reflection->getConstant('GENERATION_MUTATION_LOCK_TIMEOUT_SECONDS'))->toBe(3600);
 });
 
-function topologySnapshotRestoreGeneration(): \App\E2E\Value\TopologySnapshotGeneration
+function topologySnapshotRestoreGeneration(): TopologySnapshotGeneration
 {
-    return new \App\E2E\Value\TopologySnapshotGeneration(
+    return new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -260,8 +259,8 @@ function candidateSnapshotVm(array $command): ProcessResult
 }
 
 /**
- * @param array<int, string> $command
- * @param object{existingSnapshots: array<string, string>, createAttempts: int, gatewayDeleteFailed: bool, deleted: list<string>} $state
+ * @param  array<int, string>  $command
+ * @param  object{existingSnapshots: array<string, string>, createAttempts: int, gatewayDeleteFailed: bool, deleted: list<string>}  $state
  */
 function candidateSnapshotList(array $command, object $state): ProcessResult
 {
@@ -279,8 +278,8 @@ function candidateSnapshotList(array $command, object $state): ProcessResult
 }
 
 /**
- * @param array<int, string> $command
- * @param object{existingSnapshots: array<string, string>, createAttempts: int, gatewayDeleteFailed: bool, deleted: list<string>} $state
+ * @param  array<int, string>  $command
+ * @param  object{existingSnapshots: array<string, string>, createAttempts: int, gatewayDeleteFailed: bool, deleted: list<string>}  $state
  */
 function candidateSnapshotCreate(array $command, object $state): ProcessResult
 {
@@ -295,8 +294,8 @@ function candidateSnapshotCreate(array $command, object $state): ProcessResult
 }
 
 /**
- * @param array<int, string> $command
- * @param object{existingSnapshots: array<string, string>, createAttempts: int, gatewayDeleteFailed: bool, deleted: list<string>} $state
+ * @param  array<int, string>  $command
+ * @param  object{existingSnapshots: array<string, string>, createAttempts: int, gatewayDeleteFailed: bool, deleted: list<string>}  $state
  */
 function candidateSnapshotDelete(array $command, object $state): ProcessResult
 {
@@ -332,8 +331,7 @@ function refreshProcessState(StatePaths $paths, bool $failReadiness = false): ob
 }
 
 /**
- * @param object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, failReadiness: bool, paths: StatePaths} $state
- * @mago-expect lint:cyclomatic-complexity,halstead,kan-defect The fake maps one complete refresh process boundary.
+ * @param  object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, failReadiness: bool, paths: StatePaths}  $state
  */
 function refreshProcess(
     PendingProcess $process,
@@ -534,10 +532,9 @@ function refreshProcess(
 }
 
 /**
- * @param list<string> $guestArguments
- * @param object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, failReadiness: bool, paths: StatePaths} $state
+ * @param  list<string>  $guestArguments
+ * @param  object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, failReadiness: bool, paths: StatePaths}  $state
  */
-/** @mago-expect lint:cyclomatic-complexity The fake models the complete guest refresh protocol at one test boundary. */
 function refreshGuestProcess(array $guestArguments, string $target, object $state, string $oldSha): ProcessResult
 {
     if ($guestArguments === ['/bin/true']) {
@@ -760,7 +757,6 @@ function removeRefreshFixture(array $fixture): void
     $fixture['processes']->run(['git', '-C', $fixture['sourceRoot'], 'branch', '-D', $fixture['branch']]);
 }
 
-/** @mago-expect lint:cyclomatic-complexity,halstead Test cases share one contract fixture and remain independently asserted. */
 /** The host holds the topology snapshot VMs, but no snapshot the manifest names. */
 function staleManifestProcess(PendingProcess $process, ProcessFactory $real, array &$mutations): ProcessResult
 {
@@ -1204,7 +1200,7 @@ describe('TopologySnapshotRefresher contracts', function () {
             $paths = new StatePaths(temporaryPath('orbit-refresh-stopped-', 4));
             $state = new AtomicJsonStore($paths);
             $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
-            $manifests->promote(new \App\E2E\Value\TopologySnapshotGeneration(
+            $manifests->promote(new TopologySnapshotGeneration(
                 'stopped-test',
                 $mainSha,
                 ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -1329,7 +1325,7 @@ describe('TopologySnapshotRefresher contracts', function () {
             $paths = new StatePaths(temporaryPath('orbit-refresh-cold-state-', 4));
             $state = new AtomicJsonStore($paths);
             $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
-            $generation = new \App\E2E\Value\TopologySnapshotGeneration(
+            $generation = new TopologySnapshotGeneration(
                 'old-generation',
                 $oldSha,
                 ['gateway' => 'main-old-gateway', 'app-dev' => 'main-old-app-dev', 'app-prod' => 'main-old-app-prod'],
@@ -1439,7 +1435,6 @@ describe('TopologySnapshotRefresher contracts', function () {
 
     it('refuses to return a generation until every candidate snapshot is observable', function () {
         $created = [];
-        /** @mago-expect lint:cyclomatic-complexity Candidate snapshot responses stay in one protocol fixture. */
         Process::fake(function (PendingProcess $process) use (&$created): ProcessResult {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
@@ -1508,7 +1503,7 @@ describe('TopologySnapshotRefresher contracts', function () {
         $state = new AtomicJsonStore($paths);
         $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
         $state->write('topology-snapshot/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
-        $generation = new \App\E2E\Value\TopologySnapshotGeneration(
+        $generation = new TopologySnapshotGeneration(
             'g-'.str_repeat('a', 12),
             str_repeat('b', 40),
             ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -1585,7 +1580,6 @@ describe('TopologySnapshotRefresher contracts', function () {
         expect($state->read('topology-snapshot/corrupt.json'))->toBeNull();
     });
 
-    /** @mago-expect lint:cyclomatic-complexity Restore scenario asserts the complete ordered cleanup contract. */
     it('deletes unpromoted candidate snapshots before restoring the promoted generation', function () {
         [$paths, $state, $manifests] = topologySnapshotRestoreFixture();
         $generation = topologySnapshotRestoreGeneration();
@@ -1595,10 +1589,6 @@ describe('TopologySnapshotRefresher contracts', function () {
             TopologyProfile::ROLES,
         ), true);
         $events = [];
-        /**
-         * @mago-expect lint:cyclomatic-complexity The process fake preserves its ordered inventory branches.
-         * @mago-expect lint:cyclomatic-complexity The process fake preserves its ordered snapshot branches.
-         */
         $processFake = function (PendingProcess $process) use (&$orphans, &$events, $generation) {
             $command = $process->command;
             assert(is_array($command));

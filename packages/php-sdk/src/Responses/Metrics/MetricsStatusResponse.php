@@ -8,16 +8,11 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Bounded wire DTO parser
- * @mago-expect lint:excessive-parameter-list
- * @mago-expect lint:too-many-methods Bounded wire DTO parser
- */
 final readonly class MetricsStatusResponse
 {
     /**
-     * @param array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null $assignment
-     * @param list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}> $exporters
+     * @param  array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null  $assignment
+     * @param  list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}>  $exporters
      */
     private function __construct(
         public bool $enabled,
@@ -81,7 +76,6 @@ final readonly class MetricsStatusResponse
     }
 
     /**
-     * @mago-expect lint:inline-variable-return Typed intermediate keeps static analysis precise.
      * @return array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null
      */
     private static function assignment(mixed $value, string $requestId): ?array
@@ -118,7 +112,6 @@ final readonly class MetricsStatusResponse
         return $assignment;
     }
 
-    /** @mago-expect analysis:mixed-assignment Gateway health values remain mixed until validated. */
     private static function health(mixed $value, string $requestId): string
     {
         if (is_string($value)) {
@@ -140,7 +133,6 @@ final readonly class MetricsStatusResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway exporter values remain mixed until validated.
      * @return list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}>
      */
     private static function exporters(mixed $value, string $requestId): array
@@ -196,14 +188,13 @@ final readonly class MetricsStatusResponse
 
     private static function validAssignmentStatus(mixed $value): bool
     {
-        return (
+        return
             is_string($value)
             && in_array(
                 $value,
                 ['active', 'failed', 'provisioning', 'removing'],
                 strict: true,
-            )
-        );
+            );
     }
 
     private static function validActual(mixed $value): bool
@@ -223,22 +214,20 @@ final readonly class MetricsStatusResponse
 
     private static function validReason(mixed $value): bool
     {
-        return (
+        return
             is_string($value)
             && in_array(
                 $value,
                 ['metrics_node', 'role_default', 'roleless_default_excluded', 'explicit_enabled', 'explicit_disabled'],
                 strict: true,
-            )
-        );
+            );
     }
 
     private static function validDegradedReason(mixed $value): bool
     {
-        return (
+        return
             $value === null
-            || is_string($value) && in_array($value, ['unreachable', 'firewall_inactive'], strict: true)
-        );
+            || is_string($value) && in_array($value, ['unreachable', 'firewall_inactive'], strict: true);
     }
 
     private static function validatedHealth(string $status, string $requestId): string
@@ -253,6 +242,17 @@ final readonly class MetricsStatusResponse
         );
     }
 
+    /**
+     * @return array{
+     *     enabled: bool,
+     *     url: ?string,
+     *     assignment: array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null,
+     *     prometheus: string,
+     *     grafana: string,
+     *     exporters: list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}>,
+     *     request_id: string
+     * }
+     */
     public function toArray(): array
     {
         return [

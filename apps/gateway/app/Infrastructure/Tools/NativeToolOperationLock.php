@@ -23,10 +23,8 @@ final readonly class NativeToolOperationLock implements ToolOperationLock
     /**
      * @template T
      *
-     * @param Closure(): T $callback
+     * @param  Closure(): T  $callback
      * @return T
-     *
-     * @mago-expect lint:excessive-parameter-list The lock identity requires the complete typed tool operation.
      */
     public function run(
         int $nodeId,
@@ -70,7 +68,6 @@ final readonly class NativeToolOperationLock implements ToolOperationLock
         }
     }
 
-    /** @mago-expect lint:excessive-parameter-list The failure preserves the complete typed lock identity. */
     private function lockedException(
         int $nodeId,
         ToolManagerName $manager,

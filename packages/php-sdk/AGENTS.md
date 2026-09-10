@@ -37,5 +37,5 @@ Laravel or Boost support.
   before inventing a transport pattern.
 - Use Pest 5 with `describe()` and `it()`.
 - Use focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA.
-- Run Mago format, lint, and analysis, Rector, and
+- Run Pint format checks and PHPStan analysis, Rector, and
   `git diff --check -- packages/php-sdk` from the monorepo root before handoff.

@@ -7,7 +7,6 @@ namespace App\Domain\Nodes\Storage;
 use App\Data\Nodes\AppsSettingsData;
 use App\Data\Nodes\NodeSettingsData;
 
-/** @mago-expect lint:cyclomatic-complexity Normalization preserves two legacy keys while exposing one typed apps setting. */
 final readonly class NodeSettingsNormalizer
 {
     public function normalize(?NodeSettingsData $settings): ?NodeSettingsData

@@ -26,7 +26,6 @@ final readonly class VpnSettings
         private SettingRepository $settings,
     ) {}
 
-    /** @mago-expect lint:excessive-parameter-list The complete VPN configuration has six named scalar settings. */
     public function configure(
         string $subnet,
         int $port = 51_820,

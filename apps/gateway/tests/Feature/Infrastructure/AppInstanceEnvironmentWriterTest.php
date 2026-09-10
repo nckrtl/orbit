@@ -377,7 +377,8 @@ function writer_environment_access(SshExecutor $ssh): RemoteAppInstanceEnvironme
 {
     return new RemoteAppInstanceEnvironmentAccess(
         $ssh,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/key';
@@ -388,7 +389,8 @@ function writer_environment_access(SshExecutor $ssh): RemoteAppInstanceEnvironme
                 return 'ssh-ed25519 synthetic';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/tmp/known-hosts';
@@ -399,7 +401,6 @@ function writer_environment_access(SshExecutor $ssh): RemoteAppInstanceEnvironme
     );
 }
 
-/** @mago-expect lint:file-name Test-local adapter executes the fixed writer program. */
 final class WriterLocalSshExecutor implements SshExecutor
 {
     /** @var list<string> */
@@ -451,7 +452,6 @@ final class WriterLocalSshExecutor implements SshExecutor
     }
 }
 
-/** @mago-expect lint:file-name Test-local adapter returns a bounded remote observation. */
 final readonly class WriterObservationSshExecutor implements SshExecutor
 {
     public function __construct(

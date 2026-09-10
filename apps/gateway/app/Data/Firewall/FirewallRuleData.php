@@ -13,7 +13,6 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class FirewallRuleData extends Data
 {
-    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         public int $id,
         public int $nodeId,

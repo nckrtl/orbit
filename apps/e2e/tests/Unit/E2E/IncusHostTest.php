@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\State\SecretRedactor;
-use App\E2E\State\StatePaths;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
-use App\E2E\Value\OperationId;
+use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -20,7 +19,6 @@ beforeEach(function () {
     $container = new Container;
     $container->instance(ProcessFactory::class, new ProcessFactory);
     Facade::clearResolvedInstances();
-    /** @mago-expect analysis:possibly-invalid-argument The process facade only needs the container contract in unit tests. */
     Facade::setFacadeApplication($container);
 });
 
@@ -46,22 +44,20 @@ function guestIpv4Probe(): array
 
 function isIncusGuestBatchHelper(PendingProcess $process): bool
 {
-    return (
+    return
         is_array($process->command)
         && count($process->command) === 2
         && ($process->command[0] ?? null) === 'python3'
         && is_string($process->command[1] ?? null)
-        && str_ends_with($process->command[1], '/resources/host/exec-all.py')
-    );
+        && str_ends_with($process->command[1], '/resources/host/exec-all.py');
 }
 
 function isDirectIncusGuestCommand(PendingProcess $process): bool
 {
-    return (
+    return
         is_array($process->command)
         && ($process->command[0] ?? null) === 'incus'
-        && in_array('exec', $process->command, true)
-    );
+        && in_array('exec', $process->command, true);
 }
 
 /** @return array<string, array{instance:string, command:GuestCommand}> */
@@ -80,7 +76,7 @@ function incusGuestBatchCommands(): array
 }
 
 /**
- * @param callable(array{label:string,instance:string,argv:list<string>}): array{stdout:string,stderr:string,exit_code:int} $result
+ * @param  callable(array{label:string,instance:string,argv:list<string>}): array{stdout:string,stderr:string,exit_code:int}  $result
  */
 function incusGuestHelperResult(PendingProcess $process, callable $result): ProcessResult
 {
@@ -93,7 +89,6 @@ function incusGuestHelperResult(PendingProcess $process, callable $result): Proc
     return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
 }
 
-/** @mago-expect lint:excessive-parameter-list VM fixture fields stay explicit for exact inventory cases. */
 function vmJson(
     string $name = 'orbit-e2e-tst-123-aaaaaaaa-gateway',
     string $owner = 'orbit-e2e',
@@ -261,7 +256,6 @@ describe('IncusHost reads', function () {
 
     it('reads an exact instance set from one inventory request', function () {
         $reads = 0;
-        /** @mago-expect lint:cyclomatic-complexity,kan-defect Inventory process responses stay in one exact boundary fixture. */
         Process::fake(function (PendingProcess $process) use (&$reads) {
             if (
                 array_filter(
@@ -431,8 +425,7 @@ describe('IncusHost reads', function () {
             }
 
             return incusGuestHelperResult($process, static fn (): array => [
-                'stdout' =>
-                    "2: enp5s0    inet 192.0.2.44/24 scope global enp5s0\n"
+                'stdout' => "2: enp5s0    inet 192.0.2.44/24 scope global enp5s0\n"
                         ."2: enp5s0    inet 198.51.100.44/24 scope global enp5s0\n",
                 'stderr' => '',
                 'exit_code' => 0,
@@ -453,8 +446,7 @@ describe('IncusHost reads', function () {
     it('assigns the legacy deterministic Incus MAC address', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand(
@@ -464,8 +456,7 @@ describe('IncusHost reads', function () {
                     incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                     'eth0',
                     'hwaddr=00:16:3e:5e:4b:52',
-                )
-                    => Process::result(''),
+                ) => Process::result(''),
                 default => Process::result('', 'Unexpected command.', 1),
             };
         });
@@ -673,8 +664,7 @@ describe('IncusHost reads', function () {
     it('attaches a network only with the deterministic topology MAC', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([[
@@ -710,19 +700,16 @@ describe('IncusHost reads', function () {
         $fingerprint = str_repeat('a', 64);
         Process::fake(function (PendingProcess $process) use ($fingerprint) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
-                incusCommand('list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json') => Process::result(
                     vmJson('orbit-e2e-topology-snapshot-gateway'),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
                     ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
-                incusCommand('image', 'list', 'images:', 'ubuntu/26.04', '--format=json')
-                    => Process::result(json_encode([[
+                incusCommand('image', 'list', 'images:', 'ubuntu/26.04', '--format=json') => Process::result(json_encode([[
                     'fingerprint' => $fingerprint,
                     'type' => 'virtual-machine',
                     'aliases' => [['name' => 'ubuntu/26.04']],
@@ -886,7 +873,6 @@ describe('IncusHost network creation', function () {
     });
 });
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Mutation cases share one explicit process contract. */
 describe('IncusHost mutations', function () {
     it('rejects duplicate VM targets before starting any process', function () {
         Process::fake();
@@ -1061,8 +1047,7 @@ describe('IncusHost mutations', function () {
     it('does not start an already running owned VM', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     str_replace(
                         ['"status":"Stopped"', '"status_code":102'],
                         ['"status":"Running"', '"status_code":103'],
@@ -1081,8 +1066,7 @@ describe('IncusHost mutations', function () {
     it('force-stops the exact owned VM when graceful stop fails', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')) => Process::result(
@@ -1107,8 +1091,7 @@ describe('IncusHost mutations', function () {
     it('exposes the forced stop failure when graceful stop also fails', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')) => Process::result(
@@ -1464,12 +1447,10 @@ describe('IncusHost mutations', function () {
     it('uses argument arrays with global scope, storage, and exact identities', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
-                incusCommand('list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json') => Process::result(
                     vmJson('orbit-e2e-topology-snapshot-gateway'),
                 ),
                 incusCommand('image', 'list', incusTarget(), 'orbit-base', '--format=json') => Process::result(
@@ -1485,8 +1466,7 @@ describe('IncusHost mutations', function () {
                         'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.30.1/24'],
                     ],
                 ], JSON_THROW_ON_ERROR)),
-                incusCommand('snapshot', 'list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('snapshot', 'list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json') => Process::result(
                     snapshotJson('main-g1'),
                 ),
                 default => Process::result(),
@@ -1628,8 +1608,7 @@ describe('IncusHost mutations', function () {
     it('does not set metadata when exact resource ownership does not match', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(owner: 'someone-else'),
                 ),
                 default => Process::result(),
@@ -1653,8 +1632,7 @@ describe('IncusHost mutations', function () {
     it('validates the exact owned network before attaching it', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
-                    => Process::result(
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
@@ -2040,7 +2018,7 @@ describe('IncusHost mutations', function () {
             '--device',
             'eth0,ipv4.address=10.232.1.10',
             '--device',
-            'eth0,hwaddr='.\App\E2E\Value\TopologyTarget::macFor('oe-topo-snap', 'gateway'),
+            'eth0,hwaddr='.TopologyTarget::macFor('oe-topo-snap', 'gateway'),
         ));
         Process::assertNotRan(
             static fn (PendingProcess $process): bool => array_slice($process->command, 3, 2) === ['snapshot', 'list'],

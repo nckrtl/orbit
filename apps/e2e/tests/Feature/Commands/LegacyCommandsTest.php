@@ -7,12 +7,19 @@ use App\Console\Commands\Legacy\InventoryCommand;
 use App\Console\Commands\Legacy\QuarantineCommand;
 use App\Console\Commands\Legacy\VerifyCommand;
 use App\E2E\LegacyRetirement;
+use App\E2E\LegacyRetirementHost;
+use App\E2E\State\OperationLock;
+use App\E2E\State\StatePaths;
+use App\E2E\Value\OperationId;
 use App\E2E\Value\QuarantineManifest;
+use App\E2E\Value\RetirementInventory;
+use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\Factory;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
 /** @param array<string, mixed> $metadata */
-function legacyCommandSync(array $metadata): \Illuminate\Contracts\Process\ProcessResult
+function legacyCommandSync(array $metadata): ProcessResult
 {
     return Process::result(json_encode([
         'type' => 'sync',
@@ -102,7 +109,6 @@ function removeObservedHostTypeSubstitutionFixture(string $root, string $path, s
     rmdir($root);
 }
 
-/** @mago-expect lint:cyclomatic-complexity The command specification keeps one coherent retirement lifecycle. */
 describe('legacy commands', function () {
     it('rejects file and directory substitution for every observed host path kind', function (
         string $kind,
@@ -110,7 +116,7 @@ describe('legacy commands', function () {
     ): void {
         [$root, $path, $observation] = observedHostTypeSubstitutionFixture($kind, $expectedType);
 
-        expect(fn () => app(\App\E2E\LegacyRetirementHost::class)->observeCurrent())
+        expect(fn () => app(LegacyRetirementHost::class)->observeCurrent())
             ->toThrow(RuntimeException::class, 'filesystem type');
 
         removeObservedHostTypeSubstitutionFixture($root, $path, $observation);
@@ -152,7 +158,7 @@ describe('legacy commands', function () {
         chmod($observation, 0600);
         putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
 
-        expect(fn () => app(\App\E2E\LegacyRetirementHost::class)->observeCurrent())
+        expect(fn () => app(LegacyRetirementHost::class)->observeCurrent())
             ->toThrow(RuntimeException::class, 'symbolic link');
 
         putenv('ORBIT_E2E_LEGACY_OBSERVATION');
@@ -237,14 +243,14 @@ describe('legacy commands', function () {
         chmod($observation, 0600);
         chmod($freezeEvidence, 0600);
         putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
-        $host = app(\App\E2E\LegacyRetirementHost::class);
-        $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-content-lock-', 5));
+        $host = app(LegacyRetirementHost::class);
+        $paths = new StatePaths(temporaryPath('legacy-content-lock-', 5));
         $early = new LegacyRetirement(
             $host->observe(...),
             $host->mutate(...),
-            fn (): \DateTimeImmutable => new \DateTimeImmutable('2026-08-28T10:00:00+00:00'),
-            new \App\E2E\State\OperationLock($paths),
-            new \App\E2E\Value\OperationId(str_repeat('d', 32)),
+            fn (): DateTimeImmutable => new DateTimeImmutable('2026-08-28T10:00:00+00:00'),
+            new OperationLock($paths),
+            new OperationId(str_repeat('d', 32)),
             $host->observeCurrent(...),
         );
         $inventory = $early->inventory();
@@ -266,9 +272,9 @@ describe('legacy commands', function () {
         $later = new LegacyRetirement(
             $host->observe(...),
             $host->mutate(...),
-            fn (): \DateTimeImmutable => new \DateTimeImmutable('2026-09-05T10:00:00+00:00'),
-            new \App\E2E\State\OperationLock($paths),
-            new \App\E2E\Value\OperationId(str_repeat('e', 32)),
+            fn (): DateTimeImmutable => new DateTimeImmutable('2026-09-05T10:00:00+00:00'),
+            new OperationLock($paths),
+            new OperationId(str_repeat('e', 32)),
             $host->observeCurrent(...),
         );
 
@@ -407,7 +413,7 @@ describe('legacy commands', function () {
             ]);
         });
 
-        app(\App\E2E\LegacyRetirementHost::class)->observeCurrent(['instances' => [$requested]]);
+        app(LegacyRetirementHost::class)->observeCurrent(['instances' => [$requested]]);
 
         expect($commands)->toBe([
             ['incus', 'query', '--raw', 'lab:/1.0/instances/old-vm?project=orbit'],
@@ -449,8 +455,7 @@ describe('legacy commands', function () {
             $commands[] = $process->command;
 
             return match ($process->command) {
-                ['incus', 'query', '--raw', 'lab:/1.0/instances/old-vm/snapshots/ready?project=orbit']
-                    => legacyCommandSync([
+                ['incus', 'query', '--raw', 'lab:/1.0/instances/old-vm/snapshots/ready?project=orbit'] => legacyCommandSync([
                     'name' => 'ready',
                     'config' => ['owner' => 'old'],
                 ]),
@@ -565,20 +570,20 @@ describe('legacy commands', function () {
         chmod($observation, 0600);
         chmod($freezeEvidence, 0600);
         putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
-        $host = app(\App\E2E\LegacyRetirementHost::class);
-        $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-preserved-lock-', 5));
+        $host = app(LegacyRetirementHost::class);
+        $paths = new StatePaths(temporaryPath('legacy-preserved-lock-', 5));
         $early = new LegacyRetirement(
             $host->observe(...),
             $host->mutate(...),
             fn (): DateTimeImmutable => new DateTimeImmutable('2026-08-28T10:00:00+00:00'),
-            new \App\E2E\State\OperationLock($paths),
-            new \App\E2E\Value\OperationId(str_repeat('a', 32)),
+            new OperationLock($paths),
+            new OperationId(str_repeat('a', 32)),
             $host->observeCurrent(...),
         );
         $inventory = $early->inventory();
         $manifest = $early->quarantine($inventory, $inventory->sha256(), $freezeEvidence);
         $commands = [];
-        $realProcesses = new \Illuminate\Process\Factory;
+        $realProcesses = new Factory;
         Process::fake(function (PendingProcess $process) use (&$commands, $fingerprint, $realProcesses) {
             $commands[] = $process->command;
 
@@ -586,18 +591,17 @@ describe('legacy commands', function () {
                 return $realProcesses->newPendingProcess()->timeout(30)->run($process->command);
             }
 
-            return (
+            return
                 str_contains($process->command[3], '/storage-pools/')
                     ? legacyCommandSync(['name' => 'orbit-e2e', 'config' => ['source' => 'orbit-e2e']])
-                    : legacyCommandSync(['fingerprint' => $fingerprint, 'aliases' => []])
-            );
+                    : legacyCommandSync(['fingerprint' => $fingerprint, 'aliases' => []]);
         });
         $later = new LegacyRetirement(
             $host->observe(...),
             $host->mutate(...),
             fn (): DateTimeImmutable => new DateTimeImmutable('2026-09-05T10:00:00+00:00'),
-            new \App\E2E\State\OperationLock($paths),
-            new \App\E2E\Value\OperationId(str_repeat('b', 32)),
+            new OperationLock($paths),
+            new OperationId(str_repeat('b', 32)),
             $host->observeCurrent(...),
         );
 
@@ -664,15 +668,15 @@ describe('legacy commands', function () {
         chmod($observation, 0600);
         chmod($freezeEvidence, 0600);
         putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
-        $host = app(\App\E2E\LegacyRetirementHost::class);
+        $host = app(LegacyRetirementHost::class);
         $early = new LegacyRetirement(
             $host->observe(...),
             $host->mutate(...),
             fn (): DateTimeImmutable => new DateTimeImmutable('2026-08-28T10:00:00+00:00'),
-            new \App\E2E\State\OperationLock(
-                new \App\E2E\State\StatePaths(temporaryPath('legacy-preserved-duplicate-lock-', 5)),
+            new OperationLock(
+                new StatePaths(temporaryPath('legacy-preserved-duplicate-lock-', 5)),
             ),
-            new \App\E2E\Value\OperationId(str_repeat('e', 32)),
+            new OperationId(str_repeat('e', 32)),
             $host->observeCurrent(...),
         );
         $inventory = $early->inventory();
@@ -771,14 +775,14 @@ describe('legacy commands', function () {
         chmod($observation, 0600);
         chmod($freezeEvidence, 0600);
         putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
-        $host = app(\App\E2E\LegacyRetirementHost::class);
-        $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-preserved-refusal-lock-', 5));
+        $host = app(LegacyRetirementHost::class);
+        $paths = new StatePaths(temporaryPath('legacy-preserved-refusal-lock-', 5));
         $early = new LegacyRetirement(
             $host->observe(...),
             $host->mutate(...),
             fn (): DateTimeImmutable => new DateTimeImmutable('2026-08-28T10:00:00+00:00'),
-            new \App\E2E\State\OperationLock($paths),
-            new \App\E2E\Value\OperationId(str_repeat('c', 32)),
+            new OperationLock($paths),
+            new OperationId(str_repeat('c', 32)),
             $host->observeCurrent(...),
         );
         $inventory = $early->inventory();
@@ -789,18 +793,17 @@ describe('legacy commands', function () {
         Process::fake(function (PendingProcess $process) use (&$commands, $fingerprint) {
             $commands[] = $process->command;
 
-            return (
+            return
                 str_contains($process->command[3], '/storage-pools/')
                     ? legacyCommandSync(['name' => 'orbit-e2e', 'config' => []])
-                    : legacyCommandSync(['fingerprint' => $fingerprint, 'aliases' => []])
-            );
+                    : legacyCommandSync(['fingerprint' => $fingerprint, 'aliases' => []]);
         });
         $later = new LegacyRetirement(
             $host->observe(...),
             $host->mutate(...),
             fn (): DateTimeImmutable => new DateTimeImmutable('2026-09-05T10:00:00+00:00'),
-            new \App\E2E\State\OperationLock($paths),
-            new \App\E2E\Value\OperationId(str_repeat('d', 32)),
+            new OperationLock($paths),
+            new OperationId(str_repeat('d', 32)),
             $host->observeCurrent(...),
         );
 
@@ -875,7 +878,7 @@ describe('legacy commands', function () {
             ])
             ->assertFailed();
         $this->artisan('legacy:inventory', ['--output' => $schema3Inventory])->assertSuccessful();
-        $fresh = \App\E2E\Value\RetirementInventory::fromArray(LegacyRetirement::readProtectedJson($schema3Inventory));
+        $fresh = RetirementInventory::fromArray(LegacyRetirement::readProtectedJson($schema3Inventory));
         $this
             ->artisan('legacy:quarantine', [
                 '--inventory' => $schema3Inventory,
@@ -932,7 +935,7 @@ describe('legacy commands', function () {
         putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
 
         $this->artisan('legacy:inventory', ['--output' => $inventoryPath])->assertSuccessful();
-        $inventory = \App\E2E\Value\RetirementInventory::fromArray(
+        $inventory = RetirementInventory::fromArray(
             LegacyRetirement::readProtectedJson($inventoryPath),
         );
         $this

@@ -17,12 +17,10 @@ use Illuminate\Validation\Rule;
 use JsonException;
 use stdClass;
 
-/** @mago-expect lint:cyclomatic-complexity This request keeps transport normalization and typed payload mapping at one boundary. */
 final class ProvisionNodeRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
         $tld = $this->input('tld');
 
         if (! is_string($tld)) {
@@ -36,8 +34,6 @@ final class ProvisionNodeRequest extends FormRequest
      * Preserve explicit blank peer addresses so the allocator can reject them.
      *
      * @return array<array-key, mixed>
-     *
-     * @mago-expect analysis:mixed-assignment Decoded JSON is an untyped transport boundary.
      */
     public function validationData(): array
     {
@@ -130,7 +126,6 @@ final class ProvisionNodeRequest extends FormRequest
         ];
     }
 
-    /** @mago-expect analysis:mixed-assignment Validated request data starts at an untyped boundary. */
     public function payload(): ProvisionNodeData
     {
         $validated = $this->validated();
@@ -204,7 +199,6 @@ final class ProvisionNodeRequest extends FormRequest
 
     private function requiresPublicSshHost(): bool
     {
-        /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
         $name = $this->input('name');
 
         if (! is_string($name) || $name === '') {

@@ -11,7 +11,7 @@ focused tests for red, green, and refactor. Run focused Pest tests locally. Revi
   diagnostics, TLS verification, redirects, and root-CA one-shot behavior.
 - Use Saloon fakes. Do not contact a live Gateway or node.
 - Run `composer validate --strict` and `composer check`.
-- Run Mago format check, lint, and analysis with zero findings. Run Rector in
+- Run Pint format checks and PHPStan analysis with zero findings. Run Rector in
   dry-run mode and `git diff --check -- packages/php-sdk` from the monorepo
   root.
 - Require the reviewer's passing root `composer check` receipt on the submitted candidate. Use `composer test`

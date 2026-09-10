@@ -15,7 +15,7 @@ final readonly class AppDevCaddyConfigRenderer
             return '# Orbit has no active app development sites.'.PHP_EOL;
         }
 
-        return (
+        return
             $sites
                 ->sortBy('hostname')
                 ->map(static function (AppDevSite $site): string {
@@ -55,7 +55,6 @@ final readonly class AppDevCaddyConfigRenderer
                         }
                         CADDY;
                 })
-                ->implode(PHP_EOL.PHP_EOL).PHP_EOL
-        );
+                ->implode(PHP_EOL.PHP_EOL).PHP_EOL;
     }
 }

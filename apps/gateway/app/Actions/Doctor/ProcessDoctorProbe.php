@@ -88,6 +88,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 $inspection = $this->inspector->inspect($process);
             } catch (DoctorInspectionException) {
                 $issues[] = $this->failure($process);
+
                 continue;
             }
 
@@ -99,12 +100,14 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                     'present',
                     'absent',
                 );
+
                 continue;
             }
 
             $observed = $inspection->status;
             if ($observed === null) {
                 $issues[] = $this->failure($process);
+
                 continue;
             }
 

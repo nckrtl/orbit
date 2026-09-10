@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class RouteTarget extends Model
 {
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = ['route_id', 'app_instance_id', 'position'];
 

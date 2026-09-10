@@ -13,10 +13,6 @@ use App\E2E\Value\TopologyTarget;
 use JsonException;
 use RuntimeException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The convergence contract keeps one explicit ordered operation sequence.
- * @mago-expect lint:kan-defect Each guarded phase must remain visible and fail closed.
- */
 final readonly class TopologyConverger
 {
     private const int INSTANCE_API_READINESS_ATTEMPTS = 30;
@@ -218,7 +214,10 @@ final readonly class TopologyConverger
         return ConvergenceReport::successful($steps);
     }
 
-    /** @param array<string, string> $instances @return array<string, string> */
+    /**
+     * @param  array<string, string>  $instances
+     * @return array<string, string>
+     */
     private function architectures(array $instances): array
     {
         $requests = [];
@@ -422,20 +421,20 @@ final readonly class TopologyConverger
             || ! is_string($placement['user'] ?? null)
             || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $placement['user']) !== 1
             || ! is_string($placement['home'] ?? null)
-            || ! $isPlacementPath($placement['home'] ?? null)
+            || ! $isPlacementPath($placement['home'])
             || ! is_string($placement['checkout_path'] ?? null)
-            || ! $isPlacementPath($placement['checkout_path'] ?? null)
+            || ! $isPlacementPath($placement['checkout_path'])
             || ! is_string($placement['effective_root'] ?? null)
-            || ! $isPlacementPath($placement['effective_root'] ?? null)
+            || ! $isPlacementPath($placement['effective_root'])
             || ! is_string($placement['environment_path'] ?? null)
-            || ! $isPlacementPath($placement['environment_path'] ?? null)
+            || ! $isPlacementPath($placement['environment_path'])
             || $placement['database_path'] !== null
             && (! is_string($placement['database_path'])
             || ! $isPlacementPath($placement['database_path']))
             || ! is_string($placement['service'] ?? null)
             || preg_match('/\A[a-zA-Z0-9@_.-]{1,128}\z/D', $placement['service']) !== 1
             || ! is_string($placement['socket'] ?? null)
-            || ! $isPlacementPath($placement['socket'] ?? null)
+            || ! $isPlacementPath($placement['socket'])
             || $placement['current_target'] !== null
             && (! is_string($placement['current_target'])
             || ! $isPlacementPath($placement['current_target']))
@@ -468,11 +467,9 @@ final readonly class TopologyConverger
     private function failureDetails(string $script, GuestCommandResult $result): string
     {
         $pattern = match (true) {
-            $script === 'converge-gateway.sh' && $result->exitCode === 71
-                => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+            $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
             in_array($script, ['converge-app-dev.sh', 'converge-app-prod-internal-tls.sh'], true)
-                && $result->exitCode === 1
-                => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+                && $result->exitCode === 1 => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
             default => null,
         };
 

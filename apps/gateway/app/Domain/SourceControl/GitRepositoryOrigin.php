@@ -7,7 +7,6 @@ namespace App\Domain\SourceControl;
 use InvalidArgumentException;
 use SensitiveParameter;
 
-/** @mago-expect lint:cyclomatic-complexity Each branch rejects one unsafe Git origin shape. */
 final class GitRepositoryOrigin
 {
     public static function validate(#[SensitiveParameter] string $repository): string

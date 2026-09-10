@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -49,7 +50,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
  * @property array<string, mixed>|null $registration_migration_recovery
- * @property \Illuminate\Support\Carbon|null $registration_completed_at
+ * @property Carbon|null $registration_completed_at
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
  * @property bool|null $source_is_laravel
@@ -59,9 +60,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property AppInstanceState $status
  * @property-read App $app
  * @property-read Node $node
- * @property-read \Illuminate\Database\Eloquent\Collection<int, RouteTarget> $routeTargets
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Route> $routes
- * @property-read \Illuminate\Database\Eloquent\Collection<int, AppInstanceEnvironmentValue> $environmentValues
+ * @property-read Collection<int, RouteTarget> $routeTargets
+ * @property-read Collection<int, Route> $routes
+ * @property-read Collection<int, AppInstanceEnvironmentValue> $environmentValues
  * @property-read AppInstanceRemovalMember|null $removalMember
  */
 final class AppInstance extends Model
@@ -78,7 +79,7 @@ final class AppInstance extends Model
         'status' => 'reserved',
     ];
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'app_id',
@@ -173,7 +174,7 @@ final class AppInstance extends Model
         return $root;
     }
 
-    /** @return array<string, class-string> */
+    /** @return array<string, string> */
     protected function casts(): array
     {
         return [

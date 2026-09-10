@@ -11,14 +11,14 @@ use InvalidArgumentException;
 use JsonException;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity JSON argv validation remains at the command boundary. */
 final class ExecCommand extends E2ECommand
 {
     #[\Override]
     protected $signature =
         'topology:exec {issue} {role} '
-            .self::WORKTREE_OPTION
-            .' {--argv=} {--argv-file=} {--proof : Run against the retained failed proof topology} {--json}';
+        .self::WORKTREE_OPTION
+        .' {--argv=} {--argv-file=} {--proof : Run against the retained failed proof topology} {--json}';
+
     #[\Override]
     protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one discovery or failed-proof role';
 
@@ -111,13 +111,12 @@ final class ExecCommand extends E2ECommand
     }
 
     /**
-     * @param list<mixed> $value
+     * @param  list<mixed>  $value
      * @return list<string>
      */
     private function argvList(array $value): array
     {
         $argv = [];
-        /** @mago-expect analysis:mixed-assignment Each argument is validated before it joins the vector. */
         foreach ($value as $argument) {
             if (! is_string($argument)) {
                 throw new InvalidArgumentException('Every argv item must be a string.');

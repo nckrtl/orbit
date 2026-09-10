@@ -489,7 +489,7 @@ function metricsExporterRetiredArtifactCleanupArguments(): array
 }
 
 /**
- * @param list<RemoteCommand> $commands
+ * @param  list<RemoteCommand>  $commands
  * @return list<list<string>>
  */
 function metricsExporterRetiredArtifactCommands(array $commands): array
@@ -519,8 +519,8 @@ function metricsExporterRetiredArtifactCommands(array $commands): array
  * A fixed index breaks the moment an earlier step gains or loses a command;
  * matching on the argument shape does not.
  *
- * @param list<RemoteCommand> $commands
- * @param list<string> $arguments
+ * @param  list<RemoteCommand>  $commands
+ * @param  list<string>  $arguments
  */
 function metricsExporterCommand(array $commands, array $arguments): ?RemoteCommand
 {
@@ -555,10 +555,6 @@ final class MetricsExporterCapturingSsh implements SshExecutor
     }
 }
 
-/**
- * @mago-expect lint:cyclomatic-complexity The stateful fake matches every fixed exporter command.
- * @mago-expect lint:too-many-methods Each matched command gets its own narrow state-mutating helper.
- */
 final class MetricsExporterStatefulSsh implements SshExecutor
 {
     /** @var list<RemoteCommand> */
@@ -570,8 +566,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
     private ?string $candidate = null;
 
     /**
-     * @param list<string>|null $failArguments
-     * @mago-expect lint:excessive-parameter-list The stateful fake exposes every exporter recovery dimension under test.
+     * @param  list<string>|null  $failArguments
      */
     public function __construct(
         public ?string $configuration,
@@ -596,12 +591,10 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         }
 
         return match ($command->arguments) {
-            ['sudo', 'test', '-e', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf']
-                => metricsExporterResult(
+            ['sudo', 'test', '-e', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'] => metricsExporterResult(
                 exitCode: $this->configuration === null ? 1 : 0,
             ),
-            ['sudo', 'cat', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf']
-                => metricsExporterResult(
+            ['sudo', 'cat', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'] => metricsExporterResult(
                 stdout: $this->configuration ?? '',
             ),
             ['sudo', 'ufw', 'status', 'numbered'] => metricsExporterResult(
@@ -609,8 +602,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                     ? metricsExporterFirewallStatus($connection->host)
                     : "Status: active\n",
             ),
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter']
-                => metricsExporterResult(),
+            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'] => metricsExporterResult(),
             [
                 'sudo',
                 'install',
@@ -623,16 +615,14 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 '0644',
                 '/dev/stdin',
                 '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf.orbit-candidate',
-            ]
-                => $this->stage($command),
+            ] => $this->stage($command),
             [
                 'sudo',
                 'rm',
                 '-f',
                 '--',
                 '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf.orbit-candidate',
-            ]
-                => $this->discardCandidate(),
+            ] => $this->discardCandidate(),
             [
                 'sudo',
                 'mv',
@@ -640,14 +630,12 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 '--',
                 '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf.orbit-candidate',
                 '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf',
-            ]
-                => $this->publishCandidate(),
+            ] => $this->publishCandidate(),
             ['sudo', 'systemctl', 'enable', '--now', 'prometheus-node-exporter'] => $this->enable(),
             ['sudo', 'systemctl', 'restart', 'prometheus-node-exporter'] => $this->enable(),
             ['sudo', 'systemctl', 'daemon-reload'] => metricsExporterResult(),
             ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'] => $this->disable(),
-            ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf']
-                => $this->removeConfiguration(),
+            ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'] => $this->removeConfiguration(),
             ['systemctl', 'is-active', 'prometheus-node-exporter'] => metricsExporterResult(
                 exitCode: $this->serviceActive ? 0 : 3,
                 stdout: $this->serviceActive ? "active\n" : "inactive\n",
@@ -669,8 +657,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 '9100',
                 'comment',
                 'orbit:metrics-node-exporter',
-            ]
-                => $this->addFirewall(),
+            ] => $this->addFirewall(),
             ['sudo', 'ufw', '--force', 'delete', '5'] => $this->removeFirewall(),
             [
                 'sudo',
@@ -679,8 +666,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 '--',
                 '/usr/local/sbin/orbit-metrics-uninstall',
                 '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
-            ]
-                => $this->cleanupRetiredArtifacts(),
+            ] => $this->cleanupRetiredArtifacts(),
             default => metricsExporterResult(),
         };
     }

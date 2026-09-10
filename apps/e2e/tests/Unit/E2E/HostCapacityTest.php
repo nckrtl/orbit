@@ -12,8 +12,8 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
 /**
- * @param list<string> $harnessInstances
- * @param list<string> $subnets
+ * @param  list<string>  $harnessInstances
+ * @param  list<string>  $subnets
  */
 function fakeCapacityHost(array $harnessInstances, array $subnets): void
 {

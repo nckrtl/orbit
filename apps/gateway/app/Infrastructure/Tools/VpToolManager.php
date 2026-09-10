@@ -13,10 +13,6 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter keeps each fail-closed VP parsing branch explicit.
- * @mago-expect lint:too-many-methods The closed manager contract requires every lifecycle method on one adapter.
- */
 final readonly class VpToolManager implements ToolManager
 {
     private const string VP_BINARY = '/usr/local/bin/vp';
@@ -197,7 +193,7 @@ final readonly class VpToolManager implements ToolManager
         return $version;
     }
 
-    public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string
+    public function candidateVersion(Node $node, string $package, ToolOperation $operation): string
     {
         $this->guardNode($node);
         $this->guardPackage($package);
@@ -395,11 +391,10 @@ final readonly class VpToolManager implements ToolManager
 
     private function isSafeString(string $value): bool
     {
-        return (
+        return
             $value !== ''
             && strlen($value) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1
-        );
+            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1;
     }
 
     /** @param non-empty-list<string> $arguments */

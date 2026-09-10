@@ -6,7 +6,6 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity,too-many-methods The recipe owns validation and all physical Node lookups. */
 final readonly class TopologyRecipe
 {
     public const string BASE_IMAGE = 'orbit-base-ubuntu-26.04-runtime';
@@ -19,39 +18,7 @@ final readonly class TopologyRecipe
         public string $id,
         public array $nodes,
     ) {
-        if (preg_match('/\A[a-z][a-z0-9_-]{0,62}\z/D', $id) !== 1 || $nodes === [] || ! array_is_list($nodes)) {
-            throw new InvalidArgumentException('The topology recipe identity or Node inventory is invalid.');
-        }
-
-        $nodesByKey = [];
-        $addresses = [];
-        foreach ($nodes as $node) {
-            if (! $node instanceof TopologyNode) {
-                throw new InvalidArgumentException('Every topology recipe entry must be a Node.');
-            }
-            if (isset($nodesByKey[$node->key])) {
-                throw new InvalidArgumentException('Topology recipe Node keys must be unique.');
-            }
-            if (isset($addresses[$node->address])) {
-                throw new InvalidArgumentException('Topology recipe Node address positions must be unique.');
-            }
-            $nodesByKey[$node->key] = $node;
-            $addresses[$node->address] = true;
-        }
-        foreach ($nodes as $node) {
-            foreach ($node->roles as $role) {
-                if (
-                    isset($nodesByKey[$role])
-                    && $role !== $node->key
-                    && ! in_array($role, $nodesByKey[$role]->roles, true)
-                ) {
-                    throw new InvalidArgumentException(
-                        "Topology recipe Node key [{$role}] collides with a role assigned to another Node.",
-                    );
-                }
-            }
-        }
-        $this->nodesByKey = $nodesByKey;
+        $this->nodesByKey = $this->validateNodes($id, $nodes);
     }
 
     public static function registered(string $image = self::BASE_IMAGE): self
@@ -144,9 +111,7 @@ final readonly class TopologyRecipe
 
     public function node(string $key): TopologyNode
     {
-        return (
-            $this->nodesByKey[$key] ?? throw new InvalidArgumentException("Topology recipe Node [{$key}] is absent.")
-        );
+        return $this->nodesByKey[$key] ?? throw new InvalidArgumentException("Topology recipe Node [{$key}] is absent.");
     }
 
     public function nodeForRole(string $role): TopologyNode
@@ -174,5 +139,47 @@ final readonly class TopologyRecipe
     public function resolveNode(string $nodeOrRole): TopologyNode
     {
         return $this->hasNode($nodeOrRole) ? $this->node($nodeOrRole) : $this->nodeForRole($nodeOrRole);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $nodes
+     * @return array<string, TopologyNode>
+     */
+    private function validateNodes(string $id, array $nodes): array
+    {
+        if (preg_match('/\A[a-z][a-z0-9_-]{0,62}\z/D', $id) !== 1 || $nodes === [] || ! array_is_list($nodes)) {
+            throw new InvalidArgumentException('The topology recipe identity or Node inventory is invalid.');
+        }
+
+        $nodesByKey = [];
+        $addresses = [];
+        foreach ($nodes as $node) {
+            if (! $node instanceof TopologyNode) {
+                throw new InvalidArgumentException('Every topology recipe entry must be a Node.');
+            }
+            if (isset($nodesByKey[$node->key])) {
+                throw new InvalidArgumentException('Topology recipe Node keys must be unique.');
+            }
+            if (isset($addresses[$node->address])) {
+                throw new InvalidArgumentException('Topology recipe Node address positions must be unique.');
+            }
+            $nodesByKey[$node->key] = $node;
+            $addresses[$node->address] = true;
+        }
+        foreach ($nodes as $node) {
+            foreach ($node->roles as $role) {
+                if (
+                    isset($nodesByKey[$role])
+                    && $role !== $node->key
+                    && ! in_array($role, $nodesByKey[$role]->roles, true)
+                ) {
+                    throw new InvalidArgumentException(
+                        "Topology recipe Node key [{$role}] collides with a role assigned to another Node.",
+                    );
+                }
+            }
+        }
+
+        return $nodesByKey;
     }
 }

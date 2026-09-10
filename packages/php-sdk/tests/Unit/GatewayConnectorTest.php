@@ -51,7 +51,8 @@ describe(GatewayConnector::class, function (): void {
         );
         $connector->withMockClient($mockClient);
 
-        $connector->send(new class extends Request {
+        $connector->send(new class extends Request
+        {
             protected Method $method = Method::GET;
 
             public function resolveEndpoint(): string
@@ -147,7 +148,8 @@ describe(GatewayConnector::class, function (): void {
 
 function gateway_connector_probe_request(): Request
 {
-    return new class extends Request {
+    return new class extends Request
+    {
         protected Method $method = Method::GET;
 
         public function resolveEndpoint(): string

@@ -11,7 +11,7 @@ interface DevelopmentProjectionOperationLock
     /**
      * @template T
      *
-     * @param Closure(): T $operation
+     * @param  Closure(): T  $operation
      * @return T
      */
     public function run(Closure $operation): mixed;

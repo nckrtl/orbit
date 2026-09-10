@@ -127,7 +127,7 @@ final readonly class RemotePhpPackageManager
     }
 
     /**
-     * @param Collection<int, string> $versions
+     * @param  Collection<int, string>  $versions
      */
     private function install(
         Node $node,
@@ -170,8 +170,8 @@ final readonly class RemotePhpPackageManager
     }
 
     /**
-     * @param list<string> $packages
-     * @param array{source_step: string, source_error: string, install_step: string, install_error: string} $failure
+     * @param  list<string>  $packages
+     * @param  array{source_step: string, source_error: string, install_step: string, install_error: string}  $failure
      */
     private function convergeSource(
         Node $node,
@@ -419,9 +419,8 @@ final readonly class RemotePhpPackageManager
     }
 
     /**
-     * @param list<string> $packages
-     * @param array{source_step: string, source_error: string, install_step: string, install_error: string} $failure
-     * @mago-expect lint:excessive-parameter-list The executor and stable failure contract stay explicit at this remote boundary.
+     * @param  list<string>  $packages
+     * @param  array{source_step: string, source_error: string, install_step: string, install_error: string}  $failure
      */
     private function installProfile(
         Node $node,

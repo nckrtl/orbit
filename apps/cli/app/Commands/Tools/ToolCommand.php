@@ -43,7 +43,6 @@ abstract class ToolCommand extends GatewayCommand
         $value = $this->argument($argument);
 
         if ($value === null && $this->mayPrompt()) {
-            /** @mago-expect analysis:mixed-assignment Console prompts cross an untyped framework boundary. */
             $value = $this->ask($question);
         }
 

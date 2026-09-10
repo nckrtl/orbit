@@ -17,7 +17,8 @@ abstract class TestCase extends BaseTestCase
     {
         $this->app->instance(
             RepositoryDefaultBranchResolver::class,
-            new class($defaultBranch) implements RepositoryDefaultBranchResolver {
+            new class($defaultBranch) implements RepositoryDefaultBranchResolver
+            {
                 public function __construct(
                     private readonly string $defaultBranch,
                 ) {}

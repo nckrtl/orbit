@@ -15,7 +15,6 @@ use LogicException;
 
 final readonly class NativeRoleBaselineConverger implements RoleBaselineConverger
 {
-    /** @mago-expect lint:excessive-parameter-list The closed role registry requires one baseline per role plus fleet reconciliation. */
     public function __construct(
         private GatewayRoleBaseline $gateway,
         private VpnRoleBaseline $vpn,

@@ -58,11 +58,10 @@ final readonly class NodeAccessAuthorizer
 
     public function hasAnyAccess(Node $consumer): bool
     {
-        return (
+        return
             $this->isGatewayNode($consumer)
             || $this->hasGatewayAuthority($consumer)
-            || $consumer->accessibleNodes()->exists()
-        );
+            || $consumer->accessibleNodes()->exists();
     }
 
     /** @return list<int> */

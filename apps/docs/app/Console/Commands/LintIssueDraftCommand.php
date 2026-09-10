@@ -19,7 +19,7 @@ final class LintIssueDraftCommand extends Command
 
     public function handle(IssueDraft $draft): int
     {
-        $file = $this->argument('file');
+        $file = $this->input->getArgument('file');
 
         if (! is_string($file) || ! is_file($file)) {
             $this->error('The issue draft file must exist.');

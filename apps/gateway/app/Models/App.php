@@ -21,11 +21,11 @@ use SensitiveParameter;
  */
 final class App extends Model
 {
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = ['name', 'slug', 'repository_url', 'default_branch', 'root', 'defaults'];
 
-    /** @var array<array-key, string> */
+    /** @var list<string> */
     #[\Override]
     protected $hidden = ['defaults', 'repository_identity'];
 

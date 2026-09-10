@@ -93,6 +93,8 @@ if ((failed != 0)); then
     exit "$failed"
 fi
 
+"$repository_root/bin/worktree-cache"
+
 ensure_gateway_app_key
 
 # Cache reuse is optional feedback and must not make bootstrap a test gate.

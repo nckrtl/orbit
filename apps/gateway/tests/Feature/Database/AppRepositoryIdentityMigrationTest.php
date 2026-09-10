@@ -8,10 +8,9 @@ use Illuminate\Support\Facades\Schema;
 
 it('reports every duplicate identity before changing the App schema or rows', function (): void {
     $removalMigration = app_repository_identity_removal_migration();
-    $migration = require
-        base_path(
-            'database/migrations/2026_09_06_000000_add_repository_identity_to_apps.php',
-        );
+    $migration = require base_path(
+        'database/migrations/2026_09_06_000000_add_repository_identity_to_apps.php',
+    );
     $removalMigration->down();
 
     try {
@@ -44,10 +43,9 @@ it('reports every duplicate identity before changing the App schema or rows', fu
 
 it('backfills required unique identities and rolls back only the added boundary', function (): void {
     $removalMigration = app_repository_identity_removal_migration();
-    $migration = require
-        base_path(
-            'database/migrations/2026_09_06_000000_add_repository_identity_to_apps.php',
-        );
+    $migration = require base_path(
+        'database/migrations/2026_09_06_000000_add_repository_identity_to_apps.php',
+    );
     $removalMigration->down();
 
     try {

@@ -17,13 +17,11 @@ use Illuminate\Database\Eloquent\Model;
  */
 final class Setting extends Model
 {
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = ['scope_type', 'scope_id', 'key', 'value', 'is_secret'];
 
     /**
-     * @mago-expect lint:no-literal-password The cast name is not a credential.
-     *
      * @return array<string, string>
      */
     protected function casts(): array

@@ -20,15 +20,8 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\Node;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Removal keeps guarded projection rollback in one transaction flow.
- * @mago-expect lint:halstead Removal keeps the ordered recovery boundary visible in one transaction flow.
- * @mago-expect lint:kan-defect Removal keeps guarded projection rollback in one transaction flow.
- * @mago-expect lint:too-many-methods Removal keeps its guards, role shedding and ordered recovery in one boundary.
- */
 final readonly class RemoveNodeAction
 {
-    /** @mago-expect lint:excessive-parameter-list Removal requires each narrow lifecycle collaborator explicitly. */
     public function __construct(
         private PrivateDnsManager $dns,
         private GatewayPeerProjectionManager $peers,
@@ -39,7 +32,6 @@ final readonly class RemoveNodeAction
         private ?RouteRemovalGuard $routes = null,
     ) {}
 
-    /** @mago-expect lint:no-boolean-flag-parameter The public removal contract carries the explicit claim and consent. */
     public function execute(
         Node $node,
         Node $caller,
@@ -62,7 +54,7 @@ final readonly class RemoveNodeAction
             retainedOnNode: $shed === null
                 ? []
                 : $this->residue->describe(
-                    array_values(array_map(RoleName::from(...), $shed)),
+                    array_map(RoleName::from(...), $shed),
                     nodeLeavesFleet: true,
                 ),
             followUp: $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),

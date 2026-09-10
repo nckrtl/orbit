@@ -17,7 +17,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
 
-/** @mago-expect lint:excessive-parameter-list Baseline wiring keeps SSH, key, host, and firewall dependencies explicit. */
 final readonly class VpnRoleBaseline implements RoleBaseline
 {
     public function __construct(
@@ -42,7 +41,6 @@ final readonly class VpnRoleBaseline implements RoleBaseline
 
         $account = $this->accounts->resolve($node);
 
-        /** @var string $wireguardIp */
         $wireguardIp = $node->wireguard_ip;
 
         $result = $this->ssh->execute(

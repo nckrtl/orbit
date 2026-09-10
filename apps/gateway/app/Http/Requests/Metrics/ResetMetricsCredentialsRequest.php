@@ -11,11 +11,13 @@ use UnexpectedValueException;
 
 final class ResetMetricsCredentialsRequest extends FormRequest
 {
+    /** @return array{} */
     public function rules(): array
     {
         return [];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

@@ -18,7 +18,6 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @mago-expect lint:excessive-parameter-list The request transports the bounded Route creation contract. */
     public function __construct(
         private readonly int $appId,
         private readonly string $hostname,

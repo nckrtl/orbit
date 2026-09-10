@@ -8,12 +8,14 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
@@ -109,7 +111,7 @@ it('refuses a stored runtime association that differs from its production identi
     ]);
 
     expect(fn () => ProductionPhpRuntimeIdentity::from($instance))
-        ->toThrow(\App\Domain\Shared\ResourceOperationException::class);
+        ->toThrow(ResourceOperationException::class);
 });
 
 it('renders generated identity separately from preserved local defaults', function (): void {
@@ -374,7 +376,8 @@ function orb214_runtime_instance(): array
 
 function orb214_app_prod_ssh(AppDevFakeSshExecutor $ssh): AppProdSshExecutor
 {
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-test-key';
@@ -385,13 +388,14 @@ function orb214_app_prod_ssh(AppDevFakeSshExecutor $ssh): AppProdSshExecutor
             return 'ssh-ed25519 AAAA';
         }
     };
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-test-known-hosts';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
 
     return new AppProdSshExecutor($ssh, $keys, $knownHosts);

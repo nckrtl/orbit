@@ -11,7 +11,7 @@ interface AppDevSourceOperationLock
     /**
      * @template T
      *
-     * @param Closure(): T $operation
+     * @param  Closure(): T  $operation
      * @return T
      */
     public function synchronized(int $nodeId, Closure $operation): mixed;

@@ -9,7 +9,8 @@ use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 
 it('scans and fingerprints the preferred SSH host key', function (): void {
-    $runner = new class implements ProcessRunner {
+    $runner = new class implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $invocations = [];
 
@@ -62,7 +63,8 @@ it('keeps bounded command diagnostics when the host key scan fails', function ()
         15_000,
         true,
     );
-    $runner = new class($result) implements ProcessRunner {
+    $runner = new class($result) implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $invocations = [];
 

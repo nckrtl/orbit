@@ -113,7 +113,8 @@ describe('app creation', function (): void {
                 'defaults' => ['php_version' => '8.5'],
             ])
             ->assertCreated();
-        $branches = new class implements RepositoryDefaultBranchResolver {
+        $branches = new class implements RepositoryDefaultBranchResolver
+        {
             public int $calls = 0;
 
             public function resolve(string $repository): string
@@ -509,7 +510,8 @@ describe('app validation', function (): void {
     it('keeps raw remote output out of repository errors and activity diagnostics', function (): void {
         $requestId = (string) Str::uuid();
         $diagnostic = (string) Str::uuid();
-        $processes = new class($diagnostic) implements ProcessRunner {
+        $processes = new class($diagnostic) implements ProcessRunner
+        {
             public function __construct(
                 private readonly string $diagnostic,
             ) {}
@@ -746,8 +748,7 @@ function app_api_default_secrets(): array
 }
 
 /**
- * @param array{database: string, query: string, command: string, environment: string} $secrets
- *
+ * @param  array{database: string, query: string, command: string, environment: string}  $secrets
  * @return array<string, mixed>
  */
 function app_api_sensitive_defaults(array $secrets): array

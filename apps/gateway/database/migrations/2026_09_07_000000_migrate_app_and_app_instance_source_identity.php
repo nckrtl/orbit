@@ -8,7 +8,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         $unsupported = DB::table('app_instances')
@@ -19,7 +20,7 @@ return new class extends Migration {
             ->all();
 
         if ($unsupported !== []) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'Cannot migrate unsupported AppInstance source ownership: '.implode(', ', $unsupported),
             );
         }
@@ -63,7 +64,7 @@ return new class extends Migration {
             ->all();
 
         if ($unsupported !== []) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'Cannot restore legacy AppInstance source ownership: '.implode(', ', $unsupported),
             );
         }

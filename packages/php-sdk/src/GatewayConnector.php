@@ -23,7 +23,6 @@ use SensitiveParameter;
 use Throwable;
 use UnexpectedValueException;
 
-/** @mago-expect lint:too-many-methods Central connector boundaries override unsafe inherited diagnostics. */
 final class GatewayConnector extends Connector
 {
     use AlwaysThrowOnErrors;

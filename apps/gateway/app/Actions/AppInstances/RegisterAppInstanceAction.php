@@ -36,13 +36,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-/**
- * @mago-expect lint:too-many-methods,cyclomatic-complexity Registration keeps its fail-closed inference and durable retry gates together.
- * @mago-expect lint:kan-defect The coordinator keeps mutation, rollback, and retained retry states in one lifecycle.
- */
 final readonly class RegisterAppInstanceAction
 {
-    /** @mago-expect lint:excessive-parameter-list Each collaborator owns one existing lifecycle boundary. */
     public function __construct(
         private RegistrationSourceManager $sources,
         private CreateAppAction $createApp,
@@ -510,7 +505,7 @@ final readonly class RegisterAppInstanceAction
     private function retainedFact(AppInstance $instance): RegistrationSourceFacts
     {
         $layout = AppInstanceSourceLayout::tryFrom($instance->source_layout);
-        $worktreePaths = $instance->registration_worktree_paths;
+        $worktreePaths = $instance->getAttribute('registration_worktree_paths');
 
         if (
             ! $layout instanceof AppInstanceSourceLayout
@@ -530,7 +525,6 @@ final readonly class RegisterAppInstanceAction
             );
         }
 
-        /** @var list<string> $worktreePaths */
         return new RegistrationSourceFacts(
             path: $instance->registration_original_path,
             layout: $layout,
@@ -554,7 +548,7 @@ final readonly class RegisterAppInstanceAction
             return $instance->checkout_path;
         }
 
-        $app = $instance->relationLoaded('app') ? $instance->app : $instance->app()->firstOrFail();
+        $app = $instance->relationLoaded('app') ? $instance->getRelation('app') : $instance->app()->firstOrFail();
 
         if (! $app instanceof OrbitApp) {
             throw $this->conflict(
@@ -580,8 +574,6 @@ final readonly class RegisterAppInstanceAction
 
         $plannedName = is_array($planned) ? $planned['name'] : null;
         $plannedCheckoutPath = is_array($planned) ? $planned['checkout_path'] : null;
-        assert(is_string($plannedName) || $plannedName === null);
-        assert(is_string($plannedCheckoutPath) || $plannedCheckoutPath === null);
         $name = 'default';
         $account = $this->accounts->resolve($node);
         $roots = $this->storageRoots->resolveApps(
@@ -693,7 +685,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     /**
-     * @param list<RegistrationSourceFacts> $facts
+     * @param  list<RegistrationSourceFacts>  $facts
      * @return list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeHostname: string|null}>
      */
     private function reserveMembers(
@@ -923,7 +915,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     /**
-     * @param list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeHostname: string|null}> $members
+     * @param  list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeHostname: string|null}>  $members
      */
     private function needsRelocation(array $members): bool
     {
@@ -941,7 +933,10 @@ final readonly class RegisterAppInstanceAction
         return false;
     }
 
-    /** @param list<string> $paths */
+    /**
+     * @param  list<string>  $paths
+     * @return list<string>
+     */
     private function sortedPaths(array $paths): array
     {
         sort($paths, SORT_STRING);
@@ -950,7 +945,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     /**
-     * @param array{hostname: string|null, provenance: string} $routeIntent
+     * @param  array{hostname: string|null, provenance: string}  $routeIntent
      * @return array<string, mixed>
      */
     private function registrationEvidence(
@@ -1118,14 +1113,13 @@ final readonly class RegisterAppInstanceAction
 
     private function currentRouteIsAuthoritative(AppInstance $instance): bool
     {
-        return (
+        return
             ! $instance->migration_required
             && (
                 $instance->registration_completed_at !== null
                 || $instance->status === AppInstanceState::Active
                 && $instance->provisioning_step === 'active'
-            )
-        );
+            );
     }
 
     /**

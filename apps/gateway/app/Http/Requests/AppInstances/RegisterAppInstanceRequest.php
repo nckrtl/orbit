@@ -16,7 +16,6 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
 use UnexpectedValueException;
 
-/** @mago-expect lint:cyclomatic-complexity The request validates each independent optional registration value. */
 final class RegisterAppInstanceRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
@@ -35,6 +34,7 @@ final class RegisterAppInstanceRequest extends FormRequest
         ];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

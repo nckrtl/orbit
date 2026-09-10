@@ -10,12 +10,14 @@ use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
@@ -60,7 +62,7 @@ it('prepares every projection and Laravel URL before DNS then cuts over and clea
         ]))
         ->toBe([
             'hostname' => 'next.example.test',
-            'status' => \App\Domain\Routes\RouteStatus::Active,
+            'status' => RouteStatus::Active,
             'failed_step' => null,
             'error_code' => null,
             'hostname_change_previous' => null,
@@ -100,15 +102,15 @@ it('records each forward boundary failure and completes rollback to the old auth
             'hostname_change_direction',
             'hostname_change_step',
         ]))->toBe([
-        'hostname' => 'old.example.test',
-        'status' => \App\Domain\Routes\RouteStatus::Active,
-        'failed_step' => $failedStep,
-        'error_code' => "route.test_{$failure}",
-        'hostname_change_previous' => 'old.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
-        'hostname_change_step' => RouteHostnameChangeStep::RolledBack,
-    ]);
+            'hostname' => 'old.example.test',
+            'status' => RouteStatus::Active,
+            'failed_step' => $failedStep,
+            'error_code' => "route.test_{$failure}",
+            'hostname_change_previous' => 'old.example.test',
+            'hostname_change_target' => 'next.example.test',
+            'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
+            'hostname_change_step' => RouteHostnameChangeStep::RolledBack,
+        ]);
 })->with([
     'workload certificate' => ['workload-certificate', 'workload-certificate'],
     'workload Caddy' => ['workload-caddy', 'workload-caddy'],
@@ -148,7 +150,7 @@ it('records database cutover failure and rolls authoritative DNS back before ser
         SQL);
 
     expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(\Illuminate\Database\QueryException::class);
+        ->toThrow(QueryException::class);
 
     expect($route->refresh()->hostname)
         ->toBe('old.example.test')
@@ -406,7 +408,7 @@ it('records cleanup failure when clearing the durable operation fields fails', f
         SQL);
 
     expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(\Illuminate\Database\QueryException::class);
+        ->toThrow(QueryException::class);
 
     expect($route->refresh()->hostname)
         ->toBe('next.example.test')
@@ -472,7 +474,6 @@ final class RouteHostnameChangeEvents
     public array $values = [];
 }
 
-/** @mago-expect lint:too-many-methods The fake records every ordered projector boundary in one event stream. */
 final class RouteHostnameChangeProjectorFake implements RouteHostnameProjector
 {
     /** @var array<string, int> */

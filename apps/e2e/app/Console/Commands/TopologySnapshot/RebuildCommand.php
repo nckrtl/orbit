@@ -15,6 +15,7 @@ final class RebuildCommand extends E2ECommand
     protected $signature = 'topology-snapshot:rebuild
         {--main-sha=}
         {--json}';
+
     #[\Override]
     protected $description = 'Tear the topology snapshot down and build it again from the base image';
 

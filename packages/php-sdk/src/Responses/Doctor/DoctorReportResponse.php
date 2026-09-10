@@ -11,8 +11,8 @@ use SensitiveParameter;
 final readonly class DoctorReportResponse
 {
     /**
-     * @param list<DoctorNodeResponse> $nodes
-     * @param array{nodes:int,families:int,checks:int,drift:int,unverifiable:int} $summary
+     * @param  list<DoctorNodeResponse>  $nodes
+     * @param  array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}  $summary
      */
     private function __construct(
         public bool $healthy,
@@ -22,8 +22,7 @@ final readonly class DoctorReportResponse
     ) {}
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway report values remain mixed until validated.
-     * @param array<array-key, mixed> $data
+     * @param  array<array-key, mixed>  $data
      */
     public static function fromGatewayData(
         #[SensitiveParameter]

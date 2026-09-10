@@ -18,6 +18,7 @@ final class StatusCommand extends Command
 {
     #[\Override]
     protected $signature = 'topology-snapshot:status {--json}';
+
     #[\Override]
     protected $description = 'Show the promoted topology snapshot generation';
 

@@ -8,7 +8,8 @@ use App\Domain\Nodes\RoleName;
 
 final class NodeRoleServiceCatalog
 {
-    /** @return list<string> */ public function forRole(RoleName $role): array
+    /** @return list<string> */
+    public function forRole(RoleName $role): array
     {
         return match ($role) {
             RoleName::Gateway => ['caddy', 'php8.5-fpm'],

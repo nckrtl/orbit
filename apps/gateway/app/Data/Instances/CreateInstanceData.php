@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\Instances;
 
-/** @mago-expect lint:excessive-parameter-list The request has seven independent scalar fields. */
 final readonly class CreateInstanceData
 {
     public function __construct(

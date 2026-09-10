@@ -10,7 +10,6 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 
-/** @mago-expect lint:cyclomatic-complexity Human output renders each optional removal progress field defensively. */
 final class ShowInstanceCommand extends GatewayCommand
 {
     #[\Override]

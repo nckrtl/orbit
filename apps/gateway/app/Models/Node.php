@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Shared\LifecycleStatus;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * @mago-expect lint:too-many-methods The Node aggregate exposes each bounded owned relation and cast explicitly.
- *
  * @property int $id
  * @property int|null $cluster_id
  * @property string $name
@@ -30,11 +29,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $dns_server_override
  * @property string|null $ssh_host_fingerprint
  * @property array<string, mixed>|null $settings
- * @property-read \Illuminate\Database\Eloquent\Collection<int, NodeRole> $roles
- * @property-read \Illuminate\Database\Eloquent\Collection<int, ToolManagerRecord> $toolManagers
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Tool> $tools
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Node> $accessibleNodes
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Node> $accessingNodes
+ * @property-read Collection<int, NodeRole> $roles
+ * @property-read Collection<int, ToolManagerRecord> $toolManagers
+ * @property-read Collection<int, Tool> $tools
+ * @property-read Collection<int, Node> $accessibleNodes
+ * @property-read Collection<int, Node> $accessingNodes
  * @property-read Cluster|null $cluster
  */
 final class Node extends Model
@@ -45,7 +44,7 @@ final class Node extends Model
         'public_ssh_port' => 22,
     ];
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'name',

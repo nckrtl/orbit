@@ -20,7 +20,6 @@ use Orbit\Sdk\Responses\Tools\ToolsResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead Request-ID boundary assertions stay visible together. */
 describe('success request ID boundary', function (): void {
     it('bounds Doctor response metadata request IDs', function (array $meta, string $expected, ?string $unsafe): void {
         $response = success_request_id_dto(new RunDoctorRequest, [
@@ -51,7 +50,6 @@ describe('success request ID boundary', function (): void {
         'unsafe' => [['request_id' => 'token=doctor-metadata-secret'], '', 'doctor-metadata-secret'],
     ]);
 
-    /** @mago-expect lint:cyclomatic-complexity Tool metadata boundaries stay visible together. */
     it('bounds Tool item and collection response metadata request IDs', function (
         array $meta,
         string $expected,
@@ -405,7 +403,6 @@ function success_request_id_dto(GatewayRequest $request, array $payload): object
     $connector = new GatewayConnector('https://10.70.0.1');
     $connector->withMockClient($mockClient);
 
-    /** @mago-expect analysis:mixed-assignment Saloon DTO return types are dynamic. */
     $dto = $connector->send($request)->dto();
 
     if (! is_object($dto)) {

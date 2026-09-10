@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Commands\Tools\InstallToolCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
@@ -225,12 +226,12 @@ it('rejects missing inputs invalid packages and nodes before HTTP', function ():
 it('uses noninteractive manager and package rules without prompting', function (): void {
     $mock = MockClient::global();
 
-    $missingManager = app(\App\Commands\Tools\InstallToolCommand::class);
+    $missingManager = app(InstallToolCommand::class);
     $missingManager->setLaravel(app());
     $managerTester = new CommandTester($missingManager);
     $managerTester->execute(['--node' => '12'], ['interactive' => false]);
 
-    $missingPackage = app(\App\Commands\Tools\InstallToolCommand::class);
+    $missingPackage = app(InstallToolCommand::class);
     $missingPackage->setLaravel(app());
     $packageTester = new CommandTester($missingPackage);
     $packageTester->execute(['--node' => '12', '--manager' => 'vp'], ['interactive' => false]);

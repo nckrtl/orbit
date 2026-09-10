@@ -13,6 +13,7 @@ final class DeleteCommand extends Command
 {
     #[\Override]
     protected $signature = 'legacy:delete {--quarantine=} {--ack-sha256=} {--json}';
+
     #[\Override]
     protected $description = 'Delete exact legacy targets after quarantine retention';
 

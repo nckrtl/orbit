@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Metrics\MetricsConfigurationBundle;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
 use App\Infrastructure\Metrics\MetricsFootprint;
+use App\Infrastructure\Metrics\MetricsGeneratedFile;
 
 describe(MetricsConfigurationRenderer::class, function (): void {
     it('generates exactly the files MetricsFootprint::ConfigurationPaths names', function (): void {
@@ -12,7 +14,7 @@ describe(MetricsConfigurationRenderer::class, function (): void {
         $bundle = $renderer->render(metricsRendererTargets(), 'admin-password');
 
         $generatedPaths = array_map(
-            static fn (App\Infrastructure\Metrics\MetricsGeneratedFile $file): string => $file->path,
+            static fn (MetricsGeneratedFile $file): string => $file->path,
             $bundle->files,
         );
 
@@ -104,7 +106,7 @@ function metricsRendererTargets(): array
 }
 
 function metricsRendererFileHash(
-    App\Infrastructure\Metrics\MetricsConfigurationBundle $bundle,
+    MetricsConfigurationBundle $bundle,
     string $path,
 ): string {
     foreach ($bundle->files as $file) {

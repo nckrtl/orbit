@@ -6,7 +6,6 @@ namespace App\Data\Gateway;
 
 use Spatie\LaravelData\Data;
 
-/** @mago-expect lint:excessive-parameter-list */
 final class BootstrapGatewayData extends Data
 {
     public function __construct(

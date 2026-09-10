@@ -40,11 +40,6 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 use UnexpectedValueException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Command activity maps each bounded domain failure explicitly.
- * @mago-expect lint:kan-defect Command activity owns one bounded attempt and its explicit failure projection.
- * @mago-expect lint:too-many-methods Command activity keeps one attempt lifecycle in one middleware.
- */
 final readonly class RecordCommandActivity
 {
     public function __construct(
@@ -84,7 +79,6 @@ final readonly class RecordCommandActivity
         }
     }
 
-    /** @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary. */
     private function start(Request $request): Activity
     {
         $requestId = $request->attributes->get('orbit.request_id');
@@ -109,7 +103,6 @@ final readonly class RecordCommandActivity
         ]);
     }
 
-    /** @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary. */
     private function complete(
         Activity $activity,
         Request $request,
@@ -232,8 +225,7 @@ final readonly class RecordCommandActivity
             'duration_ms' => $this->duration($startedAt),
             'error_code' => match (true) {
                 $exception instanceof ValidationException,
-                $exception instanceof NodeRoleValidationException,
-                    => 'validation.failed',
+                $exception instanceof NodeRoleValidationException, => 'validation.failed',
                 $exception instanceof NodeProvisioningException => $exception->errorCode,
                 $exception instanceof NodeRemovalException => $exception->errorCode,
                 $exception instanceof RuntimeConvergenceException => $exception->errorCode,
@@ -298,8 +290,7 @@ final readonly class RecordCommandActivity
     }
 
     /**
-     * @param array<string, mixed> $updates
-     *
+     * @param  array<string, mixed>  $updates
      * @return array<string, mixed>
      */
     private function withResult(
@@ -443,7 +434,6 @@ final readonly class RecordCommandActivity
 
     /**
      * @return array<array-key, mixed>
-     * @mago-expect analysis:mixed-assignment Parsed request input is an untyped transport boundary.
      */
     private function doctorInput(Request $request): array
     {
@@ -493,18 +483,16 @@ final readonly class RecordCommandActivity
     }
 
     /**
-     * @param array<string, mixed> $input
-     * @mago-expect analysis:mixed-assignment Request input is an untyped transport boundary.
+     * @param  array<string, mixed>  $input
      */
     private function validNodeRoleAdditionInput(array $input): bool
     {
         $role = $input['role'] ?? null;
 
-        return (
+        return
             is_string($role)
             && RoleName::tryFrom($role) instanceof RoleName
-            && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']))
-        );
+            && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']));
     }
 
     private function callerIp(Request $request): string
@@ -525,11 +513,8 @@ final readonly class RecordCommandActivity
     }
 
     /**
-     * @param array<string, mixed> $updates
-     *
+     * @param  array<string, mixed>  $updates
      * @return array<string, mixed>
-     *
-     * @mago-expect analysis:mixed-assignment Request attributes are an untyped transport boundary.
      */
     private function withTarget(
         Activity $activity,
@@ -575,8 +560,8 @@ final readonly class RecordCommandActivity
     }
 
     /**
-     * @param array<string, mixed> $updates
-     * @param array<string, mixed> $target
+     * @param  array<string, mixed>  $updates
+     * @param  array<string, mixed>  $target
      * @return array<string, mixed>
      */
     private function withAppInstanceSourceLayout(
@@ -620,8 +605,6 @@ final readonly class RecordCommandActivity
 
     /**
      * @return list<string>
-     *
-     * @mago-expect analysis:mixed-assignment Request and persisted JSON values are untyped transport boundaries.
      */
     private function environmentSecretValues(Request $request): array
     {

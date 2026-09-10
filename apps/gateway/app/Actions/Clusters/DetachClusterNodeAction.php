@@ -23,7 +23,6 @@ final readonly class DetachClusterNodeAction
     {
         /**
          * @var Cluster $updated
-         * @mago-expect lint:inline-variable-return The annotation narrows Laravel's transaction result.
          */
         $updated = DB::transaction(function () use ($cluster, $node): Cluster {
             $lockedCluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);

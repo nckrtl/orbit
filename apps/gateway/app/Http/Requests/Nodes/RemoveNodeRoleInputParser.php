@@ -16,6 +16,7 @@ final readonly class RemoveNodeRoleInputParser
 
     /**
      * @return array<string, mixed>
+     *
      * @throws UnexpectedValueException
      */
     public function parse(string $json, mixed $routeRole): array
@@ -46,8 +47,7 @@ final readonly class RemoveNodeRoleInputParser
     }
 
     /**
-     * @param array<string, mixed> $input
-     * @mago-expect analysis:mixed-assignment Parsed request input is an untyped transport boundary.
+     * @param  array<string, mixed>  $input
      */
     private function isStructurallyValid(array $input): bool
     {

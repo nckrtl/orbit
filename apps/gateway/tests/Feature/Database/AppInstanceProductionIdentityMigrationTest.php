@@ -80,10 +80,9 @@ it('refuses rollback before discarding recorded production identity', function (
 
 function app_instance_production_identity_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_060000_add_production_identity_to_app_instances_table.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_060000_add_production_identity_to_app_instances_table.php',
+    );
 }
 
 /** @return array{OrbitApp, Node} */

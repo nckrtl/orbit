@@ -9,6 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -316,7 +317,8 @@ function orb197_firewall_legacy_instance(Node $node, LifecycleStatus $status): I
 
 function role_firewall_manager(SshExecutor $ssh): NativeNodeRoleFirewallManager
 {
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-test-key';
@@ -327,23 +329,19 @@ function role_firewall_manager(SshExecutor $ssh): NativeNodeRoleFirewallManager
             return 'ssh-ed25519 TEST';
         }
     };
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-known-hosts';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
 
     return new NativeNodeRoleFirewallManager($ssh, $keys, $knownHosts);
 }
 
-/**
- * @mago-expect lint:cyclomatic-complexity The stateful fake models UFW status transitions and mutations.
- * @mago-expect lint:file-name The stateful fake stays with its focused firewall interaction tests.
- * @mago-expect lint:kan-defect Branches simulate the remote UFW protocol for focused interaction tests.
- */
 final class RoleFirewallSshExecutor implements SshExecutor
 {
     /** @var list<array{connection: SshConnection, command: RemoteCommand}> */

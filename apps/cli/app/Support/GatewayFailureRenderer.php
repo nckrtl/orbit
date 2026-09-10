@@ -9,9 +9,7 @@ use LaravelZero\Framework\Commands\Command;
 final class GatewayFailureRenderer
 {
     /**
-     * @param array<string,mixed> $details
-     *
-     * @mago-expect lint:excessive-parameter-list Every knob is optional and mirrors the shared failure envelope shape.
+     * @param  array<string,mixed>  $details
      */
     public static function write(
         Command $command,

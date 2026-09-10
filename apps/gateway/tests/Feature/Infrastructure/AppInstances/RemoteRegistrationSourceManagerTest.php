@@ -342,12 +342,12 @@ it('persists relocation checkpoints without publishing dirty migration fields', 
                 'registration_relocation_state',
                 'registration_authoritative_path',
             ]))->toBe([
-            'name' => 'main',
-            'checkout_path' => $fixture['source'],
-            'migration_required' => true,
-            'registration_relocation_state' => 'relocated',
-            'registration_authoritative_path' => $fixture['destination'],
-        ]);
+                'name' => 'main',
+                'checkout_path' => $fixture['source'],
+                'migration_required' => true,
+                'registration_relocation_state' => 'relocated',
+                'registration_authoritative_path' => $fixture['destination'],
+            ]);
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }
@@ -636,7 +636,7 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
     ]);
     $manager = orb105_registration_manager(new Orb105LocalSshExecutor);
 
-    return (
+    return
         compact(
             'manager',
             'node',
@@ -649,15 +649,15 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         + [
             'source_root' => $sourceRoot,
             'destination_root' => $destinationRoot,
-        ]
-    );
+        ];
 }
 
 function orb105_registration_manager(
     SshExecutor $executor,
     ?string $managedGroup = null,
 ): RemoteRegistrationSourceManager {
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/dev/null';
@@ -668,7 +668,8 @@ function orb105_registration_manager(
             return 'unused';
         }
     };
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/dev/null';
@@ -676,7 +677,8 @@ function orb105_registration_manager(
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    $accounts = new class($managedGroup) implements ManagedUserAccountResolver {
+    $accounts = new class($managedGroup) implements ManagedUserAccountResolver
+    {
         public function __construct(
             private readonly ?string $managedGroup,
         ) {}

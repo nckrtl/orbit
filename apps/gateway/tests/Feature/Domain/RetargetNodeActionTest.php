@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Nodes\RetargetNodeAction;
 use App\Data\Nodes\RetargetNodeData;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -19,7 +20,8 @@ use App\Models\Node;
 
 describe(RetargetNodeAction::class, function (): void {
     beforeEach(function (): void {
-        app()->instance(HostKeyScanner::class, new class implements HostKeyScanner {
+        app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
+        {
             public bool $throws = false;
 
             /** @var list<array{host:string,port:int}> */
@@ -36,7 +38,8 @@ describe(RetargetNodeAction::class, function (): void {
                 return new HostKey('ssh-ed25519', 'host-key', 'SHA256:pinned');
             }
         });
-        app()->instance(KnownHostsStore::class, new class implements KnownHostsStore {
+        app()->instance(KnownHostsStore::class, new class implements KnownHostsStore
+        {
             /** @var list<array{host:string,port:int,fingerprint:string}> */
             public array $writes = [];
 
@@ -50,7 +53,8 @@ describe(RetargetNodeAction::class, function (): void {
                 return '/tmp/known-hosts';
             }
         });
-        app()->instance(SshKeyProvider::class, new class implements SshKeyProvider {
+        app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/id_ed25519';
@@ -61,9 +65,11 @@ describe(RetargetNodeAction::class, function (): void {
                 return 'ssh-ed25519 AAAAC3Nza';
             }
         });
-        app()->instance(SshExecutor::class, new class implements SshExecutor {
+        app()->instance(SshExecutor::class, new class implements SshExecutor
+        {
             /** @var list<array{connection:SshConnection,command:RemoteCommand}> */
             public array $calls = [];
+
             public CommandResult $result;
 
             public function __construct()
@@ -78,9 +84,12 @@ describe(RetargetNodeAction::class, function (): void {
                 return $this->result;
             }
         });
-        app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger {
+        app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger
+        {
             public ?Node $node = null;
+
             public ?SshConnection $connection = null;
+
             public ?Throwable $throws = null;
 
             public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
@@ -377,7 +386,7 @@ describe(RetargetNodeAction::class, function (): void {
             $this->node
                 ->roles()
                 ->create([
-                    'role' => \App\Domain\Nodes\RoleName::AppDev,
+                    'role' => RoleName::AppDev,
                     'status' => LifecycleStatus::Active,
                 ]);
         });

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-/** @mago-expect lint:excessive-parameter-list Explicit flags define complete Caddy publication failure scenarios. */
 final readonly class AppDevCaddyPublishScenario
 {
     /** @param array<string, string> $existingOrbitFragments */

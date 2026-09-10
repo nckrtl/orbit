@@ -11,8 +11,6 @@ use InvalidArgumentException;
  * beside the plan under `.loop/proof/` at the candidate commit, installed
  * root-owned at the fixed guest directory, plus the digest every role reported
  * after installation. A plan references a fixture by its guest path on any node.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect Every fixture rule is checked fail-closed in one value.
  */
 final readonly class ProofFixtures
 {
@@ -25,8 +23,8 @@ final readonly class ProofFixtures
     private const array KEYS = ['guest_directory', 'files', 'digest', 'roles'];
 
     /**
-     * @param array<string, array{mode:string, sha256:string}> $files Keyed by file name, sorted.
-     * @param array<string, string> $roles The digest each role observed, in profile role order.
+     * @param  array<string, array{mode:string, sha256:string}>  $files  Keyed by file name, sorted.
+     * @param  array<string, string>  $roles  The digest each role observed, in profile role order.
      */
     public function __construct(
         public array $files,
@@ -95,7 +93,7 @@ final readonly class ProofFixtures
      * The inventory text both sides hash: one `name<TAB>mode<TAB>sha256` line per
      * file in name order, exactly what the guest prints after installation.
      *
-     * @param array<string, array{mode:string, sha256:string}> $files
+     * @param  array<string, array{mode:string, sha256:string}>  $files
      */
     public static function inventoryText(array $files): string
     {
@@ -137,7 +135,6 @@ final readonly class ProofFixtures
             throw new InvalidArgumentException('The proof fixture schema is invalid.');
         }
         $files = [];
-        /** @mago-expect analysis:mixed-assignment Each file entry is validated before it joins the inventory. */
         foreach ($value['files'] as $name => $file) {
             if (
                 ! is_string($name)
@@ -151,7 +148,6 @@ final readonly class ProofFixtures
             $files[$name] = ['mode' => $file['mode'], 'sha256' => $file['sha256']];
         }
         $roles = [];
-        /** @mago-expect analysis:mixed-assignment Each role digest is validated before use. */
         foreach ($value['roles'] as $role => $digest) {
             if (! is_string($role) || ! is_string($digest)) {
                 throw new InvalidArgumentException('The proof fixture schema is invalid.');

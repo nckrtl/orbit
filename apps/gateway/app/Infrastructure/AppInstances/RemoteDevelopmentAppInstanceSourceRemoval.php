@@ -25,14 +25,7 @@ use App\Models\Node;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
-/**
- * @mago-expect lint:kan-defect Source finalization keeps one fail-closed journal and identity protocol.
- * @mago-expect lint:cyclomatic-complexity The adapter keeps each fail-closed source identity branch together.
- * @mago-expect lint:too-many-methods The adapter owns one removal-only inspection and deletion protocol.
- */
-final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
-    DevelopmentAppInstanceSourceFinalizer,
-    DevelopmentAppInstanceSourceRemoval
+final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements DevelopmentAppInstanceSourceFinalizer, DevelopmentAppInstanceSourceRemoval
 {
     public function __construct(
         private AppDevSshExecutor $ssh,
@@ -76,8 +69,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
     }
 
     /**
-     * @param array<string, string> $quarantineMappings
-     * @mago-expect lint:excessive-parameter-list Source inspection keeps every recorded identity field explicit.
+     * @param  array<string, string>  $quarantineMappings
      */
     private function inspectPathLocked(
         AppInstance $appInstance,
@@ -318,7 +310,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 || $state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup
                 && $receiptStructure === 'intact'
             ) {
-                $states = $expectation?->authenticatedMemberStates ?? [];
+                $states = $expectation->authenticatedMemberStates ?? [];
                 $states[$member->id] = $state;
                 $authenticatedExpectation = $expectation instanceof AppInstanceSourceRevalidationExpectation
                     ? new AppInstanceSourceRevalidationExpectation(
@@ -746,8 +738,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             )
             || ! is_string($member->checkout_path)
             || ! is_string($member->root)
-            || $member->branch !== null
-            && ! is_string($member->branch)
+            || $member->getAttribute('branch') !== null
+            && ! is_string($member->getAttribute('branch'))
             || ! is_string($member->starting_commit)
             || ! is_string($member->source_commit)
             || ! is_string($member->common_repository_path)
@@ -842,14 +834,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             );
         }
 
-        $branch = $appInstance->branch;
+        $branch = $appInstance->getAttribute('branch');
         $startingCommit = $appInstance->starting_commit;
 
         if ($branch !== null && ! is_string($branch) || ! is_string($startingCommit)) {
             $this->invalidEvidence($appInstance, false);
         }
 
-        $repositoryIdentity = $appInstance->app->repository_identity;
+        $repositoryIdentity = $appInstance->app->getAttribute('repository_identity');
 
         if (! is_string($repositoryIdentity) || $repositoryIdentity === '') {
             $this->invalidEvidence($appInstance, false);
@@ -867,7 +859,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         ];
     }
 
-    /** @return list<string> */
+    /**
+     * @param  array<string, string>  $quarantineMappings
+     * @return list<string>
+     */
     private function worktreePaths(
         string $inventory,
         AppInstance $appInstance,
@@ -886,10 +881,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
 
             if (isset($quarantineMappings[$value])) {
                 $value = $quarantineMappings[$value];
-            }
-
-            if (! is_string($value)) {
-                $this->invalidEvidence($appInstance, $force);
             }
 
             $path = StoragePath::tryParse($value);

@@ -10,7 +10,6 @@ use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity Plan resolution fails closed across workspace and retained-proof sources. */
 final readonly class ProofPlanFile
 {
     public const string DIRECTORY = '.loop/proof';

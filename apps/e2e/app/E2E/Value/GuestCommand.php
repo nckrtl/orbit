@@ -43,18 +43,13 @@ final readonly class GuestCommand
             throw new InvalidArgumentException('Guest command and timeout must be valid.');
         }
 
-        foreach ($command as $argument) {
-            /** @mago-expect analysis:redundant-type-comparison Runtime callers can violate the PHPDoc list type. */
-            if (! is_string($argument) || str_contains($argument, "\0")) {
-                throw new InvalidArgumentException('Guest command arguments must be safe strings.');
-            }
-        }
+        $this->assertArguments($command);
     }
 
     /**
      * The exact argument vector, run as the `orbit` runtime user.
      *
-     * @param list<string> $argv
+     * @param  list<string>  $argv
      */
     public static function asOrbitUser(array $argv, int $timeout = 60, ?string $stdin = null): self
     {
@@ -70,7 +65,7 @@ final readonly class GuestCommand
     /**
      * Run one proof action with a catchable guest deadline and bounded cleanup grace.
      *
-     * @param list<string> $argv
+     * @param  list<string>  $argv
      */
     public static function asProofAction(array $argv, int $deadline): self
     {
@@ -104,5 +99,15 @@ final readonly class GuestCommand
     public static function isProgramArgument(string $argument): bool
     {
         return $argument !== '' && ! str_contains($argument, '=') && ! str_starts_with($argument, '-');
+    }
+
+    /** @param array<array-key, mixed> $command */
+    private function assertArguments(array $command): void
+    {
+        foreach ($command as $argument) {
+            if (! is_string($argument) || str_contains($argument, "\0")) {
+                throw new InvalidArgumentException('Guest command arguments must be safe strings.');
+            }
+        }
     }
 }

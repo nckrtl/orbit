@@ -6,10 +6,6 @@ namespace Orbit\Sdk\Responses\Clusters;
 
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway values are validated at the Cluster DTO boundary.
- * @mago-expect lint:excessive-parameter-list The constructor mirrors the complete Cluster response.
- */
 final readonly class ClusterResponse
 {
     /** @param list<ClusterNodeResponse> $nodes */
@@ -88,8 +84,7 @@ final readonly class ClusterResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway values remain mixed until keyed.
-     *
+     * @param  array<array-key, mixed>  $value
      * @return array<string, mixed>
      */
     private static function stringKeyed(#[SensitiveParameter] array $value): array

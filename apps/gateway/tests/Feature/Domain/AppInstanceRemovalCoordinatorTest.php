@@ -26,6 +26,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -762,7 +763,6 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
     }
 }
 
-/** @mago-expect lint:cyclomatic-complexity The fake models each durable finalization and recovery state. */
 final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFinalizer
 {
     public function __construct(
@@ -991,7 +991,7 @@ final class Orb181CoordinatorLock implements AppDevSourceOperationLock
         try {
             $result = $operation();
 
-            if ($result instanceof \App\Models\AppInstanceRemoval) {
+            if ($result instanceof AppInstanceRemoval) {
                 $this->acceptedWhileHeld = AppInstance::query()
                     ->whereKey($result->members->pluck('app_instance_id'))
                     ->get()

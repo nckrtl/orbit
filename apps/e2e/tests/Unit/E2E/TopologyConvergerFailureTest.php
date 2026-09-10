@@ -6,7 +6,6 @@ use App\E2E\IncusHost;
 use App\E2E\TopologyConverger;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -18,7 +17,6 @@ beforeEach(function () {
     $container = new Container;
     $container->instance(ProcessFactory::class, new ProcessFactory);
     Facade::clearResolvedInstances();
-    /** @mago-expect analysis:possibly-invalid-argument The process facade only needs the container contract in unit tests. */
     Facade::setFacadeApplication($container);
 });
 
@@ -63,8 +61,7 @@ function failing_converger_process_result(
             'name' => 'oe-50fa1830b7de',
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
         ]], JSON_THROW_ON_ERROR)),
-        ($command[count($command) - 2] ?? null) === 'lab:' && in_array('list', $command, true)
-            => Process::result(json_encode(
+        ($command[count($command) - 2] ?? null) === 'lab:' && in_array('list', $command, true) => Process::result(json_encode(
             array_map(
                 static fn (string $role): array => json_decode(
                     failing_converger_vm('orbit-e2e-tst-123-aaaaaaaa-'.$role),
@@ -257,13 +254,11 @@ describe('TopologyConverger guest failures', function () {
 });
 
 describe('TopologyConverger diagnostic parsing', function () {
-    /** @mago-expect lint:cyclomatic-complexity Diagnostic cases preserve one complete parser contract. */
     it('ignores arbitrary output and malformed provisioning diagnostics', function (
         string $script,
         int $exitCode,
         string $output,
     ): void {
-        /** @mago-expect lint:cyclomatic-complexity Failure parsing remains one explicit process fixture. */
         Process::fake(function (PendingProcess $process) use ($script, $exitCode, $output) {
             $command = $process->command;
             assert(is_array($command));

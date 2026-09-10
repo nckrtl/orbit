@@ -150,7 +150,6 @@ describe('GET /api/v1/nodes serialization', function (): void {
     });
 });
 
-/** @mago-expect lint:halstead The API group keeps the node show serialization and access projection together. */
 describe('GET /api/v1/nodes/{node}', function (): void {
     it('shows one node in the standard envelope without secret fields', function (): void {
         $node = $this->markAsGateway(Node::query()->create([

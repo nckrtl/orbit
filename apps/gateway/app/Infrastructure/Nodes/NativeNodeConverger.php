@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -22,10 +23,6 @@ use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
 use Closure;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Ordered node bootstrap keeps each SSH and firewall safety gate explicit.
- * @mago-expect lint:excessive-parameter-list Base convergence requires each typed host boundary.
- */
 final readonly class NativeNodeConverger implements NodeConverger, RecoverableNodeConverger
 {
     /** @var list<positive-int> */
@@ -96,7 +93,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         );
     }
 
-    /** @return array{0: \App\Infrastructure\Ssh\HostKey, 1: string} */
+    /** @return array{0: HostKey, 1: string} */
     private function prepare(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint): array
     {
         if ($node->platform !== 'linux') {
@@ -206,7 +203,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
     private function finishWireGuard(
         Node $node,
         string $managedUser,
-        \App\Infrastructure\Ssh\HostKey $hostKey,
+        HostKey $hostKey,
         string $wireguardIp,
     ): void {
         $this->knownHosts->put($wireguardIp, 22, $hostKey);

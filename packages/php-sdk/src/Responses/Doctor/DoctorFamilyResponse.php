@@ -21,8 +21,7 @@ final readonly class DoctorFamilyResponse
     ) {}
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway family values remain mixed until validated.
-     * @param array<array-key, mixed> $data
+     * @param  array<array-key, mixed>  $data
      */
     public static function fromGatewayData(#[SensitiveParameter] array $data): ?self
     {

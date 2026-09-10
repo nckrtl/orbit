@@ -26,7 +26,6 @@ final class NodesController extends Controller
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function index(Request $request, ListNodesAction $action): JsonResponse
     {
-        /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
         $consumer = $request->user();
         assert($consumer instanceof Node, description: 'Authenticated peer must be a Node.');
 
@@ -55,7 +54,6 @@ final class NodesController extends Controller
         ]);
     }
 
-    /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
     #[RequiresNodeAccess(ServingNode::Target)]
     public function destroy(
         Request $request,
@@ -80,7 +78,6 @@ final class NodesController extends Controller
         ]);
     }
 
-    /** @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary. */
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function store(ProvisionNodeRequest $request, ProvisionNodeAction $action): JsonResponse
     {

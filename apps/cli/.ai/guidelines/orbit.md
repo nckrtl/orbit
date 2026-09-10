@@ -14,4 +14,4 @@
 ## Verification
 
 - Use focused Pest 5 tests locally. Reviewers run root `composer check` across all projects with TIA; `composer test` remains an explicit full local run.
-- Run `composer check` before delivery. Mago and Rector are the configured PHP quality tools.
+- Run `composer check` before delivery. Pint, Larastan, and Rector are the configured PHP quality tools.

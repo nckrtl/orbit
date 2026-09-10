@@ -6,13 +6,11 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity The immutable plan validates every external input before Incus mutation. */
 final readonly class ColdTopologyPlan
 {
     /**
-     * @param array<string, string> $imageFingerprints
-     * @param array<string, string> $metadata
-     * @mago-expect lint:excessive-parameter-list The plan deliberately carries the complete construction contract.
+     * @param  array<string, string>  $imageFingerprints
+     * @param  array<string, string>  $metadata
      */
     public function __construct(
         public TopologyTarget $target,
@@ -48,7 +46,7 @@ final readonly class ColdTopologyPlan
             throw new InvalidArgumentException('The cold topology image fingerprint inventory is incomplete.');
         }
         foreach ($imageFingerprints as $image => $fingerprint) {
-            if (! is_string($image) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
+            if (preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
                 throw new InvalidArgumentException('A cold topology image fingerprint is invalid.');
             }
         }

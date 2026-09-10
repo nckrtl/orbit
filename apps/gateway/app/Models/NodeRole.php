@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class NodeRole extends Model
 {
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'node_id',
@@ -51,11 +51,10 @@ final class NodeRole extends Model
             return true;
         }
 
-        return (
+        return
             $this->status === LifecycleStatus::Failed
             && is_string($this->failed_step)
-            && str_starts_with($this->failed_step, 'converge:')
-        );
+            && str_starts_with($this->failed_step, 'converge:');
     }
 
     public function claimConvergence(): void

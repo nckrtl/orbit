@@ -18,7 +18,6 @@ final class DoctorIssueData extends Data
 {
     public string $code;
 
-    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         DoctorIssueCode $code,
         public DoctorIssueKind $kind,
@@ -38,7 +37,6 @@ final class DoctorIssueData extends Data
         $this->code = $code->code();
     }
 
-    /** @mago-expect lint:excessive-parameter-list */
     public static function fromInternal(
         DoctorFamily $family,
         string $code,

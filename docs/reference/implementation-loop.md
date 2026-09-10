@@ -49,7 +49,25 @@ The proof flow uses the same worktree, preflight, documentation, review, artifac
 
 ## Local checks
 
-Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, formatting, lint, and analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. The independent reviewer runs root `composer check` on the clean submitted candidate before approval. This local gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
+Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, Pint formatting and syntax checks, and static analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. The independent reviewer runs root `composer check` on the clean submitted candidate before approval. This local gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
+
+Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
+
+Every project runs analysis at level 6. The configured paths keep the existing analysis scopes. Tests remain covered by Pint and Pest.
+
+| Project | Analysis level | Analyzed paths |
+| --- | --- | --- |
+| CLI | 6 | `app` |
+| Gateway | 6 | `app`, `routes`, `database/migrations` |
+| Docs | 6 | `app`, `config` |
+| E2E | 6 | `app` |
+| PHP SDK | 6 | `src` |
+
+CLI and E2E have counted exceptions for Larastan findings on inherited command helpers. The exceptions match exact command names, inputs, and files. Unmatched exceptions and new findings fail analysis.
+
+`bin/bootstrap` seeds missing quality caches after installing dependencies, so `bin/worktree-create` gives new worktrees a warm starting point. It copies each project's most recent compatible Pint and PHPStan result caches from registered worktrees. Compatibility requires identical project Composer lock files and that tool's configuration. Existing destination caches are preserved, and copied caches are independent files. Run `bin/worktree-cache` to seed an existing checkout after installing dependencies.
+
+Pint stores its cache in `vendor/pint.cache`. PHPStan stores analysis results in `vendor/phpstan/cache/resultCache.php`. Both tools validate cached results and recheck changed inputs. PHPStan's path-specific compiled container and Larastan's migration cache stay local and rebuild when needed; bootstrap copies only portable result caches. A missing or incompatible source cache falls back to a normal first run.
 
 Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and TIA baselines. Run checks in each project that a change affects.
 

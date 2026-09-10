@@ -7,10 +7,10 @@ namespace App\Domain\Nodes;
 final readonly class NodeRoleDependencySet
 {
     /**
-     * @param list<int> $instanceIds
-     * @param list<int> $workspaceIds
-     * @param list<int> $processIds
-     * @param list<string> $summaries
+     * @param  list<int>  $instanceIds
+     * @param  list<int>  $workspaceIds
+     * @param  list<int>  $processIds
+     * @param  list<string>  $summaries
      */
     public function __construct(
         public array $instanceIds,

@@ -14,7 +14,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity Assignment validates each independent persisted role claim. */
 final readonly class AssignRoleAction
 {
     public function __construct(
@@ -32,7 +31,6 @@ final readonly class AssignRoleAction
         try {
             /**
              * @var NodeRole $assignment
-             * @mago-expect lint:inline-variable-return The annotation narrows Laravel's transaction result.
              */
             $assignment = DB::transaction(function () use ($node, $role): NodeRole {
                 $this->lockRoleClaims();

@@ -12,6 +12,7 @@ final class InventoryCommand extends Command
 {
     #[\Override]
     protected $signature = 'legacy:inventory {--output=} {--json}';
+
     #[\Override]
     protected $description = 'Inventory exact legacy retirement candidates without mutation';
 

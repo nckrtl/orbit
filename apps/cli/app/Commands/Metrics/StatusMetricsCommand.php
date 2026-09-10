@@ -9,13 +9,11 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The human table surfaces every optional assignment field defensively.
- */
 final class StatusMetricsCommand extends MetricsCommand
 {
     #[\Override]
     protected $signature = 'metrics:status {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Show Metrics status.';
 
@@ -92,7 +90,7 @@ final class StatusMetricsCommand extends MetricsCommand
     /**
      * Reads one printable assignment field; absent, null, and unexpected shapes all read as absent.
      *
-     * @param array<string, mixed>|null $assignment
+     * @param  array<string, mixed>|null  $assignment
      */
     private function text(?array $assignment, string $key): ?string
     {

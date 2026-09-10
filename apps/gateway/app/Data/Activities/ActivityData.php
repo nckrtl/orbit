@@ -15,7 +15,6 @@ use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
 use DateTimeInterface;
 
-/** @mago-expect lint:excessive-parameter-list */
 final readonly class ActivityData
 {
     /** @param array<string, mixed> $properties */
@@ -36,7 +35,6 @@ final readonly class ActivityData
         public string $occurredAt,
     ) {}
 
-    /** @mago-expect analysis:mixed-assignment Eloquent attributes are untyped until validated below. */
     public static function fromModel(Activity $activity): self
     {
         $callerNodeId = $activity->getAttribute('caller_node_id');
@@ -85,8 +83,6 @@ final readonly class ActivityData
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Activity properties are untyped until their keys are validated below.
-     *
      * @return array<string, mixed>
      */
     private static function properties(Activity $activity): array

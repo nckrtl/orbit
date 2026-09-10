@@ -6,6 +6,7 @@ use App\Actions\Clusters\AttachClusterNodeAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Clusters\UpdateClusterData;
+use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -389,7 +390,7 @@ it('rejects malformed input, caller-owned fields, arrays, and conflicting retrie
 
 it('refuses invalid or occupied active explicit hostnames before Route or projection state changes', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
         hostname: 'active.example.test',
         publication: RoutePublication::Private,
@@ -426,7 +427,7 @@ it('refuses invalid or occupied active explicit hostnames before Route or projec
 
 it('updates an active explicit private development hostname through convergence', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
         hostname: 'active.example.test',
         publication: RoutePublication::Private,
@@ -495,14 +496,14 @@ it('keeps database cutover failures bounded through the Route update API', funct
             'failed_step',
             'error_code',
         ]))->toBe([
-        'hostname' => 'active.example.test',
-        'hostname_change_previous' => 'active.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
-        'hostname_change_step' => RouteHostnameChangeStep::RolledBack,
-        'failed_step' => 'database-cutover',
-        'error_code' => 'route.hostname_change_failed',
-    ]);
+            'hostname' => 'active.example.test',
+            'hostname_change_previous' => 'active.example.test',
+            'hostname_change_target' => 'next.example.test',
+            'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
+            'hostname_change_step' => RouteHostnameChangeStep::RolledBack,
+            'failed_step' => 'database-cutover',
+            'error_code' => 'route.hostname_change_failed',
+        ]);
 });
 
 it('keeps final cleanup failures bounded through the Route update API', function (): void {
@@ -538,14 +539,14 @@ it('keeps final cleanup failures bounded through the Route update API', function
             'failed_step',
             'error_code',
         ]))->toBe([
-        'hostname' => 'next.example.test',
-        'hostname_change_previous' => 'active.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
-        'failed_step' => 'cleanup',
-        'error_code' => 'route.hostname_change_failed',
-    ]);
+            'hostname' => 'next.example.test',
+            'hostname_change_previous' => 'active.example.test',
+            'hostname_change_target' => 'next.example.test',
+            'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+            'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
+            'failed_step' => 'cleanup',
+            'error_code' => 'route.hostname_change_failed',
+        ]);
 });
 
 it('keeps production hostname changes behind the active reconciliation refusal', function (): void {
@@ -554,7 +555,7 @@ it('keeps production hostname changes behind the active reconciliation refusal',
         'source_is_laravel' => false,
         'provisioning_step' => 'active',
     ]);
-    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
         hostname: 'production.example.test',
         publication: RoutePublication::Private,
@@ -633,7 +634,7 @@ function route_api_active_development_route(OrbitApp $app, AppInstance $target):
         'source_is_laravel' => false,
         'provisioning_step' => 'active',
     ]);
-    $route = app(CreateRouteAction::class)->execute(new \App\Data\Routes\CreateRouteData(
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $app->id,
         hostname: 'active.example.test',
         publication: RoutePublication::Private,

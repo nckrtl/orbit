@@ -79,7 +79,7 @@ it('uses a bounded error for an invalid credential-bearing origin', function ():
 
     try {
         OrbitApp::findByRepositoryOrigin($repository);
-    } catch (\InvalidArgumentException $caught) {
+    } catch (InvalidArgumentException $caught) {
         $exception = $caught;
     }
 
@@ -89,7 +89,7 @@ it('uses a bounded error for an invalid credential-bearing origin', function ():
     ], return: true);
 
     expect($exception)
-        ->toBeInstanceOf(\InvalidArgumentException::class)
+        ->toBeInstanceOf(InvalidArgumentException::class)
         ->and($exception?->getMessage())
         ->toBe('The Git repository origin is invalid.')
         ->and($debugOutput)

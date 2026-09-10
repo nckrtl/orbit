@@ -17,9 +17,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class NodeRoleMutationData extends Data
 {
     /**
-     * @param list<string> $retainedOnNode
-     *
-     * @mago-expect lint:excessive-parameter-list The mutation reports every outcome the operator has to act on.
+     * @param  list<string>  $retainedOnNode
      */
     public function __construct(
         public int $nodeId,

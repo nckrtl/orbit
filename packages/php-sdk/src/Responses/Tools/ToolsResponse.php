@@ -16,8 +16,7 @@ final readonly class ToolsResponse
     public string $requestId;
 
     /**
-     * @mago-expect analysis:mixed-assignment Collection members remain mixed until validated.
-     * @param array<array-key, mixed> $tools
+     * @param  array<array-key, mixed>  $tools
      */
     public function __construct(
         #[SensitiveParameter]

@@ -14,7 +14,6 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Filesystem\Filesystem;
@@ -22,7 +21,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-/** @mago-expect lint:halstead,cyclomatic-complexity The interaction test keeps each security-sensitive publication boundary observable. */
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
     [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
 
@@ -615,7 +613,8 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
     mkdir(directory: $orbitHome.'/ca/gateway-current', permissions: 0o700, recursive: true);
     file_put_contents(filename: $orbitHome.'/ca/gateway-current/gateway.key', data: 'PRIVATE KEY');
     file_put_contents(filename: $orbitHome.'/ca/gateway-current/gateway.pem', data: 'CERTIFICATE');
-    $issuer = new class($orbitHome) implements GatewayCertificateIssuer {
+    $issuer = new class($orbitHome) implements GatewayCertificateIssuer
+    {
         /** @var list<array{hostname: string, address: string}> */
         public array $calls = [];
 
@@ -633,7 +632,8 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             );
         }
     };
-    $processes = new class($failure) implements ProcessRunner {
+    $processes = new class($failure) implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $calls = [];
 

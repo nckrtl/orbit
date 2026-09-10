@@ -43,6 +43,12 @@ describe('proof reuse evidence', function (): void {
 
         expect(ObservedPhpInputs::fromArray($observed->toArray())->toArray())->toBe($observed->toArray());
 
+        $malformed = $observed->toArray();
+        $malformed['phases']['setup'] = 'invalid';
+
+        expect(fn () => ObservedPhpInputs::fromArray($malformed))
+            ->toThrow(InvalidArgumentException::class, 'setup surfaces are invalid');
+
         $different = $runtime('gateway');
         $different['package_versions']['php8.5-pcov'] = '1.0.13-sury';
 

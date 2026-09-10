@@ -15,7 +15,6 @@ use App\Models\AppInstance;
 
 final readonly class ImportAppInstanceEnvironmentAction
 {
-    /** @mago-expect lint:excessive-parameter-list Import keeps its operation owner and each existing read and storage boundary explicit. */
     public function __construct(
         private AppInstanceEnvironmentOperationLock $operations,
         private AppInstanceEnvironmentContextResolver $contexts,

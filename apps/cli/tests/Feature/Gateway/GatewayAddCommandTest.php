@@ -23,7 +23,8 @@ beforeEach(function (): void {
     $this->trustStore = $this->orbitHome.'/system-trust';
     app()->instance(
         TrustStoreInstallerResolver::class,
-        new class($this->trustStore) extends TrustStoreInstallerResolver {
+        new class($this->trustStore) extends TrustStoreInstallerResolver
+        {
             public function __construct(
                 private readonly string $trustStore,
             ) {}
@@ -64,7 +65,6 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-/** @mago-expect lint:halstead The command contract keeps gateway discovery, trust, and activation assertions together. */
 describe(GatewayAddCommand::class, function (): void {
     it('adds and activates the first gateway profile from a bare IP', function (): void {
         expect(class_exists(GatewayAddCommand::class))->toBeTrue();

@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $name
  * @property string|null $tld
  * @property ClusterState $state
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Node> $nodes
+ * @property-read Collection<int, Node> $nodes
  * @property-read NodeRole|null $routerAssignment
  */
 final class Cluster extends Model
@@ -26,7 +27,7 @@ final class Cluster extends Model
         'state' => 'inactive',
     ];
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'name',

@@ -3,7 +3,8 @@ paths:
   - '.editorconfig'
   - '.gitattributes'
   - '.gitignore'
-  - 'mago.toml'
+  - 'pint.json'
+  - 'phpstan.neon'
   - 'phpunit.xml.dist'
   - 'rector.php'
 ---
@@ -11,5 +12,5 @@ paths:
 # Development Tooling
 
 - Pest 5 runs the full suite in parallel without TIA through `composer test`.
-- Mago owns formatting, linting, and analysis. Rector owns automated PHP refactoring checks.
+- Pint owns formatting and syntax checks. Larastan owns static analysis. Rector owns automated PHP refactoring checks.
 - Do not commit test caches, runtime state, credentials, or generated environment files.

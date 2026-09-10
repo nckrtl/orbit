@@ -264,8 +264,8 @@ it('renders gateway API errors through the shared exact json failure envelope', 
 });
 
 /**
- * @param list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}> $nodes
- * @param array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}|null $summary
+ * @param  list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>  $nodes
+ * @param  array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}|null  $summary
  * @return array{healthy:bool,nodes:list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>,summary:array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}}
  */
 function doctor_cli_report(bool $healthy, array $nodes = [], ?array $summary = null): array
@@ -278,7 +278,7 @@ function doctor_cli_report(bool $healthy, array $nodes = [], ?array $summary = n
 }
 
 /**
- * @param list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}> $families
+ * @param  list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>  $families
  * @return array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}
  */
 function doctor_cli_node(string $name, array $families, int $nodeId = 7): array
@@ -286,15 +286,14 @@ function doctor_cli_node(string $name, array $families, int $nodeId = 7): array
     return [
         'node_id' => $nodeId,
         'node_name' => $name,
-        'healthy' =>
-            $families === []
+        'healthy' => $families === []
                 || array_all($families, static fn (array $family): bool => $family['status'] === 'healthy'),
         'families' => $families,
     ];
 }
 
 /**
- * @param list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}> $issues
+ * @param  list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>  $issues
  * @return array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}
  */
 function doctor_cli_family(string $family, string $status, int $checked, array $issues): array
@@ -308,7 +307,6 @@ function doctor_cli_family(string $family, string $status, int $checked, array $
 }
 
 /**
- * @mago-expect lint:excessive-parameter-list The helper mirrors the complete Doctor issue wire shape.
  * @return array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}
  */
 function doctor_cli_issue(

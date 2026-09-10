@@ -19,7 +19,6 @@ beforeEach(function () {
     $container = new Container;
     $container->instance(ProcessFactory::class, new ProcessFactory);
     Facade::clearResolvedInstances();
-    /** @mago-expect analysis:possibly-invalid-argument The process facade only needs the container contract in unit tests. */
     Facade::setFacadeApplication($container);
 });
 
@@ -98,7 +97,6 @@ function task7_ipv4(array $command): ?string
 }
 
 /** @param list<list<string>> $recorded */
-/** @mago-expect lint:cyclomatic-complexity The process fake models all ordered convergence responses in one test boundary. */
 function task7_process_result(
     PendingProcess $process,
     array &$recorded,
@@ -124,6 +122,7 @@ function task7_process_result(
                     'stderr' => '',
                     'exit_code' => 0,
                 ];
+
                 continue;
             }
             if (task7_is_global_ipv4_probe($argv)) {
@@ -140,6 +139,7 @@ function task7_process_result(
                     'stderr' => '',
                     'exit_code' => 0,
                 ];
+
                 continue;
             }
             $nested = new PendingProcess(app(ProcessFactory::class));
@@ -273,7 +273,6 @@ function task7_production_placement(): array
     ];
 }
 
-/** @mago-expect lint:cyclomatic-complexity The fixture preserves one complete ordered convergence contract. */
 describe('TopologyConverger', function () {
     it('hydrates both recorded typed placements without changing the topology', function (): void {
         $recorded = [];

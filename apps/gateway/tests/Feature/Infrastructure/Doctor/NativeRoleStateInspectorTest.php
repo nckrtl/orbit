@@ -11,6 +11,7 @@ use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -319,7 +320,6 @@ final class RoleInspectorSshExecutor implements SshExecutor
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps key material isolated. */
 final readonly class RoleInspectorKeys implements SshKeyProvider
 {
     public function privateKeyPath(): string
@@ -333,7 +333,6 @@ final readonly class RoleInspectorKeys implements SshKeyProvider
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps host state isolated. */
 final readonly class RoleInspectorKnownHosts implements KnownHostsStore
 {
     public function path(): string
@@ -341,5 +340,5 @@ final readonly class RoleInspectorKnownHosts implements KnownHostsStore
         return '/known';
     }
 
-    public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+    public function put(string $host, int $port, HostKey $key): void {}
 }

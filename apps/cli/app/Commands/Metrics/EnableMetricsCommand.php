@@ -17,6 +17,7 @@ final class EnableMetricsCommand extends MetricsCommand
 {
     #[\Override]
     protected $signature = 'metrics:enable {node? : Node ID or name} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Enable Metrics on one node.';
 

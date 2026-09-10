@@ -13,7 +13,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
-use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
@@ -492,26 +491,23 @@ it('restores the prior schema when no removal evidence or removing lifecycle exi
 
 function orb179_removal_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_08_000000_persist_app_instance_removal_inventory.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_08_000000_persist_app_instance_removal_inventory.php',
+    );
 }
 
 function orb182_source_commit_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_08_204126_add_source_commit_to_app_instance_removal_members.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_08_204126_add_source_commit_to_app_instance_removal_members.php',
+    );
 }
 
 function orb105_nullable_removal_branch_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_033524_allow_nullable_branches_in_app_instance_removal_evidence.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_033524_allow_nullable_branches_in_app_instance_removal_evidence.php',
+    );
 }
 
 /** @return array{AppInstance, Route} */

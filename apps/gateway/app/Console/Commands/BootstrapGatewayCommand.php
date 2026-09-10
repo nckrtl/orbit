@@ -10,7 +10,6 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use Illuminate\Console\Command;
 
-/** @mago-expect lint:cyclomatic-complexity Bootstrap validates canonical and compatibility WireGuard inputs independently. */
 final class BootstrapGatewayCommand extends Command
 {
     #[\Override]

@@ -33,13 +33,8 @@ use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Removal keeps its ordered recovery and error mapping in one action boundary.
- * @mago-expect lint:too-many-methods The action keeps removal state transitions and recovery in one transaction boundary.
- */
 final readonly class RemoveNodeRoleAction
 {
-    /** @mago-expect lint:excessive-parameter-list The action requires each narrow lifecycle collaborator explicitly. */
     public function __construct(
         private NodeRoleDependencyInspector $inspector,
         private NodeRoleDependentCleaner $cleaner,
@@ -52,9 +47,6 @@ final readonly class RemoveNodeRoleAction
         private ?RouteRemovalGuard $routes = null,
     ) {}
 
-    /**
-     * @mago-expect lint:no-boolean-flag-parameter The public removal contract carries explicit consent and purge choices.
-     */
     public function execute(
         Node $node,
         RoleName $role,
@@ -212,8 +204,6 @@ final readonly class RemoveNodeRoleAction
     /**
      * The ordinary path: every dependent and every baseline step is torn down
      * on the node, and any failure leaves the assignment in `Failed`.
-     *
-     * @mago-expect lint:excessive-parameter-list The teardown needs the claimed assignment and its captured dependents.
      */
     private function tearDownNodeSide(
         Node $node,
@@ -285,7 +275,6 @@ final readonly class RemoveNodeRoleAction
     {
         /**
          * @var array{NodeRole, NodeRoleDependencySet} $claim
-         * @mago-expect lint:inline-variable-return The annotation narrows Laravel's transaction result.
          */
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = NodeRole::query()
@@ -401,21 +390,19 @@ final readonly class RemoveNodeRoleAction
 
     private function canClaim(NodeRole $assignment): bool
     {
-        return (
+        return
             $assignment->status === LifecycleStatus::Active
             || $assignment->status === LifecycleStatus::Failed
             && is_string($assignment->failed_step)
-            && str_starts_with($assignment->failed_step, 'remove:')
-        );
+            && str_starts_with($assignment->failed_step, 'remove:');
     }
 
     private function sameDependencies(NodeRoleDependencySet $captured, NodeRoleDependencySet $current): bool
     {
-        return (
+        return
             $captured->instanceIds === $current->instanceIds
             && $captured->workspaceIds === $current->workspaceIds
-            && $captured->processIds === $current->processIds
-        );
+            && $captured->processIds === $current->processIds;
     }
 
     private function withRetirementPreview(

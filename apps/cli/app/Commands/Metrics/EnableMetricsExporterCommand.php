@@ -13,6 +13,7 @@ final class EnableMetricsExporterCommand extends MetricsCommand
 {
     #[\Override]
     protected $signature = 'metrics:exporter:enable {node : Node ID or name} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Enable the Metrics exporter on a node.';
 

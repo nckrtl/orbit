@@ -33,10 +33,8 @@ final class NodeOutput
     }
 
     /**
-     * @param list<string> $rolesShed
-     * @param list<string> $retainedOnNode
-     *
-     * @mago-expect lint:excessive-parameter-list Every knob mirrors one field of the shared degradation advisory shape.
+     * @param  list<string>  $rolesShed
+     * @param  list<string>  $retainedOnNode
      */
     public static function degradationAdvisory(
         Command $command,

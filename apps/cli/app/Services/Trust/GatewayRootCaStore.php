@@ -7,7 +7,6 @@ namespace App\Services\Trust;
 use RuntimeException;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity The store fails closed at each filesystem safety boundary. */
 final readonly class GatewayRootCaStore
 {
     public function store(string $gatewayName, RootCertificate $certificate): string

@@ -11,7 +11,6 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-/** @mago-expect lint:excessive-parameter-list */
 final class AddProcessRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
@@ -20,10 +19,10 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     /**
-     * @param list<string> $command
-     * @param array<string, string>|null $environment
-     * @param list<string>|null $ports
-     * @param list<array{source: string, target: string, read_only?: bool}>|null $volumes
+     * @param  list<string>  $command
+     * @param  array<string, string>|null  $environment
+     * @param  list<string>|null  $ports
+     * @param  list<array{source: string, target: string, read_only?: bool}>|null  $volumes
      */
     public function __construct(
         private readonly string $targetType,

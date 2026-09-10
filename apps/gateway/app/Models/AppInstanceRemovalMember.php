@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -28,18 +29,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $source_identity
  * @property list<string> $linked_worktree_paths
  * @property string $source_digest
- * @property \Illuminate\Support\Carbon|null $source_prepared_at
- * @property \Illuminate\Support\Carbon|null $route_cleared_at
+ * @property Carbon|null $source_prepared_at
+ * @property Carbon|null $route_cleared_at
  * @property string|null $route_outcome
- * @property \Illuminate\Support\Carbon|null $source_finalized_at
+ * @property Carbon|null $source_finalized_at
  * @property string|null $finalization_receipt
- * @property \Illuminate\Support\Carbon|null $runtime_cleaned_at
- * @property \Illuminate\Support\Carbon|null $row_deleted_at
+ * @property Carbon|null $runtime_cleaned_at
+ * @property Carbon|null $row_deleted_at
  * @property-read AppInstanceRemoval $removal
  */
 final class AppInstanceRemovalMember extends Model
 {
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'app_instance_removal_id',

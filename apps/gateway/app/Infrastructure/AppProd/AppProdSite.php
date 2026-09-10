@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppProd;
 
-/** @mago-expect lint:excessive-parameter-list A site is one immutable rendered production runtime record. */
 final readonly class AppProdSite
 {
     public function __construct(

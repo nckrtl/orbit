@@ -17,7 +17,6 @@ use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead The feature group locks the complete AppInstance request and removal contract. */
 describe('AppInstance requests', function (): void {
     it('creates an AppInstance with inherited root and maps the typed response', function (): void {
         $mockClient = new MockClient([
