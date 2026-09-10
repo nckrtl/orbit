@@ -2,11 +2,20 @@
 
 declare(strict_types=1);
 
+use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\ScenarioRunStore;
+use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\OperationId;
+use App\E2E\Value\ScenarioAction;
+use App\E2E\Value\ScenarioDefinition;
 use App\E2E\Value\ScenarioId;
 use App\E2E\Value\ScenarioResult;
 use App\E2E\Value\ScenarioRunId;
 use App\E2E\Value\ScenarioStatus;
+use App\E2E\Value\TopologyEndState;
+use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyTarget;
 
 function scenarioResult(ScenarioStatus $primary, ?ScenarioStatus $effective = null): ScenarioResult
 {
@@ -66,4 +75,39 @@ it('retains the primary failure when cleanup makes the effective result infrastr
 
     expect($result->primaryStatus)->toBe(ScenarioStatus::Failed);
     expect($result->status)->toBe(ScenarioStatus::InfrastructureError);
+});
+
+it('adds the first phase to an empty retained attempt object', function (): void {
+    $paths = new StatePaths(temporaryPath('scenario-state-', 5));
+    $runs = new ScenarioRunStore(new AtomicJsonStore($paths));
+    $run = new ScenarioRunId(str_repeat('b', 32));
+    $scenario = new ScenarioId('cold-four-node');
+    $attempt = new AttemptId(str_repeat('c', 32));
+    $operation = new OperationId(str_repeat('d', 32));
+    $recipe = TopologyRecipe::coldAcceptance();
+    $definition = new ScenarioDefinition(
+        $scenario,
+        'cold',
+        $recipe,
+        [new ScenarioAction('setup', 'construct', 60)],
+        ['apps/e2e/resources/guest/prepare-node.sh' => str_repeat('e', 64)],
+        TopologyEndState::complete($recipe),
+        false,
+        'cold scenario state',
+    );
+    $target = TopologyTarget::disposableScenario($run, $scenario, $attempt, $recipe);
+    $runs->beginAttempt(
+        $run,
+        $definition,
+        $attempt,
+        $operation,
+        $target,
+        str_repeat('a', 40),
+        '2026-09-10T12:00:00.000000+00:00',
+    );
+
+    $runs->recordPhase($run, $scenario, $attempt, 'preflight', ['passed' => true]);
+
+    expect($runs->attempt($run, $scenario, $attempt)['phase_timings'])
+        ->toBe(['preflight' => ['passed' => true]]);
 });

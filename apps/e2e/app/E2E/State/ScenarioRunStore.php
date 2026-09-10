@@ -83,7 +83,7 @@ final readonly class ScenarioRunStore
         }
         $state = $this->attempt($run, $scenario, $attempt);
         $phaseTimings = $state['phase_timings'] ?? null;
-        if (! is_array($phaseTimings) || array_is_list($phaseTimings)) {
+        if (! is_array($phaseTimings) || $phaseTimings !== [] && array_is_list($phaseTimings)) {
             throw new InvalidArgumentException('The scenario phase state is invalid.');
         }
         $phaseTimings[$phase] = $timing;
