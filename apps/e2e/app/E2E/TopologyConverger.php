@@ -140,7 +140,9 @@ final readonly class TopologyConverger
             $appProdNode,
             $laravel->commit,
         ]);
-        $typedCheckoutPath = $this->typedCheckoutPath($sampleResources);
+        $sample = $this->sampleState($sampleResources);
+        $typedCheckoutPath = $sample['checkout_path'];
+        $productionPlacement = $sample['production'];
         $steps['create.sample-resources'] = true;
         $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['metrics', $appDevNode]);
         $steps['converge.metrics'] = true;
@@ -148,7 +150,7 @@ final readonly class TopologyConverger
         // product must re-render every projection from the checked-out code.
         // The app-prod internal-TLS fragment lands inside the managed Caddy
         // layout first so the product publisher carries it forward.
-        if ($typedCheckoutPath === null) {
+        if ($typedCheckoutPath === null || $productionPlacement !== null) {
             $this->run($instances[$appProdNode], 'converge-sample-app.sh', ['internal-tls']);
         }
         $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['reproject']);
@@ -159,12 +161,32 @@ final readonly class TopologyConverger
         $steps['await.instance-api-readiness'] = true;
 
         if ($typedCheckoutPath !== null) {
-            $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
-                'hydrate',
-                $laravel->commit,
-                'app-dev',
-                $typedCheckoutPath,
-            ]);
+            if ($productionPlacement === null) {
+                $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
+                    'hydrate',
+                    $laravel->commit,
+                    'app-dev',
+                    $typedCheckoutPath,
+                ]);
+            } else {
+                $this->runAll([
+                    'app-dev' => [
+                        'instance' => $instances[$appDevNode],
+                        'script' => 'converge-sample-app.sh',
+                        'arguments' => ['hydrate', $laravel->commit, 'app-dev', $typedCheckoutPath],
+                    ],
+                    'app-prod' => [
+                        'instance' => $instances[$appProdNode],
+                        'script' => 'converge-sample-app.sh',
+                        'arguments' => [
+                            'hydrate',
+                            $laravel->commit,
+                            'app-prod',
+                            base64_encode(json_encode($productionPlacement, JSON_THROW_ON_ERROR)),
+                        ],
+                    ],
+                ]);
+            }
         } else {
             $this->runAll([
                 'app-dev' => [
@@ -181,7 +203,6 @@ final readonly class TopologyConverger
         }
 
         $steps['hydrate.sample-apps'] = true;
-
         $permissionCommands = [];
         foreach ($nodes as $node => $instance) {
             $permissionCommands[$node] = [
@@ -311,10 +332,11 @@ final readonly class TopologyConverger
         }
     }
 
-    private function typedCheckoutPath(GuestCommandResult $result): ?string
+    /** @return array{checkout_path:?string,production:?array<string,mixed>} */
+    private function sampleState(GuestCommandResult $result): array
     {
         if ($result->stdout === '') {
-            return null;
+            return ['checkout_path' => null, 'production' => null];
         }
 
         try {
@@ -325,7 +347,14 @@ final readonly class TopologyConverger
 
         if (
             ! is_array($state)
-            || array_keys($state) !== ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root']
+            || ! in_array(
+                array_keys($state),
+                [
+                    ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root'],
+                    ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root', 'production'],
+                ],
+                true,
+            )
             || ($state['shape'] ?? null) !== 'app_instances'
             || ! is_int($state['app_id'] ?? null)
             || ! is_int($state['node_id'] ?? null)
@@ -337,7 +366,103 @@ final readonly class TopologyConverger
             throw new RuntimeException('Sample resource convergence returned invalid typed state.');
         }
 
-        return $state['checkout_path'];
+        $production = $state['production'] ?? null;
+        if ($production !== null) {
+            $production = $this->productionPlacement($production);
+        }
+
+        return ['checkout_path' => $state['checkout_path'], 'production' => $production];
+    }
+
+    /**
+     * @return array{
+     *     layout:string,
+     *     instance_id:int,
+     *     user:string,
+     *     home:string,
+     *     checkout_path:string,
+     *     effective_root:string,
+     *     environment_path:string,
+     *     database_path:?string,
+     *     service:string,
+     *     socket:string,
+     *     current_target:?string,
+     *     hostname:string
+     * }
+     */
+    private function productionPlacement(mixed $placement): array
+    {
+        $isPlacementPath = static fn (string $path): bool => (
+            str_starts_with($path, '/')
+            && ! str_contains($path, '//')
+            && ! str_contains($path, "\n")
+            && ! str_contains($path, "\r")
+            && preg_match('#(?:\A|/)\.\.?(/|\z)#D', $path) !== 1
+        );
+
+        if (
+            ! is_array($placement)
+            || array_keys($placement) !== [
+                'layout',
+                'instance_id',
+                'user',
+                'home',
+                'checkout_path',
+                'effective_root',
+                'environment_path',
+                'database_path',
+                'service',
+                'socket',
+                'current_target',
+                'hostname',
+            ]
+            || ! in_array($placement['layout'] ?? null, ['flat', 'release'], true)
+            || ! is_int($placement['instance_id'] ?? null)
+            || $placement['instance_id'] < 1
+            || ! is_string($placement['user'] ?? null)
+            || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $placement['user']) !== 1
+            || ! is_string($placement['home'] ?? null)
+            || ! $isPlacementPath($placement['home'] ?? null)
+            || ! is_string($placement['checkout_path'] ?? null)
+            || ! $isPlacementPath($placement['checkout_path'] ?? null)
+            || ! is_string($placement['effective_root'] ?? null)
+            || ! $isPlacementPath($placement['effective_root'] ?? null)
+            || ! is_string($placement['environment_path'] ?? null)
+            || ! $isPlacementPath($placement['environment_path'] ?? null)
+            || $placement['database_path'] !== null
+            && (! is_string($placement['database_path'])
+            || ! $isPlacementPath($placement['database_path']))
+            || ! is_string($placement['service'] ?? null)
+            || preg_match('/\A[a-zA-Z0-9@_.-]{1,128}\z/D', $placement['service']) !== 1
+            || ! is_string($placement['socket'] ?? null)
+            || ! $isPlacementPath($placement['socket'] ?? null)
+            || $placement['current_target'] !== null
+            && (! is_string($placement['current_target'])
+            || ! $isPlacementPath($placement['current_target']))
+            || ! is_string($placement['hostname'] ?? null)
+            || preg_match('/\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\z/D', $placement['hostname']) !== 1
+            || $placement['layout'] === 'flat'
+            && $placement['current_target'] !== null
+            || $placement['layout'] === 'release'
+            && $placement['current_target'] === null
+        ) {
+            throw new RuntimeException('Sample resource convergence returned invalid production placement.');
+        }
+
+        return [
+            'layout' => $placement['layout'],
+            'instance_id' => $placement['instance_id'],
+            'user' => $placement['user'],
+            'home' => $placement['home'],
+            'checkout_path' => $placement['checkout_path'],
+            'effective_root' => $placement['effective_root'],
+            'environment_path' => $placement['environment_path'],
+            'database_path' => $placement['database_path'],
+            'service' => $placement['service'],
+            'socket' => $placement['socket'],
+            'current_target' => $placement['current_target'],
+            'hostname' => $placement['hostname'],
+        ];
     }
 
     private function failureDetails(string $script, GuestCommandResult $result): string

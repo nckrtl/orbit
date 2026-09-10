@@ -158,6 +158,7 @@ function typed_sample_resource_fixture(): array
         }
         printf '%s\n' "$*" >>"$state/commands"
         case "$1" in
+          list) [[ "$*" == 'list --raw' ]]; printf '%s' "${COMMAND_SURFACE:-}" ;;
           node:list)
             if [[ -e "$state/active" && -n "${FINAL_NODE_RESPONSE:-}" ]]; then
               printf '%s' "$FINAL_NODE_RESPONSE"
@@ -228,7 +229,11 @@ function typed_sample_resource_fixture(): array
               if [[ -n "${TYPED_RESPONSE:-}" ]]; then
                 printf '%s' "$TYPED_RESPONSE"
               else
-                printf '{%s"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$prefix" "$state" "$(printf a%.0s {1..40})"
+                printf '{%s"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}' "$prefix" "$state" "$(printf a%.0s {1..40})"
+                if [[ -e "$state/production" ]]; then
+                  printf ',{"id":5,"app_id":1,"node_id":3,"name":"e2e-prod","environment":"production","source_layout":"release","status":"active","checkout_path":"%s/production/current","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","effective_root":"%s/production/current/public","current_target":"%s/production/releases/one","hostname":"e2e-prod.orbit.test","php_version":"8.5"}' "$state" "$state" "$(printf a%.0s {1..40})" "$state" "$state"
+                fi
+                printf ']}'
               fi
             else
               printf '{%s"app_instances":[]}' "$prefix"
@@ -241,6 +246,18 @@ function typed_sample_resource_fixture(): array
             touch "$state/route"
             printf '{"id":4}'
             ;;
+          instance:clone)
+            [[ "$*" == 'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json' ]]
+            [[ "${CLONE_FAILS:-0}" == 0 ]] || exit 19
+            touch "$state/production"
+            printf '{"id":5}'
+            ;;
+          instance:deploy)
+            [[ "$*" == 'instance:deploy 5 --json' ]]
+            touch "$state/deployed"
+            printf '{"id":5,"status":"active"}'
+            ;;
+          env:import|env:sync) printf '{"status":"completed"}' ;;
           route:list)
             if [[ -e "$state/route" && -n "${FINAL_ROUTE_LIST_RESPONSE:-}" ]]; then
               printf '%s' "$FINAL_ROUTE_LIST_RESPONSE"
@@ -363,6 +380,7 @@ function typed_cluster_creation_commands(): array
     return [
         'node:list --json',
         'instance:list --json',
+        'list --raw',
         'cluster:list --json',
         'cluster:new e2e-development --json',
         'cluster:node:attach 3 2 --json',
@@ -729,6 +747,75 @@ describe('Gateway host prerequisite convergence', function () {
                     'noninteractive install --yes --no-install-recommends -- caddy dnsmasq php8.5-fpm',
                 ]);
         } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('fails closed for production service socket owner and current-target mismatches', function (): void {
+        $root = temporaryPath('orbit-production-placement-', 5);
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir("{$root}/production/releases/one/public", 0o700, true);
+        file_put_contents("{$root}/production/releases/one/artisan", "<?php\n");
+        file_put_contents("{$root}/production/.env", "APP_KEY=base64:test\n");
+        symlink("{$root}/production/releases/one", "{$root}/production/current");
+        file_put_contents("{$root}/bin/systemctl", <<<'BASH'
+            #!/usr/bin/env bash
+            if [[ "$*" == 'is-active orbit-nckrtl-php8.5-fpm.service' ]]; then printf 'active\n'; exit 0; fi
+            printf 'inactive\n'; exit 3
+            BASH);
+        chmod("{$root}/bin/systemctl", 0o700);
+        $socket = stream_socket_server("unix://{$root}/production/php.sock", $errorCode, $errorMessage);
+        expect($socket)->not->toBeFalse($errorMessage);
+        $placement = [
+            'layout' => 'release',
+            'instance_id' => 5,
+            'user' => 'nckrtl',
+            'home' => "{$root}/production",
+            'checkout_path' => "{$root}/production/current",
+            'effective_root' => "{$root}/production/current/public",
+            'environment_path' => "{$root}/production/.env",
+            'database_path' => null,
+            'service' => 'orbit-nckrtl-php8.5-fpm.service',
+            'socket' => "{$root}/production/php.sock",
+            'current_target' => "{$root}/production/releases/one",
+            'hostname' => 'e2e-prod.orbit.test',
+        ];
+        $run = static function (string $probe, array $value) use ($root): Process {
+            return new Process([
+                'bash',
+                dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+                $probe,
+                'proof',
+                str_repeat('a', 40),
+                'orbit-e2e-proof-app-prod',
+                base64_encode(json_encode($value, JSON_THROW_ON_ERROR)),
+            ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+        };
+
+        try {
+            expect($run('role.app-prod', $placement)->run())
+                ->toBe(0)
+                ->and($run('php-fpm.app-prod', $placement)->run())
+                ->toBe(0);
+            foreach ([
+                'service' => ['service' => 'wrong.service'],
+                'socket' => ['socket' => "{$root}/production/missing.sock"],
+                'owner' => ['user' => 'nobody'],
+                'current target' => ['current_target' => "{$root}/production/releases/two"],
+            ] as $change) {
+                expect(
+                    $run(
+                        array_key_exists('current_target', $change) ? 'role.app-prod' : 'php-fpm.app-prod',
+                        array_replace($placement, $change),
+                    )->run(),
+                )
+                    ->not
+                    ->toBe(0);
+            }
+        } finally {
+            if (is_resource($socket)) {
+                fclose($socket);
+            }
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
         }
     });
@@ -2405,6 +2492,7 @@ describe('convergence guest scripts', function () {
                 ...$firstCommands,
                 'node:list --json',
                 'instance:list --json',
+                'list --raw',
                 'cluster:list --json',
                 'app:list --json',
                 'route:list --json',
@@ -2435,6 +2523,54 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('selects candidate creation and explicit deployment once without repeat mutation', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        $surface = implode("\n", ['instance:clone', 'instance:deploy', 'env:import', 'env:update', 'env:sync'])."\n";
+        try {
+            $first = typed_sample_create_resources_process($fixture, ['COMMAND_SURFACE' => $surface]);
+            expect($first->run())->toBe(0, $first->getErrorOutput());
+            $state = json_decode((string) file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($state['production']['layout'] ?? null)
+                ->toBe('release')
+                ->and($commands)
+                ->toContain(
+                    'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json',
+                    'env:sync --instance=5 --json',
+                    'instance:deploy 5 --json',
+                );
+
+            $second = typed_sample_create_resources_process($fixture, ['COMMAND_SURFACE' => $surface]);
+            expect($second->run())->toBe(0, $second->getErrorOutput());
+            $all = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect(array_filter($all, fn (string $command): bool => str_starts_with($command, 'instance:clone ')))
+                ->toHaveCount(1)
+                ->and(array_filter($all, fn (string $command): bool => str_starts_with($command, 'instance:deploy ')))
+                ->toHaveCount(1);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('does not enter the direct path after a selected clone fails', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        $surface = "instance:clone\ninstance:deploy\n";
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'COMMAND_SURFACE' => $surface,
+                'CLONE_FAILS' => '1',
+            ]);
+            expect($process->run())->toBe(19);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)
+                ->toContain('instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json')
+                ->not->toContain('instance:deploy 5 --json', 'instance:new 1 3 e2e-prod');
+            expect(file_exists($fixture['state']))->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
     it('creates the missing explicit private Route for an existing active typed AppInstance', function (): void {
         $fixture = typed_sample_resource_fixture();
         foreach (['cluster', 'attached', 'router', 'active', 'app', 'instance'] as $stateFile) {
@@ -2450,6 +2586,7 @@ describe('convergence guest scripts', function () {
                 ->toBe([
                     'node:list --json',
                     'instance:list --json',
+                    'list --raw',
                     'cluster:list --json',
                     'app:list --json',
                     'route:list --json',
@@ -2987,6 +3124,7 @@ describe('convergence guest scripts', function () {
             expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
                 'node:list --json',
                 'instance:list --json',
+                'list --raw',
             ]);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);

@@ -455,6 +455,99 @@ describe('TopologyVerifier typed application state', function () {
             ->and($batches[0] ?? null)
             ->toBe(['sample-app-state']);
     });
+
+    it('passes the exact recorded production placement to every production probe', function (array $production): void {
+        setUpTopologyVerifierProcessFacade();
+        $sha = str_repeat('a', 40);
+        $encoded = base64_encode(json_encode($production, JSON_THROW_ON_ERROR));
+        $argv = [];
+        Process::fake(function (PendingProcess $process) use ($sha, $production, &$argv): ProcessResult {
+            $inventory = topologyVerifierInventory($process);
+            if ($inventory instanceof ProcessResult) {
+                return $inventory;
+            }
+            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
+            $results = [];
+            foreach ($payload['requests'] as $request) {
+                if ($request['label'] === 'sample-app-state') {
+                    $results[] = [
+                        'label' => 'sample-app-state',
+                        'stdout' => json_encode([
+                            'shape' => 'app_instances',
+                            'app_id' => 1,
+                            'node_id' => 2,
+                            'name' => 'e2e-dev',
+                            'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
+                            'effective_root' => 'public',
+                            'production' => $production,
+                        ], JSON_THROW_ON_ERROR),
+                        'stderr' => '',
+                        'exit_code' => 0,
+                    ];
+                    continue;
+                }
+                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
+                    $results[] = [
+                        'label' => $request['label'],
+                        'stdout' => '2: enp5s0    inet 192.0.2.1/24 scope global',
+                        'stderr' => '',
+                        'exit_code' => 0,
+                    ];
+                    continue;
+                }
+                $argv[$request['label']] = $request['argv'];
+                $results[] = [
+                    'label' => $request['label'],
+                    'stdout' => topologyVerifierEvidence($request, $sha),
+                    'stderr' => '',
+                    'exit_code' => 0,
+                ];
+            }
+
+            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
+        });
+
+        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
+            TopologyTarget::topologySnapshot(),
+            VerificationMode::Readiness,
+            new SourceState($sha, $sha),
+        );
+
+        expect($report->passed)->toBeTrue();
+        foreach (['role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'] as $probe) {
+            expect($argv[$probe][array_key_last($argv[$probe])] ?? null)->toBe($encoded);
+        }
+        expect(array_keys($report->probes))->not->toContain('workspace.app-dev');
+    })->with([
+        'flat shared' => [[
+            'layout' => 'flat',
+            'instance_id' => 7,
+            'user' => 'orbit-laravel',
+            'home' => '/var/www/laravel',
+            'checkout_path' => '/var/www/laravel/e2e-prod',
+            'effective_root' => '/var/www/laravel/e2e-prod/public',
+            'environment_path' => '/var/www/laravel/e2e-prod/.env',
+            'database_path' => '/var/www/laravel/e2e-prod/database/database.sqlite',
+            'service' => 'php8.5-fpm.service',
+            'socket' => '/run/php/orbit-prod-instance-7.sock',
+            'current_target' => null,
+            'hostname' => 'laravel.internal',
+        ]],
+        'release dedicated' => [[
+            'layout' => 'release',
+            'instance_id' => 7,
+            'user' => 'orbit-laravel',
+            'home' => '/var/www/laravel',
+            'checkout_path' => '/var/www/laravel/current',
+            'effective_root' => '/var/www/laravel/current/public',
+            'environment_path' => '/var/www/laravel/.env',
+            'database_path' => null,
+            'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
+            'socket' => '/run/php/orbit-laravel.sock',
+            'current_target' => '/var/www/laravel/releases/20260910T120000Z',
+            'hostname' => 'e2e-prod.orbit.test',
+        ]],
+    ]);
 });
 
 describe('TopologyVerifier failures and retries', function () {
