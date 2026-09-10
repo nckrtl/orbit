@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\StaleTopologySnapshotManifest;
+use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\StatePaths;
 use App\E2E\TopologySnapshotAvailability;
+use App\E2E\TopologySnapshotReplacementStore;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologySnapshotReplacementInstallation;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
@@ -31,6 +37,49 @@ function availabilityGeneration(): TopologySnapshotGeneration
         'gateway_app-dev_app-prod',
         TopologyProfile::ROLES,
         ['gateway', 'app-dev'],
+    );
+}
+
+function availabilityReplacementInstallation(
+    TopologySnapshotGeneration $old,
+): TopologySnapshotReplacementInstallation {
+    $new = new TopologySnapshotGeneration(
+        'replacement-generation',
+        str_repeat('6', 40),
+        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod'],
+        str_repeat('7', 64),
+        $old->baseImageFingerprint,
+        $old->laravel,
+        str_repeat('8', 64),
+        2,
+        $old->coldEpoch,
+        $old->baseImageAlias,
+        TopologyProfile::NAME,
+        TopologyProfile::ROLES,
+        TopologyProfile::CHECKOUT_ROLES,
+        $old->id,
+    );
+
+    return new TopologySnapshotReplacementInstallation(
+        'ORB-231',
+        new AttemptId(str_repeat('a', 32)),
+        new AttemptId(str_repeat('b', 32)),
+        new OperationId(str_repeat('c', 32)),
+        str_repeat('d', 40),
+        str_repeat('e', 40),
+        str_repeat('f', 40),
+        $new->mainSha,
+        str_repeat('a', 64),
+        str_repeat('b', 64),
+        $old,
+        $new,
+        $new->baseImageAlias,
+        $new->baseImageFingerprint,
+        'oe-replacement',
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
     );
 }
 
@@ -97,6 +146,22 @@ describe('TopologySnapshotAvailability', function () {
             ->assertAvailable(availabilityGeneration()))
             ->not
             ->toThrow(Throwable::class);
+    });
+
+    it('refuses a generation inconsistent with an active replacement before any Incus command', function () {
+        $identity = TopologySnapshotIdentity::primary();
+        $installation = availabilityReplacementInstallation(availabilityGeneration());
+        $replacements = new TopologySnapshotReplacementStore(new AtomicJsonStore(
+            new StatePaths(temporaryPath('availability-replacement-', 4)),
+        ));
+        $replacements->start($installation, '2026-09-10T10:00:00Z');
+        Process::fake();
+
+        expect(fn () => new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity, $replacements)
+            ->assertAvailable($installation->newGeneration))
+            ->toThrow(RuntimeException::class, 'replacement recovery is incomplete');
+
+        Process::assertNothingRan();
     });
 
     it('names the recovery command when the manifest names snapshots the host lost', function () {

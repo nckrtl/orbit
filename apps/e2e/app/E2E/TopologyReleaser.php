@@ -12,6 +12,7 @@ use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\CapturedProof;
 use App\E2E\Value\LeaseTargetRecovery;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofReleaseReason;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
@@ -63,10 +64,14 @@ final readonly class TopologyReleaser
             $attempt = $state->attemptId($purpose);
             $this->assertReleaseAllowed($state, $purpose, $attempt, $reason);
             if ($purpose === AttemptPurpose::Proof && $reason === ProofReleaseReason::Abandonment) {
-                if ($this->abandonReplacement === null) {
-                    throw new RuntimeException('Snapshot replacement abandonment is not configured.');
+                $capture = $this->capturedProof($state, $attempt);
+                $manifest = ProofInputManifest::fromArray($capture->manifest);
+                if ($manifest->construction->snapshotReplacement) {
+                    if ($this->abandonReplacement === null) {
+                        throw new RuntimeException('Snapshot replacement abandonment is not configured.');
+                    }
+                    ($this->abandonReplacement)($request, $capture);
                 }
-                ($this->abandonReplacement)($request, $this->capturedProof($state, $attempt));
             }
 
             return $this->releaseAttempt($request, $state, $purpose, $attempt);

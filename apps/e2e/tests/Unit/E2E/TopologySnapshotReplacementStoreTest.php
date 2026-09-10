@@ -12,8 +12,11 @@ use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotReplacementInstallation;
 
-function replacementStoreInstallationFixture(string $artifactSha = ''): TopologySnapshotReplacementInstallation
-{
+function replacementStoreInstallationFixture(
+    string $artifactSha = '',
+    string $replacementAttempt = '',
+    string $operation = '',
+): TopologySnapshotReplacementInstallation {
     $old = new TopologySnapshotGeneration(
         'old-generation', str_repeat('1', 40),
         ['gateway' => 'main-old-gateway', 'app-dev' => 'main-old-app-dev', 'app-prod' => 'main-old-app-prod'],
@@ -32,8 +35,10 @@ function replacementStoreInstallationFixture(string $artifactSha = ''): Topology
     );
 
     return new TopologySnapshotReplacementInstallation(
-        'ORB-231', new AttemptId(str_repeat('a', 32)), new AttemptId(str_repeat('b', 32)),
-        new OperationId(str_repeat('c', 32)), str_repeat('d', 40),
+        'ORB-231', new AttemptId(str_repeat('a', 32)), new AttemptId(
+            $replacementAttempt === '' ? str_repeat('b', 32) : $replacementAttempt,
+        ),
+        new OperationId($operation === '' ? str_repeat('c', 32) : $operation), str_repeat('d', 40),
         $artifactSha === '' ? str_repeat('e', 40) : $artifactSha,
         str_repeat('f', 40), str_repeat('6', 40), str_repeat('a', 64), str_repeat('b', 64),
         $old, $new, 'orbit-base-ubuntu-26.04-runtime', str_repeat('8', 64), 'oe-replacement',
@@ -115,5 +120,67 @@ it('archives terminal progress by proof attempt and clears active state', functi
         ))->toBe($abandoned->toArray());
 
     expect(fn () => $store->start($abandoned->installation, '2026-09-10T10:00:02Z'))
-        ->toThrow(RuntimeException::class, 'already archived');
+        ->toThrow(RuntimeException::class, 'requires fresh resource identities');
 });
+
+it('starts a fresh exact retry while retaining an abandoned or rolled-back archive', function (bool $rolledBack): void {
+    $state = new AtomicJsonStore(new StatePaths(temporaryPath('replacement-store-retry-', 8)));
+    $store = new TopologySnapshotReplacementStore($state);
+    $started = $store->start(replacementStoreInstallationFixture(), '2026-09-10T10:00:00Z');
+    if ($rolledBack) {
+        foreach ([
+            'construction_pending',
+            'construction_verified',
+            'staging_pending',
+            'staging_verified',
+            'swap_pending',
+            'swap_in_progress',
+            'rollback_pending',
+            'rolled_back',
+            'cleanup_pending',
+        ] as $phase) {
+            $started = $started->withPhase(
+                $phase,
+                '2026-09-10T10:00:01Z',
+                in_array($phase, ['rollback_pending', 'rolled_back', 'cleanup_pending'], true)
+                    ? 'simulated interruption'
+                    : null,
+            );
+        }
+    }
+    $abandoned = $started
+        ->withTemporaryResourcesCleaned()
+        ->withStagedResourcesCleaned()
+        ->withPhase('abandoned', '2026-09-10T10:00:02Z');
+    $store->complete($abandoned);
+    $retry = replacementStoreInstallationFixture(
+        replacementAttempt: str_repeat('d', 32),
+        operation: str_repeat('e', 32),
+    );
+
+    expect(fn () => $store->start(replacementStoreInstallationFixture(
+        artifactSha: str_repeat('0', 40),
+        replacementAttempt: str_repeat('d', 32),
+        operation: str_repeat('e', 32),
+    ), '2026-09-10T10:00:03Z'))
+        ->toThrow(RuntimeException::class, 'differs from its retained authority')
+        ->and($store->active())
+        ->toBeNull();
+
+    $restarted = $store->start($retry, '2026-09-10T10:00:03Z');
+
+    expect($restarted->phase)
+        ->toBe('authorized')
+        ->and($restarted->installation->replacementAttempt->value)
+        ->toBe(str_repeat('d', 32))
+        ->and($store->active()?->toArray())
+        ->toBe($restarted->toArray())
+        ->and($state->read(
+            'topology-snapshot/replacements/'.$abandoned->installation->proofAttempt->value
+            .'/'.$abandoned->installation->replacementAttempt->value.'.json',
+        ))
+        ->toBe($abandoned->toArray());
+})->with([
+    'abandoned preparation' => false,
+    'abandoned after rollback' => true,
+]);

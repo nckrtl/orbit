@@ -39,8 +39,10 @@ final readonly class TopologySnapshotReplacementStore
 
             return $existing;
         }
-        if ($this->archived($installation->proofAttempt) !== null) {
-            throw new RuntimeException('The topology snapshot replacement proof attempt is already archived.');
+        $archived = $this->archived($installation->proofAttempt);
+        if ($archived !== null) {
+            $this->assertRestartAllowed($installation, $archived);
+            $this->retainExactArchive($archived);
         }
 
         $recovery = TopologySnapshotReplacementRecovery::authorized(
@@ -67,16 +69,11 @@ final readonly class TopologySnapshotReplacementStore
             throw new RuntimeException('A nonterminal topology snapshot replacement cannot be archived.');
         }
         $this->assertCanReplace($recovery);
-        $path = $this->archivePath($recovery->installation->proofAttempt);
         $value = $recovery->toArray();
-        $archived = $this->store->read($path);
-        if ($archived !== null && $archived !== $value) {
-            throw new RuntimeException('The topology snapshot replacement archive conflicts with retained evidence.');
-        }
-        if ($archived === null) {
-            $this->store->write($path, $value);
-        }
-        if ($this->store->read($path) !== $value) {
+        $this->retainExactArchive($recovery);
+        $latest = $this->archivePath($recovery->installation->proofAttempt);
+        $this->store->write($latest, $value);
+        if ($this->store->read($latest) !== $value) {
             throw new RuntimeException('The topology snapshot replacement could not be archived.');
         }
         $this->store->delete(self::ACTIVE_PATH);
@@ -103,8 +100,54 @@ final readonly class TopologySnapshotReplacementStore
         }
     }
 
+    private function assertRestartAllowed(
+        TopologySnapshotReplacementInstallation $installation,
+        TopologySnapshotReplacementRecovery $archived,
+    ): void {
+        if ($archived->phase !== 'abandoned') {
+            throw new RuntimeException('The topology snapshot replacement proof attempt is already archived.');
+        }
+        $previous = $archived->installation;
+        if (
+            $installation->replacementAttempt->value === $previous->replacementAttempt->value
+            || $installation->resourceOperation->value === $previous->resourceOperation->value
+        ) {
+            throw new RuntimeException('A retried topology snapshot replacement requires fresh resource identities.');
+        }
+        $current = $installation->toArray();
+        $retained = $previous->toArray();
+        foreach (['replacement_attempt_id', 'resource_operation_id', 'temporary_network', 'temporary_instances'] as $key) {
+            unset($current[$key], $retained[$key]);
+        }
+        if ($current !== $retained) {
+            throw new RuntimeException('A retried topology snapshot replacement differs from its retained authority.');
+        }
+    }
+
+    private function retainExactArchive(TopologySnapshotReplacementRecovery $recovery): void
+    {
+        $path = $this->exactArchivePath($recovery);
+        $value = $recovery->toArray();
+        $archived = $this->store->read($path);
+        if ($archived !== null && $archived !== $value) {
+            throw new RuntimeException('The topology snapshot replacement archive conflicts with retained evidence.');
+        }
+        if ($archived === null) {
+            $this->store->write($path, $value);
+        }
+        if ($this->store->read($path) !== $value) {
+            throw new RuntimeException('The topology snapshot replacement could not be archived.');
+        }
+    }
+
     private function archivePath(AttemptId $proofAttempt): string
     {
         return 'topology-snapshot/replacements/'.$proofAttempt->value.'.json';
+    }
+
+    private function exactArchivePath(TopologySnapshotReplacementRecovery $recovery): string
+    {
+        return 'topology-snapshot/replacements/'.$recovery->installation->proofAttempt->value
+            .'/'.$recovery->installation->replacementAttempt->value.'.json';
     }
 }

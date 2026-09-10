@@ -357,11 +357,22 @@ final readonly class TopologySnapshotReplacementInstaller
     ): TopologySnapshotReplacementResult {
         $message = $this->redactor->redact($exception->getMessage());
         try {
-            if ($recovery->manifestPromoted || $this->isPromoted($recovery->installation->newGeneration)) {
-                if ($recovery->phase !== 'manifest_promoted') {
-                    $recovery = $this->recordCommittedManifest($recovery);
+            $retained = $this->replacements->active();
+            if ($retained !== null) {
+                if (! $retained->installation->sameIdentity($recovery->installation)) {
+                    throw new RuntimeException('Snapshot replacement recovery identity changed after failure.');
                 }
-                $recovery = $this->failurePhase($recovery, 'cleanup_pending', $message, $nextAction);
+                $recovery = $retained;
+            }
+            if ($recovery->manifestPromoted || $this->isPromoted($recovery->installation->newGeneration)) {
+                if (in_array($recovery->phase, ['swap_pending', 'swap_in_progress', 'manifest_pending'], true)) {
+                    $recovery = $this->recordCommittedManifest($recovery);
+                } else {
+                    $this->recordPromotionLineage($recovery->installation);
+                }
+                if ($recovery->phase !== 'cleanup_pending') {
+                    $recovery = $this->failurePhase($recovery, 'cleanup_pending', $message, $nextAction);
+                }
             } elseif (in_array($recovery->phase, ['swap_pending', 'swap_in_progress', 'manifest_pending'], true)) {
                 $recovery = $this->failurePhase($recovery, 'rollback_pending', $message, $nextAction);
                 $recovery = $this->rollback($recovery);

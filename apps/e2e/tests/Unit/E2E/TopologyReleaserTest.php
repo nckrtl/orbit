@@ -156,6 +156,38 @@ function extendedReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose
     );
 }
 
+function replacementReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose): FeatureTopology
+{
+    $generation = new TopologySnapshotGeneration(
+        'g-'.str_repeat('a', 12),
+        str_repeat('b', 40),
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        str_repeat('c', 64),
+        str_repeat('d', 64),
+        new LaravelRelease('v13.10.1', str_repeat('e', 40)),
+        str_repeat('f', 64),
+        2,
+        'ubuntu-26.04-amd64-v1',
+        TopologyRecipe::BASE_IMAGE,
+        TopologyProfile::NAME,
+        TopologyProfile::ROLES,
+        TopologyProfile::CHECKOUT_ROLES,
+    );
+
+    return new FeatureTopology(
+        TopologyConstructionInputs::forSnapshotReplacement(
+            $target,
+            2,
+            TopologyRecipe::BASE_IMAGE,
+            str_repeat('d', 64),
+        ),
+        $purpose,
+        $generation,
+        new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
+        new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
+    );
+}
+
 function releaserForTest(StatePaths $paths, ?Closure $abandonReplacement = null): TopologyReleaser
 {
     $host = new IncusHost;
@@ -172,12 +204,21 @@ function releaserForTest(StatePaths $paths, ?Closure $abandonReplacement = null)
 }
 
 /** @return array{IssueState, TopologyTarget} */
-function capturedReleaseState(string $worktree, StatePaths $hostPaths): array
-{
+function capturedReleaseState(
+    string $worktree,
+    StatePaths $hostPaths,
+    bool $snapshotReplacement = false,
+): array {
     $issue = 'AUX-99';
     $attempt = new AttemptId(str_repeat('a', 32));
-    $target = TopologyTarget::feature($issue, $attempt, TopologyRecipe::extendedAppProd());
-    $topology = extendedReleaseTopology($target, AttemptPurpose::Proof);
+    $target = TopologyTarget::feature(
+        $issue,
+        $attempt,
+        $snapshotReplacement ? TopologyRecipe::registered() : TopologyRecipe::extendedAppProd(),
+    );
+    $topology = $snapshotReplacement
+        ? replacementReleaseTopology($target, AttemptPurpose::Proof)
+        : extendedReleaseTopology($target, AttemptPurpose::Proof);
     $manifest = new ProofInputManifest(
         4,
         str_repeat('a', 40),
@@ -211,7 +252,8 @@ function capturedReleaseState(string $worktree, StatePaths $hostPaths): array
         $attempt,
         AttemptPurpose::Proof,
         new OperationId(str_repeat('d', 32)),
-        TopologyExtension::AppProd,
+        $snapshotReplacement ? null : TopologyExtension::AppProd,
+        $snapshotReplacement,
     );
     $state->writeTopology($topology);
     $state->writeProof($proof);
@@ -286,7 +328,7 @@ describe('TopologyReleaser', function () {
         $worktree = temporaryPath('orbit-release-abandonment-', 4);
         mkdir($worktree, 0700);
         $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
-        [$state, $target] = capturedReleaseState($worktree, $paths);
+        [$state, $target] = capturedReleaseState($worktree, $paths, snapshotReplacement: true);
         $commands = [];
         fakeReleaseHost(
             $target,
@@ -319,7 +361,7 @@ describe('TopologyReleaser', function () {
         $worktree = temporaryPath('orbit-release-abandonment-failed-', 4);
         mkdir($worktree, 0700);
         $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
-        [$state, $target] = capturedReleaseState($worktree, $paths);
+        [$state, $target] = capturedReleaseState($worktree, $paths, snapshotReplacement: true);
         $commands = [];
         fakeReleaseHost(
             $target,
@@ -342,6 +384,39 @@ describe('TopologyReleaser', function () {
             ->toBe([])
             ->and($state->hasAttempt(AttemptPurpose::Proof))
             ->toBeTrue();
+    });
+
+    it('releases an ordinary proof without consulting another issue replacement', function (): void {
+        $worktree = temporaryPath('orbit-release-other-proof-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        [$state, $target] = capturedReleaseState($worktree, $paths);
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
+            $commands,
+        );
+        $replacementConsulted = false;
+        $releaser = releaserForTest(
+            $paths,
+            static function () use (&$replacementConsulted): void {
+                $replacementConsulted = true;
+
+                throw new RuntimeException('ORB-231 has an active snapshot replacement.');
+            },
+        );
+
+        $result = $releaser->release(
+            new TopologyRequest('AUX-99', $worktree),
+            AttemptPurpose::Proof,
+            reason: ProofReleaseReason::Abandonment,
+        );
+
+        expect($replacementConsulted)
+            ->toBeFalse()
+            ->and($result['state'])->toBe('released')
+            ->and($state->hasAttempt(AttemptPurpose::Proof))->toBeFalse();
     });
 
     it('protects a captured active proof when mutable proof result state is missing or mismatched', function (
