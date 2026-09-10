@@ -9,18 +9,27 @@ $read = static fn (string $relative): string => (string) file_get_contents($root
 it('initializes one current feature-plan artifact', function () use ($read): void {
     $script = $read('bin/worktree-create');
     $ignore = $read('.gitignore');
+    $template = $read('.agents/skills/planning-features/template.md');
 
     foreach ([
         'initialize_feature_plan',
         'mkdir -p "$worktree/.loop/proof"',
+        '.agents/skills/planning-features/template.md',
+    ] as $needle) {
+        expect($script)->toContain($needle);
+    }
+
+    foreach ([
         '# Feature plan',
+        'Plan format: 1',
+        'Flow: {{FLOW}}',
         'Review verdict: PENDING',
         '## Acceptance map',
         '## Implementation order',
         '## Deviations',
         '## Review findings',
     ] as $needle) {
-        expect($script)->toContain($needle);
+        expect($template)->toContain($needle);
     }
 
     expect($script)

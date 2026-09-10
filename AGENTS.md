@@ -67,6 +67,9 @@ orchestrator assigns the formal reviewers and coordinates phase transitions.
   topology only when `proof` is explicitly selected. Automated-only issues
   without the label use local checks without a required topology. ADR 0058
   governs this distinction. Planning and review check the label against acceptance.
+- New or revised feature plans use the planning template and `bin/plan-lint`.
+  A completed plan handoff includes a receipt verified against its saved artifact;
+  structural validation does not replace independent plan review.
 - Proof plans and fixtures live locally under ignored `.loop/proof/` and are
   published with `bin/loop-artifacts` on immutable candidate-bound refs. Per-worktree harness state lives in `<worktree>/.e2e/`.
 - Discovery remains the default development target while a separate fresh

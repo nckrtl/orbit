@@ -5,7 +5,7 @@ description: Use when preparing or correcting the plan for one Orbit issue of an
 
 # Planning Features
 
-Turn one Linear issue into `.loop/plan.md`, the separately versioned implementation map the plan reviewer checks and the implementer follows, and bring the maintained documentation for the issue up to date before any code exists. This task is the planner, which the other skills call preflight. It edits only the plan and pages under `docs/`. It does not change product code, tests, proof files, Linear, or GitHub, and it never rewrites Git history.
+Turn one Linear issue into `.loop/plan.md`, the separately versioned implementation map the plan reviewer checks and the implementer follows, and bring the maintained documentation for the issue up to date before any code exists. This task is the planner, which the other skills call preflight. It edits only the plan, its generated `.loop/plan-lint.json` receipt, and pages under `docs/`. It does not change product code, tests, proof files, Linear, or GitHub, and it never rewrites Git history.
 
 This is an independently invokable planning task. It does not assume who implements the plan or what lifecycle surrounds it.
 
@@ -61,13 +61,13 @@ Use existing Linear activity and Git history; do not require a separate creation
 
 ## Write the documentation
 
-Before the acceptance map, run `auditing-documentation` in its default issue scope and fix the drift it finds. Then, when the issue carries the `docs` label, write or update the pages that describe the issue's outcome by following `writing-documentation`, stating the behavior the `Acceptance` items deliver in the present tense. For these pages the reference is the issue and its ADRs, not the code; the code follows. Run `composer docs-build` and then `composer docs-lint` from the repository root, then commit every change under `docs/`, including `docs/generated/context.json`, as one commit on the feature branch whose message starts with `docs:`. Save the ignored plan with `bin/loop-artifacts save <ISSUE>` for independent plan review. The reviewer saves its verdict on that separate draft ref. A blocked issue keeps its `docs:` commits on the branch, and the next planning pass starts from them. The implementer starts from these pages and corrects them only where implementation deviates.
+Before the acceptance map, run `auditing-documentation` in its default issue scope and fix the drift it finds. Then, when the issue carries the `docs` label, write or update the pages that describe the issue's outcome by following `writing-documentation`, stating the behavior the `Acceptance` items deliver in the present tense. For these pages the reference is the issue and its ADRs, not the code; the code follows. Run `composer docs-build` and then `composer docs-lint` from the repository root, then commit every change under `docs/`, including `docs/generated/context.json`, as one commit on the feature branch whose message starts with `docs:`. Save the completed plan and lint receipt together at handoff, as described below. The reviewer saves its verdict on that separate draft ref. A blocked issue keeps its `docs:` commits on the branch, and the next planning pass starts from them. The implementer starts from these pages and corrects them only where implementation deviates.
 
 ## Write the plan
 
 In `discovery`, map existing issue `Proof:` venues to focused tests, the local review gate, and reproducible discovery observations without changing acceptance outcomes. Apply the implementation loop's current local check policy to stale generic full no-TIA CI wording; record that mapping and return the issue text correction to the orchestrator. This policy alignment alone is not a product-contract stop. Do not require a proof plan, fixtures, observed inputs, exact-commit proof, or main-freshness checks. For an `incus` issue, name the planned development observations and state that proof instrumentation is not required. Otherwise record `Incus: not required` with the local acceptance checks. Preflight and its independent review precede discovery acquisition. Optional topology extension declarations reuse the existing format; they do not require running proof actions.
 
-Fill every section of `.loop/plan.md` without copying the issue into it:
+Use [the current template](template.md) for every new or revised plan. Keep its `Plan format`, assigned `Issue`, and selected `Flow` headers. Fill every section of `.loop/plan.md` without copying the issue into it:
 
 - **Outcome:** the issue's outcome in one sentence.
 - **Code boundaries:** for each `In` bullet, the files or directories that change. For each `Out` bullet, the exclusion that keeps it unchanged. Pages under `docs/` belong to the Documentation section and `.loop/proof/<ISSUE>.json` to the acceptance map; neither is a code boundary or a component.
@@ -84,6 +84,16 @@ Set `Review verdict: PENDING` and clear stale findings. Do not create slice file
 
 When given review findings, change only the plan content and the pages the findings cite. Do not widen the outcome, weaken a proof, or absorb a new requirement; a new requirement is separate Linear work. Commit changed pages as a further `docs:` commit, mark each addressed finding `addressed:` under `## Review findings`, and set `Review verdict: PENDING` again.
 
-## Verify
+## Verify and hand off
 
-The plan is complete when every `Acceptance` item has a row, every row names a boundary or a page and a runnable proof, every `Out` bullet has an exclusion, the Documentation section lists every changed page and every reported finding with its owner, every change under `docs/` is committed, `composer docs-lint` passes, `Must preserve` names the touched ADR bullets, and no open question hides a product decision.
+Run `bin/plan-lint record <ISSUE>` after the final plan edit. Fix each reported
+structural error and rerun until it exits zero. This writes
+`.loop/plan-lint.json`; it does not approve the plan. Then run
+`bin/loop-artifacts save <ISSUE>` and
+`bin/plan-lint verify <ISSUE> --artifact=<artifact-sha>` with its exact output.
+Return that artifact binding and the verification output with the handoff.
+A completed planning response requires this receipt. If planning cannot finish,
+return the classified stop and evidence instead of claiming completion.
+
+Trust the successful structural check. Do not repeat section, format, or table
+checks with extra tool calls. Check the meaning: every `Acceptance` item has a matching row and a suitable runnable proof, every `Out` bullet has an exclusion, the Documentation section lists every changed page and every reported finding with its owner, every change under `docs/` is committed, `composer docs-lint` passes, `Must preserve` names the touched ADR bullets, and no open question hides a product decision.

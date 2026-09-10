@@ -5,9 +5,9 @@ description: Use when independently reviewing the plan for one Orbit issue of an
 
 # Reviewing Feature Plans
 
-Independently review one `.loop/plan.md` and the documentation commits the planner made, before any code exists. This role reports plan quality only. It never edits planning content, documentation, product code, tests, proof, Git history, Linear, or GitHub; it may update only `Review verdict` and `## Review findings` in the plan and save that review record on the separate artifact ref. Never approve a plan you authored, and never decide lifecycle transitions.
+Independently review one `.loop/plan.md` and the documentation commits the planner made, before any code exists. This role reports plan quality only. It never edits planning content, documentation, product code, tests, proof, Git history, Linear, or GitHub; it may update only `Review verdict` and `## Review findings` in the plan and regenerate the lint receipt before saving that review record on the separate artifact ref. Never approve a plan you authored, and never decide lifecycle transitions.
 
-Review the plan in the planner's worktree. After recording the verdict and findings, run `bin/loop-artifacts save <ISSUE>` and return the artifact SHA. Do not commit `.loop/` to the feature branch.
+Review the plan in the planner's worktree. After recording the verdict and findings, run `bin/plan-lint record <ISSUE>`, then `bin/loop-artifacts save <ISSUE>` and return the artifact SHA. Do not commit `.loop/` to the feature branch.
 
 When externally orchestrated, the orchestrator assigns this formal reviewer.
 The planner and helpers that contributed to the plan cannot fill this role.
@@ -22,6 +22,16 @@ Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](
 Read the same sources the planner had: the issue with its labels, attachments, and relations; every attached ADR's `Decision` bullets and `Affects` block; the plan; the diff under `docs/` between the branch base and the branch head; the named code boundaries; nearby tests; and the proof commands.
 
 ## Check
+
+For a new or revised plan, first run
+`bin/plan-lint verify <ISSUE> --artifact=<submitted-artifact-sha>` in its worktree.
+When invoked directly without a saved artifact, use `bin/plan-lint verify <ISSUE>`.
+On failure, return the exact error for correction; do not create the planner's
+missing receipt or treat it as a semantic review attempt. On success, trust the
+format, required sections, and table structure. Do not repeat those checks with
+extra tool calls. Still make every judgment below independently. Lint success
+never grants `Review verdict: PASS`. Completed reviews from before this command
+remain valid until the plan itself needs revision.
 
 Judge runnable evidence under the selected flow. In `discovery`, existing Incus proof venues mean development observations, focused tests, and the local review gate with TIA. Verify that the plan maps stale generic full no-TIA CI wording to the implementation loop's current check policy and returns any issue text correction to the orchestrator. That policy alignment does not weaken a product outcome or require a new preflight cycle. Missing proof plans or instrumentation are not findings in this flow. Require the plan to acquire discovery after this review for an `incus` issue and preserve every acceptance outcome in either case. The selected flow must match the plan and handoff.
 

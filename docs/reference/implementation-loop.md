@@ -179,6 +179,43 @@ A nonzero test, formatting, or analysis command is a correctness signal requirin
 
 One maintenance owner covers all five projects. Routine warming uses scripts; failures needing investigation use [maintaining-monorepo](../../.agents/skills/maintaining-monorepo/SKILL.md). The agent diagnoses the exact failed commit, preserves evidence, and performs source repairs in a separate worktree. It returns verification to the orchestrator instead of approving its own change or mutating primary main. Feature development can continue during a correctness hold. Cache freshness alone never holds creation, merge, or cleanup.
 
+## Plan validation
+
+The [plan template](../../.agents/skills/planning-features/template.md) is the
+source for new worktrees and revised plans. Change the template, format number,
+linter, and fixtures together when the format changes. Completed reviews and
+saved artifacts do not need migration merely because the format advances.
+
+| Command | Result |
+| --- | --- |
+| `bin/plan-lint check ISSUE` | Checks current format, issue, flow, required sections, filled acceptance cells, and unfinished scaffold text without writing |
+| `bin/plan-lint record ISSUE` | Runs the same checks and writes `.loop/plan-lint.json` on success; removes old success before an attempted replacement |
+| `bin/plan-lint verify ISSUE --artifact=SHA` | Rechecks the plan, requires its receipt, and compares local inputs with the submitted saved artifact |
+
+All three commands accept `--worktree=PATH`. An existing worktree can use the
+command and template from updated primary main without merging main into its
+feature branch. Use the same tool version for recording and verification.
+Verification without `--artifact` checks only the local plan and receipt.
+
+The planner records after its final edit, saves with `bin/loop-artifacts save`,
+then verifies that exact artifact before returning a completed handoff. The
+orchestrator runs that verification before dispatching independent plan review.
+A missing, failed, or stale receipt returns to the planner with the command's
+error. An idle worker alone is not a completed plan. A real planning stop still
+returns its classification and evidence through the existing resolution route.
+
+The deterministic receipt binds the plan bytes, issue, selected flow, and
+validator with its template. It is carried in the existing ignored `.loop/`
+artifact snapshot. A plan edit, including review findings or verdict, requires
+recording again before the next save. Unrelated main movement does not invalidate
+it. The reviewer refreshes the receipt after recording its independent verdict.
+
+Agents trust these structural checks and skip duplicate format inspections.
+Reviewers still judge acceptance coverage, design, scope, ADRs, and proof quality.
+The linter does not test code, require future files to exist, approve a plan,
+or authorize development. Orbit owns this validation contract; the external
+orchestrator owns dispatch and recovery.
+
 ## Artifact references
 
 The local `.loop/` directory is ignored. It holds the flow selection, plan, plan review, development notes, and any proof plan and fixtures for one issue. The product candidate contains no `.loop/` paths. The commands use a temporary Git index and leave the feature head and its real index unchanged.

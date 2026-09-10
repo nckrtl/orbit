@@ -8,6 +8,11 @@ description: Use when implementing one Orbit issue from a worktree.
 Implement one Linear issue in its worktree, push the exact candidate, and return a pull-request body with evidence for every `Acceptance` item under the selected flow. Own code, tests, integration, applicable proof, commits, and the branch push. Never review or approve your own work.
 
 This task may be invoked directly. A supplied `.loop/plan.md` is the implementation map, not a lifecycle gate.
+When assigned planning, follow `planning-features` and return its verified lint
+receipt before reporting the plan complete. Development is a separate assignment.
+When development changes a plan in the current format, regenerate its receipt
+with `bin/plan-lint record <ISSUE>` before saving or publishing the artifacts.
+Trust structural validation; retain independent review and acceptance proof.
 
 The external orchestrator owns pull-request creation, updates, review requests, review publication, and merge. The developer must not invoke `gh` or mutate any pull-request or GitHub surface.
 
