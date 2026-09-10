@@ -2,6 +2,8 @@
 
 This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the separate candidate-bound artifact workspace, and the commands that run a plan are on the [Incus topology registry](incus-topologies.md).
 
+This page applies to the `proof` delivery flow. The [implementation loop](implementation-loop.md) describes the discovery-only flow, which requires no proof plan or isolated acceptance run.
+
 ## Plan file
 
 A plan is one JSON object at `.loop/proof/<ISSUE>.json` in the worktree. A `--plan=PATH` value must select the active issue's plan under `.loop/proof/`; the harness refuses an absolute path, a `.` or `..` segment, a path outside that directory, a plan for another issue, and any key outside this table. A refusal caused by the selected plan names that plan.

@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Select a delivery flow without changing the product candidate."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+def git(root, *args):
+    result = subprocess.run(['git', '-C', str(root), *args], capture_output=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode().strip() or 'Git command failed.')
+    return result.stdout.decode().strip()
+
+
+def selected(root):
+    path = root / '.loop/flow.json'
+    if not path.exists() and not path.is_symlink():
+        return 'proof'
+    if path.is_symlink() or not path.is_file() or path.parent.is_symlink():
+        raise RuntimeError('Flow selection must be a regular .loop/flow.json file.')
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict) or data.get('schema') != 1 or data.get('flow') not in ('discovery', 'proof'):
+        raise RuntimeError('Invalid .loop/flow.json; select discovery or proof explicitly.')
+    return data['flow']
+
+
+def default(root):
+    result = subprocess.run(['git', '-C', str(root), 'config', '--local', '--get', 'orbit.loopFlow'],
+                            capture_output=True)
+    if result.returncode == 1:
+        return 'proof'
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode().strip())
+    flow = result.stdout.decode().strip()
+    if flow not in ('discovery', 'proof'):
+        raise RuntimeError('Invalid orbit.loopFlow; set the default to discovery or proof.')
+    return flow
+
+
+def save(root, flow):
+    directory = root / '.loop'
+    if directory.is_symlink():
+        raise RuntimeError('.loop must be a regular directory.')
+    directory.mkdir(exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=directory, delete=False) as stream:
+        temporary = Path(stream.name)
+        json.dump({'schema': 1, 'flow': flow}, stream)
+        stream.write('\n')
+    os.replace(temporary, directory / 'flow.json')
+
+
+def verify_merge(root, flow, candidate, merge):
+    if not candidate or not merge:
+        raise RuntimeError('verify-merge requires --candidate and --merge.')
+    candidate = git(root, 'rev-parse', '--verify', candidate + '^{commit}')
+    merge = git(root, 'rev-parse', '--verify', merge + '^{commit}')
+    parents = git(root, 'show', '-s', '--format=%P', merge).split()
+    if len(parents) != 2 or parents[1] != candidate:
+        raise RuntimeError('Merge must have the approved candidate as its exact second parent.')
+    tree = git(root, 'rev-parse', merge + '^{tree}')
+    if flow == 'proof':
+        git(root, 'merge-base', '--is-ancestor', parents[0], candidate)
+        expected = git(root, 'rev-parse', candidate + '^{tree}')
+    else:
+        expected = git(root, 'merge-tree', '--write-tree', parents[0], candidate).splitlines()[0]
+    if tree != expected:
+        raise RuntimeError('Merge tree differs from the selected flow\'s expected merge.')
+    return {'flow': flow, 'candidate': candidate, 'merge': merge, 'tree': tree}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['status', 'default', 'init', 'select', 'verify-merge'])
+    parser.add_argument('--flow', choices=['discovery', 'proof'])
+    parser.add_argument('--worktree', default='.')
+    parser.add_argument('--candidate')
+    parser.add_argument('--merge')
+    args = parser.parse_args()
+    root = Path(git(args.worktree, 'rev-parse', '--show-toplevel'))
+    if args.action == 'default':
+        if args.flow:
+            git(root, 'config', '--local', 'orbit.loopFlow', args.flow)
+        print(default(root))
+        return
+    if args.action == 'init':
+        path = root / '.loop/flow.json'
+        if path.exists() or path.is_symlink():
+            flow = selected(root)
+            if args.flow and flow != args.flow:
+                raise RuntimeError('Existing flow differs; use select --flow to change it explicitly.')
+        else:
+            save(root, args.flow or default(root))
+    elif args.action == 'select':
+        if not args.flow:
+            parser.error('select requires --flow')
+        save(root, args.flow)
+    elif args.flow:
+        parser.error('--flow is only valid with default, init, or select')
+    flow = selected(root)
+    if args.action == 'verify-merge':
+        print(json.dumps(verify_merge(root, flow, args.candidate, args.merge)))
+    else:
+        print(flow)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (RuntimeError, OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

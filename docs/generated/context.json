@@ -1239,7 +1239,8 @@
                 "Workspace"
             ],
             "governing_adrs": [
-                "0049"
+                "0049",
+                "0051"
             ]
         },
         {
@@ -1259,6 +1260,7 @@
                 "Node",
                 "Proof topology",
                 "Route",
+                "Tool",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -1266,7 +1268,8 @@
                 "0006",
                 "0019",
                 "0040",
-                "0049"
+                "0049",
+                "0051"
             ]
         },
         {

@@ -681,3 +681,17 @@ function commandInstanceFixture(\App\E2E\Value\FeatureTopology $topology, string
         ],
     ];
 }
+
+it('refuses proof-only commands before any transport in discovery flow', function (string $command): void {
+    ['worktree' => $worktree] = commandPrimaryFixture();
+    mkdir($worktree.'/.loop', 0700, true);
+    file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"discovery"}');
+    Process::fake();
+
+    $this
+        ->artisan($command, ['issue' => 'TST-12', '--json' => true])
+        ->expectsOutputToContain('discovery flow disables proof')
+        ->assertFailed();
+
+    Process::assertNothingRan();
+})->with(['topology:prove', 'topology:equivalence', 'topology:candidate']);

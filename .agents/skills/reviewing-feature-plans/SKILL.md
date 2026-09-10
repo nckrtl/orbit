@@ -9,11 +9,17 @@ Independently review one `.loop/plan.md` and the documentation commits the plann
 
 Review the plan in the planner's worktree. After recording the verdict and findings, run `bin/loop-artifacts save <ISSUE>` and return the artifact SHA. Do not commit `.loop/` to the feature branch.
 
+## Delivery flow
+
+Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a legacy artifact without this file implies `proof`, never `discovery`. Existing unselected worktrees use `proof`; select a different flow explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
+
 ## Inputs
 
 Read the same sources the planner had: the issue with its labels, attachments, and relations; every attached ADR's `Decision` bullets and `Affects` block; the plan; the diff under `docs/` between the branch base and the branch head; the named code boundaries; nearby tests; and the proof commands.
 
 ## Check
+
+Judge runnable evidence under the selected flow. In `discovery`, existing Incus proof venues mean development observations plus tests and CI. Missing proof plans or instrumentation are not findings in that flow. Require the plan to acquire discovery after this review and preserve every acceptance outcome. The selected flow must match the plan and handoff.
 
 - **Coverage:** every `Acceptance` item has one row, in order, with a concrete boundary, or the page from the Documentation section when documentation is what the item delivers, and a proof that exists and can run today.
 - **Labels:** every boundary is inside a component the issue is labeled with, where a component is one of the five Composer projects, pages under `docs/` and files under `.loop/proof/` are not components, a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`. A boundary in an unlabeled component is a finding, not a silent expansion.

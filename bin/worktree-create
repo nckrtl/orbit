@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-    printf 'Usage: %s LINEAR-ID slug\n' "${0##*/}" >&2
+    printf 'Usage: %s LINEAR-ID slug [--flow=discovery|proof]\n' "${0##*/}" >&2
     exit 2
 }
 
@@ -66,7 +66,15 @@ none
 EOF
 }
 
-[[ $# -eq 2 ]] || usage
+[[ $# -eq 2 || $# -eq 3 ]] || usage
+flow_args=()
+if [[ $# -eq 3 ]]; then
+    case "$3" in
+        --flow=discovery|--flow=proof) flow_args=("$3") ;;
+        *) usage ;;
+    esac
+fi
+script_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 linear_id="$1"
 slug="$2"
@@ -106,6 +114,7 @@ if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; the
         exit 1
     fi
 
+    "$script_root/bin/loop-flow" init "--worktree=$worktree" "${flow_args[@]}"
     initialize_feature_plan "$worktree" "$linear_id"
     "$worktree/bin/bootstrap"
     printf '%s\n' "$worktree"
@@ -127,6 +136,7 @@ else
     git worktree add -b "$branch" "$worktree" origin/main
 fi
 
+"$script_root/bin/loop-flow" init "--worktree=$worktree" "${flow_args[@]}"
 initialize_feature_plan "$worktree" "$linear_id"
 "$worktree/bin/bootstrap"
 printf '%s\n' "$worktree"
