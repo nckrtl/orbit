@@ -1,0 +1,104 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "feat(e2e): run defined cold scenarios with complete results",
+        "url": "https://github.com/nckrtl/orbit/pull/251"
+      },
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      },
+      {
+        "title": "ADR 0019",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0019-run-disposable-incus-scenario-lanes.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An operator selects reusable cold scenarios for one exact commit and receives a complete per-flow result and aggregate report after every runnable flow finishes.\n\n## Scope\n\n* In: scenario definitions, filtering, serial execution through the existing disposable cold constructor, per-attempt records, Pest integration, aggregate reporting, and on-demand command guidance.\n* Out: snapshot scenarios, parallel workers, nightly or pull-request triggers, affected-flow selection, new product behavior, feature-proof gates, and snapshot replacement or promotion.\n\n## Acceptance\n\n- [ ] The command resolves an exact candidate and an optional scenario filter, and rejects unknown IDs, duplicate IDs, invalid recipes, missing action deadlines, or invalid declared inputs before Incus mutation. Proof: `apps/e2e/tests/Feature/Commands/ScenarioWrapperTest.php` and `apps/e2e/tests/Unit/E2E/ScenarioDefinitionTest.php`.\n- [ ] Each result identifies the candidate, run, attempt, lane, normalized recipe and definition fingerprints, declared inputs, phase timing, action outcomes, verification, diagnostics, and cleanup; editing a declared definition or input invalidates its fingerprint. Proof: `apps/e2e/tests/Unit/E2E/ScenarioResultTest.php`.\n- [ ] Two selected cold flows construct separate exact inventories from the recorded unchanged generic image; failure at a required step stops that flow, attempts its cleanup, and still runs the other flow. Proof: the existing `apps/e2e/tests/Scenario/ColdTopologyAcceptanceTest.php` extended with the dedicated Incus harness acceptance `cold-scenario-suite`.\n- [ ] JSON and standard Pest reports distinguish passed, failed, blocked by an unavailable required checkpoint, and infrastructure-error outcomes; the process returns nonzero after writing the complete aggregate when any selected flow is not passed. Proof: `apps/e2e/tests/Feature/Commands/ScenarioWrapperTest.php`.\n- [ ] Success, action failure, reporting failure, and interrupted construction attempt exact owned cleanup; cleanup failure retains both the original outcome and the remaining exact resources with a supported recovery action, and never deletes unrelated resources. Proof: `apps/e2e/tests/Unit/E2E/ColdTopologyConstructorTest.php` and Incus harness acceptance `cold-scenario-suite-cleanup`.\n- [ ] Running the command leaves the promoted generation and manifest unchanged and creates no issue-proof or promotion receipt; ordinary acquisition, proof, review, and merge do not invoke it. Proof: `apps/e2e/tests/Feature/Commands/ScenarioWrapperTest.php` and Incus harness acceptance `cold-scenario-suite`.\n- [ ] Maintained scenario guidance describes the command, filters, result meanings, and exact cleanup; generated context is current. Proof: `composer docs-lint`.\n- [ ] Harness checks pass. Proof: `cd apps/e2e && composer check`.",
+  "id": "675a84bd-bede-46b8-bec2-cdf79ef598e2",
+  "identifier": "ORB-234",
+  "inverseRelations": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/e2e"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Run defined cold scenarios with complete results",
+  "updatedAt": "2026-09-10T18:57:30.011Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-234/run-defined-cold-scenarios-with-complete-results"
+}
