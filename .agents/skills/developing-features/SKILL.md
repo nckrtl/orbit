@@ -18,7 +18,7 @@ Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](
 ## Inputs
 
 - The issue in the `creating-issues` shape: outcome, `Scope`, `Acceptance` checklist, labels, attached ADRs, and relations.
-- A worktree from `bin/worktree-create <ISSUE> <slug>` on the branch `<issue-lowercase>-<slug>`, bootstrapped from `main`.
+- A worktree from `bin/worktree-create <ISSUE>` on the branch `<issue-lowercase>`, bootstrapped from `main`.
 - Work from the whole-repository worktree; run Composer and Pest in each affected app or package directory. Bootstrap installs the pinned Pest monorepo fixes and seeds absent private TIA caches from compatible published main baselines. Check its per-project seed results; never copy a feature graph back to main. Use `composer test:affected` for optional TIA feedback with two workers, and focused explicit-path tests for acceptance. A cold TIA baseline can run the full project suite; do not use root `bin/test` as its fallback.
 - The plan when one exists, with its acceptance map, `Must preserve` list, and the `docs:` commits the planner made.
 

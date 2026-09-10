@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-    printf 'Usage: %s LINEAR-ID slug [--flow=discovery|proof]\n' "${0##*/}" >&2
+    printf 'Usage: %s LINEAR-ID [--flow=discovery|proof]\n' "${0##*/}" >&2
     exit 2
 }
 
@@ -66,24 +66,28 @@ none
 EOF
 }
 
-[[ $# -eq 2 || $# -eq 3 ]] || usage
+[[ $# -eq 1 || $# -eq 2 ]] || usage
 flow_args=()
-if [[ $# -eq 3 ]]; then
-    case "$3" in
-        --flow=discovery|--flow=proof) flow_args=("$3") ;;
+if [[ $# -eq 2 ]]; then
+    case "$2" in
+        --flow=discovery|--flow=proof) flow_args=("$2") ;;
         *) usage ;;
     esac
 fi
 script_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 linear_id="$1"
-slug="$2"
-
 [[ "$linear_id" =~ ^[A-Za-z]+-[0-9]+$ ]] || usage
-[[ "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || usage
 
-name="${linear_id,,}-$slug"
+name="${linear_id,,}"
 branch="$name"
+mapfile -t issue_branches < <(git for-each-ref --format='%(refname:short)' "refs/heads/$name" "refs/heads/$name-*")
+if [[ ${#issue_branches[@]} -gt 1 ]]; then
+    printf 'More than one branch matches %s: %s\n' "$linear_id" "${issue_branches[*]}" >&2
+    exit 1
+elif [[ ${#issue_branches[@]} -eq 1 ]]; then
+    branch="${issue_branches[0]}"
+fi
 primary_root="$(git worktree list --porcelain | awk '/^worktree / && !found { print substr($0, 10); found=1 }')"
 worktree_root="$(git config --path --get orbit.worktreeRoot || printf '/fast/worktrees/orbit')"
 if [[ "$worktree_root" != /* ]]; then

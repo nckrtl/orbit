@@ -17,7 +17,7 @@ Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](
 
 - The issue in the `creating-issues` shape: outcome paragraph, `Scope` In and Out bullets, `Acceptance` checklist, and its labels, attachments, and relations.
 - Every ADR attached to the issue, read for its `Decision` bullets and `Affects` block.
-- A worktree from `bin/worktree-create <ISSUE> <slug>` on the branch `<issue-lowercase>-<slug>`, with `.loop/plan.md` scaffolded and `.loop/proof/` created; create the same workspace by hand in another checkout workflow.
+- A worktree from `bin/worktree-create <ISSUE>` on the branch `<issue-lowercase>`, with `.loop/plan.md` scaffolded and `.loop/proof/` created; create the same workspace by hand in another checkout workflow.
 - Nearby code, tests, and the proof commands the issue's `Proof:` actions name.
 
 Stop, and report the gap instead of planning around it, when:

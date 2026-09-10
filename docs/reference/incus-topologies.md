@@ -74,7 +74,7 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | `status ISSUE` | Reports the state files without touching Incus |
 | `release ISSUE [--proof\|--candidate] [--capture] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. `--proof --capture` preserves acceptance evidence first. Recovery options identify one exact legacy lease. |
 
-`bin/worktree-remove ISSUE slug` releases the proof topology, then discovery, then removes the worktree. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs candidate-bound artifact refs. Capture successful proof evidence before removing its worktree.
+`bin/worktree-remove ISSUE` releases the proof topology, then discovery, then removes the worktree. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs candidate-bound artifact refs. Capture successful proof evidence before removing its worktree.
 
 ### Guest commands
 
