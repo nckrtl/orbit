@@ -19,7 +19,7 @@ usage: bin/e2e-topology <action> ISSUE [...]
   release ISSUE [--proof|--candidate] [--recover-extension=none|app-prod --expected-attempt=ID]
                                   release or recover the selected topology
 
-Every action except acquire finds the worktree at <primary>/.worktrees/<issue>-*
+Every action except acquire finds the issue among registered Git worktrees
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.
 USAGE
     exit 64
