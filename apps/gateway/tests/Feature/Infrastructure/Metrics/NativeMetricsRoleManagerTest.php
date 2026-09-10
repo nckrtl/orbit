@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationCleanup;
@@ -10,6 +11,7 @@ use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Models\Node;
 
@@ -81,6 +83,7 @@ function metricsRoleManagerNode(string $name, string $address, RoleName $role = 
         'architecture' => 'x86_64',
         'public_ssh_host' => str_replace('10.44', '192.0.2', $address),
         'wireguard_ip' => $address,
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
     $node->roles()->create([
         'role' => $role,
@@ -101,6 +104,26 @@ it('omits the publication key from mutations that do not touch it', function ():
         ->toBeNull()
         ->and($result->toArray())
         ->not->toHaveKey('publication');
+});
+
+it('refuses ineligible exporter enablement before preference or fleet work', function (): void {
+    $node = metricsRoleManagerNode('unmanaged', '10.44.0.5', RoleName::AppProd);
+    $node->update(['ssh_host_fingerprint' => null]);
+    $fleet = Mockery::mock(MetricsFleetReconciler::class);
+    $fleet->shouldNotReceive('reconcile');
+    app()->instance(MetricsFleetReconciler::class, $fleet);
+
+    try {
+        app(NativeMetricsRoleManager::class)->enableExporter($node->id);
+        $this->fail('Expected exporter enablement to be refused.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)
+            ->toBe('metrics.exporter_node_ineligible')
+            ->and($exception->status)
+            ->toBe(409);
+    }
+
+    expect(app(ExporterPreferenceRepository::class)->get($node->id))->toBeNull();
 });
 
 /**

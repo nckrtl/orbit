@@ -12,6 +12,7 @@ use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRoleManager;
+use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -26,6 +27,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         private ExporterPreferenceRepository $preferences,
         private MetricsFleetReconciler $fleet,
         private MetricsPublicationReport $report,
+        private ManagedNodeEligibility $eligibility,
     ) {}
 
     public function enable(int $nodeId): MetricsMutationData
@@ -71,7 +73,16 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
 
     public function enableExporter(int $nodeId): MetricsMutationData
     {
-        $this->activeNode($nodeId);
+        $node = $this->activeNode($nodeId);
+
+        if (! $this->eligibility->allows($node)) {
+            throw new ResourceOperationException(
+                'metrics.exporter_node_ineligible',
+                'Metrics exporters require a managed Linux node with WireGuard and pinned SSH identity.',
+                409,
+            );
+        }
+
         $this->preferences->put($nodeId, ExporterPreference::Enabled);
         $this->fleet->reconcile();
 

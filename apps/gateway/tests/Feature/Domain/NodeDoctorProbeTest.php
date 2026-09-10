@@ -16,6 +16,8 @@ it('reports bounded node drift and unreachable state', function (): void {
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'architecture' => 'amd64',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
     $report = new NodeDoctorProbe()->inspect(
         new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)),
@@ -44,6 +46,8 @@ it('reports lifecycle and identity drift', function (): void {
         'status' => LifecycleStatus::Provisioning,
         'platform' => 'linux',
         'architecture' => 'amd64',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
     $report = new NodeDoctorProbe()->inspect(
         new DoctorNodeContext($node, new NodeInspectionData(true, 'darwin', 'aarch64', false)),
@@ -80,7 +84,13 @@ it('reports lifecycle and identity drift', function (): void {
 });
 
 it('reports bounded inspection failure before unreachable', function (): void {
-    $node = new Node(['name' => 'edge', 'status' => LifecycleStatus::Provisioning]);
+    $node = new Node([
+        'name' => 'edge',
+        'status' => LifecycleStatus::Provisioning,
+        'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
     $report = new NodeDoctorProbe()->inspect(
         new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null), inspectionFailed: true),
     );
@@ -108,6 +118,8 @@ it('reports a healthy node with bounded values', function (): void {
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'architecture' => 'amd64',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
     $report = new NodeDoctorProbe()->inspect(
         new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)),
@@ -115,7 +127,7 @@ it('reports a healthy node with bounded values', function (): void {
     expect($report->status->value)->toBe('healthy')->and($report->checked)->toBe(1)->and($report->issues)->toBeEmpty();
 });
 
-it('redacts unsupported managed platform and architecture values', function (): void {
+it('suppresses managed SSH expectations for an ineligible record', function (): void {
     $sentinel = 'credential=doctor-secret';
     $node = new Node([
         'name' => 'edge',
@@ -129,17 +141,9 @@ it('redacts unsupported managed platform and architecture values', function (): 
     );
 
     expect($report->status->value)
-        ->toBe('unverifiable')
+        ->toBe('healthy')
         ->and($report->issues)
-        ->toHaveCount(1)
-        ->and($report->issues[0]->code)
-        ->toBe('node.inspection_failed')
-        ->and($report->issues[0]->kind->value)
-        ->toBe('unverifiable')
-        ->and($report->issues[0]->expected)
-        ->toBe('supported')
-        ->and($report->issues[0]->observed)
-        ->toBe('unsupported')
+        ->toBeEmpty()
         ->and(json_encode($report, JSON_THROW_ON_ERROR))
         ->not->toContain($sentinel);
 });

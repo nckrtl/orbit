@@ -67,6 +67,22 @@ it('returns no expectations for absent or ambiguous active Metrics assignment st
     expect($provider->for($node))->toBe([]);
 });
 
+it('returns no exporter expectation for an ineligible record with enabled intent', function (): void {
+    $metrics = metricsFirewallExpectationNode('metrics', '10.44.0.3');
+    $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
+    $client = metricsFirewallExpectationNode('operator-client', '10.44.0.4');
+    $client->update(['ssh_host_fingerprint' => null]);
+    $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($client->id, ExporterPreference::Enabled);
+    $provider = new NativeMetricsFirewallExpectationProvider(
+        new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
+        new MetricsGatewayResolver,
+        new NodeFirewallRuleCatalog,
+    );
+
+    expect($provider->for($client))->toBe([]);
+});
+
 it('uses the direct node projection and retains its firewall expectations', function (): void {
     $metrics = metricsFirewallExpectationNode('metrics', '10.44.0.3');
     $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
@@ -118,5 +134,6 @@ function metricsFirewallExpectationNode(string $name, string $address): Node
         'public_ssh_host' => '127.0.0.1',
         'ssh_user' => 'orbit',
         'wireguard_ip' => $address,
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 }

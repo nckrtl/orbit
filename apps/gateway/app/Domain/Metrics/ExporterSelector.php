@@ -13,7 +13,12 @@ final readonly class ExporterSelector
         array $roles,
         ?ExporterPreference $preference = null,
         bool $isMetricsNode = false,
+        bool $eligible = true,
     ): ExporterSelection {
+        if (! $eligible) {
+            return new ExporterSelection(false, ExporterSelectionReason::Ineligible);
+        }
+
         if ($isMetricsNode) {
             return new ExporterSelection(true, ExporterSelectionReason::MetricsNode);
         }

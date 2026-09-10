@@ -22,4 +22,26 @@ describe(ExporterSelector::class, function (): void {
             ->and($selector->select([RoleName::Metrics], ExporterPreference::Disabled, true)->reason)
             ->toBe(ExporterSelectionReason::MetricsNode);
     });
+
+    it('excludes an ineligible node for every preference and default', function (
+        ?ExporterPreference $preference,
+        bool $isMetricsNode,
+    ): void {
+        $selection = new ExporterSelector()->select(
+            [RoleName::AppProd],
+            $preference,
+            $isMetricsNode,
+            eligible: false,
+        );
+
+        expect($selection->selected)
+            ->toBeFalse()
+            ->and($selection->reason)
+            ->toBe(ExporterSelectionReason::Ineligible);
+    })->with([
+        'absent preference' => [null, false],
+        'enabled preference' => [ExporterPreference::Enabled, false],
+        'disabled preference' => [ExporterPreference::Disabled, false],
+        'metrics default' => [null, true],
+    ]);
 });

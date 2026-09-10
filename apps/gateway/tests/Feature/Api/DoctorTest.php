@@ -296,6 +296,7 @@ function doctor_api_node(
         'public_ssh_port' => 22,
         'user' => 'orbit',
         'wireguard_ip' => "10.44.0.{$number}",
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 }
 
