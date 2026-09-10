@@ -7,14 +7,18 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\OrphanNetworkSweep;
+use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyReleaser;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CapturedProof;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\LeaseTargetRecovery;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofInputManifest;
+use App\E2E\Value\ProofReleaseReason;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyExtension;
@@ -166,12 +170,179 @@ function releaserForTest(StatePaths $paths): TopologyReleaser
     );
 }
 
+/** @return array{IssueState, TopologyTarget} */
+function capturedReleaseState(string $worktree, StatePaths $hostPaths): array
+{
+    $issue = 'AUX-99';
+    $attempt = new AttemptId(str_repeat('a', 32));
+    $target = TopologyTarget::feature($issue, $attempt, TopologyRecipe::extendedAppProd());
+    $topology = extendedReleaseTopology($target, AttemptPurpose::Proof);
+    $manifest = new ProofInputManifest(
+        4,
+        str_repeat('a', 40),
+        str_repeat('b', 40),
+        [],
+        [],
+        '.loop/proof/AUX-99.json',
+        [],
+        $topology->construction,
+        null,
+        [
+            'static_classification' => true,
+            'proof_contract' => true,
+            'checkout_literals' => true,
+            'observed_processes' => true,
+            'observed_paths' => true,
+            'pcov_cleanup' => true,
+        ],
+    );
+    $proof = [
+        'status' => 'proved',
+        'issue' => $issue,
+        'attempt_id' => $attempt->value,
+        'candidate_sha' => str_repeat('a', 40),
+        'plan_sha256' => str_repeat('c', 64),
+        'manifest_sha256' => $manifest->fingerprint(),
+        'actions' => [],
+    ];
+    $state = IssueState::forWorktree($issue, $worktree);
+    $state->writeAttempt(
+        $attempt,
+        AttemptPurpose::Proof,
+        new OperationId(str_repeat('d', 32)),
+        TopologyExtension::AppProd,
+    );
+    $state->writeTopology($topology);
+    $state->writeProof($proof);
+    $capture = new CapturedProof(
+        $issue,
+        $attempt,
+        str_repeat('a', 40),
+        str_repeat('c', 64),
+        $manifest->fingerprint(),
+        $proof,
+        $topology,
+        $manifest->toArray(),
+        '2026-09-10T10:00:00Z',
+    );
+    $state->captureProof($capture);
+    new AtomicJsonStore($hostPaths)->write(
+        'proof-evidence/'.$issue.'/'.$attempt->value.'.json',
+        $capture->toArray(),
+    );
+
+    return [$state, $target];
+}
+
 describe('TopologyReleaser', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
         Facade::clearResolvedInstances();
         Facade::setFacadeApplication($container);
+    });
+
+    it('retains successful captured proof unless replacement or abandonment is explicit', function (
+        ProofReleaseReason $reason,
+    ): void {
+        $worktree = temporaryPath('orbit-release-captured-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        [$state, $target] = capturedReleaseState($worktree, $paths);
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
+            $commands,
+        );
+
+        expect(fn () => releaserForTest($paths)->release(
+            new TopologyRequest('AUX-99', $worktree),
+            AttemptPurpose::Proof,
+        ))
+            ->toThrow(RuntimeException::class, 'successful proof remains retained')
+            ->and($commands)
+            ->toBe([]);
+
+        $result = releaserForTest($paths)->release(
+            new TopologyRequest('AUX-99', $worktree),
+            AttemptPurpose::Proof,
+            reason: $reason,
+        );
+
+        expect($result['state'])
+            ->toBe('released')
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeFalse()
+            ->and($state->capturedProof()?->attempt->value)
+            ->toBe(str_repeat('a', 32));
+    })->with([
+        'replacement' => ProofReleaseReason::Replacement,
+        'abandonment' => ProofReleaseReason::Abandonment,
+    ]);
+
+    it('protects a captured active proof when mutable proof result state is missing or mismatched', function (
+        string $proofState,
+    ): void {
+        $worktree = temporaryPath('orbit-release-captured-state-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        [$state, $target] = capturedReleaseState($worktree, $paths);
+        if ($proofState === 'missing') {
+            unlink($worktree.'/.e2e/'.IssueState::PROOF);
+        } else {
+            $state->writeProof(['status' => 'diagnosis', 'attempt_id' => str_repeat('f', 32)]);
+        }
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
+            $commands,
+        );
+
+        expect(fn () => releaserForTest($paths)->release(
+            new TopologyRequest('AUX-99', $worktree),
+            AttemptPurpose::Proof,
+        ))
+            ->toThrow(RuntimeException::class, 'successful proof remains retained')
+            ->and($commands)
+            ->toBe([])
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeTrue();
+    })->with(['missing', 'mismatched']);
+
+    it('verifies already absent captured resources and completes cleanup without a lease', function (): void {
+        $worktree = temporaryPath('orbit-release-captured-absent-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        [$state, $target] = capturedReleaseState($worktree, $paths);
+        $capture = $state->capturedProof() ?? throw new RuntimeException('Fixture capture is missing.');
+        $state->forgetAttempt(AttemptPurpose::Proof);
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
+            $commands,
+            network: false,
+            presentNames: [],
+        );
+
+        $result = releaserForTest($paths)->releaseCapturedProof(
+            new TopologyRequest('AUX-99', $worktree),
+            $capture,
+        );
+
+        expect($result['state'])
+            ->toBe('released')
+            ->and($result['attempt_id'])
+            ->toBe($capture->attempt->value)
+            ->and($result['released'])
+            ->toBe([])
+            ->and($result['already_absent'])
+            ->toEqualCanonicalizing([
+                ...array_map($target->instance(...), $target->recipe->nodeKeys()),
+                $target->network(),
+            ]);
     });
 
     it('stops and deletes the exact VMs and network, drops the lease, and keeps the proof', function () {
@@ -182,7 +353,7 @@ describe('TopologyReleaser', function () {
         $target = TopologyTarget::feature('TST-12', $attempt);
         $state = IssueState::forWorktree('TST-12', $worktree);
         $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('c', 32)));
-        $state->writeProof(['status' => 'proved', 'attempt_id' => $attempt->value]);
+        $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $attempt->value]);
         $commands = [];
         fakeReleaseHost(
             $target,
@@ -216,7 +387,7 @@ describe('TopologyReleaser', function () {
             ->and($state->hasAttempt())
             ->toBeFalse()
             ->and($state->proof()['status'] ?? null)
-            ->toBe('proved')
+            ->toBe('diagnosis')
             ->and(array_values(array_filter($commands, static fn (string $command): bool => str_starts_with(
                 $command,
                 'delete',
@@ -610,7 +781,7 @@ describe('TopologyReleaser', function () {
             ->toBeTrue();
     });
 
-    it('removes the successful proof commit pin when that proof is released', function (): void {
+    it('keeps the successful proof commit pin when exact closeout cleanup releases machines', function (): void {
         $worktree = temporaryPath('orbit-release-worktree-', 4);
         mkdir($worktree, 0700);
         file_put_contents($worktree.'/.gitignore', "/.e2e/\n");
@@ -639,10 +810,9 @@ describe('TopologyReleaser', function () {
         );
 
         releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
-            ->release(
-                new TopologyRequest('AUX-99', $worktree),
-                AttemptPurpose::Proof,
-            );
+            ->releaseExact(new TopologyRequest('AUX-99', $worktree), [
+                AttemptPurpose::Proof->value => $attempt,
+            ]);
         $output = [];
         $exitCode = 0;
         exec(implode(' ', array_map(escapeshellarg(...), [
@@ -654,7 +824,7 @@ describe('TopologyReleaser', function () {
             'refs/orbit/e2e-proof/aux-99/'.$attempt->value,
         ])).' 2>/dev/null', $output, $exitCode);
 
-        expect($exitCode)->not->toBe(0);
+        expect($exitCode)->toBe(0);
     });
 
     it('refuses an exact cleanup set with a replaced identity before any Incus, Git, or lease mutation', function (): void {

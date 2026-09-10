@@ -76,11 +76,15 @@ orchestrator assigns the formal reviewers and coordinates phase transitions.
   proof topology runs. Retain a failed proof for explicit unprivileged
   debugging and release it independently before the next proof.
 - Proof evidence is immutable for one exact commit and issue. Never reuse proof
-  resources across issues. Capture successful evidence before releasing its VMs.
+  resources across issues. Capture successful evidence before interactive review.
 - Every proof action must exit `0`. Promotion requires the exact proved commit,
   exact proof plan, and complete zero-exit action evidence.
-- Release successful proof with `release <ISSUE> --proof --capture` and idle
-  discovery before review. Closeout refreshes the snapshot from merged main.
+- In proof flow, release idle discovery before review but retain every captured
+  successful proof Node. Review actions and findings stay separate from immutable
+  proof evidence, and a code or configuration fix requires fresh proof.
+- After the verified merge, closeout refreshes the snapshot from merged main and
+  then releases the exact retained successful proof topology. A failed refresh
+  keeps that topology and its evidence for retry.
 - Production release is separate from development proof and never reuses a
   disposable proof topology.
 

@@ -53,13 +53,18 @@ it('reads complete worktree listings without early-exit SIGPIPE', function () us
     }
 });
 
-it('releases retained proof and discovery only for a merged branch, before removing a worktree', function () use (
+it('refuses active successful proof and releases diagnosis or discovery only after merge', function () use (
     $read,
 ): void {
     $script = $read('bin/worktree-remove');
 
     expect($script)
         ->toContain('if [[ -f "$worktree/.e2e/proof-attempt.json" ]]')
+        ->toContain('($result["status"] ?? null) === "proved"')
+        ->toContain('($result["attempt_id"] ?? null) === ($attempt["attempt_id"] ?? null)')
+        ->toContain('$worktree/.e2e/captured-proof')
+        ->toContain('must be released by verified closeout before worktree removal')
+        ->toContain('Only diagnosis remains releasable here')
         ->toContain('release "$linear_id" "--worktree=$worktree" --proof')
         ->toContain('if [[ -f "$worktree/.e2e/attempt.json" ]]')
         ->toContain('release "$linear_id" "--worktree=$worktree"');
@@ -158,6 +163,45 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
     }
 });
 
+it('separates idle discovery release from retained successful proof review', function () use ($read): void {
+    $agents = $read('AGENTS.md');
+    $developer = $read('.agents/skills/developing-features/SKILL.md');
+    $reviewer = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
+    $merger = $read('.agents/skills/merging-pull-requests/SKILL.md');
+
+    expect($agents)
+        ->toContain('release idle discovery before review')
+        ->toContain('retain every captured')
+        ->toContain('successful proof Node')
+        ->toContain('Review actions and findings stay separate')
+        ->toContain('a code or configuration fix requires fresh proof')
+        ->toContain('closeout refreshes the snapshot from merged main')
+        ->toContain('then releases the exact retained successful proof topology');
+
+    expect($developer)
+        ->toContain('bin/e2e-topology prove <ISSUE>')
+        ->toContain('bin/e2e-topology capture <ISSUE>')
+        ->toContain('release only idle discovery')
+        ->toContain('captured successful proof topology')
+        ->toContain('release <ISSUE> --proof --replace')
+        ->toContain('fresh complete proof and capture from the corrected candidate')
+        ->toContain('keep discovery available for reviewer inspection');
+
+    expect($reviewer)
+        ->toContain('require idle discovery to be absent')
+        ->toContain('captured successful proof topology to remain active')
+        ->toContain('exec --proof --review-action=<ID>')
+        ->toContain('bin/e2e-topology review <ISSUE>')
+        ->toContain('A required failed or incomplete action prevents approval')
+        ->toContain('fresh complete proof before another approval pass');
+
+    expect($merger)
+        ->toContain('bin/e2e-topology closeout <ISSUE>')
+        ->toContain('releases the exact retained proof topology only after refresh succeeds')
+        ->toContain('require idle discovery to have been released before review')
+        ->toContain('refuses to release or remove an active successful proof');
+});
+
 it('binds review and merge to one exact remote head', function () use ($read): void {
     $review = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
     $merge = $read('.agents/skills/merging-pull-requests/SKILL.md');
@@ -184,9 +228,9 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('current main included in that head')
         ->toContain('A changed head needs fresh approval, local review checks, and an evidence decision')
         ->toContain('Never substitute snapshot refresh for missing acceptance proof')
-        ->toContain('bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>')
-        ->toContain('A failed refresh retains captured evidence and requires retry')
-        ->toContain('bin/e2e-topology release <ISSUE> --proof --capture')
+        ->toContain('bin/e2e-topology closeout <ISSUE>')
+        ->toContain('A failed refresh retains the topology, captured evidence, and review record for retry')
+        ->toContain('verified closeout owns that exact release')
         ->toContain('bin/worktree-remove <ISSUE>')
         ->toContain('GitHub evidence is read-only');
 
@@ -278,7 +322,9 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
         ->toContain('complete `.loop/` workspace')
         ->toContain('bin/loop-artifacts publish <ISSUE>')
         ->toContain('no removal commit or second approval')
-        ->toContain('release <ISSUE> --proof --capture')
+        ->toContain('bin/e2e-topology capture <ISSUE>')
+        ->toContain('release only idle discovery')
+        ->toContain('successful proof topology remains available')
         ->toContain('The reviewer runs root `composer check` across all projects with TIA');
     expect($reviewer)
         ->toContain('bin/loop-artifacts fetch <ISSUE> --candidate=<head> --expected-artifact=<artifact-sha>')
@@ -293,6 +339,7 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
         ->toContain('conflict-free Git merge tree')
         ->toContain('absence of `.loop/` from main')
         ->toContain('complete acceptance proof')
+        ->toContain('successful proof lease to be absent after closeout')
         ->toContain('Keep artifact refs and the primary checkout')
         ->toContain('bin/worktree-remove <ISSUE>');
     expect($planReviewer)

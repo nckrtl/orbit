@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\Git\GitRepository;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CapturedProof;
 use App\E2E\Value\LeaseTargetRecovery;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofReleaseReason;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
@@ -41,7 +42,7 @@ final readonly class TopologyReleaser
         TopologyRequest $request,
         ?AttemptPurpose $purpose = null,
         ?LeaseTargetRecovery $recovery = null,
-        bool $capture = false,
+        ?ProofReleaseReason $reason = null,
     ): array {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = new OperationLock($this->hostPaths);
@@ -56,24 +57,10 @@ final readonly class TopologyReleaser
             if ($recovery !== null) {
                 $this->recoverLeaseTarget($request, $state, $purpose, $recovery);
             }
+            $attempt = $state->attemptId($purpose);
+            $this->assertReleaseAllowed($state, $purpose, $attempt, $reason);
 
-            if ($capture) {
-                if ($purpose !== AttemptPurpose::Proof) {
-                    throw new RuntimeException('Only proof attempts support evidence capture.');
-                }
-                $plan = ProofPlanFile::currentOrRetained($request, null)->plan;
-                $evidence = ProofEvidence::capture($state, $plan);
-                $archive = new AtomicJsonStore($this->hostPaths);
-                $path = 'proof-evidence/'.$request->issue.'/'.$state->attemptId($purpose)->value.'.json';
-                $previous = $archive->read($path);
-                if ($previous !== null && $previous !== $evidence) {
-                    throw new RuntimeException('The retained proof archive is immutable.');
-                }
-                $archive->write($path, $evidence);
-                $state->captureProof($evidence);
-            }
-
-            return $this->releaseAttempt($request, $state, $purpose, $state->attemptId($purpose), $capture);
+            return $this->releaseAttempt($request, $state, $purpose, $attempt);
         } finally {
             $lock->release();
         }
@@ -85,12 +72,18 @@ final readonly class TopologyReleaser
      * @param  array<string, AttemptId>  $attempts  Keyed by an AttemptPurpose value.
      * @return array{state:string,issue:string,attempts:list<array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>}>,released:list<string>,already_absent:list<string>,networks_reaped:list<string>}
      */
-    public function releaseExact(TopologyRequest $request, array $attempts): array
-    {
+    public function releaseExact(
+        TopologyRequest $request,
+        array $attempts,
+        bool $issueLockHeld = false,
+    ): array {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
-        $lock = new OperationLock($this->hostPaths);
-        if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
-            throw new RuntimeException('The issue topology is locked by another harness command.');
+        $lock = null;
+        if (! $issueLockHeld) {
+            $lock = new OperationLock($this->hostPaths);
+            if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
+                throw new RuntimeException('The issue topology is locked by another harness command.');
+            }
         }
         try {
             $captured = $this->capturedAttempts($request, $state, $attempts);
@@ -130,7 +123,68 @@ final readonly class TopologyReleaser
                 'networks_reaped' => array_values(array_unique($networksReaped)),
             ];
         } finally {
-            $lock->release();
+            $lock?->release();
+        }
+    }
+
+    /**
+     * Closeout cleanup remains retryable if the exact lease was forgotten after
+     * resource deletion but before the final closeout record was written.
+     *
+     * @return array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>}
+     */
+    public function releaseCapturedProof(
+        TopologyRequest $request,
+        CapturedProof $capture,
+        bool $issueLockHeld = false,
+    ): array {
+        if ($capture->issue !== $request->issue) {
+            throw new RuntimeException('The captured proof belongs to another issue.');
+        }
+        $lock = null;
+        if (! $issueLockHeld) {
+            $lock = new OperationLock($this->hostPaths);
+            if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
+                throw new RuntimeException('The issue topology is locked by another harness command.');
+            }
+        }
+
+        try {
+            $state = IssueState::forWorktree($request->issue, $request->worktree);
+            $archived = new AtomicJsonStore($this->hostPaths)->read(
+                'proof-evidence/'.$capture->issue.'/'.$capture->attempt->value.'.json',
+            );
+            if (
+                ! is_array($archived)
+                || CapturedProof::fromStoredArray($archived)->toArray() !== $capture->toArray()
+            ) {
+                throw new RuntimeException('The retained proof archive and cleanup capture differ.');
+            }
+            $active = $state->hasAttempt(AttemptPurpose::Proof);
+            if ($active) {
+                if ($state->attemptId(AttemptPurpose::Proof)->value !== $capture->attempt->value) {
+                    throw new RuntimeException('The retained proof attempt no longer matches its capture.');
+                }
+                if ($state->requireTopology(AttemptPurpose::Proof)->toArray() !== $capture->topology->toArray()) {
+                    throw new RuntimeException('The retained proof topology no longer matches its capture.');
+                }
+            }
+            [$released, $absent] = $this->deleteResources($capture->topology->target);
+            if ($active) {
+                $state->forgetAttempt(AttemptPurpose::Proof);
+            }
+
+            return [
+                'state' => 'released',
+                'issue' => $request->issue,
+                'purpose' => AttemptPurpose::Proof->value,
+                'attempt_id' => $capture->attempt->value,
+                'released' => $released,
+                'already_absent' => $absent,
+                'networks_reaped' => $this->sweep?->sweep() ?? [],
+            ];
+        } finally {
+            $lock?->release();
         }
     }
 
@@ -174,20 +228,9 @@ final readonly class TopologyReleaser
         IssueState $state,
         AttemptPurpose $purpose,
         AttemptId $attempt,
-        bool $capture = false,
     ): array {
         $target = $this->targetForRelease($request, $state, $purpose, $attempt);
         [$released, $absent] = $this->deleteResources($target);
-        $proof = $state->proof() ?? [];
-        if (
-            ! $capture
-            && $purpose === AttemptPurpose::Proof
-            && ($proof['status'] ?? null) === 'proved'
-            && ($proof['attempt_id'] ?? null) === $attempt->value
-            && is_string($proof['manifest_sha256'] ?? null)
-        ) {
-            new GitRepository($request->worktree)->unpinProof($request->issue, $attempt);
-        }
         $state->forgetAttempt($purpose);
 
         return [
@@ -199,6 +242,56 @@ final readonly class TopologyReleaser
             'already_absent' => $absent,
             'networks_reaped' => $this->sweep?->sweep() ?? [],
         ];
+    }
+
+    private function assertReleaseAllowed(
+        IssueState $state,
+        AttemptPurpose $purpose,
+        AttemptId $attempt,
+        ?ProofReleaseReason $reason,
+    ): void {
+        if ($purpose !== AttemptPurpose::Proof) {
+            if ($reason !== null) {
+                throw new RuntimeException('A proof release reason can select only a proof attempt.');
+            }
+
+            return;
+        }
+
+        $proof = $state->proof() ?? [];
+        $localCapture = $state->capturedProof($attempt);
+        $rawArchive = new AtomicJsonStore($this->hostPaths)->read(
+            'proof-evidence/'.$state->issue.'/'.$attempt->value.'.json',
+        );
+        $archivedCapture = is_array($rawArchive) ? CapturedProof::fromStoredArray($rawArchive) : null;
+        if ($localCapture !== null && $archivedCapture === null) {
+            throw new RuntimeException('The retained proof archive is missing; cleanup is refused.');
+        }
+        if (
+            $localCapture !== null
+            && $localCapture->toArray() !== $archivedCapture->toArray()
+        ) {
+            throw new RuntimeException('The retained proof archive and worktree capture differ.');
+        }
+        $successful = $localCapture !== null
+            || $archivedCapture !== null
+            || ($proof['status'] ?? null) === 'proved'
+            && ($proof['attempt_id'] ?? null) === $attempt->value;
+        if (! $successful) {
+            if ($reason !== null) {
+                throw new RuntimeException('Replacement and abandonment apply only to a successful proof.');
+            }
+
+            return;
+        }
+        if ($localCapture === null && $archivedCapture === null) {
+            throw new RuntimeException('A successful proof must be captured before it can be released.');
+        }
+        if ($reason === null) {
+            throw new RuntimeException(
+                'A successful proof remains retained; select explicit replacement or abandonment, or use closeout.',
+            );
+        }
     }
 
     private function recoverLeaseTarget(

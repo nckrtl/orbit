@@ -10,6 +10,7 @@ function loopFlowFixture(): array
 {
     $root = temporaryPath('orbit-flow-', 6);
     mkdir($root.'/bin', 0700, true);
+    mkdir($root.'/.agents/skills/planning-features', 0700, true);
     $run = new ProcessFactory;
     foreach ([
         ['init',   '-b',         'main'],
@@ -19,12 +20,16 @@ function loopFlowFixture(): array
     ] as $args) {
         expect($run->path($root)->run(['git', ...$args])->successful())->toBeTrue();
     }
-    file_put_contents($root.'/.gitignore', "/.loop/\n/.worktrees/\n");
+    file_put_contents($root.'/.gitignore', "/.e2e/\n/.loop/\n/.worktrees/\n");
     file_put_contents($root.'/shared.txt', "base\n");
     foreach (['loop-flow', 'worktree-create', 'worktree-remove'] as $script) {
         copy(dirname(__DIR__, 5).'/bin/'.$script, $root.'/bin/'.$script);
         chmod($root.'/bin/'.$script, 0755);
     }
+    copy(
+        dirname(__DIR__, 5).'/.agents/skills/planning-features/template.md',
+        $root.'/.agents/skills/planning-features/template.md',
+    );
     file_put_contents($root.'/bin/bootstrap', "#!/bin/sh\nexit 0\n");
     chmod($root.'/bin/bootstrap', 0755);
     file_put_contents(
@@ -271,6 +276,34 @@ it('closes out a merged worktree when the repository has a long worktree listing
     expect(
         $run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-44-cleanup'])->successful(),
     )->toBeFalse();
+});
+
+it('refuses to remove an active captured proof when its mutable proof result is absent', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $remote = temporaryPath('orbit-flow-retained-proof-remote-', 6);
+    $run->run(['git', 'init', '--bare', $remote])->throw();
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $remote])->throw();
+    $run->path($root)->run(['git', 'push', '-u', 'origin', 'main'])->throw();
+    $worktree = $root.'-worktrees/tst-48';
+    $run->path($root)->run(['git', 'worktree', 'add', '-b', 'tst-48', $worktree])->throw();
+    $attempt = str_repeat('a', 32);
+    mkdir($worktree.'/.e2e/captured-proof', 0700, true);
+    file_put_contents(
+        $worktree.'/.e2e/proof-attempt.json',
+        json_encode(['attempt_id' => $attempt], JSON_THROW_ON_ERROR),
+    );
+    file_put_contents($worktree.'/.e2e/captured-proof/'.$attempt.'.json', '{}');
+
+    $result = $run->path($root)->run([$root.'/bin/worktree-remove', 'TST-48']);
+
+    expect($result->successful())
+        ->toBeFalse()
+        ->and($result->errorOutput())
+        ->toContain('must be released by verified closeout')
+        ->and(is_dir($worktree))
+        ->toBeTrue()
+        ->and(file_exists($root.'/.git/tia-queued'))
+        ->toBeFalse();
 });
 
 it('does not queue cache refresh or remove an unmerged feature', function (): void {
