@@ -45,7 +45,13 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         $account = $this->accounts->resolve($node);
         $desiredSites = $this->sites
             ->forNode($node, $pendingRoute)
-            ->filter(static fn (AppDevSite $site): bool => $site->phpVersion !== null && ! $site->isProxy())
+            ->filter(
+                static fn (AppDevSite $site): bool => (
+                    $site->phpVersion !== null
+                    && ! $site->isProxy()
+                    && ! $site->usesDedicatedPhpRuntime()
+                ),
+            )
             ->values();
         $desiredVersions = $desiredSites
             ->map(static fn (AppDevSite $site): string => $site->phpVersion ?? '')
