@@ -6,11 +6,13 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\IncusHost;
+use App\E2E\ProofReviewService;
 use App\E2E\TopologyAcquirer;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\TopologyProfile;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -23,19 +25,35 @@ final class ShellCommand extends E2ECommand
     protected $signature =
         'topology:shell {issue} {role} '
         .self::WORKTREE_OPTION
-        .' {--proof : Open the retained failed proof topology} {--json}';
+        .' {--proof : Open a retained proof topology}'
+        .' {--review-action= : Record this shell against captured successful proof}'
+        .' {--required : Mark the recorded review action as required}'
+        .' {--json}';
 
     #[\Override]
-    protected $description = 'Open an interactive shell as orbit on one discovery or failed-proof role';
+    protected $description = 'Open an orbit shell on discovery, failed proof, or captured proof review';
 
-    public function handle(TopologyAcquirer $acquirer, IncusHost $host): int
-    {
+    public function handle(
+        TopologyAcquirer $acquirer,
+        ProofReviewService $review,
+        IncusHost $host,
+    ): int {
         try {
             $request = $this->request();
             $role = (string) $this->argument('role');
             $purpose = $this->option('proof') ? AttemptPurpose::Proof : AttemptPurpose::Discovery;
-            $instance = $acquirer->instance($request, $role, $purpose);
-            $this->log($request, "role={$role} instance={$instance}");
+            $action = $this->stringOption('review-action');
+            if ($this->option('required') && $action === null) {
+                throw new InvalidArgumentException('--required needs --review-action.');
+            }
+            if ($action !== null && ! $this->option('proof')) {
+                throw new InvalidArgumentException('--review-action needs --proof.');
+            }
+            $instance = $action === null
+                ? $acquirer->instance($request, $role, $purpose)
+                : $review->beginShell($request, $action, $role, (bool) $this->option('required'));
+            $reviewIdentity = $action === null ? '' : " action={$action}";
+            $this->log($request, "role={$role}{$reviewIdentity} instance={$instance}");
             $directory = in_array($role, TopologyProfile::CHECKOUT_ROLES, true)
                 ? MountPath::GUEST_SOURCE
                 : '/home/orbit';
@@ -55,6 +73,13 @@ final class ShellCommand extends E2ECommand
 
             return self::FAILURE;
         }
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

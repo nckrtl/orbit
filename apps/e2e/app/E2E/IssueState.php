@@ -9,8 +9,12 @@ use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\CandidateConvergenceResult;
+use App\E2E\Value\CapturedProof;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofCloseoutRecord;
+use App\E2E\Value\ProofReviewEvaluation;
+use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\TopologyExtension;
 use RuntimeException;
 
@@ -330,11 +334,133 @@ final readonly class IssueState
         return $topology;
     }
 
-    /** @param array<array-key, mixed> $evidence */
-    public function captureProof(array $evidence): void
+    /** The immutable typed capture, distinct from the mutable retained live topology. */
+    public function capturedProof(?AttemptId $attempt = null): ?CapturedProof
     {
-        $attempt = new AttemptId((string) ($evidence['proof']['attempt_id'] ?? ''));
-        $this->writeImmutable('captured-proof/'.$attempt->value.'.json', $evidence);
+        $attempt ??= $this->proofAttemptFromResult();
+        if ($attempt === null) {
+            return null;
+        }
+        $captured = $this->store->read($this->attemptEvidencePath('captured-proof', $attempt));
+        if ($captured === null) {
+            return null;
+        }
+
+        $capture = CapturedProof::fromStoredArray($captured);
+        if ($capture->issue !== $this->issue || $capture->attempt->value !== $attempt->value) {
+            throw new RuntimeException('Captured proof evidence has a different issue or attempt identity.');
+        }
+
+        return $capture;
+    }
+
+    /**
+     * Store one typed capture. The array form retains read/write compatibility
+     * with evidence captured by the previous release command.
+     *
+     * @param  CapturedProof|array<array-key, mixed>  $evidence
+     */
+    public function captureProof(CapturedProof|array $evidence): void
+    {
+        if (is_array($evidence)) {
+            $attempt = new AttemptId((string) ($evidence['proof']['attempt_id'] ?? ''));
+            $this->writeImmutable($this->attemptEvidencePath('captured-proof', $attempt), $evidence);
+
+            return;
+        }
+        if ($evidence->issue !== $this->issue || $evidence->proof !== $this->proof()) {
+            throw new RuntimeException('Captured proof evidence does not match the current issue proof.');
+        }
+        $this->writeImmutable(
+            $this->attemptEvidencePath('captured-proof', $evidence->attempt),
+            $evidence->toArray(),
+        );
+    }
+
+    public function reviewRecord(?AttemptId $attempt = null): ?ProofReviewRecord
+    {
+        $attempt ??= $this->proofAttemptFromResult();
+        if ($attempt === null) {
+            return null;
+        }
+        $value = $this->store->read($this->attemptEvidencePath('proof-review', $attempt));
+
+        return $value === null ? null : ProofReviewRecord::fromArray($value);
+    }
+
+    public function writeReviewRecord(ProofReviewRecord $record): void
+    {
+        if ($record->issue !== $this->issue) {
+            throw new RuntimeException('The proof review record belongs to another issue.');
+        }
+        $capture = $this->capturedProof($record->attempt);
+        if ($capture === null || $capture->candidateSha !== $record->candidateSha) {
+            throw new RuntimeException('The proof review record does not match captured proof evidence.');
+        }
+        $path = $this->attemptEvidencePath('proof-review', $record->attempt);
+        $existing = $this->store->read($path);
+        if ($existing !== null && ! $record->canReplace(ProofReviewRecord::fromArray($existing))) {
+            throw new RuntimeException('The proof review record cannot replace its retained history.');
+        }
+        $this->store->write($path, $record->toArray());
+    }
+
+    public function reviewEvaluation(?AttemptId $attempt = null): ?ProofReviewEvaluation
+    {
+        $attempt ??= $this->proofAttemptFromResult();
+        if ($attempt === null) {
+            return null;
+        }
+        $value = $this->store->read($this->attemptEvidencePath('proof-review-evaluation', $attempt));
+
+        return $value === null ? null : ProofReviewEvaluation::fromArray($value);
+    }
+
+    public function writeReviewEvaluation(ProofReviewEvaluation $evaluation): void
+    {
+        if ($evaluation->issue !== $this->issue) {
+            throw new RuntimeException('The proof review evaluation belongs to another issue.');
+        }
+        $record = $this->reviewRecord($evaluation->attempt);
+        if ($record === null || $record->candidateSha !== $evaluation->candidateSha) {
+            throw new RuntimeException('The proof review evaluation has no matching review record.');
+        }
+        $expected = ProofReviewEvaluation::forRecord($record, $evaluation->evaluatedAt);
+        if ($expected->toArray() !== $evaluation->toArray()) {
+            throw new RuntimeException('The proof review evaluation does not match its review record.');
+        }
+        $this->store->write(
+            $this->attemptEvidencePath('proof-review-evaluation', $evaluation->attempt),
+            $evaluation->toArray(),
+        );
+    }
+
+    public function closeoutRecord(?AttemptId $attempt = null): ?ProofCloseoutRecord
+    {
+        $attempt ??= $this->proofAttemptFromResult();
+        if ($attempt === null) {
+            return null;
+        }
+        $value = $this->store->read($this->attemptEvidencePath('proof-closeout', $attempt));
+
+        return $value === null ? null : ProofCloseoutRecord::fromArray($value);
+    }
+
+    public function writeCloseoutRecord(ProofCloseoutRecord $record): void
+    {
+        if ($record->issue !== $this->issue) {
+            throw new RuntimeException('The proof closeout record belongs to another issue.');
+        }
+        $capture = $this->capturedProof($record->attempt);
+        if ($capture === null) {
+            throw new RuntimeException('The proof closeout record has no captured proof evidence.');
+        }
+        $path = $this->attemptEvidencePath('proof-closeout', $record->attempt);
+        $existing = $this->store->read($path);
+        if ($existing !== null && ! $record->canReplace(ProofCloseoutRecord::fromArray($existing))) {
+            throw new RuntimeException('The proof closeout record cannot replace its retained state.');
+        }
+        $this->store->write($path, $record->toArray());
     }
 
     /** Drop the attempt lease and record; the proof result and the log stay. */
@@ -447,6 +573,18 @@ final readonly class IssueState
         if (preg_match('/\A[0-9a-f]{64}\z/D', $fingerprint) !== 1) {
             throw new RuntimeException('The evidence fingerprint is invalid.');
         }
+    }
+
+    private function proofAttemptFromResult(): ?AttemptId
+    {
+        $attempt = $this->proof()['attempt_id'] ?? null;
+
+        return is_string($attempt) ? new AttemptId($attempt) : null;
+    }
+
+    private function attemptEvidencePath(string $directory, AttemptId $attempt): string
+    {
+        return $directory.'/'.$attempt->value.'.json';
     }
 
     /** @param array<array-key, mixed> $value */

@@ -47,10 +47,60 @@ if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; the
         exit 1
     fi
 
+    proof_attempt="$worktree/.e2e/proof-attempt.json"
+    proof_result="$worktree/.e2e/proof.json"
+    proof_captures="$worktree/.e2e/captured-proof"
+    if [[ -f "$proof_attempt" ]]; then
+        if php -r '
+            try {
+                $attempt = json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR);
+            } catch (Throwable $exception) {
+                fwrite(STDERR, "Cannot validate active proof state: {$exception->getMessage()}\n");
+                exit(2);
+            }
+            if (
+                ! is_array($attempt)
+                || ! is_string($attempt["attempt_id"] ?? null)
+                || preg_match("/\\A[0-9a-f]{32}\\z/D", $attempt["attempt_id"]) !== 1
+            ) {
+                fwrite(STDERR, "Cannot validate active proof state: invalid attempt identity.\n");
+                exit(2);
+            }
+            $capture = $argv[3]."/".$attempt["attempt_id"].".json";
+            if (is_file($capture)) {
+                exit(0);
+            }
+            if (! is_file($argv[2])) {
+                exit(1);
+            }
+            try {
+                $result = json_decode(file_get_contents($argv[2]), true, 16, JSON_THROW_ON_ERROR);
+            } catch (Throwable $exception) {
+                fwrite(STDERR, "Cannot validate active proof state: {$exception->getMessage()}\n");
+                exit(2);
+            }
+            if (! is_array($result)) {
+                fwrite(STDERR, "Cannot validate active proof state: expected a proof-result object.\n");
+                exit(2);
+            }
+            exit(
+                ($result["status"] ?? null) === "proved"
+                && ($result["attempt_id"] ?? null) === ($attempt["attempt_id"] ?? null)
+                    ? 0
+                    : 1
+            );
+        ' "$proof_attempt" "$proof_result" "$proof_captures"; then
+            printf 'Active successful proof for %s must be released by verified closeout before worktree removal.\n' "$linear_id" >&2
+            exit 1
+        elif [[ $? -ne 1 ]]; then
+            exit 1
+        fi
+    fi
+
     # Queue before removing the caller; cache maintenance must never hold cleanup.
     "$script_root/bin/tia-cache" refresh --background --repository="$primary_root" || printf 'TIA refresh could not be queued; retry bin/tia-cache refresh --background.\n' >&2
 
-    # Both issue topologies die with the worktree: release proof, then discovery.
+    # Closeout owns successful proof release. Only diagnosis remains releasable here.
     if [[ -f "$worktree/.e2e/proof-attempt.json" ]]; then
         printf 'Releasing the proof topology of %s\n' "$linear_id"
         "$primary_root/bin/e2e-topology" release "$linear_id" "--worktree=$worktree" --proof

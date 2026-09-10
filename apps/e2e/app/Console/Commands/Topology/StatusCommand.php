@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
+use App\E2E\IssueState;
 use App\E2E\Value\AttemptPurpose;
 use Throwable;
 
@@ -23,14 +24,15 @@ final class StatusCommand extends E2ECommand
             $request = $this->request();
             $state = $this->state($request);
             if (! $state->hasAttempt()) {
-                $captured = $state->proofTopology();
+                $captured = $state->capturedProof();
                 $this->outputJson(
                     [
                         'state' => $captured !== null ? 'captured' : 'absent',
                         'issue' => $request->issue,
                         'worktree' => $request->worktree,
                         'proof' => $state->proof(),
-                        'captured_topology' => $captured?->toArray(),
+                        'captured_topology' => $captured?->topology->toArray(),
+                        ...($captured === null ? [] : $this->proofLifecycle($state)),
                     ],
                     $captured !== null ? 'captured '.$captured->attempt->value : 'absent',
                 );
@@ -47,6 +49,7 @@ final class StatusCommand extends E2ECommand
                     'candidate-convergence',
                 ]));
                 $candidate = $state->attempt(AttemptPurpose::CandidateConvergence);
+                $proofLifecycle = $this->proofLifecycle($state);
                 $this->outputJson(
                     [
                         'state' => implode('+', $purposes),
@@ -58,6 +61,11 @@ final class StatusCommand extends E2ECommand
                         'candidate_topology' => $state->topology(AttemptPurpose::CandidateConvergence)?->toArray(),
                         'proof' => $state->proof(),
                         'candidate_convergence' => $state->candidateConvergence(),
+                        ...(
+                            $hasProof || $proofLifecycle['capture'] !== null
+                                ? $proofLifecycle
+                                : []
+                        ),
                     ],
                     implode('+', $purposes).' '.$candidate['attempt_id'],
                 );
@@ -83,6 +91,7 @@ final class StatusCommand extends E2ECommand
                     'topology' => $state->topology(AttemptPurpose::Discovery)?->toArray(),
                     'proof_topology' => $state->topology(AttemptPurpose::Proof)?->toArray(),
                     'proof' => $proof,
+                    ...$this->proofLifecycle($state),
                 ], "discovery {$discovery['attempt_id']}; proof {$proofAttempt['attempt_id']} {$proofStatus}");
 
                 return self::SUCCESS;
@@ -100,6 +109,11 @@ final class StatusCommand extends E2ECommand
                     'proved' => $state->isProved(),
                     'topology' => $topology?->toArray(),
                     'proof' => $state->proof(),
+                    ...(
+                        $purpose === AttemptPurpose::Proof
+                            ? $this->proofLifecycle($state)
+                            : []
+                    ),
                 ],
                 $attempt['purpose'].' '.$attempt['attempt_id'].($state->isProved() ? ' proved' : ''),
             );
@@ -110,5 +124,38 @@ final class StatusCommand extends E2ECommand
 
             return self::FAILURE;
         }
+    }
+
+    /** @return array<string, mixed> */
+    private function proofLifecycle(IssueState $state): array
+    {
+        $attempt = $state->hasAttempt(AttemptPurpose::Proof)
+            ? $state->attemptId(AttemptPurpose::Proof)
+            : null;
+        $captured = $state->capturedProof($attempt);
+        $review = $captured === null ? null : $state->reviewRecord($captured->attempt);
+        $evaluation = $captured === null ? null : $state->reviewEvaluation($captured->attempt);
+        $closeout = $captured === null ? null : $state->closeoutRecord($captured->attempt);
+        $retained = $captured !== null
+            && $state->hasAttempt(AttemptPurpose::Proof)
+            && $state->attemptId(AttemptPurpose::Proof)->value === $captured->attempt->value
+                ? $state->topology(AttemptPurpose::Proof)
+                : null;
+
+        return [
+            'capture' => $captured === null ? null : [
+                'issue' => $captured->issue,
+                'attempt_id' => $captured->attempt->value,
+                'candidate_sha' => $captured->candidateSha,
+                'plan_sha256' => $captured->planSha256,
+                'manifest_sha256' => $captured->manifestSha256,
+                'captured_at' => $captured->capturedAt,
+                'fingerprint' => $captured->fingerprint(),
+            ],
+            'retained_topology' => $retained?->toArray(),
+            'review_record' => $review?->toArray(),
+            'review_evaluation' => $evaluation?->toArray(),
+            'closeout' => $closeout?->toArray(),
+        ];
     }
 }

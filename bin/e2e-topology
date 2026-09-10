@@ -8,15 +8,24 @@ if [[ $# -lt 1 ]]; then
 usage: bin/e2e-topology <action> ISSUE [...]
 
   acquire ISSUE WORKTREE          fresh discovery topology on the mounted worktree
-  shell   ISSUE NODE [--proof]    shell on a recorded physical Node key (including app-prod-2 when declared)
-  exec    ISSUE NODE --argv=JSON  run on a recorded physical Node key; --proof selects a failed proof
+  shell   ISSUE NODE [--proof --review-action=ID --required]
+                                  shell on a recorded physical Node key (including app-prod-2 when declared);
+                                  successful proof starts a review action
+  exec    ISSUE NODE --argv=JSON [--proof --review-action=ID --required]
+                                  run on a recorded physical Node key; successful proof records a review action
   sync    ISSUE                   re-verify the mounted source identity
   verify  ISSUE                   verify the discovery topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default .loop/proof/ISSUE.json)
+  capture ISSUE [--plan=PATH]     capture successful-proof evidence before interactive review
+  review  ISSUE [--complete=ID --result=passed|failed --finding=TEXT]
+                                  complete an action and evaluate the separate proof-review record
   equivalence ISSUE [--plan=PATH] compare HEAD with the immutable inputs of its retained proof
   candidate ISSUE                converge and verify an equivalent accepted candidate
+  closeout ISSUE --candidate=SHA --artifact=SHA --merge=SHA --main-sha=SHA
+                                  refresh from verified merged main, then release the retained proof
   status  ISSUE                   report discovery and proof from <worktree>/.e2e/
-  release ISSUE [--proof|--candidate] [--recover-extension=none|app-prod --expected-attempt=ID]
+  release ISSUE [--proof|--candidate] [--replace|--abandon]
+                [--recover-extension=none|app-prod --expected-attempt=ID]
                                   release or recover the selected topology
 
 Every action except acquire finds the issue among registered Git worktrees
@@ -29,7 +38,7 @@ action=$1
 shift
 
 case "$action" in
-    acquire|shell|exec|sync|verify|prove|equivalence|candidate|status|release)
+    acquire|shell|exec|sync|verify|prove|capture|review|equivalence|candidate|closeout|status|release)
         exec php "$root/apps/e2e/artisan" "topology:$action" "$@"
         ;;
     *)

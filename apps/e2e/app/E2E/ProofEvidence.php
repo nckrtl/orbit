@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use RuntimeException;
@@ -16,7 +17,10 @@ final class ProofEvidence
     /** @return array<string, mixed> */
     public static function capture(IssueState $state, ProofPlan $plan): array
     {
-        $topology = $state->proofTopology() ?? throw new RuntimeException('No immutable proof evidence is available.');
+        if (! $state->isProved()) {
+            throw new RuntimeException('Only a successful active proof can be captured.');
+        }
+        $topology = $state->requireTopology(AttemptPurpose::Proof);
         $proof = $state->proof() ?? [];
         $expected = array_map(
             static fn (array $action): array => [
@@ -26,7 +30,14 @@ final class ProofEvidence
             ],
             [...$plan->setup, ...$plan->acceptance],
         );
-        if (($proof['actions'] ?? null) !== $expected || ($proof['plan_sha256'] ?? null) !== $plan->fingerprint()) {
+        if (
+            ($proof['status'] ?? null) !== 'proved'
+            || ($proof['issue'] ?? null) !== $state->issue
+            || ($proof['attempt_id'] ?? null) !== $topology->attempt->value
+            || ($proof['candidate_sha'] ?? null) !== $topology->source->hostSha
+            || ($proof['actions'] ?? null) !== $expected
+            || ($proof['plan_sha256'] ?? null) !== $plan->fingerprint()
+        ) {
             throw new RuntimeException('Proof capture requires the exact plan and complete zero-exit action evidence.');
         }
         $fingerprint = $proof['manifest_sha256'] ?? null;
@@ -39,10 +50,11 @@ final class ProofEvidence
         $manifest = ProofInputManifest::fromArray($raw);
         if (
             $manifest->fingerprint() !== $fingerprint
-            || $manifest->provedSha !== ($proof['candidate_sha'] ?? null)
+            || $manifest->provedSha !== $proof['candidate_sha']
             || $topology->source->hostSha !== $manifest->provedSha
             || $topology->source->guestSha !== $manifest->provedSha
             || $manifest->construction->toArray() !== $topology->construction->toArray()
+            || array_keys($topology->instances) !== $topology->target->recipe->nodeKeys()
             || ! $topology->verification->passed
             || $manifest->policyVersion !== StaticProofInputPolicy::VERSION
             || in_array(false, $manifest->completeness, true)

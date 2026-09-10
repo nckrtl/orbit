@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
-use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\ProofEquivalenceEvaluator;
-use App\E2E\ProofEvidence;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\StaticProofInputPolicy;
-use App\E2E\TopologyReleaser;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CapturedProof;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\ObservedPhpInputs;
@@ -23,6 +21,8 @@ use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
+use App\E2E\Value\ProofReviewAction;
+use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
@@ -33,9 +33,7 @@ use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
-use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
-use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
     $container = new Container;
@@ -44,15 +42,16 @@ beforeEach(function (): void {
     Facade::setFacadeApplication($container);
 });
 
-/** @return array{root:string,main:string,proved:string,plan:ProofPlan,state:IssueState,evaluator:ProofEquivalenceEvaluator} */
+/** @return array{root:string,main:string,proved:string,plan:ProofPlan,state:IssueState,host_paths:StatePaths,evaluator:ProofEquivalenceEvaluator} */
 function proofEquivalenceFixture(bool $observedInputs = false): array
 {
     $root = temporaryPath('orbit-equivalence-', 6);
-    foreach (['apps/cli/app', 'docs/reference', '.loop/proof'] as $directory) {
+    foreach (['apps/cli/app', 'apps/cli/config', 'docs/reference', '.loop/proof'] as $directory) {
         mkdir($root.'/'.$directory, 0700, true);
     }
     file_put_contents($root.'/.gitignore', "/.e2e/\n");
     file_put_contents($root.'/apps/cli/app/runtime.php', "<?php\n");
+    file_put_contents($root.'/apps/cli/config/runtime.php', "<?php\n");
     file_put_contents($root.'/docs/reference/note.md', "before\n");
     file_put_contents($root.'/.loop/proof/check.sh', "#!/bin/sh\nexit 0\n");
     chmod($root.'/.loop/proof/check.sh', 0755);
@@ -130,7 +129,7 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
     $target = TopologyTarget::feature('AUX-99', $attempt);
     $state = IssueState::forWorktree('AUX-99', $root);
     $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
-    $state->writeTopology(new FeatureTopology(
+    $topology = new FeatureTopology(
         $manifest->construction,
         AttemptPurpose::Proof,
         proofEquivalenceGeneration($main),
@@ -144,22 +143,39 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
                 'evidence_ref' => 'incus://'.$target->instance('gateway').'/proof.verify',
             ],
         ]),
-    ));
-    $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
-    $state->writeProof(
-        new ProofResult(
-            'AUX-99',
-            $attempt,
-            ProofStatus::Proved,
-            $proved,
-            [['id' => 'check', 'node' => 'app-dev', 'exit_code' => 0, 'stdout' => '', 'stderr' => '']],
-            null,
-            '2026-09-02T10:00:00Z',
-            planSha256: $plan->fingerprint(),
-            manifestSha256: $manifest->fingerprint(),
-        )->toArray(),
     );
+    $state->writeTopology($topology);
+    $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
+    $proof = new ProofResult(
+        'AUX-99',
+        $attempt,
+        ProofStatus::Proved,
+        $proved,
+        [['id' => 'check', 'node' => 'app-dev', 'exit_code' => 0, 'stdout' => '', 'stderr' => '']],
+        null,
+        '2026-09-02T10:00:00Z',
+        planSha256: $plan->fingerprint(),
+        manifestSha256: $manifest->fingerprint(),
+    );
+    $state->writeProof($proof->toArray());
+    $capture = new CapturedProof(
+        'AUX-99',
+        $attempt,
+        $proved,
+        $plan->fingerprint(),
+        $manifest->fingerprint(),
+        $proof->toArray(),
+        $topology,
+        $manifest->toArray(),
+        '2026-09-02T10:01:00Z',
+    );
+    $state->captureProof($capture);
     new GitRepository($root)->pinProof('AUX-99', $attempt, $proved);
+    $hostPaths = new StatePaths(temporaryPath('orbit-equivalence-host-', 6));
+    new AtomicJsonStore($hostPaths)->write(
+        'proof-evidence/AUX-99/'.$attempt->value.'.json',
+        $capture->toArray(),
+    );
 
     return [
         'root' => $root,
@@ -167,10 +183,11 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
         'proved' => $proved,
         'plan' => $plan,
         'state' => $state,
+        'host_paths' => $hostPaths,
         'evaluator' => new ProofEquivalenceEvaluator(
             $policy,
             $builder,
-            new StatePaths(temporaryPath('orbit-equivalence-host-', 6)),
+            $hostPaths,
             new OperationId(str_repeat('c', 32)),
             new IncusHost,
             $root,
@@ -225,6 +242,34 @@ function evaluateProof(array $fixture, ?ProofPlan $plan = null): ProofEquivalenc
     );
 }
 
+/** @param array{state:IssueState,host_paths:StatePaths} $fixture */
+function recordProofReviewAction(array $fixture): void
+{
+    $capture = $fixture['state']->capturedProof() ?? throw new RuntimeException('Fixture capture is missing.');
+    $record = ProofReviewRecord::empty(
+        $capture->issue,
+        $capture->candidateSha,
+        $capture->attempt,
+        '2026-09-02T10:02:00Z',
+    )->withAction(
+        ProofReviewAction::incomplete(
+            'inspect-runtime',
+            'shell',
+            'app-dev',
+            true,
+            [],
+            null,
+            '2026-09-02T10:02:00Z',
+        ),
+        '2026-09-02T10:02:00Z',
+    );
+    $fixture['state']->writeReviewRecord($record);
+    new AtomicJsonStore($fixture['host_paths'])->write(
+        'proof-review/AUX-99/'.$capture->attempt->value.'.json',
+        $record->toArray(),
+    );
+}
+
 describe('ProofEquivalenceEvaluator', function (): void {
     it('routes unobserved current-main PHP drift through candidate convergence', function (): void {
         $fixture = proofEquivalenceFixture(observedInputs: true);
@@ -247,6 +292,52 @@ describe('ProofEquivalenceEvaluator', function (): void {
             ->toBe('run-candidate-convergence')
             ->and($report->changedPaths[0]['classification'])
             ->toBe('unrelated-runtime');
+    });
+
+    it('requires fresh proof for current-main runtime drift after interactive review', function (): void {
+        $fixture = proofEquivalenceFixture(observedInputs: true);
+        recordProofReviewAction($fixture);
+        $branch = equivalenceGit($fixture['root'], ['branch', '--show-current']);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', '--detach', $fixture['main']]);
+        file_put_contents($fixture['root'].'/apps/cli/app/runtime.php', "<?php\n// unrelated main change\n");
+        equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'unrelated main runtime']);
+        $advancedMain = equivalenceGit($fixture['root'], ['rev-parse', 'HEAD']);
+        equivalenceGit($fixture['root'], ['update-ref', 'refs/remotes/origin/main', $advancedMain]);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', $branch]);
+        equivalenceGit($fixture['root'], ['merge', '--quiet', '--no-edit', $advancedMain]);
+
+        $report = evaluateProof($fixture);
+
+        expect($report->result)
+            ->toBe(ProofEquivalenceResult::Stale)
+            ->and($report->promotionPath)
+            ->toBeNull()
+            ->and($report->nextAction)
+            ->toBe('release-proof-and-run-complete-reproof')
+            ->and($report->changedPaths[0]['classification'])
+            ->toBe('runtime');
+    });
+
+    it('restores durable review history before classifying current-main runtime drift', function (): void {
+        $fixture = proofEquivalenceFixture(observedInputs: true);
+        recordProofReviewAction($fixture);
+        $capture = $fixture['state']->capturedProof() ?? throw new RuntimeException('Fixture capture is missing.');
+        unlink($fixture['root'].'/.e2e/proof-review/'.$capture->attempt->value.'.json');
+        $branch = equivalenceGit($fixture['root'], ['branch', '--show-current']);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', '--detach', $fixture['main']]);
+        file_put_contents($fixture['root'].'/apps/cli/app/runtime.php', "<?php\n// reviewed main change\n");
+        equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'reviewed main runtime']);
+        $advancedMain = equivalenceGit($fixture['root'], ['rev-parse', 'HEAD']);
+        equivalenceGit($fixture['root'], ['update-ref', 'refs/remotes/origin/main', $advancedMain]);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', $branch]);
+        equivalenceGit($fixture['root'], ['merge', '--quiet', '--no-edit', $advancedMain]);
+
+        $report = evaluateProof($fixture);
+
+        expect($report->result)
+            ->toBe(ProofEquivalenceResult::Stale)
+            ->and($fixture['state']->reviewRecord($capture->attempt)?->hasActions())
+            ->toBeTrue();
     });
 
     it('marks observed current-main PHP drift stale', function (): void {
@@ -296,6 +387,7 @@ describe('ProofEquivalenceEvaluator', function (): void {
 
     it('retains proof for a documentation-only correction', function (): void {
         $fixture = proofEquivalenceFixture();
+        recordProofReviewAction($fixture);
         file_put_contents($fixture['root'].'/docs/reference/note.md', "after\n");
         equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'documentation correction']);
 
@@ -343,8 +435,9 @@ describe('ProofEquivalenceEvaluator', function (): void {
             ->toBeFalse();
     });
 
-    it('marks runtime and proof-contract changes stale', function (string $path): void {
+    it('marks reviewed runtime, configuration, and proof-contract changes stale', function (string $path): void {
         $fixture = proofEquivalenceFixture();
+        recordProofReviewAction($fixture);
         file_put_contents($fixture['root'].'/'.$path, "changed\n");
         equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'proof input changed']);
 
@@ -358,6 +451,7 @@ describe('ProofEquivalenceEvaluator', function (): void {
             ->toBe('release-proof-and-run-complete-reproof');
     })->with([
         'runtime' => 'apps/cli/app/runtime.php',
+        'configuration' => 'apps/cli/config/runtime.php',
         'proof contract' => '.loop/proof/check.sh',
     ]);
 
@@ -408,71 +502,42 @@ describe('ProofEquivalenceEvaluator', function (): void {
 
 it('evaluates captured proof after the proof lease and topology are released', function (): void {
     $fixture = proofEquivalenceFixture();
-    $evidence = ProofEvidence::capture($fixture['state'], $fixture['plan']);
-    $fixture['state']->captureProof($evidence);
     $fixture['state']->forgetAttempt(AttemptPurpose::Proof);
+    $proof = $fixture['state']->proof();
+    $proof['actions'] = [];
+    $fixture['state']->writeProof($proof);
 
     expect($fixture['state']->hasAttempt())
         ->toBeFalse()
         ->and(evaluateProof($fixture)->result)
         ->toBe(ProofEquivalenceResult::Exact);
-
-    $proof = $fixture['state']->proof();
-    $proof['actions'] = [];
-    $fixture['state']->writeProof($proof);
-    expect(fn () => evaluateProof($fixture))
-        ->toThrow(RuntimeException::class, 'Captured proof evidence does not match');
 });
 
-it('refuses capture when action evidence is incomplete', function (): void {
+it('requires a captured proof instead of recapturing a successful live attempt', function (): void {
     $fixture = proofEquivalenceFixture();
-    $proof = $fixture['state']->proof();
-    $proof['actions'] = [];
-    $fixture['state']->writeProof($proof);
-
-    expect(fn () => ProofEvidence::capture($fixture['state'], $fixture['plan']))
-        ->toThrow(RuntimeException::class, 'complete zero-exit');
-});
-
-it('archives proof before cleanup and keeps that evidence through a release retry', function (): void {
-    $fixture = proofEquivalenceFixture();
-    $hostPaths = new StatePaths($fixture['root'].'-host');
-    $host = new IncusHost;
-    $releaser = new TopologyReleaser(
-        $host,
-        new IncusNetworkLifecycle($host),
-        $hostPaths,
-        new OperationId(str_repeat('c', 32)),
-    );
-    $failInventory = true;
-    Process::fake(function (PendingProcess $process) use (
-        &$failInventory,
-    ) {
-        $command = $process->command;
-        if (is_array($command) && $command[0] === 'git') {
-            return new ProcessFactory()->path($process->path)->run($command);
-        }
-        if ($failInventory) {
-            return Process::result(errorOutput: 'injected inventory failure', exitCode: 1);
-        }
-
-        return Process::result('[]');
-    });
-    $request = new TopologyRequest('AUX-99', $fixture['root']);
-    expect(fn () => $releaser->release($request, AttemptPurpose::Proof, capture: true))
-        ->toThrow(RuntimeException::class);
     $attempt = $fixture['state']->attemptId(AttemptPurpose::Proof)->value;
-    $archive = new AtomicJsonStore($hostPaths);
-    $saved = $archive->read('proof-evidence/AUX-99/'.$attempt.'.json');
-    expect($saved['proof'])->toBe($fixture['state']->proof());
-    $failInventory = false;
-    $result = $releaser->release($request, AttemptPurpose::Proof, capture: true);
-    expect($result['state'])
-        ->toBe('released')
-        ->and($fixture['state']->hasAttempt())
-        ->toBeFalse()
-        ->and($archive->read('proof-evidence/AUX-99/'.$attempt.'.json'))
-        ->toBe($saved)
-        ->and(evaluateProof($fixture)->result)
-        ->toBe(ProofEquivalenceResult::Exact);
+    unlink(
+        $fixture['root'].'/.e2e/captured-proof/'.$attempt.'.json',
+    );
+    unlink($fixture['host_paths']->path('proof-evidence/AUX-99/'.$attempt.'.json'));
+
+    expect(fn () => evaluateProof($fixture))
+        ->toThrow(RuntimeException::class, 'retained proof archive is missing');
+});
+
+it('ignores mutable live proof state after capture', function (): void {
+    $fixture = proofEquivalenceFixture();
+    $proof = $fixture['state']->proof();
+    $proof['actions'] = [];
+    $fixture['state']->writeProof($proof);
+    $topology = $fixture['state']->requireTopology(AttemptPurpose::Proof);
+    $fixture['state']->writeTopology(new FeatureTopology(
+        $topology->construction,
+        $topology->purpose,
+        $topology->generation,
+        new SourceState(str_repeat('9', 40), str_repeat('9', 40)),
+        $topology->verification,
+    ));
+
+    expect(evaluateProof($fixture)->result)->toBe(ProofEquivalenceResult::Exact);
 });
