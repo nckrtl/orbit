@@ -26,6 +26,11 @@ function loopFlowFixture(): array
     }
     file_put_contents($root.'/bin/bootstrap', "#!/bin/sh\nexit 0\n");
     chmod($root.'/bin/bootstrap', 0755);
+    file_put_contents(
+        $root.'/bin/tia-cache',
+        "#!/bin/sh\nprintf '%s\\n' \"\$*\" > \"\$(git rev-parse --git-common-dir)/tia-queued\"\nexit 1\n",
+    );
+    chmod($root.'/bin/tia-cache', 0755);
     expect($run->path($root)->run(['git', 'add', '.'])->successful())->toBeTrue();
     expect($run->path($root)->run(['git', 'commit', '-m', 'base'])->successful())->toBeTrue();
 
@@ -72,6 +77,40 @@ it('creates worktrees with the flag or shared default and preserves existing sel
     expect($run->path($root)->run([$script, 'default', '--flow=proof'])->successful())->toBeTrue();
     expect($run->path($root)->run([$create, 'TST-44', 'feature'])->successful())->toBeTrue();
     expect(DeliveryFlow::forWorktree($root.'/.worktrees/tst-44-feature'))->toBe('proof');
+});
+
+it('pulls clean primary main and refreshes baselines before creating the next worktree', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $remote = temporaryPath('orbit-flow-new-main-', 6);
+    $run->run(['git', 'init', '--bare', $remote]);
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $remote]);
+    $run->path($root)->run(['git', 'push', '-u', 'origin', 'main']);
+    $source = $root.'/.worktrees/advance-main';
+    $run->path($root)->run(['git', 'worktree', 'add', '-b', 'advance-main', $source]);
+    file_put_contents($source.'/next.txt', 'new main');
+    $run->path($source)->run(['git', 'add', '.']);
+    $run->path($source)->run(['git', 'commit', '-m', 'advance main']);
+    $run->path($source)->run(['git', 'push', 'origin', 'HEAD:main']);
+
+    $result = $run->path($root)->run([$root.'/bin/worktree-create', 'TST-46', 'fresh']);
+
+    expect($result->successful())->toBeTrue($result->errorOutput());
+    expect(file_get_contents($root.'/next.txt'))->toBe('new main');
+    expect(file_get_contents($root.'/.worktrees/tst-46-fresh/next.txt'))->toBe('new main');
+    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --repository='.$root);
+    expect($run->path($root)->run(['git', 'status', '--porcelain'])->output())->toBe('');
+});
+
+it('preserves dirty primary main before attempting new worktree setup', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    file_put_contents($root.'/shared.txt', 'active migration');
+
+    $result = $run->path($root)->run([$root.'/bin/worktree-create', 'TST-47', 'dirty']);
+
+    expect($result->successful())->toBeFalse();
+    expect(file_get_contents($root.'/shared.txt'))->toBe('active migration');
+    expect(file_exists($root.'/.worktrees/tst-47-dirty'))->toBeFalse();
+    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });
 
 it('accepts a conflict-free merge after main advances only in discovery flow', function (): void {
@@ -181,8 +220,26 @@ it('closes out a merged worktree when the repository has a long worktree listing
     ]);
 
     expect($result->successful())->toBeTrue($result->errorOutput());
+    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --background --repository='.$root);
     expect(is_dir($worktree))->toBeFalse();
     expect(
         $run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-44-cleanup'])->successful(),
     )->toBeFalse();
+});
+
+it('does not queue cache refresh or remove an unmerged feature', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $root]);
+    $run->path($root)->run(['git', 'fetch', 'origin']);
+    $worktree = $root.'/.worktrees/tst-45-unmerged';
+    $run->path($root)->run(['git', 'worktree', 'add', '-b', 'tst-45-unmerged', $worktree]);
+    file_put_contents($worktree.'/feature.txt', 'unmerged feature');
+    $run->path($worktree)->run(['git', 'add', '.']);
+    $run->path($worktree)->run(['git', 'commit', '-m', 'feature']);
+
+    $result = $run->path($root)->run([$root.'/bin/worktree-remove', 'TST-45', 'unmerged']);
+
+    expect($result->successful())->toBeFalse();
+    expect(is_dir($worktree))->toBeTrue();
+    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });

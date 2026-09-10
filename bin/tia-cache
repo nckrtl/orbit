@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Publish successful main TIA graphs and seed private worktree caches."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+PHP_METADATA = r'''
+require $argv[1].'/vendor/autoload.php';
+echo json_encode([
+    'cache' => Pest\Plugins\Tia\Storage::tempDir($argv[1]),
+    'fingerprint' => Pest\Plugins\Tia\Fingerprint::compute($argv[1]),
+    'coverage' => (extension_loaded('pcov') && ini_get('pcov.enabled'))
+        || (extension_loaded('xdebug') && in_array('coverage', xdebug_info('mode'), true)),
+], JSON_THROW_ON_ERROR);
+'''
+
+
+def run(root, *command, capture=True):
+    result = subprocess.run(command, cwd=root, text=True, capture_output=capture,
+                            env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'})
+    if result.returncode:
+        raise RuntimeError((result.stderr or '').strip() or f'{command[0]} exited {result.returncode}')
+    return result.stdout.strip() if capture else None
+
+
+def git(root, *args):
+    return run(root, 'git', *args)
+
+
+def common_directory(repository):
+    return Path(git(repository, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+
+
+def cache_store(common):
+    return common / 'orbit-tia/v1'
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def atomic_write(path, data, replace=True):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if replace:
+            os.replace(temporary, path)
+        else:
+            # A concurrent seed or a first Pest run must win over this copy.
+            os.link(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def metadata(root, project):
+    data = json.loads(run(root, 'php', '-r', PHP_METADATA, str(root / project)))
+    data['runner'] = digest((root / 'bin/pest-support/manifest.json').read_bytes()
+                            + (root / project / 'tests/Pest.php').read_bytes())
+    return data
+
+
+def require_ancestor(root, ancestor, head):
+    if not isinstance(ancestor, str) or not re.fullmatch(r'[0-9a-f]{40,64}', ancestor):
+        raise ValueError('Invalid baseline commit.')
+    git(root, 'merge-base', '--is-ancestor', ancestor, head)
+
+
+def validate_graph(root, graph_text, info, tested_commit):
+    graph = json.loads(graph_text)
+    if not isinstance(graph, dict) or graph.get('schema') != 1 or graph.get('fingerprint') != info['fingerprint']:
+        raise ValueError('Graph schema or fingerprint differs.')
+    baselines = graph.get('baselines', {})
+    if not isinstance(baselines, dict) or set(baselines) != {'main'}:
+        raise ValueError('Only a main baseline can be published.')
+    main = baselines['main']
+    if (not isinstance(main, dict) or main.get('tree') not in ({}, [])
+            or not isinstance(main.get('results'), dict) or not main['results']
+            or not isinstance(graph.get('edges'), dict) or not graph['edges']):
+        raise ValueError('Main graph has no recorded coverage/results or contains working edits.')
+    if any(not isinstance(result, dict) or result.get('status') not in range(7)
+           for result in main['results'].values()):
+        raise ValueError('Main graph contains failed or unknown results.')
+    # A no-affected-tests run can leave the graph anchored at an older main.
+    require_ancestor(root, main.get('sha'), tested_commit)
+    files = graph.get('files', [])
+    if not isinstance(files, (dict, list)):
+        raise ValueError('Graph file list is invalid.')
+    paths = list(files.values() if isinstance(files, dict) else files) + list(graph['edges'])
+    paths += [result['file'] for result in main['results'].values() if 'file' in result]
+    if any(not isinstance(path, str) or Path(path).is_absolute() or '..' in Path(path).parts
+           for path in paths):
+        raise ValueError('Graph contains nonportable paths.')
+    return main['sha']
+
+
+def publication_path(store, project):
+    return store / 'published' / (project.replace('/', '-') + '.json')
+
+
+def read_publication(store, project):
+    snapshot = json.loads(publication_path(store, project).read_text())
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get('graph'), str):
+        raise ValueError('Invalid publication.')
+    return snapshot
+
+
+def compatible(root, project, snapshot, info):
+    if snapshot.get('schema') != 1 or snapshot.get('project') != project:
+        raise ValueError('Publication belongs to another schema or project.')
+    if snapshot.get('runner') != info['runner'] or snapshot.get('fingerprint') != info['fingerprint']:
+        raise ValueError('Dependencies, runtime, or test configuration differ.')
+    if digest(snapshot['graph'].encode()) != snapshot['sha256']:
+        raise ValueError('Publication checksum differs.')
+    require_ancestor(root, snapshot['tested_commit'], 'HEAD')
+    validate_graph(root, snapshot['graph'], info, snapshot['tested_commit'])
+
+
+def seed(root, store, projects):
+    for project in projects:
+        try:
+            info = metadata(root, project)
+            destination = Path(info['cache']) / 'graph.json'
+            if destination.exists() or destination.is_symlink():
+                print(f'[{project}] kept existing private cache', flush=True)
+                continue
+            snapshot = read_publication(store, project)
+            compatible(root, project, snapshot, info)
+            atomic_write(destination, snapshot['graph'].encode(), replace=False)
+            print(f'[{project}] seeded main {snapshot["tested_commit"][:12]} -> {destination}', flush=True)
+        except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
+            print(f'[{project}] cache not seeded: {error}', flush=True)
+
+
+def prepare_checkout(common, store):
+    # This private repository can use branch main while the user's main is dirty.
+    # A .git file gives Pest a cache key distinct from other checkouts of this origin.
+    checkout = store / 'checkout'
+    origin = git(common, 'remote', 'get-url', 'origin')
+    if not checkout.exists():
+        checkout.mkdir(parents=True)
+        git(checkout, 'init', '--initial-branch=main', '--separate-git-dir=' + str(store / 'repository'))
+        git(checkout, 'remote', 'add', 'origin', origin)
+        git(checkout, 'config', 'orbit.tiaCacheOwner', str(common))
+    if (git(checkout, 'config', '--get', 'orbit.tiaCacheOwner') != str(common)
+            or git(checkout, 'remote', 'get-url', 'origin') != origin
+            or not (checkout / '.git').is_file()):
+        raise RuntimeError('Cache checkout ownership differs.')
+    if git(checkout, 'status', '--porcelain'):
+        raise RuntimeError(f'Cache checkout contains edits: {checkout}')
+    if git(checkout, 'symbolic-ref', '--short', 'HEAD') != 'main':
+        raise RuntimeError('Cache checkout must remain on main.')
+    git(checkout, 'fetch', str(common), 'refs/remotes/origin/main:refs/remotes/origin/main')
+    git(checkout, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    if subprocess.run(['git', 'rev-parse', '--verify', 'HEAD'], cwd=checkout,
+                      capture_output=True).returncode:
+        git(checkout, 'checkout', '-B', 'main', 'origin/main')
+    else:
+        git(checkout, 'merge', '--ff-only', 'origin/main')
+    return checkout
+
+
+def install_project(root, project):
+    directory = root / project
+    if (directory / '.env.example').exists() and not (directory / '.env').exists():
+        shutil.copyfile(directory / '.env.example', directory / '.env')
+    run(directory, 'composer', 'install', '--no-interaction', '--prefer-dist', capture=False)
+
+
+def refresh_project(root, store, project, commit):
+    install_project(root, project)
+    info = metadata(root, project)
+    if not info['coverage']:
+        raise RuntimeError('PCOV or Xdebug coverage must be enabled to refresh a baseline.')
+    baseline = None
+    try:
+        snapshot = read_publication(store, project)
+        compatible(root, project, snapshot, info)
+        if snapshot['tested_commit'] == commit:
+            print(f'[{project}] already published at {commit[:12]}', flush=True)
+            return
+        baseline = snapshot['graph']
+    except (RuntimeError, OSError, ValueError, KeyError, TypeError):
+        pass
+    graph_path = Path(info['cache']) / 'graph.json'
+    # Only the maintenance checkout writes here. Start from its last successful,
+    # compatible publication, never an unverified graph left by a failed run or
+    # by another runner version. Pest's own fingerprint does not cover our patch.
+    if baseline is None:
+        graph_path.unlink(missing_ok=True)
+    else:
+        atomic_write(graph_path, baseline.encode())
+    run(root / project, 'composer', 'test:affected', capture=False)
+    if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
+        raise RuntimeError('Cache checkout changed during testing; publication refused.')
+    graph = graph_path.read_text()
+    anchor = validate_graph(root, graph, info, commit)
+    snapshot = {
+        'schema': 1, 'project': project, 'tested_commit': commit, 'graph_commit': anchor,
+        'published_at': datetime.now(timezone.utc).isoformat(),
+        'fingerprint': info['fingerprint'], 'runner': info['runner'],
+        'sha256': digest(graph.encode()), 'graph': graph,
+    }
+    atomic_write(publication_path(store, project), json.dumps(snapshot).encode())
+    print(f'[{project}] published main {commit[:12]}', flush=True)
+
+
+def refresh(common, store, projects):
+    store.mkdir(parents=True, exist_ok=True)
+    # Every queued refresh reads newest main after acquiring the lock.
+    with (store / 'refresh.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        git(common, 'fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main')
+        checkout = prepare_checkout(common, store)
+        commit = git(checkout, 'rev-parse', 'HEAD')
+        failed = False
+        for project in projects:
+            try:
+                refresh_project(checkout, store, project, commit)
+            except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
+                failed = True
+                print(f'[{project}] refresh failed; previous publication retained: {error}', flush=True)
+        return 1 if failed else 0
+
+
+def start_background(common, store, projects):
+    # Closeout may remove the caller's feature worktree immediately after queueing.
+    source = Path(__file__).read_bytes()
+    runner = store / 'runners' / (digest(source) + '.py')
+    atomic_write(runner, source)
+    log = store / 'refresh.log'
+    with log.open('ab') as output:
+        process = subprocess.Popen(
+            [sys.executable, str(runner), 'refresh', '--repository', str(common),
+             *[f'--project={project}' for project in projects]],
+            cwd=common, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    print(f'TIA refresh queued (pid {process.pid}); log: {log}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('seed', 'refresh', 'status'))
+    parser.add_argument('--repository', default='.')
+    parser.add_argument('--project', action='append', choices=PROJECTS)
+    parser.add_argument('--background', action='store_true')
+    args = parser.parse_args()
+    if args.background and args.action != 'refresh':
+        parser.error('--background requires refresh')
+    common = common_directory(args.repository)
+    store = cache_store(common)
+    projects = args.project or PROJECTS
+    if args.action == 'seed':
+        root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
+        seed(root, store, projects)
+    elif args.action == 'status':
+        for project in projects:
+            try:
+                snapshot = read_publication(store, project)
+                print(json.dumps({key: value for key, value in snapshot.items() if key != 'graph'}))
+            except (OSError, ValueError) as error:
+                print(f'[{project}] no readable publication: {error}')
+        print(f'Refresh log: {store / "refresh.log"}')
+    elif args.background:
+        start_background(common, store, projects)
+    else:
+        return refresh(common, store, projects)
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (RuntimeError, OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

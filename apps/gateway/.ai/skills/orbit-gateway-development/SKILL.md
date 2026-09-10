@@ -44,4 +44,4 @@ composer check
 ```
 
 Run focused Pest tests during TDD. Run changed-project checks with Rector and Pint format checks and Larastan analysis, and `git diff --check -- apps/gateway` from the
-monorepo root before handoff. CI runs the full parallel suites without TIA.
+monorepo root before handoff. Reviewers run root `composer check` across all projects with TIA.

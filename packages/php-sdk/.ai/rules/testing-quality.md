@@ -1,7 +1,7 @@
 # Testing and quality
 
 Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
-focused tests for red, green, and refactor. Run focused Pest tests locally. CI runs the full Pest 5 suite in parallel without TIA.
+focused tests for red, green, and refactor. Run focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA and two parallel test workers per project.
 
 - Run `composer guidance:check` first. It must fail when the rule index, an
   indexed file, or material path coverage is missing. The failure must give the
@@ -14,7 +14,7 @@ focused tests for red, green, and refactor. Run focused Pest tests locally. CI r
 - Run Pint format checks and PHPStan analysis with zero findings. Run Rector in
   dry-run mode and `git diff --check -- packages/php-sdk` from the monorepo
   root.
-- Require green CI full suites on the submitted candidate. Use `composer test`
+- Require the reviewer's passing root `composer check` receipt on the submitted candidate. Use `composer test`
   or root `bin/test` only for an explicit full local run or failure diagnosis.
 - Review the diff, staged files, branch, and upstream state before handoff.
   Keep authorized cross-component changes in the same feature branch. Never

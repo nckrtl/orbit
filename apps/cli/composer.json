@@ -57,7 +57,7 @@
         "guidance:check": "vendor/bin/pest tests/Feature/BoostGuidanceTest.php --no-tia --compact",
         "guidance:generate": "@php orbit boost:update --no-discover --no-interaction",
         "lint": "@format:check",
-        "rector": "vendor/bin/rector process --no-progress-bar",
+        "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
         "test": "vendor/bin/pest --parallel --no-tia --compact"
     },
     "config": {

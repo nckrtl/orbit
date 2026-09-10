@@ -87,20 +87,22 @@ branch="$name"
 primary_root="$(git worktree list --porcelain | awk '/^worktree / && !found { print substr($0, 10); found=1 }')"
 worktree="$primary_root/.worktrees/$name"
 
-git fetch --prune origin
-
-main_commit="$(git rev-parse refs/heads/main)"
-origin_main_commit="$(git rev-parse refs/remotes/origin/main)"
-
-if [[ "$main_commit" != "$origin_main_commit" ]]; then
-    printf 'Local main must match origin/main before creating a worktree.\n' >&2
-    exit 1
-fi
-
 if [[ -n "$(git -C "$primary_root" status --porcelain)" ]]; then
     printf 'The primary worktree must be clean.\n' >&2
     exit 1
 fi
+
+if [[ "$(git -C "$primary_root" symbolic-ref --quiet --short HEAD || true)" != main ]]; then
+    printf 'The primary checkout must be on main.\n' >&2
+    exit 1
+fi
+
+git fetch --prune origin
+git -C "$primary_root" merge --ff-only origin/main
+
+# Finish pending main recording before copying caches into the next worktree.
+# Failed recording leaves the last successful publication and a cold-run fallback.
+"$script_root/bin/tia-cache" refresh --repository="$primary_root" || printf 'TIA refresh failed; compatible prior baselines or a recording run will be used.\n' >&2
 
 if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; then
     if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then

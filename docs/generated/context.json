@@ -1097,6 +1097,46 @@
             ]
         },
         {
+            "path": "docs/decisions/0052-seed-worktrees-from-successful-main-test-baselines.md",
+            "title": "ADR 0052: Seed worktrees from successful main test baselines",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0051",
+                "0052"
+            ]
+        },
+        {
+            "path": "docs/decisions/0053-use-local-review-checks-for-feature-landing.md",
+            "title": "ADR 0053: Use local review checks for feature landing",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0049",
+                "0051",
+                "0052",
+                "0053"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1236,6 +1276,7 @@
             "title": "Implementation loop",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway",
                 "packages/php-sdk"
             ],
@@ -1247,7 +1288,9 @@
             ],
             "governing_adrs": [
                 "0049",
-                "0051"
+                "0051",
+                "0052",
+                "0053"
             ]
         },
         {
