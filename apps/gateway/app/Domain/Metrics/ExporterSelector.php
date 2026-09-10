@@ -11,9 +11,14 @@ final readonly class ExporterSelector
     /** @param list<RoleName> $roles */
     public function select(
         array $roles,
+        bool $eligible,
         ?ExporterPreference $preference = null,
         bool $isMetricsNode = false,
     ): ExporterSelection {
+        if (! $eligible) {
+            return new ExporterSelection(false, ExporterSelectionReason::Ineligible);
+        }
+
         if ($isMetricsNode) {
             return new ExporterSelection(true, ExporterSelectionReason::MetricsNode);
         }

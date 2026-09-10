@@ -31,12 +31,13 @@ Every command accepts `--json`, and `--main-sha=SHA` must be the full SHA of the
 
 ## Promote
 
-Feature closeout uses `refresh` from merged main after captured proof resources are released, under [ADR 0050](../decisions/0050-release-successful-proof-resources-before-landing.md). The explicit `promote` command remains available for a retained live topology and verifies its plan selected from `.loop/proof/`. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
+Feature closeout uses `refresh` from merged main while captured successful proof resources remain retained, under [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md). The explicit `promote` command remains available only for an unchanged retained live topology that has not received interactive reviewer access, and it verifies its plan selected from `.loop/proof/`. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
 
 | Refusal | Condition |
 | --- | --- |
 | Evidence | No `proved` attempt, or the plan fingerprint, zero-exit action list, or manifest does not match the recorded proof |
 | Mutation | The plan declares an extension, declares `mutates: true`, or its `ends_with` leaves a Node out; each condition sets `mutates` |
+| Review state | The retained proof topology has any interactive reviewer action, so its live state is not promotion input |
 | Tree | Primary `main` does not hold the accepted tree, or a different accepted tree has no `equivalent` report bound to that head |
 | Fingerprint | The proved, accepted, and merged runtime fingerprints differ, or the cold epoch or base image alias changed |
 | Leftover | A `-next` copy from an earlier promotion exists |
@@ -51,9 +52,11 @@ The failure reports that the new snapshot generation is already installed, the c
 
 ## Refresh
 
-`refresh` is the maintenance path when no proved topology exists, and, at the current `origin/main`, the closeout path when the merged candidate's proof plan normalizes to `mutates: true` ([ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)). An extended plan always takes this closeout path. Merge closeout never substitutes a refresh for a missing or invalid proof.
+`refresh` is the maintenance path when no proved topology exists and the closeout path for a retained successful proof after interactive review. A plan that normalizes to `mutates: true` also uses refresh under [ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md). An extended plan always takes this closeout path. Merge closeout never substitutes a refresh for missing or invalid proof or review evidence.
 
-It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation. After a successful closeout refresh, closeout records the proved attempt, artifact SHA, accepted head, merge commit, and promoted generation. A failed refresh retains captured proof evidence and does not report closeout complete. The result is `unchanged`, `promoted`, or `failed`.
+It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation.
+
+After a successful closeout refresh, `bin/e2e-topology closeout` records the proved attempt, artifact SHA, accepted head, merge commit, and promoted generation. It then releases the complete retained proof topology. A failed refresh retains every proof Node, the captured evidence, and the review record, and does not report closeout complete. The refresh result is `unchanged`, `promoted`, or `failed`.
 
 ### Convergence
 

@@ -8,6 +8,7 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\ObservedPhpInputCollector;
+use App\E2E\ProofCaptureService;
 use App\E2E\ProofFixtureStager;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\State\AtomicJsonStore;
@@ -800,7 +801,10 @@ it('constructs and retains an independently addressed extended proof beside disc
         $planDirectory.'/TST-123.json',
         json_encode($planValue, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
     );
-    expect($processes->run(['git', '-C', $worktree, 'add', '.loop/proof/TST-123.json'])->successful())
+    file_put_contents($worktree.'/.loop/flow.json', "{\"schema\":1,\"flow\":\"proof\"}\n");
+    expect($processes->run([
+        'git', '-C', $worktree, 'add', '.loop/flow.json', '.loop/proof/TST-123.json',
+    ])->successful())
         ->toBeTrue()
         ->and($processes->run(['git', '-C', $worktree, 'commit', '-q', '-m', 'Add extended proof'])->successful())
         ->toBeTrue();
@@ -934,6 +938,20 @@ it('constructs and retains an independently addressed extended proof beside disc
             'copy local:'.$discoveryTarget->instance('gateway'),
             'copy local:'.$discoveryTarget->instance('app-prod-2'),
         );
+
+    $capture = (new ProofCaptureService($paths, new OperationId(str_repeat('1', 32))))
+        ->capture(new TopologyRequest('TST-123', $worktree), $plan);
+
+    expect($capture->attempt->value)
+        ->toBe($proofTarget->requireAttempt()->value)
+        ->and(array_keys($capture->topology->instances))
+        ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+        ->and($state->hasAttempt(AttemptPurpose::Proof))
+        ->toBeTrue()
+        ->and($state->capturedProof()?->fingerprint())
+        ->toBe($capture->fingerprint())
+        ->and(is_file($paths->path('proof-evidence/TST-123/'.$proofTarget->requireAttempt()->value.'.json')))
+        ->toBeTrue();
 
     $eventCount = count($events);
     expect(fn () => $runner->prove(

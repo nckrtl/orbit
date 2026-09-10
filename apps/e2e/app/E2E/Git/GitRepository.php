@@ -107,6 +107,22 @@ final readonly class GitRepository
         throw new InvalidArgumentException('Git could not compare the commit ancestry.');
     }
 
+    /** @return list<string> */
+    public function parents(string $commit): array
+    {
+        $this->validateReachableCommit($commit);
+        $line = trim($this->run(['rev-list', '--parents', '-n', '1', $commit]));
+        $parts = preg_split('/\s+/', $line);
+        if (! is_array($parts) || array_shift($parts) !== $commit) {
+            throw new InvalidArgumentException('Git returned an invalid commit parent list.');
+        }
+        foreach ($parts as $parent) {
+            $this->validateSha($parent);
+        }
+
+        return $parts;
+    }
+
     public function createBundle(string $destination, string $commit, ?string $prerequisite = null): void
     {
         $this->validateSha($commit);

@@ -54,7 +54,7 @@ Legacy Instance and Workspace records remain available during staged conversion.
 
 ## Testing on real Linux machines
 
-Automated tests cover most Orbit behavior. When a change depends on Linux, systemd, file permissions, networking, or several machines, it is also tested in a fresh Incus environment. [ADR 0006](decisions/0006-topology-led-feature-development.md) explains why Orbit uses this approach.
+Automated tests cover most Orbit behavior. When a change depends on Linux, systemd, file permissions, networking, or several machines, contributors also observe it in a disposable Incus environment. The selected [implementation flow](reference/implementation-loop.md#incus-requirement) decides whether that environment is development discovery or a separate fresh proof topology. [ADR 0006](decisions/0006-topology-led-feature-development.md) explains why Orbit uses Incus.
 
 ## Documentation tools
 

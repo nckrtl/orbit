@@ -5,9 +5,15 @@ declare(strict_types=1);
 use App\E2E\IssueState;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CapturedProof;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofCloseoutRecord;
+use App\E2E\Value\ProofInputManifest;
+use App\E2E\Value\ProofReviewAction;
+use App\E2E\Value\ProofReviewEvaluation;
+use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyExtension;
@@ -293,5 +299,109 @@ describe('IssueState', function () {
                 TopologyExtension::AppProd,
             ))
             ->toThrow(RuntimeException::class, 'does not match the active lease');
+    });
+
+    it('persists typed capture, monotonic review, evaluation, and closeout state by exact attempt', function (): void {
+        $worktree = temporaryPath('orbit-issue-review-state-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('ORB-230', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $candidate = str_repeat('d', 40);
+        $topology = issueStateTopology('ORB-230', $attempt, AttemptPurpose::Proof);
+        $topology = new FeatureTopology(
+            $topology->construction,
+            $topology->purpose,
+            $topology->generation,
+            new SourceState($candidate, $candidate),
+            $topology->verification,
+        );
+        $manifest = new ProofInputManifest(
+            4,
+            $candidate,
+            str_repeat('b', 40),
+            [],
+            [],
+            '.loop/proof/ORB-230.json',
+            [],
+            $topology->construction,
+            null,
+            [
+                'static_classification' => true,
+                'proof_contract' => true,
+                'checkout_literals' => true,
+                'observed_processes' => true,
+                'observed_paths' => true,
+                'pcov_cleanup' => true,
+            ],
+        );
+        $proof = [
+            'status' => 'proved',
+            'issue' => 'ORB-230',
+            'attempt_id' => $attempt->value,
+            'candidate_sha' => $candidate,
+            'plan_sha256' => str_repeat('c', 64),
+            'manifest_sha256' => $manifest->fingerprint(),
+            'actions' => [],
+        ];
+        $state->writeProof($proof);
+        $capture = new CapturedProof(
+            'ORB-230',
+            $attempt,
+            $candidate,
+            str_repeat('c', 64),
+            $manifest->fingerprint(),
+            $proof,
+            $topology,
+            $manifest->toArray(),
+            '2026-09-10T10:00:00Z',
+        );
+        $state->captureProof($capture);
+        $pending = ProofReviewAction::incomplete(
+            'required-shell',
+            'shell',
+            'gateway',
+            true,
+            [],
+            null,
+            '2026-09-10T10:01:00Z',
+        );
+        $record = ProofReviewRecord::empty('ORB-230', $candidate, $attempt, '2026-09-10T10:01:00Z')
+            ->withAction($pending, '2026-09-10T10:01:00Z');
+        $state->writeReviewRecord($record);
+        $evaluation = ProofReviewEvaluation::forRecord($record, '2026-09-10T10:02:00Z');
+        $state->writeReviewEvaluation($evaluation);
+        $failedCloseout = new ProofCloseoutRecord(
+            'refresh-failed',
+            'ORB-230',
+            $attempt,
+            $candidate,
+            str_repeat('e', 40),
+            str_repeat('f', 40),
+            str_repeat('1', 40),
+            null,
+            'Refresh failed.',
+            '2026-09-10T10:03:00Z',
+        );
+        $state->writeCloseoutRecord($failedCloseout);
+
+        expect($state->capturedProof()?->fingerprint())
+            ->toBe($capture->fingerprint())
+            ->and($state->reviewRecord()?->action('required-shell')?->status)
+            ->toBe('incomplete')
+            ->and($state->reviewEvaluation()?->status)
+            ->toBe('blocked')
+            ->and($state->closeoutRecord()?->state)
+            ->toBe('refresh-failed');
+
+        $completed = $record->withAction(
+            $pending->complete('passed', null, '', '', null, '2026-09-10T10:04:00Z'),
+            '2026-09-10T10:04:00Z',
+        );
+        $state->writeReviewRecord($completed);
+
+        expect($state->reviewRecord()?->action('required-shell')?->status)
+            ->toBe('passed')
+            ->and(fn () => $state->writeReviewRecord($record))
+            ->toThrow(RuntimeException::class, 'cannot replace its retained history');
     });
 });

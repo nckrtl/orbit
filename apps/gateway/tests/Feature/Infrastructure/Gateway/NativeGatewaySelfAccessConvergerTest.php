@@ -53,9 +53,11 @@ it('pins the gateway host key for its own WireGuard address', function (): void 
     ] = gateway_self_access_converger();
 
     try {
-        $converger->converge(gateway_self_access_node());
+        $fingerprint = $converger->converge(gateway_self_access_node());
 
-        expect(file_get_contents($knownHostsPath))
+        expect($fingerprint)
+            ->toBe('SHA256:hostfingerprint')
+            ->and(file_get_contents($knownHostsPath))
             ->toBe("10.44.0.1 ssh-ed25519 HOSTKEYVALUE\n")
             ->and($processes->invocations)
             ->not

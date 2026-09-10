@@ -12,7 +12,13 @@ use Illuminate\Support\Facades\DB;
 
 it('projects active nodes from prospective roles and explicit preferences once', function (): void {
     $metrics = metricsExporterProjectionNode('metrics');
+    $metrics->update(['ssh_host_fingerprint' => null]);
     $metrics->roles()->create(['role' => 'metrics', 'status' => 'provisioning']);
+    $metrics->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $gateway = metricsExporterProjectionNode('gateway');
+    $gateway->update(['ssh_host_fingerprint' => null]);
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $gateway->roles()->create(['role' => 'vpn', 'status' => 'active']);
     $active = metricsExporterProjectionNode('active-role');
     $active->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $provisioning = metricsExporterProjectionNode('provisioning-role');
@@ -21,9 +27,21 @@ it('projects active nodes from prospective roles and explicit preferences once',
     $failed->roles()->create(['role' => 'gateway', 'status' => 'failed']);
     $explicit = metricsExporterProjectionNode('explicit');
     $inactive = metricsExporterProjectionNode('inactive', 'failed');
+    $unsupported = metricsExporterProjectionNode('unsupported');
+    $unsupported->update(['platform' => 'darwin']);
+    $unmanagedAbsent = metricsExporterProjectionNode('unmanaged-absent');
+    $unmanagedAbsent->update(['ssh_host_fingerprint' => null]);
+    $unmanagedEnabled = metricsExporterProjectionNode('unmanaged-enabled');
+    $unmanagedEnabled->update(['ssh_host_fingerprint' => null]);
+    $unmanagedDisabled = metricsExporterProjectionNode('unmanaged-disabled');
+    $unmanagedDisabled->update(['ssh_host_fingerprint' => null]);
     $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($metrics->id, ExporterPreference::Disabled);
     $preferences->put($active->id, ExporterPreference::Disabled);
     $preferences->put($explicit->id, ExporterPreference::Enabled);
+    $preferences->put($unsupported->id, ExporterPreference::Enabled);
+    $preferences->put($unmanagedEnabled->id, ExporterPreference::Enabled);
+    $preferences->put($unmanagedDisabled->id, ExporterPreference::Disabled);
 
     $projection = new NativeMetricsExporterProjection(new ExporterSelector, $preferences);
     $items = $projection->for($metrics);
@@ -37,6 +55,7 @@ it('projects active nodes from prospective roles and explicit preferences once',
         $items,
     ))->toBe([
         ['metrics',           true,  'metrics_node'],
+        ['gateway',           true,  'role_default'],
         ['active-role',       false, 'explicit_disabled'],
         ['provisioning-role', true,  'role_default'],
         ['failed-role',       false, 'roleless_default_excluded'],
@@ -60,6 +79,15 @@ it('projects active nodes from prospective roles and explicit preferences once',
                 $item->selection->reason->value,
             ]);
     }
+
+    expect($projection->forNode($metrics, $unsupported))
+        ->toBeNull()
+        ->and($projection->forNode($metrics, $unmanagedAbsent))
+        ->toBeNull()
+        ->and($projection->forNode($metrics, $unmanagedEnabled))
+        ->toBeNull()
+        ->and($projection->forNode($metrics, $unmanagedDisabled))
+        ->toBeNull();
 });
 
 it('returns no direct projection for inactive or missing nodes', function (): void {
@@ -130,5 +158,7 @@ function metricsExporterProjectionNode(string $name, string $status = 'active'):
         'platform' => 'linux',
         'public_ssh_host' => '127.0.0.1',
         'ssh_user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+        'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 20),
     ]);
 }

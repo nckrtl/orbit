@@ -178,6 +178,7 @@ describe('RunDoctorAction', function (): void {
             'role' => RoleName::AppDev,
             'status' => LifecycleStatus::Active,
         ]);
+        $selected->update(['ssh_host_fingerprint' => null]);
         bind_run_doctor_inspector(new NodeInspectionData(false, null, null, null));
 
         $report = app(RunDoctorAction::class)->execute(
@@ -198,6 +199,27 @@ describe('RunDoctorAction', function (): void {
             ->toBe('node.ssh_unreachable')
             ->and($report->nodes[0]->families[1]->issues[0]->code)
             ->toBe('role.node_unreachable');
+    });
+
+    it('omits the SSH finding for an ineligible record', function (): void {
+        $consumer = run_doctor_node('consumer');
+        $selected = run_doctor_node('operator-client');
+        $selected->update(['ssh_host_fingerprint' => null]);
+        $consumer->accessibleNodes()->attach($selected);
+        $inspector = bind_run_doctor_inspector(new NodeInspectionData(false, null, null, null));
+
+        $report = app(RunDoctorAction::class)->execute(
+            $consumer,
+            $selected->id,
+            [DoctorFamily::Node],
+        );
+
+        expect($report->healthy)
+            ->toBeTrue()
+            ->and($report->nodes[0]->families[0]->issues)
+            ->toBeEmpty()
+            ->and($inspector->nodeIds)
+            ->toBe([$selected->id]);
     });
 
     it('maps a typed base inspection failure and continues selected probes', function (): void {
@@ -261,6 +283,7 @@ function run_doctor_node(string $name): Node
         'public_ssh_port' => 22,
         'user' => 'orbit',
         'wireguard_ip' => "10.44.0.{$number}",
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 }
 

@@ -36,6 +36,16 @@ Apply `incus` when acceptance depends on a real operating system, service manage
 
 Retained issue snapshots and plans may call this label `proof:incus`; interpret that name as the same Incus requirement. A label rename alone does not change acceptance or the selected flow and does not require new candidate artifacts or another preflight. Publish new issues and handoffs with `incus`.
 
+## Scripted orchestration
+
+An installed external controller can expose one command through `bin/loop ISSUE`. Set repository-local Git configuration `orbit.deliveryDriver` to its absolute executable path. The entry point works from primary main or a linked issue worktree and passes the primary repository to that driver. Orbit owns worktree preparation, checks, plan validation, artifact validation, and the role processes; the external controller owns worker prompts, identities, dispatch, retries, and merge decisions under its orchestration contract.
+
+The Hermes controller starts new discovery issues by creating and bootstrapping the worktree, running root `composer check` once before planning, saving the Linear issue snapshot under `.loop/issue.json`, and starting a retained Builder in Herdr. This startup check validates the prepared dependencies and warms private caches. It does not replace the independent reviewer's check on the finished candidate. Existing worktrees without a controller journal retain their current orchestration, and explicit proof delivery retains its existing process.
+
+Tom repeats `bin/loop ISSUE` on worker events. The controller validates the completed phase receipt, starts an independent plan or PR reviewer, resumes the retained Builder with findings or implementation authority, or lands an independently approved candidate. An idle worker is only a wake signal. Structural receipt validation does not decide review quality. `bin/loop ISSUE status` reports the recorded phase, worker identities, and any owned wait or error. Long preparation runs have a retained process, journal, and log; an accepted background command reports its process instead of claiming the phase completed.
+
+Mutable session state and worker completion receipts live under `.loop/runtime/`, with the controller's durable journal in the Git common directory. Artifact save and publication exclude exactly `.loop/runtime/`. Plans, issue snapshots, development evidence, and proof inputs outside that directory remain in the artifact snapshot. The controller retains its review and completion records after worktree cleanup; recording a session or receipt never requires changing an already published candidate artifact.
+
 ## Start planning or implementation
 
 The orchestrator assigns an issue, registered worktree, phase, Incus requirement, selected flow, and any prior handoff. The planner or implementer reads its branch, `HEAD`, and working changes from that worktree. A startup SHA copied into a prompt is context, not a candidate gate, unless the task explicitly requests work on a particular revision. A stale or mistyped startup SHA does not require stopping, changing the checkout, or fetching main to find a matching object. Record the observed revision in the handoff.
@@ -68,7 +78,13 @@ Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verif
 
 ## Proof delivery
 
-The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](proof-plans.md). Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. Successful proof resources are captured and released before review, and closeout refreshes the shared snapshot from merged main. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
+The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](proof-plans.md). Release idle discovery resources before handing the candidate to review. Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
+
+After every declared proof action and general verification exits `0`, the harness captures the proof result, action evidence, topology inventory, input manifest, and candidate identity before it permits successful-proof inspection. It retains every standard or declared extended proof Node through review. Reviewers may use proof `shell` and `exec` access with the ordinary guest privilege boundary, including commands that change live application or machine state. The harness records review actions, results, required-check status, and findings separately from the immutable captured proof. [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md) governs this retained-proof review lifecycle.
+
+A required review check that fails or has an incomplete record prevents approval. An exploratory command failure remains distinct and does not replace a required result. A code or configuration fix requires a new candidate and fresh proof from declared inputs; an edit left on a reviewed machine and an equivalence report for the old proof cannot establish the fix. The old attempt may be released before replacement or explicit abandonment, but its captured proof and review record remain available.
+
+After the approved candidate merges, `bin/e2e-topology closeout` verifies the accepted merge and refreshes the shared snapshot from merged main without promoting reviewer-modified live state. A failed refresh keeps the complete retained proof topology, captured evidence, and review record for retry. Only a successful refresh permits the command to release the retained topology. Failed proof keeps its diagnosis and explicit release path.
 
 ## Local checks
 
