@@ -1,0 +1,25 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "production-bridge-current",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb213-production-bridge.sh",
+                "production-bridge-current"
+            ],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "production-bridge-repeat",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb213-production-bridge.sh",
+                "production-bridge-repeat"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": true
+}
