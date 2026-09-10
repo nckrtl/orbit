@@ -41,10 +41,11 @@ After all three replacements and the promoted manifest agree, acquisition sees o
 
 ## Promote
 
-Feature closeout uses `refresh` from merged main while captured successful proof resources remain retained, under [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md). The explicit `promote` command remains available only for an unchanged retained live topology that has not received interactive reviewer access, and it verifies its plan selected from `.loop/proof/`. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
+Feature closeout uses `refresh` from merged main while captured successful proof resources remain retained, under [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md). The explicit `promote` command remains available only for an ordinary unchanged retained live topology that has not received interactive reviewer access, and it verifies its plan selected from `.loop/proof/`. A plan with `snapshot_replacement: true` fails before Incus access because only verified closeout can install its clean reconstructed replacement. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
 
 | Refusal | Condition |
 | --- | --- |
+| Declared replacement | The plan sets `snapshot_replacement: true`; only clean closeout reconstruction can install it |
 | Evidence | No `proved` attempt, or the plan fingerprint, zero-exit action list, or manifest does not match the recorded proof |
 | Mutation | The plan declares an extension, declares `mutates: true`, or its `ends_with` leaves a Node out; each condition sets `mutates` |
 | Review state | The retained proof topology has any interactive reviewer action, so its live state is not promotion input |
