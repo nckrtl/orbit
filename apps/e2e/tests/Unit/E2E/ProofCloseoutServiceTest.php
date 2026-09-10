@@ -55,7 +55,7 @@ function closeoutGitFixture(): array
     expect(Process::run(['git', '-C', $primary, 'add', '.'])->successful())->toBeTrue();
     expect(Process::run(['git', '-C', $primary, 'commit', '-q', '-m', 'Base'])->successful())->toBeTrue();
     expect(Process::run([
-        'git', '-C', $primary, 'worktree', 'add', '-q', '-b', 'orb-230', $worktree, 'HEAD',
+        'git', '-C', $primary, 'worktree', 'add', '-q', '-b', 'aux-230', $worktree, 'HEAD',
     ])->successful())->toBeTrue();
     file_put_contents($worktree.'/feature.txt', "feature\n");
     expect(Process::run(['git', '-C', $worktree, 'add', 'feature.txt'])->successful())->toBeTrue();
@@ -69,11 +69,11 @@ function closeoutGitFixture(): array
     expect(Process::run(['git', '-C', $primary, 'commit', '-q', '-m', 'Artifact'])->successful())->toBeTrue();
     $artifact = (new GitRepository($primary))->commit();
     expect(Process::run([
-        'git', '-C', $primary, 'tag', 'loop/orb-230/'.$candidate, $artifact,
+        'git', '-C', $primary, 'tag', 'loop/aux-230/'.$candidate, $artifact,
     ])->successful())->toBeTrue();
     expect(Process::run(['git', '-C', $primary, 'switch', '-q', 'main'])->successful())->toBeTrue();
     expect(Process::run([
-        'git', '-C', $primary, 'merge', '-q', '--no-ff', 'orb-230', '-m', 'Merge ORB-230',
+        'git', '-C', $primary, 'merge', '-q', '--no-ff', 'aux-230', '-m', 'Merge AUX-230',
     ])->successful())->toBeTrue();
     $merge = (new GitRepository($primary))->commit();
 
@@ -92,7 +92,7 @@ function closeoutGitFixture(): array
 
 function closeoutState(string $worktree, string $candidate, StatePaths $hostPaths): IssueState
 {
-    $issue = 'ORB-230';
+    $issue = 'AUX-230';
     $attempt = attemptId('b');
     $target = TopologyTarget::feature($issue, $attempt);
     $generation = new TopologySnapshotGeneration(
@@ -124,7 +124,7 @@ function closeoutState(string $worktree, string $candidate, StatePaths $hostPath
         str_repeat('2', 40),
         [],
         [],
-        '.loop/proof/ORB-230.json',
+        '.loop/proof/AUX-230.json',
         [],
         $construction,
         null,
@@ -226,7 +226,7 @@ it('retains the proof and records a redacted failed refresh for retry', function
     );
 
     $result = $service->closeout(
-        new TopologyRequest('ORB-230', $git['worktree']),
+        new TopologyRequest('AUX-230', $git['worktree']),
         $git['candidate'],
         $git['artifact'],
         $git['merge'],
@@ -243,7 +243,7 @@ it('retains the proof and records a redacted failed refresh for retry', function
         ->toBeTrue()
         ->and($state->capturedProof()?->candidateSha)
         ->toBe($git['candidate'])
-        ->and(is_file($paths->path('proof-closeout/ORB-230/'.str_repeat('b', 32).'.json')))
+        ->and(is_file($paths->path('proof-closeout/AUX-230/'.str_repeat('b', 32).'.json')))
         ->toBeTrue();
 });
 
@@ -269,7 +269,7 @@ it('refreshes before exact cleanup and completes the retry-safe closeout record'
     );
 
     $result = $service->closeout(
-        new TopologyRequest('ORB-230', $git['worktree']),
+        new TopologyRequest('AUX-230', $git['worktree']),
         $git['candidate'],
         $git['artifact'],
         $git['merge'],
@@ -314,7 +314,7 @@ it('retries a failed refresh without releasing the retained attempt early', func
             return ['state' => 'released'];
         },
     );
-    $request = new TopologyRequest('ORB-230', $git['worktree']);
+    $request = new TopologyRequest('AUX-230', $git['worktree']);
 
     $first = $service->closeout(
         $request,
@@ -355,7 +355,7 @@ it('completes after cleanup removed the lease before the final record was writte
     $capture = $state->capturedProof() ?? throw new RuntimeException('Fixture capture is missing.');
     $refreshed = new ProofCloseoutRecord(
         'refresh-succeeded',
-        'ORB-230',
+        'AUX-230',
         $capture->attempt,
         $git['candidate'],
         $git['artifact'],
@@ -367,7 +367,7 @@ it('completes after cleanup removed the lease before the final record was writte
     );
     $state->writeCloseoutRecord($refreshed);
     new AtomicJsonStore($paths)->write(
-        'proof-closeout/ORB-230/'.$capture->attempt->value.'.json',
+        'proof-closeout/AUX-230/'.$capture->attempt->value.'.json',
         $refreshed->toArray(),
     );
     $state->forgetAttempt(AttemptPurpose::Proof);
@@ -389,7 +389,7 @@ it('completes after cleanup removed the lease before the final record was writte
     );
 
     $result = $service->closeout(
-        new TopologyRequest('ORB-230', $git['worktree']),
+        new TopologyRequest('AUX-230', $git['worktree']),
         $git['candidate'],
         $git['artifact'],
         $git['merge'],
@@ -413,7 +413,7 @@ it('restores a complete host closeout record after the local final write was los
     $capture = $state->capturedProof() ?? throw new RuntimeException('Fixture capture is missing.');
     $refreshed = new ProofCloseoutRecord(
         'refresh-succeeded',
-        'ORB-230',
+        'AUX-230',
         $capture->attempt,
         $git['candidate'],
         $git['artifact'],
@@ -425,7 +425,7 @@ it('restores a complete host closeout record after the local final write was los
     );
     $complete = new ProofCloseoutRecord(
         'complete',
-        'ORB-230',
+        'AUX-230',
         $capture->attempt,
         $git['candidate'],
         $git['artifact'],
@@ -437,7 +437,7 @@ it('restores a complete host closeout record after the local final write was los
     );
     $state->writeCloseoutRecord($refreshed);
     new AtomicJsonStore($paths)->write(
-        'proof-closeout/ORB-230/'.$capture->attempt->value.'.json',
+        'proof-closeout/AUX-230/'.$capture->attempt->value.'.json',
         $complete->toArray(),
     );
     $state->forgetAttempt(AttemptPurpose::Proof);
@@ -449,7 +449,7 @@ it('restores a complete host closeout record after the local final write was los
     );
 
     $result = $service->closeout(
-        new TopologyRequest('ORB-230', $git['worktree']),
+        new TopologyRequest('AUX-230', $git['worktree']),
         $git['candidate'],
         $git['artifact'],
         $git['merge'],
@@ -483,7 +483,7 @@ it('retries a failed refresh on newer clean main that still contains the merge',
             return ['state' => 'released'];
         },
     );
-    $request = new TopologyRequest('ORB-230', $git['worktree']);
+    $request = new TopologyRequest('AUX-230', $git['worktree']);
     expect($service->closeout(
         $request,
         $git['candidate'],
@@ -536,7 +536,7 @@ it('refuses a merge whose same-tree second parent is not the exact candidate', f
     );
 
     expect(fn () => $service->closeout(
-        new TopologyRequest('ORB-230', $git['worktree']),
+        new TopologyRequest('AUX-230', $git['worktree']),
         $git['candidate'],
         $git['artifact'],
         $wrongMerge,
@@ -558,7 +558,7 @@ it('refuses closeout when the review evaluation has a required failure', functio
         '2026-09-10T10:01:00Z',
     )->complete('failed', null, '', '', 'must fix', '2026-09-10T10:04:00Z');
     $failedRecord = ProofReviewRecord::empty(
-        'ORB-230',
+        'AUX-230',
         $git['candidate'],
         attemptId('b'),
         '2026-09-10T10:01:00Z',
@@ -570,9 +570,9 @@ it('refuses closeout when the review evaluation has a required failure', functio
     $failedEvaluation = ProofReviewEvaluation::forRecord($failedRecord, '2026-09-10T10:05:00Z');
     $state->writeReviewEvaluation($failedEvaluation);
     $archive = new AtomicJsonStore($paths);
-    $archive->write('proof-review/ORB-230/'.str_repeat('b', 32).'.json', $failedRecord->toArray());
+    $archive->write('proof-review/AUX-230/'.str_repeat('b', 32).'.json', $failedRecord->toArray());
     $archive->write(
-        'proof-review-evaluation/ORB-230/'.str_repeat('b', 32).'.json',
+        'proof-review-evaluation/AUX-230/'.str_repeat('b', 32).'.json',
         $failedEvaluation->toArray(),
     );
     $service = closeoutService(
@@ -583,7 +583,7 @@ it('refuses closeout when the review evaluation has a required failure', functio
     );
 
     expect(fn () => $service->closeout(
-        new TopologyRequest('ORB-230', $git['worktree']),
+        new TopologyRequest('AUX-230', $git['worktree']),
         $git['candidate'],
         $git['artifact'],
         $git['merge'],

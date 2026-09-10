@@ -224,9 +224,9 @@ it('binds review and merge to one exact remote head', function () use ($read): v
     expect($merge)
         ->toContain('Close out one independently approved pull request')
         ->toContain('external orchestrator merges it')
-        ->toContain('a passing reviewer-run root `composer check` receipt for it')
+        ->toContain('a passing Builder-run root `composer check` receipt for it')
         ->toContain('current main included in that head')
-        ->toContain('A changed head needs fresh approval, local review checks, and an evidence decision')
+        ->toContain('A changed head needs fresh approval, a fresh Builder gate, and an evidence decision')
         ->toContain('Never substitute snapshot refresh for missing acceptance proof')
         ->toContain('bin/e2e-topology closeout <ISSUE>')
         ->toContain('A failed refresh retains the topology, captured evidence, and review record for retry')
@@ -325,12 +325,15 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
         ->toContain('bin/e2e-topology capture <ISSUE>')
         ->toContain('release only idle discovery')
         ->toContain('successful proof topology remains available')
-        ->toContain('The reviewer runs root `composer check` across all projects with TIA');
+        ->toContain('run root `composer check` on that exact candidate')
+        ->toContain('Retain the successful `role: builder` receipt');
     expect($reviewer)
         ->toContain('bin/loop-artifacts fetch <ISSUE> --candidate=<head> --expected-artifact=<artifact-sha>')
         ->toContain('Do not repeat those checks manually')
         ->toContain('Validate again when either SHA changes')
-        ->toContain('Investigate any validation failure before continuing');
+        ->toContain('Investigate any validation failure before continuing')
+        ->toContain('Validate the Builder gate and inspect evidence')
+        ->toContain('Do not repeat root `composer check` solely to approve the candidate');
     expect($merger)
         ->toContain('one independent `Approved.` review bound to the exact head and published artifact SHA')
         ->toContain('--candidate=<approved-head> --expected-artifact=<artifact-sha>')
@@ -345,6 +348,27 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
     expect($planReviewer)
         ->toContain('bin/loop-artifacts save <ISSUE>')
         ->toContain('Do not commit `.loop/` to the feature branch');
+});
+
+it('assigns the exact-candidate quality gate to the Builder', function () use ($read): void {
+    $developer = $read('.agents/skills/developing-features/SKILL.md');
+    $reviewer = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
+    $reference = $read('docs/reference/implementation-loop.md');
+
+    expect($developer)
+        ->toContain('run root `composer check` on that exact candidate')
+        ->toContain('Retain the successful `role: builder` receipt')
+        ->toContain('Builder gate: passed (<receipt>)');
+
+    expect($reviewer)
+        ->toContain('Validate the Builder gate and inspect evidence')
+        ->toContain('`role: builder`')
+        ->toContain('Do not repeat root `composer check` solely to approve the candidate');
+
+    expect($reference)
+        ->toContain('## Candidate quality gate')
+        ->toContain('The Builder runs root `composer check`')
+        ->toContain('The reviewer does not repeat the full gate solely to approve');
 });
 
 it('keeps issue creation current, dependency-aware, atomic, and proof feasible', function () use ($read): void {
@@ -540,7 +564,7 @@ it('keeps repository guidance and agent manifests current', function () use ($re
 
     expect($agents)->toContain('## Independent agent-role skills');
     expect($agents)->not->toContain('reconciling-feature-blocks');
-    expect($agents)->not->toContain('Builder');
+    expect($agents)->toContain('Builder runs root `composer check`');
     expect($agents)->not->toContain('after plan approval');
     expect($agents)->toContain('Product feature branches never modify the harness')->toContain('are not harness code');
     expect($agents)->toContain('Proof evidence is immutable');

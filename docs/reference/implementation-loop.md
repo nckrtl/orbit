@@ -27,7 +27,7 @@ The `incus` issue label identifies acceptance that needs real machines. [ADR 005
 
 | Issue label | Selected flow | Required topology |
 | --- | --- | --- |
-| No `incus` | `discovery` | None; use focused local tests and the local review gate |
+| No `incus` | `discovery` | None; use focused local tests and the candidate quality gate |
 | `incus` | `discovery` | Discovery for development and acceptance observations |
 | No `incus` | Explicit `proof` | None for automated-only acceptance; the other selected-flow rules still apply |
 | `incus` | Explicit `proof` | Discovery for development plus a separate proof topology for isolated acceptance evidence |
@@ -40,7 +40,7 @@ Retained issue snapshots and plans may call this label `proof:incus`; interpret 
 
 An installed external controller can expose one command through `bin/loop ISSUE`. Set repository-local Git configuration `orbit.deliveryDriver` to its absolute executable path. The entry point works from primary main or a linked issue worktree and passes the primary repository to that driver. Orbit owns worktree preparation, checks, plan validation, artifact validation, and the role processes; the external controller owns worker prompts, identities, dispatch, retries, and merge decisions under its orchestration contract.
 
-The Hermes controller starts new discovery issues by creating and bootstrapping the worktree, running root `composer check` once before planning, saving the Linear issue snapshot under `.loop/issue.json`, and starting a retained Builder in Herdr. This startup check validates the prepared dependencies and warms private caches. It does not replace the independent reviewer's check on the finished candidate. Existing worktrees without a controller journal retain their current orchestration, and explicit proof delivery retains its existing process.
+The Hermes controller starts new discovery issues by creating and bootstrapping the worktree, running root `composer check` once before planning, saving the Linear issue snapshot under `.loop/issue.json`, and starting a retained Builder in Herdr. This startup check validates the prepared dependencies and warms private caches. It does not replace the Builder's gate on the finished candidate. Existing worktrees without a controller journal retain their current orchestration, and explicit proof delivery retains its existing process.
 
 Tom repeats `bin/loop ISSUE` on worker events. The controller validates the completed phase receipt, starts an independent plan or PR reviewer, resumes the retained Builder with findings or implementation authority, or lands an independently approved candidate. An idle worker is only a wake signal. Structural receipt validation does not decide review quality. `bin/loop ISSUE status` reports the recorded phase, worker identities, and any owned wait or error. Long preparation runs have a retained process, journal, and log; an accepted background command reports its process instead of claiming the phase completed.
 
@@ -52,7 +52,7 @@ The orchestrator assigns an issue, registered worktree, phase, Incus requirement
 
 Verify that the worktree belongs to the assigned issue and preserve existing work. Resolve a wrong checkout, unresolved merge conflicts, or an unexpected writer before editing. Keep delivery phases serialized within each issue worktree; separate issue worktrees can progress independently. Main movement does not restart discovery planning or implementation. When correcting review findings, use the reviewed SHA as the findings' reference and assess them against the current worktree.
 
-Exact binding starts with produced review inputs: the plan reviewer checks the actual plan and documentation artifacts, and the PR reviewer checks the pushed candidate, its artifacts, and the local gate receipt. The orchestrator copies these identifiers from verified Git or repository-tool output and merges only the approved candidate. A working revision is discovered locally; an approval remains bound to the revision reviewed.
+Exact binding starts with produced review inputs: the plan reviewer checks the actual plan and documentation artifacts, and the PR reviewer checks the pushed candidate, its artifacts, and the Builder gate receipt. The orchestrator copies these identifiers from verified Git or repository-tool output and merges only the approved candidate. A working revision is discovered locally; an approval remains bound to the revision reviewed.
 
 ## Discovery-only delivery
 
@@ -63,16 +63,16 @@ The discovery flow follows this order.
 3. Obtain an independent preflight review through `reviewing-feature-plans`.
 4. For an `incus` issue, acquire discovery with `bin/e2e-topology acquire ISSUE WORKTREE` after preflight passes. Otherwise proceed without a topology.
 5. Implement and run focused local tests and project checks. For an `incus` issue, use `shell`, `exec`, `sync`, and `verify` on discovery as development tools.
-6. Commit and push the candidate, publish the artifacts, and obtain independent code review with a passing local review gate.
+6. Commit and gate the candidate, publish and push its artifacts, then obtain independent code review.
 7. Merge the approved candidate, then release any discovery resources and remove the worktree.
 
-The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, focused tests, and the local review gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
+The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, focused tests, and the Builder candidate gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
 
 Discovery uses the existing isolated topology machinery and mounts the changing worktree. Acquisition validates the saved snapshot against its recorded generation and checks cold-base compatibility, ownership, capacity, and readiness. It does not require that snapshot to match current main. An incompatible cold base or absent snapshot still needs an explicit infrastructure repair. Optional extended discovery reuses the existing extension declaration format described in [Incus topologies](incus-topologies.md); its actions do not run as acceptance proof.
 
-An advance of main alone does not require integration, another approval, proof, or local checks on a replacement candidate. The orchestrator merges when GitHub reports the approved candidate can merge and the reviewer has run the local gate successfully on that candidate. If actual conflicts block merging, the implementer fetches main, merges it into the branch, resolves conflicts, runs affected checks, publishes artifacts for the new head, and pushes again. The reviewer checks the resolution changes and affected acceptance items on that head; preflight does not restart.
+An advance of main alone does not require integration, another approval, proof, or local checks on a replacement candidate. The orchestrator merges when GitHub reports the approved candidate can merge and the Builder's gate receipt validates for that candidate. If actual conflicts block merging, the implementer fetches main, merges it into the branch, resolves conflicts, runs affected checks and a fresh candidate gate, publishes artifacts for the new head, and pushes again. The reviewer checks the resolution changes and affected acceptance items on that head; preflight does not restart.
 
-GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0053](../decisions/0053-use-local-review-checks-for-feature-landing.md) governs the local review gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
+GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0059](../decisions/0059-make-the-builder-own-the-candidate-quality-gate.md) governs the local candidate gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
 
 Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases any discovery resources, and runs `bin/worktree-remove ISSUE`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
 
@@ -88,9 +88,9 @@ After the approved candidate merges, `bin/e2e-topology closeout` verifies the ac
 
 ## Local checks
 
-Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, Pint formatting and syntax checks, and static analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. The independent reviewer runs root `composer check` on the clean submitted candidate before approval. This local gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
+Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, Pint formatting and syntax checks, and static analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. After committing the clean candidate, the Builder runs root `composer check` before implementation handoff. This candidate gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
 
-Apply this check policy when an issue or retained plan still names generic full no-TIA CI suites. The planner maps that wording to focused development checks and the reviewer's local gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. An intentional issue-specific full run needs a current explicit instruction or a concrete diagnostic reason; copied generic CI wording does not supply either. A focused test command with an explicit path and `--no-tia` remains valid: it runs the named acceptance tests, not every project suite.
+Apply this check policy when an issue or retained plan still names generic full no-TIA CI suites. The planner maps that wording to focused development checks and the Builder's candidate gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. An intentional issue-specific full run needs a current explicit instruction or a concrete diagnostic reason; copied generic CI wording does not supply either. A focused test command with an explicit path and `--no-tia` remains valid: it runs the named acceptance tests, not every project suite.
 
 Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
 
@@ -127,17 +127,17 @@ Use these commands from the affected project directory.
 | `composer check` | Runs project quality checks without the full test suite |
 | `composer test` | Runs the full project suite with TIA disabled |
 
-TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and the local review gate remain required. A TIA skip or zero selected tests is not new acceptance evidence.
+TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and the Builder candidate gate remain required. A TIA skip or zero selected tests is not new acceptance evidence.
 
 Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Discovery and proof flow selection do not change test-runner setup.
 
-## Local review gate
+## Candidate quality gate
 
-The reviewer runs root `composer check` in a clean review worktree at the submitted candidate. The command first seeds absent TIA caches, then runs strict Composer validation, project `composer check`, and `composer test:affected` in each project, sequentially. Project quality checks use the project's configured tools, including Rector in dry-run mode. A failure in any project prevents approval.
+The Builder runs root `composer check` in the clean issue worktree at the committed candidate. The command first seeds absent TIA caches, then runs strict Composer validation, project `composer check`, and `composer test:affected` in each project, sequentially. Project quality checks use the project's configured tools, including Rector in dry-run mode. A failure in any project returns directly to the Builder and prevents review dispatch.
 
-The gate writes command logs and `result.json` under the Git common directory at `orbit-checks/<candidate>/review-*/`. The receipt records the exact candidate and tree, each command, exit code, duration, and log path. It reports success only when every check passes and the candidate remains clean and unchanged. The reviewer retains the receipt with the acceptance assessment; the orchestrator verifies that its candidate matches the approved and merged head. A later candidate needs a new gate and approval.
+The gate writes command logs and `result.json` under the Git common directory at `orbit-checks/<candidate>/review-*/`. The receipt records `role: builder`, the exact candidate and tree, each command, exit code, duration, and log path. It reports success only when every check passes and the candidate remains clean and unchanged. The Builder includes the path in its implementation handoff. The orchestrator validates it before review dispatch, and the reviewer validates the same receipt while assessing the candidate. The reviewer does not repeat the full gate solely to approve. A later candidate needs a new gate and approval.
 
-GitHub's workflow is available only for manual diagnostics and remains disabled in the repository settings. It does not run automatically on pushes or pull requests. Focused acceptance tests remain required; TIA selection alone does not establish acceptance. Missing or incompatible caches can cause the local gate to record a full project suite. Root `bin/test` remains available for an explicit full run without TIA.
+GitHub's workflow is available only for manual diagnostics and remains disabled in the repository settings. It does not run automatically on pushes or pull requests. Focused acceptance tests remain required; TIA selection alone does not establish acceptance. Missing or incompatible caches can cause the candidate gate to record a full project suite. Root `bin/test` remains available for an explicit full run without TIA.
 
 ## Review handoff
 
@@ -147,14 +147,14 @@ The implementer returns one proposed PR body. The orchestrator publishes its evi
 | --- | --- |
 | Binding | `Issue: <ID>`, Incus required or not required, selected flow, candidate SHA, artifact ref and SHA |
 | Acceptance | One row per item, in order: item number or brief outcome, test or discovery check, observed result, and precise artifact path or log reference for details |
-| Checks | Focused tests and changed-project checks with results; mark the independent root gate pending until the reviewer supplies its receipt |
+| Checks | Focused tests and changed-project checks with results; `Builder gate: passed (<receipt>)` for the exact candidate |
 | Documentation | Every changed maintained page with its purpose, audit findings and owners, or the applicable reason for unchanged documentation |
 | Deviations and limits | Actual deviations and unverified behavior, or `none` |
 | Discovery | Observations and resource state for `incus` issues, or `Incus: not required`; include `Discovery development only; isolated acceptance proof not run` for discovery flow |
 
 One check can support several acceptance rows. A test count alone does not identify which outcome was checked. Discovery observations need enough context to inspect or repeat the check; they do not require a separate proof plan or immutable runtime capture. The reviewer assesses the evidence and performs additional focused checks when a concrete uncertainty warrants them.
 
-If publication omits supplied evidence, the orchestrator restores it from the implementation handoff. If evidence is absent, the implementer supplies the missing check or states the limitation. The reviewer can continue substantive review while the body is corrected. Correcting only PR text or superseded generic check wording does not change the candidate, restart preflight, or require repeating a passing gate on that unchanged candidate. Product contract changes, source changes, and changes to published candidate artifacts follow their existing review rules. Approval still requires adequate acceptance evidence and the reviewer's passing receipt.
+If publication omits supplied evidence, the orchestrator restores it from the implementation handoff. If evidence is absent, the implementer supplies the missing check or states the limitation. The reviewer can continue substantive review while the body is corrected. Correcting only PR text or superseded generic check wording does not change the candidate, restart preflight, or require repeating a passing gate on that unchanged candidate. Product contract changes, source changes, and changes to published candidate artifacts follow their existing review rules. Approval still requires adequate acceptance evidence and the validated Builder receipt.
 
 ## Main test baselines
 
@@ -252,9 +252,9 @@ The optional `--expected-artifact` argument accepts a full artifact commit SHA a
 
 Run the command from the assigned issue worktree. When that worktree has an older helper, invoke `bin/loop-artifacts` by its absolute path in the current primary main checkout while keeping the issue worktree as the working directory. The helper validates objects in the caller's repository. No main integration or worktree recreation is needed to use it.
 
-The developer includes the artifact ref and SHA in the pull request body. The reviewer fetches and validates the submitted binding with the command, then reads the plan and every fixture. Successful validation establishes the parent, file-boundary, file-type, and expected-SHA checks; agents do not repeat them manually. Validate again when either SHA changes and investigate failures before continuing. Artifact validation establishes no plan quality, acceptance, selected-flow evidence, quality-gate result, or approval.
+The developer includes the artifact ref, SHA, and Builder gate receipt in the pull request body. The reviewer fetches and validates the submitted artifact binding and gate receipt, then reads the plan and every fixture. Successful artifact validation establishes the parent, file-boundary, file-type, and expected-SHA checks; agents do not repeat them manually. Validate again when either SHA changes and investigate failures before continuing. Artifact validation establishes no plan quality, acceptance, selected-flow evidence, quality-gate result, or approval.
 
-Approval binds both SHAs. The orchestrator merges that exact candidate after approval and the local review gate. Main integration creates a new candidate and requires artifact publication, local review checks, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
+Approval binds both SHAs. The orchestrator merges that exact candidate after approval and the Builder's candidate gate. Main integration creates a new candidate and requires artifact publication, a fresh Builder gate, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
 
 ## Existing worktrees
 

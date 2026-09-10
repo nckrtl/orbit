@@ -72,7 +72,7 @@ verifiable acceptance criteria to the orchestrator; diagnosis need not wait for
 issue creation. Implement the assigned repair through
 [developing-features](../developing-features/SKILL.md), including its focused
 tests, project checks, candidate artifacts, and independent-review handoff.
-The reviewer runs root `composer check` on the exact repair candidate.
+The Builder runs root `composer check` on the exact repair candidate before independent review.
 
 A merged PR cannot receive a later repair: use a new PR even when reusing its
 failure evidence. Keep repairs limited to the incident. Harness changes still
