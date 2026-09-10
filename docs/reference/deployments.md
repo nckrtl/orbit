@@ -13,7 +13,7 @@ The Gateway prepares each new production home with these paths before it publish
 | `database.sqlite` | Holds the optional persistent SQLite database when the operating agent configures or supplies one. Layout preparation does not create this file. |
 | `current` | Selects one release through a symbolic link. It is absent until Orbit selects code. |
 
-Each prepared release contains a `.env` symbolic link that resolves to the production home's `.env` file. An absent `current` link means that the AppInstance has no selected release. Staged source under `releases/` does not become serving state merely because it exists.
+Each prepared release contains a `.env` symbolic link that resolves to the production home's `.env` file. Production creation stages initial source under `releases/` and leaves `current` absent. The explicit first deployment selects code later. Staged source does not become serving state merely because it exists.
 
 Orbit keeps `database.sqlite` at the production-home path. The operating agent must configure the application to use that path. Orbit provides no database-path environment placeholder and does not infer or rewrite a stored literal database value.
 
@@ -29,5 +29,4 @@ Caddy resolves the root symbolic link to the selected release before it passes a
 
 AppInstance removal clears the owned `current` serving link and its Caddy, certificate, Route, and runtime projections. It retains `releases/`, `.env`, an existing `database.sqlite`, and `/etc/orbit/php-fpm/<production-user>/local.conf` for operator recovery.
 
-Orbit does not remove old releases automatically. Converting an existing flat production home, fetching and activating a later release, running application commands, and selecting retained code for rollback have separate operations.
-
+Orbit does not remove old releases automatically. Orbit owns explicit release preparation, activation, and code rollback, while the operating agent owns configured application steps and recovery decisions. Converting an existing flat production home and executing a deployment remain separate operations.
