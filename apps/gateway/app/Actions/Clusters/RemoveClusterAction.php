@@ -19,7 +19,6 @@ final readonly class RemoveClusterAction
     {
         /**
          * @var Cluster $removed
-         * @mago-expect lint:inline-variable-return The annotation narrows Laravel's transaction result.
          */
         $removed = DB::transaction(function () use ($cluster): Cluster {
             $locked = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);

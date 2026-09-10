@@ -6,19 +6,12 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Serialized quarantine state validates every exact nested identity.
- * @mago-expect analysis:impossible-type-comparison Runtime serialized input can violate PHPDoc nested shapes.
- * @mago-expect analysis:invalid-array-element-key The target kind is checked before inventory validation.
- * @mago-expect analysis:less-specific-argument The observed resource is fully checked before inventory validation.
- */
 final readonly class QuarantineManifest
 {
     /**
-     * @param array{path: string, content_sha256: string, mode: int, filesystem_type: string} $freezeEvidence
-     * @param list<array<string, mixed>> $targets
-     * @param array<string, list<array<string, mixed>>> $preserved
-     * @mago-expect lint:excessive-parameter-list Every reviewed quarantine fact is explicit and immutable.
+     * @param  array{path: string, content_sha256: string, mode: int, filesystem_type: string}  $freezeEvidence
+     * @param  list<array<string, mixed>>  $targets
+     * @param  array<string, list<array<string, mixed>>>  $preserved
      */
     public function __construct(
         public string $inventorySha256,
@@ -28,101 +21,7 @@ final readonly class QuarantineManifest
         public string $quarantinedAt,
         public string $deleteAfter,
     ) {
-        if (
-            preg_match('/\A[a-f0-9]{64}\z/', $inventorySha256) !== 1
-            || array_keys($freezeEvidence) !== ['path', 'content_sha256', 'mode', 'filesystem_type']
-            || preg_match('/\A[a-f0-9]{64}\z/', $freezeEvidence['content_sha256'] ?? '') !== 1
-            || ($freezeEvidence['mode'] ?? null) !== 0600
-            || ($freezeEvidence['filesystem_type'] ?? null) !== 'file'
-            || ! is_string($freezeEvidence['path'] ?? null)
-            || $targets === []
-            || ! array_is_list($targets)
-        ) {
-            throw new InvalidArgumentException('The quarantine manifest is invalid.');
-        }
-        $quarantineTime = \DateTimeImmutable::createFromFormat(DATE_ATOM, $quarantinedAt);
-        if (
-            $quarantineTime === false
-            || $quarantineTime->format(DATE_ATOM) !== $quarantinedAt
-            || $quarantineTime->modify('+7 days')->format(DATE_ATOM) !== $deleteAfter
-        ) {
-            throw new InvalidArgumentException('The quarantine delete_after must be exactly seven days later.');
-        }
-        $seen = [];
-        $lastPosition = -1;
-        $lastIdentity = null;
-        foreach ($targets as $target) {
-            if (
-                ! is_array($target)
-                || array_is_list($target)
-                || array_keys($target) !== [
-                    'kind',
-                    'identity',
-                    'original_status',
-                    'metadata',
-                    'dependencies',
-                    'recovery',
-                    'observed',
-                    'observed_resource_sha256',
-                    'result',
-                ]
-            ) {
-                throw new InvalidArgumentException('Each quarantine target must contain the exact nested schema.');
-            }
-            $kind = $target['kind'] ?? null;
-            $identity = $target['identity'] ?? null;
-            $key = is_string($kind) && is_string($identity) ? $kind."\0".$identity : '';
-            $position = is_string($target['kind'] ?? null)
-                ? array_search($target['kind'], RetirementInventory::CANDIDATE_KINDS, true)
-                : false;
-            $observed = $target['observed'] ?? null;
-            if (
-                ! is_int($position)
-                || ! is_string($kind)
-                || $position < $lastPosition
-                || ! is_string($identity)
-                || $position === $lastPosition
-                && $lastIdentity !== null
-                && strcmp($lastIdentity, $identity) >= 0
-                || isset($seen[$key])
-                || ! is_array($observed)
-                || ! is_string($target['observed_resource_sha256'] ?? null)
-                || ! is_array($target['metadata'] ?? null)
-                || ! is_array($target['dependencies'] ?? null)
-                || ! is_array($target['recovery'] ?? null)
-                || ! in_array($target['result'] ?? null, ['stopped', 'unchanged'], true)
-                || ! hash_equals($target['observed_resource_sha256'], hash('sha256', json_encode(
-                    $observed,
-                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-                )))
-            ) {
-                throw new InvalidArgumentException('The quarantine targets are invalid or duplicated.');
-            }
-            foreach ($target['recovery'] as $command) {
-                if (! is_string($command) || $command === '') {
-                    throw new InvalidArgumentException('Every quarantine recovery command must be a string.');
-                }
-            }
-            $observedIdentity = $observed['identity'] ?? $observed['name'] ?? $observed['path'] ?? null;
-            if ($observedIdentity !== $target['identity']) {
-                throw new InvalidArgumentException('The quarantine target identity does not match its observation.');
-            }
-            if (
-                ($target['original_status'] ?? null) !== ($observed['status'] ?? null)
-                || $target['metadata'] !== ($observed['metadata'] ?? [])
-                || $target['dependencies'] !== ($observed['dependencies'] ?? [])
-            ) {
-                throw new InvalidArgumentException(
-                    'The quarantine target status, metadata, or dependencies do not match.',
-                );
-            }
-            RetirementInventory::assertLegacyCandidate($kind, $observed);
-            new RetirementInventory([$kind => [$observed]], [], $quarantinedAt);
-            $seen[$key] = true;
-            $lastPosition = $position;
-            $lastIdentity = $identity;
-        }
-        new RetirementInventory([], $preserved, $quarantinedAt);
+        $this->validate($freezeEvidence, $targets);
     }
 
     /** @return array<string, mixed> */
@@ -174,9 +73,6 @@ final readonly class QuarantineManifest
         $freezeEvidence = $value['freeze_evidence'];
         $quarantinedAt = $value['quarantined_at'];
         $deleteAfter = $value['delete_after'];
-        assert(
-            is_string($inventorySha256) && is_string($quarantinedAt) && is_string($deleteAfter),
-        );
         /** @var list<array<string, mixed>> $targets */ $targets = $value['targets'];
         /** @var array<string, list<array<string, mixed>>> $preserved */ $preserved = $value['preserved'];
 
@@ -193,5 +89,107 @@ final readonly class QuarantineManifest
     public function sha256(): string
     {
         return hash('sha256', json_encode($this->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $freezeEvidence
+     * @param  array<array-key, mixed>  $targets
+     */
+    private function validate(array $freezeEvidence, array $targets): void
+    {
+        if (
+            preg_match('/\A[a-f0-9]{64}\z/', $this->inventorySha256) !== 1
+            || array_keys($freezeEvidence) !== ['path', 'content_sha256', 'mode', 'filesystem_type']
+            || preg_match('/\A[a-f0-9]{64}\z/', $freezeEvidence['content_sha256'] ?? '') !== 1
+            || ($freezeEvidence['mode'] ?? null) !== 0600
+            || ($freezeEvidence['filesystem_type'] ?? null) !== 'file'
+            || ! is_string($freezeEvidence['path'] ?? null)
+            || $targets === []
+            || ! array_is_list($targets)
+        ) {
+            throw new InvalidArgumentException('The quarantine manifest is invalid.');
+        }
+        $quarantineTime = \DateTimeImmutable::createFromFormat(DATE_ATOM, $this->quarantinedAt);
+        if (
+            $quarantineTime === false
+            || $quarantineTime->format(DATE_ATOM) !== $this->quarantinedAt
+            || $quarantineTime->modify('+7 days')->format(DATE_ATOM) !== $this->deleteAfter
+        ) {
+            throw new InvalidArgumentException('The quarantine delete_after must be exactly seven days later.');
+        }
+        $seen = [];
+        $lastPosition = -1;
+        $lastIdentity = null;
+        foreach ($targets as $target) {
+            if (
+                ! is_array($target)
+                || array_is_list($target)
+                || array_keys($target) !== [
+                    'kind',
+                    'identity',
+                    'original_status',
+                    'metadata',
+                    'dependencies',
+                    'recovery',
+                    'observed',
+                    'observed_resource_sha256',
+                    'result',
+                ]
+            ) {
+                throw new InvalidArgumentException('Each quarantine target must contain the exact nested schema.');
+            }
+            $kind = $target['kind'] ?? null;
+            $identity = $target['identity'] ?? null;
+            $key = is_string($kind) && is_string($identity) ? $kind."\0".$identity : '';
+            $position = is_string($target['kind'] ?? null)
+                ? array_search($target['kind'], RetirementInventory::CANDIDATE_KINDS, true)
+                : false;
+            $observed = $target['observed'] ?? null;
+            if (
+                ! is_int($position)
+                || ! is_string($kind)
+                || $position < $lastPosition
+                || ! is_string($identity)
+                || $position === $lastPosition
+                && strcmp($lastIdentity, $identity) >= 0
+                || isset($seen[$key])
+                || ! is_array($observed)
+                || ! is_string($target['observed_resource_sha256'] ?? null)
+                || ! is_array($target['metadata'] ?? null)
+                || ! is_array($target['dependencies'] ?? null)
+                || ! is_array($target['recovery'] ?? null)
+                || ! in_array($target['result'] ?? null, ['stopped', 'unchanged'], true)
+                || ! hash_equals($target['observed_resource_sha256'], hash('sha256', json_encode(
+                    $observed,
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                )))
+            ) {
+                throw new InvalidArgumentException('The quarantine targets are invalid or duplicated.');
+            }
+            foreach ($target['recovery'] as $command) {
+                if (! is_string($command) || $command === '') {
+                    throw new InvalidArgumentException('Every quarantine recovery command must be a string.');
+                }
+            }
+            $observedIdentity = $observed['identity'] ?? $observed['name'] ?? $observed['path'] ?? null;
+            if ($observedIdentity !== $target['identity']) {
+                throw new InvalidArgumentException('The quarantine target identity does not match its observation.');
+            }
+            if (
+                ($target['original_status'] ?? null) !== ($observed['status'] ?? null)
+                || $target['metadata'] !== ($observed['metadata'] ?? [])
+                || $target['dependencies'] !== ($observed['dependencies'] ?? [])
+            ) {
+                throw new InvalidArgumentException(
+                    'The quarantine target status, metadata, or dependencies do not match.',
+                );
+            }
+            RetirementInventory::assertLegacyCandidate($kind, $observed);
+            new RetirementInventory([$kind => [$observed]], [], $this->quarantinedAt);
+            $seen[$key] = true;
+            $lastPosition = $position;
+            $lastIdentity = $identity;
+        }
+        new RetirementInventory([], $this->preserved, $this->quarantinedAt);
     }
 }

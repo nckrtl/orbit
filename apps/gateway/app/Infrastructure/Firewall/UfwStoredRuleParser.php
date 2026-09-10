@@ -8,10 +8,6 @@ use App\Domain\Firewall\FirewallPort;
 use App\Domain\Firewall\FirewallSource;
 use InvalidArgumentException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Stored UFW parsing rejects every unsupported managed tuple.
- * @mago-expect lint:kan-defect The score reflects fail-closed tuple parsing and ownership branches.
- */
 final readonly class UfwStoredRuleParser
 {
     public function __construct(
@@ -171,11 +167,10 @@ final readonly class UfwStoredRuleParser
             return null;
         }
 
-        return (
+        return
             $matches[1] === 'in'
                 ? ['direction' => 'in', 'in' => $matches[2], 'out' => null]
-                : ['direction' => 'out', 'in' => null, 'out' => $matches[2]]
-        );
+                : ['direction' => 'out', 'in' => null, 'out' => $matches[2]];
     }
 
     private function normalizeEndpoint(string $value): string

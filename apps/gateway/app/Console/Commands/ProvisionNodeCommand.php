@@ -10,7 +10,6 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use Illuminate\Console\Command;
 
-/** @mago-expect lint:cyclomatic-complexity Provision validates each legacy and canonical console input before convergence. */
 final class ProvisionNodeCommand extends Command
 {
     #[\Override]
@@ -138,13 +137,11 @@ final class ProvisionNodeCommand extends Command
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Console option values are an untyped boundary.
-     *
      * @return list<RoleName>|null
      */
     private function roles(): ?array
     {
-        $values = $this->option('role');
+        $values = $this->input->getOption('role');
 
         if (! is_array($values)) {
             return null;

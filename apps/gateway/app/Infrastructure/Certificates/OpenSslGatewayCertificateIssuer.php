@@ -14,7 +14,6 @@ use App\Infrastructure\Processes\ProcessRunner;
 use InvalidArgumentException;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity Certificate issuance validates and publishes one protected immutable key pair. */
 final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertificateIssuer
 {
     private const string LEAF_VALIDITY_DAYS = '397';

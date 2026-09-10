@@ -7,7 +7,6 @@ use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 use Orbit\Sdk\Responses\Nodes\NodeRolesResponse;
 
 describe('node role assignment response transport', function (): void {
-    /** @mago-expect lint:halstead The lifecycle test keeps the full status and removal response contract visible. */
     it('preserves every Ingress assignment retry replacement and removal lifecycle result', function (): void {
         $assignments = array_map(
             static fn (array $data): array => NodeRoleAssignmentResponse::fromGatewayData(

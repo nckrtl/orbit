@@ -16,8 +16,6 @@ use RuntimeException;
 
 /**
  * Orchestrate fail-closed PCOV collection on the disposable checkout roles.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The collector keeps all external process evidence fail-closed.
  */
 final readonly class ObservedPhpInputCollector
 {
@@ -139,10 +137,9 @@ final readonly class ObservedPhpInputCollector
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
-     * @param list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}> $runtimes
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
+     * @param  list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}>  $runtimes
      * @return list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>
-     * @mago-expect lint:excessive-parameter-list Runtime evidence is checked against every collected process.
      */
     public function collect(
         TopologyTarget $target,
@@ -262,10 +259,9 @@ final readonly class ObservedPhpInputCollector
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
-     * @param array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>} $runtime
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
+     * @param  array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}  $runtime
      * @return list<array{role:string,process_type:string,id:string,started_at:string,finished_at:string,paths:list<string>}>
-     * @mago-expect lint:excessive-parameter-list Every recorded identity is checked at the guest-output boundary.
      */
     private function records(
         string $output,
@@ -331,7 +327,7 @@ final readonly class ObservedPhpInputCollector
                 }
                 $path = substr($path, strlen('/home/orbit/orbit/'));
                 $entry = $entries[$path] ?? null;
-                if (! is_array($entry) || ($entry['type'] ?? null) !== 'blob') {
+                if (! is_array($entry) || ($entry['type']) !== 'blob') {
                     throw new RuntimeException("PCOV {$phase} observed an untracked path [{$path}] on {$role}.");
                 }
                 $paths[$path] = true;

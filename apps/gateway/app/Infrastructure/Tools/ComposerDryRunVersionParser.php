@@ -7,7 +7,6 @@ namespace App\Infrastructure\Tools;
 use App\Domain\Tools\ToolManagerException;
 use Closure;
 
-/** @mago-expect lint:cyclomatic-complexity Exact dry-run parsing rejects every ambiguous Composer result. */
 final readonly class ComposerDryRunVersionParser
 {
     private const int MAX_OUTPUT_LENGTH = 32_768;
@@ -139,11 +138,10 @@ final readonly class ComposerDryRunVersionParser
 
     private function isSafeVersion(string $version): bool
     {
-        return (
+        return
             $version !== ''
             && strlen($version) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x20\x7F]/', $version) !== 1
-        );
+            && preg_match('/[\x00-\x20\x7F]/', $version) !== 1;
     }
 
     private function malformedOutput(): ToolManagerException

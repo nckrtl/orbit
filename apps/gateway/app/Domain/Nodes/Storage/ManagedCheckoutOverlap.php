@@ -11,7 +11,6 @@ use App\Models\Workspace;
 
 final readonly class ManagedCheckoutOverlap
 {
-    /** @mago-expect lint:excessive-parameter-list The guard preserves separate ignore identities for each managed checkout model. */
     public function assertAvailable(
         int $nodeId,
         StoragePath $checkout,

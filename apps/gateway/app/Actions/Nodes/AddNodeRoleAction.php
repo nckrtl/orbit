@@ -23,7 +23,6 @@ use Closure;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity,too-many-methods Role lifecycle keeps its ordered claim, convergence, and failure transitions together. */
 final readonly class AddNodeRoleAction
 {
     public function __construct(
@@ -36,7 +35,6 @@ final readonly class AddNodeRoleAction
 
     /**
      * @return array{assignment: NodeRole, created: bool}
-     * @mago-expect lint:no-boolean-flag-parameter The saved public contract exposes explicit reconvergence.
      */
     public function execute(Node $node, RoleName $role, bool $convergeExisting = false): array
     {
@@ -90,7 +88,6 @@ final readonly class AddNodeRoleAction
     {
         /**
          * @var array{assignment: NodeRole, created: bool} $claim
-         * @mago-expect lint:inline-variable-return The annotation narrows Laravel's transaction result.
          */
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
@@ -116,7 +113,6 @@ final readonly class AddNodeRoleAction
     {
         /**
          * @var array{assignment: NodeRole, created: bool} $claim
-         * @mago-expect lint:inline-variable-return The annotation narrows Laravel's transaction result.
          */
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
@@ -242,7 +238,7 @@ final readonly class AddNodeRoleAction
     /**
      * @template T
      *
-     * @param Closure(): T $callback
+     * @param  Closure(): T  $callback
      * @return T
      */
     private function withAppManagerScope(Node $node, RoleName $role, Closure $callback): mixed

@@ -19,10 +19,8 @@ final class ImmediateToolOperationLock implements ToolOperationLock
     /**
      * @template T
      *
-     * @param Closure(): T $callback
+     * @param  Closure(): T  $callback
      * @return T
-     *
-     * @mago-expect lint:excessive-parameter-list The fake records the complete typed lock identity.
      */
     public function run(
         int $nodeId,

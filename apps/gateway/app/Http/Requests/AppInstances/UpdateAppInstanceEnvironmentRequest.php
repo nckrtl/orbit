@@ -17,6 +17,7 @@ final class UpdateAppInstanceEnvironmentRequest extends FormRequest
         return ['value' => ['present', 'string']];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

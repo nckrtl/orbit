@@ -12,9 +12,10 @@
         "laravel/tinker": "^3.0"
     },
     "require-dev": {
-        "carthage-software/mago": "^1.47",
         "fakerphp/faker": "^1.23",
+        "larastan/larastan": "^3.11",
         "laravel/boost": "^2.5",
+        "laravel/pint": "^1.32",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^5.1",
@@ -44,24 +45,23 @@
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate"
         ],
-        "analyse": "vendor/bin/mago analyze app --reporting-format=medium --minimum-report-level=error",
+        "analyse": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check": [
             "@guidance:check",
             "@rector",
             "@format:check",
-            "@lint",
             "@analyse"
         ],
-        "format": "vendor/bin/mago format",
-        "format:check": "vendor/bin/mago format --check",
+        "format": "vendor/bin/pint",
+        "format:check": "vendor/bin/pint --test",
         "guidance:check": "vendor/bin/pest --no-tia --compact tests/Feature/Configuration/BoostConfigurationTest.php tests/Feature/Configuration/BoostGuidanceTest.php",
         "guidance:update": [
             "@guidance:check",
             "@php artisan boost:update --no-discover --no-interaction",
             "@guidance:check"
         ],
-        "lint": "vendor/bin/mago lint app tests --reporting-format=medium --minimum-report-level=error",
-        "rector": "vendor/bin/rector process --no-progress-bar",
+        "lint": "@format:check",
+        "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
         "test": "vendor/bin/pest --parallel --no-tia --compact",
         "test:scenario-cold": [
             "Composer\\Config::disableProcessTimeout",

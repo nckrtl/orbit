@@ -267,8 +267,8 @@ it('releases the stable lock when a mutation fails', function (): void {
 });
 
 /**
- * @param list<array{type: 'add'|'use', name: string, url?: string}> $operations
- * @param resource|null $heldLock
+ * @param  list<array{type: 'add'|'use', name: string, url?: string}>  $operations
+ * @param  resource|null  $heldLock
  */
 function gateway_config_run_operations(
     string $path,
@@ -335,8 +335,8 @@ function gateway_config_run_operations(
 }
 
 /**
- * @param array{type: 'add'|'use', name: string, url?: string} $operation
- * @param array{ready: string, start: string, attempted: string} $markers
+ * @param  array{type: 'add'|'use', name: string, url?: string}  $operation
+ * @param  array{ready: string, start: string, attempted: string}  $markers
  */
 function gateway_config_operation_process(string $path, array $operation, array $markers): Process
 {

@@ -11,7 +11,6 @@ use App\E2E\Value\TopologyProfile;
 use InvalidArgumentException;
 use JsonException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Manifest validation stays at one trust boundary. */
 final readonly class PreparedStateFingerprint
 {
     private const array ROOT_KEYS = [
@@ -136,7 +135,7 @@ final readonly class PreparedStateFingerprint
 
     private function validateEpochs(mixed $declaredEpochs): void
     {
-        if (! is_array($declaredEpochs) || array_is_list($declaredEpochs) || $declaredEpochs === []) {
+        if (! is_array($declaredEpochs) || array_is_list($declaredEpochs)) {
             throw new InvalidArgumentException('Declared epochs must be a non-empty object.');
         }
 
@@ -185,9 +184,9 @@ final readonly class PreparedStateFingerprint
         }
 
         /** @var list<string> $orderedRoles */
-        $orderedRoles = array_values($roles);
+        $orderedRoles = $roles;
         /** @var list<string> $orderedCheckoutRoles */
-        $orderedCheckoutRoles = array_values($checkoutRoles);
+        $orderedCheckoutRoles = $checkoutRoles;
 
         foreach ($assignments as $node => $rolesForNode) {
             if (
@@ -209,7 +208,10 @@ final readonly class PreparedStateFingerprint
         }
     }
 
-    /** @param list<string> $actual @param list<string> $expected */
+    /**
+     * @param  list<string>  $actual
+     * @param  list<string>  $expected
+     */
     private function isExactOrderedList(array $actual, array $expected): bool
     {
         if (count($actual) !== count($expected)) {

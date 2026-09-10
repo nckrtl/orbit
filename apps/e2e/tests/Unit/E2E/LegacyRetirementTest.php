@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 use App\E2E\LegacyRetirement;
 use App\E2E\State\OperationLock;
+use App\E2E\State\StatePaths;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\QuarantineManifest;
+use App\E2E\Value\RetirementInventory;
+use App\E2E\Value\RetirementResult;
 
 function legacyFixture(): array
 {
@@ -122,7 +126,7 @@ function retirementService(
     string $now,
     ?Closure $observeCurrent = null,
 ): LegacyRetirement {
-    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-retirement-lock-', 6));
+    $paths = new StatePaths(temporaryPath('legacy-retirement-lock-', 6));
 
     return new LegacyRetirement(
         function () use (&$observed): array {
@@ -146,7 +150,7 @@ function retirementService(
                 fn (array $item): bool => ($item['name'] ?? $item['path']) !== $identity,
             ));
         },
-        fn (): \DateTimeImmutable => new \DateTimeImmutable($now),
+        fn (): DateTimeImmutable => new DateTimeImmutable($now),
         new OperationLock($paths),
         new OperationId(str_repeat('a', 32)),
         $observeCurrent,
@@ -186,7 +190,7 @@ it('revalidates only recorded resources from live state while resuming quarantin
 it('uses the injected operation ID for the retirement lock', function () {
     $observed = legacyFixture();
     $operations = [];
-    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-lock-', 4));
+    $paths = new StatePaths(temporaryPath('legacy-lock-', 4));
     $operation = new OperationId(str_repeat('e', 32));
     $seenOperation = null;
     $evidence = temporaryFile('freeze-');
@@ -206,7 +210,7 @@ it('uses the injected operation ID for the retirement lock', function () {
         function (string $name, array $resource) use (&$operations): void {
             $operations[] = [$name, $resource];
         },
-        fn (): \DateTimeImmutable => new \DateTimeImmutable('2026-08-28T10:00:00+00:00'),
+        fn (): DateTimeImmutable => new DateTimeImmutable('2026-08-28T10:00:00+00:00'),
         new OperationLock($paths),
         $operation,
     );
@@ -224,7 +228,7 @@ function crashingRetirementService(
     string $crashOperation,
 ): LegacyRetirement {
     $crashed = false;
-    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-retirement-lock-', 6));
+    $paths = new StatePaths(temporaryPath('legacy-retirement-lock-', 6));
 
     return new LegacyRetirement(
         function () use (&$observed): array {
@@ -253,7 +257,7 @@ function crashingRetirementService(
                 throw new RuntimeException('simulated crash');
             }
         },
-        fn (): \DateTimeImmutable => new \DateTimeImmutable($now),
+        fn (): DateTimeImmutable => new DateTimeImmutable($now),
         new OperationLock($paths),
         new OperationId(str_repeat('b', 32)),
     );
@@ -266,7 +270,7 @@ function crashBeforeMutationRetirementService(
     string $crashOperation,
 ): LegacyRetirement {
     $crashed = false;
-    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-retirement-lock-', 6));
+    $paths = new StatePaths(temporaryPath('legacy-retirement-lock-', 6));
 
     return new LegacyRetirement(
         function () use (&$observed): array {
@@ -296,19 +300,18 @@ function crashBeforeMutationRetirementService(
                 fn (array $item): bool => ($item['name'] ?? $item['path']) !== $identity,
             ));
         },
-        fn (): \DateTimeImmutable => new \DateTimeImmutable($now),
+        fn (): DateTimeImmutable => new DateTimeImmutable($now),
         new OperationLock($paths),
         new OperationId(str_repeat('c', 32)),
     );
 }
 
-/** @mago-expect lint:kan-defect The lifecycle matrix keeps recovery and destructive-order proof in one specification. */
 describe('legacy retirement', function () {
     it('protects compact topology networks and all accepted feature issue identities', function (
         string $kind,
         string $identity,
     ): void {
-        expect(fn () => \App\E2E\Value\RetirementInventory::assertLegacyCandidate($kind, [
+        expect(fn () => RetirementInventory::assertLegacyCandidate($kind, [
             'identity' => $identity,
             'classification' => 'legacy',
             'remote' => 'local',
@@ -330,7 +333,7 @@ describe('legacy retirement', function () {
         string $kind,
         string $identity,
     ): void {
-        expect(fn () => \App\E2E\Value\RetirementInventory::assertLegacyCandidate($kind, [
+        expect(fn () => RetirementInventory::assertLegacyCandidate($kind, [
             'identity' => $identity,
             'classification' => 'legacy',
             'remote' => 'local',
@@ -358,7 +361,7 @@ describe('legacy retirement', function () {
         $path = $root.'/escape/state.json';
 
         foreach (['inventory', 'quarantine', 'retirement'] as $input) {
-            expect(fn () => \App\E2E\LegacyRetirement::readProtectedJson($path))
+            expect(fn () => LegacyRetirement::readProtectedJson($path))
                 ->toThrow(RuntimeException::class, 'symbolic-link component');
         }
         unlink($root.'/escape');
@@ -395,7 +398,7 @@ describe('legacy retirement', function () {
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ));
             unset($target);
-            expect(fn () => \App\E2E\Value\QuarantineManifest::fromArray($value))
+            expect(fn () => QuarantineManifest::fromArray($value))
                 ->toThrow(InvalidArgumentException::class);
         }
         expect($operations)->toHaveCount(1);
@@ -421,7 +424,7 @@ describe('legacy retirement', function () {
         $malformed[] = $case;
 
         foreach ($malformed as $value) {
-            expect(fn () => \App\E2E\Value\RetirementInventory::fromArray($value))
+            expect(fn () => RetirementInventory::fromArray($value))
                 ->toThrow(InvalidArgumentException::class);
         }
     });
@@ -466,7 +469,7 @@ describe('legacy retirement', function () {
         $malformed[] = $case;
 
         foreach ($malformed as $value) {
-            expect(fn () => \App\E2E\Value\QuarantineManifest::fromArray($value))
+            expect(fn () => QuarantineManifest::fromArray($value))
                 ->toThrow(InvalidArgumentException::class);
         }
         unlink($evidence);
@@ -476,7 +479,7 @@ describe('legacy retirement', function () {
         $observed = legacyFixture();
         $operations = [];
         $preserved = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory()->preserved;
-        $valid = new \App\E2E\Value\RetirementResult(
+        $valid = new RetirementResult(
             true,
             [['kind' => 'instances', 'identity' => 'orbit-template-api', 'result' => 'deleted']],
             [],
@@ -509,7 +512,7 @@ describe('legacy retirement', function () {
         $malformed[] = $case;
 
         foreach ($malformed as $value) {
-            expect(fn () => \App\E2E\Value\RetirementResult::fromArray($value))
+            expect(fn () => RetirementResult::fromArray($value))
                 ->toThrow(InvalidArgumentException::class);
         }
     });
@@ -687,7 +690,7 @@ describe('legacy retirement', function () {
         $manifest = $service->quarantine($inventory, $inventory->sha256(), $evidence);
         $legacyManifest = $manifest->toArray();
         $legacyManifest['version'] = 1;
-        $legacyResult = new \App\E2E\Value\RetirementResult(
+        $legacyResult = new RetirementResult(
             true,
             [],
             [],
@@ -709,11 +712,11 @@ describe('legacy retirement', function () {
             'completed' => [['kind' => 'instances', 'identity' => 'orbit-e2e-dev-42']],
         ]);
 
-        expect(fn () => \App\E2E\Value\RetirementInventory::fromArray($legacyInventory))
+        expect(fn () => RetirementInventory::fromArray($legacyInventory))
             ->toThrow(InvalidArgumentException::class);
-        expect(fn () => \App\E2E\Value\QuarantineManifest::fromArray($legacyManifest))
+        expect(fn () => QuarantineManifest::fromArray($legacyManifest))
             ->toThrow(InvalidArgumentException::class);
-        expect(fn () => \App\E2E\Value\RetirementResult::fromArray($legacyResult))
+        expect(fn () => RetirementResult::fromArray($legacyResult))
             ->toThrow(InvalidArgumentException::class);
         expect(fn () => retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->quarantine(
             $inventory,
@@ -736,7 +739,7 @@ describe('legacy retirement', function () {
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $early->quarantine($inventory, $inventory->sha256(), $evidence);
-        $result = new \App\E2E\Value\RetirementResult(
+        $result = new RetirementResult(
             true,
             [],
             [],
@@ -776,11 +779,11 @@ describe('legacy retirement', function () {
             expect(LegacyRetirement::readProtectedJson($path))->toBe($artifact);
         }
 
-        expect(fn () => \App\E2E\Value\RetirementInventory::fromArray($schema2Inventory))
+        expect(fn () => RetirementInventory::fromArray($schema2Inventory))
             ->toThrow(InvalidArgumentException::class);
-        expect(fn () => \App\E2E\Value\QuarantineManifest::fromArray($schema2Manifest))
+        expect(fn () => QuarantineManifest::fromArray($schema2Manifest))
             ->toThrow(InvalidArgumentException::class);
-        expect(fn () => \App\E2E\Value\RetirementResult::fromArray($schema2Result))
+        expect(fn () => RetirementResult::fromArray($schema2Result))
             ->toThrow(InvalidArgumentException::class);
         $operationCount = count($operations);
         expect(fn () => retirementService($observed, $operations, '2026-09-05T10:00:00+00:00')->delete(
@@ -1178,7 +1181,7 @@ describe('legacy retirement', function () {
         $inventory = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory();
         $groups = $inventory->candidates;
         $groups['instances'][] = $groups['instances'][0];
-        expect(fn () => new \App\E2E\Value\RetirementInventory($groups, $inventory->preserved, $inventory->createdAt))
+        expect(fn () => new RetirementInventory($groups, $inventory->preserved, $inventory->createdAt))
             ->toThrow(InvalidArgumentException::class, 'unique');
 
         $pathRoot = temporaryPath('missing-legacy-', 4);
@@ -1268,7 +1271,7 @@ describe('legacy retirement', function () {
         $inventory = $prepared->inventory();
         $manifest = $prepared->quarantine($inventory, $inventory->sha256(), $evidence);
         $observations = 0;
-        $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-barrier-', 5));
+        $paths = new StatePaths(temporaryPath('legacy-barrier-', 5));
         $service = new LegacyRetirement(
             fn (): array => $observed,
             function (string $operation, array $resource) use (&$observed, &$operations): void {
@@ -1288,7 +1291,7 @@ describe('legacy retirement', function () {
                     unset($instance);
                 }
             },
-            fn (): \DateTimeImmutable => new \DateTimeImmutable('2026-09-05T10:00:00+00:00'),
+            fn (): DateTimeImmutable => new DateTimeImmutable('2026-09-05T10:00:00+00:00'),
             new OperationLock($paths),
             new OperationId(str_repeat('d', 32)),
             function () use (&$observed, &$observations): array {
@@ -1314,7 +1317,7 @@ describe('legacy retirement', function () {
         $observed = legacyFixture();
         $operations = [];
         $service = retirementService($observed, $operations, '2026-09-05T10:00:00+00:00');
-        $result = new \App\E2E\Value\RetirementResult(
+        $result = new RetirementResult(
             true,
             [['kind' => 'instances', 'identity' => 'orbit-template-api', 'result' => 'deleted']],
             [],

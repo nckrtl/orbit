@@ -35,11 +35,11 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeToolManagerMaterializer;
 
-/** @mago-expect lint:halstead,cyclomatic-complexity The provisioning group keeps ordering and failure boundaries visible. */
 describe(ProvisionNodeAction::class, function (): void {
     beforeEach(function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+        {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
@@ -49,7 +49,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('reconciles a roleless provisioned node after activation', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -72,7 +73,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('reconciles a role-bearing provisioned node after activation', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -102,7 +104,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('uses the node provisioning failure boundary when roleless Metrics reconciliation fails', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -142,7 +145,8 @@ describe(ProvisionNodeAction::class, function (): void {
             'user' => 'invalid user',
         ]);
         $converged = false;
-        app()->instance(NodeConverger::class, new class($converged) implements NodeConverger {
+        app()->instance(NodeConverger::class, new class($converged) implements NodeConverger
+        {
             public function __construct(
                 private bool &$converged,
             ) {}
@@ -206,7 +210,8 @@ describe(ProvisionNodeAction::class, function (): void {
             'status' => AppInstanceState::Active,
         ]);
         $converged = false;
-        app()->instance(NodeConverger::class, new class($converged) implements NodeConverger {
+        app()->instance(NodeConverger::class, new class($converged) implements NodeConverger
+        {
             public function __construct(
                 private bool &$converged,
             ) {}
@@ -240,7 +245,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects provisioning contention before creating or changing a node', function (): void {
-        app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock {
+        app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock
+        {
             public function run(string $nodeName, Closure $callback): mixed
             {
                 throw new NodeProvisioningLockException($nodeName);
@@ -260,7 +266,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('restores an active node and its gateway peer when reprovisioning fails after replacing its key', function (): void {
-        $projection = new class implements GatewayPeerProjectionManager {
+        $projection = new class implements GatewayPeerProjectionManager
+        {
             /** @var list<string|null> */
             public array $keys = [];
 
@@ -277,7 +284,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
         };
         app()->instance(GatewayPeerProjectionManager::class, $projection);
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -327,7 +335,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('returns a bounded rollback failure when gateway peer restoration fails', function (): void {
-        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager
+        {
             public function converge(Node $node): void {}
 
             public function remove(Node $node): void {}
@@ -337,7 +346,8 @@ describe(ProvisionNodeAction::class, function (): void {
                 throw new RuntimeException('secret host output');
             }
         });
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -379,7 +389,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rolls back an active node when APT materialization fails after base convergence', function (): void {
-        $projection = new class implements GatewayPeerProjectionManager {
+        $projection = new class implements GatewayPeerProjectionManager
+        {
             /** @var list<string|null> */
             public array $keys = [];
 
@@ -396,7 +407,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
         };
         app()->instance(GatewayPeerProjectionManager::class, $projection);
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -449,7 +461,8 @@ describe(ProvisionNodeAction::class, function (): void {
 
     it('rolls back the remote peer before restoring persisted state and the gateway projection after APT failure', function (): void {
         $events = [];
-        $projection = new class($events) implements GatewayPeerProjectionManager {
+        $projection = new class($events) implements GatewayPeerProjectionManager
+        {
             public function __construct(
                 private array &$events,
             ) {}
@@ -467,7 +480,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
         };
         app()->instance(GatewayPeerProjectionManager::class, $projection);
-        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger
+        {
             public function __construct(
                 private array &$events,
             ) {}
@@ -529,14 +543,16 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('marks rollback failure after restoring persisted state when recoverable remote rollback fails', function (): void {
-        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager
+        {
             public function converge(Node $node): void {}
 
             public function remove(Node $node): void {}
 
             public function restore(Node $node): void {}
         });
-        app()->instance(NodeConverger::class, new class implements NodeConverger, RecoverableNodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger, RecoverableNodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -596,7 +612,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('restores changed connection fields before rebuilding the prior gateway peer', function (): void {
-        $projection = new class implements GatewayPeerProjectionManager {
+        $projection = new class implements GatewayPeerProjectionManager
+        {
             public array $peers = [];
 
             public function converge(Node $node): void
@@ -612,7 +629,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
         };
         app()->instance(GatewayPeerProjectionManager::class, $projection);
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -701,7 +719,8 @@ describe(ProvisionNodeAction::class, function (): void {
     it('materializes only APT after base convergence and before activation', function (): void {
         $materializer = new FakeToolManagerMaterializer;
         app()->instance(ToolManagerMaterializer::class, $materializer);
-        app()->instance(NodeConverger::class, new class($materializer) implements NodeConverger {
+        app()->instance(NodeConverger::class, new class($materializer) implements NodeConverger
+        {
             public function __construct(
                 private FakeToolManagerMaterializer $materializer,
             ) {}
@@ -733,7 +752,8 @@ describe(ProvisionNodeAction::class, function (): void {
 
     it('uses recoverable convergence only for previously active nodes', function (): void {
         $events = [];
-        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger
+        {
             public function __construct(
                 private array &$events,
             ) {}
@@ -803,7 +823,8 @@ describe(ProvisionNodeAction::class, function (): void {
 
     it('keeps the prior persisted identity during recoverable completion while using the candidate in memory', function (): void {
         $events = [];
-        $materializer = new class($events) implements ToolManagerMaterializer {
+        $materializer = new class($events) implements ToolManagerMaterializer
+        {
             /** @param list<string> $events */
             public function __construct(
                 private array &$events,
@@ -824,7 +845,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
         };
         app()->instance(ToolManagerMaterializer::class, $materializer);
-        app()->instance(RoleBaselineConverger::class, new class($events) implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class($events) implements RoleBaselineConverger
+        {
             /** @param list<string> $events */
             public function __construct(
                 private array &$events,
@@ -840,7 +862,8 @@ describe(ProvisionNodeAction::class, function (): void {
 
             public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
-        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger
+        {
             /** @param list<string> $events */
             public function __construct(
                 private array &$events,
@@ -905,8 +928,8 @@ describe(ProvisionNodeAction::class, function (): void {
 
     it('recovers active state when a requested role fails during completion', function (): void {
         $events = [];
-        app()->instance(GatewayPeerProjectionManager::class, new class($events) implements
-            GatewayPeerProjectionManager {
+        app()->instance(GatewayPeerProjectionManager::class, new class($events) implements GatewayPeerProjectionManager
+        {
             public function __construct(
                 private array &$events,
             ) {}
@@ -926,7 +949,8 @@ describe(ProvisionNodeAction::class, function (): void {
                 $this->events[] = "gateway-restore:{$node->wireguard_public_key}";
             }
         });
-        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger
+        {
             public function __construct(
                 private array &$events,
             ) {}
@@ -955,7 +979,8 @@ describe(ProvisionNodeAction::class, function (): void {
                 }
             }
         });
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+        {
             public function converge(Node $node, NodeRole $assignment): void
             {
                 throw new NodeRoleOperationException(
@@ -1019,7 +1044,8 @@ describe(ProvisionNodeAction::class, function (): void {
     it('does not materialize managers after base convergence fails', function (): void {
         $materializer = new FakeToolManagerMaterializer;
         app()->instance(ToolManagerMaterializer::class, $materializer);
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1052,7 +1078,8 @@ describe(ProvisionNodeAction::class, function (): void {
             'Probe failed.',
         );
         app()->instance(ToolManagerMaterializer::class, $materializer);
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1079,7 +1106,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('persists a requested managed user when a new node fails late and uses it on retry', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1103,7 +1131,8 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($node->user)->toBe('nckrtl');
 
         $identity = null;
-        app()->instance(NodeConverger::class, new class($identity) implements NodeConverger {
+        app()->instance(NodeConverger::class, new class($identity) implements NodeConverger
+        {
             public function __construct(
                 private mixed &$identity,
             ) {}
@@ -1130,7 +1159,8 @@ describe(ProvisionNodeAction::class, function (): void {
 
     it('activates a node after its requested roles converge', function (): void {
         $events = [];
-        $converger = new class($events) implements NodeConverger {
+        $converger = new class($events) implements NodeConverger
+        {
             public ?string $expectedFingerprint = null;
 
             /** @param list<string> $events */
@@ -1149,7 +1179,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
         };
         app()->instance(NodeConverger::class, $converger);
-        app()->instance(RoleBaselineConverger::class, new class($events) implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class($events) implements RoleBaselineConverger
+        {
             /** @param list<string> $events */
             public function __construct(
                 private array &$events,
@@ -1193,7 +1224,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects pairwise requested role conflicts before persistence or base convergence', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1224,7 +1256,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('reconverges requested existing roles and leaves omitted roles untouched', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1233,7 +1266,8 @@ describe(ProvisionNodeAction::class, function (): void {
             ): void {}
         });
         $roles = [];
-        app()->instance(RoleBaselineConverger::class, new class($roles) implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class($roles) implements RoleBaselineConverger
+        {
             /** @param list<RoleName> $roles */
             public function __construct(
                 private array &$roles,
@@ -1285,7 +1319,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('passes the operator expected pin without storing it as the observed fingerprint', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public ?string $expectedFingerprint = null;
 
             public function converge(
@@ -1314,7 +1349,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('preserves an existing app-dev TLD when provisioning omits it', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1342,7 +1378,8 @@ describe(ProvisionNodeAction::class, function (): void {
     it('preserves established node identity and connection fields during safe reprovision', function (): void {
         $materializer = new FakeToolManagerMaterializer;
         app()->instance(ToolManagerMaterializer::class, $materializer);
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             /** @var array<string, mixed> */
             public array $observed = [];
 
@@ -1402,7 +1439,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects a populated TLD change when the app-dev assignment is not active', function (LifecycleStatus $roleStatus): void {
-        $nodeConverger = new class implements NodeConverger {
+        $nodeConverger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1430,7 +1468,8 @@ describe(ProvisionNodeAction::class, function (): void {
             'hostname' => 'main.old.orbit',
             'certificate_mode' => 'orbit-ca',
         ]);
-        $converger = new class implements AppDevTldConverger {
+        $converger = new class implements AppDevTldConverger
+        {
             public int $calls = 0;
 
             public function converge(Node $node): void
@@ -1461,7 +1500,8 @@ describe(ProvisionNodeAction::class, function (): void {
     ]);
 
     it('converges populated instances when changing an active app-dev TLD', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1494,7 +1534,8 @@ describe(ProvisionNodeAction::class, function (): void {
             'certificate_mode' => 'orbit-ca',
         ]);
 
-        $tldConverger = new class implements AppDevTldConverger {
+        $tldConverger = new class implements AppDevTldConverger
+        {
             public array $nodes = [];
 
             public function converge(Node $node): void
@@ -1520,7 +1561,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('converges app development projections before activating a changed TLD', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1528,7 +1570,8 @@ describe(ProvisionNodeAction::class, function (): void {
                 bool $rolelessOperator = false,
             ): void {}
         });
-        $converger = new class implements AppDevTldConverger {
+        $converger = new class implements AppDevTldConverger
+        {
             /** @var list<array{tld: ?string, status: LifecycleStatus}> */
             public array $calls = [];
 
@@ -1558,7 +1601,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('restores the previous app development TLD and projections when convergence fails', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1587,7 +1631,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('marks the node failed when restoring previous app development projections fails', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1623,7 +1668,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects a managed user change while the node owns instances', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1680,7 +1726,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects a managed user change while the node owns roles', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1729,7 +1776,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('requires a TLD when the node already owns the app-dev role', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1764,7 +1812,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects non-Linux nodes before persistence or convergence', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1796,7 +1845,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('requires the real architecture for a new Linux registration', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1817,7 +1867,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('marks the node failed when initial role convergence fails', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -1825,7 +1876,8 @@ describe(ProvisionNodeAction::class, function (): void {
                 bool $rolelessOperator = false,
             ): void {}
         });
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+        {
             public function converge(Node $node, NodeRole $assignment): void
             {
                 throw new RuntimeConvergenceException(
@@ -1873,7 +1925,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects duplicate app-dev TLD ownership before convergence', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1910,7 +1963,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects a Node TLD when a Cluster activates after preflight', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -1969,7 +2023,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('requires a first-contact fingerprint before persisting a node', function (): void {
-        $converger = new class implements NodeConverger {
+        $converger = new class implements NodeConverger
+        {
             public int $calls = 0;
 
             public function converge(
@@ -2000,7 +2055,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('rejects an unsafe WireGuard endpoint override before persisting a node', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -2022,7 +2078,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('stores the failed step and stable error code', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -2058,7 +2115,8 @@ describe(ProvisionNodeAction::class, function (): void {
 
     it('passes the bootstrap and managed identities', function (): void {
         $identities = [];
-        app()->instance(NodeConverger::class, new class($identities) implements NodeConverger {
+        app()->instance(NodeConverger::class, new class($identities) implements NodeConverger
+        {
             public function __construct(
                 private array &$identities,
             ) {}
@@ -2124,7 +2182,6 @@ function provision_node_tld_change_record(): Node
     return $node;
 }
 
-/** @mago-expect lint:file-name The stateful fake keeps TLD rollback calls visible in the action test. */
 final class ProvisionNodeTldProjectionConverger implements AppDevTldConverger
 {
     /** @var list<string|null> */

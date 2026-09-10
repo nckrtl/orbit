@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\E2E\Value\TopologyProfile;
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
 function gateway_prerequisite_fixture(): string
@@ -330,7 +332,7 @@ function typed_sample_app(array $branchFields, array $overrides = []): string
 }
 
 /** @param array<string, mixed> $overrides
- *  @return array<string, mixed>
+ * @return array<string, mixed>
  */
 function typed_sample_route(array $overrides = []): array
 {
@@ -360,7 +362,7 @@ function typed_sample_route_list(array $routes): string
 }
 
 /** @param array<int, string> $commands
- *  @return array<int, string>
+ * @return array<int, string>
  */
 function typed_cluster_mutations(array $commands): array
 {
@@ -696,7 +698,7 @@ function vpn_dns_probe_run(int $blockedTries): array
             'curl' => file_exists("{$root}/curl") ? (string) file_get_contents("{$root}/curl") : null,
         ];
     } finally {
-        new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        new Filesystem()->deleteDirectory($root);
     }
 }
 
@@ -709,7 +711,7 @@ describe('Gateway host prerequisite convergence', function () {
             ]);
             expect($process->run())->toBe(0)->and(file_exists("{$root}/apt"))->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -728,7 +730,7 @@ describe('Gateway host prerequisite convergence', function () {
                     'noninteractive install --yes --no-install-recommends -- php8.5-fpm',
                 ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -747,7 +749,7 @@ describe('Gateway host prerequisite convergence', function () {
                     'noninteractive install --yes --no-install-recommends -- caddy dnsmasq php8.5-fpm',
                 ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -821,7 +823,7 @@ describe('Gateway host prerequisite convergence', function () {
             if (is_resource($socket)) {
                 fclose($socket);
             }
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 });
@@ -882,7 +884,7 @@ function verifierWireguardFixture(): string
 /**
  * The reachability probe of one fixture root, for the given declared peers.
  *
- * @param list<string> $peers
+ * @param  list<string>  $peers
  */
 function verifierWireguardProcess(string $root, array $peers): Process
 {
@@ -898,8 +900,8 @@ function verifierWireguardProcess(string $root, array $peers): Process
 }
 
 /**
- * @param list<string> $statuses
- * @param list<int> $targets
+ * @param  list<string>  $statuses
+ * @param  list<int>  $targets
  * @return array{root:string,process:Process}
  */
 function appinstance_routes_probe_fixture(array $statuses, array $targets): array
@@ -943,7 +945,6 @@ function appinstance_routes_probe_fixture(array $statuses, array $targets): arra
     ];
 }
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect The guest-script tests keep the complete shell contract in one specification. */
 describe('convergence guest scripts', function () {
     it('requires exactly one Route association for every active AppInstance', function (
         array $statuses,
@@ -973,7 +974,7 @@ describe('convergence guest scripts', function () {
                 expect($fixture['process']->getOutput())->toBe('');
             }
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'one association' => [['active'], [1], true],
@@ -1030,7 +1031,7 @@ describe('convergence guest scripts', function () {
                 "{$root}/checkout/apps/gateway",
             ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -1060,7 +1061,7 @@ describe('convergence guest scripts', function () {
                 ->not->toContain('--wireguard-address')
                 ->not->toContain('orbit:node-retarget');
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -1079,7 +1080,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_get_contents($fixture['commands']))
                 ->not->toContain('orbit:node-provision');
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -1094,7 +1095,7 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->not->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -1157,7 +1158,7 @@ describe('convergence guest scripts', function () {
                 ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
                 ->toBe(['is-active --quiet wg-quick@orbit', 'restart wg-quick@orbit']);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -1174,7 +1175,7 @@ describe('convergence guest scripts', function () {
         try {
             expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.1.10'])->run())->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -1198,7 +1199,7 @@ describe('convergence guest scripts', function () {
                 ->toContain('orbit:node-provision')
                 ->toContain('ssh:-i');
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -1301,7 +1302,7 @@ describe('convergence guest scripts', function () {
             $evidence = json_decode($process->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
             expect($evidence['observed'])->toBe('degraded');
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -1373,7 +1374,7 @@ describe('convergence guest scripts', function () {
             file_put_contents("{$repository}/tracked.txt", "drift\n");
             expect(new Process($command)->run())->not->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -1516,7 +1517,7 @@ describe('convergence guest scripts', function () {
         $fixture = metrics_publication_probe_fixture(true);
         try {
             $assignments = base64_encode(json_encode(
-                \App\E2E\Value\TopologyProfile::ASSIGNMENTS,
+                TopologyProfile::ASSIGNMENTS,
                 JSON_THROW_ON_ERROR,
             ));
             $command = [
@@ -1585,7 +1586,7 @@ describe('convergence guest scripts', function () {
             symlink($foreignCertificate, $certificateCurrent);
             expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -1633,7 +1634,7 @@ describe('convergence guest scripts', function () {
             ]);
             expect($failedDns->run())->not->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -1740,7 +1741,7 @@ describe('convergence guest scripts', function () {
             $pdo->exec("DELETE FROM node_roles WHERE role = 'vpn'");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -1825,7 +1826,7 @@ describe('convergence guest scripts', function () {
                 "{$checkout}/artisan --version",
             ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
     it('uses fixed paths, safe arguments, idempotent resources, and the stock Laravel repository', function () {
@@ -1977,7 +1978,7 @@ describe('convergence guest scripts', function () {
                 '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
             ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2006,7 +2007,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$fixture['root']}/fetched"))
                 ->toBeTrue();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2035,7 +2036,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_get_contents("{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock"))
                 ->toBe(hash_file('sha256', "{$fixture['checkout']}/composer.lock"));
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'changed lock' => ['stale-lock', true],
@@ -2060,7 +2061,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_get_contents("{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock"))
                 ->toBe('stale-lock');
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2082,7 +2083,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_get_contents("{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock"))
                 ->toBe(hash_file('sha256', "{$fixture['checkout']}/composer.lock"));
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2117,7 +2118,7 @@ describe('convergence guest scripts', function () {
                 ->and(file("{$fixture['root']}/php-commands", FILE_IGNORE_NEW_LINES))
                 ->toBe([$fixture['checkout'].'/artisan migrate --force --no-interaction']);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2138,7 +2139,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_get_contents("{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock"))
                 ->toBe('stale-lock');
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2160,7 +2161,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$fixture['root']}/composer-commands"))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'wrong remote' => ['SAMPLE_REMOTE_URL', 'https://example.invalid/laravel.git'],
@@ -2213,7 +2214,7 @@ describe('convergence guest scripts', function () {
                 '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
             ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2343,7 +2344,7 @@ describe('convergence guest scripts', function () {
                 'effective_root' => 'public',
             ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'default branch' => [['default_branch' => '13.x']],
@@ -2373,7 +2374,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists($fixture['state']))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'missing branch fields' => [[]],
@@ -2431,7 +2432,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists($fixture['state']))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'default branch with wrong repository' => [['default_branch' => '13.x'], 'repository'],
@@ -2524,7 +2525,7 @@ describe('convergence guest scripts', function () {
             );
             expect($emptyInspection->run())->not->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2553,7 +2554,7 @@ describe('convergence guest scripts', function () {
                 ->and(array_filter($all, fn (string $command): bool => str_starts_with($command, 'instance:deploy ')))
                 ->toHaveCount(1);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2572,7 +2573,7 @@ describe('convergence guest scripts', function () {
                 ->not->toContain('instance:deploy 5 --json', 'instance:new 1 3 e2e-prod');
             expect(file_exists($fixture['state']))->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2601,7 +2602,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$fixture['root']}/route"))
                 ->toBeTrue();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2625,7 +2626,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists($fixture['state']))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'malformed response' => ['{'],
@@ -2671,7 +2672,7 @@ describe('convergence guest scripts', function () {
             expect($commands)->toContain('route:new 1 e2e-dev.orbit --publication=private --target=4 --json');
             expect(file_exists($fixture['state']))->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'malformed create response' => [['ROUTE_NEW_RESPONSE' => '{']],
@@ -2707,7 +2708,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$fixture['root']}/instance-before-cluster"))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'after Cluster creation' => [
@@ -2755,7 +2756,7 @@ describe('convergence guest scripts', function () {
             $allCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(typed_cluster_mutations(array_slice($allCommands, count($firstCommands))))->toBe($retryMutations);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'Cluster creation output' => [
@@ -2878,7 +2879,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$fixture['root']}/instance-before-cluster"))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'same name with a non-null TLD' => [
@@ -2952,7 +2953,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$fixture['root']}/instance"))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -2975,7 +2976,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$fixture['root']}/instance"))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'different Cluster membership' => [
@@ -3011,7 +3012,7 @@ describe('convergence guest scripts', function () {
                 $fixture['legacy_records'],
             ))->toBe($before);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -3068,7 +3069,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists($fixture['state']))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with(['App conflict' => ['App'], 'AppInstance conflict' => ['AppInstance']]);
 
@@ -3105,7 +3106,7 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->not->toBe(0);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -3116,7 +3117,7 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->toBe(0, $process->getErrorOutput());
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -3132,7 +3133,7 @@ describe('convergence guest scripts', function () {
                 'list --raw',
             ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
@@ -3175,7 +3176,7 @@ describe('convergence guest scripts', function () {
             ]);
             expect(file_exists("{$root}/mutated"))->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     })->with([
         'invalid JSON' => ['{'],
@@ -3215,7 +3216,7 @@ describe('convergence guest scripts', function () {
                     'workspace:',
                 );
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
         'empty later read' => ['{"app_instances":[]}'],
@@ -3332,7 +3333,7 @@ describe('convergence guest scripts', function () {
                 'instance:list --json',
             ]);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -3749,7 +3750,7 @@ describe('convergence guest scripts', function () {
                 ->and(file_exists("{$root}/git-ran"))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 });

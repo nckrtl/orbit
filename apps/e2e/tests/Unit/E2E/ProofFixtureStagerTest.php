@@ -111,7 +111,7 @@ final class ProofFixtureGuestFake implements GuestTransport
 }
 
 /**
- * @param array<string, array{string, int}> $files
+ * @param  array<string, array{string, int}>  $files
  * @return array{repository:GitRepository, commit:string}
  */
 function proofFixtureRepository(string $issue, array $files): array
@@ -154,7 +154,6 @@ describe('ProofFixtureStager', function (): void {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
         Facade::clearResolvedInstances();
-        /** @mago-expect analysis:possibly-invalid-argument The process facade only needs the container contract. */
         Facade::setFacadeApplication($container);
     });
 

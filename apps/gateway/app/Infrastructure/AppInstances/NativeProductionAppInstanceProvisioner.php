@@ -29,14 +29,8 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The coordinator keeps every durable production checkpoint explicit.
- * @mago-expect lint:kan-defect The score reflects explicit placement, retry, and durable checkpoint gates.
- * @mago-expect lint:too-many-methods The coordinator keeps each state transition independently verifiable.
- */
 final readonly class NativeProductionAppInstanceProvisioner implements ProductionAppInstanceProvisioner
 {
-    /** @mago-expect lint:excessive-parameter-list The coordinator names each source, legacy, Route, and projection boundary explicitly. */
     public function __construct(
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceSourceLifecycle $source,
@@ -181,7 +175,6 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         return [$instance, true];
     }
 
-    /** @mago-expect lint:excessive-parameter-list Retry validation compares the complete immutable production identity. */
     private function assertRetryIdentity(
         AppInstance $appInstance,
         Node $node,

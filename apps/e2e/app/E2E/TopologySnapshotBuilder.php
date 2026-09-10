@@ -22,8 +22,6 @@ use Throwable;
  * generation exists. The topology snapshot names are fixed, so cleanup after a failed
  * build needs no intent record: every topology snapshot resource stamped with this
  * operation is deleted.
- *
- * @mago-expect lint:excessive-parameter-list,cyclomatic-complexity,kan-defect Cold construction keeps its exact resource transaction at one boundary.
  */
 final readonly class TopologySnapshotBuilder
 {

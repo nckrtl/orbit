@@ -25,7 +25,8 @@ it('prepares configured roots through a narrow sudo bash command', function (): 
     $ssh = new AppDevFakeSshExecutor;
     $preparer = new RemoteNodeStorageRootPreparer(new AppDevSshExecutor(
         $ssh,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/home/orbit/.orbit/ssh/id_ed25519';
@@ -36,7 +37,8 @@ it('prepares configured roots through a narrow sudo bash command', function (): 
                 return 'ssh-ed25519 AAAA';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/home/orbit/.orbit/ssh/known_hosts';

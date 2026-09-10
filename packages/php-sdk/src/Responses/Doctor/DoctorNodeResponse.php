@@ -20,8 +20,7 @@ final readonly class DoctorNodeResponse
     ) {}
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway node values remain mixed until validated.
-     * @param array<array-key, mixed> $data
+     * @param  array<array-key, mixed>  $data
      */
     public static function fromGatewayData(#[SensitiveParameter] array $data): ?self
     {

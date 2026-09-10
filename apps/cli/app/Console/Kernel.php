@@ -20,8 +20,8 @@ final class Kernel extends BaseKernel
      * command, which prints the command list and exits 0. Scripts and proof
      * plans must not pass by accident, so an unknown command fails here.
      *
-     * @param InputInterface $input
-     * @param OutputInterface|null $output
+     * @param  InputInterface  $input
+     * @param  OutputInterface|null  $output
      */
     public function handle($input, $output = null): int
     {

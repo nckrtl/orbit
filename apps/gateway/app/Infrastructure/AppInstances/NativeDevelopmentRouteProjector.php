@@ -17,10 +17,6 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The projector keeps each ordered private Route boundary explicit.
- * @mago-expect lint:too-many-methods Each method implements one existing or hostname-change projection boundary.
- */
 final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, RouteHostnameProjector
 {
     public function __construct(

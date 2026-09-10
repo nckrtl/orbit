@@ -56,7 +56,8 @@ it('records retained production identity without changing content bytes or owner
         ->load('app');
     $bytesBefore = file_get_contents($this->marker);
     $identityBefore = stat($this->marker);
-    $layout = new class implements ProductionReleaseLayout {
+    $layout = new class implements ProductionReleaseLayout
+    {
         /** @var list<int> */
         public array $cleared = [];
 

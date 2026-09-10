@@ -29,11 +29,9 @@ final readonly class NodeSideResidue
     public const string FOLLOW_UP_ROLE_REMOVED = 'Orbit still manages this node. Clean up only the leftovers listed above; provision the node again when it is reachable.';
 
     /**
-     * @param list<RoleName> $roles
-     * @param bool $nodeLeavesFleet whether the node is leaving Orbit's registry too
+     * @param  list<RoleName>  $roles
+     * @param  bool  $nodeLeavesFleet  whether the node is leaving Orbit's registry too
      * @return list<string>
-     *
-     * @mago-expect lint:no-boolean-flag-parameter The residue differs in kind, not degree, when the node itself leaves.
      */
     public function describe(array $roles, bool $nodeLeavesFleet): array
     {
@@ -53,7 +51,6 @@ final readonly class NodeSideResidue
         return $lines;
     }
 
-    /** @mago-expect lint:no-boolean-flag-parameter The follow-up differs in kind when the node itself leaves. */
     public function followUp(bool $nodeLeavesFleet): string
     {
         return $nodeLeavesFleet ? self::FOLLOW_UP_NODE_REMOVED : self::FOLLOW_UP_ROLE_REMOVED;

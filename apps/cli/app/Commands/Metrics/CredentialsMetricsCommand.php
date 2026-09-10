@@ -14,6 +14,7 @@ final class CredentialsMetricsCommand extends MetricsCommand
 {
     #[\Override]
     protected $signature = 'metrics:credentials {--reset : Reset the password} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Show Metrics credentials.';
 

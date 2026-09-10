@@ -7,6 +7,7 @@ namespace App\Actions\Routes;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteReconciliationGuard;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -49,7 +50,7 @@ final readonly class ClearRouteTargetAction
                 ->all();
 
             if ($currentTargetIds !== $expectedTargetIds) {
-                throw new \App\Domain\Shared\ResourceOperationException(
+                throw new ResourceOperationException(
                     errorCode: 'env.owner_changed',
                     message: 'The AppInstance environment owner changed during the operation.',
                     status: 409,

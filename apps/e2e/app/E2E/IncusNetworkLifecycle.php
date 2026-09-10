@@ -11,11 +11,12 @@ use JsonException;
 use RuntimeException;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Create, reconcile, and delete share one exact host-network boundary. */
 final readonly class IncusNetworkLifecycle
 {
     private const string MANAGED_INTERFACE_PATTERN = 'oe+';
+
     private const string MANAGED_NETWORK_PATTERN = '/\Aoe-[a-z0-9](?:[a-z0-9-]{0,10}[a-z0-9])?\z/D';
+
     private const string OWNER = 'orbit-e2e';
 
     public function __construct(

@@ -11,7 +11,6 @@ use Closure;
 use LogicException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect The lock keeps ordered acquisition, bounded waiting, reentry, and cleanup in one native boundary. */
 final class NativeAppInstanceEnvironmentOperationLock implements AppInstanceEnvironmentOperationLock
 {
     /** @var array<int, int> */
@@ -24,8 +23,8 @@ final class NativeAppInstanceEnvironmentOperationLock implements AppInstanceEnvi
     private readonly Closure $wait;
 
     /**
-     * @param (Closure(): float)|null $clock
-     * @param (Closure(int): void)|null $wait
+     * @param  (Closure(): float)|null  $clock
+     * @param  (Closure(int): void)|null  $wait
      */
     public function __construct(
         private readonly string $directory,

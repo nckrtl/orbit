@@ -196,13 +196,12 @@ it('keeps Docker environment values out of production exception diagnostics', fu
         static function (array $frame): bool {
             $file = $frame['file'] ?? null;
 
-            return (
+            return
                 is_string($file)
                 && (
                     str_starts_with($file, base_path('app').DIRECTORY_SEPARATOR)
                     || str_starts_with($file, base_path('bootstrap').DIRECTORY_SEPARATOR)
-                )
-            );
+                );
         },
     ));
 
@@ -579,11 +578,10 @@ it('keeps persisted Docker environment values out of lifecycle exception traces'
             static function (array $frame): bool {
                 $file = $frame['file'] ?? '';
 
-                return (
+                return
                     is_string($file)
                     && ! str_starts_with($file, base_path('tests').'/')
-                    && ! str_contains($file, '/Illuminate/Foundation/Testing/')
-                );
+                    && ! str_contains($file, '/Illuminate/Foundation/Testing/');
             },
         ));
 
@@ -615,7 +613,6 @@ function processes_api_record(Instance $instance): Process
     ]);
 }
 
-/** @mago-expect lint:file-name Test-local fake keeps the API scenario setup visible. */
 final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
 {
     /** @var list<int> */

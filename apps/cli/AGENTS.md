@@ -7,7 +7,7 @@ Laravel Zero 13 client for Orbit.
 - Send operational commands through `nckrtl/orbit-php-sdk`.
 - Do not execute remote infrastructure commands in the CLI.
 - Use Pest 5 with `describe()` and `it()`.
-- Use Mago for formatting, linting, and analysis.
+- Use Pint for formatting and Larastan for static analysis.
 
 ## Required Guidance Bootstrap
 
@@ -46,8 +46,8 @@ the project rule set.
 
 ## Verification
 
-- Use focused Pest 5 tests locally. CI owns full parallel no-TIA suites; `composer test` remains an explicit full local run.
-- Run `composer check` before delivery. Mago and Rector are the configured PHP quality tools.
+- Use focused Pest 5 tests locally. Reviewers run root `composer check` across all projects with TIA; `composer test` remains an explicit full local run.
+- Run `composer check` before delivery. Pint, Larastan, and Rector are the configured PHP quality tools.
 
 === .ai/spatie rules ===
 
@@ -83,5 +83,12 @@ the project rule set.
 - Use TitleCase for Enum keys: `FavoritePerson`, `BestLake`, `Monthly`.
 - Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
 - Use array shape type definitions in PHPDoc blocks.
+
+=== pint/core rules ===
+
+# Laravel Pint Code Formatter
+
+- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
+- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
 
 </laravel-boost-guidelines>

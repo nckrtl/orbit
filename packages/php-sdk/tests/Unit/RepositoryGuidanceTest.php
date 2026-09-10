@@ -1,8 +1,16 @@
 <?php
 
 declare(strict_types=1);
+use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
+use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
+use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
+use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
+use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
 
-/** @mago-expect lint:halstead Repository guidance assertions stay visible together. */
 describe('repository guidance bootstrap', function (): void {
     it('indexes every required readable rule file', function (): void {
         $index = repository_guidance_contents('.ai/rules/index.md');
@@ -44,7 +52,8 @@ describe('repository guidance bootstrap', function (): void {
                 '`composer.json`',
                 '`composer.lock`',
                 '`phpunit.xml.dist`',
-                '`mago.toml`',
+                '`pint.json`',
+                '`phpstan.neon`',
                 '`rector.php`',
                 '`.gitignore`',
             );
@@ -98,7 +107,9 @@ describe('repository guidance bootstrap', function (): void {
             ->not->toContain('local TIA');
 
         expect(repository_guidance_contents('AGENTS.md'))
-            ->toContain('Use focused Pest tests locally; CI owns full parallel no-TIA suites.');
+            ->toContain(
+                'Use focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA.',
+            );
 
         foreach ([
             '.ai/rules/index.md',
@@ -198,15 +209,15 @@ describe('repository guidance bootstrap', function (): void {
             ->toBe(75)
             ->and($requestClasses)
             ->toHaveCount(72)
-            ->toContain(Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest::class)
-            ->toContain(Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest::class)
-            ->toContain(Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest::class)
-            ->toContain(Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest::class)
-            ->toContain(Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest::class)
-            ->toContain(Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest::class)
-            ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class)
-            ->toContain(Orbit\Sdk\Requests\Clusters\ListClustersRequest::class)
-            ->toContain(Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest::class);
+            ->toContain(CreateAppInstanceRequest::class)
+            ->toContain(RegisterAppInstanceRequest::class)
+            ->toContain(RemoveAppInstanceRequest::class)
+            ->toContain(ImportAppInstanceEnvironmentRequest::class)
+            ->toContain(UpdateAppInstanceEnvironmentRequest::class)
+            ->toContain(SynchronizeAppInstanceEnvironmentRequest::class)
+            ->toContain(RunDoctorRequest::class)
+            ->toContain(ListClustersRequest::class)
+            ->toContain(ClearClusterRouterRequest::class);
     });
 
     it('documents the 72-operation SDK surface including AppInstance environment transport', function (): void {

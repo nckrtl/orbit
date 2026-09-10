@@ -6,13 +6,13 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Serialized retirement results validate exact nested identities.
- * @mago-expect analysis:impossible-type-comparison Runtime serialized input can violate PHPDoc nested shapes.
- */
 final readonly class RetirementResult
 {
-    /** @param list<array<string, mixed>> $deleted @param list<array<string, mixed>> $remaining @param array<string, list<array<string, mixed>>> $preserved */
+    /**
+     * @param  list<array<string, mixed>>  $deleted
+     * @param  list<array<string, mixed>>  $remaining
+     * @param  array<string, list<array<string, mixed>>>  $preserved
+     */
     public function __construct(
         public bool $successful,
         public array $deleted,
@@ -20,7 +20,50 @@ final readonly class RetirementResult
         public array $preserved,
         public string $quarantineSha256,
     ) {
-        if (preg_match('/\A[a-f0-9]{64}\z/', $quarantineSha256) !== 1) {
+        $this->validate($deleted, $remaining);
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        return [
+            'version' => 3,
+            'successful' => $this->successful,
+            'quarantine_sha256' => $this->quarantineSha256,
+            'deleted' => $this->deleted,
+            'remaining' => $this->remaining,
+            'preserved' => $this->preserved,
+        ];
+    }
+
+    /** @param array<string, mixed> $value */
+    public static function fromArray(array $value): self
+    {
+        if (
+            array_keys($value) !== ['version', 'successful', 'quarantine_sha256', 'deleted', 'remaining', 'preserved']
+            || ($value['version'] ?? null) !== 3
+            || ! is_bool($value['successful'] ?? null)
+            || ! is_string($value['quarantine_sha256'] ?? null)
+            || ! is_array($value['deleted'] ?? null)
+            || ! is_array($value['remaining'] ?? null)
+            || ! is_array($value['preserved'] ?? null)
+        ) {
+            throw new InvalidArgumentException('The retirement result is invalid.');
+        }
+        /** @var list<array<string, mixed>> $deleted */ $deleted = $value['deleted'];
+        /** @var list<array<string, mixed>> $remaining */ $remaining = $value['remaining'];
+        /** @var array<string, list<array<string, mixed>>> $preserved */ $preserved = $value['preserved'];
+
+        return new self($value['successful'], $deleted, $remaining, $preserved, $value['quarantine_sha256']);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $deleted
+     * @param  array<array-key, mixed>  $remaining
+     */
+    private function validate(array $deleted, array $remaining): void
+    {
+        if (preg_match('/\A[a-f0-9]{64}\z/', $this->quarantineSha256) !== 1) {
             throw new InvalidArgumentException('The retirement result digest is invalid.');
         }
         if (! array_is_list($deleted) || ! array_is_list($remaining)) {
@@ -35,7 +78,7 @@ final readonly class RetirementResult
                     'manifests', 'locks' => 'file',
                     default => null,
                 }
-                : null;
+            : null;
             $expectedKeys = $filesystemType === null
                 ? ['kind', 'identity', 'result']
                 : ['kind', 'identity', 'filesystem_type', 'result'];
@@ -97,40 +140,6 @@ final readonly class RetirementResult
             }
             $seenRemaining[$key] = true;
         }
-        new RetirementInventory([], $preserved, '2000-01-01T00:00:00+00:00');
-    }
-
-    /** @return array<string, mixed> */
-    public function toArray(): array
-    {
-        return [
-            'version' => 3,
-            'successful' => $this->successful,
-            'quarantine_sha256' => $this->quarantineSha256,
-            'deleted' => $this->deleted,
-            'remaining' => $this->remaining,
-            'preserved' => $this->preserved,
-        ];
-    }
-
-    /** @param array<string, mixed> $value */
-    public static function fromArray(array $value): self
-    {
-        if (
-            array_keys($value) !== ['version', 'successful', 'quarantine_sha256', 'deleted', 'remaining', 'preserved']
-            || ($value['version'] ?? null) !== 3
-            || ! is_bool($value['successful'] ?? null)
-            || ! is_string($value['quarantine_sha256'] ?? null)
-            || ! is_array($value['deleted'] ?? null)
-            || ! is_array($value['remaining'] ?? null)
-            || ! is_array($value['preserved'] ?? null)
-        ) {
-            throw new InvalidArgumentException('The retirement result is invalid.');
-        }
-        /** @var list<array<string, mixed>> $deleted */ $deleted = $value['deleted'];
-        /** @var list<array<string, mixed>> $remaining */ $remaining = $value['remaining'];
-        /** @var array<string, list<array<string, mixed>>> $preserved */ $preserved = $value['preserved'];
-
-        return new self($value['successful'], $deleted, $remaining, $preserved, $value['quarantine_sha256']);
+        new RetirementInventory([], $this->preserved, '2000-01-01T00:00:00+00:00');
     }
 }

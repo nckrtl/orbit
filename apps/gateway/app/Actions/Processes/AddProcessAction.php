@@ -111,20 +111,17 @@ final readonly class AddProcessAction
         #[SensitiveParameter]
         array $attributes,
     ): bool {
-        return (
+        return
             $process->runtime === $attributes['runtime']
             && $process->working_directory === $attributes['working_directory']
             && $this->canonicalRuntimeConfig($process->runtime, $process->runtime_config)
             === $attributes['runtime_config']
-            && $process->restart_policy === $attributes['restart_policy']
-        );
+            && $process->restart_policy === $attributes['restart_policy'];
     }
 
     /**
-     * @param array<string, mixed> $runtimeConfig
+     * @param  array<string, mixed>  $runtimeConfig
      * @return array<string, mixed>
-     *
-     * @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary.
      */
     private function canonicalRuntimeConfig(
         ProcessRuntime $runtime,

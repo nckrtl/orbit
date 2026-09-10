@@ -13,7 +13,6 @@ use App\Services\Git\GitRepositoryOriginPolicy;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRegistrationResponse;
 
-/** @mago-expect lint:cyclomatic-complexity Registration keeps discovery, confirmation, transport, and output failure paths explicit. */
 final class RegisterInstanceCommand extends GatewayCommand
 {
     #[\Override]
@@ -115,8 +114,8 @@ final class RegisterInstanceCommand extends GatewayCommand
     {
         $appId = $this->stringOption('app');
         $appIdValue = $appId === null ? null : filter_var($appId, FILTER_VALIDATE_INT, ['options' => [
-                'min_range' => 1,
-            ]]);
+            'min_range' => 1,
+        ]]);
 
         if ($appId !== null && ! is_int($appIdValue)) {
             $this->renderGatewayFailure('app.id_invalid', 'App ID must be a positive integer.');
@@ -160,7 +159,7 @@ final class RegisterInstanceCommand extends GatewayCommand
     }
 
     /**
-     * @param array{slug: ?string, branch: ?string, root: ?string} $appValues
+     * @param  array{slug: ?string, branch: ?string, root: ?string}  $appValues
      * @return array{appId: ?int, appName: ?string, appSlug: ?string, defaultBranch: ?string, root: ?string}|null
      */
     private function confirmInteractiveValues(
@@ -176,18 +175,16 @@ final class RegisterInstanceCommand extends GatewayCommand
 
         $this->line("Source: {$facts->path}");
         $this->line("Repository: {$facts->repositoryUrl}");
-        $this->line('App slug: '.($slug ?? $facts->slug));
+        $this->line('App slug: '.$slug);
         $this->line('Default branch: '.($branch ?? $facts->defaultBranch ?? 'unresolved'));
         $this->line('Root: '.($root ?? $facts->root ?? 'unresolved'));
         if (! $selectedApp && $branch === null) {
-            /** @mago-expect analysis:mixed-assignment Console prompts cross an untyped framework boundary. */
             $branchAnswer = $this->ask('Default branch');
             $branch = is_string($branchAnswer) ? $branchAnswer : null;
             $appValues['branch'] = $branch;
         }
 
         if (! $selectedApp && $root === null) {
-            /** @mago-expect analysis:mixed-assignment Console prompts cross an untyped framework boundary. */
             $rootAnswer = $this->ask('Application root');
             $root = is_string($rootAnswer) ? $rootAnswer : null;
             $appValues['root'] = $root;

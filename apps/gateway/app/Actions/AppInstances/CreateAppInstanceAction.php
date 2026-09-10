@@ -31,14 +31,8 @@ use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The action keeps the closed durable state machine visible.
- * @mago-expect lint:kan-defect The score reflects fail-closed placement, retry, and source-state gates.
- * @mago-expect lint:too-many-methods The action keeps every transition and evidence check in one durable state machine.
- */
 final readonly class CreateAppInstanceAction
 {
-    /** @mago-expect lint:excessive-parameter-list The action names each narrow placement and source collaborator explicitly. */
     public function __construct(
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,

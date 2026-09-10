@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleDefinition;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 
@@ -65,7 +66,7 @@ describe(RoleRegistry::class, function (): void {
 
     it('requires every role definition to declare its lifecycle policy explicitly', function (): void {
         $parameters = collect(
-            new ReflectionClass(App\Domain\Nodes\RoleDefinition::class)->getConstructor()?->getParameters() ?? [],
+            new ReflectionClass(RoleDefinition::class)->getConstructor()?->getParameters() ?? [],
         )
             ->keyBy(static fn (ReflectionParameter $parameter): string => $parameter->getName());
 

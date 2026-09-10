@@ -13,6 +13,7 @@ final class ShowRouteCommand extends RouteCommand
 {
     #[\Override]
     protected $signature = 'route:show {route : Numeric Route ID} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Show a Route.';
 

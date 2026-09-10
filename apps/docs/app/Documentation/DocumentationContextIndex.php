@@ -31,12 +31,11 @@ final readonly class DocumentationContextIndex
     /** @throws JsonException */
     public function toJson(): string
     {
-        return (
+        return
             json_encode(
                 $this->toArray(),
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
-            )."\n"
-        );
+            )."\n";
     }
 
     /** @throws JsonException */
@@ -64,7 +63,10 @@ final readonly class DocumentationContextIndex
         return new self($entries);
     }
 
-    /** @param list<string> $components @param list<string> $concepts */
+    /**
+     * @param  list<string>  $components
+     * @param  list<string>  $concepts
+     */
     public function filtered(array $components, array $concepts): self
     {
         $documents = array_values(array_filter(

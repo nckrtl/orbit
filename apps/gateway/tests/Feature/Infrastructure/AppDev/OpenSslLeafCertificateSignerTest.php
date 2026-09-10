@@ -9,6 +9,7 @@ use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\ExecutableFinder;
 
 it('signs a target CSR for only the gateway-approved hostname', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
@@ -455,7 +456,7 @@ function leaf_certificate_caddy_validation(
     string $privateKeyPath,
     string $hostname,
 ): ?CommandResult {
-    if (new Symfony\Component\Process\ExecutableFinder()->find('caddy') === null) {
+    if (new ExecutableFinder()->find('caddy') === null) {
         return null;
     }
 

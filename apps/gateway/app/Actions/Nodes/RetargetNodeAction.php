@@ -27,15 +27,13 @@ use Throwable;
  * so a node with any role row is reachable only through WireGuard. Its
  * retarget pins the host key over the tunnel and only updates the public
  * record; the node-side WireGuard endpoint must already point at the Gateway.
- *
- * @mago-expect lint:cyclomatic-complexity Ordered validation, identity, and rollback gates stay in one action.
  */
 final readonly class RetargetNodeAction
 {
     public const string VPN_RECOVERY_HINT =
         'The node is reachable only through WireGuard after role provisioning. '
-            .'On the node, as root, set "Endpoint" in /etc/wireguard/orbit.conf to the Gateway address, '
-            .'run "systemctl restart wg-quick@orbit", then retry the retarget.';
+        .'On the node, as root, set "Endpoint" in /etc/wireguard/orbit.conf to the Gateway address, '
+        .'run "systemctl restart wg-quick@orbit", then retry the retarget.';
 
     public function __construct(
         private HostKeyScanner $hostKeys,

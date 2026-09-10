@@ -286,7 +286,6 @@ it('retains projection ownership through DNS failure rollback', function (): voi
 });
 
 /** @param list<string> $events @param list<CommandResult> $sshResults */
-/** @mago-expect lint:excessive-parameter-list Named failure controls keep each rollback scenario explicit. */
 function metrics_publication_manager(
     array &$events,
     array $sshResults,
@@ -347,7 +346,6 @@ function metrics_publication_manager_firewall(): string
 final class MetricsPublicationManagerProcessRunner implements ProcessRunner
 {
     /** @param list<string> $events */
-    /** @mago-expect lint:excessive-parameter-list The test runner models each independent publication outcome. */
     public function __construct(
         private array &$events,
         private bool $failCaddy,

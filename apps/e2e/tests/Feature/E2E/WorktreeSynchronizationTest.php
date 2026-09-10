@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
+use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 
 function syncGit(string $path, string ...$arguments): string
 {
@@ -34,13 +36,13 @@ function syncRepository(): string
 
 function removeSyncRepository(string $path): void
 {
-    new Illuminate\Filesystem\Filesystem()->deleteDirectory($path);
+    new Filesystem()->deleteDirectory($path);
 }
 
 /** @return array{output:string,error:string,exitCode:int} */
 function runReceiveSource(string ...$arguments): array
 {
-    $process = new Symfony\Component\Process\Process([
+    $process = new Process([
         'bash',
         dirname(__DIR__, 3).'/resources/guest/receive-source.sh',
         ...$arguments,
@@ -67,7 +69,7 @@ describe('worktree source preparation', function () {
             $bundle = $transfer.'/source.bundle';
             $repository->createBundle($bundle, $sha);
             file_put_contents($transfer.'/blocked', "blocked\n");
-            new Symfony\Component\Process\Process([
+            new Process([
                 'tar',
                 '--mode=000',
                 '-cf',
@@ -109,8 +111,9 @@ describe('worktree source preparation', function () {
                 ->and(scandir($tmp))
                 ->toBe(['.', '..']);
         } finally {
-            if (file_exists($guest.'/blocked'))
+            if (file_exists($guest.'/blocked')) {
                 chmod($guest.'/blocked', 0600);
+            }
             removeSyncRepository($host);
             removeSyncRepository($guest);
             removeSyncRepository($transfer);
@@ -431,7 +434,7 @@ describe('worktree source preparation', function () {
                 ->toBe("outside\n");
         } finally {
             removeSyncRepository($path);
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($external);
+            new Filesystem()->deleteDirectory($external);
         }
     });
 
@@ -481,7 +484,7 @@ describe('worktree source preparation', function () {
         } finally {
             removeSyncRepository($host);
             removeSyncRepository($guest);
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($external);
+            new Filesystem()->deleteDirectory($external);
         }
     });
 });

@@ -10,13 +10,13 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
+use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Exact validation and transfer remain one fail-closed operation. */
-/** @mago-expect lint:too-many-methods Synchronization owns validation, transfer, and cleanup at one external-state boundary. */
 final readonly class WorktreeSynchronizer
 {
     /** @var list<string> */
@@ -67,7 +67,7 @@ final readonly class WorktreeSynchronizer
     {
         $repository = new GitRepository($worktree);
         $this->validateWorktree($repository, $target);
-        if (count($target->recipe->nodes) > count(\App\E2E\Value\TopologyProfile::ROLES)) {
+        if (count($target->recipe->nodes) > count(TopologyProfile::ROLES)) {
             $this->syncWorkingTreeGuestScripts($target, $repository);
         }
         $hostSha = $repository->commit();
@@ -169,7 +169,7 @@ final readonly class WorktreeSynchronizer
         try {
             $guestScripts = $this->guestScripts($repository->root());
             $guestScriptHash = $this->guestScriptHash($guestScripts);
-            $paths = $overlay?->paths ?? [];
+            $paths = $overlay->paths ?? [];
             [
                 'archive' => $archive,
                 'manifest' => $manifest,
@@ -177,7 +177,7 @@ final readonly class WorktreeSynchronizer
                 'markerFile' => $markerFile,
             ] = $this->stageTransferFiles($repository, $temporaryDirectory, $paths, $guestScriptHash);
 
-            $effectiveTreeHash = $overlay?->treeHash ?? $repository->effectiveTreeHash();
+            $effectiveTreeHash = $overlay->treeHash ?? $repository->effectiveTreeHash();
             [$guestShas, $scriptStatus] = $this->guestPreflight($target, $guestScripts, $guestScriptHash);
             $roles = [];
             foreach ($target->recipe->checkoutNodeKeys() as $node) {
@@ -393,7 +393,7 @@ final readonly class WorktreeSynchronizer
      * Write the overlay archive, path manifest, deletion manifest, and guest script
      * marker the guests receive; an empty path list produces empty overlay files.
      *
-     * @param list<string> $paths
+     * @param  list<string>  $paths
      * @return array{archive:string, manifest:string, deletions:string, markerFile:string}
      */
     private function stageTransferFiles(
@@ -437,7 +437,7 @@ final readonly class WorktreeSynchronizer
     /**
      * Create one bundle per distinct prerequisite for the roles that need the commit.
      *
-     * @param array<string, array{instance:string, bundleRequired:bool, prerequisite:?string, bundle:?string}> $roles
+     * @param  array<string, array{instance:string, bundleRequired:bool, prerequisite:?string, bundle:?string}>  $roles
      * @return array<string, array{instance:string, bundleRequired:bool, prerequisite:?string, bundle:?string}>
      */
     private function createBundles(
@@ -556,7 +556,7 @@ final readonly class WorktreeSynchronizer
     }
 
     /**
-     * @param list<string> $scripts
+     * @param  list<string>  $scripts
      * @return array{0: array<string, array{sha: string, markerSha: ?string, tree: ?string, clean: bool, hydrated: bool}|null>, 1: array<string, bool>}
      */
     private function guestPreflight(TopologyTarget $target, array $scripts, string $scriptHash): array
@@ -658,12 +658,10 @@ final readonly class WorktreeSynchronizer
                         'tree' => is_string($tree) && preg_match('/\A[0-9a-f]{64}\z/D', $tree) === 1
                             ? strtolower($tree)
                             : null,
-                        'clean' =>
-                            $status instanceof GuestCommandResult
+                        'clean' => $status instanceof GuestCommandResult
                                 && $status->successful()
                                 && trim($status->stdout) === '',
-                        'hydrated' =>
-                            $hydration instanceof GuestCommandResult
+                        'hydrated' => $hydration instanceof GuestCommandResult
                                 && $hydration->successful()
                                 && trim($hydration->stdout) === $sha,
                     ]
@@ -689,14 +687,13 @@ final readonly class WorktreeSynchronizer
 
     private function sourceStateMatchesRole(mixed $state, string $sha, string $tree, bool $mustBeClean): bool
     {
-        return (
+        return
             is_array($state)
             && ($state['sha'] ?? null) === $sha
             && ($state['markerSha'] ?? null) === $sha
             && ($state['tree'] ?? null) === $tree
             && ($state['hydrated'] ?? false) === true
-            && (! $mustBeClean || ($state['clean'] ?? false) === true)
-        );
+            && (! $mustBeClean || ($state['clean'] ?? false) === true);
     }
 
     /**
@@ -706,9 +703,8 @@ final readonly class WorktreeSynchronizer
      *     prerequisite:?string,
      *     bundle:?string
      * }> $roles
-     * @param ?string $candidateTree When set, each checkout is detached at `$sha` and must prove this tree.
+     * @param  ?string  $candidateTree  When set, each checkout is detached at `$sha` and must prove this tree.
      * @return list<string>
-     * @mago-expect lint:excessive-parameter-list Transfer inputs remain explicit at the Incus trust boundary.
      */
     private function transfer(
         array $roles,
@@ -866,7 +862,7 @@ final readonly class WorktreeSynchronizer
      * The bundled checkout has no profile on the orbit user's `PATH`, so the CLI is
      * linked into `/usr/local/bin` on every checkout role once the source is in place.
      *
-     * @param array<string, array{instance:string, files:array<string, array{string, string}>}> $transfers
+     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
      */
     private function exposeOrbitCli(array $transfers): void
     {
@@ -884,7 +880,7 @@ final readonly class WorktreeSynchronizer
      * Detach every checkout at the exact commit, then let each guest prove its
      * `HEAD`, `HEAD^{tree}`, and an empty status before hydration continues.
      *
-     * @param array<string, array{instance:string, files:array<string, array{string, string}>}> $transfers
+     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
      */
     private function detachCheckouts(array $transfers, string $sha, string $candidateTree): void
     {
@@ -968,7 +964,7 @@ final readonly class WorktreeSynchronizer
      * A discovery mount hides the snapshot checkout, so the copy is the only way
      * the mounted worktree receives the gateway environment.
      *
-     * @param array<string, array{instance:string, files:array<string, array{string, string}>}> $transfers
+     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
      */
     private function preserveGatewayEnvironment(array $transfers): void
     {
@@ -1043,7 +1039,7 @@ final readonly class WorktreeSynchronizer
     }
 
     /**
-     * @param list<string> $scripts
+     * @param  list<string>  $scripts
      * @return array<string, bool>
      */
     private function unchangedGuestScripts(TopologyTarget $target, array $scripts, string $hash): array
@@ -1085,8 +1081,8 @@ final readonly class WorktreeSynchronizer
     }
 
     /**
-     * @param array<string, string> $instances
-     * @param list<string> $scripts
+     * @param  array<string, string>  $instances
+     * @param  list<string>  $scripts
      */
     private function installGuestScripts(
         array $instances,
@@ -1193,8 +1189,8 @@ final readonly class WorktreeSynchronizer
     }
 
     /**
-     * @param list<string> $installedScripts
-     * @param list<string> $scripts
+     * @param  list<string>  $installedScripts
+     * @param  list<string>  $scripts
      */
     private function guestScriptContentHashes(array $installedScripts, array $scripts): string
     {
@@ -1225,8 +1221,9 @@ final readonly class WorktreeSynchronizer
     }
 
     /**
-     * @param array<string, GuestCommandResult> $results
-     * @param array<string, array{instance:string, files:array<string, array{string, string}>}> $transfers
+     * @param  array<string, GuestCommandResult>  $results
+     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
+     *
      * @throws JsonException
      */
     private function validateSourceEvidence(array $results, array $transfers, string $sha, string $treeHash): void
@@ -1236,7 +1233,6 @@ final readonly class WorktreeSynchronizer
             if (! $result instanceof GuestCommandResult) {
                 throw new RuntimeException('Guest source batch result is invalid.');
             }
-            /** @mago-expect analysis:mixed-assignment JSON evidence is checked against exact scalar values. */
             $evidence = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
             /** @var mixed $evidence */
             if (
@@ -1305,7 +1301,7 @@ final readonly class WorktreeSynchronizer
     /** @param list<string> $arguments */
     private function git(string $path, array $arguments): string
     {
-        $result = \Illuminate\Support\Facades\Process::path($path)->run(['git', ...$arguments]);
+        $result = Process::path($path)->run(['git', ...$arguments]);
         if ($result->failed()) {
             throw new InvalidArgumentException('Git repository validation failed.');
         }

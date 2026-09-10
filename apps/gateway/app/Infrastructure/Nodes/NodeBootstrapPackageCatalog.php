@@ -9,12 +9,14 @@ use App\Models\Node;
 
 final class NodeBootstrapPackageCatalog
 {
-    /** @return list<string> */ public function forNode(Node $node): array
+    /** @return list<string> */
+    public function forNode(Node $node): array
     {
         return ['ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard'];
     }
 
-    /** @return list<string> */ public function forRole(Node $node, RoleName $role): array
+    /** @return list<string> */
+    public function forRole(Node $node, RoleName $role): array
     {
         return match ($role) {
             RoleName::Gateway => ['ca-certificates'],

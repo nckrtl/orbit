@@ -89,18 +89,16 @@ it('allows rollback when complete profile evidence belongs only to Active rows',
 
 function app_instance_source_profile_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_015031_add_source_profile_to_app_instances_table.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_015031_add_source_profile_to_app_instances_table.php',
+    );
 }
 
 function route_hostname_change_state_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
+    );
 }
 
 /** @return array{AppInstance, AppInstance, AppInstance, AppInstance} */

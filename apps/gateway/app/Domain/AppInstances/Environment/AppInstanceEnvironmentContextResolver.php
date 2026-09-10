@@ -13,7 +13,6 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
 
-/** @mago-expect lint:cyclomatic-complexity The resolver keeps every owner and placement invariant in one fail-closed snapshot boundary. */
 final readonly class AppInstanceEnvironmentContextResolver
 {
     public function resolve(
@@ -87,10 +86,10 @@ final readonly class AppInstanceEnvironmentContextResolver
     private function placement(AppInstance $instance, Node $node): array
     {
         if ($instance->environment === 'development') {
-            $path = $instance->checkout_path;
+            $path = $instance->getAttribute('checkout_path');
             $executionUser = $node->user;
         } else {
-            $path = $instance->production_home;
+            $path = $instance->getAttribute('production_home');
             $executionUser = $instance->production_user;
 
             if ($instance->checkout_path !== $path && ! $instance->usesProductionReleaseLayout()) {
@@ -117,10 +116,9 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $segments = array_slice(explode('/', $path), 1);
 
-        return (
+        return
             $segments !== []
-            && array_all($segments, static fn (string $segment): bool => ! in_array($segment, ['', '.', '..'], true))
-        );
+            && array_all($segments, static fn (string $segment): bool => ! in_array($segment, ['', '.', '..'], true));
     }
 
     private function conflict(): never

@@ -13,6 +13,7 @@ final class AcquireCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:acquire {issue} {worktree} {--json}';
+
     #[\Override]
     protected $description = 'Acquire a fresh discovery topology on the mounted worktree';
 

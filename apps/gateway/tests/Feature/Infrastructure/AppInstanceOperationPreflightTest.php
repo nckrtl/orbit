@@ -297,7 +297,8 @@ function environment_remote_access(SshExecutor $ssh): RemoteAppInstanceEnvironme
 {
     return new RemoteAppInstanceEnvironmentAccess(
         $ssh,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/key';
@@ -308,7 +309,8 @@ function environment_remote_access(SshExecutor $ssh): RemoteAppInstanceEnvironme
                 return 'ssh-ed25519 synthetic';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/tmp/known-hosts';
@@ -319,7 +321,6 @@ function environment_remote_access(SshExecutor $ssh): RemoteAppInstanceEnvironme
     );
 }
 
-/** @mago-expect lint:file-name Test-local observation double records the selected operation. */
 final class EnvironmentObservationSshExecutor implements SshExecutor
 {
     /** @var list<RemoteCommand> */
@@ -338,7 +339,6 @@ final class EnvironmentObservationSshExecutor implements SshExecutor
     }
 }
 
-/** @mago-expect lint:file-name Test-local adapter runs only the embedded Python program. */
 final class LocalEnvironmentProgramSshExecutor implements SshExecutor
 {
     /** @var list<RemoteCommand> */

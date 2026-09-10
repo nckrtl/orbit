@@ -12,6 +12,7 @@ final class SyncCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:sync {issue} '.self::WORKTREE_OPTION.' {--json}';
+
     #[\Override]
     protected $description = 'Re-verify the mounted source identity of the discovery topology';
 

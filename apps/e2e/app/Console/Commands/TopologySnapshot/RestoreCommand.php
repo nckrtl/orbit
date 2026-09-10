@@ -12,6 +12,7 @@ final class RestoreCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology-snapshot:restore {--json}';
+
     #[\Override]
     protected $description = 'Restore the promoted topology snapshot generation and leave it stopped';
 

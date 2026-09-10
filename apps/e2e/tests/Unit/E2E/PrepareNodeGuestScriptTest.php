@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
 describe('prepare node guest script', function () {
@@ -107,7 +108,7 @@ describe('prepare node guest script', function () {
                 ->and(file_get_contents("{$root}/commands"))
                 ->toContain('find /home/orbit ( -nouser -o -nogroup ) -exec python3 -c');
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 

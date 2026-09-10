@@ -59,7 +59,7 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 
 ## Commands
 
-`acquire` takes the worktree as a positional argument. Every other command finds it at `<primary>/.worktrees/<issue-lowercase>-*`, exactly one match, or takes `--worktree=PATH`. Every command accepts `--json`, and a failure prints `{"state":"failed","error":"..."}` with a nonzero exit.
+`acquire` takes the worktree as a positional argument. Every other command finds the issue among registered Git worktrees by branch or directory name, requires exactly one match, or takes `--worktree=PATH`. New worktrees use the configurable external base described in [Implementation loop](implementation-loop.md). Every command accepts `--json`, and a failure prints `{"state":"failed","error":"..."}` with a nonzero exit.
 
 | Command | What it does |
 | --- | --- |
@@ -74,7 +74,7 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | `status ISSUE` | Reports the state files without touching Incus |
 | `release ISSUE [--proof\|--candidate] [--capture] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. `--proof --capture` preserves acceptance evidence first. Recovery options identify one exact legacy lease. |
 
-`bin/worktree-remove ISSUE slug` releases the proof topology, then discovery, then removes the worktree. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs candidate-bound artifact refs. Capture successful proof evidence before removing its worktree.
+`bin/worktree-remove ISSUE` releases the proof topology, then discovery, then removes the worktree. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs candidate-bound artifact refs. Capture successful proof evidence before removing its worktree.
 
 ### Guest commands
 

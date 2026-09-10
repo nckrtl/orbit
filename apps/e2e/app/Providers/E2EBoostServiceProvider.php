@@ -21,7 +21,8 @@ final class E2EBoostServiceProvider extends ServiceProvider
 
         config(['view.compiled' => storage_path('framework/cache')]);
 
-        $this->app->register(new class($this->app) extends BoostServiceProvider {
+        $this->app->register(new class($this->app) extends BoostServiceProvider
+        {
             protected function registerRoutes(): void {}
         });
     }

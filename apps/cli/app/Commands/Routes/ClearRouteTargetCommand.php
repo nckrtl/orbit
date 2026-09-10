@@ -13,6 +13,7 @@ final class ClearRouteTargetCommand extends RouteCommand
 {
     #[\Override]
     protected $signature = 'route:target:clear {route : Numeric Route ID} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Clear the configured Route target.';
 

@@ -10,8 +10,6 @@ use RuntimeException;
 
 /**
  * Validate the same acceptance evidence before capture and after resource release.
- *
- * @mago-expect lint:cyclomatic-complexity The capture boundary checks each recorded identity and completeness guard.
  */
 final class ProofEvidence
 {

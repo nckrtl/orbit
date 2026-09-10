@@ -7,10 +7,6 @@ namespace Orbit\Sdk\Responses\Routes;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway Route fields are validated independently.
- * @mago-expect lint:excessive-parameter-list The DTO exposes the bounded Route contract.
- */
 final readonly class RouteResponse
 {
     public function __construct(
@@ -97,7 +93,6 @@ final readonly class RouteResponse
         ];
     }
 
-    /** @mago-expect analysis:mixed-assignment Gateway values remain mixed until their string keys are retained. */
     private static function target(#[SensitiveParameter] mixed $value): ?RouteTargetResponse
     {
         if (! is_array($value)) {

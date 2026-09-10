@@ -65,7 +65,6 @@ function bindPromotedTopologySnapshot(TopologySnapshotGeneration $generation): v
     app()->instance(TopologySnapshotManifestStore::class, $manifests);
 }
 
-/** @mago-expect lint:cyclomatic-complexity The command contract stays grouped by its public topology snapshot surface. */
 describe('topology snapshot commands', function () {
     it('resolves a separate stateful lock for each lifecycle owner', function () {
         expect(app(OperationLock::class))->not->toBe(app(OperationLock::class));
@@ -321,11 +320,10 @@ describe('topology snapshot commands', function () {
             $command = $process->command;
             assert(is_array($command));
 
-            return (
+            return
                 in_array('delete', $command, true)
                 || in_array('stop', $command, true)
-                || ($command[0] ?? null) === 'python3'
-            );
+                || ($command[0] ?? null) === 'python3';
         });
     });
 

@@ -15,7 +15,6 @@ use Throwable;
 
 final readonly class MetricsPublicationManager implements PublicationManager
 {
-    /** @mago-expect lint:excessive-parameter-list Each dependency owns one step of the atomic Metrics publication boundary. */
     public function __construct(
         private GatewayCertificateIssuer $certificates,
         private MetricsCertificatePublisher $certificatePublisher,

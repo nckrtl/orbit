@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\LegacyIncusRevalidator;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Process\Pool;
@@ -29,7 +30,7 @@ function liveIncusQuery(string $path): array
 }
 
 /** @param array<string, mixed> $metadata */
-function liveIncusResult(array $metadata, int $exitCode = 0): \Illuminate\Contracts\Process\ProcessResult
+function liveIncusResult(array $metadata, int $exitCode = 0): ProcessResult
 {
     return Process::result(
         json_encode([
@@ -105,15 +106,14 @@ describe('legacy Incus revalidation', function (): void {
         Process::fake(function (PendingProcess $process) use (&$commands, $fingerprint) {
             $commands[] = $process->command;
 
-            return (
+            return
                 str_contains($process->command[3], '/storage-pools/')
                     ? liveIncusResult(['name' => 'orbit-e2e', 'config' => ['size' => '1TiB']])
                     : liveIncusResult([
                         'fingerprint' => $fingerprint,
                         'aliases' => [['name' => 'some-other-display-name']],
                         'properties' => ['os' => 'Ubuntu'],
-                    ])
-            );
+                    ]);
         });
 
         $current = new LegacyIncusRevalidator()->currentBatch([
@@ -308,6 +308,21 @@ describe('legacy Incus revalidation', function (): void {
             'dependencies' => [],
         ]))
             ->toThrow(RuntimeException::class, 'metadata changed');
+    });
+
+    it('rejects changes to numeric keys in nested stable metadata', function (): void {
+        Process::fake(['*' => liveIncusResult([
+            'name' => 'ready',
+            'config' => ['labels' => [3 => 'replacement', 'owner' => 'orbit']],
+        ])]);
+
+        expect(fn () => new LegacyIncusRevalidator()->assertCurrent('snapshots', [
+            'name' => 'old-vm/ready',
+            'remote' => 'lab',
+            'project' => 'orbit',
+            'metadata' => ['labels' => [3 => 'reviewed', 'owner' => 'orbit']],
+            'dependencies' => [],
+        ]))->toThrow(RuntimeException::class, 'metadata changed');
     });
 
     it('fails closed on an exact network kind or identity mismatch', function (): void {
@@ -514,12 +529,14 @@ describe('legacy Incus revalidation', function (): void {
     it('fails closed when a batch omits a launched resource response', function (): void {
         $container = Facade::getFacadeApplication();
         assert($container instanceof Container);
-        $container->instance(ProcessFactory::class, new class extends ProcessFactory {
-            #[\Override]
+        $container->instance(ProcessFactory::class, new class extends ProcessFactory
+        {
+            #[Override]
             public function pool(callable $callback): Pool
             {
-                return new class($this, $callback) extends Pool {
-                    #[\Override]
+                return new class($this, $callback) extends Pool
+                {
+                    #[Override]
                     public function run(): ProcessPoolResults
                     {
                         ($this->callback)($this);

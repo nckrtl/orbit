@@ -29,9 +29,8 @@ final readonly class PrometheusConfigRenderer
                 ."\"\n";
         }
 
-        return (
+        return
             "# retention.time: 15d (configured by the container CLI flag)\nglobal:\n  scrape_interval: 15s\n  evaluation_interval: 15s\nscrape_configs:\n  - job_name: orbit-node-exporter\n    static_configs:\n"
-            .$entries
-        );
+            .$entries;
     }
 }

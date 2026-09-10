@@ -200,7 +200,7 @@ it('leaves legacy flat production layouts outside release validation and cleanup
 });
 
 /**
- * @param list<CommandResult> $results
+ * @param  list<CommandResult>  $results
  * @return array{RemoteProductionAppInstanceSourceLifecycle, AppDevFakeSshExecutor, AppInstance}
  */
 function orb216_release_layout_lifecycle(array $results): array
@@ -208,7 +208,8 @@ function orb216_release_layout_lifecycle(array $results): array
     $ssh = new AppDevFakeSshExecutor($results);
     $executor = new AppProdSshExecutor(
         $ssh,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/orbit-test-key';
@@ -219,7 +220,8 @@ function orb216_release_layout_lifecycle(array $results): array
                 return 'ssh-ed25519 test';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/tmp/orbit-test-known-hosts';

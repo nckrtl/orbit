@@ -6,7 +6,6 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity The manifest schema fails closed on every field. */
 final readonly class FeatureTopology
 {
     public const int SCHEMA = 4;
@@ -25,8 +24,7 @@ final readonly class FeatureTopology
     public AttemptId $attempt;
 
     /**
-     * @param array<string, array{device:string,source:string,path:string}> $mounts
-     * @mago-expect lint:excessive-parameter-list The manifest keeps six independent typed fields.
+     * @param  array<string, array{device:string,source:string,path:string}>  $mounts
      */
     public function __construct(
         public TopologyConstructionInputs $construction,
@@ -61,8 +59,8 @@ final readonly class FeatureTopology
     /**
      * A mounted source names one identical device on every checkout role and nothing else.
      *
-     * @param array<array-key, mixed> $mounts
-     * @param list<string> $mountedRoles
+     * @param  array<array-key, mixed>  $mounts
+     * @param  list<string>  $mountedRoles
      */
     private static function validateMounts(array $mounts, array $mountedRoles): void
     {
@@ -71,7 +69,6 @@ final readonly class FeatureTopology
         }
 
         $sources = [];
-        /** @mago-expect analysis:mixed-assignment Serialized input is validated one mount at a time. */
         foreach ($mounts as $mount) {
             if (
                 ! is_array($mount)

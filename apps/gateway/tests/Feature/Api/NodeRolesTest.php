@@ -20,9 +20,11 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeToolManagerMaterializer;
+use Tests\TestCase;
 
 beforeEach(function (): void {
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
@@ -108,11 +110,11 @@ it('keeps ordinary role mutation on target access', function (): void {
 
 it('exposes only the exact numeric node role routes and methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
-        ->filter(static fn (\Illuminate\Routing\Route $route): bool => str_starts_with(
+        ->filter(static fn (Route $route): bool => str_starts_with(
             (string) $route->getName(),
             'node:role:',
         ))
-        ->mapWithKeys(static fn (\Illuminate\Routing\Route $route): array => [
+        ->mapWithKeys(static fn (Route $route): array => [
             $route->getName() => [
                 'uri' => $route->uri(),
                 'methods' => $route->methods(),
@@ -855,9 +857,8 @@ it('rejects unsafe raw JSON without mutation or rejected activity input', functi
     ],
 ]);
 
-/** @mago-expect lint:excessive-parameter-list Test transport helper preserves exact raw JSON. */
 function node_roles_raw_json(
-    Tests\TestCase $test,
+    TestCase $test,
     string $method,
     string $uri,
     string $json,
@@ -890,8 +891,7 @@ function node_roles_api_node(
     ]);
 }
 
-/** @mago-expect lint:file-name Test-local fake isolates all remote role effects. */
-final class NodeRoleApiLifecycleFake implements RoleBaselineConverger, NodeRoleDependentCleaner
+final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBaselineConverger
 {
     /** @var list<string> */
     public array $converged = [];
@@ -929,7 +929,6 @@ final class NodeRoleApiLifecycleFake implements RoleBaselineConverger, NodeRoleD
     public function clean(NodeRoleDependencySet $dependencies): void {}
 }
 
-/** @mago-expect lint:file-name Test-local fake proves reachability runs only after authorization. */
 final class NodeRoleApiReachabilityFake implements NodeReachabilityProbe
 {
     /** @var list<int> */

@@ -7,9 +7,7 @@ namespace App\Data\Apps;
 final readonly class CreateAppData
 {
     /**
-     * @param array<array-key, mixed>|null $defaults
-     *
-     * @mago-expect lint:excessive-parameter-list The input carries the complete bounded App creation contract.
+     * @param  array<array-key, mixed>|null  $defaults
      */
     public function __construct(
         public string $name,

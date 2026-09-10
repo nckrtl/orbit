@@ -77,17 +77,19 @@ final readonly class DocumentationContextEntry
         ]);
     }
 
-    /** @param list<string> $components @param list<string> $concepts */
+    /**
+     * @param  list<string>  $components
+     * @param  list<string>  $concepts
+     */
     public function matches(array $components, array $concepts): bool
     {
         if ($components === [] && $concepts === []) {
             return true;
         }
 
-        return (
+        return
             array_intersect($components, $this->components) !== []
-            || array_intersect($concepts, $this->concepts) !== []
-        );
+            || array_intersect($concepts, $this->concepts) !== [];
     }
 
     public function priority(): int

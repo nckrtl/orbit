@@ -11,15 +11,10 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\RouteTarget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The reconciler validates the complete affected Route proposal before any write.
- * @mago-expect lint:kan-defect Atomic reconciliation keeps every fail-closed proposal branch in one domain boundary.
- */
 final readonly class RouteMutationReconciler
 {
     public function __construct(
@@ -29,10 +24,10 @@ final readonly class RouteMutationReconciler
     /**
      * The caller owns the surrounding transaction and infrastructure locks.
      *
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $baselineNodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $baselineClusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
      */
     public function reconcile(
         array $nodeOverrides = [],
@@ -64,8 +59,8 @@ final readonly class RouteMutationReconciler
     }
 
     /**
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      */
     public function validate(array $nodeOverrides = [], array $clusterOverrides = []): void
     {
@@ -73,11 +68,11 @@ final readonly class RouteMutationReconciler
     }
 
     /**
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $baselineNodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $baselineClusterOverrides
-     * @return array{\Illuminate\Database\Eloquent\Collection<int, Route>, array<int, array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, hostname: string}>}
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
+     * @return array{Collection<int, Route>, array<int, array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, hostname: string}>}
      */
     private function proposals(
         array $nodeOverrides,
@@ -128,10 +123,10 @@ final readonly class RouteMutationReconciler
     }
 
     /**
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $baselineNodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $baselineClusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
      * @return Collection<int, Route>
      */
     private function affectedRoutes(
@@ -181,8 +176,8 @@ final readonly class RouteMutationReconciler
     }
 
     /**
-     * @param array<int, mixed> $overrides
-     * @param array<int, mixed> $baselineOverrides
+     * @param  array<int, mixed>  $overrides
+     * @param  array<int, mixed>  $baselineOverrides
      * @return list<int>
      */
     private function affectedIds(array $overrides, array $baselineOverrides): array
@@ -194,10 +189,10 @@ final readonly class RouteMutationReconciler
     }
 
     /**
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $baselineNodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $baselineClusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
      * @return array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, hostname: string}
      */
     private function proposal(
@@ -212,7 +207,6 @@ final readonly class RouteMutationReconciler
         $firstTarget = null;
 
         foreach ($targets as $targetRow) {
-            assert($targetRow instanceof RouteTarget);
             $target = $targetRow->appInstance;
             $this->assertTarget($route, $target);
             $targetPlacement = $this->state->forNode($target->node, $nodeOverrides, $clusterOverrides);
@@ -269,8 +263,8 @@ final readonly class RouteMutationReconciler
     }
 
     /**
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      */
     private function placementWithoutTarget(Route $route, array $nodeOverrides, array $clusterOverrides): RoutePlacement
     {
@@ -323,8 +317,8 @@ final readonly class RouteMutationReconciler
     }
 
     /**
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $baselineNodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $baselineClusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
      */
     private function rebaseRetainedHostname(
         Route $route,

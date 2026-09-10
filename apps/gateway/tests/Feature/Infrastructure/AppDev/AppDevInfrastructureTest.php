@@ -17,25 +17,11 @@ use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
+use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
-
-function app_dev_account_resolver(
-    ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-): ManagedUserAccountResolver {
-    return new class($account) implements ManagedUserAccountResolver {
-        public function __construct(
-            private readonly ManagedUserAccount $account,
-        ) {}
-
-        public function resolve(\App\Models\Node $node): ManagedUserAccount
-        {
-            return $this->account;
-        }
-    };
-}
-
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -59,6 +45,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -73,11 +60,29 @@ use App\Models\Workspace;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevCaddyPublishHarness;
 use Tests\Support\AppDevCaddyPublishScenario;
 use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FpmPublishHarness;
+
+function app_dev_account_resolver(
+    ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+): ManagedUserAccountResolver {
+    return new class($account) implements ManagedUserAccountResolver
+    {
+        public function __construct(
+            private readonly ManagedUserAccount $account,
+        ) {}
+
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return $this->account;
+        }
+    };
+}
 
 it('converges the persistent and active app development TLD route over WireGuard', function (): void {
     $node = Node::query()->create([
@@ -140,7 +145,7 @@ it('renders isolated pools and private Caddy listeners for every active scope', 
         )
         ->not->toContain(':80');
 
-    if (new Symfony\Component\Process\ExecutableFinder()->find('caddy') !== null) {
+    if (new ExecutableFinder()->find('caddy') !== null) {
         expect($adapted->succeeded())
             ->toBeTrue()
             ->and($adapted->stdout)
@@ -1405,7 +1410,8 @@ it('locks instance removal before calculating shared traversal releases and muta
     [, $instance] = app_dev_runtime_models();
     $instance->update(['checkout_path' => '/home/orbit/projects/team/acme']);
     $ssh = new AppDevFakeSshExecutor;
-    $lock = new class($instance, $ssh) implements AppDevSourceOperationLock {
+    $lock = new class($instance, $ssh) implements AppDevSourceOperationLock
+    {
         public int $calls = 0;
 
         /** @var list<int> */
@@ -1467,7 +1473,8 @@ it('locks workspace removal before calculating shared traversal releases and mut
     [, $instance, $workspace] = app_dev_runtime_models();
     $workspace->update(['checkout_path' => '/home/orbit/projects/first']);
     $ssh = new AppDevFakeSshExecutor;
-    $lock = new class($instance, $ssh) implements AppDevSourceOperationLock {
+    $lock = new class($instance, $ssh) implements AppDevSourceOperationLock
+    {
         public int $calls = 0;
 
         /** @var list<int> */
@@ -1912,7 +1919,8 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
     ]);
-    $signer = new class implements LeafCertificateSigner {
+    $signer = new class implements LeafCertificateSigner
+    {
         /** @var list<array{hostname: string, csr: string}> */
         public array $calls = [];
 
@@ -1983,7 +1991,8 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
     ]);
-    $signer = new class implements LeafCertificateSigner {
+    $signer = new class implements LeafCertificateSigner
+    {
         public function sign(string $hostname, string $certificateRequest): string
         {
             return "LEAF CERTIFICATE\n";
@@ -2062,7 +2071,8 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
     );
     new Filesystem()->ensureDirectoryExists($root.'/usr/local/share/ca-certificates', recursive: true);
     file_put_contents($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt', "STALE\n");
-    $signer = new class($rootCertificate) implements LeafCertificateSigner {
+    $signer = new class($rootCertificate) implements LeafCertificateSigner
+    {
         public function __construct(
             private readonly string $rootCertificate,
         ) {}
@@ -2264,7 +2274,8 @@ it('holds the shared projection lock while capturing and publishing DNS intent',
     app_dev_runtime_models();
     $orbitHome = sys_get_temp_dir().'/orbit-dns-lock-'.Str::uuid();
     config()->set('orbit.home', $orbitHome);
-    $processes = new class($orbitHome) implements \App\Infrastructure\Processes\ProcessRunner {
+    $processes = new class($orbitHome) implements ProcessRunner
+    {
         public bool $observedLock = false;
 
         public function __construct(
@@ -2429,7 +2440,8 @@ it('enters projection ownership before app-dev Caddy and DNS host publication', 
         ssh: app_dev_ssh($ssh),
         projection: $owner,
     );
-    $processes = new class($owner) implements \App\Infrastructure\Processes\ProcessRunner {
+    $processes = new class($owner) implements ProcessRunner
+    {
         public function __construct(
             private readonly AppDevProjectionOwnerSpy $owner,
         ) {}
@@ -2868,7 +2880,8 @@ function source_manager(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
 ): array {
     $ssh ??= new AppDevFakeSshExecutor;
-    $lock ??= new class implements AppDevSourceOperationLock {
+    $lock ??= new class implements AppDevSourceOperationLock
+    {
         public function synchronized(int $nodeId, Closure $operation): mixed
         {
             return $operation();
@@ -2880,7 +2893,7 @@ function source_manager(
             app_dev_ssh($ssh),
             $lock,
             app_dev_account_resolver($account),
-            new App\Domain\Nodes\Storage\CheckoutRemovalBoundary(new App\Domain\Nodes\Storage\ProtectedPathCatalog),
+            new CheckoutRemovalBoundary(new ProtectedPathCatalog),
         ),
         $ssh,
     ];
@@ -3217,7 +3230,8 @@ function set_xattr(string $path, string $value): void
 it('unpublishes app-dev runtime repeatedly without removing source', function (): void {
     [, $instance, $workspace] = app_dev_runtime_models();
     $calls = [];
-    $source = new class($calls) implements AppDevSourceManager {
+    $source = new class($calls) implements AppDevSourceManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -3237,7 +3251,8 @@ it('unpublishes app-dev runtime repeatedly without removing source', function ()
             $this->calls[] = 'source:workspace';
         }
     };
-    $fpm = new class($calls) implements AppDevPhpFpmManager {
+    $fpm = new class($calls) implements AppDevPhpFpmManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -3248,7 +3263,8 @@ it('unpublishes app-dev runtime repeatedly without removing source', function ()
             $this->calls[] = 'fpm';
         }
     };
-    $certificates = new class($calls) implements AppDevCertificateManager {
+    $certificates = new class($calls) implements AppDevCertificateManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -3268,7 +3284,8 @@ it('unpublishes app-dev runtime repeatedly without removing source', function ()
             $this->calls[] = 'certificate:workspace';
         }
     };
-    $caddy = new class($calls) implements AppDevCaddyManager {
+    $caddy = new class($calls) implements AppDevCaddyManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -3281,7 +3298,8 @@ it('unpublishes app-dev runtime repeatedly without removing source', function ()
 
         public function remove(Node $node): void {}
     };
-    $dns = new class($calls) implements PrivateDnsManager {
+    $dns = new class($calls) implements PrivateDnsManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -3400,8 +3418,6 @@ it('removes an app development fragment from a direct Caddyfile and restores tha
 
 /**
  * @return array{exitCode: int, stderr: string, liveIsLink: bool, liveMain: string, publishedFragments: array<string, string>, serviceCalls: list<string>}
- * @mago-expect lint:halstead The local process harness verifies filesystem and service rollback state.
- * @mago-expect lint:no-boolean-flag-parameter The flag selects the success or activation-failure scenario.
  */
 function run_app_dev_direct_caddy_removal(bool $failActivation): array
 {
@@ -3436,7 +3452,7 @@ function run_app_dev_direct_caddy_removal(bool $failActivation): array
         $etc.'/orbit-locks/caddy.lock',
     );
     $command = $caddyPublisher->removeCommand('remove-version');
-    $process = new \Symfony\Component\Process\Process(
+    $process = new Process(
         command: array_slice(array: $command->arguments, offset: 1),
         cwd: $root,
         env: [
@@ -3504,7 +3520,8 @@ final class AppDevProjectionOwnerSpy implements DevelopmentProjectionOperationLo
 
 function app_dev_ssh(AppDevFakeSshExecutor $ssh): AppDevSshExecutor
 {
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/home/orbit/.orbit/ssh/id_ed25519';
@@ -3515,7 +3532,8 @@ function app_dev_ssh(AppDevFakeSshExecutor $ssh): AppDevSshExecutor
             return 'ssh-ed25519 AAAA';
         }
     };
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/home/orbit/.orbit/ssh/known_hosts';

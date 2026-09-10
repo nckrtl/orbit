@@ -15,10 +15,6 @@ use Orbit\Sdk\Responses\Gateway\RootCaCertificateResponse;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The trust workflow fails closed at each transport and trust boundary.
- * @mago-expect lint:too-many-methods Private phase methods keep each trust boundary small and auditable.
- */
 final readonly class GatewayRootCaTrustService
 {
     public function __construct(
@@ -132,7 +128,6 @@ final readonly class GatewayRootCaTrustService
         string $requestId,
     ): RootCaCertificateResponse {
         try {
-            /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
             $response = $this->connectors
                 ->make($profile)
                 ->send(new FetchRootCaCertificateRequest)

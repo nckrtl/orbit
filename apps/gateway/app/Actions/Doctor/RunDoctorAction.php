@@ -19,7 +19,6 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class RunDoctorAction
 {
-    /** @mago-expect lint:excessive-parameter-list The closed Doctor family set keeps every probe dependency explicit. */
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
         private NodeStateInspector $nodeInspector,
@@ -93,8 +92,7 @@ final readonly class RunDoctorAction
     }
 
     /**
-     * @param list<DoctorFamily> $requested
-     *
+     * @param  list<DoctorFamily>  $requested
      * @return list<DoctorFamily>
      */
     private function families(array $requested): array

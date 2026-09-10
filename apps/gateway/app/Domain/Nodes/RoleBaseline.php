@@ -11,7 +11,6 @@ interface RoleBaseline
 {
     public function converge(Node $node, NodeRole $assignment): void;
 
-    /** @mago-expect lint:no-boolean-flag-parameter The role lifecycle contract carries the explicit purge-data choice. */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void;
 
     /**

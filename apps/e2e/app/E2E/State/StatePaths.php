@@ -7,7 +7,6 @@ namespace App\E2E\State;
 use InvalidArgumentException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity Security validation requires explicit path checks. */
 final readonly class StatePaths
 {
     private string $root;

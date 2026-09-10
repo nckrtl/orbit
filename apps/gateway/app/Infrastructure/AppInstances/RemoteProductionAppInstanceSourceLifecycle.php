@@ -14,13 +14,7 @@ use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter keeps every fail-closed production source gate explicit.
- * @mago-expect lint:too-many-methods The adapter owns source preparation and its authenticated release-layout boundary.
- */
-final readonly class RemoteProductionAppInstanceSourceLifecycle implements
-    ProductionAppInstanceSourceLifecycle,
-    ProductionReleaseLayout
+final readonly class RemoteProductionAppInstanceSourceLifecycle implements ProductionAppInstanceSourceLifecycle, ProductionReleaseLayout
 {
     public function __construct(
         private AppProdSshExecutor $ssh,
@@ -533,7 +527,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements
         }
 
         try {
-            return $this->classifier->classify($json, $parts[1] ?? 'absent');
+            return $this->classifier->classify($json, $parts[1]);
         } catch (RuntimeConvergenceException $exception) {
             throw $this->failure(
                 'production-source-classification',

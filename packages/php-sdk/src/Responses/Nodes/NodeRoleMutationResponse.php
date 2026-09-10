@@ -7,10 +7,6 @@ namespace Orbit\Sdk\Responses\Nodes;
 use Orbit\Sdk\GatewayApiException;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Mutation transport rejects each invalid field and state explicitly.
- * @mago-expect lint:excessive-parameter-list Stable mutation DTO fields are part of the public contract.
- */
 final readonly class NodeRoleMutationResponse
 {
     private const int MAX_NODE_NAME_LENGTH = 63;
@@ -37,7 +33,6 @@ final readonly class NodeRoleMutationResponse
         #[SensitiveParameter]
         string $requestId,
     ): self {
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $nodeId = $data['node_id'] ?? null;
 
         if (! is_int($nodeId) || $nodeId < 1) {
@@ -47,7 +42,6 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $nodeName = $data['node_name'] ?? null;
 
         if (! self::isSafeNodeName($nodeName)) {
@@ -58,8 +52,6 @@ final readonly class NodeRoleMutationResponse
         }
 
         /** @var string $nodeName */
-
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $role = $data['role'] ?? null;
 
         if (! self::isSafeRole($role)) {
@@ -69,7 +61,6 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $removed = $data['removed'] ?? null;
 
         if (! is_bool($removed)) {
@@ -79,7 +70,6 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $assignmentData = $data['assignment'] ?? null;
         $assignment = null;
 
@@ -104,7 +94,6 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $degradation = $data['degradation'] ?? null;
 
         if (
@@ -118,7 +107,6 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $retainedOnNodeData = $data['retained_on_node'] ?? [];
         $retainedOnNode = is_array($retainedOnNodeData) ? self::stringListOrNull($retainedOnNodeData) : null;
 
@@ -129,7 +117,6 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
         $followUp = $data['follow_up'] ?? null;
 
         if ($followUp !== null && ! is_string($followUp)) {
@@ -182,7 +169,7 @@ final readonly class NodeRoleMutationResponse
     }
 
     /**
-     * @param array<array-key, mixed> $value
+     * @param  array<array-key, mixed>  $value
      * @return array<string, mixed>
      */
     private static function stringKeyedArray(array $value): array
@@ -190,7 +177,6 @@ final readonly class NodeRoleMutationResponse
         /** @var array<string, mixed> $result */
         $result = [];
 
-        /** @mago-expect analysis:mixed-assignment Gateway mutation payload values stay mixed until copied into a keyed array. */
         foreach ($value as $key => $item) {
             /** @var mixed $item */
             if (! is_string($key)) {
@@ -204,9 +190,7 @@ final readonly class NodeRoleMutationResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway mutation payload values stay mixed until validated.
-     *
-     * @param array<array-key, mixed> $value
+     * @param  array<array-key, mixed>  $value
      * @return list<string>|null
      */
     private static function stringListOrNull(array $value): ?array
@@ -226,21 +210,19 @@ final readonly class NodeRoleMutationResponse
 
     private static function isSafeRole(mixed $value): bool
     {
-        return (
+        return
             is_string($value)
             && $value !== ''
             && strlen($value) <= 128
-            && preg_match('/\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\z/D', $value) === 1
-        );
+            && preg_match('/\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\z/D', $value) === 1;
     }
 
     private static function isSafeNodeName(mixed $value): bool
     {
-        return (
+        return
             is_string($value)
             && $value !== ''
             && strlen($value) <= self::MAX_NODE_NAME_LENGTH
-            && preg_match('/\A[A-Za-z0-9_-]+\z/D', $value) === 1
-        );
+            && preg_match('/\A[A-Za-z0-9_-]+\z/D', $value) === 1;
     }
 }

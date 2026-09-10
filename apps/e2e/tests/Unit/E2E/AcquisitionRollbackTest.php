@@ -6,7 +6,6 @@ use App\E2E\AcquisitionRollback;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologyTarget;
 
 it('uses one inventory and parallel mutation batches before deleting the network', function (): void {
     $target = featureTarget('TST-123');

@@ -12,7 +12,10 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class DoctorReportData extends Data
 {
-    /** @param list<DoctorNodeReportData> $nodes */
+    /**
+     * @param  list<DoctorNodeReportData>  $nodes
+     * @param  array{nodes: int, families: int, checks: int, drift: int, unverifiable: int}  $summary
+     */
     public function __construct(
         public bool $healthy,
         public array $nodes,

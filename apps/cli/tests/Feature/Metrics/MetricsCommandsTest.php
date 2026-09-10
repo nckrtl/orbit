@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -37,7 +38,7 @@ afterEach(function (): void {
 });
 
 it('registers the six metrics commands', function (): void {
-    $commands = collect($this->app->make(\Illuminate\Contracts\Console\Kernel::class)->all())
+    $commands = collect($this->app->make(Kernel::class)->all())
         ->keys()
         ->filter(static fn (string $name): bool => str_starts_with($name, 'metrics:'))
         ->values()
@@ -756,7 +757,7 @@ it('renders structured secret-safe failures for every Metrics command', function
 ]);
 
 /**
- * @param array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null $assignment
+ * @param  array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null  $assignment
  * @return array{enabled: bool, url: ?string, assignment: ?array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}, prometheus: string, grafana: string, exporters: array{}}
  */
 function metrics_cli_status_payload(?array $assignment = null): array

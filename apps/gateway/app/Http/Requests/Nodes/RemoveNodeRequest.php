@@ -13,6 +13,7 @@ use UnexpectedValueException;
 
 final class RemoveNodeRequest extends FormRequest
 {
+    /** @return array<string, list<string|Closure>> */
     public function rules(): array
     {
         return [
@@ -21,6 +22,7 @@ final class RemoveNodeRequest extends FormRequest
         ];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

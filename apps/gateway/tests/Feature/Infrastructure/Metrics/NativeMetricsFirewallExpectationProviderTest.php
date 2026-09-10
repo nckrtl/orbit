@@ -71,7 +71,8 @@ it('uses the direct node projection and retains its firewall expectations', func
     $metrics = metricsFirewallExpectationNode('metrics', '10.44.0.3');
     $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
     $node = metricsFirewallExpectationNode('app', '10.44.0.4');
-    $projection = new class implements MetricsExporterProjection {
+    $projection = new class implements MetricsExporterProjection
+    {
         public int $fleetCalls = 0;
 
         /** @var list<array{int, int}> */

@@ -17,7 +17,6 @@ use App\Models\Node;
 use App\Models\Route;
 use App\Rules\SupportedPhpVersion;
 
-/** @mago-expect lint:excessive-parameter-list Fixed paths preserve isolated publication tests; the package service owns host installation. */
 final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
 {
     public function __construct(

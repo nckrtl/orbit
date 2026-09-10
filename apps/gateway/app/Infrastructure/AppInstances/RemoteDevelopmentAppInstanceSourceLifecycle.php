@@ -17,10 +17,6 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter keeps each fail-closed source-layout and evidence branch together.
- * @mago-expect lint:too-many-methods The adapter keeps one fixed source-only lifecycle and its evidence checks together.
- */
 final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements DevelopmentAppInstanceSourceLifecycle
 {
     public function __construct(
@@ -175,7 +171,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
     }
 
     /**
-     * @param array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string} $context
+     * @param  array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string}  $context
      * @return non-empty-list<string>
      */
     private function arguments(AppInstance $appInstance, array $context): array

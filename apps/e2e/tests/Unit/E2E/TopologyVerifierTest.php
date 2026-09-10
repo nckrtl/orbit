@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\TopologyVerifier;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyEndState;
+use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
@@ -59,22 +61,20 @@ function setUpTopologyVerifierProcessFacade(): void
 
 function isTopologyVerifierHelper(PendingProcess $process): bool
 {
-    return (
+    return
         is_array($process->command)
         && count($process->command) === 2
         && ($process->command[0] ?? null) === 'python3'
         && is_string($process->command[1] ?? null)
-        && str_ends_with($process->command[1], '/resources/host/exec-all.py')
-    );
+        && str_ends_with($process->command[1], '/resources/host/exec-all.py');
 }
 
 function isDirectTopologyVerifierProbe(PendingProcess $process): bool
 {
-    return (
+    return
         is_array($process->command)
         && ($process->command[0] ?? null) === 'incus'
-        && in_array('exec', $process->command, true)
-    );
+        && in_array('exec', $process->command, true);
 }
 
 function isGlobalIpv4TopologyVerifierProbe(array $argv): bool
@@ -86,7 +86,6 @@ function isGlobalIpv4TopologyVerifierProbe(array $argv): bool
     ];
 }
 
-/** @mago-expect lint:cyclomatic-complexity The fake models exact network, VM identity, and fault variants. */
 function topologyVerifierInventory(
     PendingProcess $process,
     ?TopologyTarget $topologyTarget = null,
@@ -122,7 +121,7 @@ function topologyVerifierInventory(
             static function (string $node) use ($topologyTarget, $invalidExtraMac, $stoppedExtra): array {
                 $instance = $topologyTarget->instance($node);
                 $extension =
-                    $topologyTarget->recipe->node($node)->purpose === \App\E2E\Value\TopologyNodePurpose::Extension;
+                    $topologyTarget->recipe->node($node)->purpose === TopologyNodePurpose::Extension;
                 $stopped = $stoppedExtra && $extension;
 
                 return [
@@ -200,8 +199,8 @@ function topologyVerifierEvidence(array $request, string $sha): string
 }
 
 /**
- * @param array{label:string,project:string,instance:string,argv:list<string>,timeout:int,stdin:?string} $request
- * @param array<string, string> $probeRoles
+ * @param  array{label:string,project:string,instance:string,argv:list<string>,timeout:int,stdin:?string}  $request
+ * @param  array<string, string>  $probeRoles
  */
 function assertTopologyVerifierRequest(array $request, array $probeRoles, string $sha): void
 {
@@ -325,13 +324,13 @@ describe('TopologyVerifier', function () {
                 if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
                     $results[] = [
                         'label' => $request['label'],
-                        'stdout' =>
-                            '2: enp5s0    inet 192.0.2.'
+                        'stdout' => '2: enp5s0    inet 192.0.2.'
                                 .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
                                 .'/24 scope global',
                         'stderr' => '',
                         'exit_code' => 0,
                     ];
+
                     continue;
                 }
                 assertTopologyVerifierRequest($request, $probeRoles, $sha);
@@ -409,6 +408,7 @@ describe('TopologyVerifier typed application state', function () {
                         'stderr' => '',
                         'exit_code' => 0,
                     ];
+
                     continue;
                 }
                 if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
@@ -418,6 +418,7 @@ describe('TopologyVerifier typed application state', function () {
                         'stderr' => '',
                         'exit_code' => 0,
                     ];
+
                     continue;
                 }
                 $argv[$request['label']] = $request['argv'];
@@ -484,6 +485,7 @@ describe('TopologyVerifier typed application state', function () {
                         'stderr' => '',
                         'exit_code' => 0,
                     ];
+
                     continue;
                 }
                 if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
@@ -493,6 +495,7 @@ describe('TopologyVerifier typed application state', function () {
                         'stderr' => '',
                         'exit_code' => 0,
                     ];
+
                     continue;
                 }
                 $argv[$request['label']] = $request['argv'];
@@ -619,13 +622,13 @@ describe('TopologyVerifier failures and retries', function () {
                 if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
                     $results[] = [
                         'label' => $request['label'],
-                        'stdout' =>
-                            '2: enp5s0    inet 192.0.2.'
+                        'stdout' => '2: enp5s0    inet 192.0.2.'
                                 .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
                                 .'/24 scope global',
                         'stderr' => '',
                         'exit_code' => 0,
                     ];
+
                     continue;
                 }
                 assertTopologyVerifierRequest($request, $probeRoles, $sha);
@@ -636,6 +639,7 @@ describe('TopologyVerifier failures and retries', function () {
                         'stderr' => '',
                         'exit_code' => 0,
                     ];
+
                     continue;
                 }
                 $attempts[$request['label']]++;
@@ -682,7 +686,7 @@ describe('TopologyVerifier failures and retries', function () {
  * Run one verification against a fake host that answers every probe, failing
  * exactly the named ones. Returns the report and the argv of each probe.
  *
- * @param list<string> $failing
+ * @param  list<string>  $failing
  * @return array{report:VerificationReport,argv:array<string, list<string>>,batches:list<list<string>>}
  */
 function runTopologyVerifierWithEndState(
@@ -696,7 +700,6 @@ function runTopologyVerifierWithEndState(
     $batches = [];
 
     $target ??= TopologyTarget::topologySnapshot();
-    /** @mago-expect lint:cyclomatic-complexity The fake answers the complete physical-Node verification matrix. */
     Process::fake(function (PendingProcess $process) use ($sha, $failing, &$argv, &$batches, $target) {
         $inventory = topologyVerifierInventory($process, $target->isTopologySnapshot() ? null : $target);
         if ($inventory instanceof ProcessResult) {
@@ -709,13 +712,13 @@ function runTopologyVerifierWithEndState(
             if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
                 $results[] = [
                     'label' => $request['label'],
-                    'stdout' =>
-                        '2: enp5s0    inet 192.0.2.'
+                    'stdout' => '2: enp5s0    inet 192.0.2.'
                             .$target->recipe->node($request['label'])->address
                             .'/24 scope global',
                     'stderr' => '',
                     'exit_code' => 0,
                 ];
+
                 continue;
             }
             $labels[] = $request['label'];
@@ -809,14 +812,13 @@ describe('TopologyVerifier declared end state', function (): void {
         setUpTopologyVerifierProcessFacade();
         $target = featureTarget('AUX-106', 'a', TopologyRecipe::extendedAppProd());
         Process::fake(function (PendingProcess $process) use ($target, $invalidMac) {
-            return (
+            return
                 topologyVerifierInventory(
                     $process,
                     $target,
                     invalidExtraMac: $invalidMac,
                     stoppedExtra: ! $invalidMac,
-                ) ?? Process::result('', 'Unexpected command.', 2)
-            );
+                ) ?? Process::result('', 'Unexpected command.', 2);
         });
 
         expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
@@ -833,7 +835,7 @@ describe('TopologyVerifier declared end state', function (): void {
     it('uses the complete cold recipe assignment map and physical peer names', function (): void {
         $target = TopologyTarget::disposableCold(
             'AUX-106',
-            new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+            new AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
         $run = runTopologyVerifierWithEndState(null, target: $target);
@@ -868,17 +870,16 @@ describe('TopologyVerifier declared end state', function (): void {
         setUpTopologyVerifierProcessFacade();
         $target = TopologyTarget::disposableCold(
             'AUX-106',
-            new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+            new AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
         Process::fake(function (PendingProcess $process) use ($target) {
-            return (
+            return
                 topologyVerifierInventory($process, $target, invalidExtraMac: true) ?? Process::result(
                     '',
                     'Unexpected command.',
                     2,
-                )
-            );
+                );
         });
 
         expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
@@ -893,17 +894,16 @@ describe('TopologyVerifier declared end state', function (): void {
         setUpTopologyVerifierProcessFacade();
         $target = TopologyTarget::disposableCold(
             'AUX-106',
-            new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+            new AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
         Process::fake(function (PendingProcess $process) use ($target) {
-            return (
+            return
                 topologyVerifierInventory($process, $target, stoppedExtra: true) ?? Process::result(
                     '',
                     'Unexpected command.',
                     2,
-                )
-            );
+                );
         });
 
         expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(

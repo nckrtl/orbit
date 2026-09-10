@@ -15,6 +15,7 @@ final class DisableMetricsCommand extends MetricsCommand
 {
     #[\Override]
     protected $signature = 'metrics:disable {--force : Skip confirmation} {--purge-data : Delete Metrics data} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Disable Metrics.';
 

@@ -23,10 +23,6 @@ use Symfony\Component\Console\Exception\ExceptionInterface;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The shared boundary handles each command failure category.
- * @mago-expect lint:too-many-methods Shared gateway input, transport, and rendering helpers stay centralized for operator commands.
- */
 abstract class GatewayCommand extends Command
 {
     #[\Override]
@@ -222,7 +218,6 @@ abstract class GatewayCommand extends Command
         }
 
         try {
-            /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
             $dto = $response->dto();
         } catch (InvalidArgumentException $exception) {
             throw new GatewayApiException(
@@ -243,17 +238,15 @@ abstract class GatewayCommand extends Command
     private function responseRequestId(Response $response): ?string
     {
         try {
-            /** @mago-expect analysis:mixed-assignment Malformed DTOs still expose untyped response metadata. */
             $metaRequestId = $response->json('meta.request_id');
         } catch (JsonException) {
             $metaRequestId = null;
         }
 
-        return (
+        return
             $this->validResponseRequestId($metaRequestId) ?? $this->validResponseRequestId(
                 $response->getPsrResponse()->getHeaderLine('X-Orbit-Request-Id'),
-            )
-        );
+            );
     }
 
     private function validResponseRequestId(mixed $requestId): ?string

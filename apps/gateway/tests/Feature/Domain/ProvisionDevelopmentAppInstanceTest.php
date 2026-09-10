@@ -42,7 +42,8 @@ beforeEach(function (): void {
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::SourceResolved,
     ]);
-    $this->configuration = new class implements DevelopmentAppInstanceConfigurator {
+    $this->configuration = new class implements DevelopmentAppInstanceConfigurator
+    {
         public int $inspections = 0;
 
         public int $configurations = 0;
@@ -74,7 +75,8 @@ beforeEach(function (): void {
         }
     };
     $this->projectionOwner = new ProvisionDevelopmentProjectionOwner;
-    $this->projection = new class($this->projectionOwner) implements DevelopmentRouteProjector {
+    $this->projection = new class($this->projectionOwner) implements DevelopmentRouteProjector
+    {
         public int $convergences = 0;
 
         public ?RuntimeConvergenceException $failure = null;

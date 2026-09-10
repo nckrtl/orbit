@@ -21,6 +21,7 @@ final class SetRouteTargetRequest extends FormRequest
         ];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

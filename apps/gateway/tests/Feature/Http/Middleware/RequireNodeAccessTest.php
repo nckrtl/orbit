@@ -19,7 +19,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Tests\TestCase;
 
 beforeEach(function (): void {
     Route::middleware([
@@ -384,7 +386,7 @@ function middleware_tool(string $package, ?Node $toolNode = null, ?Node $manager
         ]);
 }
 
-function middleware_get(Tests\TestCase $test, Node $consumer, string $uri): Illuminate\Testing\TestResponse
+function middleware_get(TestCase $test, Node $consumer, string $uri): TestResponse
 {
     return $test
         ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
@@ -393,11 +395,11 @@ function middleware_get(Tests\TestCase $test, Node $consumer, string $uri): Illu
 
 /** @param array<string, mixed> $input */
 function middleware_post(
-    Tests\TestCase $test,
+    TestCase $test,
     Node $consumer,
     string $uri,
     array $input,
-): Illuminate\Testing\TestResponse {
+): TestResponse {
     return $test
         ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->postJson($uri, $input);
@@ -471,7 +473,6 @@ final class NodeAccessTestController
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-only controller fixture. */
 final class NodeAccessMissingScopeController
 {
     public static bool $executed = false;
@@ -485,7 +486,6 @@ final class NodeAccessMissingScopeController
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-only request fixture. */
 final class NodeAccessInstanceRequest extends FormRequest
 {
     public function authorize(): bool
@@ -500,7 +500,6 @@ final class NodeAccessInstanceRequest extends FormRequest
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-only request fixture. */
 final class NodeAccessProcessRequest extends FormRequest
 {
     public function authorize(): bool
@@ -518,7 +517,6 @@ final class NodeAccessProcessRequest extends FormRequest
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-only request fixture. */
 final class NodeAccessToolRequest extends FormRequest
 {
     public function authorize(): bool
@@ -533,11 +531,10 @@ final class NodeAccessToolRequest extends FormRequest
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-only middleware fixture. */
 final class CaptureNodeAccessErrorCode
 {
-    /** @param \Closure(Request): Response $next */
-    public function handle(Request $request, \Closure $next): Response
+    /** @param Closure(Request): Response $next */
+    public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
         $errorCode = $request->attributes->get('orbit.error_code');

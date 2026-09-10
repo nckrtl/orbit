@@ -9,8 +9,8 @@ use SensitiveParameter;
 final readonly class NodeAccessResponse
 {
     /**
-     * @param list<NodeAccessNodeResponse> $canAccess
-     * @param list<NodeAccessNodeResponse> $accessibleBy
+     * @param  list<NodeAccessNodeResponse>  $canAccess
+     * @param  list<NodeAccessNodeResponse>  $accessibleBy
      */
     public function __construct(
         public array $canAccess,
@@ -52,8 +52,6 @@ final readonly class NodeAccessResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway list items remain mixed until validated.
-     *
      * @return list<NodeAccessNodeResponse>
      */
     private static function nodeList(mixed $value): array

@@ -15,8 +15,6 @@ use InvalidArgumentException;
 
 /**
  * Build and verify the complete phase-one proof-input inventory from Git objects.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect,excessive-parameter-list The builder proves completeness across one explicit Git trust boundary.
  */
 final readonly class ProofInputManifestBuilder
 {
@@ -180,7 +178,7 @@ final readonly class ProofInputManifestBuilder
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
      * @return array<string, true>
      */
     private function contractPaths(array $entries, string $issue, string $planPath, ProofPlan $plan): array
@@ -199,8 +197,8 @@ final readonly class ProofInputManifestBuilder
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
-     * @param array<string, true> $contract
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
+     * @param  array<string, true>  $contract
      */
     private function requirePath(array $entries, string $path, array &$contract): void
     {
@@ -211,8 +209,8 @@ final readonly class ProofInputManifestBuilder
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
-     * @param array<string, true> $contract
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
+     * @param  array<string, true>  $contract
      */
     private function addDirectory(array $entries, string $directory, array &$contract, bool $required): void
     {
@@ -234,8 +232,8 @@ final readonly class ProofInputManifestBuilder
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
-     * @param array<string, true> $contract
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
+     * @param  array<string, true>  $contract
      */
     private function addFileOrDirectory(array $entries, string $input, array &$contract): void
     {
@@ -248,8 +246,8 @@ final readonly class ProofInputManifestBuilder
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
-     * @param array<string, true> $contractPaths
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
+     * @param  array<string, true>  $contractPaths
      */
     private function assertCheckoutLiterals(array $entries, array $contractPaths, ProofPlan $plan): void
     {
@@ -279,8 +277,8 @@ final readonly class ProofInputManifestBuilder
     }
 
     /**
-     * @param array<string, array{mode:string,type:string,object:string}> $entries
-     * @param array<string, true> $contractPaths
+     * @param  array<string, array{mode:string,type:string,object:string}>  $entries
+     * @param  array<string, true>  $contractPaths
      */
     private function coveredByContract(string $path, array $entries, array $contractPaths): bool
     {
@@ -293,9 +291,8 @@ final readonly class ProofInputManifestBuilder
             static fn (string $candidate): bool => str_starts_with($candidate, $prefix),
         );
 
-        return (
+        return
             $descendants !== []
-            && array_all($descendants, static fn (string $candidate): bool => isset($contractPaths[$candidate]))
-        );
+            && array_all($descendants, static fn (string $candidate): bool => isset($contractPaths[$candidate]));
     }
 }

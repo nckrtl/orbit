@@ -6,7 +6,11 @@ namespace App\E2E\Value;
 
 final class IncusMetadata
 {
-    /** Additional creation metadata cannot replace the harness ownership marker. */
+    /**
+     * Additional creation metadata cannot replace the harness ownership marker.
+     *
+     * @param  array<array-key, mixed>  $metadata
+     */
     public static function isValidAdditionalMap(array $metadata): bool
     {
         return array_all(

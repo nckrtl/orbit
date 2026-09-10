@@ -9,6 +9,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyExtension;
+use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
@@ -19,7 +20,6 @@ use RuntimeException;
 /** Construct one issue topology from the pinned snapshots and its optional base-image extension. */
 final readonly class IssueTopologyConstructor
 {
-    /** @mago-expect lint:excessive-parameter-list Construction keeps each lifecycle authority explicit. */
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
@@ -31,8 +31,8 @@ final readonly class IssueTopologyConstructor
     ) {}
 
     /**
-     * @param array<string, string> $metadata
-     * @param array<string, array{device:string,source:string,path:string}> $mounts
+     * @param  array<string, string>  $metadata
+     * @param  array<string, array{device:string,source:string,path:string}>  $mounts
      */
     public function construct(
         TopologyTarget $target,
@@ -69,7 +69,7 @@ final readonly class IssueTopologyConstructor
             }
             $slot = $this->capacity->reserveSlot(count($target->recipe->nodes));
             $lastAddress = max(array_map(
-                static fn (\App\E2E\Value\TopologyNode $node): int => $node->address,
+                static fn (TopologyNode $node): int => $node->address,
                 $target->recipe->nodes,
             ));
             $this->networks->create($target->network(), $slot, $metadata, $lastAddress);

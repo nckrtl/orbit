@@ -34,7 +34,8 @@ beforeEach(function (): void {
 });
 
 it('updates missing existing and identical values without contacting the workload Node', function (): void {
-    app()->instance(SshExecutor::class, new class implements SshExecutor {
+    app()->instance(SshExecutor::class, new class implements SshExecutor
+    {
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             throw new RuntimeException('Update contacted SSH.');
@@ -530,10 +531,7 @@ function ambiguous_environment_target(Node $caller): array
     return [$route->hostname];
 }
 
-final class EnvironmentApiAccess implements
-    AppInstanceOperationPreflight,
-    AppInstanceEnvironmentReader,
-    AppInstanceEnvironmentWriter
+final class EnvironmentApiAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
 {
     public int $preflights = 0;
 
@@ -592,7 +590,7 @@ final class EnvironmentApiAccess implements
 
     public function write(
         AppInstanceEnvironmentContext $context,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         string $contents,
     ): AppInstanceEnvironmentWriteResult {
         $this->writes[] = $contents;

@@ -11,7 +11,7 @@ interface ToolManagerScopeLock
     /**
      * @template T
      *
-     * @param Closure(): T $callback
+     * @param  Closure(): T  $callback
      * @return T
      */
     public function run(int $nodeId, ToolManagerName $manager, Closure $callback): mixed;

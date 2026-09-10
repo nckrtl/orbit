@@ -17,8 +17,9 @@ final class ProveCommand extends E2ECommand
     #[\Override]
     protected $signature =
         'topology:prove {issue} '
-            .self::WORKTREE_OPTION
-            .' {--plan= : The proof plan; defaults to .loop/proof/<ISSUE>.json in the worktree} {--json}';
+        .self::WORKTREE_OPTION
+        .' {--plan= : The proof plan; defaults to .loop/proof/<ISSUE>.json in the worktree} {--json}';
+
     #[\Override]
     protected $description = 'Prove the worktree HEAD commit on a fresh topology with the proof plan';
 

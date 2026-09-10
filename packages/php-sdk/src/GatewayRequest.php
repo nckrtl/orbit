@@ -13,10 +13,6 @@ use Saloon\Http\Response;
 use SensitiveParameter;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity
- * @mago-expect lint:too-many-methods Central request boundaries keep every transport safe.
- */
 abstract class GatewayRequest extends Request
 {
     /** @return array{type: class-string<static>} */
@@ -105,8 +101,6 @@ abstract class GatewayRequest extends Request
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway collection items remain mixed until validated.
-     *
      * @return list<array<string, mixed>>
      */
     protected function unwrapDataList(#[SensitiveParameter] Response $response): array
@@ -145,8 +139,6 @@ abstract class GatewayRequest extends Request
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment JSON values remain mixed by design.
-     *
      * @return array<string, mixed>
      */
     protected function stringKeyedArray(#[SensitiveParameter] mixed $value): array
@@ -169,8 +161,6 @@ abstract class GatewayRequest extends Request
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment JSON values remain mixed until validated.
-     *
      * @return list<string>
      */
     protected function stringList(#[SensitiveParameter] mixed $value): array
@@ -193,8 +183,6 @@ abstract class GatewayRequest extends Request
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment JSON decoding starts at an untyped boundary.
-     *
      * @return array<string, mixed>|null
      */
     private function decodeBody(#[SensitiveParameter] Response $response): ?array

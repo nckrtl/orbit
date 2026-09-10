@@ -10,6 +10,7 @@ use RuntimeException;
 
 final class GatewayGuidelineComposer extends GuidelineComposer
 {
+    /** @return Collection<string, array<array-key, mixed>> */
     public function resolvedGuidelines(): Collection
     {
         return parent::resolvedGuidelines()->map($this->replaceScopedGuidance(...));
@@ -54,6 +55,10 @@ final class GatewayGuidelineComposer extends GuidelineComposer
         return $guidelines;
     }
 
+    /**
+     * @param  array<array-key, mixed>  $guideline
+     * @return array<array-key, mixed>
+     */
     private function replaceScopedGuidance(array $guideline): array
     {
         if (! array_key_exists(key: 'scoped', array: $guideline) || ! is_array($guideline['scoped'])) {

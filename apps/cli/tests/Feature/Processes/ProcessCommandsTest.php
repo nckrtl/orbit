@@ -461,8 +461,7 @@ it('redacts secret-looking log values in human output', function (): void {
                 'id' => 12,
                 'name' => 'redis',
                 'lines' => 25,
-                'logs' =>
-                    'DB_PASSWORD='
+                'logs' => 'DB_PASSWORD='
                         .process_cli_secret('db')
                         ."\n"
                         .'Authorization: Bearer '
@@ -489,8 +488,7 @@ it('redacts secret-looking log values in JSON output', function (): void {
                 'id' => 12,
                 'name' => 'redis',
                 'lines' => 25,
-                'logs' =>
-                    'api_key='
+                'logs' => 'api_key='
                         .process_cli_secret('api')
                         ."\n"
                         .'{"password":"'
@@ -540,8 +538,7 @@ it('redacts the complete proven credential set from process logs', function (): 
                 'id' => 12,
                 'name' => 'redis',
                 'lines' => 25,
-                'logs' =>
-                    "APP_KEY={$appKey}\n"
+                'logs' => "APP_KEY={$appKey}\n"
                         ."Authorization: Basic {$basicCredential}\n"
                         ."Proxy-Authorization: Basic {$proxyCredential}\n"
                         ."Bearer {$bearerCredential}\n"
@@ -642,7 +639,7 @@ it('rejects unbounded or unsafe process options without disclosure or gateway IO
     array $options,
     string $code,
     string $message,
-    #[\SensitiveParameter]
+    #[SensitiveParameter]
     string $secret,
 ): void {
     $mock = MockClient::global();
@@ -732,8 +729,7 @@ it('rejects unbounded or unsafe process options without disclosure or gateway IO
     ],
     'working directory length' => fn (): array => [
         [
-            '--working-directory' =>
-                '/'.str_repeat(string: 'x', times: 4096).process_cli_secret('working-directory-length'),
+            '--working-directory' => '/'.str_repeat(string: 'x', times: 4096).process_cli_secret('working-directory-length'),
         ],
         'process.working_directory_invalid',
         'Process working directory is invalid.',

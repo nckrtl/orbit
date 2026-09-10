@@ -7,15 +7,10 @@ namespace App\E2E\Value;
 use DateTimeImmutable;
 use InvalidArgumentException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Serialized inventory validation checks exact kinds, order, and identities.
- * @mago-expect lint:kan-defect The serialized boundary intentionally validates every nested field.
- * @mago-expect analysis:impossible-type-comparison Runtime serialized input can violate PHPDoc nested shapes.
- * @mago-expect analysis:mixed-argument Nested values are type-checked immediately before digest operations.
- */
 final readonly class RetirementInventory
 {
     public const array CANDIDATE_KINDS = ['snapshots', 'instances', 'networks', 'source_paths', 'manifests', 'locks'];
+
     public const array PRESERVED_KINDS = [
         'instances',
         'snapshots',
@@ -29,7 +24,10 @@ final readonly class RetirementInventory
         'evidence',
     ];
 
-    /** @param array<string, list<array<string, mixed>>> $candidates @param array<string, list<array<string, mixed>>> $preserved */
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $candidates
+     * @param  array<string, list<array<string, mixed>>>  $preserved
+     */
     public function __construct(
         public array $candidates,
         public array $preserved,
@@ -125,7 +123,10 @@ final readonly class RetirementInventory
         }
     }
 
-    /** @param array<string, list<array<string, mixed>>> $groups @param list<string> $allowed */
+    /**
+     * @param  array<string, array<array-key, mixed>>  $groups
+     * @param  list<string>  $allowed
+     */
     private static function validateGroups(array $groups, array $allowed): void
     {
         $seen = [];
@@ -158,7 +159,7 @@ final readonly class RetirementInventory
         }
     }
 
-    /** @param array<string, mixed> $resource */
+    /** @param array<array-key, mixed> $resource */
     private static function validateResource(string $kind, array $resource): void
     {
         $allowed = match ($kind) {

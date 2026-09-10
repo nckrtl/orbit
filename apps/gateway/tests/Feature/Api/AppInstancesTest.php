@@ -30,6 +30,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -50,13 +51,14 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\TestCase;
 
-/** @mago-expect lint:cyclomatic-complexity The stateful removal fake models durable retry and inventory transitions. */
 beforeEach(function (): void {
-    $this->destination = new class implements AppInstanceDestinationGuard {
+    $this->destination = new class implements AppInstanceDestinationGuard
+    {
         public bool $occupied = false;
 
-        public function assertUnoccupied(Node $node, \App\Domain\Nodes\Storage\StoragePath $destination): void
+        public function assertUnoccupied(Node $node, StoragePath $destination): void
         {
             if ($this->occupied) {
                 throw new ResourceOperationException(
@@ -68,14 +70,16 @@ beforeEach(function (): void {
         }
     };
     app()->instance(AppInstanceDestinationGuard::class, $this->destination);
-    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+    {
         public function converge(Node $node, NodeRole $assignment): void {}
 
         public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
 
         public function removeUnreachable(Node $node, NodeRole $assignment): void {}
     });
-    $this->configuration = new class implements DevelopmentAppInstanceConfigurator {
+    $this->configuration = new class implements DevelopmentAppInstanceConfigurator
+    {
         public int $inspections = 0;
 
         public int $configurations = 0;
@@ -97,7 +101,8 @@ beforeEach(function (): void {
         }
     };
     app()->instance(DevelopmentAppInstanceConfigurator::class, $this->configuration);
-    $this->projection = new class implements DevelopmentRouteProjector {
+    $this->projection = new class implements DevelopmentRouteProjector
+    {
         public int $convergences = 0;
 
         public function converge(AppInstance $appInstance, Route $route): void
@@ -106,13 +111,15 @@ beforeEach(function (): void {
         }
     };
     app()->instance(DevelopmentRouteProjector::class, $this->projection);
-    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
         public function resolve(Node $node): ManagedUserAccount
         {
             return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
         }
     });
-    $this->source = new class implements DevelopmentAppInstanceSourceLifecycle {
+    $this->source = new class implements DevelopmentAppInstanceSourceLifecycle
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -165,7 +172,8 @@ beforeEach(function (): void {
         }
     };
     app()->instance(DevelopmentAppInstanceSourceLifecycle::class, $this->source);
-    $this->productionSource = new class implements ProductionAppInstanceSourceLifecycle {
+    $this->productionSource = new class implements ProductionAppInstanceSourceLifecycle
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -206,12 +214,14 @@ beforeEach(function (): void {
         }
     };
     app()->instance(ProductionAppInstanceSourceLifecycle::class, $this->productionSource);
-    app()->instance(ProductionReleaseLayout::class, new class implements ProductionReleaseLayout {
+    app()->instance(ProductionReleaseLayout::class, new class implements ProductionReleaseLayout
+    {
         public function validateCurrent(AppInstance $appInstance): void {}
 
         public function clearCurrent(AppInstance $appInstance): void {}
     });
-    $this->productionProjection = new class implements ProductionRouteProjector {
+    $this->productionProjection = new class implements ProductionRouteProjector
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -236,9 +246,8 @@ beforeEach(function (): void {
         }
     };
     app()->instance(ProductionRouteProjector::class, $this->productionProjection);
-    $this->removalSource = new class implements
-        DevelopmentAppInstanceSourceFinalizer,
-        DevelopmentAppInstanceSourceRemoval {
+    $this->removalSource = new class implements DevelopmentAppInstanceSourceFinalizer, DevelopmentAppInstanceSourceRemoval
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -386,7 +395,8 @@ beforeEach(function (): void {
     };
     app()->instance(DevelopmentAppInstanceSourceRemoval::class, $this->removalSource);
     app()->instance(DevelopmentAppInstanceSourceFinalizer::class, $this->removalSource);
-    $this->removalProjector = new class implements AppInstanceRemovalProjector {
+    $this->removalProjector = new class implements AppInstanceRemovalProjector
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -1660,7 +1670,8 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
         branch: null,
     );
     $native = app(DevelopmentAppInstanceProvisioner::class);
-    $provisioner = new class($native) implements DevelopmentAppInstanceProvisioner {
+    $provisioner = new class($native) implements DevelopmentAppInstanceProvisioner
+    {
         public int $completions = 0;
 
         public function __construct(
@@ -1687,20 +1698,21 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
         }
     };
     app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
-    $lock = new class($data) implements AppDevSourceOperationLock {
+    $lock = new class($data) implements AppDevSourceOperationLock
+    {
         public int $leases = 0;
 
         public function __construct(
             private readonly CreateAppInstanceData $data,
         ) {}
 
-        public function synchronized(int $nodeId, \Closure $operation): mixed
+        public function synchronized(int $nodeId, Closure $operation): mixed
         {
             $this->leases++;
 
             try {
                 return $operation();
-            } catch (\Throwable $exception) {
+            } catch (Throwable $exception) {
                 if ($this->leases === 1) {
                     app(CreateAppInstanceAction::class)->execute($this->data);
                 }
@@ -1734,8 +1746,8 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
 
 it('persists unexpected provisioning failures before releasing the lease', function (): void {
     $native = app(DevelopmentAppInstanceProvisioner::class);
-    app()->instance(DevelopmentAppInstanceProvisioner::class, new class($native) implements
-        DevelopmentAppInstanceProvisioner {
+    app()->instance(DevelopmentAppInstanceProvisioner::class, new class($native) implements DevelopmentAppInstanceProvisioner
+    {
         public function __construct(
             private readonly DevelopmentAppInstanceProvisioner $native,
         ) {}
@@ -1750,7 +1762,7 @@ it('persists unexpected provisioning failures before releasing the lease', funct
             ?string $hostname,
             bool $recoverSourceProfile = false,
         ): AppInstance {
-            throw new \LogicException('Unexpected provisioning failure.');
+            throw new LogicException('Unexpected provisioning failure.');
         }
     });
 
@@ -1762,7 +1774,7 @@ it('persists unexpected provisioning failures before releasing the lease', funct
         hostname: null,
         branch: null,
     )))
-        ->toThrow(\LogicException::class, 'Unexpected provisioning failure.');
+        ->toThrow(LogicException::class, 'Unexpected provisioning failure.');
 
     expect(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
         ->toBe([
@@ -1779,7 +1791,8 @@ it('persists unexpected provisioning failures before releasing the lease', funct
 });
 
 it('does not reserve or persist failure evidence when lease acquisition fails', function (): void {
-    $provisioner = new class implements DevelopmentAppInstanceProvisioner {
+    $provisioner = new class implements DevelopmentAppInstanceProvisioner
+    {
         public int $reservations = 0;
 
         public function reserve(AppInstance $appInstance, ?string $hostname): void
@@ -1796,10 +1809,11 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
         }
     };
     app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
-    app()->instance(AppDevSourceOperationLock::class, new class implements AppDevSourceOperationLock {
-        public function synchronized(int $nodeId, \Closure $operation): mixed
+    app()->instance(AppDevSourceOperationLock::class, new class implements AppDevSourceOperationLock
+    {
+        public function synchronized(int $nodeId, Closure $operation): mixed
         {
-            throw new \RuntimeException('Lease acquisition failed.');
+            throw new RuntimeException('Lease acquisition failed.');
         }
     });
 
@@ -1811,7 +1825,7 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
         hostname: null,
         branch: null,
     )))
-        ->toThrow(\RuntimeException::class, 'Lease acquisition failed.');
+        ->toThrow(RuntimeException::class, 'Lease acquisition failed.');
 
     expect($provisioner->reservations)
         ->toBe(0)
@@ -1826,18 +1840,19 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
 });
 
 it('persists reservation conflicts before releasing the lease', function (): void {
-    $lock = new class implements AppDevSourceOperationLock {
+    $lock = new class implements AppDevSourceOperationLock
+    {
         public bool $held = false;
 
         public bool $failurePersistedWhileHeld = false;
 
-        public function synchronized(int $nodeId, \Closure $operation): mixed
+        public function synchronized(int $nodeId, Closure $operation): mixed
         {
             $this->held = true;
 
             try {
                 return $operation();
-            } catch (\Throwable $exception) {
+            } catch (Throwable $exception) {
                 $instance = AppInstance::query()->sole();
                 $this->failurePersistedWhileHeld =
                     $instance->failed_step === 'source-prepare' && $instance->error_code === 'route.hostname_taken';
@@ -1848,7 +1863,8 @@ it('persists reservation conflicts before releasing the lease', function (): voi
             }
         }
     };
-    $provisioner = new class($lock) implements DevelopmentAppInstanceProvisioner {
+    $provisioner = new class($lock) implements DevelopmentAppInstanceProvisioner
+    {
         public bool $reservedWhileHeld = false;
 
         public function __construct(
@@ -2717,7 +2733,7 @@ it('rejects the removed compatibility key', function (): void {
 /**
  * @return array{AppInstance, AppInstance, AppInstance, list<string>}
  */
-function orb182_api_removal_graph(Tests\TestCase $test): array
+function orb182_api_removal_graph(TestCase $test): array
 {
     $instances = [];
 

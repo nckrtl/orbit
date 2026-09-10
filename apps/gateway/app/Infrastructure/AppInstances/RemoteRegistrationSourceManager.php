@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Registration\RegistrationSourceFacts;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
@@ -22,11 +21,6 @@ use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use JsonException;
 
-/**
- * @mago-expect lint:too-many-methods The adapter keeps the fixed registration protocol and its parser together.
- * @mago-expect lint:cyclomatic-complexity The adapter validates each source and relocation state before mutation.
- * @mago-expect lint:kan-defect The adapter keeps preparation, cleanup authorization, and retained retry in one protocol.
- */
 final readonly class RemoteRegistrationSourceManager implements RegistrationSourceManager
 {
     public function __construct(
@@ -297,7 +291,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     }
 
     /**
-     * @param list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}> $members
+     * @param  list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}>  $members
      * @return array<int, array{device: int|null, inode: int|null}>
      */
     private function preparationIdentities(string $output, array $members): array
@@ -474,7 +468,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         if (
             preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1
             || preg_match('/\A[0-9a-f]{64}\z/D', $digest) !== 1
-            || (($row['detached'] ?? false) === true) !== ($branch === null)
+            || ($row['detached'] === true) !== ($branch === null)
         ) {
             throw $this->invalidSource();
         }
@@ -492,7 +486,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             inferredSlug: $this->requiredString($row, 'inferred_slug'),
             inferredRoot: is_string($row['inferred_root'] ?? null) ? $row['inferred_root'] : null,
             commonRepositoryPath: $this->requiredString($row, 'common_repository_path'),
-            worktreePaths: array_values($worktreePaths),
+            worktreePaths: $worktreePaths,
             sourceDigest: $digest,
         );
     }

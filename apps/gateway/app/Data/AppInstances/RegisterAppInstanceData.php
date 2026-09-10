@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\AppInstances;
 
-/** @mago-expect lint:excessive-parameter-list The data object preserves the complete typed registration request. */
 final readonly class RegisterAppInstanceData
 {
     public function __construct(

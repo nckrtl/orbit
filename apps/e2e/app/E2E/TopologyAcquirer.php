@@ -17,11 +17,13 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
+use App\E2E\Value\VerificationReport;
 use Closure;
 use InvalidArgumentException;
 use RuntimeException;
@@ -33,9 +35,6 @@ use Throwable;
  * The attempt lives in `<worktree>/.e2e/`. The three VMs are cloned from the
  * promoted topology snapshot, the worktree is mounted on the checkout roles, and
  * the topology stays alive until `release`.
- *
- * @mago-expect lint:excessive-parameter-list The lifecycle dependencies are explicit trust boundaries.
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The lifecycle keeps its exact ordered operations together.
  */
 final readonly class TopologyAcquirer
 {
@@ -183,7 +182,7 @@ final readonly class TopologyAcquirer
     private function create(TopologyRequest $request, IssueState $state): FeatureTopology
     {
         $proofPlan = ProofPlanFile::forAcquisition($request)?->plan;
-        $recipe = $proofPlan?->recipe() ?? \App\E2E\Value\TopologyRecipe::registered();
+        $recipe = $proofPlan?->recipe() ?? TopologyRecipe::registered();
         $generation = $this->promotedGeneration($request->worktree);
         $this->assertMountableWorktree($request->worktree);
         $this->assertVendorHydrated($request->worktree);
@@ -330,7 +329,7 @@ final readonly class TopologyAcquirer
     private function withSource(
         FeatureTopology $topology,
         SourceState $source,
-        \App\E2E\Value\VerificationReport $verification,
+        VerificationReport $verification,
     ): FeatureTopology {
         return new FeatureTopology(
             $topology->construction,
@@ -397,7 +396,7 @@ final readonly class TopologyAcquirer
 
     private function issueConstructor(): IssueTopologyConstructor
     {
-        return (
+        return
             $this->constructor ?? new IssueTopologyConstructor(
                 $this->host,
                 $this->networks,
@@ -406,8 +405,7 @@ final readonly class TopologyAcquirer
                 $this->operation,
                 $this->topologySnapshot,
                 $this->topologySnapshotIdentity,
-            )
-        );
+            );
     }
 
     /** The worktree becomes an Incus disk source verbatim, so it must satisfy the mount path rule. */

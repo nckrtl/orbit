@@ -33,8 +33,8 @@ final readonly class TopologyEndState
     private const string NODES = 'nodes';
 
     /**
-     * @param list<string> $nodes The declared-present roles, in profile order.
-     * @param list<string> $recipeNodes
+     * @param  list<string>  $nodes  The declared-present roles, in profile order.
+     * @param  list<string>  $recipeNodes
      */
     private function __construct(
         public array $nodes,
@@ -63,7 +63,6 @@ final readonly class TopologyEndState
             throw new InvalidArgumentException('The proof plan key ends_with.nodes must be a non-empty list.');
         }
         $declaredNodes = [];
-        /** @mago-expect analysis:mixed-assignment Each declared node is validated before it joins the set. */
         foreach ($nodes as $node) {
             if (! is_string($node) || ! in_array($node, $recipeNodes, strict: true)) {
                 throw new InvalidArgumentException(
@@ -120,8 +119,8 @@ final readonly class TopologyEndState
     }
 
     /**
-     * @param list<string> $roles
-     * @param list<string> $recipeNodes
+     * @param  list<string>  $roles
+     * @param  list<string>  $recipeNodes
      * @return list<string>
      */
     private static function inRecipeOrder(array $roles, array $recipeNodes): array

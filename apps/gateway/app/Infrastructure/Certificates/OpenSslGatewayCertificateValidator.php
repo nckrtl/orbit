@@ -8,7 +8,6 @@ use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 
-/** @mago-expect lint:cyclomatic-complexity Gateway certificate validation fails closed across each trust-policy check. */
 final readonly class OpenSslGatewayCertificateValidator
 {
     private const int MAXIMUM_VALIDITY_SECONDS = 397 * 24 * 60 * 60;
@@ -98,13 +97,12 @@ final readonly class OpenSslGatewayCertificateValidator
         $validFrom = strtotime($notBefore[1]);
         $validTo = strtotime($notAfter[1]);
 
-        return (
+        return
             is_int($validFrom)
             && is_int($validTo)
             && $validTo >= $validFrom
             && ($validTo - $validFrom) <= self::MAXIMUM_VALIDITY_SECONDS
-            && $this->hasExpectedExtensions($paths->certificatePath, $hostname, $wireguardIp)
-        );
+            && $this->hasExpectedExtensions($paths->certificatePath, $hostname, $wireguardIp);
     }
 
     private function hasExpectedExtensions(
@@ -138,7 +136,7 @@ final readonly class OpenSslGatewayCertificateValidator
             return false;
         }
 
-        return (
+        return
             ($extensions['basicConstraints'] ?? null) === 'CA:FALSE'
             && $this->hasCriticalExtension($text->stdout, 'Basic Constraints')
             && $this->hasExactUsage($extensions['keyUsage'] ?? null, [
@@ -153,18 +151,16 @@ final readonly class OpenSslGatewayCertificateValidator
                 $extensions['subjectAltName'] ?? null,
                 $hostname,
                 $wireguardIp,
-            )
-        );
+            );
     }
 
     private function hasCriticalExtension(string $certificateText, string $extension): bool
     {
-        return (
+        return
             preg_match(
                 '/X509v3 '.preg_quote(str: $extension, delimiter: '/').': critical\s*\R/',
                 $certificateText,
-            ) === 1
-        );
+            ) === 1;
     }
 
     /** @param list<string> $expected */
@@ -229,13 +225,12 @@ final readonly class OpenSslGatewayCertificateValidator
         $publicDetails = openssl_pkey_get_details($publicKey);
         $privateDetails = openssl_pkey_get_details($parsedPrivateKey);
 
-        return (
+        return
             is_array($publicDetails)
             && ($publicDetails['type'] ?? null) === OPENSSL_KEYTYPE_RSA
             && ($publicDetails['bits'] ?? null) === 2048
             && is_array($privateDetails)
             && ($privateDetails['type'] ?? null) === OPENSSL_KEYTYPE_RSA
-            && ($privateDetails['bits'] ?? null) === 2048
-        );
+            && ($privateDetails['bits'] ?? null) === 2048;
     }
 }

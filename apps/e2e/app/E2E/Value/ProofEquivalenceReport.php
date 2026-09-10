@@ -8,8 +8,6 @@ use InvalidArgumentException;
 
 /**
  * One immutable decision relating a proved SHA to one later accepted SHA.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect,excessive-parameter-list The immutable evidence boundary validates every decision field together.
  */
 final readonly class ProofEquivalenceReport
 {
@@ -30,8 +28,8 @@ final readonly class ProofEquivalenceReport
     ];
 
     /**
-     * @param list<array{path:string,previous_path:?string,change:string,classification:string}> $changedPaths
-     * @param list<string> $errors
+     * @param  list<array{path:string,previous_path:?string,change:string,classification:string}>  $changedPaths
+     * @param  list<string>  $errors
      */
     public function __construct(
         public string $provedSha,
@@ -44,68 +42,17 @@ final readonly class ProofEquivalenceReport
         public array $errors,
         public string $recordedAt,
     ) {
-        if (! array_is_list($changedPaths)) {
-            throw new InvalidArgumentException('The equivalence report path decisions are invalid.');
-        }
-        foreach ([$provedSha, $acceptedSha, $includedMainSha] as $sha) {
-            if (preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {
-                throw new InvalidArgumentException('An equivalence report Git identity is invalid.');
-            }
-        }
-        foreach ([$planSha256, $manifestSha256] as $fingerprint) {
-            if (preg_match('/\A[0-9a-f]{64}\z/D', $fingerprint) !== 1) {
-                throw new InvalidArgumentException('An equivalence report fingerprint is invalid.');
-            }
-        }
-        $orderedChanges = [];
-        foreach ($changedPaths as $change) {
-            if (
-                array_keys($change) !== ['path', 'previous_path', 'change', 'classification']
-                || ! is_string($change['path'])
-                || $change['path'] === ''
-                || ! is_string($change['change'])
-                || ! in_array($change['change'], self::CHANGE_KINDS, true)
-                || ! is_string($change['classification'])
-                || ! in_array($change['classification'], array_column(ProofInputClassification::cases(), 'value'), true)
-                || $change['previous_path'] !== null
-                && ! is_string($change['previous_path'])
-            ) {
-                throw new InvalidArgumentException('An equivalence report path decision is invalid.');
-            }
-            $orderedChanges[] = [$change['path'], $change['previous_path'] ?? ''];
-        }
-        if (! array_is_list($errors) || ! array_all($errors, static fn (mixed $error): bool => is_string($error))) {
-            throw new InvalidArgumentException('The equivalence report errors are invalid.');
-        }
-        $sortedChanges = $orderedChanges;
-        sort($sortedChanges, SORT_REGULAR);
-        $classifications = array_column($changedPaths, 'classification');
-        $hasMaterial = array_intersect($classifications, [
-            ProofInputClassification::Runtime->value,
-            ProofInputClassification::ProofContract->value,
-        ]) !== [];
-        $hasIndeterminate = in_array(ProofInputClassification::Indeterminate->value, $classifications, true);
+        $this->validateDecision($changedPaths, $errors);
         $hasUnrelatedRuntime = in_array(
             ProofInputClassification::UnrelatedRuntime->value,
-            $classifications,
+            array_column($changedPaths, 'classification'),
             true,
         );
-        $decisionValid = match ($result) {
-            ProofEquivalenceResult::Exact => $changedPaths === [] && $errors === [],
-            ProofEquivalenceResult::Equivalent => $changedPaths !== []
-                && ! $hasMaterial
-                && ! $hasIndeterminate
-                && $errors === [],
-            ProofEquivalenceResult::Stale => $hasMaterial && $errors === [],
-            ProofEquivalenceResult::Indeterminate => $errors !== [] || $hasIndeterminate,
-        };
         $this->nextAction = match (true) {
             $result === ProofEquivalenceResult::Equivalent && $hasUnrelatedRuntime => 'run-candidate-convergence',
-            in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
-                => 'review-exact-head',
+            in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true) => 'review-exact-head',
             $result === ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
-            $result === ProofEquivalenceResult::Indeterminate => 'resolve-equivalence-failure-and-run-complete-reproof',
-            default => throw new \LogicException('The proof equivalence result is unsupported.'),
+            default => 'resolve-equivalence-failure-and-run-complete-reproof',
         };
         $this->promotionPath = $result === ProofEquivalenceResult::Equivalent && $hasUnrelatedRuntime
             ? 'candidate-convergence'
@@ -114,15 +61,6 @@ final readonly class ProofEquivalenceReport
                     ? 'retained-proof'
                     : null
             );
-        if (
-            preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $recordedAt) !== 1
-            || $orderedChanges !== $sortedChanges
-            || count($orderedChanges) !== count(array_unique(array_map(serialize(...), $orderedChanges)))
-            || count($errors) !== count(array_unique($errors))
-            || ! $decisionValid
-        ) {
-            throw new InvalidArgumentException('The equivalence report decision is invalid.');
-        }
     }
 
     public function fingerprint(): string
@@ -184,9 +122,9 @@ final readonly class ProofEquivalenceReport
             throw new InvalidArgumentException('The equivalence report result is invalid.');
         }
         /** @var list<array{path:string,previous_path:?string,change:string,classification:string}> $changedPaths */
-        $changedPaths = array_values($value['changed_paths']);
+        $changedPaths = $value['changed_paths'];
         /** @var list<string> $errors */
-        $errors = array_values($value['errors']);
+        $errors = $value['errors'];
         $report = new self(
             $value['proved_sha'],
             $value['accepted_sha'],
@@ -228,5 +166,72 @@ final readonly class ProofEquivalenceReport
             'errors' => $this->errors,
             'recorded_at' => $this->recordedAt,
         ];
+    }
+
+    /**
+     * @param  array<array-key, array<array-key, mixed>>  $changedPaths
+     * @param  array<array-key, mixed>  $errors
+     */
+    private function validateDecision(array $changedPaths, array $errors): void
+    {
+        if (! array_is_list($changedPaths)) {
+            throw new InvalidArgumentException('The equivalence report path decisions are invalid.');
+        }
+        foreach ([$this->provedSha, $this->acceptedSha, $this->includedMainSha] as $sha) {
+            if (preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {
+                throw new InvalidArgumentException('An equivalence report Git identity is invalid.');
+            }
+        }
+        foreach ([$this->planSha256, $this->manifestSha256] as $fingerprint) {
+            if (preg_match('/\A[0-9a-f]{64}\z/D', $fingerprint) !== 1) {
+                throw new InvalidArgumentException('An equivalence report fingerprint is invalid.');
+            }
+        }
+        $orderedChanges = [];
+        foreach ($changedPaths as $change) {
+            if (
+                array_keys($change) !== ['path', 'previous_path', 'change', 'classification']
+                || ! is_string($change['path'])
+                || $change['path'] === ''
+                || ! is_string($change['change'])
+                || ! in_array($change['change'], self::CHANGE_KINDS, true)
+                || ! is_string($change['classification'])
+                || ! in_array($change['classification'], array_column(ProofInputClassification::cases(), 'value'), true)
+                || $change['previous_path'] !== null
+                && ! is_string($change['previous_path'])
+            ) {
+                throw new InvalidArgumentException('An equivalence report path decision is invalid.');
+            }
+            $orderedChanges[] = [$change['path'], $change['previous_path'] ?? ''];
+        }
+        if (! array_is_list($errors) || ! array_all($errors, static fn (mixed $error): bool => is_string($error))) {
+            throw new InvalidArgumentException('The equivalence report errors are invalid.');
+        }
+        $sortedChanges = $orderedChanges;
+        sort($sortedChanges, SORT_REGULAR);
+        $classifications = array_column($changedPaths, 'classification');
+        $hasMaterial = array_intersect($classifications, [
+            ProofInputClassification::Runtime->value,
+            ProofInputClassification::ProofContract->value,
+        ]) !== [];
+        $hasIndeterminate = in_array(ProofInputClassification::Indeterminate->value, $classifications, true);
+        $decisionValid = match ($this->result) {
+            ProofEquivalenceResult::Exact => $changedPaths === [] && $errors === [],
+            ProofEquivalenceResult::Equivalent => $changedPaths !== []
+                && ! $hasMaterial
+                && ! $hasIndeterminate
+                && $errors === [],
+            ProofEquivalenceResult::Stale => $hasMaterial && $errors === [],
+            ProofEquivalenceResult::Indeterminate => $errors !== [] || $hasIndeterminate,
+        };
+        if (
+            preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $this->recordedAt) !== 1
+            || $orderedChanges !== $sortedChanges
+            || count($orderedChanges) !== count(array_unique(array_map(serialize(...), $orderedChanges)))
+            || count($errors) !== count(array_unique($errors))
+            || ! $decisionValid
+        ) {
+            throw new InvalidArgumentException('The equivalence report decision is invalid.');
+        }
     }
 }

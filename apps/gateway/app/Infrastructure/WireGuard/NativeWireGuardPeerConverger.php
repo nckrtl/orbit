@@ -13,8 +13,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use Closure;
 
-/** @mago-expect lint:cyclomatic-complexity The adapter keeps the fixed remote transaction and every bounded failure mapping together. */
-final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger
+final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
 {
     /** @var list<positive-int> */
     private const array PEER_INSTALL_RETRY_DELAYS = [1_000_000, 2_000_000];
@@ -390,7 +389,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
     }
 
     /**
-     * @param array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string} $dns
+     * @param  array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string}  $dns
      */
     private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns): RemoteCommand
     {

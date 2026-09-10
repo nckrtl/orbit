@@ -1,0 +1,16 @@
+{
+    "preset": "laravel",
+    "in": [
+        "."
+    ],
+    "exclude": [
+        "bootstrap/cache",
+        "node_modules",
+        "public/build",
+        "storage"
+    ],
+    "cache-file": "vendor/pint.cache",
+    "notPath": [
+        "#^(?!(?:app|bootstrap|config|tests)/)#"
+    ]
+}

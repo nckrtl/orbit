@@ -19,7 +19,6 @@ use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead The six Tool request contracts stay visible together. */
 describe('tool requests', function (): void {
     it('uses the exact six Tool methods, endpoints, and queries', function (
         GatewayRequest $request,

@@ -13,8 +13,6 @@ use Symfony\Component\Process\Process;
  * Runs the rendered VPN ordering drop-in install and removal scripts against a
  * sandboxed unit directory with shimmed root-owned `install`, `chown`, and
  * `systemctl`.
- *
- * @mago-expect lint:too-many-methods The harness exposes one seam per sandboxed host observation.
  */
 final class VpnOrderingDropInHarness
 {
@@ -72,8 +70,6 @@ final class VpnOrderingDropInHarness
 
     /**
      * @return array{int, list<string>}
-     *
-     * @mago-expect lint:no-boolean-flag-parameter The flag models the observed unit activation state.
      */
     public function run(string $service, bool $serviceActive = true): array
     {
@@ -93,8 +89,6 @@ final class VpnOrderingDropInHarness
 
     /**
      * @return array{int, list<string>}
-     *
-     * @mago-expect lint:no-boolean-flag-parameter The flag models the observed unit activation state.
      */
     private function execute(ProcessInvocation $command, bool $serviceActive): array
     {

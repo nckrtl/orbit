@@ -13,7 +13,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Rules\SupportedPhpVersion;
 
-/** @mago-expect lint:excessive-parameter-list Explicit fixed paths support safe publication and isolated execution tests. */
 final readonly class RemoteAppProdPhpFpmManager implements AppProdPhpFpmManager
 {
     public function __construct(

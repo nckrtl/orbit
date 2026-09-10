@@ -6,14 +6,12 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity The persisted construction schema validates every bound input. */
 final readonly class TopologyConstructionInputs
 {
     public const int SCHEMA = 1;
 
     /**
-     * @param array<string, array{source:string,instance:string,incus_address:string,wireguard_address:string}> $nodes
-     * @mago-expect lint:excessive-parameter-list Each persisted construction input is an independent proof binding.
+     * @param  array<string, array{source:string,instance:string,incus_address:string,wireguard_address:string}>  $nodes
      */
     private function __construct(
         public TopologyTarget $target,
@@ -43,22 +41,7 @@ final readonly class TopologyConstructionInputs
         ) {
             throw new InvalidArgumentException('The topology construction image input is invalid.');
         }
-        if (array_keys($nodes) !== $target->recipe->nodeKeys()) {
-            throw new InvalidArgumentException('The topology construction Node inventory is incomplete.');
-        }
-        foreach ($nodes as $key => $node) {
-            $recipeNode = $target->recipe->node($key);
-            if (
-                array_keys($node) !== ['source', 'instance', 'incus_address', 'wireguard_address']
-                || ! in_array($node['source'], ['snapshot', 'image'], true)
-                || $node['source'] !== ($key === 'app-prod-2' ? 'image' : 'snapshot')
-                || $node['instance'] !== $target->instance($key)
-                || $node['incus_address'] !== TopologyTarget::ipv4For($slot, $recipeNode->address)
-                || $node['wireguard_address'] !== $recipeNode->wireGuardAddress()
-            ) {
-                throw new InvalidArgumentException("Topology construction Node [{$key}] is invalid.");
-            }
-        }
+        $this->assertNodes($target, $slot, $nodes);
     }
 
     public static function create(
@@ -172,5 +155,26 @@ final readonly class TopologyConstructionInputs
             $value['image_fingerprint'],
             $nodes,
         );
+    }
+
+    /** @param array<string, array<array-key, mixed>> $nodes */
+    private function assertNodes(TopologyTarget $target, int $slot, array $nodes): void
+    {
+        if (array_keys($nodes) !== $target->recipe->nodeKeys()) {
+            throw new InvalidArgumentException('The topology construction Node inventory is incomplete.');
+        }
+        foreach ($nodes as $key => $node) {
+            $recipeNode = $target->recipe->node($key);
+            if (
+                array_keys($node) !== ['source', 'instance', 'incus_address', 'wireguard_address']
+                || ! in_array($node['source'], ['snapshot', 'image'], true)
+                || $node['source'] !== ($key === 'app-prod-2' ? 'image' : 'snapshot')
+                || $node['instance'] !== $target->instance($key)
+                || $node['incus_address'] !== TopologyTarget::ipv4For($slot, $recipeNode->address)
+                || $node['wireguard_address'] !== $recipeNode->wireGuardAddress()
+            ) {
+                throw new InvalidArgumentException("Topology construction Node [{$key}] is invalid.");
+            }
+        }
     }
 }

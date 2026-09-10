@@ -13,6 +13,7 @@ final class RemoveRouteCommand extends RouteCommand
 {
     #[\Override]
     protected $signature = 'route:remove {route : Numeric Route ID} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Remove a Route.';
 

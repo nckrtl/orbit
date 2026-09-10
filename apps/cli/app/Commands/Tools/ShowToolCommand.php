@@ -13,6 +13,7 @@ final class ShowToolCommand extends ToolCommand
 {
     #[\Override]
     protected $signature = 'tool:show {tool : Numeric tool ID} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Show a tool.';
 

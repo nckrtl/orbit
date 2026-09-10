@@ -8,8 +8,6 @@ use App\E2E\Value\ProofInputClassification;
 
 /**
  * Repository-owned phase-one classification for every proof-relevant component.
- *
- * @mago-expect lint:cyclomatic-complexity The positive path policy remains visible and fails closed in one place.
  */
 final readonly class StaticProofInputPolicy
 {
@@ -152,10 +150,9 @@ final readonly class StaticProofInputPolicy
 
     private function isInstruction(string $path): bool
     {
-        return (
+        return
             basename($path) === 'AGENTS.md'
-            || preg_match('~(?:\A|/)(?:\.agents|\.ai|\.codex)(?:/|\z)~D', $path) === 1
-        );
+            || preg_match('~(?:\A|/)(?:\.agents|\.ai|\.codex)(?:/|\z)~D', $path) === 1;
     }
 
     private function isReadme(string $path): bool
@@ -172,12 +169,11 @@ final readonly class StaticProofInputPolicy
             return true;
         }
 
-        return (
+        return
             preg_match(
-                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|mago\.toml|phpunit\.xml(?:\.dist)?|rector\.php)\z~D',
+                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|mago\.toml|pint\.json|phpstan\.neon(?:\.dist)?|phpunit\.xml(?:\.dist)?|rector\.php)\z~D',
                 $path,
             ) === 1
-            || $path === 'apps/e2e/.env.example'
-        );
+            || $path === 'apps/e2e/.env.example';
     }
 }

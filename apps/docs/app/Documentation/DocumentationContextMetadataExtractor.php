@@ -27,17 +27,7 @@ final readonly class DocumentationContextMetadataExtractor
     public function canonicalConcepts(string $contents): array
     {
         preg_match_all('/^- \*\*([^*]+)\*\*/m', $contents, $matches);
-        /** @var list<string> $concepts */
-        $concepts = $matches[1] ?? [];
-
-        $normalized = [];
-        foreach ($concepts as $concept) {
-            if ($concept !== '') {
-                $normalized[] = $concept;
-            }
-        }
-
-        $concepts = array_values(array_unique($normalized));
+        $concepts = array_values(array_unique($matches[1]));
         sort($concepts);
 
         return $concepts;
@@ -101,14 +91,13 @@ final readonly class DocumentationContextMetadataExtractor
     private function governingAdrs(string $path, string $contents): array
     {
         preg_match_all('/(?<![0-9])([0-9]{4})-[a-z0-9-]+\.md/', $contents, $matches);
-        /** @var list<string> $adrs */
-        $adrs = $matches[1] ?? [];
+        $adrs = $matches[1];
 
         if (preg_match('#^docs/decisions/(?<adr>[0-9]{4})-#', $path, $ownMatch) === 1) {
             $adrs[] = $ownMatch['adr'];
         }
 
-        $adrs = array_values(array_unique(array_filter($adrs, is_string(...))));
+        $adrs = array_values(array_unique($adrs));
         sort($adrs);
 
         return $adrs;

@@ -13,6 +13,7 @@ final class DisableMetricsExporterCommand extends MetricsCommand
 {
     #[\Override]
     protected $signature = 'metrics:exporter:disable {node : Node ID or name} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Disable the Metrics exporter on a node.';
 

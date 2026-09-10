@@ -38,6 +38,7 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
         return ToolResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
+    /** @return array{node_id: int, manager: string, package: string, version_constraint?: string} */
     protected function defaultBody(): array
     {
         return array_filter(

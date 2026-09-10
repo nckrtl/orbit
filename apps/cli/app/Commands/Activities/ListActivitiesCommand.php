@@ -40,7 +40,7 @@ final class ListActivitiesCommand extends GatewayCommand
             );
         }
 
-        $requestId = $this->option('request-id');
+        $requestId = $this->input->getOption('request-id');
 
         if (
             $requestId !== null

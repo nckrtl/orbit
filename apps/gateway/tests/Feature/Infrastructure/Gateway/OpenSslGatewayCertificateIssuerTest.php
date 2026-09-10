@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\GatewayCertificatePaths;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Files\AtomicSymlinkPublisher;
@@ -14,8 +16,8 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\ExecutableFinder;
 
-/** @mago-expect lint:halstead The integration test keeps issuance, identity, and renewal in one observable flow. */
 it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP identities', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-'.Str::uuid();
     $caDirectory = $orbitHome.'/ca';
@@ -231,7 +233,8 @@ it('keeps an issued generation stable while later certificates are published', f
         $firstCertificate = file_get_contents($first->certificatePath);
         $firstPrivateKey = file_get_contents($first->privateKeyPath);
         $second = $issuer->issue('gateway.orbit', '10.44.0.2');
-        $publications = new class implements ProcessRunner {
+        $publications = new class implements ProcessRunner
+        {
             /** @var list<ProcessInvocation> */
             public array $invocations = [];
 
@@ -298,7 +301,8 @@ it('reuses one resolved generation when the current alias changes during validat
         $second = $issuer->issue('gateway.orbit', '10.44.0.2');
         $currentDirectory = $orbitHome.'/ca/gateway-current';
         new NativeAtomicSymlinkPublisher()->publish(dirname($first->certificatePath), $currentDirectory);
-        $switchingProcesses = new class(dirname($second->certificatePath), $currentDirectory) implements ProcessRunner {
+        $switchingProcesses = new class(dirname($second->certificatePath), $currentDirectory) implements ProcessRunner
+        {
             private NativeProcessRunner $processes;
 
             private bool $switched = false;
@@ -339,7 +343,8 @@ it('reuses one resolved generation when the current alias changes during validat
 });
 
 it('renews gateway leaves when they expire within 30 days', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $invocations = [];
 
@@ -351,7 +356,7 @@ it('renews gateway leaves when they expire within 30 days', function (): void {
         }
     };
     $validator = new OpenSslGatewayCertificateValidator($processes);
-    $paths = new \App\Domain\Certificates\GatewayCertificatePaths('/tmp/gateway.key', '/tmp/gateway.pem');
+    $paths = new GatewayCertificatePaths('/tmp/gateway.key', '/tmp/gateway.pem');
 
     $validator->matches($paths, 'gateway.orbit', '10.44.0.1', '/tmp/root.pem');
 
@@ -368,7 +373,8 @@ it('renews gateway leaves when they expire within 30 days', function (): void {
 });
 
 it('rejects legacy gateway leaves whose lifetime exceeds 397 days', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public function run(ProcessInvocation $invocation): CommandResult
         {
             $stdout = in_array('-dates', $invocation->arguments, strict: true)
@@ -379,7 +385,7 @@ it('rejects legacy gateway leaves whose lifetime exceeds 397 days', function ():
         }
     };
     $validator = new OpenSslGatewayCertificateValidator($processes);
-    $paths = new \App\Domain\Certificates\GatewayCertificatePaths('/tmp/gateway.key', '/tmp/gateway.pem');
+    $paths = new GatewayCertificatePaths('/tmp/gateway.key', '/tmp/gateway.pem');
 
     expect($validator->matches($paths, 'gateway.orbit', '10.44.0.1', '/tmp/root.pem'))
         ->toBeFalse();
@@ -449,7 +455,7 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
             ]))->succeeded(),
         )->toBeTrue();
 
-        $paths = new \App\Domain\Certificates\GatewayCertificatePaths(
+        $paths = new GatewayCertificatePaths(
             $leafDirectory.'/gateway.key',
             $leafDirectory.'/gateway.pem',
         );
@@ -570,7 +576,7 @@ it('rejects a gateway leaf with an Ed25519 key pair and the exact approved polic
             ]))->succeeded(),
         )->toBeTrue();
 
-        $paths = new \App\Domain\Certificates\GatewayCertificatePaths(
+        $paths = new GatewayCertificatePaths(
             $leafDirectory.'/gateway.key',
             $leafDirectory.'/gateway.pem',
         );
@@ -590,7 +596,8 @@ it('rejects invalid certificate identities before invoking OpenSSL', function (
     string $hostname,
     string $address,
 ): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public int $calls = 0;
 
         public function run(ProcessInvocation $invocation): CommandResult
@@ -692,10 +699,11 @@ it('preserves the current usable certificate pair when atomic publication fails'
         );
         $current = $issuer->issue('gateway.orbit', '10.44.0.1');
         $currentCertificate = file_get_contents($current->certificatePath);
-        $failingLinks = new class implements AtomicSymlinkPublisher {
+        $failingLinks = new class implements AtomicSymlinkPublisher
+        {
             public function publish(string $target, string $link): void
             {
-                throw new \RuntimeException('simulated atomic link failure');
+                throw new RuntimeException('simulated atomic link failure');
             }
         };
         $failingIssuer = new OpenSslGatewayCertificateIssuer(
@@ -706,7 +714,7 @@ it('preserves the current usable certificate pair when atomic publication fails'
         );
 
         expect(fn () => $failingIssuer->issue('gateway.orbit', '10.44.0.2'))
-            ->toThrow(function (\App\Domain\Nodes\NodeProvisioningException $exception): void {
+            ->toThrow(function (NodeProvisioningException $exception): void {
                 expect($exception->step)
                     ->toBe('gateway-certificate-publish')
                     ->and($exception->errorCode)
@@ -812,7 +820,7 @@ function gateway_certificate_caddy_validation(
     string $certificatePath,
     string $privateKeyPath,
 ): ?CommandResult {
-    if (new Symfony\Component\Process\ExecutableFinder()->find('caddy') === null) {
+    if (new ExecutableFinder()->find('caddy') === null) {
         return null;
     }
 

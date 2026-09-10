@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -15,13 +16,15 @@ use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
 
 beforeEach(function (): void {
-    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner {
+    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
+    {
         public function scan(string $host, int $port): HostKey
         {
             return new HostKey('ssh-ed25519', 'host-key', 'SHA256:pinned');
         }
     });
-    app()->instance(KnownHostsStore::class, new class implements KnownHostsStore {
+    app()->instance(KnownHostsStore::class, new class implements KnownHostsStore
+    {
         public function put(string $host, int $port, HostKey $key): void {}
 
         public function path(): string
@@ -29,7 +32,8 @@ beforeEach(function (): void {
             return '/tmp/known-hosts';
         }
     });
-    app()->instance(SshKeyProvider::class, new class implements SshKeyProvider {
+    app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/id_ed25519';
@@ -40,7 +44,8 @@ beforeEach(function (): void {
             return 'ssh-ed25519 AAAAC3Nza';
         }
     });
-    app()->instance(SshExecutor::class, new class implements SshExecutor {
+    app()->instance(SshExecutor::class, new class implements SshExecutor
+    {
         /** @var list<SshConnection> */
         public array $connections = [];
 
@@ -51,7 +56,8 @@ beforeEach(function (): void {
             return new CommandResult(0, '', '', 1, false);
         }
     });
-    app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger {
+    app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger
+    {
         public ?SshConnection $connection = null;
 
         public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
@@ -104,7 +110,8 @@ it('retargets a node from the gateway console', function (): void {
 });
 
 it('reports typed retarget failures without leaking command output', function (): void {
-    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner {
+    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
+    {
         public function scan(string $host, int $port): HostKey
         {
             throw new RuntimeException('sensitive command output');
@@ -128,7 +135,8 @@ it('reports typed retarget failures without leaking command output', function ()
 });
 
 it('explains the node-side recovery when a converged node is unreachable over wireguard', function (): void {
-    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner {
+    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
+    {
         public function scan(string $host, int $port): HostKey
         {
             throw new RuntimeException('sensitive command output');
@@ -141,7 +149,7 @@ it('explains the node-side recovery when a converged node is unreachable over wi
         'wireguard_ip' => '10.44.0.3',
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
-    $node->roles()->create(['role' => \App\Domain\Nodes\RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
 
     $this
         ->artisan('orbit:node-retarget', [

@@ -22,7 +22,6 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\Cache;
 
-/** @mago-expect lint:halstead The materializer lifecycle group keeps lock, probe, retry, and failure invariants visible. */
 describe(NativeToolManagerMaterializer::class, function (): void {
     it('is the production Tool manager materializer', function (): void {
         expect(app(ToolManagerMaterializer::class))
@@ -463,10 +462,10 @@ function materializer_node(
     return $node;
 }
 
-/** @mago-expect lint:too-many-methods The focused fake implements the complete manager contract for lifecycle tests. */
 final class MaterializerToolManagerFake implements ToolManager
 {
     public bool $supports = true;
+
     public ?ToolManagerException $failure = null;
 
     /** @param list<string> $events */
@@ -533,7 +532,6 @@ final class MaterializerToolManagerFake implements ToolManager
     public function remove(Node $node, string $package): void {}
 }
 
-/** @mago-expect lint:single-class-per-file Test-local lock records canonical acquisition and release order. */
 final class OrderingMaterializerScopeLock implements ToolManagerScopeLock
 {
     public function __construct(
@@ -545,7 +543,7 @@ final class OrderingMaterializerScopeLock implements ToolManagerScopeLock
         $this->events[] = $event;
     }
 
-    public function run(int $nodeId, ToolManagerName $manager, \Closure $callback): mixed
+    public function run(int $nodeId, ToolManagerName $manager, Closure $callback): mixed
     {
         $this->events[] = 'enter:'.$manager->value;
         try {

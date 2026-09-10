@@ -29,8 +29,7 @@ enum ExporterDegradationReason: string
         return match ($errorCode) {
             'metrics.exporter_configuration_inspection_failed',
             'metrics.exporter_service_inspection_failed',
-            'metrics.exporter_firewall_inspection_failed',
-                => self::Unreachable,
+            'metrics.exporter_firewall_inspection_failed', => self::Unreachable,
             'metrics.exporter_firewall_inactive' => self::FirewallInactive,
             default => null,
         };

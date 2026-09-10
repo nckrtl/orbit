@@ -30,15 +30,15 @@ final readonly class NativeRepositoryDefaultBranchResolver implements Repository
             throw $this->failure();
         }
 
-        $firstLine = explode("\n", $result->stdout, 2)[0] ?? '';
+        $firstLine = explode("\n", $result->stdout, 2)[0];
 
         if (preg_match('/\Aref: refs\/heads\/(.+)\tHEAD\z/D', $firstLine, $matches) !== 1) {
             throw $this->failure();
         }
 
-        $branch = $matches[1] ?? null;
+        $branch = $matches[1];
 
-        if (! is_string($branch) || ! GitBranchName::isValid($branch)) {
+        if (! GitBranchName::isValid($branch)) {
             throw $this->failure();
         }
 

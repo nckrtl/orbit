@@ -6,8 +6,9 @@ use App\Services\Trust\GatewayRootCaStore;
 use App\Services\Trust\RootCertificate;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\TestCase;
 
-uses(Tests\TestCase::class);
+uses(TestCase::class);
 
 beforeEach(function (): void {
     $this->orbitHome = sys_get_temp_dir().'/orbit-ca-store-'.Str::uuid();

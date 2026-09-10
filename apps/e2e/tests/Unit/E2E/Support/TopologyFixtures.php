@@ -11,14 +11,20 @@ declare(strict_types=1);
  */
 
 use App\E2E\Git\GitRepository;
+use App\E2E\IncusHost;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\PreparedFingerprint;
+use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
 /** One promoted generation for the fixture repository, so discovery acquisition can start. */
@@ -28,7 +34,7 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $mainSha = new GitRepository($repositoryRoot)->commit();
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($mainSha);
-    new TopologySnapshotManifestStore($store, $paths, new \App\E2E\IncusHost)->promote(new TopologySnapshotGeneration(
+    new TopologySnapshotManifestStore($store, $paths, new IncusHost)->promote(new TopologySnapshotGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -46,7 +52,7 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
 }
 
 /** @param list<string> $command */
-function topologyFirewallResult(array $command): ?\Illuminate\Contracts\Process\ProcessResult
+function topologyFirewallResult(array $command): ?ProcessResult
 {
     if (
         ($command[0] ?? null) === 'python3'
@@ -121,7 +127,7 @@ function hydrateFixtureVendor(string $worktree): void
 
 function topologySnapshotVmInventoryJson(): string
 {
-    $roles = \App\E2E\Value\TopologyProfile::ROLES;
+    $roles = TopologyProfile::ROLES;
     $instances = array_merge(
         array_map(static fn (string $role): string => TopologyTarget::topologySnapshot()->instance($role), $roles),
         array_map(static fn (string $role): string => featureTarget('TST-123')->instance($role), $roles),
@@ -166,13 +172,12 @@ function topologySnapshotSnapshotInventoryJson(
     );
 }
 
-/** @mago-expect lint:excessive-parameter-list The fixture exposes each independent Incus inventory field. */
 function topologyVmJson(
     string $name,
     array $metadata = ['user.orbit.e2e.owner' => 'orbit-e2e'],
     ?string $network = null,
     bool $running = false,
-    ?\App\E2E\Value\TopologyRecipe $recipe = null,
+    ?TopologyRecipe $recipe = null,
     int $slot = 2,
 ): string {
     $devices = ['root' => ['pool' => 'default']];
@@ -222,7 +227,7 @@ function topologyPromotedLaravel(): LaravelRelease
 function topologyFinalPreparedFingerprint(
     string $repositoryRoot,
     string $commit = 'HEAD',
-): \App\E2E\Value\PreparedFingerprint {
+): PreparedFingerprint {
     $release = topologyPromotedLaravel();
 
     return new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($commit, $release);
@@ -254,9 +259,8 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
 }
 
 /**
- * @param list<string> $command
- * @param list<string> $runningInstances
- * @mago-expect lint:cyclomatic-complexity The fake inventories each exact Incus resource kind.
+ * @param  list<string>  $command
+ * @param  list<string>  $runningInstances
  */
 function pinnedWorktreeInventoryResult(
     array $command,
@@ -264,7 +268,7 @@ function pinnedWorktreeInventoryResult(
     ?string $operationId = null,
     array $runningInstances = [],
     int $slot = 2,
-): ?\Illuminate\Contracts\Process\ProcessResult {
+): ?ProcessResult {
     if (($firewall = topologyFirewallResult($command)) !== null) {
         return $firewall;
     }
@@ -338,7 +342,7 @@ function pinnedWorktreeInventoryResult(
 }
 
 /** @param list<string> $guest */
-function pinnedWorktreeGuestCommandResult(array $guest): \Illuminate\Contracts\Process\ProcessResult
+function pinnedWorktreeGuestCommandResult(array $guest): ProcessResult
 {
     if (array_slice($guest, 0, 6) === ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit']) {
         $guest = array_slice($guest, 6);
@@ -390,20 +394,20 @@ function pinnedWorktreeGuestCommandResult(array $guest): \Illuminate\Contracts\P
 }
 
 /** @param list<string> $command */
-function pinnedWorktreeGuestResult(array $command): \Illuminate\Contracts\Process\ProcessResult
+function pinnedWorktreeGuestResult(array $command): ProcessResult
 {
     return pinnedWorktreeGuestCommandResult(array_slice($command, 6));
 }
 
 /**
- * @param null|list<array<array-key, mixed>> $events
- * @param null|Closure(list<string>): (?\Illuminate\Contracts\Process\ProcessResult) $guestOverride
+ * @param  null|list<array<array-key, mixed>>  $events
+ * @param  null|Closure(list<string>): (?ProcessResult)  $guestOverride
  */
 function pinnedWorktreeBatchResult(
-    \Illuminate\Process\PendingProcess $process,
+    PendingProcess $process,
     ?array &$events = null,
     ?Closure $guestOverride = null,
-): ?\Illuminate\Contracts\Process\ProcessResult {
+): ?ProcessResult {
     $command = $process->command;
     if (
         ($command[0] ?? null) !== 'python3'
@@ -443,10 +447,9 @@ function pinnedWorktreeBatchResult(
 }
 
 /**
- * @param list<array<array-key, mixed>> $events
- * @param null|Closure(list<string>): void $observe
- * @param null|Closure(list<string>): (?\Illuminate\Contracts\Process\ProcessResult) $guestOverride
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The fake models one full topology construction boundary.
+ * @param  list<array<array-key, mixed>>  $events
+ * @param  null|Closure(list<string>): void  $observe
+ * @param  null|Closure(list<string>): (?ProcessResult)  $guestOverride
  */
 function fakePinnedWorktreeProcesses(
     TopologyTarget $target,
@@ -459,8 +462,7 @@ function fakePinnedWorktreeProcesses(
     $realProcess = new ProcessFactory;
     $runningInstances = [];
     $networkCreated = false;
-    /** @mago-expect lint:cyclomatic-complexity The fake maps every Incus and guest construction operation. */
-    Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
+    Process::fake(function (PendingProcess $process) use (
         &$events,
         &$runningInstances,
         &$networkCreated,
@@ -581,7 +583,7 @@ function fakePinnedWorktreeProcesses(
             $runningInstances[] = preg_replace('/\A[^:]+:/', '', $command[4]);
         }
 
-        return (
+        return
             pinnedWorktreeInventoryResult(
                 $command,
                 $target,
@@ -591,7 +593,6 @@ function fakePinnedWorktreeProcesses(
             ) ?? $guestOverride?->__invoke(array_slice(
                 $command,
                 6,
-            )) ?? pinnedWorktreeGuestResult($command)
-        );
+            )) ?? pinnedWorktreeGuestResult($command);
     });
 }

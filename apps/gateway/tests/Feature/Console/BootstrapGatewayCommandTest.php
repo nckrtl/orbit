@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
+use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
@@ -33,13 +34,14 @@ it('reports typed gateway provisioning failures without leaking command output',
     );
 
     app()->instance(BootstrapGatewayAction::class, new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
+        assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
-        vpn: new class($failure) implements GatewayVpnConverger {
+        vpn: new class($failure) implements GatewayVpnConverger
+        {
             public function __construct(
                 private NodeProvisioningException $failure,
             ) {}
@@ -49,10 +51,12 @@ it('reports typed gateway provisioning failures without leaking command output',
                 throw $this->failure;
             }
         },
-        web: new class implements GatewayWebConverger {
+        web: new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void {}
         },
-        selfAccess: new class implements GatewaySelfAccessConverger {
+        selfAccess: new class implements GatewaySelfAccessConverger
+        {
             public function converge(Node $node): void {}
         },
         orbitHome: $orbitHome,
@@ -101,19 +105,22 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
     $filesystem->put($osReleasePath, "ID=ubuntu\nVERSION_CODENAME=resolute\n");
 
     app()->instance(BootstrapGatewayAction::class, new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
+        assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
-        vpn: new class implements GatewayVpnConverger {
+        vpn: new class implements GatewayVpnConverger
+        {
             public function converge(Node $gateway, BootstrapGatewayData $data): void {}
         },
-        web: new class implements GatewayWebConverger {
+        web: new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void {}
         },
-        selfAccess: new class implements GatewaySelfAccessConverger {
+        selfAccess: new class implements GatewaySelfAccessConverger
+        {
             public function converge(Node $node): void {}
         },
         orbitHome: $orbitHome,

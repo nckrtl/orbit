@@ -7,7 +7,6 @@ use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 use Orbit\Sdk\Responses\Tools\ToolsResponse;
 
-/** @mago-expect lint:halstead The bounded Tool response contracts stay visible together. */
 describe('tool responses', function (): void {
     it('maps every tool field without applying Tool policy', function (): void {
         $response = ToolResponse::fromGatewayData(tool_response_data(), tool_response_request_id());

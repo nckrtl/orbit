@@ -14,16 +14,14 @@ use Throwable;
 
 /**
  * Rolls back only resources created by one acquisition operation.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect Every target is checked before any mutation.
  */
 final readonly class AcquisitionRollback
 {
     /**
-     * @param Closure(list<string>): array<string, IncusInstance|IncusNetwork|null> $readBatch
-     * @param Closure(list<string>): void $stopBatch
-     * @param Closure(list<string>): void $deleteInstancesBatch
-     * @param Closure(string): void $deleteNetwork
+     * @param  Closure(list<string>): array<string, mixed>  $readBatch
+     * @param  Closure(list<string>): void  $stopBatch
+     * @param  Closure(list<string>): void  $deleteInstancesBatch
+     * @param  Closure(string): void  $deleteNetwork
      */
     public function __construct(
         private Closure $readBatch,
@@ -74,7 +72,7 @@ final readonly class AcquisitionRollback
      * The identity of every intended resource as observed now; `cleanup()` later
      * refuses any resource whose identity drifted from this observation.
      *
-     * @param list<string> $resources
+     * @param  list<string>  $resources
      * @return array<string, array<string, mixed>|null>
      */
     public function observe(array $resources): array
@@ -95,7 +93,11 @@ final readonly class AcquisitionRollback
         return $observed;
     }
 
-    /** @param list<string> $resources @param array<array-key, mixed> $observed @return array<string, string> */
+    /**
+     * @param  list<string>  $resources
+     * @param  array<array-key, mixed>  $observed
+     * @return array<string, string>
+     */
     public function cleanup(
         TopologyTarget $target,
         array $resources,
@@ -141,6 +143,7 @@ final readonly class AcquisitionRollback
                 }
                 if ($current === null) {
                     $results[$resource] = 'absent';
+
                     continue;
                 }
                 $this->assertIdentity($target, $resource, $current, $this->expected($observed, $resource), $operation);
@@ -229,7 +232,10 @@ final readonly class AcquisitionRollback
         return $results;
     }
 
-    /** @param list<string> $resources @param array<string, string> $results */
+    /**
+     * @param  list<string>  $resources
+     * @param  array<string, string>  $results
+     */
     private function retainNetworkResult(
         TopologyTarget $target,
         array $resources,
@@ -242,7 +248,10 @@ final readonly class AcquisitionRollback
         }
     }
 
-    /** @param array<array-key, mixed> $observed @return array<array-key, mixed>|null */
+    /**
+     * @param  array<array-key, mixed>  $observed
+     * @return array<array-key, mixed>|null
+     */
     private function expected(array $observed, string $resource): ?array
     {
         $expected = $observed[$resource] ?? null;

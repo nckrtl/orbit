@@ -12,4 +12,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Console/Commands/** | .ai/rules/commands.md |
 | app/E2E/State/** | .ai/rules/state.md |
 | tests/** | .ai/rules/tests.md |
-| composer.json, mago.toml, boost.json | .ai/rules/tooling.md |
+| composer.json, pint.json, phpstan.neon, boost.json | .ai/rules/tooling.md |

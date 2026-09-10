@@ -16,7 +16,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity */
 final readonly class SshManagedUserAccountResolver implements ManagedUserAccountResolver
 {
     public const string PROGRAM = 'passwd_entry=$(getent passwd -- "$1"); test "$(printf \'%s\\n\' "$passwd_entry" | wc -l)" -eq 1; managed_user=$(printf \'%s\\n\' "$passwd_entry" | cut -d: -f1); managed_home=$(printf \'%s\\n\' "$passwd_entry" | cut -d: -f6); managed_group=$(id -gn -- "$1"); printf "%s\\n%s\\n%s\\n" "$managed_user" "$managed_home" "$managed_group"';

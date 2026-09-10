@@ -56,7 +56,6 @@ final class GatewayRootCaClient
             requestIdResolver: static fn (): string => $requestId,
         );
         $connector->config()->add('verify', false);
-        /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
         $response = $connector->send(new FetchRootCaCertificateRequest)->dto();
 
         if (! $response instanceof RootCaCertificateResponse) {

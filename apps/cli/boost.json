@@ -11,13 +11,13 @@
     ],
     "sail": false,
     "skills": [
-        "pest-testing",
         "laravel-best-practices",
         "testing-best-practices",
         "spatie-laravel-php",
         "spatie-security",
         "spatie-version-control",
         "command-designer",
-        "orbit-cli-development"
+        "orbit-cli-development",
+        "pest-testing"
     ]
 }

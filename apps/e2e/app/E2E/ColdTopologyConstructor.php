@@ -10,6 +10,7 @@ use App\E2E\Value\ColdTopologyCleanupResult;
 use App\E2E\Value\ColdTopologyPlan;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyTarget;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
 use RuntimeException;
@@ -17,12 +18,9 @@ use Throwable;
 
 /**
  * One exact resource transaction shared by persistent and disposable cold callers.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect Exact construction and rollback keep every external-state branch at one boundary.
  */
 final readonly class ColdTopologyConstructor
 {
-    /** @mago-expect lint:excessive-parameter-list Explicit infrastructure dependencies keep construction testable. */
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
@@ -149,7 +147,7 @@ final readonly class ColdTopologyConstructor
                 ? $this->capacity->reserveSlot(count($plan->target->recipe->nodes))
                 : $plan->fixedSlot ?? throw new RuntimeException('Persistent cold topology slot is absent.');
             $lastAddress = max(array_map(
-                static fn (\App\E2E\Value\TopologyNode $node): int => $node->address,
+                static fn (TopologyNode $node): int => $node->address,
                 $plan->target->recipe->nodes,
             ));
             $this->networks->create($plan->target->network(), $slot, $plan->metadata, $lastAddress);

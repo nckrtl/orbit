@@ -9,12 +9,12 @@ use Closure;
 use RuntimeException;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity Lock ownership requires explicit failure checks. */
 final class OperationLock
 {
     /** @var resource|null */
     private $handle = null;
 
+    /** @var array{pid:int,process_start_identity:string,operation_id:string,acquired_at:string}|null */
     private ?array $owner = null;
 
     public function __construct(

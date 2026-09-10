@@ -15,11 +15,6 @@ use App\Models\Node;
 use JsonException;
 use stdClass;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter keeps each fail-closed Composer parsing branch explicit.
- * @mago-expect lint:kan-defect The score reflects explicit private-root verification and failure gates.
- * @mago-expect lint:too-many-methods The closed manager contract requires every lifecycle method on one adapter.
- */
 final readonly class ComposerToolManager implements ToolManager
 {
     private const int MAX_PACKAGE_LENGTH = 255;
@@ -60,11 +55,10 @@ final readonly class ComposerToolManager implements ToolManager
 
     public function validatePackage(string $package): bool
     {
-        return (
+        return
             $package !== ''
             && strlen($package) <= self::MAX_PACKAGE_LENGTH
-            && preg_match(self::PACKAGE_PATTERN, $package) === 1
-        );
+            && preg_match(self::PACKAGE_PATTERN, $package) === 1;
     }
 
     public function materialize(Node $node): void
@@ -366,11 +360,10 @@ final readonly class ComposerToolManager implements ToolManager
 
     private function isSafeText(string $value): bool
     {
-        return (
+        return
             $value !== ''
             && strlen($value) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1
-        );
+            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1;
     }
 
     private function isSafePackageVersion(string $version): bool
@@ -405,14 +398,13 @@ final readonly class ComposerToolManager implements ToolManager
 
         $packagePattern = preg_quote(str: $package, delimiter: '~');
 
-        return (
+        return
             preg_match(
                 '~Could not find a matching version of package '
                 .$packagePattern
                 .'\. Check the package spelling, your version constraint and that the package is available in a stability which matches your minimum-stability~',
                 $normalized,
-            ) === 1
-        );
+            ) === 1;
     }
 
     private function malformedInstalledResult(CommandResult $result): ToolManagerException
@@ -450,7 +442,6 @@ final readonly class ComposerToolManager implements ToolManager
 
     /**
      * @return non-empty-list<string>
-     * @mago-expect lint:no-boolean-flag-parameter The flag selects the fixed live or dry-run command form.
      */
     private function operationArguments(string $operation, string $package, bool $dryRun): array
     {

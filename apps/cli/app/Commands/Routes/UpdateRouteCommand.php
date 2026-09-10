@@ -17,6 +17,7 @@ final class UpdateRouteCommand extends RouteCommand
         {--hostname= : New explicit hostname}
         {--publication= : New publication intent}
         {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Update a Route.';
 

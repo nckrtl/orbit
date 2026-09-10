@@ -34,10 +34,9 @@ use Illuminate\Support\Facades\Process;
  * A host holding the attempt's VMs and network with the given metadata; every
  * mutation is recorded and reflected in later reads.
  *
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The fake answers each Incus read and mutation kind.
  *
- * @param array<string, string> $metadata
- * @param list<string> $commands
+ * @param  array<string, string>  $metadata
+ * @param  list<string>  $commands
  */
 function fakeReleaseHost(
     TopologyTarget $target,

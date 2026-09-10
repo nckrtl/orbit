@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances\Environment;
 
 use App\Domain\Shared\ResourceOperationException;
+use Dotenv\Dotenv;
 use Dotenv\Exception\InvalidFileException;
 use Dotenv\Parser\Parser;
 use Throwable;
@@ -13,8 +14,6 @@ final readonly class AppInstanceEnvironmentImporter
 {
     /**
      * @return array<string, string>
-     *
-     * @mago-expect analysis:mixed-assignment The dotenv package exposes an untyped parser boundary.
      */
     public function parse(#[\SensitiveParameter] string $contents): array
     {
@@ -53,7 +52,7 @@ final readonly class AppInstanceEnvironmentImporter
                 $seen[$name] = true;
             }
 
-            $parsed = \Dotenv\Dotenv::parse($contents);
+            $parsed = Dotenv::parse($contents);
         } catch (InvalidFileException) {
             $this->fail();
         } catch (ResourceOperationException $exception) {
@@ -62,6 +61,15 @@ final readonly class AppInstanceEnvironmentImporter
             $this->fail();
         }
 
+        return $this->stringValues($parsed);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $parsed
+     * @return array<string, string>
+     */
+    private function stringValues(array $parsed): array
+    {
         $values = [];
 
         foreach ($parsed as $key => $value) {

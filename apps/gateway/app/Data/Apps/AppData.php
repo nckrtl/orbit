@@ -14,9 +14,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class AppData extends Data
 {
     /**
-     * @param array<array-key, mixed>|null $defaults
-     *
-     * @mago-expect lint:excessive-parameter-list The response exposes the complete bounded App contract.
+     * @param  array<array-key, mixed>|null  $defaults
      */
     public function __construct(
         public int $id,
@@ -42,8 +40,7 @@ final class AppData extends Data
     }
 
     /**
-     * @param array<string, mixed>|null $defaults
-     *
+     * @param  array<string, mixed>|null  $defaults
      * @return array<array-key, mixed>|null
      */
     private static function publicDefaults(?array $defaults): ?array

@@ -10,4 +10,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | .ai/**, .agents/**, .codex/**, AGENTS.md, app/Providers/LaravelBoostCompatibilityServiceProvider.php, app/Support/LaravelZero*.php, boost.json, composer.json, composer.lock, config/boost.php, tests/Feature/BoostGuidanceTest.php | .ai/rules/repository-bootstrap.md |
 | bootstrap/**, config/**, orbit | .ai/rules/runtime.md |
 | tests/** | .ai/rules/tests.md |
-| .editorconfig, .gitattributes, .gitignore, mago.toml, phpunit.xml.dist, rector.php | .ai/rules/tooling.md |
+| .editorconfig, .gitattributes, .gitignore, pint.json, phpstan.neon, phpunit.xml.dist, rector.php | .ai/rules/tooling.md |

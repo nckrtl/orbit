@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Pest\Plugins\Tia\ChangedFiles;
+use Pest\Plugins\Tia\Storage;
 use Symfony\Component\Process\Process;
 
 /** @return array{project:string,pest:string,script:string,patch:string} */
@@ -154,11 +156,11 @@ it('keeps project and linked-worktree baselines separate and resolves changed pa
     $linked = $root.'-linked';
     new Process(['git', 'worktree', 'add', '-b', 'feature', $linked], $root)->mustRun();
     try {
-        $first = Pest\Plugins\Tia\Storage::tempDir($root.'/apps/first');
-        expect(Pest\Plugins\Tia\Storage::tempDir($root.'/packages/second'))->not->toBe($first);
-        expect(Pest\Plugins\Tia\Storage::tempDir($linked.'/apps/first'))->not->toBe($first);
+        $first = Storage::tempDir($root.'/apps/first');
+        expect(Storage::tempDir($root.'/packages/second'))->not->toBe($first);
+        expect(Storage::tempDir($linked.'/apps/first'))->not->toBe($first);
         file_put_contents($linked.'/apps/first/source.php', '<?php return 2;');
-        $changes = new Pest\Plugins\Tia\ChangedFiles($linked.'/apps/first');
+        $changes = new ChangedFiles($linked.'/apps/first');
         expect($changes->repoPrefix())->toBe('apps/first/');
         expect($changes->since($changes->currentSha()))->toBe(['source.php']);
     } finally {

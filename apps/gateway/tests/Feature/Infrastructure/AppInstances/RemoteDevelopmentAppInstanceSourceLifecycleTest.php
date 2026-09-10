@@ -56,7 +56,8 @@ beforeEach(function (): void {
         ? $groupIdentity['name']
         : $user;
     $account = new ManagedUserAccount($user, $group, $this->sandbox.'/home');
-    $accounts = new class($account) implements ManagedUserAccountResolver {
+    $accounts = new class($account) implements ManagedUserAccountResolver
+    {
         public function __construct(
             private readonly ManagedUserAccount $account,
         ) {}
@@ -71,7 +72,8 @@ beforeEach(function (): void {
     $this->sourceLock = new NativeAppDevSourceOperationLock($this->sandbox.'/locks');
     $ssh = new AppDevSshExecutor(
         $this->transport,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/orbit-test-key';
@@ -82,7 +84,8 @@ beforeEach(function (): void {
                 return 'ssh-ed25519 test';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/tmp/orbit-test-known-hosts';
@@ -195,7 +198,7 @@ it('refuses a missing explicit branch without falling back', function (): void {
 
     expect(fn () => $this->source->resolve($instance))
         ->toThrow(
-            \App\Domain\AppDev\RuntimeConvergenceException::class,
+            RuntimeConvergenceException::class,
             'App development step [app-instance-source-resolve] failed',
         );
 });
@@ -1745,7 +1748,7 @@ function orb182_real_source_graph(
 }
 
 /**
- * @param list<AppInstance> $instances
+ * @param  list<AppInstance>  $instances
  * @return list<AppInstanceRemovalMember>
  */
 function orb182_record_sources(
@@ -2050,7 +2053,7 @@ final class Orb180RecordingSourceLock implements AppDevSourceOperationLock
     }
 }
 
-final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshExecutor
+final class Orb76LocalSourceSshExecutor implements SshExecutor
 {
     /** @var list<RemoteCommand> */
     public array $commands = [];
@@ -2063,9 +2066,9 @@ final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshEx
     ) {}
 
     public function execute(
-        \App\Infrastructure\Ssh\SshConnection $connection,
-        \App\Infrastructure\Ssh\RemoteCommand $command,
-    ): \App\Infrastructure\Processes\CommandResult {
+        SshConnection $connection,
+        RemoteCommand $command,
+    ): CommandResult {
         $this->commands[] = $command;
         $input = $command->input;
 

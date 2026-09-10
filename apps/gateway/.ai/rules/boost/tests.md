@@ -21,4 +21,4 @@ paths:
 - Run the narrowest set of tests that covers the change. Pass a file path or `--filter=testName` to `php artisan test --compact`.
 - Rerun a test after each change to it.
 - Run `vendor/bin/pest` to call the test runner directly. It accepts the same file path and `--filter=testName` arguments.
-- After focused tests pass, run `composer check` locally and require green CI full suites without TIA before handoff.
+- After focused tests pass, run `composer check` locally and hand off to an independent reviewer who runs root `composer check` across all projects with TIA.

@@ -10,7 +10,6 @@ use App\Models\Node;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:halstead The claim matrix keeps each policy and serialization boundary visible. */
 describe(AssignRoleAction::class, function (): void {
     it('assigns compatible roles idempotently', function (): void {
         $node = Node::query()->create([

@@ -47,7 +47,8 @@ function reachability_node(): Node
 
 function reachability_inspector(NodeInspectionData|Throwable $outcome): NodeStateInspector
 {
-    return new class($outcome) implements NodeStateInspector {
+    return new class($outcome) implements NodeStateInspector
+    {
         public function __construct(
             private readonly NodeInspectionData|Throwable $outcome,
         ) {}

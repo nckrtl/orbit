@@ -8,10 +8,10 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 
-/** @mago-expect lint:cyclomatic-complexity The preview, confirmation, and forced retry contract has several explicit branches. */
 final class RemoveNodeRoleCommand extends GatewayCommand
 {
     #[\Override]
@@ -93,7 +93,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
     }
 
     private function previewRemoval(
-        \Orbit\Sdk\GatewayConnector $connector,
+        GatewayConnector $connector,
         int $nodeId,
         string $role,
     ): ?int {
@@ -153,17 +153,15 @@ final class RemoveNodeRoleCommand extends GatewayCommand
     {
         $details = $exception->details();
 
-        return (
+        return
             $exception->errorCode() === 'validation.failed'
             && ($details['field'] ?? null) === 'force'
-            && ($details['reason'] ?? null) === 'destructive_consent_required'
-        );
+            && ($details['reason'] ?? null) === 'destructive_consent_required';
     }
 
     /** @return list<string> */
     private function dependents(GatewayApiException $exception): array
     {
-        /** @mago-expect analysis:mixed-assignment Gateway error details cross an untyped boundary. */
         $dependents = $exception->details()['dependents'] ?? null;
 
         if (! is_array($dependents)) {

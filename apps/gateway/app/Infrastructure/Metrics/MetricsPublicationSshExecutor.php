@@ -16,10 +16,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter keeps firewall ownership, mutation, verification, and recovery together.
- * @mago-expect lint:too-many-methods The private methods keep each fixed firewall operation narrow and non-generic.
- */
 final readonly class MetricsPublicationSshExecutor
 {
     private const string FirewallComment = MetricsFootprint::PublicationFirewallComment;

@@ -12,7 +12,6 @@ use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity */
 final readonly class VpnConfigurationRepository
 {
     public function __construct(

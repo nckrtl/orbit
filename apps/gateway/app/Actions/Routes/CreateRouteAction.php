@@ -21,7 +21,6 @@ use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:cyclomatic-complexity Route creation validates each explicit and generated invariant before one atomic write. */
 final readonly class CreateRouteAction
 {
     public function __construct(
@@ -153,7 +152,6 @@ final readonly class CreateRouteAction
         ];
     }
 
-    /** @mago-expect lint:excessive-parameter-list Atomic persistence receives the complete validated Route proposal. */
     private function create(
         int $appId,
         string $hostname,

@@ -249,7 +249,7 @@ it('propagates every source safety enumeration failure before treating its outpu
 });
 
 /**
- * @param list<CommandResult> $results
+ * @param  list<CommandResult>  $results
  * @return array{RemoteProductionAppInstanceSourceLifecycle, AppDevFakeSshExecutor, AppInstance}
  */
 function production_source_lifecycle(array $results, ?string $branch = null): array
@@ -257,7 +257,8 @@ function production_source_lifecycle(array $results, ?string $branch = null): ar
     $ssh = new AppDevFakeSshExecutor($results);
     $executor = new AppProdSshExecutor(
         $ssh,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/tmp/orbit-test-key';
@@ -268,7 +269,8 @@ function production_source_lifecycle(array $results, ?string $branch = null): ar
                 return 'ssh-ed25519 test';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/tmp/orbit-test-known-hosts';

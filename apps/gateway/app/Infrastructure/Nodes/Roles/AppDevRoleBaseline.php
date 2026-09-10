@@ -17,7 +17,6 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Models\Node;
 use App\Models\NodeRole;
 
-/** @mago-expect lint:excessive-parameter-list Baseline wiring keeps infrastructure collaborators explicit at the composition boundary. */
 final readonly class AppDevRoleBaseline implements RoleBaseline
 {
     public function __construct(

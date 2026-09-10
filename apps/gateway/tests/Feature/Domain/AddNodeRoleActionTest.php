@@ -24,7 +24,6 @@ use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
 
-/** @mago-expect lint:halstead The focused group keeps each role lifecycle transition visible. */
 describe(AddNodeRoleAction::class, function (): void {
     beforeEach(function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
@@ -498,7 +497,6 @@ final class AddNodeRoleBaselineFake implements RoleBaselineConverger
     public function removeUnreachable(Node $node, NodeRole $assignment): void {}
 }
 
-/** @mago-expect lint:single-class-per-file Test-local lock records persisted assignment state at release. */
 final class StateAwareToolManagerScopeLock implements ToolManagerScopeLock
 {
     /** @var list<string> */
@@ -507,7 +505,7 @@ final class StateAwareToolManagerScopeLock implements ToolManagerScopeLock
     /** @var list<array{manager: ToolManagerName, status: LifecycleStatus, failed_step: ?string, error_code: ?string}> */
     public array $releaseStates = [];
 
-    public function run(int $nodeId, ToolManagerName $manager, \Closure $callback): mixed
+    public function run(int $nodeId, ToolManagerName $manager, Closure $callback): mixed
     {
         $this->events[] = 'acquire:'.$manager->value;
 

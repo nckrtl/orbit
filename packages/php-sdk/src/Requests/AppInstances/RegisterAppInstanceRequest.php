@@ -18,7 +18,6 @@ final class RegisterAppInstanceRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @mago-expect lint:excessive-parameter-list The request preserves the bounded confirmed registration input. */
     public function __construct(
         private readonly string $sourcePath,
         private readonly bool $includeWorktrees = false,

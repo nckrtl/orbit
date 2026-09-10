@@ -8,7 +8,6 @@ use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Nodes\AssignRoleAction;
-use App\Actions\Routes\CreateRouteAction;
 use App\Console\GatewayBoostInstallCommand;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevCertificateManager;

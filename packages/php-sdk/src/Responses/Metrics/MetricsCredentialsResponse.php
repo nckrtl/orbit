@@ -18,8 +18,7 @@ final readonly class MetricsCredentialsResponse
     ) {}
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway credential values remain mixed until validated.
-     * @param array<string,mixed> $data
+     * @param  array<string,mixed>  $data
      */
     public static function fromGatewayData(
         #[SensitiveParameter]

@@ -21,11 +21,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use SensitiveParameter;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity The adapter keeps one fixed remote program and its bounded receipts in one infrastructure boundary. */
-final readonly class RemoteAppInstanceEnvironmentAccess implements
-    AppInstanceOperationPreflight,
-    AppInstanceEnvironmentReader,
-    AppInstanceEnvironmentWriter
+final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
 {
     private const string AccessProgram = <<<'PYTHON'
         import base64, os, pwd, stat, sys

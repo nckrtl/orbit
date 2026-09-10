@@ -14,7 +14,6 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
 
-/** @mago-expect lint:halstead Request contract assertions stay visible together. */
 describe('AppInstance environment requests', function (): void {
     it('sends the three exact methods routes and JSON object payloads', function (): void {
         $cases = [
@@ -110,7 +109,6 @@ describe('AppInstance environment requests', function (): void {
         $request = new UpdateAppInstanceEnvironmentRequest('app.example.test', 'VISIBLE_NAME', $value);
 
         ob_start();
-        /** @mago-expect lint:no-debug-symbols Executing regression captures the request diagnostic boundary. */
         var_dump($request);
         $dump = ob_get_clean();
 
@@ -148,7 +146,6 @@ describe('AppInstance environment requests', function (): void {
         }
 
         ob_start();
-        /** @mago-expect lint:no-debug-symbols Executing regression captures the response diagnostic boundary. */
         var_dump($transportResponse);
         $responseDump = ob_get_clean();
 

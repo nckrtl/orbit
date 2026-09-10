@@ -21,10 +21,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 it('reports every invalid active AppInstance before changing the upgrade schema or rows', function (): void {
-    $migration = require
-        base_path(
-            'database/migrations/2026_09_05_000000_provision_development_app_instances.php',
-        );
+    $migration = require base_path(
+        'database/migrations/2026_09_05_000000_provision_development_app_instances.php',
+    );
     $migration->down();
 
     $app = OrbitApp::query()->create([

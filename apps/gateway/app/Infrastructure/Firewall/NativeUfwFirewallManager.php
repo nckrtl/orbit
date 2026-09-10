@@ -18,11 +18,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\FirewallRule;
 use App\Models\Node;
 
-/**
- * @mago-expect lint:cyclomatic-complexity UFW reconciliation fails closed at each ownership and recovery gate.
- * @mago-expect lint:kan-defect The score reflects explicit collision, verification, and recovery branches.
- * @mago-expect lint:too-many-methods UFW reconciliation keeps one ownership boundary in one adapter.
- */
 final readonly class NativeUfwFirewallManager implements FirewallManager
 {
     public function __construct(
@@ -293,7 +288,7 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
     }
 
     /**
-     * @param array{action: string, source: string, port: string, protocol: string, family: string} $observed
+     * @param  array{action: string, source: string, port: string, protocol: string, family: string}  $observed
      * @return non-empty-list<string>
      */
     private function deleteObservedArguments(FirewallRule $rule, array $observed): array

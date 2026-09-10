@@ -13,6 +13,7 @@ final class StatusCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:status {issue} '.self::WORKTREE_OPTION.' {--json}';
+
     #[\Override]
     protected $description = 'Report the issue discovery and proof topologies without touching infrastructure';
 

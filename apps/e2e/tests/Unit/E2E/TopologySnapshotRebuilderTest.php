@@ -74,10 +74,8 @@ function legacyRebuildGeneration(string $id): TopologySnapshotGeneration
     return TopologySnapshotGeneration::fromArray($legacy);
 }
 
-/** @mago-expect lint:cyclomatic-complexity The fake preserves one coherent Incus resource inventory. */
 function fakeRebuildHost(RebuildHost $state): void
 {
-    /** @mago-expect lint:cyclomatic-complexity One process fake models every inventory and mutation command. */
     Process::fake(function (PendingProcess $process) use ($state): ProcessResult {
         $command = $process->command;
         assert(is_array($command), 'Incus uses argument arrays.');
@@ -115,11 +113,10 @@ function fakeRebuildHost(RebuildHost $state): void
 /** @param list<string> $command */
 function rebuildFirewallResult(array $command): ?ProcessResult
 {
-    return (
+    return
         ($command[0] ?? null) === 'python3'
             ? Process::result(json_encode(['changed' => true], JSON_THROW_ON_ERROR))
-            : null
-    );
+            : null;
 }
 
 function rebuildInstanceInventoryJson(RebuildHost $state): string
@@ -165,7 +162,6 @@ function rebuilderFor(
         $host,
         new IncusNetworkLifecycle($host),
         $manifests,
-        $paths,
         new OperationLock($paths),
         new OperationId(str_repeat('a', 32)),
         rebuildIdentity(),

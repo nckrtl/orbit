@@ -3,24 +3,36 @@
 set -euo pipefail
 
 usage() {
-    printf 'Usage: %s LINEAR-ID slug\n' "${0##*/}" >&2
+    printf 'Usage: %s LINEAR-ID\n' "${0##*/}" >&2
     exit 2
 }
 
-[[ $# -eq 2 ]] || usage
+[[ $# -eq 1 || $# -eq 2 ]] || usage
+script_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 linear_id="$1"
-slug="$2"
-
 [[ "$linear_id" =~ ^[A-Za-z]+-[0-9]+$ ]] || usage
-[[ "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || usage
 
-name="${linear_id,,}-$slug"
+name="${linear_id,,}"
 branch="$name"
+if [[ $# -eq 2 ]]; then
+    # Keep old closeout callers usable while their existing worktrees finish.
+    [[ "$2" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || usage
+    branch="$name-$2"
+else
+    mapfile -t issue_branches < <(git for-each-ref --format='%(refname:short)' "refs/heads/$name" "refs/heads/$name-*")
+    if [[ ${#issue_branches[@]} -gt 1 ]]; then
+        printf 'More than one branch matches %s: %s\n' "$linear_id" "${issue_branches[*]}" >&2
+        exit 1
+    elif [[ ${#issue_branches[@]} -eq 1 ]]; then
+        branch="${issue_branches[0]}"
+    fi
+fi
 primary_root="$(git worktree list --porcelain | awk '/^worktree / && !found { print substr($0, 10); found=1 }')"
-# The worktree that has the branch checked out wins; the slug-derived path is the fallback.
+# The registered branch path wins; the configured issue directory is the fallback.
 worktree="$(git worktree list --porcelain | awk -v ref="branch refs/heads/$branch" '/^worktree / { path=substr($0, 10) } $0 == ref && !found { print path; found=1 }')"
-[[ -n "$worktree" ]] || worktree="$primary_root/.worktrees/$name"
+worktree_root="$(git config --path --get orbit.worktreeRoot || printf '/fast/worktrees/orbit')"
+[[ -n "$worktree" ]] || worktree="$worktree_root/$name"
 
 git fetch --prune origin
 
@@ -34,6 +46,9 @@ if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; the
         printf 'Branch is not merged into origin/main: %s\n' "$branch" >&2
         exit 1
     fi
+
+    # Queue before removing the caller; cache maintenance must never hold cleanup.
+    "$script_root/bin/tia-cache" refresh --background --repository="$primary_root" || printf 'TIA refresh could not be queued; retry bin/tia-cache refresh --background.\n' >&2
 
     # Both issue topologies die with the worktree: release proof, then discovery.
     if [[ -f "$worktree/.e2e/proof-attempt.json" ]]; then

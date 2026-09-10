@@ -7,7 +7,6 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;

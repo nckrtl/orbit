@@ -14,6 +14,7 @@ final class VerifyCommand extends Command
 {
     #[\Override]
     protected $signature = 'legacy:verify {--retirement=} {--json}';
+
     #[\Override]
     protected $description = 'Verify exact retirement absence and preservation';
 

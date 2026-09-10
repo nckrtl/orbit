@@ -33,7 +33,7 @@ final readonly class MacOsTrustStoreInstaller implements TrustStoreInstaller
                 matches: $matches,
             );
 
-            foreach ($matches[0] ?? [] as $pem) {
+            foreach ($matches[0] as $pem) {
                 try {
                     $candidate = RootCertificate::fromPem($pem);
                 } catch (Throwable) {

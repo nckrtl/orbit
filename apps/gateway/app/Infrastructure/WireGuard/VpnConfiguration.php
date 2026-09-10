@@ -6,7 +6,6 @@ namespace App\Infrastructure\WireGuard;
 
 use App\Models\Node;
 
-/** @mago-expect lint:excessive-parameter-list */
 final readonly class VpnConfiguration
 {
     public function __construct(

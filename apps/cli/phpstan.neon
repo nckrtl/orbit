@@ -1,0 +1,36 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 6
+    paths:
+        - app
+    tmpDir: vendor/phpstan/cache
+    parallel:
+        maximumNumberOfProcesses: 2
+
+    # Larastan checks inherited helpers against every registered subclass, even
+    # when that subclass never calls the helper. Only the callers declare these
+    # inputs; E2E also guards its optional worktree input with hasOption().
+    # Match the exact commands, input names, files, and counts. New findings fail.
+    ignoreErrors:
+        -
+            identifier: larastan.console.undefinedOption
+            message: '#^Command "(?:cluster:list|cluster:new|cluster:node:attach|cluster:router:set|cluster:show|cluster:update)" does not have option "force"\.$#'
+            path: app/Commands/Clusters/ClusterCommand.php
+            count: 6
+        -
+            identifier: larastan.console.undefinedOption
+            message: '#^Command "(?:process:logs|process:remove|process:restart|process:start|process:stop)" does not have option "instance"\.$#'
+            path: app/Commands/Processes/ProcessCommand.php
+            count: 5
+        -
+            identifier: larastan.console.undefinedOption
+            message: '#^Command "(?:process:logs|process:remove|process:restart|process:start|process:stop)" does not have option "workspace"\.$#'
+            path: app/Commands/Processes/ProcessCommand.php
+            count: 5
+        -
+            identifier: larastan.console.undefinedOption
+            message: '#^Command "(?:tool:remove|tool:show|tool:update)" does not have option "node"\.$#'
+            path: app/Commands/Tools/ToolCommand.php
+            count: 3

@@ -14,17 +14,12 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity
- * @mago-expect lint:excessive-parameter-list
- * @mago-expect lint:kan-defect
- * @mago-expect lint:too-many-methods
- */
 final readonly class BootstrapGatewayAction
 {
     /** @var list<RoleName> */
@@ -348,14 +343,12 @@ final readonly class BootstrapGatewayAction
             return false;
         }
 
-        /** @mago-expect analysis:invalid-argument OpenSSL accepts PEM strings at runtime. */
         $parsedCertificate = openssl_x509_read(certificate: $certificate);
         $parsedPrivateKey = openssl_pkey_get_private($privateKey);
         $privateKeyDetails = $parsedPrivateKey !== false
             ? openssl_pkey_get_details($parsedPrivateKey)
             : false;
         $details = $parsedCertificate !== false ? openssl_x509_parse($parsedCertificate) : false;
-        /** @mago-expect analysis:mixed-assignment OpenSSL certificate fields are untyped. */
         $basicConstraints = is_array($details)
             ? $details['extensions']['basicConstraints'] ?? null
             : null;
@@ -363,7 +356,7 @@ final readonly class BootstrapGatewayAction
         $validTo = is_array($details) ? $details['validTo_time_t'] : null;
         $now = time();
 
-        return (
+        return
             $parsedCertificate !== false
             && $parsedPrivateKey !== false
             && is_array($privateKeyDetails)
@@ -375,8 +368,7 @@ final readonly class BootstrapGatewayAction
             && $validFrom <= $now
             && is_int($validTo)
             && $validTo >= $now
-            && openssl_x509_check_private_key($parsedCertificate, $parsedPrivateKey)
-        );
+            && openssl_x509_check_private_key($parsedCertificate, $parsedPrivateKey);
     }
 
     private function publishCertificateAuthorityPair(
@@ -440,7 +432,7 @@ final readonly class BootstrapGatewayAction
         string $errorCode,
         array $arguments,
         ?string $input = null,
-    ): \App\Infrastructure\Processes\CommandResult {
+    ): CommandResult {
         $result = $this->processes->run(new ProcessInvocation(
             arguments: $arguments,
             timeout: 60.0,

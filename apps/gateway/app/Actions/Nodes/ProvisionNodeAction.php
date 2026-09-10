@@ -8,6 +8,7 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ActiveTldScopeGuard;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -36,10 +37,8 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Node provisioning keeps its ordered identity, role, and recovery gates together. */
 final readonly class ProvisionNodeAction
 {
-    /** @mago-expect lint:excessive-parameter-list The action coordinates its complete provisioning boundary. */
     public function __construct(
         private AddNodeRoleAction $roles,
         private NodeConverger $converger,
@@ -69,7 +68,6 @@ final readonly class ProvisionNodeAction
         }
     }
 
-    /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
     private function provision(ProvisionNodeData $data): Node
     {
         if (
@@ -482,7 +480,7 @@ final readonly class ProvisionNodeAction
             return null;
         }
 
-        return $cluster->state === \App\Domain\Clusters\ClusterState::Active && is_string($cluster->tld)
+        return $cluster->state === ClusterState::Active && is_string($cluster->tld)
             ? $cluster->tld
             : null;
     }
@@ -527,10 +525,9 @@ final readonly class ProvisionNodeAction
 
     private function hasAppDevRole(Node $node, ProvisionNodeData $data): bool
     {
-        return (
+        return
             in_array(needle: RoleName::AppDev, haystack: $data->roles, strict: true)
-            || $node->exists && $node->roles()->where('role', RoleName::AppDev->value)->exists()
-        );
+            || $node->exists && $node->roles()->where('role', RoleName::AppDev->value)->exists();
     }
 
     private function hasActiveAppDevRole(Node $node): bool

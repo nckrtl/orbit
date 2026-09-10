@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -547,7 +548,7 @@ it('renders local validation failures through the exact json boundary', function
 ]);
 
 it('renders console input failures through the exact json boundary', function (array $arguments): void {
-    $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()[$arguments['command']];
+    $command = app(Kernel::class)->all()[$arguments['command']];
     $tester = new CommandTester($command);
     $expectedPayload = [
         'error' => [

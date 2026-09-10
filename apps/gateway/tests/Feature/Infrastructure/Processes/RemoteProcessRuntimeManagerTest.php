@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\ProcessOperationException;
@@ -17,6 +18,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -1567,7 +1569,7 @@ it('derives the production removal target from persisted instance identity after
     $process->update(['status' => LifecycleStatus::Removing]);
     $this->instance->update([
         'status' => LifecycleStatus::Removing,
-        'certificate_mode' => \App\Domain\Instances\CertificateMode::Acme,
+        'certificate_mode' => CertificateMode::Acme,
     ]);
     $this->instance->node->roles()->delete();
     $this->instance->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Removing]);
@@ -1910,7 +1912,6 @@ final class ProcessRuntimeFakeSshExecutor implements SshExecutor
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake supplies the managed account contract. */
 final readonly class ProcessRuntimeFakeManagedUserAccountResolver implements ManagedUserAccountResolver
 {
     public function resolve(Node $node): ManagedUserAccount
@@ -1919,7 +1920,6 @@ final readonly class ProcessRuntimeFakeManagedUserAccountResolver implements Man
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake executes the remote boundary without opening SSH. */
 final class ProcessRuntimeExecutingSshExecutor implements SshExecutor
 {
     /** @var list<RemoteCommand> */
@@ -1982,10 +1982,6 @@ final class ProcessRuntimeExecutingSshExecutor implements SshExecutor
     }
 }
 
-/**
- * @mago-expect lint:single-class-per-file Test-local fake executes Docker state transitions in memory.
- * @mago-expect lint:cyclomatic-complexity The fake implements the fixed Docker command state machine under test.
- */
 final class ProcessRuntimeStatefulDockerSshExecutor implements SshExecutor
 {
     /** @var array<string, array{managed: string, kind: string, owner_id: string, spec: string, running: bool}> */
@@ -2124,7 +2120,6 @@ final class ProcessRuntimeStatefulDockerSshExecutor implements SshExecutor
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps remote command assertions visible. */
 final class ProcessRuntimeFakeSshKeyProvider implements SshKeyProvider
 {
     public function ensureKeyPair(): void {}
@@ -2140,7 +2135,6 @@ final class ProcessRuntimeFakeSshKeyProvider implements SshKeyProvider
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps remote command assertions visible. */
 final class ProcessRuntimeFakeKnownHostsStore implements KnownHostsStore
 {
     public function path(): string
@@ -2148,5 +2142,5 @@ final class ProcessRuntimeFakeKnownHostsStore implements KnownHostsStore
         return '/orbit/ssh/known_hosts';
     }
 
-    public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+    public function put(string $host, int $port, HostKey $key): void {}
 }

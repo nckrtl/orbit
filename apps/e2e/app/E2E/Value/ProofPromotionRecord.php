@@ -8,8 +8,6 @@ use InvalidArgumentException;
 
 /**
  * Durable lineage for the exact runtime state installed by proof promotion.
- *
- * @mago-expect lint:excessive-parameter-list Every independent lineage identity is explicit.
  */
 final readonly class ProofPromotionRecord
 {

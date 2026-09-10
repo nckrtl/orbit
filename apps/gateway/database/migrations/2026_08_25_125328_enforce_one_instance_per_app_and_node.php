@@ -7,7 +7,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     /**
      * Run the migrations.
      */
@@ -20,7 +21,7 @@ return new class extends Migration {
             ->first();
 
         if ($duplicate !== null) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'Cannot enforce one instance per app and node while duplicate placements exist.',
             );
         }

@@ -22,11 +22,6 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The update state machine keeps every ordered constraint and retry gate explicit.
- * @mago-expect lint:kan-defect The score reflects the required fail-closed lifecycle branches.
- * @mago-expect lint:too-many-methods Narrow helpers keep the synchronous update boundary explicit.
- */
 final readonly class UpdateToolAction
 {
     use MarksToolFailures;
@@ -80,7 +75,6 @@ final readonly class UpdateToolAction
         );
     }
 
-    /** @mago-expect lint:halstead The method preserves the required update transition order under both locks. */
     private function underLock(Tool $tool, ToolManager $manager): ToolActionResult
     {
         $current = Tool::query()
@@ -438,7 +432,6 @@ final readonly class UpdateToolAction
         return $version !== '' && strlen($version) <= 255 && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1;
     }
 
-    /** @mago-expect lint:excessive-parameter-list Manager failures preserve the stable operation envelope. */
     private function managerFailure(
         Tool $tool,
         string $errorCode,
@@ -457,7 +450,6 @@ final readonly class UpdateToolAction
         );
     }
 
-    /** @mago-expect lint:excessive-parameter-list The stable operation envelope requires each public field. */
     private function failure(
         Tool $tool,
         string $errorCode,

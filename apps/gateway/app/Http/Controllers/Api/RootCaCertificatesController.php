@@ -17,7 +17,6 @@ final class RootCaCertificatesController extends Controller
     {
         try {
             $certificate = $certificates->rootCertificate();
-            /** @mago-expect analysis:invalid-argument OpenSSL accepts PEM strings at runtime. */
             $fingerprint = openssl_x509_fingerprint($certificate, digest_algo: 'sha256');
 
             if (! is_string($fingerprint)) {

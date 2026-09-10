@@ -14,7 +14,7 @@ use Throwable;
 abstract class E2ECommand extends Command
 {
     /** The option every issue command accepts to name the worktree explicitly. */
-    protected const string WORKTREE_OPTION = '{--worktree= : The worktree of the issue; defaults to <primary>/.worktrees/<issue>-*}';
+    protected const string WORKTREE_OPTION = '{--worktree= : The registered Git worktree of the issue}';
 
     protected function outputFailure(Throwable $exception): void
     {

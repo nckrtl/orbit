@@ -22,7 +22,8 @@ use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
-    $this->baselines = new class implements RoleBaselineConverger {
+    $this->baselines = new class implements RoleBaselineConverger
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -121,7 +122,8 @@ it('returns 409 before Router validation or mutation while the Cluster owner is 
             'role' => RoleName::Router,
             'status' => LifecycleStatus::Provisioning,
         ]);
-    app()->instance(ClusterRouterOperationLock::class, new class implements ClusterRouterOperationLock {
+    app()->instance(ClusterRouterOperationLock::class, new class implements ClusterRouterOperationLock
+    {
         public function run(int $clusterId, Closure $operation): mixed
         {
             throw new ResourceOperationException(

@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
@@ -15,7 +16,6 @@ use App\Models\Node;
 use App\Models\Route;
 use App\Models\Workspace;
 
-/** @mago-expect lint:too-many-methods One certificate manager keeps each workload and Router scope on the same protected publication lifecycle. */
 final readonly class RemoteAppDevCertificateManager implements AppDevCertificateManager
 {
     public function __construct(
@@ -254,7 +254,6 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         );
     }
 
-    /** @mago-expect lint:excessive-parameter-list Publication needs the complete certificate identity and payload. */
     private function publish(
         Node $node,
         string $scope,
@@ -263,7 +262,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         string $certificate,
         string $rootCertificate,
         string $rootHash,
-        \App\Domain\Nodes\ManagedUserAccount $account,
+        ManagedUserAccount $account,
     ): void {
         $this->ssh->execute(
             $node,

@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace App\E2E\Git;
 
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\DirtyOverlay;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Repository validation stays at the Git trust boundary. */
-/** @mago-expect lint:too-many-methods The Git trust boundary owns the locked repository operations. */
 final readonly class GitRepository
 {
     public function __construct(
@@ -180,7 +179,7 @@ final readonly class GitRepository
         $this->run(['update-ref', '-d', $this->proofReference($issue, $attempt)]);
     }
 
-    public function dirtyOverlay(): ?\App\E2E\Value\DirtyOverlay
+    public function dirtyOverlay(): ?DirtyOverlay
     {
         $root = $this->root();
         $records = $this->run(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none']);
@@ -215,7 +214,7 @@ final readonly class GitRepository
 
         sort($paths, SORT_STRING);
 
-        return new \App\E2E\Value\DirtyOverlay(array_values(array_unique($paths)), $this->effectiveTreeHash());
+        return new DirtyOverlay(array_values(array_unique($paths)), $this->effectiveTreeHash());
     }
 
     public function effectiveTreeHash(): string
@@ -295,7 +294,7 @@ final readonly class GitRepository
 
     private function validateOverlayPath(string $path): void
     {
-        new \App\E2E\Value\DirtyOverlay([$path], str_repeat('0', 64));
+        new DirtyOverlay([$path], str_repeat('0', 64));
         if (
             preg_match('~(?:\A|/)(?:\.git|vendor|node_modules)(?:/|\z)~i', $path) === 1
             || preg_match('~(?:\A|/)(?:\.env(?:\.|\z)|credentials?(?:\.|/|\z)|id_[rd]sa(?:\.|\z))~i', $path) === 1
@@ -526,7 +525,7 @@ final readonly class GitRepository
     }
 
     /**
-     * @param array<string, string> $selected
+     * @param  array<string, string>  $selected
      * @return array<string, string>
      */
     private function readBlobs(array $selected): array
@@ -635,8 +634,8 @@ final readonly class GitRepository
     }
 
     /**
-     * @param array{mode:string,type:string,object:string} $from
-     * @param array{mode:string,type:string,object:string} $to
+     * @param  array{mode:string,type:string,object:string}  $from
+     * @param  array{mode:string,type:string,object:string}  $to
      */
     private function changedEntryKind(array $from, array $to): string
     {
