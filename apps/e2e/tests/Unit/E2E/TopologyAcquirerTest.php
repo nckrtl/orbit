@@ -9,6 +9,7 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\PromotedTopologySnapshotResolver;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
@@ -230,10 +231,14 @@ it('refuses acquisition before Incus mutation when an active replacement conflic
         TopologySnapshotIdentity::primary(),
         $root,
         fn () => attemptId(),
-        availability: new TopologySnapshotAvailability(
-            $host,
-            TopologySnapshotIdentity::primary(),
-            $replacements,
+        snapshotResolver: new PromotedTopologySnapshotResolver(
+            new PreparedStateFingerprint(new GitRepository($root)),
+            $manifests,
+            new TopologySnapshotAvailability(
+                $host,
+                TopologySnapshotIdentity::primary(),
+                $replacements,
+            ),
         ),
     );
 
@@ -362,7 +367,7 @@ it('constructs an extended discovery without adopting proof resources or sharing
         ->toBeFalse();
 });
 
-it('uses the saved snapshot for discovery after main changes while proof flow still requires freshness', function (): void {
+it('uses the acquired generation for discovery sync after main and promotion change while proof requires freshness', function (): void {
     $root = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-flow-acquisition-', 4));
     promoteDiscoveryGeneration($root, $paths);
@@ -404,6 +409,19 @@ it('uses the saved snapshot for discovery after main changes while proof flow st
     unlink($worktree.'/.loop/flow.json');
 
     $topology = $acquirer->acquire($request);
+    $featureManifest = $worktree.'/apps/e2e/resources/prepared-state.json';
+    $originalFeatureManifest = (string) file_get_contents($featureManifest);
+    $changedFeatureManifest = json_decode($originalFeatureManifest, true, 512, JSON_THROW_ON_ERROR);
+    $changedFeatureManifest['cold_epoch'] = 'ubuntu-26.04-amd64-v98';
+    file_put_contents($featureManifest, json_encode($changedFeatureManifest, JSON_THROW_ON_ERROR));
+    expect($processes->run(['git', '-C', $worktree, 'commit', '-am', 'Change feature cold contract'])->successful())
+        ->toBeTrue();
+    expect(fn () => $acquirer->sync($request))
+        ->toThrow(RuntimeException::class, 'The feature prepared state changes the cold base contract.');
+    file_put_contents($featureManifest, $originalFeatureManifest);
+    expect($processes->run(['git', '-C', $worktree, 'commit', '-am', 'Restore feature cold contract'])->successful())
+        ->toBeTrue();
+    $manifests->promote(legacyAcquisitionGeneration());
     $synced = $acquirer->sync($request);
 
     expect($topology->purpose)->toBe(AttemptPurpose::Discovery);

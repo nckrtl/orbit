@@ -38,7 +38,7 @@ final readonly class ScenarioResult
         if (preg_match('/\A[a-f0-9]{40}\z/D', $candidate) !== 1) {
             throw new InvalidArgumentException('The scenario result candidate is invalid.');
         }
-        if ($lane !== 'cold') {
+        if (! in_array($lane, ['cold', 'snapshot'], true)) {
             throw new InvalidArgumentException('The scenario result lane is invalid.');
         }
         foreach ([$definitionFingerprint, $recipeFingerprint] as $fingerprint) {

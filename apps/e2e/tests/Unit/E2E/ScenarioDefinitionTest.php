@@ -8,6 +8,7 @@ use App\E2E\Value\ScenarioAction;
 use App\E2E\Value\ScenarioDefinition;
 use App\E2E\Value\ScenarioId;
 use App\E2E\Value\TopologyEndState;
+use App\E2E\Value\TopologyExtension;
 use App\E2E\Value\TopologyRecipe;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -62,6 +63,68 @@ it('changes its fingerprint when a bounded action changes', function (): void {
     );
 
     expect($changed->fingerprint())->not->toBe($definition->fingerprint());
+});
+
+it('normalizes snapshot lanes with an explicit matching extension', function (?TopologyExtension $extension): void {
+    $recipe = $extension?->recipe() ?? TopologyRecipe::registered();
+    $definition = new ScenarioDefinition(
+        new ScenarioId($extension === null ? 'snapshot-lifecycle' : 'snapshot-extension'),
+        'snapshot',
+        $recipe,
+        [
+            new ScenarioAction('setup', 'prepare', 3600),
+            new ScenarioAction('exercise', 'exercise', 300),
+            new ScenarioAction('assertion', 'verify', 900),
+        ],
+        ['apps/e2e/resources/guest/prepare-node.sh' => str_repeat('a', 64)],
+        TopologyEndState::complete($recipe),
+        false,
+        'snapshot scenario lifecycle',
+        extension: $extension,
+    );
+
+    expect($definition->normalized()['extension'])->toBe($extension?->value);
+    expect($definition->normalized()['recipe'])->toBe($recipe->toArray());
+})->with([
+    'registered topology' => [null],
+    'app-prod extension' => [TopologyExtension::AppProd],
+]);
+
+it('rejects a snapshot recipe that differs from its extension declaration', function (): void {
+    $recipe = TopologyRecipe::extendedAppProd();
+
+    expect(fn () => new ScenarioDefinition(
+        new ScenarioId('snapshot-invalid'),
+        'snapshot',
+        $recipe,
+        [
+            new ScenarioAction('setup', 'prepare', 3600),
+            new ScenarioAction('exercise', 'exercise', 300),
+            new ScenarioAction('assertion', 'verify', 900),
+        ],
+        ['apps/e2e/resources/guest/prepare-node.sh' => str_repeat('a', 64)],
+        TopologyEndState::complete($recipe),
+        false,
+        'snapshot scenario invalid recipe',
+    ))->toThrow(InvalidArgumentException::class, 'does not match its extension declaration');
+});
+
+it('requires every snapshot lifecycle action phase', function (): void {
+    $recipe = TopologyRecipe::registered();
+
+    expect(fn () => new ScenarioDefinition(
+        new ScenarioId('snapshot-incomplete'),
+        'snapshot',
+        $recipe,
+        [
+            new ScenarioAction('setup', 'prepare', 3600),
+            new ScenarioAction('assertion', 'verify', 900),
+        ],
+        ['apps/e2e/resources/guest/prepare-node.sh' => str_repeat('a', 64)],
+        TopologyEndState::complete($recipe),
+        false,
+        'snapshot scenario incomplete lifecycle',
+    ))->toThrow(InvalidArgumentException::class, 'setup, exercise, and assertion');
 });
 
 it('rejects invalid IDs, absent deadlines, and invalid declared inputs before execution', function (Closure $action): void {

@@ -1,6 +1,6 @@
 # Incus topology registry
 
-This page is for a contributor or agent who proves an issue on Incus. It answers which topologies an issue has, which state each one is in, and which `bin/e2e-topology` command from the `apps/e2e` harness moves it. The plan a proof runs is on [Proof plans](proof-plans.md). The persistent snapshot supplies ordinary topology clones and is described on [Topology snapshot](topology-snapshot.md).
+This page is for contributors, agents, and operators who use disposable Incus topologies from the `apps/e2e` harness. It answers which topology an issue or on-demand scenario starts from, which state it owns, and which `bin/e2e-topology` or `bin/e2e-scenarios` command controls it. The plan a proof runs is on [Proof plans](proof-plans.md). The persistent snapshot supplies ordinary topology clones and snapshot-lane scenarios and is described on [Topology snapshot](topology-snapshot.md).
 
 ## Discovery and proof
 
@@ -127,19 +127,25 @@ Successful closeout removes only the recorded clean replacement resources and th
 
 This declared cold replacement uses the issue-proof lifecycle, not the disposable cold-scenario lifecycle, ordinary refresh, or disaster recovery. Cold scenarios remain disposable and have no issue-proof or promotion authority. Refresh converges the current promoted generation in place from main. `rebuild` and `recover-legacy` restore availability when snapshot state is absent or inconsistent; they cannot reclassify their result as issue proof.
 
-## On-demand cold scenarios
+## On-demand scenarios
 
-`bin/e2e-scenarios`, governed by [ADR 0019](../decisions/0019-run-disposable-incus-scenario-lanes.md), runs committed cold-lane scenarios for one exact commit. It supports these invocations:
+`bin/e2e-scenarios`, governed by [ADR 0019](../decisions/0019-run-disposable-incus-scenario-lanes.md), runs committed cold-lane or snapshot-lane scenarios for one exact commit. It supports these invocations:
 
 | Command | Result |
 | --- | --- |
 | `bin/e2e-scenarios cold [CANDIDATE_SHA]` | Runs every cold scenario for the current clean checkout. The optional full lowercase SHA must equal `HEAD`. |
 | `bin/e2e-scenarios cold [CANDIDATE_SHA] --scenario=ID` | Runs only the named scenario. Repeat `--scenario` to select more scenarios in the given order. |
+| `bin/e2e-scenarios snapshot [CANDIDATE_SHA]` | Runs every snapshot scenario for the current clean checkout. The optional full lowercase SHA must equal `HEAD`. |
+| `bin/e2e-scenarios snapshot [CANDIDATE_SHA] --scenario=ID` | Runs only the named snapshot scenario. Repeat `--scenario` to select more scenarios in the given order. |
 | `bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID` | Retries exact cleanup from the retained attempt record and verifies that its inventory is absent. |
 
-Before it changes Incus, the command resolves the commit and every selected scenario. It rejects an unknown or repeated scenario ID, an invalid recipe, a missing action deadline, and an invalid declared input. With no filter it selects every committed cold scenario. It runs selected scenarios serially and gives each one a separate attempt, network, VM inventory, state root, and Pest test. A failed flow stops after its first failed required step, attempts cleanup, and does not stop another selected flow from running.
+Before it changes Incus, the command resolves the commit and every selected scenario for the requested lane. It rejects an unknown or repeated scenario ID, a scenario from another lane, an invalid recipe, a missing action deadline, and an invalid declared input. With no filter it selects every committed scenario in the requested lane. It runs selected scenarios serially and gives each one a separate attempt, network, VM inventory, state root, and Pest test. A failed flow stops after its first failed required step, attempts cleanup, and does not stop another selected flow from running.
 
 The faithful cold flow starts from the unchanged `orbit-base-ubuntu-26.04-runtime` image alias, synchronizes the exact candidate, converges the declared product roles, and verifies the complete inventory. It performs no pre-construction PCOV instrumentation and runs no PCOV collection. Normal product provisioning may install the packaged PCOV extension as part of the app-dev runtime.
+
+A snapshot flow records the current promoted generation and verifies its three coordinated snapshots before construction. It creates a fresh attempt-scoped network, clones the three registered Nodes from that exact generation, synchronizes the exact candidate, converges the topology, and verifies readiness before its exercise action. A missing, stale, or changed generation produces an `infrastructure-error`, skips the exercise, and still runs exact cleanup. Every repeat clones a new attempt and cannot observe application or filesystem changes from an earlier run.
+
+A snapshot scenario can declare additional Nodes from the configured `orbit-base-ubuntu-26.04-runtime` image. The attempt records each physical Node, the reserved capacity and network slot, the base image alias and fingerprint, and the promoted source generation. Construction refuses a pre-existing network or VM instead of adopting it. Cleanup removes only the attempt's exact recorded resources and leaves foreign resources unchanged.
 
 The command writes each result and the complete aggregate under `<primary>/.e2e/scenarios/runs/<run-id>/`. Each result records the candidate, run, scenario, attempt, lane, normalized recipe and definition fingerprints, declared-input fingerprints, phase timings, action outcomes, verification, diagnostics, cleanup, remaining exact resources, and recovery command. A definition or declared-input change produces a different fingerprint. The aggregate contains one result for every selected scenario and is written after every runnable flow finishes.
 
@@ -149,12 +155,12 @@ The JSON aggregate and the standard Pest report use these outcomes:
 | --- | --- |
 | `passed` | Every required action and verification passed, and exact cleanup completed. |
 | `failed` | A scenario action or product assertion failed. |
-| `blocked` | The result schema reserves this status for an unavailable required run-scoped checkpoint. The current cold catalog has no checkpoint-dependent flow and does not produce this status. |
+| `blocked` | The result schema reserves this status for an unavailable required run-scoped checkpoint. The current catalog has no checkpoint-dependent flow and does not produce this status. |
 | `infrastructure-error` | Construction, reporting, verification infrastructure, or cleanup could not produce a valid scenario result. |
 
 The process exits nonzero when any selected scenario is not `passed`, but only after it writes the complete aggregate. Cleanup failure keeps the original outcome, reports `infrastructure-error`, and retains the remaining exact inventory and recovery command. Recovery revalidates the recorded owner, run, scenario, attempt, and operation before deleting anything. It never selects a resource by prefix, age, glob, or an unresolved value.
 
-This command is explicitly invoked by an operator. It is not part of `bin/test`, discovery acquisition, feature proof, review, merge, topology-snapshot promotion, or continuous integration. It writes no issue-proof or promotion receipt and does not read, replace, refresh, or promote the persistent topology snapshot. Snapshot-lane scenarios, parallel workers, nightly or pull-request triggers, and affected-flow selection are separate work.
+This command is explicitly invoked by an operator. It is not part of `bin/test`, discovery acquisition, feature proof, review, merge, topology-snapshot promotion, or continuous integration. It writes no issue-proof or promotion receipt. A cold scenario does not read the persistent topology snapshot. A snapshot scenario reads and clones one verified promoted generation, but it never changes the generation, its VMs, its manifest, or another attempt. Parallel workers, nightly or pull-request triggers, and affected-flow selection are separate work.
 
 The cold acceptance recipe separates physical Node identity from product role assignment:
 

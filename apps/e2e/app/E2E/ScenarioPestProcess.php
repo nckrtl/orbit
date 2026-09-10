@@ -35,12 +35,17 @@ final readonly class ScenarioPestProcess
             return $result instanceof ScenarioProcessResult ? $result : new ScenarioProcessResult(70, 'Invalid process fake.');
         }
 
+        $acceptanceFile = match ($definition->lane) {
+            'cold' => 'tests/Scenario/ColdTopologyAcceptanceTest.php',
+            'snapshot' => 'tests/Scenario/SnapshotTopologyAcceptanceTest.php',
+            default => throw new \InvalidArgumentException('The scenario lane is invalid.'),
+        };
         $process = new Process([
             PHP_BINARY,
             'vendor/bin/pest',
             '--no-tia',
             '--compact',
-            'tests/Scenario/ColdTopologyAcceptanceTest.php',
+            $acceptanceFile,
             '--filter='.$definition->pestFilter,
         ], $this->projectRoot, [
             'ORBIT_SCENARIO_CANDIDATE_SHA' => $candidate,
@@ -50,6 +55,7 @@ final readonly class ScenarioPestProcess
             'ORBIT_SCENARIO_ID' => $definition->id->value,
             'ORBIT_SCENARIO_ATTEMPT_ID' => $attempt->value,
             'ORBIT_SCENARIO_OPERATION_ID' => $operation->value,
+            'ORBIT_E2E_OPERATION_ID' => $operation->value,
         ]);
         $process->setTimeout(null);
 
