@@ -1234,8 +1234,12 @@
             "path": "docs/reference/implementation-loop.md",
             "title": "Implementation loop",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
+                "Gateway",
                 "Workspace"
             ],
             "governing_adrs": [

@@ -30,6 +30,8 @@
         }
     },
     "scripts": {
+        "pre-autoload-dump": "@php ../../bin/pest-setup",
+        "test:affected": "vendor/bin/pest --parallel --processes=2 --tia --compact",
         "analyse": "vendor/bin/mago analyze app config --reporting-format=medium --minimum-report-level=error",
         "check": [
             "@guidance:check",
