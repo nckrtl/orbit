@@ -258,7 +258,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name'],
             [
                 'instance' => null,
-                'workspace' => null,
                 'runtime' => 'systemd',
                 'command' => [],
                 'image' => null,
@@ -271,7 +270,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'process:list' => [[], ['instance' => null, 'workspace' => null, 'json' => false]],
+        'process:list' => [[], ['instance' => null, 'json' => false]],
         'process:logs' => [['process'], ['lines' => '100', 'json' => false]],
         'process:remove' => [['process'], ['json' => false]],
         'process:restart' => [['process'], ['json' => false]],
