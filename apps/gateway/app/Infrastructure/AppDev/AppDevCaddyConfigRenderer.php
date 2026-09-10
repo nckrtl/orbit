@@ -18,7 +18,7 @@ final readonly class AppDevCaddyConfigRenderer
         return (
             $sites
                 ->sortBy('hostname')
-                ->map(static function (AppDevSite $site): string {
+                ->map(function (AppDevSite $site): string {
                     $upstreams = implode(' ', array_map(
                         static fn (string $address): string => "https://{$address}",
                         $site->proxyAddresses(),
@@ -42,7 +42,7 @@ final readonly class AppDevCaddyConfigRenderer
                                 : implode(PHP_EOL, array_filter([
                                     "root * {$site->checkoutPath}/{$site->documentRoot}",
                                     'encode zstd gzip',
-                                    $site->phpVersion === null ? null : "php_fastcgi unix/{$site->socketPath()}",
+                                    $site->phpVersion === null ? null : $this->phpHandler($site),
                                     'file_server',
                                 ]))
                         );
@@ -57,5 +57,18 @@ final readonly class AppDevCaddyConfigRenderer
                 })
                 ->implode(PHP_EOL.PHP_EOL).PHP_EOL
         );
+    }
+
+    private function phpHandler(AppDevSite $site): string
+    {
+        if ($site->environment !== 'production') {
+            return "php_fastcgi unix/{$site->socketPath()}";
+        }
+
+        return <<<CADDY
+            php_fastcgi unix/{$site->socketPath()} {
+                resolve_root_symlink
+            }
+            CADDY;
     }
 }

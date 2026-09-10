@@ -16,6 +16,7 @@ use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
@@ -205,6 +206,11 @@ beforeEach(function (): void {
         }
     };
     app()->instance(ProductionAppInstanceSourceLifecycle::class, $this->productionSource);
+    app()->instance(ProductionReleaseLayout::class, new class implements ProductionReleaseLayout {
+        public function validateCurrent(AppInstance $appInstance): void {}
+
+        public function clearCurrent(AppInstance $appInstance): void {}
+    });
     $this->productionProjection = new class implements ProductionRouteProjector {
         /** @var list<string> */
         public array $calls = [];
@@ -758,7 +764,7 @@ it('creates an active standalone production AppInstance with stable placement an
         'app_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'release-name',
-        'root' => 'current/public',
+        'root' => 'public',
     ]);
 
     $user = "orbit-app-{$this->orbitApp->id}";
@@ -768,8 +774,8 @@ it('creates an active standalone production AppInstance with stable placement an
         ->assertJsonPath('data.environment', 'production')
         ->assertJsonPath('data.production_user', $user)
         ->assertJsonPath('data.production_home', $home)
-        ->assertJsonPath('data.checkout_path', $home)
-        ->assertJsonPath('data.root', 'current/public')
+        ->assertJsonPath('data.checkout_path', "{$home}/releases/initial")
+        ->assertJsonPath('data.root', 'public')
         ->assertJsonPath('data.effective_root', "{$home}/current/public")
         ->assertJsonPath('data.selected_branch', 'main')
         ->assertJsonPath('data.branch_override', null)

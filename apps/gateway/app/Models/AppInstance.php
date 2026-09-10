@@ -167,10 +167,23 @@ final class AppInstance extends Model
         $root = $this->root ?? $this->app->root;
 
         if ($this->environment === 'production' && is_string($this->production_home) && is_string($root)) {
-            return "{$this->production_home}/{$root}";
+            $base = $this->usesProductionReleaseLayout()
+                ? "{$this->production_home}/current"
+                : $this->production_home;
+
+            return "{$base}/{$root}";
         }
 
         return $root;
+    }
+
+    public function usesProductionReleaseLayout(): bool
+    {
+        return (
+            $this->environment === 'production'
+            && is_string($this->production_home)
+            && str_starts_with($this->checkout_path, "{$this->production_home}/releases/")
+        );
     }
 
     /** @return array<string, class-string> */

@@ -267,11 +267,15 @@ final readonly class AppDevSiteRepository
         Route $route,
         bool $hostnameChange = false,
     ): AppDevSite {
+        $checkoutPath = $instance->usesProductionReleaseLayout()
+            ? "{$instance->production_home}/current"
+            : $instance->checkout_path;
+
         return new AppDevSite(
             nodeId: $instance->node_id,
             nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "app-instance-{$instance->id}",
-            checkoutPath: $instance->checkout_path,
+            checkoutPath: $checkoutPath,
             documentRoot: $instance->root ?? $instance->app->root ?? '',
             phpVersion: $instance->selected_php_version,
             hostname: $route->hostname,
