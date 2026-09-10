@@ -1137,6 +1137,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0054-maintain-main-caches-asynchronously.md",
+            "title": "ADR 0054: Maintain main caches asynchronously",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0052",
+                "0053",
+                "0054"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
