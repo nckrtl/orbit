@@ -276,3 +276,26 @@ it('refuses artifact symlinks and bindings that change product files', function 
     expect(fn () => new GitRepository($fixture['root'])->loopCommit('TST-42', $fixture['candidate']))
         ->toThrow(InvalidArgumentException::class, 'outside its delivery workspace');
 });
+
+it('keeps changing controller state out of immutable candidate artifacts', function (): void {
+    $fixture = loopArtifactFixture();
+    $root = $fixture['root'];
+    mkdir($root.'/.loop/runtime', 0700);
+    file_put_contents($root.'/.loop/runtime/session.json', '{"agent":"builder"}');
+    file_put_contents($root.'/.loop/runtime-notes.md', 'retained development evidence');
+    symlink($root.'/runtime.txt', $root.'/.loop/runtime/local-link');
+    $run = new ProcessFactory;
+
+    $first = $run->path($root)->run([$fixture['script'], 'publish', 'TST-42']);
+    expect($first->successful())->toBeTrue($first->errorOutput());
+    $binding = json_decode($first->output(), true, 512, JSON_THROW_ON_ERROR);
+    $paths = loopArtifactGit($root, ['ls-tree', '-r', '--name-only', $binding['artifacts']]);
+    expect($paths)->not->toContain('.loop/runtime/')->toContain('.loop/runtime-notes.md', '.loop/plan.md');
+
+    file_put_contents($root.'/.loop/runtime/session.json', '{"agent":"reviewer"}');
+    file_put_contents($root.'/.loop/runtime/receipt.json', '{"result":"approved"}');
+    $again = $run->path($root)->run([$fixture['script'], 'publish', 'TST-42']);
+    expect($again->successful())->toBeTrue($again->errorOutput());
+    expect(json_decode($again->output(), true, 512, JSON_THROW_ON_ERROR))->toBe($binding);
+    expect(loopArtifactGit($root, ['rev-parse', 'HEAD']))->toBe($fixture['candidate']);
+});

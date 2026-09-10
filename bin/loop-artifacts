@@ -98,13 +98,17 @@ def main():
     directory = root / '.loop'
     if not directory.is_dir() or directory.is_symlink():
         raise RuntimeError('A regular .loop directory is required.')
+    # Runtime sessions, dispatches and live receipts change after publication.
+    # They belong to the controller's durable journal, not candidate artifacts.
     for path in directory.rglob('*'):
+        if path.relative_to(directory).parts[0] == 'runtime':
+            continue
         if path.is_symlink() or not (path.is_file() or path.is_dir()):
             raise RuntimeError(f'Artifact must be a regular file or directory: {path}')
     with tempfile.TemporaryDirectory(prefix='orbit-loop-index-') as temporary:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / 'index'))
         git('read-tree', candidate, env=env)
-        git('add', '-f', '--', '.loop', env=env)
+        git('add', '-f', '--', '.loop', ':(exclude).loop/runtime', env=env)
         tree = git('write-tree', env=env).decode().strip()
         ref = ref if args.action == 'publish' else f'refs/orbit/loop/{args.issue.lower()}/draft'
         old = subprocess.run(['git', 'rev-parse', '--verify', ref], capture_output=True)
