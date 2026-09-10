@@ -93,7 +93,9 @@ final readonly class ScenarioCatalog
         }
         ksort($inputs, SORT_STRING);
         $recipe = TopologyRecipe::coldAcceptance();
-        $expected = TopologyEndState::complete($recipe);
+        $expected = TopologyEndState::fromArray([
+            'nodes' => ['gateway', 'operator', 'app-prod'],
+        ], $recipe);
 
         return [
             new ScenarioDefinition(

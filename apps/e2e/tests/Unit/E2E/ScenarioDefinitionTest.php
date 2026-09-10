@@ -9,6 +9,9 @@ use App\E2E\Value\ScenarioDefinition;
 use App\E2E\Value\ScenarioId;
 use App\E2E\Value\TopologyEndState;
 use App\E2E\Value\TopologyRecipe;
+use Illuminate\Container\Container;
+use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Support\Facades\Facade;
 
 function scenarioDefinition(array $inputs = ['resources/host/prepare-node.sh' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']): ScenarioDefinition
 {
@@ -71,9 +74,16 @@ it('rejects invalid IDs, absent deadlines, and invalid declared inputs before ex
 ]);
 
 it('rejects unknown, repeated, and duplicate catalog IDs before execution', function (): void {
+    $container = new Container;
+    $container->instance(ProcessFactory::class, new ProcessFactory);
+    Facade::clearResolvedInstances();
+    Facade::setFacadeApplication($container);
     $repository = new GitRepository(dirname(__DIR__, 5));
     $candidate = $repository->commit();
     $catalog = new ScenarioCatalog($repository);
+
+    expect($catalog->definitions($candidate)[0]->expectedEndState->toArray())
+        ->toBe(['nodes' => ['gateway', 'operator', 'app-prod']]);
 
     expect(fn () => $catalog->select($candidate, ['unknown-scenario']))
         ->toThrow(InvalidArgumentException::class, 'is unknown');
