@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace Orbit\Sdk;
 
 use Closure;
+use GuzzleHttp\Promise\PromiseInterface;
 use InvalidArgumentException;
 use LogicException;
+use Orbit\Sdk\Requests\Environment\EnvironmentRequest;
 use Orbit\Sdk\Support\GatewayOrigin;
 use Orbit\Sdk\Support\GatewayRequestId;
 use Saloon\Enums\PipeOrder;
+use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Connector;
+use Saloon\Http\Faking\MockClient;
 use Saloon\Http\PendingRequest;
+use Saloon\Http\Request;
 use Saloon\Http\Response;
 use Saloon\Traits\Plugins\AlwaysThrowOnErrors;
 use SensitiveParameter;
+use Throwable;
 use UnexpectedValueException;
 
 /** @mago-expect lint:too-many-methods Central connector boundaries override unsafe inherited diagnostics. */
@@ -90,6 +96,31 @@ final class GatewayConnector extends Connector
         bool $die = false,
     ): static {
         throw new LogicException('Orbit SDK raw transport debugging is disabled.');
+    }
+
+    public function sendAsync(
+        #[SensitiveParameter]
+        Request $request,
+        #[SensitiveParameter]
+        ?MockClient $mockClient = null,
+    ): PromiseInterface {
+        $promise = parent::sendAsync($request, $mockClient);
+
+        if (! $request instanceof EnvironmentRequest) {
+            return $promise;
+        }
+
+        return $promise->otherwise(static function (#[SensitiveParameter] mixed $reason): never {
+            if ($reason instanceof FatalRequestException) {
+                $reason->getPendingRequest()->executeFatalPipeline($reason);
+            }
+
+            if ($reason instanceof Throwable) {
+                throw $reason;
+            }
+
+            throw new LogicException('Gateway asynchronous request failed.');
+        });
     }
 
     public function boot(#[SensitiveParameter] PendingRequest $pendingRequest): void

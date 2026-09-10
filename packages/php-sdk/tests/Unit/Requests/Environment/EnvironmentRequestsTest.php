@@ -183,43 +183,60 @@ describe('AppInstance environment requests', function (): void {
     it('sanitizes a real fatal transport failure without changing the intended body', function (): void {
         $value = 'plain-live-transport-sentinel-150f';
         $serializedBody = null;
-        $request = new UpdateAppInstanceEnvironmentRequest('app.example.test', 'VISIBLE_NAME', $value);
-        $request->middleware()->onRequest(
-            static function (#[SensitiveParameter] PendingRequest $pendingRequest) use (&$serializedBody): void {
-                $serializedBody = (string) $pendingRequest->createPsrRequest()->getBody();
-            },
-            'captureEnvironmentRequestBody',
-        );
+        $request = environment_update_with_body_capture($value, $serializedBody);
         $connector = new GatewayConnector('https://127.0.0.1:1', timeout: 1);
 
         try {
             $connector->send($request);
             $this->fail('Expected a refused environment transport connection.');
         } catch (Throwable $exception) {
-            expect($exception)->toBeInstanceOf(GatewayApiException::class);
-
-            if (! $exception instanceof GatewayApiException) {
-                $this->fail('Expected a sanitized environment transport failure.');
-            }
-
-            $diagnostics = implode("\n", [
-                $exception->getMessage(),
-                (string) $exception,
-                print_r($exception, return: true),
-                environment_request_sdk_trace($exception),
-            ]);
-
-            expect($exception)
-                ->not->toBeInstanceOf(FatalRequestException::class)->and($exception->getMessage())->toBe(
-                    'Gateway environment operation failed before receiving a response.',
-                )->and($exception->errorCode())->toBeNull()->and($exception->requestId())->toBeNull()->and(
-                    $exception->details(),
-                )->toBeEmpty()->and($exception->getPrevious())->toBeNull()->and(method_exists(
-                    $exception,
-                    'getPendingRequest',
-                ))->toBeFalse()->and($diagnostics)
-                ->not->toContain($value)->and($serializedBody)->toBe('{"value":"plain-live-transport-sentinel-150f"}');
+            assert_safe_environment_transport_failure($exception, $value);
         }
+
+        expect($serializedBody)->toBe('{"value":"plain-live-transport-sentinel-150f"}');
+    });
+
+    it('sanitizes a real asynchronous fatal transport failure without changing the intended body', function (): void {
+        $value = 'plain-async-transport-sentinel-9d31';
+        $serializedBody = null;
+        $request = environment_update_with_body_capture($value, $serializedBody);
+        $connector = new GatewayConnector('https://127.0.0.1:1', timeout: 1);
+
+        try {
+            $connector->sendAsync($request)->wait();
+            $this->fail('Expected a refused asynchronous environment transport connection.');
+        } catch (Throwable $exception) {
+            assert_safe_environment_transport_failure($exception, $value);
+        }
+
+        expect($serializedBody)->toBe('{"value":"plain-async-transport-sentinel-9d31"}');
+    });
+
+    it('sanitizes a real pooled fatal transport failure without changing the intended body', function (): void {
+        $value = 'plain-pool-transport-sentinel-f2a7';
+        $serializedBody = null;
+        $failure = null;
+        $request = environment_update_with_body_capture($value, $serializedBody);
+        $connector = new GatewayConnector('https://127.0.0.1:1', timeout: 1);
+        $connector
+            ->pool(
+                requests: ['environment' => $request],
+                concurrency: 1,
+                exceptionHandler: static function (#[SensitiveParameter] mixed $reason) use (&$failure): void {
+                    $failure = $reason;
+                },
+            )
+            ->send()
+            ->wait();
+
+        expect($failure)->toBeInstanceOf(Throwable::class);
+
+        if (! $failure instanceof Throwable) {
+            $this->fail('Expected a pooled environment transport failure.');
+        }
+
+        assert_safe_environment_transport_failure($failure, $value);
+        expect($serializedBody)->toBe('{"value":"plain-pool-transport-sentinel-f2a7"}');
     });
 });
 
@@ -243,6 +260,52 @@ function environment_request_sdk_trace(Throwable $exception): string
     ));
 
     return print_r($frames, return: true);
+}
+
+function environment_update_with_body_capture(
+    #[SensitiveParameter]
+    string $value,
+    ?string &$serializedBody,
+): UpdateAppInstanceEnvironmentRequest {
+    $request = new UpdateAppInstanceEnvironmentRequest('app.example.test', 'VISIBLE_NAME', $value);
+    $request->middleware()->onRequest(
+        static function (#[SensitiveParameter] PendingRequest $pendingRequest) use (&$serializedBody): void {
+            $serializedBody = (string) $pendingRequest->createPsrRequest()->getBody();
+        },
+        'captureEnvironmentRequestBody',
+    );
+
+    return $request;
+}
+
+function assert_safe_environment_transport_failure(
+    Throwable $exception,
+    #[SensitiveParameter]
+    string $value,
+): void {
+    expect($exception)->toBeInstanceOf(GatewayApiException::class);
+
+    if (! $exception instanceof GatewayApiException) {
+        throw new RuntimeException('Expected a sanitized environment transport failure.');
+    }
+
+    $diagnostics = implode("\n", [
+        $exception->getMessage(),
+        (string) $exception,
+        print_r($exception, return: true),
+        environment_request_sdk_trace($exception),
+    ]);
+
+    expect($exception)
+        ->not->toBeInstanceOf(FatalRequestException::class)->and($exception->getMessage())->toBe(
+            'Gateway environment operation failed before receiving a response.',
+        )->and($exception->errorCode())->toBeNull()->and($exception->requestId())->toBeNull()->and(
+            $exception->details(),
+        )->toBeEmpty()->and($exception->getPrevious())->toBeNull()->and(method_exists(
+            $exception,
+            'getPendingRequest',
+        ))->toBeFalse()->and($diagnostics)
+        ->not->toContain($value);
 }
 
 function environment_operation(GatewayRequest $request): string
