@@ -306,3 +306,52 @@ it('recovers exact cleanup and records infrastructure-error when Pest writes no 
     expect($aggregate->results[0]->diagnostics)->toBe(['injected reporting failure']);
     expect($paths->path($runs->aggregatePath($aggregate->run)))->toBeFile();
 });
+
+it('recovers the exact attempt and retains recovery after the scenario process is interrupted', function (): void {
+    $root = dirname(__DIR__, 5);
+    $repository = new GitRepository($root);
+    $candidate = $repository->commit();
+    $paths = new StatePaths(temporaryPath('scenario-interruption-', 5));
+    $runs = new ScenarioRunStore(new AtomicJsonStore($paths));
+    $definition = wrapperScenarioDefinitions()[0];
+    $catalog = new ScenarioCatalog($repository, fn (): array => [$definition]);
+    $process = new ScenarioPestProcess(
+        base_path(),
+        fn (): ScenarioProcessResult => new ScenarioProcessResult(143, 'Scenario interrupted by signal 15.'),
+    );
+    $constructor = (new ReflectionClass(ColdTopologyConstructor::class))->newInstanceWithoutConstructor();
+    $recoveries = [];
+    $recovery = new ScenarioRecovery(
+        $runs,
+        $constructor,
+        function (ScenarioRunId $run, ScenarioId $scenario, AttemptId $attempt) use (&$recoveries): ColdTopologyCleanupResult {
+            $recoveries[] = [$run->value, $scenario->value, $attempt->value];
+
+            return new ColdTopologyCleanupResult(
+                ['exact-vm'],
+                ['exact-network'],
+                [],
+                [],
+                "bin/e2e-scenarios cleanup {$run->value} {$scenario->value} {$attempt->value}",
+            );
+        },
+    );
+    $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
+
+    $aggregate = $runner->run($candidate, $root, $root);
+    $result = $aggregate->results[0];
+
+    expect($recoveries)->toHaveCount(1);
+    expect($result->status)->toBe(ScenarioStatus::InfrastructureError);
+    expect($result->diagnostics)->toBe(['Scenario interrupted by signal 15.']);
+    expect($result->cleanup)
+        ->toMatchArray([
+            'removed' => ['exact-vm'],
+            'absent' => ['exact-network'],
+            'refused' => [],
+            'remaining' => [],
+        ]);
+    expect($result->cleanup['recovery_command'] ?? null)
+        ->toBe("bin/e2e-scenarios cleanup {$result->run->value} {$result->scenario->value} {$result->attempt->value}");
+    expect($paths->path($runs->aggregatePath($aggregate->run)))->toBeFile();
+});

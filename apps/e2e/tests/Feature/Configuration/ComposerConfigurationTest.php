@@ -34,11 +34,7 @@ describe('Composer configuration', function (): void {
             ->toHaveKey('test:live-incus')
             ->and($composer['scripts']['test'])
             ->toBe('vendor/bin/pest --parallel --no-tia --compact');
-        expect($composer['scripts']['test:scenario-cold'])
-            ->toBe([
-                'Composer\\Config::disableProcessTimeout',
-                'vendor/bin/pest --no-tia --compact tests/Scenario/ColdTopologyAcceptanceTest.php',
-            ]);
+        expect($composer['scripts'])->not->toHaveKey('test:scenario-cold');
         expect($composer['scripts']['scenario:cold'])
             ->toBe([
                 'Composer\\Config::disableProcessTimeout',

@@ -18,6 +18,7 @@ use App\E2E\Value\ScenarioStatus;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
+use App\Exceptions\E2E\ColdTopologyCleanupException;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
@@ -163,10 +164,12 @@ final readonly class ScenarioColdExecutor
                 }
             } catch (Throwable $exception) {
                 $this->cancelDeadline();
+                [$constructionFailure, $failedCleanup] = $this->constructionFailure($exception);
+                $cleanup = $failedCleanup;
                 if (
                     $definition->expectsConstructionFailure
-                    && $exception instanceof InvalidArgumentException
-                    && $exception->getMessage() === 'The Git command failed.'
+                    && $constructionFailure instanceof InvalidArgumentException
+                    && $constructionFailure->getMessage() === 'The Git command failed.'
                 ) {
                     $actions[] = $this->action(
                         'injected-source-failure',
@@ -178,14 +181,15 @@ final readonly class ScenarioColdExecutor
                     );
                     $primary = ScenarioStatus::Passed;
                 } else {
-                    $diagnostics[] = $this->redactor->redact($exception->getMessage());
+                    $diagnostic = $this->redactor->redact($constructionFailure->getMessage());
+                    $diagnostics[] = $diagnostic;
                     $actions[] = $this->action(
                         'construct',
                         'setup',
                         $actionStarted,
                         microtime(true),
                         false,
-                        $this->redactor->redact($exception->getMessage()),
+                        $diagnostic,
                     );
                     $primary = ScenarioStatus::InfrastructureError;
                 }
@@ -220,7 +224,7 @@ final readonly class ScenarioColdExecutor
             $primary = ScenarioStatus::InfrastructureError;
         } finally {
             $cleanupStarted = microtime(true);
-            $cleanup = $this->constructor->cleanup($target, $operation);
+            $cleanup ??= $this->constructor->cleanup($target, $operation);
             $cleanupTiming = [
                 'started_at' => self::timestamp($cleanupStarted),
                 'finished_at' => self::timestamp(microtime(true)),
@@ -262,6 +266,16 @@ final readonly class ScenarioColdExecutor
         $this->runs->writeResult($result);
 
         return $result;
+    }
+
+    /** @return array{Throwable, ColdTopologyCleanupResult|null} */
+    private function constructionFailure(Throwable $exception): array
+    {
+        if (! $exception instanceof ColdTopologyCleanupException) {
+            return [$exception, null];
+        }
+
+        return [$exception->getPrevious() ?? $exception, $exception->cleanup];
     }
 
     /** @return array<string, mixed> */
