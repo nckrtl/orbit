@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
+use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
@@ -24,6 +25,7 @@ final readonly class NativeProductionRouteProjector implements ProductionRoutePr
         private NodeRoleFirewallManager $firewall,
         private RemoteAppDevCaddyManager $caddy,
         private DnsmasqPrivateDnsManager $dns,
+        private ProductionReleaseLayout $releaseLayout,
     ) {}
 
     public function prepareRuntime(AppInstance $appInstance, Route $route): void
@@ -52,6 +54,7 @@ final readonly class NativeProductionRouteProjector implements ProductionRoutePr
     public function publish(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
+        $this->releaseLayout->validateCurrent($appInstance);
         $this->caddy->convergeRoute($appInstance->node, $route);
         $this->dns->convergeRoute($route);
     }

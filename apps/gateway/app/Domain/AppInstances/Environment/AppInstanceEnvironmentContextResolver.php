@@ -92,7 +92,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             $path = $instance->getAttribute('production_home');
             $executionUser = $instance->production_user;
 
-            if ($instance->checkout_path !== $path) {
+            if ($instance->checkout_path !== $path && ! $instance->usesProductionReleaseLayout()) {
                 $this->conflict();
             }
         }

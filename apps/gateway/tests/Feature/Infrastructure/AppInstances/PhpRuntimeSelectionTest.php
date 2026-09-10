@@ -100,6 +100,7 @@ it('renders only the selected production PHP site with its recorded user home po
         ->toContain(
             'root * /home/orbit-app-3/current/public',
             'php_fastcgi unix//run/php/orbit-app-instance-7.sock',
+            'resolve_root_symlink',
             'root * /home/orbit-app-4/public',
         );
 });
