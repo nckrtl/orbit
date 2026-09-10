@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -27,6 +30,7 @@ beforeEach(function (): void {
     $this->access = new EnvironmentApiAccess;
     app()->instance(AppInstanceOperationPreflight::class, $this->access);
     app()->instance(AppInstanceEnvironmentReader::class, $this->access);
+    app()->instance(AppInstanceEnvironmentWriter::class, $this->access);
 });
 
 it('updates missing existing and identical values without contacting the workload Node', function (): void {
@@ -209,11 +213,25 @@ it('enforces peer and owning-Node access before reading configuration or using S
         ->putJson("/api/v1/instances/{$this->instance->id}/environment/KEY", ['value' => 'arbitrary-visible-value'])
         ->assertForbidden()
         ->assertJsonPath('error.code', 'node_access.required');
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $denied->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required');
 
     expect($this->access->preflights)
         ->toBe(0)
         ->and($this->access->reads)
         ->toBe(0)
+        ->and($this->access->writePreflights)
+        ->toBe(0)
+        ->and($this->access->writes)
+        ->toBe([])
         ->and(AppInstanceEnvironmentValue::query()->count())
         ->toBe(1);
 });
@@ -244,6 +262,134 @@ it('requires an active complete owner while keeping stored updates offline', fun
         ->putJson("/api/v1/instances/{$this->instance->id}/environment/OTHER", ['value' => 'value'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'env.owner_unavailable');
+});
+
+it('synchronizes by the existing selector with a narrow value-free result', function (): void {
+    $this->instance
+        ->environmentValues()
+        ->createMany([
+            ['env_key' => 'Z_LITERAL', 'env_value' => 'local-$VALUE'],
+            ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.hostname}}'],
+            ['env_key' => 'APP_KEY', 'env_value' => 'base64:stored-key'],
+        ]);
+    $url = "/api/v1/instances/{$this->route->hostname}/environment/sync";
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk()
+        ->assertExactJson([
+            'data' => [
+                'app_instance_id' => $this->instance->id,
+                'operation' => 'sync',
+                'changed' => true,
+                'key_count' => 3,
+            ],
+            'meta' => ['request_id' => request_id_from_test_response()],
+        ]);
+
+    expect($this->access->writePreflights)
+        ->toBe(1)
+        ->and($this->access->requiredCapacities[0])
+        ->toBeGreaterThan(1_048_576)
+        ->and($this->access->writes)
+        ->toBe([
+            "APP_KEY=\"base64:stored-key\"\nAPP_URL=\"https://environment-api.test\"\nZ_LITERAL=\"local-\\\$VALUE\"\n",
+        ]);
+
+    $this->access->writeResult = AppInstanceEnvironmentWriteResult::unchanged();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk()
+        ->assertJsonPath('data.changed', false);
+});
+
+it('requires exactly an empty JSON object before synchronization work', function (string $body): void {
+    $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'value']);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: $body,
+        )
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect($this->access->writePreflights)->toBe(0)->and($this->access->writes)->toBe([]);
+})->with([
+    'missing body' => '',
+    'array' => '[]',
+    'null' => 'null',
+    'unknown member' => '{"replace":true}',
+    'malformed' => '{',
+]);
+
+it('refuses missing configuration before remote work', function (): void {
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.configuration_missing');
+
+    expect($this->access->writePreflights)->toBe(0)->and($this->access->writes)->toBe([]);
+});
+
+it('preflights from encrypted-size metadata before decrypting or writing', function (): void {
+    DB::table('app_instance_environment_values')->insert([
+        'app_instance_id' => $this->instance->id,
+        'env_key' => 'BROKEN',
+        'env_value' => 'not-ciphertext',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $url = "/api/v1/instances/{$this->instance->id}/environment/sync";
+    $this->access->refuseWritePreflight = true;
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.write_preflight_failed');
+
+    expect($this->access->writePreflights)->toBe(1)->and($this->access->writes)->toBe([]);
+
+    $this->access->refuseWritePreflight = false;
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.configuration_unreadable');
+
+    expect($this->access->writePreflights)->toBe(2)->and($this->access->writes)->toBe([]);
+});
+
+it('reports an unconfirmed synchronization without values or an unchanged claim', function (): void {
+    $sentinel = 'unconfirmed-secret-sentinel';
+    $this->instance->environmentValues()->create(['env_key' => 'SECRET', 'env_value' => $sentinel]);
+    $this->access->writeResult = AppInstanceEnvironmentWriteResult::unconfirmed();
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.sync_unconfirmed')
+        ->assertJsonMissingPath('data.changed');
+
+    expect($response->getContent())->not->toContain($sentinel);
 });
 
 function request_id_from_test_response(): string
@@ -353,13 +499,33 @@ function ambiguous_environment_target(Node $caller): array
     return [$route->hostname];
 }
 
-final class EnvironmentApiAccess implements AppInstanceOperationPreflight, AppInstanceEnvironmentReader
+final class EnvironmentApiAccess implements
+    AppInstanceOperationPreflight,
+    AppInstanceEnvironmentReader,
+    AppInstanceEnvironmentWriter
 {
     public int $preflights = 0;
 
     public int $reads = 0;
 
+    public int $writePreflights = 0;
+
+    /** @var list<int> */
+    public array $requiredCapacities = [];
+
+    /** @var list<string> */
+    public array $writes = [];
+
+    public bool $refuseWritePreflight = false;
+
+    public AppInstanceEnvironmentWriteResult $writeResult;
+
     public string $contents = "KEY=value\n";
+
+    public function __construct()
+    {
+        $this->writeResult = AppInstanceEnvironmentWriteResult::changed();
+    }
 
     public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void
     {
@@ -369,12 +535,33 @@ final class EnvironmentApiAccess implements AppInstanceOperationPreflight, AppIn
     public function assertEnvironmentWritable(
         AppInstanceEnvironmentContext $context,
         int $requiredCapacityBytes,
-    ): void {}
+    ): void {
+        $this->writePreflights++;
+        $this->requiredCapacities[] = $requiredCapacityBytes;
+
+        if ($this->refuseWritePreflight) {
+            throw new ResourceOperationException(
+                errorCode: 'env.write_preflight_failed',
+                message: 'The recorded AppInstance environment file cannot be replaced safely.',
+                status: 409,
+            );
+        }
+    }
 
     public function read(AppInstanceEnvironmentContext $context): string
     {
         $this->reads++;
 
         return $this->contents;
+    }
+
+    public function write(
+        AppInstanceEnvironmentContext $context,
+        #[\SensitiveParameter]
+        string $contents,
+    ): AppInstanceEnvironmentWriteResult {
+        $this->writes[] = $contents;
+
+        return $this->writeResult;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -18,17 +19,52 @@ use Illuminate\Support\Facades\DB;
 final readonly class SetRouteTargetAction
 {
     public function __construct(
+        private AppInstanceEnvironmentOperationLock $environmentOperations,
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
     ) {}
 
     public function execute(Route $route, int $appInstanceId): Route
     {
+        /** @var list<int> $expectedTargetIds */
+        $expectedTargetIds = $route
+            ->targets()
+            ->orderBy('app_instance_id')
+            ->pluck('app_instance_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        return $this->environmentOperations->run(
+            [...$expectedTargetIds, $appInstanceId],
+            fn (): Route => $this->executeOwned($route, $appInstanceId, $expectedTargetIds),
+        );
+    }
+
+    /** @param list<int> $expectedTargetIds */
+    private function executeOwned(Route $route, int $appInstanceId, array $expectedTargetIds): Route
+    {
         try {
             /** @var Route $updated */
-            $updated = DB::transaction(function () use ($route, $appInstanceId): Route {
+            $updated = DB::transaction(function () use ($route, $appInstanceId, $expectedTargetIds): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $target = AppInstance::query()->with(['app', 'node'])->lockForUpdate()->findOrFail($appInstanceId);
+                $currentTargetIds = $locked
+                    ->targets()
+                    ->orderBy('app_instance_id')
+                    ->pluck('app_instance_id')
+                    ->map(static fn (mixed $id): int => (int) $id)
+                    ->values()
+                    ->all();
+
+                if ($currentTargetIds !== $expectedTargetIds) {
+                    throw new ResourceOperationException(
+                        errorCode: 'env.owner_changed',
+                        message: 'The AppInstance environment owner changed during the operation.',
+                        status: 409,
+                    );
+                }
+
                 $currentTarget = $locked->targets()->first();
 
                 if ($currentTarget?->app_instance_id === $target->id) {

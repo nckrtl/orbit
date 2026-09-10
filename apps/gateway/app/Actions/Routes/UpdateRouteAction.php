@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\UpdateRouteData;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Routes\RouteHostname;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -17,13 +18,47 @@ use Illuminate\Support\Facades\DB;
 final readonly class UpdateRouteAction
 {
     public function __construct(
+        private AppInstanceEnvironmentOperationLock $environmentOperations,
         private ConvergeRouteAction $converge,
         private RouteReconciliationGuard $reconciliation,
     ) {}
 
     public function execute(Route $route, UpdateRouteData $data): Route
     {
-        $route->refresh();
+        /** @var list<int> $targetIds */
+        $targetIds = $route
+            ->targets()
+            ->orderBy('app_instance_id')
+            ->pluck('app_instance_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        return $this->environmentOperations->run(
+            $targetIds,
+            fn (): Route => $this->executeOwned($route, $data, $targetIds),
+        );
+    }
+
+    /** @param list<int> $expectedTargetIds */
+    private function executeOwned(Route $route, UpdateRouteData $data, array $expectedTargetIds): Route
+    {
+        $route->refresh()->load('targets');
+        $currentTargetIds = $route
+            ->targets
+            ->pluck('app_instance_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($currentTargetIds !== $expectedTargetIds) {
+            throw new ResourceOperationException(
+                errorCode: 'env.owner_changed',
+                message: 'The AppInstance environment owner changed during the operation.',
+                status: 409,
+            );
+        }
         $hostname = $data->hostnameProvided && $data->hostname !== null
             ? RouteHostname::validate($data->hostname)
             : null;

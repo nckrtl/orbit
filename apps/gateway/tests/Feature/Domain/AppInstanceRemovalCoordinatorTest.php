@@ -7,6 +7,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
@@ -36,12 +37,14 @@ beforeEach(function (): void {
     $this->orb181Finalizer = new Orb181CoordinatorFinalizer($this->orb181Inspector);
     $this->orb181Projector = new Orb181CoordinatorProjector;
     $this->orb181Lock = new Orb181CoordinatorLock;
+    $this->orb212EnvironmentLock = new Orb212CoordinatorEnvironmentLock;
     $this->orb183Content = new Orb183CoordinatorContentRetention;
     $this->orb181Coordinator = new RemoveAppInstanceAction(
         $this->orb181Inspector,
         $this->orb181Finalizer,
         $this->orb181Projector,
         new ManagedCheckoutOverlap,
+        $this->orb212EnvironmentLock,
         $this->orb181Lock,
         $this->orb183Content,
         app(RouteStateResolver::class),
@@ -182,6 +185,8 @@ it('refuses normal checkout cascade then removes the immutable worktree-first se
 
     expect($members->pluck('app_instance_id')->all())
         ->toBe([$first->id, $second->id, $checkout->id])
+        ->and($this->orb212EnvironmentLock->owners)
+        ->toBe([[$checkout->id], [$checkout->id, $first->id, $second->id]])
         ->and($members->every(fn (AppInstanceRemovalMember $member): bool => $member->linked_worktree_paths === $paths))
         ->toBeTrue()
         ->and($members->pluck('source_digest')->unique()->count())
@@ -997,5 +1002,20 @@ final class Orb181CoordinatorLock implements AppDevSourceOperationLock
         } finally {
             $this->held = false;
         }
+    }
+}
+
+final class Orb212CoordinatorEnvironmentLock implements AppInstanceEnvironmentOperationLock
+{
+    /** @var list<list<int>> */
+    public array $owners = [];
+
+    public function run(array $appInstanceIds, Closure $operation): mixed
+    {
+        $owners = array_values(array_unique(array_map(intval(...), $appInstanceIds)));
+        sort($owners, SORT_NUMERIC);
+        $this->owners[] = $owners;
+
+        return $operation();
     }
 }
