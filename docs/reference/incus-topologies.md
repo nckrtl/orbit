@@ -109,18 +109,34 @@ The retained proof topology can exercise lease files, identity validation, captu
 
 Every Incus network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep that deletes each harness network in the configured Incus project with an empty `used_by`, except `oe-topo-snap` and `oe-standby`. The sweep holds the `topology-create` lock, so a network created moments before its first VM is never swept.
 
-## On-demand cold scenario
+## On-demand cold scenarios
 
-`bin/e2e-scenarios`, governed by [ADR 0019](../decisions/0019-run-disposable-incus-scenario-lanes.md), supports these cold-lane invocations:
+`bin/e2e-scenarios`, governed by [ADR 0019](../decisions/0019-run-disposable-incus-scenario-lanes.md), runs committed cold-lane scenarios for one exact commit. It supports these invocations:
 
-| Command | Candidate commit |
+| Command | Result |
 | --- | --- |
-| `bin/e2e-scenarios cold` | Resolves the current checkout's `HEAD`. |
-| `bin/e2e-scenarios cold CANDIDATE_SHA` | Requires the full lowercase SHA to equal the current checkout's `HEAD`. |
+| `bin/e2e-scenarios cold [CANDIDATE_SHA]` | Runs every cold scenario for the current clean checkout. The optional full lowercase SHA must equal `HEAD`. |
+| `bin/e2e-scenarios cold [CANDIDATE_SHA] --scenario=ID` | Runs only the named scenario. Repeat `--scenario` to select more scenarios in the given order. |
+| `bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID` | Retries exact cleanup from the retained attempt record and verifies that its inventory is absent. |
 
-Both forms require a clean checkout and run the first disposable cold-lane acceptance flow. The flow starts from the unchanged `orbit-base-ubuntu-26.04-runtime` image alias, synchronizes that exact commit, converges the registered product roles, verifies the complete inventory, and then unconditionally releases the attempt.
+Before it changes Incus, the command resolves the commit and every selected scenario. It rejects an unknown or repeated scenario ID, an invalid recipe, a missing action deadline, and an invalid declared input. With no filter it selects every committed cold scenario. It runs selected scenarios serially and gives each one a separate attempt, network, VM inventory, state root, and Pest test. A failed flow stops after its first failed required step, attempts cleanup, and does not stop another selected flow from running.
 
-This command is explicitly invoked by a person or later scenario scheduler. It is not part of `bin/test`, feature acquire, feature proof, review, merge, topology-snapshot promotion, or CI. The cold flow performs no pre-construction PCOV instrumentation and runs no PCOV collection. Normal product provisioning may install the packaged PCOV extension as part of the app-dev runtime. General scenario selection, result aggregation, snapshot-lane scenarios, worker scheduling, and nightly or pull-request triggers are separate work.
+The faithful cold flow starts from the unchanged `orbit-base-ubuntu-26.04-runtime` image alias, synchronizes the exact candidate, converges the declared product roles, and verifies the complete inventory. It performs no pre-construction PCOV instrumentation and runs no PCOV collection. Normal product provisioning may install the packaged PCOV extension as part of the app-dev runtime.
+
+The command writes each result and the complete aggregate under `<primary>/.e2e/scenarios/runs/<run-id>/`. Each result records the candidate, run, scenario, attempt, lane, normalized recipe and definition fingerprints, declared-input fingerprints, phase timings, action outcomes, verification, diagnostics, cleanup, remaining exact resources, and recovery command. A definition or declared-input change produces a different fingerprint. The aggregate contains one result for every selected scenario and is written after every runnable flow finishes.
+
+The JSON aggregate and the standard Pest report use these outcomes:
+
+| Outcome | Meaning |
+| --- | --- |
+| `passed` | Every required action and verification passed, and exact cleanup completed. |
+| `failed` | A scenario action or product assertion failed. |
+| `blocked` | The result schema reserves this status for an unavailable required run-scoped checkpoint. The current cold catalog has no checkpoint-dependent flow and does not produce this status. |
+| `infrastructure-error` | Construction, reporting, verification infrastructure, or cleanup could not produce a valid scenario result. |
+
+The process exits nonzero when any selected scenario is not `passed`, but only after it writes the complete aggregate. Cleanup failure keeps the original outcome, reports `infrastructure-error`, and retains the remaining exact inventory and recovery command. Recovery revalidates the recorded owner, run, scenario, attempt, and operation before deleting anything. It never selects a resource by prefix, age, glob, or an unresolved value.
+
+This command is explicitly invoked by an operator. It is not part of `bin/test`, discovery acquisition, feature proof, review, merge, topology-snapshot promotion, or continuous integration. It writes no issue-proof or promotion receipt and does not read, replace, refresh, or promote the persistent topology snapshot. Snapshot-lane scenarios, parallel workers, nightly or pull-request triggers, and affected-flow selection are separate work.
 
 The cold acceptance recipe separates physical Node identity from product role assignment:
 

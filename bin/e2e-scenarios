@@ -3,19 +3,65 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-if [[ $# -lt 1 || $# -gt 2 || "$1" != cold ]]; then
+usage() {
     cat >&2 <<'USAGE'
-usage: bin/e2e-scenarios cold [CANDIDATE_SHA]
+usage: bin/e2e-scenarios cold [CANDIDATE_SHA] [--scenario=ID ...]
+       bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID
 
-Runs the explicitly requested cold Incus acceptance flow. The candidate
-defaults to this clean checkout's HEAD. When supplied, it must equal HEAD. This
-command is not part of feature development, proof, review, merge, promotion,
-or CI.
+Runs explicitly requested cold Incus scenarios or retries one exact retained
+cleanup. Scenario runs are not part of feature development, proof, review,
+merge, promotion, or CI.
 USAGE
     exit 64
+}
+
+if [[ $# -lt 1 ]]; then
+    usage
 fi
 
-candidate=${2:-$(git -C "$root" rev-parse --verify HEAD^{commit})}
+command=$1
+shift
+
+common_git=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)
+export ORBIT_SCENARIO_REPOSITORY=$root
+export ORBIT_SCENARIO_PRIMARY_ROOT
+ORBIT_SCENARIO_PRIMARY_ROOT=$(cd "$common_git/.." && pwd)
+
+if [[ "$command" == cleanup ]]; then
+    if [[ $# -ne 3 || ! "$1" =~ ^[0-9a-f]{32}$ || ! "$2" =~ ^[a-z][a-z0-9-]{0,62}$ || ! "$3" =~ ^[0-9a-f]{32}$ ]]; then
+        usage
+    fi
+
+    exec composer --working-dir="$root/apps/e2e" scenario:cleanup -- "$1" "$2" "$3"
+fi
+
+if [[ "$command" != cold ]]; then
+    usage
+fi
+
+candidate=
+if [[ $# -gt 0 && "$1" != --* ]]; then
+    candidate=$1
+    shift
+fi
+candidate=${candidate:-$(git -C "$root" rev-parse --verify HEAD^{commit})}
+
+scenario_arguments=()
+declare -A selected_scenarios=()
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" != --scenario=* || ! "${1#--scenario=}" =~ ^[a-z][a-z0-9-]{0,62}$ ]]; then
+        usage
+    fi
+    scenario_id=${1#--scenario=}
+    if [[ -n "${selected_scenarios[$scenario_id]+present}" ]]; then
+        printf 'e2e-scenarios: scenario ID [%s] was selected more than once\n' "$scenario_id" >&2
+        exit 64
+    fi
+    selected_scenarios[$scenario_id]=1
+    scenario_arguments+=("$1")
+    shift
+done
+
 if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
     printf 'e2e-scenarios: candidate SHA must be 40 lowercase hexadecimal characters\n' >&2
     exit 64
@@ -29,10 +75,6 @@ if [[ -n "$(git -C "$root" status --porcelain --untracked-files=all -- . ':!.e2e
     exit 64
 fi
 
-common_git=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)
 export ORBIT_SCENARIO_CANDIDATE_SHA=$candidate
-export ORBIT_SCENARIO_REPOSITORY=$root
-export ORBIT_SCENARIO_PRIMARY_ROOT
-ORBIT_SCENARIO_PRIMARY_ROOT=$(cd "$common_git/.." && pwd)
 
-exec composer --working-dir="$root/apps/e2e" test:scenario-cold
+exec composer --working-dir="$root/apps/e2e" scenario:cold -- "${scenario_arguments[@]}"

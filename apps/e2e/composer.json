@@ -64,10 +64,11 @@
         "lint": "@format:check",
         "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
         "test": "vendor/bin/pest --parallel --no-tia --compact",
-        "test:scenario-cold": [
+        "scenario:cold": [
             "Composer\\Config::disableProcessTimeout",
-            "vendor/bin/pest --no-tia --compact tests/Scenario/ColdTopologyAcceptanceTest.php"
+            "@php artisan scenario:cold"
         ],
+        "scenario:cleanup": "@php artisan scenario:cleanup",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

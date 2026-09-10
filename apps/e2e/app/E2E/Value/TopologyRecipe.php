@@ -78,6 +78,68 @@ final readonly class TopologyRecipe
         ]);
     }
 
+    /** @return array{id:string,nodes:list<array{key:string,image:string,purpose:string,address:int,checkout:bool,roles:list<string>}>} */
+    public function toArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'nodes' => array_map(static fn (TopologyNode $node): array => [
+                'key' => $node->key,
+                'image' => $node->image,
+                'purpose' => $node->purpose->value,
+                'address' => $node->address,
+                'checkout' => $node->checkout,
+                'roles' => $node->roles,
+            ], $this->nodes),
+        ];
+    }
+
+    /** @param array<array-key, mixed> $value */
+    public static function fromArray(array $value): self
+    {
+        if (array_keys($value) !== ['id', 'nodes'] || ! is_string($value['id']) || ! is_array($value['nodes'])) {
+            throw new InvalidArgumentException('The topology recipe schema is invalid.');
+        }
+
+        $nodes = [];
+        foreach ($value['nodes'] as $node) {
+            if (
+                ! is_array($node)
+                || array_keys($node) !== ['key', 'image', 'purpose', 'address', 'checkout', 'roles']
+                || ! is_string($node['key'])
+                || ! is_string($node['image'])
+                || ! is_string($node['purpose'])
+                || ! is_int($node['address'])
+                || ! is_bool($node['checkout'])
+                || ! is_array($node['roles'])
+                || ! array_all($node['roles'], static fn (mixed $role): bool => is_string($role))
+            ) {
+                throw new InvalidArgumentException('A topology recipe Node schema is invalid.');
+            }
+            $purpose = TopologyNodePurpose::tryFrom($node['purpose']);
+            if ($purpose === null) {
+                throw new InvalidArgumentException('A topology recipe Node purpose is invalid.');
+            }
+            /** @var list<string> $roles */
+            $roles = $node['roles'];
+            $nodes[] = new TopologyNode(
+                $node['key'],
+                $node['image'],
+                $purpose,
+                $node['address'],
+                $node['checkout'],
+                $roles,
+            );
+        }
+
+        return new self($value['id'], $nodes);
+    }
+
+    public function fingerprint(): string
+    {
+        return hash('sha256', json_encode($this->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
     /** @return list<string> */
     public function nodeKeys(): array
     {

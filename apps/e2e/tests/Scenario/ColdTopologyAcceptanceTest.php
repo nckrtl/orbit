@@ -2,33 +2,20 @@
 
 declare(strict_types=1);
 
-use App\E2E\ColdTopologyConstructor;
 use App\E2E\IncusHost;
-use App\E2E\LaravelReleaseResolver;
-use App\E2E\PreparedStateFingerprint;
-use App\E2E\State\AtomicJsonStore;
+use App\E2E\ScenarioColdExecutor;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologySnapshotAvailability;
 use App\E2E\TopologySnapshotManifestStore;
-use App\E2E\TopologyVerifier;
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\ColdTopologyPlan;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ScenarioStatus;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
-use App\E2E\Value\VerificationMode;
-use App\Exceptions\E2E\ColdTopologyCleanupException;
 
-/**
- * Observe the promoted topology only while its generation is stable. The cold
- * lane does not hold this lock while it runs, so an independent feature flow
- * remains free to promote a newer generation.
- *
- * @return array<string, mixed>|null
- */
-function stablePromotedTopology(
+/** @return array<string, mixed>|null */
+function stableScenarioPromotion(
     StatePaths $paths,
     TopologySnapshotManifestStore $manifests,
     IncusHost $host,
@@ -52,211 +39,62 @@ function stablePromotedTopology(
     }
 }
 
-/** @param array<string, mixed>|null $before @param array<string, mixed>|null $after */
-function assertPromotionWasNotMutatedInPlace(?array $before, ?array $after): void
+function assertScenarioDidNotMutatePromotion(?array $before, ?array $after): void
 {
-    if ($before !== null && $after === null) {
-        throw new RuntimeException('The promoted topology snapshot disappeared during the cold scenario.');
-    }
-    if (($before['id'] ?? null) === ($after['id'] ?? null) && $before !== $after) {
-        throw new RuntimeException('The promoted topology snapshot generation changed in place.');
+    if ($before !== $after) {
+        throw new RuntimeException('The promoted topology snapshot changed during the cold scenario.');
     }
 }
 
-it('constructs and releases the four-Node cold acceptance topology', function () {
-    $candidate = getenv('ORBIT_SCENARIO_CANDIDATE_SHA');
-    $repository = getenv('ORBIT_SCENARIO_REPOSITORY');
-    $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
-    if (
-        ! is_string($candidate)
-        || preg_match('/\A[a-f0-9]{40}\z/D', $candidate) !== 1
-        || ! is_string($repository)
-        || ! str_starts_with($repository, '/')
-        || ! is_string($primary)
-        || ! str_starts_with($primary, '/')
-    ) {
-        throw new RuntimeException('Run this flow through bin/e2e-scenarios cold [CANDIDATE_SHA].');
-    }
-
-    $this->app->instance(StatePaths::class, StatePaths::forPrimary($primary));
-    foreach ([
-        AtomicJsonStore::class,
-        ColdTopologyConstructor::class,
-        TopologySnapshotManifestStore::class,
-    ] as $service) {
-        $this->app->forgetInstance($service);
-    }
-
-    $host = $this->app->make(IncusHost::class);
-    $constructor = $this->app->make(ColdTopologyConstructor::class);
-    $manifests = $this->app->make(TopologySnapshotManifestStore::class);
-    $operation = $this->app->make(OperationId::class);
-    $laravel = $this->app->make(LaravelReleaseResolver::class)->resolve('>=13.0.0');
-    $fingerprint = $this->app->make(PreparedStateFingerprint::class)->forCommit($candidate, $laravel);
-    $image = $fingerprint->manifest['base_image_alias'] ?? null;
-    if ($image !== TopologyRecipe::BASE_IMAGE) {
-        throw new RuntimeException('The faithful cold flow requires the Ubuntu 26.04 runtime base alias.');
-    }
-
-    $recipe = TopologyRecipe::coldAcceptance($image);
-    $attempt = AttemptId::generate();
-    $target = TopologyTarget::disposableCold('SCN-1', $attempt, $recipe);
+it('cold-scenario-suite constructs and releases the four-Node topology', function (): void {
     $paths = $this->app->make(StatePaths::class);
-    $observedPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
-    $source = null;
-    $cleanup = null;
-    $primaryFailure = null;
+    $manifests = $this->app->make(TopologySnapshotManifestStore::class);
+    $host = $this->app->make(IncusHost::class);
+    $operation = $this->app->make(OperationId::class);
+    $before = stableScenarioPromotion($paths, $manifests, $host, $operation);
 
-    try {
-        $source = $constructor->construct(new ColdTopologyPlan(
-            $target,
-            $repository,
-            $candidate,
-            [$image => $host->imageFingerprint($image)],
-            $laravel,
-            $operation,
-            [
-                'user.orbit.e2e.issue' => 'SCN-1',
-                'user.orbit.e2e.attempt' => $attempt->value,
-                'user.orbit.e2e.operation' => $operation->value,
-                'user.orbit.e2e.recipe' => $recipe->id,
-            ],
-        ));
+    $result = $this->app->make(ScenarioColdExecutor::class)->executeFromEnvironment('cold-four-node');
 
-        $verification = $this->app->make(TopologyVerifier::class)->verify(
-            $target,
-            VerificationMode::Proof,
-            $source,
-        );
-        $instances = $host->instances(array_map($target->instance(...), $recipe->nodeKeys()));
-
-        expect($source->hostSha)->toBe($candidate);
-        expect($source->guestSha)->toBe($candidate);
-        expect($verification->passed)->toBeTrue();
-        expect($verification->probes['role.assignments']['expected'] ?? null)
-            ->toBe('gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active');
-        expect($verification->probes['role.assignments']['observed'] ?? null)
-            ->toBe('gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active');
-        expect(array_keys($instances))
-            ->toEqualCanonicalizing(array_map($target->instance(...), $recipe->nodeKeys()));
-        expect($instances[$target->instance('operator')]->metadata['user.orbit.e2e.attempt'] ?? null)
-            ->toBe($attempt->value);
-        expect($instances[$target->instance('extra')]->metadata['user.orbit.e2e.attempt'] ?? null)
-            ->toBe($attempt->value);
-        $currentPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
-        assertPromotionWasNotMutatedInPlace($observedPromotion, $currentPromotion);
-        $observedPromotion = $currentPromotion;
-    } catch (Throwable $failure) {
-        $primaryFailure = $failure;
-    } finally {
-        $cleanup = $constructor->cleanup($target, $operation);
-    }
-
-    if (! $cleanup->successful()) {
-        throw new ColdTopologyCleanupException(
-            $cleanup,
-            $primaryFailure ?? new RuntimeException('Cold topology acceptance cleanup was refused.'),
-        );
-    }
-    if ($primaryFailure !== null) {
-        throw $primaryFailure;
-    }
-
-    expect($cleanup->refused)->toBe([]);
-    expect($host->instances(array_map($target->instance(...), $recipe->nodeKeys())))->toBe([]);
-    expect($host->network($target->network()))->toBeNull();
-    $currentPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
-    assertPromotionWasNotMutatedInPlace($observedPromotion, $currentPromotion);
+    expect($result->status)->toBe(ScenarioStatus::Passed);
+    expect($result->verification['passed'] ?? null)->toBeTrue();
+    expect($result->cleanup['remaining'] ?? null)->toBe([]);
+    expect($result->definition['observes_php'] ?? null)->toBeFalse();
+    assertScenarioDidNotMutatePromotion(
+        $before,
+        stableScenarioPromotion($paths, $manifests, $host, $operation),
+    );
 });
 
-it('automatically releases the exact cold inventory after an injected construction failure', function () {
-    $candidate = getenv('ORBIT_SCENARIO_CANDIDATE_SHA');
-    $repository = getenv('ORBIT_SCENARIO_REPOSITORY');
-    $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
-    if (
-        ! is_string($candidate)
-        || preg_match('/\A[a-f0-9]{40}\z/D', $candidate) !== 1
-        || ! is_string($repository)
-        || ! str_starts_with($repository, '/')
-        || ! is_string($primary)
-        || ! str_starts_with($primary, '/')
-    ) {
-        throw new RuntimeException('Run this flow through bin/e2e-scenarios cold [CANDIDATE_SHA].');
-    }
-
-    $this->app->instance(StatePaths::class, StatePaths::forPrimary($primary));
-    foreach ([
-        AtomicJsonStore::class,
-        ColdTopologyConstructor::class,
-        TopologySnapshotManifestStore::class,
-    ] as $service) {
-        $this->app->forgetInstance($service);
-    }
-
-    $host = $this->app->make(IncusHost::class);
-    $constructor = $this->app->make(ColdTopologyConstructor::class);
-    $manifests = $this->app->make(TopologySnapshotManifestStore::class);
-    $operation = $this->app->make(OperationId::class);
-    $laravel = $this->app->make(LaravelReleaseResolver::class)->resolve('>=13.0.0');
-    $fingerprint = $this->app->make(PreparedStateFingerprint::class)->forCommit($candidate, $laravel);
-    $image = $fingerprint->manifest['base_image_alias'] ?? null;
-    if ($image !== TopologyRecipe::BASE_IMAGE) {
-        throw new RuntimeException('The faithful cold flow requires the Ubuntu 26.04 runtime base alias.');
-    }
-
-    $recipe = TopologyRecipe::coldAcceptance($image);
-    $attempt = AttemptId::generate();
-    $target = TopologyTarget::disposableCold('SCN-2', $attempt, $recipe);
+it('cold-scenario-suite-cleanup releases exact resources after construction failure', function (): void {
     $paths = $this->app->make(StatePaths::class);
-    $observedPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
-    $injectedSha = str_repeat('0', 40);
-    $constructionFailure = null;
-    $cleanup = null;
-    $primaryFailure = null;
+    $manifests = $this->app->make(TopologySnapshotManifestStore::class);
+    $host = $this->app->make(IncusHost::class);
+    $operation = $this->app->make(OperationId::class);
+    $before = stableScenarioPromotion($paths, $manifests, $host, $operation);
 
-    try {
-        try {
-            $constructor->construct(new ColdTopologyPlan(
-                $target,
-                $repository,
-                $injectedSha,
-                [$image => $host->imageFingerprint($image)],
-                $laravel,
-                $operation,
-                [
-                    'user.orbit.e2e.issue' => 'SCN-2',
-                    'user.orbit.e2e.attempt' => $attempt->value,
-                    'user.orbit.e2e.operation' => $operation->value,
-                    'user.orbit.e2e.recipe' => $recipe->id,
-                ],
-            ));
-        } catch (Throwable $failure) {
-            $constructionFailure = $failure;
-        }
+    $result = $this->app->make(ScenarioColdExecutor::class)
+        ->executeFromEnvironment('cold-construction-cleanup');
+    $target = TopologyTarget::disposableScenario(
+        $result->run,
+        $result->scenario,
+        $result->attempt,
+        TopologyRecipe::coldAcceptance(),
+    );
 
-        expect($constructionFailure)
-            ->toBeInstanceOf(InvalidArgumentException::class)
-            ->and($constructionFailure?->getMessage())
-            ->toBe('The Git command failed.');
-    } catch (Throwable $failure) {
-        $primaryFailure = $failure;
-    } finally {
-        $cleanup = $constructor->cleanup($target, $operation);
-    }
-
-    if (! $cleanup->successful()) {
-        throw new ColdTopologyCleanupException(
-            $cleanup,
-            $primaryFailure ?? new RuntimeException('Injected construction-failure scenario cleanup was refused.'),
-        );
-    }
-    if ($primaryFailure !== null) {
-        throw $primaryFailure;
-    }
-
-    expect($cleanup->refused)->toBe([]);
-    expect($host->instances(array_map($target->instance(...), $recipe->nodeKeys())))->toBe([]);
-    expect($host->network($target->network()))->toBeNull();
-    $currentPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
-    assertPromotionWasNotMutatedInPlace($observedPromotion, $currentPromotion);
+    expect($result->status)->toBe(ScenarioStatus::Passed);
+    expect($result->actions[0]['name'] ?? null)->toBe('injected-source-failure');
+    expect($result->cleanup['removed'] ?? null)->toBe([
+        $target->instance('extra'),
+        $target->instance('app-prod'),
+        $target->instance('operator'),
+        $target->instance('gateway'),
+        $target->network(),
+    ]);
+    expect($result->cleanup['remaining'] ?? null)->toBe([]);
+    expect($result->cleanup['recovery_command'] ?? null)
+        ->toBe("bin/e2e-scenarios cleanup {$result->run->value} {$result->scenario->value} {$result->attempt->value}");
+    assertScenarioDidNotMutatePromotion(
+        $before,
+        stableScenarioPromotion($paths, $manifests, $host, $operation),
+    );
 });

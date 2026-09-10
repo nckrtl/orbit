@@ -26,6 +26,7 @@ use App\E2E\ProofEquivalenceEvaluator;
 use App\E2E\ProofFixtureStager;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\ProofReviewService;
+use App\E2E\ScenarioPestProcess;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
@@ -68,6 +69,10 @@ final class AppServiceProvider extends ServiceProvider
         );
         $repositoryRoot = dirname(__DIR__, 4);
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
+        $this->app->singleton(
+            ScenarioPestProcess::class,
+            fn (): ScenarioPestProcess => new ScenarioPestProcess(dirname(__DIR__, 2)),
+        );
         // Host-wide state (topology snapshot generation, locks) lives in the primary checkout's `.e2e/`.
         $this->app->singleton(
             StatePaths::class,
