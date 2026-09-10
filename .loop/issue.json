@@ -1,0 +1,110 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      },
+      {
+        "title": "ADR 0019",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0019-run-disposable-incus-scenario-lanes.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An operator runs a defined scenario from the recorded promoted generation, with independent source, guest state, and results for each attempt.\n\n## Scope\n\n* In: snapshot-lane construction and candidate convergence, source-generation recording, declared additional Nodes, failure handling, and scenario command guidance.\n* Out: cold-constructor changes, parallel scheduling, new product behavior, shared-checkpoint creation, feature-proof gates, and snapshot promotion.\n\n## Acceptance\n\n- [ ] A selected snapshot scenario records and clones one promoted generation, synchronizes the exact candidate, and converges it before any exercise action; a missing or unverifiable generation prevents exercise and produces an infrastructure-error result. Proof: `apps/e2e/tests/Unit/E2E/SnapshotScenarioRunnerTest.php` and Incus harness acceptance `snapshot-scenario-lifecycle`.\n- [ ] Repeating the same scenario starts from a fresh isolated clone and cannot observe a previous run's application or filesystem mutations. Proof: Incus harness acceptance `snapshot-scenario-isolation`.\n- [ ] A declared extra Node has its own recorded base fingerprint, physical identity, capacity reservation, and exact cleanup; an undeclared or existing foreign resource cannot be adopted. Proof: `apps/e2e/tests/Unit/E2E/SnapshotScenarioRunnerTest.php` and Incus harness acceptance `snapshot-scenario-extension`.\n- [ ] Failed preparation skips the flow's exercise, records diagnostics and cleanup, and does not stop another independent selected flow; results use the same complete aggregate contract as cold scenarios. Proof: `apps/e2e/tests/Feature/Commands/ScenarioWrapperTest.php`.\n- [ ] Successful and failed runs leave the promoted generation, its VMs, manifest, and other attempts unchanged; no scenario output is accepted as feature proof or promotion evidence. Proof: Incus harness acceptance `snapshot-scenario-isolation`.\n- [ ] Maintained scenario guidance describes snapshot inputs and failure behavior, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Harness checks pass. Proof: `cd apps/e2e && composer check`.",
+  "id": "fd8aa322-b534-4c2c-84f1-aa0f9f370168",
+  "identifier": "ORB-235",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-234",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/e2e"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Run scenarios from an isolated promoted snapshot",
+  "updatedAt": "2026-09-10T20:00:20.779Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-235/run-scenarios-from-an-isolated-promoted-snapshot"
+}
