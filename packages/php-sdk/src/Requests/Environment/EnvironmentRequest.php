@@ -10,6 +10,8 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 use Orbit\Sdk\Responses\Environment\EnvironmentTransportResponse;
 use Saloon\Contracts\Body\HasBody;
+use Saloon\Exceptions\Request\FatalRequestException;
+use Saloon\Http\PendingRequest;
 use Saloon\Http\Response;
 use Saloon\Repositories\Body\JsonBodyRepository;
 use Saloon\Traits\Body\HasJsonBody;
@@ -31,6 +33,16 @@ abstract class EnvironmentRequest extends GatewayRequest implements HasBody
     final public function resolveResponseClass(): ?string
     {
         return EnvironmentTransportResponse::class;
+    }
+
+    final public function boot(#[SensitiveParameter] PendingRequest $pendingRequest): void
+    {
+        $pendingRequest->middleware()->onFatalException(
+            static fn (#[SensitiveParameter] FatalRequestException $_exception): never => throw new GatewayApiException(
+                'Gateway environment operation failed before receiving a response.',
+            ),
+            'sanitizeEnvironmentFatalRequestException',
+        );
     }
 
     final public function createDtoFromResponse(

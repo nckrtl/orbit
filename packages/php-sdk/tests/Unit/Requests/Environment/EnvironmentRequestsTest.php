@@ -2,14 +2,17 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
 use Saloon\Enums\Method;
+use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
 
 /** @mago-expect lint:halstead Request contract assertions stay visible together. */
 describe('AppInstance environment requests', function (): void {
@@ -176,6 +179,48 @@ describe('AppInstance environment requests', function (): void {
         $valueParameter = new ReflectionParameter([UpdateAppInstanceEnvironmentRequest::class, '__construct'], 'value');
         expect($valueParameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
     });
+
+    it('sanitizes a real fatal transport failure without changing the intended body', function (): void {
+        $value = 'plain-live-transport-sentinel-150f';
+        $serializedBody = null;
+        $request = new UpdateAppInstanceEnvironmentRequest('app.example.test', 'VISIBLE_NAME', $value);
+        $request->middleware()->onRequest(
+            static function (#[SensitiveParameter] PendingRequest $pendingRequest) use (&$serializedBody): void {
+                $serializedBody = (string) $pendingRequest->createPsrRequest()->getBody();
+            },
+            'captureEnvironmentRequestBody',
+        );
+        $connector = new GatewayConnector('https://127.0.0.1:1', timeout: 1);
+
+        try {
+            $connector->send($request);
+            $this->fail('Expected a refused environment transport connection.');
+        } catch (Throwable $exception) {
+            expect($exception)->toBeInstanceOf(GatewayApiException::class);
+
+            if (! $exception instanceof GatewayApiException) {
+                $this->fail('Expected a sanitized environment transport failure.');
+            }
+
+            $diagnostics = implode("\n", [
+                $exception->getMessage(),
+                (string) $exception,
+                print_r($exception, return: true),
+                environment_request_sdk_trace($exception),
+            ]);
+
+            expect($exception)
+                ->not->toBeInstanceOf(FatalRequestException::class)->and($exception->getMessage())->toBe(
+                    'Gateway environment operation failed before receiving a response.',
+                )->and($exception->errorCode())->toBeNull()->and($exception->requestId())->toBeNull()->and(
+                    $exception->details(),
+                )->toBeEmpty()->and($exception->getPrevious())->toBeNull()->and(method_exists(
+                    $exception,
+                    'getPendingRequest',
+                ))->toBeFalse()->and($diagnostics)
+                ->not->toContain($value)->and($serializedBody)->toBe('{"value":"plain-live-transport-sentinel-150f"}');
+        }
+    });
 });
 
 function environment_connector(MockClient $mock): GatewayConnector
@@ -184,6 +229,20 @@ function environment_connector(MockClient $mock): GatewayConnector
     $connector->withMockClient($mock);
 
     return $connector;
+}
+
+function environment_request_sdk_trace(Throwable $exception): string
+{
+    $frames = array_values(array_filter(
+        $exception->getTrace(),
+        static fn (array $frame): bool => (
+            array_key_exists('class', $frame)
+            && is_string($frame['class'])
+            && str_starts_with($frame['class'], 'Orbit\\Sdk\\')
+        ),
+    ));
+
+    return print_r($frames, return: true);
 }
 
 function environment_operation(GatewayRequest $request): string
