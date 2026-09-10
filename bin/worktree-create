@@ -85,7 +85,21 @@ slug="$2"
 name="${linear_id,,}-$slug"
 branch="$name"
 primary_root="$(git worktree list --porcelain | awk '/^worktree / && !found { print substr($0, 10); found=1 }')"
-worktree="$primary_root/.worktrees/$name"
+worktree_root="$(git config --path --get orbit.worktreeRoot || printf '/fast/worktrees/orbit')"
+if [[ "$worktree_root" != /* ]]; then
+    printf 'orbit.worktreeRoot must be an absolute path.\n' >&2
+    exit 1
+fi
+worktree_root="$(realpath -m -- "$worktree_root")"
+case "$worktree_root/" in
+    "$primary_root/"*)
+        printf 'orbit.worktreeRoot must be outside the primary checkout.\n' >&2
+        exit 1
+        ;;
+esac
+# Reusing a registered branch preserves existing worktrees at their original path.
+worktree="$(git worktree list --porcelain | awk -v ref="branch refs/heads/$branch" '/^worktree / { path=substr($0, 10) } $0 == ref && !found { print path; found=1 }')"
+[[ -n "$worktree" ]] || worktree="$worktree_root/${linear_id,,}"
 
 if [[ -n "$(git -C "$primary_root" status --porcelain)" ]]; then
     printf 'The primary worktree must be clean.\n' >&2
@@ -128,7 +142,7 @@ if [[ -e "$worktree" ]]; then
     exit 1
 fi
 
-mkdir -p "$primary_root/.worktrees"
+mkdir -p "$worktree_root"
 
 if git show-ref --verify --quiet "refs/heads/$branch"; then
     git worktree add "$worktree" "$branch"

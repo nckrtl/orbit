@@ -59,7 +59,7 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 
 ## Commands
 
-`acquire` takes the worktree as a positional argument. Every other command finds it at `<primary>/.worktrees/<issue-lowercase>-*`, exactly one match, or takes `--worktree=PATH`. Every command accepts `--json`, and a failure prints `{"state":"failed","error":"..."}` with a nonzero exit.
+`acquire` takes the worktree as a positional argument. Every other command finds the issue among registered Git worktrees by branch or directory name, requires exactly one match, or takes `--worktree=PATH`. New worktrees use the configurable external base described in [Implementation loop](implementation-loop.md). Every command accepts `--json`, and a failure prints `{"state":"failed","error":"..."}` with a nonzero exit.
 
 | Command | What it does |
 | --- | --- |

@@ -46,12 +46,21 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
-/** A primary checkout with one issue worktree, so the locator resolves without git. */
+/** A primary checkout with one registered external issue worktree. */
 function commandPrimaryFixture(string $issue = 'TST-12'): array
 {
     $primary = temporaryPath('orbit-command-primary-', 6);
-    $worktree = $primary.'/.worktrees/'.strtolower($issue).'-feature';
-    mkdir($worktree, 0700, true);
+    $worktree = $primary.'-worktrees/'.strtolower($issue);
+    mkdir($primary, 0700, true);
+    foreach ([
+        ['init', '-b', 'main'],
+        ['config', 'user.name', 'Orbit'],
+        ['config', 'user.email', 'orbit@example.test'],
+        ['commit', '--allow-empty', '-m', 'fixture'],
+        ['worktree', 'add', '-b', strtolower($issue).'-feature', $worktree],
+    ] as $arguments) {
+        new Symfony\Component\Process\Process(['git', ...$arguments], $primary)->mustRun();
+    }
     app()->instance(WorktreeLocator::class, new WorktreeLocator($primary));
 
     return ['primary' => $primary, 'worktree' => realpath($worktree)];
@@ -219,10 +228,10 @@ describe('topology commands', function () {
 
         $this
             ->artisan('topology:status', ['issue' => 'TST-13'])
-            ->expectsOutputToContain('No worktree matches '.$primary.'/.worktrees/tst-13-*')
+            ->expectsOutputToContain('No registered worktree matches TST-13')
             ->assertFailed();
 
-        mkdir($primary.'/.worktrees/tst-12-other', 0700, true);
+        new Symfony\Component\Process\Process(['git', 'worktree', 'add', '-b', 'tst-12-other', $primary.'-other'], $primary)->mustRun();
         $this
             ->artisan('topology:status', ['issue' => 'TST-12'])
             ->expectsOutputToContain('More than one worktree matches')
@@ -375,7 +384,8 @@ describe('topology commands', function () {
 
     it('refuses sync and exec on a proved extended attempt before touching Incus', function () {
         ['primary' => $primary, 'worktree' => $worktree] = commandPrimaryFixture();
-        rmdir($worktree);
+        Process::run(['git', '-C', $primary, 'worktree', 'remove', $worktree])->throw();
+        Process::run(['git', '-C', $primary, 'branch', '-d', 'tst-12-feature'])->throw();
         file_put_contents($primary.'/README.md', "fixture\n");
         Process::run(['git', '-C', $primary, 'init', '--quiet', '-b', 'main'])->throw();
         Process::run(['git', '-C', $primary, 'config', 'user.email', 'orbit@example.test'])->throw();
