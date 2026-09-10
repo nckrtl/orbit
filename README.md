@@ -48,7 +48,7 @@ Gateway, SDK, and E2E harness at one commit, so cross-project changes stay
 atomic.
 
 ```bash
-bin/worktree-create NCK-123 concise-feature-name --flow=discovery
+bin/worktree-create NCK-123 concise-feature-name
 ```
 
 The command creates `.worktrees/nck-123-concise-feature-name` on branch

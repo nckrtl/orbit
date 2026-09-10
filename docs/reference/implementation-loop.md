@@ -4,18 +4,18 @@ This page is for contributors who prepare a candidate for review. It describes d
 
 ## Select a flow
 
-A worktree uses either `discovery` or `proof`, as governed by [ADR 0051](../decisions/0051-select-discovery-only-feature-delivery.md). The selected flow lives in ignored `.loop/flow.json` and travels with the candidate-bound artifact ref. Each plan, implementation, review, and closeout handoff names the flow. The reviewer verifies the published selection matches the handoff and local selection.
+Discovery is the built-in default for new clones and unselected worktrees. Proof requires an explicit selection. A worktree uses either `discovery` or `proof`, as governed by [ADR 0051](../decisions/0051-select-discovery-only-feature-delivery.md). The selected flow lives in ignored `.loop/flow.json` and travels with the candidate-bound artifact ref. Each plan, implementation, review, and closeout handoff names the flow. The reviewer verifies the published selection matches the handoff and local selection.
 
 | Command | Result |
 | --- | --- |
 | `bin/loop-flow default --flow=discovery` | Selects discovery-only delivery for new worktrees in this repository |
 | `bin/loop-flow default --flow=proof` | Selects the proof flow for new worktrees |
-| `bin/loop-flow default` | Prints the repository default; an unset default is `proof` |
+| `bin/loop-flow default` | Prints the repository default; an unset default is `discovery` |
 | `bin/worktree-create ISSUE slug --flow=discovery` | Creates and bootstraps a worktree with discovery-only delivery |
 | `bin/worktree-create ISSUE slug --flow=proof` | Creates and bootstraps a worktree with the proof flow |
 | `bin/worktree-create ISSUE slug` | Creates a worktree using the repository default; keeps an existing worktree's selection |
 | `bin/loop-flow init` | Initializes a manually created worktree from the repository default without replacing an existing selection |
-| `bin/loop-flow status` | Prints the current worktree's flow; an unselected legacy worktree is `proof` |
+| `bin/loop-flow status` | Prints the current worktree's flow; an unselected worktree is `discovery` |
 | `bin/loop-flow select --flow=discovery` | Explicitly changes the current worktree's flow |
 | `bin/loop-flow select --flow=proof` | Explicitly restores the current worktree's proof flow |
 

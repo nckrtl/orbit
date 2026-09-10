@@ -11,7 +11,7 @@ Review the plan in the planner's worktree. After recording the verdict and findi
 
 ## Delivery flow
 
-Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a legacy artifact without this file implies `proof`, never `discovery`. Existing unselected worktrees use `proof`; select a different flow explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
+Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
 
 ## Inputs
 
