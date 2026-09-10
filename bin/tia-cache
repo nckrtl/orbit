@@ -83,19 +83,24 @@ def require_ancestor(root, ancestor, head):
 
 def validate_graph(root, graph_text, info, tested_commit):
     graph = json.loads(graph_text)
-    if graph.get('schema') != 1 or graph.get('fingerprint') != info['fingerprint']:
+    if not isinstance(graph, dict) or graph.get('schema') != 1 or graph.get('fingerprint') != info['fingerprint']:
         raise ValueError('Graph schema or fingerprint differs.')
     baselines = graph.get('baselines', {})
-    if set(baselines) != {'main'}:
+    if not isinstance(baselines, dict) or set(baselines) != {'main'}:
         raise ValueError('Only a main baseline can be published.')
     main = baselines['main']
-    if main.get('tree') not in ({}, []) or not main.get('results') or not graph.get('edges'):
+    if (not isinstance(main, dict) or main.get('tree') not in ({}, [])
+            or not isinstance(main.get('results'), dict) or not main['results']
+            or not isinstance(graph.get('edges'), dict) or not graph['edges']):
         raise ValueError('Main graph has no recorded coverage/results or contains working edits.')
-    if any(result.get('status') not in range(7) for result in main['results'].values()):
+    if any(not isinstance(result, dict) or result.get('status') not in range(7)
+           for result in main['results'].values()):
         raise ValueError('Main graph contains failed or unknown results.')
     # A no-affected-tests run can leave the graph anchored at an older main.
     require_ancestor(root, main.get('sha'), tested_commit)
     files = graph.get('files', [])
+    if not isinstance(files, (dict, list)):
+        raise ValueError('Graph file list is invalid.')
     paths = list(files.values() if isinstance(files, dict) else files) + list(graph['edges'])
     paths += [result['file'] for result in main['results'].values() if 'file' in result]
     if any(not isinstance(path, str) or Path(path).is_absolute() or '..' in Path(path).parts
@@ -109,7 +114,10 @@ def publication_path(store, project):
 
 
 def read_publication(store, project):
-    return json.loads(publication_path(store, project).read_text())
+    snapshot = json.loads(publication_path(store, project).read_text())
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get('graph'), str):
+        raise ValueError('Invalid publication.')
+    return snapshot
 
 
 def compatible(root, project, snapshot, info):
@@ -179,19 +187,28 @@ def refresh_project(root, store, project, commit):
     info = metadata(root, project)
     if not info['coverage']:
         raise RuntimeError('PCOV or Xdebug coverage must be enabled to refresh a baseline.')
+    baseline = None
     try:
         snapshot = read_publication(store, project)
         compatible(root, project, snapshot, info)
         if snapshot['tested_commit'] == commit:
             print(f'[{project}] already published at {commit[:12]}', flush=True)
             return
+        baseline = snapshot['graph']
     except (RuntimeError, OSError, ValueError, KeyError, TypeError):
         pass
-    seed(root, store, [project])
+    graph_path = Path(info['cache']) / 'graph.json'
+    # Only the maintenance checkout writes here. Start from its last successful,
+    # compatible publication, never an unverified graph left by a failed run or
+    # by another runner version. Pest's own fingerprint does not cover our patch.
+    if baseline is None:
+        graph_path.unlink(missing_ok=True)
+    else:
+        atomic_write(graph_path, baseline.encode())
     run(root / project, 'composer', 'test:affected', capture=False)
     if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
         raise RuntimeError('Cache checkout changed during testing; publication refused.')
-    graph = (Path(info['cache']) / 'graph.json').read_text()
+    graph = graph_path.read_text()
     anchor = validate_graph(root, graph, info, commit)
     snapshot = {
         'schema': 1, 'project': project, 'tested_commit': commit, 'graph_commit': anchor,

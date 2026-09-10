@@ -144,6 +144,29 @@ class MainCacheTest(unittest.TestCase):
             self.publish()
         self.assertFalse(cache.publication_path(self.store, self.project).exists())
 
+    def test_runner_change_discards_runtime_graph_before_recording_again(self):
+        self.publish()
+        self.info['runner'] = 'upgraded-patch'
+
+        def record():
+            self.assertFalse((Path(self.info['cache']) / 'graph.json').exists())
+            self.write_graph()
+
+        self.publish(record)
+        self.assertEqual('upgraded-patch', cache.read_publication(self.store, self.project)['runner'])
+
+    def test_refresh_restores_successful_graph_before_retrying_failed_runtime_state(self):
+        self.publish()
+        (Path(self.info['cache']) / 'graph.json').write_text('failed runtime state')
+        (self.root / 'source.php').write_text('new main')
+        current = self.commit_change('new main')
+
+        def retry():
+            self.assertEqual(self.graph, json.loads((Path(self.info['cache']) / 'graph.json').read_text()))
+            self.write_graph()
+
+        self.publish(retry, current)
+
     def test_missing_incompatible_corrupt_or_future_publication_is_a_cache_miss(self):
         root = self.feature()
         self.assertFalse(self.seed(root).exists())
@@ -158,6 +181,8 @@ class MainCacheTest(unittest.TestCase):
                 path.write_text(json.dumps({**snapshot, **changes}))
                 self.assertFalse(self.seed(root).exists())
         path.write_text('incomplete JSON')
+        self.assertFalse(self.seed(root).exists())
+        path.write_text('[]')
         self.assertFalse(self.seed(root).exists())
 
     def test_no_affected_run_can_publish_an_ancestor_graph_at_new_main(self):
