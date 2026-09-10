@@ -38,6 +38,8 @@ use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
+use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
+use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\AppProd\AppProdRuntimeConverger;
@@ -106,9 +108,11 @@ use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
+use App\Infrastructure\AppInstances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
+use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
@@ -207,6 +211,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceEnvironmentReader::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceEnvironmentWriter::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceOperationPreflight::class => RemoteAppInstanceEnvironmentAccess::class,
+        AppInstanceSqliteSeeder::class => RemoteAppInstanceSqliteSeeder::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevCertificateManager::class => RemoteAppDevCertificateManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
@@ -256,6 +261,7 @@ final class AppServiceProvider extends ServiceProvider
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
+        SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleToolIntentGuard::class => EloquentNodeRoleToolIntentGuard::class,

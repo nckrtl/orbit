@@ -26,7 +26,7 @@ The seed operation does not stop source processes or schedules, pause queue proc
 
 ## Install and retry the target seed
 
-Orbit transfers the validated snapshot without putting database bytes in Activity or generic logs. It installs the complete snapshot through an atomic replacement at the target path.
+Orbit transfers the validated snapshot without putting database bytes in Activity or generic logs. It publishes the complete snapshot atomically at an absent target path and never overwrites an unrelated destination.
 
 An interrupted attempt resumes only temporary work that belongs to the same seed. It removes its own temporary files, preserves unrelated files, and refuses a destination database that the operation does not own. After a completed installation, an identical retry keeps the existing target database without replacing it.
 
