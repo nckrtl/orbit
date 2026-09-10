@@ -1078,6 +1078,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0051-select-discovery-only-feature-delivery.md",
+            "title": "ADR 0051: Select discovery-only feature delivery",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Proof topology",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0006",
+                "0015",
+                "0049",
+                "0050",
+                "0051"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
