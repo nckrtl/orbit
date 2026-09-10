@@ -24,6 +24,22 @@ A successful SDK result contains only a positive `app_instance_id`, the expected
 
 The SDK keeps a valid structured Gateway error code and request ID for an import conflict, unavailable target, failed preflight, unresolved reference, failed synchronization, or unconfirmed synchronization. It omits remote response content from that error boundary.
 
+## Use the CLI
+
+The Orbit command-line interface (CLI) exposes the three environment operations without reading a local file, choosing a target Node, or displaying an environment value. Select an AppInstance with a positive numeric ID or its exact Route hostname.
+
+| Command | Required options | Optional options | Effect |
+| --- | --- | --- | --- |
+| `orbit env:import` | `--instance=SELECTOR` | `--replace`, `--json` | Import the workload `.env`. The Gateway refuses stored-key conflicts unless `--replace` is present. Replacement retains stored keys that the file omits. |
+| `orbit env:update` | `--instance=SELECTOR`, `--key=KEY`, `--value=VALUE` | `--json` | Add or replace one stored value. The workload file stays unchanged. |
+| `orbit env:sync` | `--instance=SELECTOR` | `--json` | Replace the workload `.env` from the complete stored configuration. |
+
+Quote environment values for the shell so Orbit receives the intended string. An empty value needs an explicit empty quoted argument, `--value=''`; quote multiline values and values that contain spaces or shell metacharacters. Use single quotes for a reference expression such as `--value='https://{{app_instance.hostname}}'` so the Gateway stores the expression unchanged for destination-specific synchronization. The strings `false` and `0` remain strings.
+
+Import or update changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` explicitly to install it in the workload file. Synchronization does not refresh an application cache or restart a service or process, so run those application steps separately when existing application code must use the new configuration.
+
+Human and JSON success output contains the selected AppInstance ID, the operation, whether the owned boundary changed, the total stored key count, and the request ID. Import and update output also states that the workload file is unchanged. Failures use a bounded error code and request ID and omit environment values.
+
 ## Import an environment file
 
 Use the Gateway API to import the existing file from the recorded placement:
