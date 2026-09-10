@@ -1,6 +1,6 @@
 # Incus topology registry
 
-This page is for a contributor or agent who proves an issue on Incus. It answers which topologies an issue has, which state each one is in, and which `bin/e2e-topology` command from the `apps/e2e` harness moves it. The plan a proof runs is on [Proof plans](proof-plans.md). The persistent snapshot every topology is copied from is on [Topology snapshot](topology-snapshot.md).
+This page is for contributors, agents, and operators who use disposable Incus topologies from the `apps/e2e` harness. It answers which topology an issue or on-demand scenario starts from, which state it owns, and which `bin/e2e-topology` or `bin/e2e-scenarios` command controls it. The plan a proof runs is on [Proof plans](proof-plans.md). The persistent snapshot that discovery, proof, and snapshot-lane scenarios clone is on [Topology snapshot](topology-snapshot.md).
 
 ## Discovery and proof
 
