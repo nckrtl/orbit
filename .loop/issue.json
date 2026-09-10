@@ -1,0 +1,108 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "ADR 0055",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers.md"
+      },
+      {
+        "title": "ADR 0003",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0003-singleton-metrics-role.md"
+      },
+      {
+        "title": "ADR 0033",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0033-trust-wireguard-members-for-private-node-traffic.md"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An authorized WireGuard member opens Grafana through metrics.orbit; a member without Gateway authority cannot reach Grafana through that name or a direct upstream address.\n\n## Scope\n\n* In: Gateway Grafana publication, peer and grant authorization, request identity handling, upstream network isolation, revocation, and Metrics access guidance.\n* Out: Grafana credential lifecycle, other private-service authorization, new SDK or CLI operations, operator-client enrollment, and harness changes.\n\n## Acceptance\n\n- [ ] The active Gateway caller and an active peer with a directed grant to that Gateway can reach the Grafana login through metrics.orbit; a peer with only Metrics-Node permission, an ungranted peer, an inactive peer, and a public caller cannot. Proof: Incus action `grafana-gateway-authority` and the Gateway authorization suites.\n- [ ] Browser paths, Grafana API requests, and streaming connections use the same caller check; spoofed forwarding or identity headers cannot turn a denied caller into an admitted caller, and unavailable identity or authorization state denies forwarding. Proof: Gateway Grafana authorization tests and Incus action `grafana-request-identity`.\n- [ ] An active peer cannot bypass the check through a raw Gateway address, alternate Host value, Metrics address, or direct Grafana port; both separate-role and co-located Gateway/Metrics layouts admit upstream traffic only from the Gateway proxy. Proof: Incus action `grafana-upstream-isolation` and `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsPublicationSshExecutorTest.php`.\n- [ ] Removing the peer's membership or required Gateway grant denies subsequent Grafana requests and terminates its existing streaming access; repeating the revocation does not restore access. Proof: Incus action `grafana-access-revocation`.\n- [ ] Valid Gateway authority does not bypass Grafana login or expose stored credentials in ordinary responses; unrelated private services retain their accepted WireGuard reachability. Proof: Incus action `grafana-login-and-network-regression` and the Gateway Metrics API suites.\n- [ ] Publication failure and retry preserve upstream isolation and never report a partially authorized Grafana endpoint as ready. Proof: `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsPublicationManagerTest.php` and Incus action `grafana-publication-retry`.\n- [ ] Metrics guidance describes the endpoint, grant requirement, login, and revocation behavior, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Gateway checks pass. Proof: `cd apps/gateway && composer check`.",
+  "id": "f9db0d4c-d6a9-4b4b-b168-464403382a36",
+  "identifier": "ORB-229",
+  "inverseRelations": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Authorize Grafana access through the Gateway",
+  "updatedAt": "2026-09-10T15:43:01.998Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-229/authorize-grafana-access-through-the-gateway"
+}
