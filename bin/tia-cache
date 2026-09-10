@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
-"""Publish successful main TIA graphs and seed private worktree caches."""
+"""Refresh main test and quality caches through one durable background worker."""
 import argparse
+import base64
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 
 PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+QUALITY = {
+    'pint': ('pint.json', 'vendor/pint.cache', 'format:check'),
+    'phpstan': ('phpstan.neon', 'vendor/phpstan/cache/resultCache.php', 'analyse'),
+}
+COMMAND_LOG = None
+COMMAND_LOCK = None
+COMMAND_TIMEOUT = 1800
 PHP_METADATA = r'''
 require $argv[1].'/vendor/autoload.php';
 echo json_encode([
@@ -25,11 +36,45 @@ echo json_encode([
 '''
 
 
+class CommandFailure(RuntimeError):
+    def __init__(self, message, exit_code=None):
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
 def run(root, *command, capture=True):
-    result = subprocess.run(command, cwd=root, text=True, capture_output=capture,
-                            env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'})
+    options = {'cwd': root, 'text': True, 'start_new_session': True,
+               'pass_fds': () if COMMAND_LOCK is None else (COMMAND_LOCK,),
+               'env': {**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'}}
+    def execute(**streams):
+        # Descendants inherit maintenance ownership if the worker is interrupted.
+        process = subprocess.Popen(command, **streams, **options)
+        try:
+            stdout, stderr = process.communicate(timeout=COMMAND_TIMEOUT)
+        except subprocess.TimeoutExpired as error:
+            for termination in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.killpg(process.pid, termination)
+                except ProcessLookupError:
+                    pass
+                if termination == signal.SIGTERM:
+                    try:
+                        process.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
+            process.communicate()
+            raise CommandFailure(f'{command[0]} timed out after {COMMAND_TIMEOUT}s') from error
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+    if not capture and COMMAND_LOG is not None:
+        with COMMAND_LOG.open('a') as output:
+            output.write(' '.join(command) + '\n')
+            output.flush()
+            result = execute(stdout=output, stderr=subprocess.STDOUT)
+    else:
+        result = execute(**({'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE} if capture else {}))
     if result.returncode:
-        raise RuntimeError((result.stderr or '').strip() or f'{command[0]} exited {result.returncode}')
+        raise CommandFailure((result.stderr or '').strip() or f'{command[0]} exited {result.returncode}', result.returncode)
     return result.stdout.strip() if capture else None
 
 
@@ -63,6 +108,11 @@ def atomic_write(path, data, replace=True):
         else:
             # A concurrent seed or a first Pest run must win over this copy.
             os.link(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -182,8 +232,9 @@ def install_project(root, project):
     run(directory, 'composer', 'install', '--no-interaction', '--prefer-dist', capture=False)
 
 
-def refresh_project(root, store, project, commit):
-    install_project(root, project)
+def refresh_project(root, store, project, commit, installed=False, force=False):
+    if not installed:
+        install_project(root, project)
     info = metadata(root, project)
     if not info['coverage']:
         raise RuntimeError('PCOV or Xdebug coverage must be enabled to refresh a baseline.')
@@ -191,7 +242,7 @@ def refresh_project(root, store, project, commit):
     try:
         snapshot = read_publication(store, project)
         compatible(root, project, snapshot, info)
-        if snapshot['tested_commit'] == commit:
+        if snapshot['tested_commit'] == commit and not force:
             print(f'[{project}] already published at {commit[:12]}', flush=True)
             return
         baseline = snapshot['graph']
@@ -220,49 +271,342 @@ def refresh_project(root, store, project, commit):
     print(f'[{project}] published main {commit[:12]}', flush=True)
 
 
-def refresh(common, store, projects):
+def php_runtime(root):
+    return run(root, 'php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+
+
+def quality_fingerprint(root, project, tool):
+    config, _, _ = QUALITY[tool]
+    return digest((root / project / 'composer.lock').read_bytes()
+                  + b'\0' + (root / project / config).read_bytes()
+                  + b'\0' + php_runtime(root).encode())
+
+
+def quality_path(store, project, tool):
+    return store / 'quality' / project.replace('/', '-') / (tool + '.json')
+
+
+def quality_data(snapshot, project, tool):
+    if snapshot.get('schema') != 1 or snapshot.get('project') != project or snapshot.get('tool') != tool:
+        raise ValueError('Quality publication belongs to another project or tool.')
+    data = base64.b64decode(snapshot['data'], validate=True)
+    if not data or digest(data) != snapshot['sha256']:
+        raise ValueError('Quality publication checksum differs.')
+    return data
+
+
+def refresh_quality(root, store, project, commit, tool, force=False):
+    _, relative, script = QUALITY[tool]
+    path = quality_path(store, project, tool)
+    fingerprint = quality_fingerprint(root, project, tool)
+    destination = root / project / relative
+    try:
+        snapshot = json.loads(path.read_text())
+        data = quality_data(snapshot, project, tool)
+        if snapshot['fingerprint'] != fingerprint:
+            raise ValueError('Quality dependencies or configuration differ.')
+        require_ancestor(root, snapshot['tested_commit'], commit)
+        if snapshot['tested_commit'] == commit and not force:
+            return
+        atomic_write(destination, data)
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError):
+        # The maintenance checkout owns this disposable tool cache, not its publication.
+        destination.unlink(missing_ok=True)
+    run(root / project, 'composer', script, capture=False)
+    if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
+        raise RuntimeError('Cache checkout changed during quality checks; publication refused.')
+    if destination.is_symlink() or not destination.is_file():
+        raise RuntimeError('Quality check did not produce a regular result cache.')
+    data = destination.read_bytes()
+    if not data:
+        raise RuntimeError('Quality check produced an empty cache.')
+    snapshot = {'schema': 1, 'project': project, 'tool': tool, 'tested_commit': commit,
+                'fingerprint': fingerprint, 'sha256': digest(data),
+                'data': base64.b64encode(data).decode(),
+                'published_at': datetime.now(timezone.utc).isoformat()}
+    atomic_write(path, json.dumps(snapshot).encode())
+
+
+@contextmanager
+def queue_lock(store):
     store.mkdir(parents=True, exist_ok=True)
-    # Every queued refresh reads newest main after acquiring the lock.
-    with (store / 'refresh.lock').open('a') as lock:
+    with (store / 'requests.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        git(common, 'fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main')
-        checkout = prepare_checkout(common, store)
-        commit = git(checkout, 'rev-parse', 'HEAD')
-        failed = False
-        for project in projects:
+        yield
+
+
+def load_requests(store):
+    try:
+        state = json.loads((store / 'requests.json').read_text())
+    except FileNotFoundError:
+        return {'schema': 1, 'generation': 0, 'pending': {}, 'results': {}}
+    if (not isinstance(state, dict) or state.get('schema') != 1
+            or not isinstance(state.get('pending'), dict) or not isinstance(state.get('results'), dict)
+            or type(state.get('generation')) is not int
+            or any(project not in PROJECTS or not isinstance(request, dict)
+                   or type(request.get('generation')) is not int
+                   for project, request in state['pending'].items())
+            or any(project not in PROJECTS or not isinstance(result, dict)
+                   for project, result in state['results'].items())):
+        raise ValueError('Invalid maintenance requests; retain the file for diagnosis.')
+    if 'correctness_failures' not in state:
+        state['correctness_failures'] = {
+            project: {check['tool']: {**check, 'commit': result.get('commit')}
+                      for check in result.get('checks', []) if check.get('kind') == 'check_failure'}
+            for project, result in state['results'].items()
+            if any(check.get('kind') == 'check_failure' for check in result.get('checks', []))}
+    failures = state['correctness_failures']
+    if (not isinstance(failures, dict) or any(
+            project not in PROJECTS or not isinstance(checks, dict)
+            or any(tool not in ('tia', *QUALITY) or not isinstance(check, dict)
+                   or check.get('tool') != tool or check.get('kind') != 'check_failure'
+                   for tool, check in checks.items()) for project, checks in failures.items())):
+        raise ValueError('Invalid correctness failures; retain the file for diagnosis.')
+    return state
+
+
+def save_requests(store, state):
+    atomic_write(store / 'requests.json', json.dumps(state).encode())
+
+
+def record_outcome(state, project, outcome):
+    """Infrastructure failures cannot erase an observed correctness failure."""
+    unresolved = state.setdefault('correctness_failures', {}).setdefault(project, {})
+    for check in outcome['checks']:
+        tool = check['tool']
+        if check.get('kind') == 'check_failure':
+            unresolved[tool] = {**check, 'commit': outcome['commit']}
+        elif check['exit_code'] == 0:
+            unresolved.pop(tool, None)
+    if not unresolved:
+        del state['correctness_failures'][project]
+    state['results'][project] = outcome
+
+
+def known_main(common):
+    try:
+        return git(common, 'rev-parse', '--verify', 'refs/remotes/origin/main')
+    except RuntimeError:
+        return None
+
+
+def publications_current(store, project, commit):
+    try:
+        snapshot = read_publication(store, project)
+        if snapshot['tested_commit'] != commit or digest(snapshot['graph'].encode()) != snapshot['sha256']:
+            return False
+        for tool in QUALITY:
+            snapshot = json.loads(quality_path(store, project, tool).read_text())
+            quality_data(snapshot, project, tool)
+            if snapshot['tested_commit'] != commit:
+                return False
+        return True
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
+def worker_key(common):
+    return digest(Path(__file__).read_bytes() + php_runtime(common).encode())
+
+
+def enqueue(common, store, projects):
+    """Caller holds requests.lock through worker launch to avoid a shutdown race."""
+    state = load_requests(store)
+    target = known_main(common)
+    key = worker_key(common)
+    state['generation'] += 1
+    # Upgrade every retained request, including projects outside this invocation.
+    for request in state['pending'].values():
+        if request.get('worker_key') != key:
+            request.update(worker_key=key, generation=state['generation'])
+    for project in projects:
+        # The worker must fetch even when the caller's remote-tracking ref is stale.
+        # It skips checks after that fetch when successful publications are current.
+        pending = state['pending'].get(project)
+        if pending and pending.get('target') == target and pending.get('worker_key') == key:
+            continue
+        state['pending'][project] = {'generation': state['generation'], 'target': target, 'worker_key': key}
+    save_requests(store, state)
+    return state
+
+
+def acquire_worker(store, blocking=False):
+    lock = (store / 'refresh.lock').open('a+')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+    except BlockingIOError:
+        lock.close()
+        return None
+    return lock
+
+
+def active_worker(store):
+    if not (store / 'refresh.lock').exists():
+        return False
+    with (store / 'refresh.lock').open('r') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+    return False
+
+
+def project_checks(root, store, project, commit, directory):
+    global COMMAND_LOG
+    checks = []
+    unresolved = load_requests(store).get('correctness_failures', {}).get(project, {})
+    operations = [('install', lambda: install_project(root, project)),
+                  ('tia', lambda: refresh_project(root, store, project, commit, installed=True, force='tia' in unresolved))]
+    operations += [(tool, lambda tool=tool: refresh_quality(root, store, project, commit, tool, force=tool in unresolved)) for tool in QUALITY]
+    for tool, operation in operations:
+        COMMAND_LOG = directory / (project.replace('/', '-') + '-' + tool + '.log')
+        COMMAND_LOG.write_text(f'{project}: {tool} at {commit}\n')
+        entry = {'tool': tool, 'log': str(COMMAND_LOG), 'exit_code': 0}
+        try:
+            operation()
+        except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
+            entry.update(exit_code=getattr(error, 'exit_code', None) or 1, error=str(error),
+                         kind='check_failure' if tool != 'install' and isinstance(error, CommandFailure)
+                         and error.exit_code is not None else 'maintenance_failure')
+            with COMMAND_LOG.open('a') as output:
+                output.write(str(error) + '\n')
+        finally:
+            COMMAND_LOG = None
+        checks.append(entry)
+        if tool == 'install' and entry['exit_code']:
+            break
+    return {'commit': commit, 'success': all(item['exit_code'] == 0 for item in checks), 'checks': checks}
+
+
+def drain(common, store, lock):
+    """Drain durable generations; a crash leaves the unacknowledged batch pending."""
+    global COMMAND_LOCK
+    COMMAND_LOCK = lock.fileno()
+    failed = False
+    try:
+        while True:
+            with queue_lock(store):
+                state = load_requests(store)
+                batch = state['pending'].copy()
+                if not batch or any(request.get('worker_key') != worker_key(common) for request in batch.values()):
+                    # Release before the queue lock: a concurrent submitter can now start a worker.
+                    # Requests from an upgraded runner remain visible for its next invocation.
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+                    return int(failed)
+            directory = Path(tempfile.mkdtemp(prefix='run-', dir=store))
+            commit = known_main(common)
+            outcomes = {}
             try:
-                refresh_project(checkout, store, project, commit)
+                git(common, 'fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main')
+                checkout = prepare_checkout(common, store)
+                commit = git(checkout, 'rev-parse', 'HEAD')
+                key = worker_key(common)
+                for project in batch:
+                    previous = state['results'].get(project, {})
+                    if (previous.get('success') and previous.get('worker_key') == key
+                            and not state.get('correctness_failures', {}).get(project)
+                            and publications_current(store, project, commit)):
+                        outcomes[project] = {**previous, 'commit': commit}
+                    else:
+                        outcomes[project] = {**project_checks(checkout, store, project, commit, directory),
+                                             'worker_key': key}
+                    # Expose a correctness failure before the remaining projects finish.
+                    with queue_lock(store):
+                        progress = load_requests(store)
+                        record_outcome(progress, project, outcomes[project])
+                        save_requests(store, progress)
             except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
-                failed = True
-                print(f'[{project}] refresh failed; previous publication retained: {error}', flush=True)
-        return 1 if failed else 0
+                log = directory / 'setup.log'
+                log.write_text(str(error) + '\n')
+                outcomes = {project: {'commit': commit, 'success': False, 'checks': [
+                    {'tool': 'setup', 'kind': 'maintenance_failure', 'exit_code': 1,
+                     'error': str(error), 'log': str(log)}]} for project in batch}
+            with queue_lock(store):
+                state = load_requests(store)
+                for project, request in batch.items():
+                    outcome = outcomes[project]
+                    record_outcome(state, project, outcome)
+                    failed |= not outcome['success']
+                    if state['pending'].get(project) == request:
+                        del state['pending'][project]
+                save_requests(store, state)
+            print(f'Main cache refresh at {commit}: {"FAILED" if any(not o["success"] for o in outcomes.values()) else "passed"}; logs: {directory}', flush=True)
+    finally:
+        COMMAND_LOCK = None
+        lock.close()
+
+
+def refresh(common, store, projects):
+    with queue_lock(store):
+        enqueue(common, store, projects)
+    lock = acquire_worker(store, blocking=True)
+    result = drain(common, store, lock)
+    state = load_requests(store)
+    return int(bool(result) or any(not state['results'].get(project, {}).get('success') for project in projects))
 
 
 def start_background(common, store, projects):
-    # Closeout may remove the caller's feature worktree immediately after queueing.
-    source = Path(__file__).read_bytes()
-    runner = store / 'runners' / (digest(source) + '.py')
-    atomic_write(runner, source)
-    log = store / 'refresh.log'
-    with log.open('ab') as output:
-        process = subprocess.Popen(
-            [sys.executable, str(runner), 'refresh', '--repository', str(common),
-             *[f'--project={project}' for project in projects]],
-            cwd=common, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-    print(f'TIA refresh queued (pid {process.pid}); log: {log}')
+    with queue_lock(store):
+        state = enqueue(common, store, projects)
+        if not state['pending']:
+            print('Main caches already published; no refresh needed.')
+            return
+        lock = acquire_worker(store)
+        if lock is None:
+            print(f'Cache request retained by active worker; log: {store / "refresh.log"}')
+            return
+        try:
+            # Frozen, standalone runner and inherited lock survive caller/worktree removal.
+            source = Path(__file__).read_bytes()
+            runner = store / 'runners' / (digest(source) + '.py')
+            atomic_write(runner, source)
+            log = store / 'refresh.log'
+            with log.open('ab') as output:
+                process = subprocess.Popen(
+                    [sys.executable, str(runner), 'work', '--repository', str(common),
+                     '--worker-fd', str(lock.fileno())],
+                    cwd=common, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+                    start_new_session=True, pass_fds=(lock.fileno(),),
+                )
+            print(f'Main cache refresh queued (pid {process.pid}); log: {log}')
+        finally:
+            # Do not unlock: the child inherited the same lock description.
+            lock.close()
+
+
+def status(common, store, remote=False):
+    main = known_main(common)
+    if remote:
+        lines = git(common, 'ls-remote', 'origin', 'refs/heads/main').splitlines()
+        if len(lines) != 1 or not re.fullmatch(r'[0-9a-f]{40,64}\s+refs/heads/main', lines[0]):
+            raise RuntimeError('Remote main could not be established.')
+        main = lines[0].split()[0]
+    state = load_requests(store)
+    active = active_worker(store)
+    current = {project: bool(main) and publications_current(store, project, main) for project in PROJECTS}
+    failures = {project: result for project, result in state['results'].items() if not result.get('success')}
+    return {'schema': 1, 'main': main, 'worker_active': active, 'pending': state['pending'],
+            'current': current, 'results': state['results'], 'failures': failures,
+            'correctness_failures': state.get('correctness_failures', {}),
+            'needed': not all(current.values()), 'refresh_log': str(store / 'refresh.log')}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('seed', 'refresh', 'status'))
+    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work'))
     parser.add_argument('--repository', default='.')
     parser.add_argument('--project', action='append', choices=PROJECTS)
     parser.add_argument('--background', action='store_true')
+    parser.add_argument('--json', action='store_true', help='Print machine-readable maintenance status')
+    parser.add_argument('--remote', action='store_true', help='Read authoritative remote main for status')
+    parser.add_argument('--worker-fd', type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.background and args.action != 'refresh':
         parser.error('--background requires refresh')
+    if (args.json or args.remote) and args.action != 'status':
+        parser.error('--json and --remote require status')
+    if args.action == 'work' and args.worker_fd is None:
+        parser.error('work requires an inherited worker lock')
     common = common_directory(args.repository)
     store = cache_store(common)
     projects = args.project or PROJECTS
@@ -270,6 +614,9 @@ def main():
         root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
         seed(root, store, projects)
     elif args.action == 'status':
+        if args.json:
+            print(json.dumps(status(common, store, args.remote), sort_keys=True))
+            return 0
         for project in projects:
             try:
                 snapshot = read_publication(store, project)
@@ -277,6 +624,10 @@ def main():
             except (OSError, ValueError) as error:
                 print(f'[{project}] no readable publication: {error}')
         print(f'Refresh log: {store / "refresh.log"}')
+        print(json.dumps(status(common, store, args.remote), sort_keys=True))
+    elif args.action == 'work':
+        os.nice(10)
+        return drain(common, store, os.fdopen(args.worker_fd, 'a+'))
     elif args.background:
         start_background(common, store, projects)
     else:

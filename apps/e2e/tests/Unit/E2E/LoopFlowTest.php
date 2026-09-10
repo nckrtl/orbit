@@ -87,7 +87,7 @@ it('creates worktrees with the flag or shared default and preserves existing sel
     expect($run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-42'])->successful())->toBeFalse();
 });
 
-it('pulls clean primary main and refreshes baselines before creating the next worktree', function (): void {
+it('pulls clean primary main and queues warming without making it a worktree creation gate', function (): void {
     ['root' => $root, 'run' => $run] = loopFlowFixture();
     $remote = temporaryPath('orbit-flow-new-main-', 6);
     $run->run(['git', 'init', '--bare', $remote]);
@@ -105,7 +105,7 @@ it('pulls clean primary main and refreshes baselines before creating the next wo
     expect($result->successful())->toBeTrue($result->errorOutput());
     expect(file_get_contents($root.'/next.txt'))->toBe('new main');
     expect(file_get_contents($root.'-worktrees/tst-46/next.txt'))->toBe('new main');
-    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --repository='.$root);
+    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --background --repository='.$root);
     expect($run->path($root)->run(['git', 'status', '--porcelain'])->output())->toBe('');
 });
 

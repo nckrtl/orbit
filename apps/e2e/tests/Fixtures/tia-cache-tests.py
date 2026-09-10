@@ -1,9 +1,12 @@
 """Exercise cache publication with real repositories and an isolated test runner."""
 import copy
+import fcntl
 import importlib.machinery
 import importlib.util
 import json
 import os
+import signal
+import time
 from pathlib import Path
 import subprocess
 import sys
@@ -206,7 +209,9 @@ class MainCacheTest(unittest.TestCase):
             cache.prepare_checkout(self.common, self.store)
 
     def test_background_runner_survives_caller_removal_and_does_not_hold_closeout(self):
-        with patch.object(cache.subprocess, 'Popen') as process:
+        with patch.object(cache, 'known_main', return_value=self.commit), \
+                patch.object(cache, 'worker_key', return_value='runner'), \
+                patch.object(cache.subprocess, 'Popen') as process:
             cache.start_background(self.common, self.store, [self.project])
         arguments, options = process.call_args
         command = arguments[0]
@@ -217,10 +222,14 @@ class MainCacheTest(unittest.TestCase):
         self.assertEqual(subprocess.DEVNULL, options['stdin'])
 
     def test_refresh_releases_lock_and_preserves_other_project_progress_on_failure(self):
-        with patch.object(cache, 'refresh_project', side_effect=[RuntimeError('failed'), None]) as refresh:
+        failed = {'commit': self.commit, 'success': False, 'checks': [{'tool': 'tia', 'exit_code': 1}]}
+        passed = {'commit': self.commit, 'success': True, 'checks': [{'tool': 'tia', 'exit_code': 0}]}
+        with patch.object(cache, 'project_checks', side_effect=[failed, passed]) as refresh:
             self.assertEqual(1, cache.refresh(self.common, self.store, ['apps/cli', 'apps/docs']))
             self.assertEqual(2, refresh.call_count)
-        with patch.object(cache, 'refresh_project'):
+        self.assertFalse(cache.load_requests(self.store)['results']['apps/cli']['success'])
+        self.assertTrue(cache.load_requests(self.store)['results']['apps/docs']['success'])
+        with patch.object(cache, 'project_checks', return_value=passed):
             self.assertEqual(0, cache.refresh(self.common, self.store, ['apps/docs']))
 
     def test_bootstrap_seeds_after_installation_without_running_affected_suites(self):
@@ -247,6 +256,333 @@ class MainCacheTest(unittest.TestCase):
         self.assertEqual(5, sum(line.startswith('composer install') for line in lines))
         self.assertEqual('cache seed --repository=' + str(root), lines[5])
         self.assertNotIn('test:affected', calls.read_text())
+
+
+class MaintenanceQueueTest(unittest.TestCase):
+    setUp = MainCacheTest.setUp
+    commit_change = MainCacheTest.commit_change
+
+    def submit(self, projects=None):
+        with cache.queue_lock(self.store):
+            return cache.enqueue(self.common, self.store, projects or [self.project])
+
+    def test_duplicate_requests_share_one_worker_and_keep_all_projects(self):
+        self.submit()
+        lock = cache.acquire_worker(self.store)
+        try:
+            cache.start_background(self.common, self.store, [self.project])
+            cache.start_background(self.common, self.store, ['apps/cli'])
+            state = cache.load_requests(self.store)
+            self.assertEqual({'apps/cli', 'apps/docs'}, set(state['pending']))
+            self.assertTrue(cache.active_worker(self.store))
+            self.assertIsNone(cache.acquire_worker(self.store))
+        finally:
+            lock.close()
+        calls = []
+
+        def check(root, store, project, commit, directory):
+            calls.append(project)
+            return {'commit': commit, 'success': True, 'checks': []}
+
+        with patch.object(cache, 'project_checks', side_effect=check):
+            self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
+        self.assertEqual(['apps/docs', 'apps/cli'], calls)
+        self.assertEqual({}, cache.load_requests(self.store)['pending'])
+
+    def test_refresh_fetches_an_external_merge_even_with_current_local_publications(self):
+        key = cache.worker_key(self.common)
+        with cache.queue_lock(self.store):
+            cache.save_requests(self.store, {'schema': 1, 'generation': 1, 'pending': {}, 'results': {
+                self.project: {'commit': self.commit, 'success': True, 'checks': [], 'worker_key': key}}})
+        (self.root / 'source.php').write_text('external merge')
+        remote = self.commit_change('merged outside closeout')
+        self.assertEqual(self.commit, cache.known_main(self.common))
+        with patch.object(cache, 'publications_current', side_effect=lambda store, project, commit: commit == self.commit), \
+                patch.object(cache, 'project_checks', return_value={'commit': remote, 'success': True, 'checks': []}) as checks:
+            self.assertEqual(0, cache.refresh(self.common, self.store, [self.project]))
+        self.assertEqual(remote, checks.call_args.args[3])
+        self.assertEqual(remote, cache.known_main(self.common))
+
+    def test_partial_request_upgrades_all_retained_projects(self):
+        with patch.object(cache, 'worker_key', return_value='old-runner'):
+            self.submit(['apps/cli', 'apps/docs'])
+        with patch.object(cache, 'worker_key', return_value='new-runner'):
+            state = self.submit(['apps/docs'])
+            self.assertEqual({'new-runner'}, {request['worker_key'] for request in state['pending'].values()})
+            with patch.object(cache, 'project_checks', return_value={'commit': self.commit, 'success': True, 'checks': []}) as checks:
+                self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
+            self.assertEqual(2, checks.call_count)
+        self.assertEqual({}, cache.load_requests(self.store)['pending'])
+
+    def test_command_timeout_stops_descendants_before_returning(self):
+        marker = self.root / 'descendant-ready'
+        script = '''import fcntl, os, signal, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+if os.fork() == 0:
+    with open('descendant.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with open('descendant-ready', 'w') as marker:
+            marker.write(str(os.getpid()))
+        time.sleep(30)
+        with open('escaped-child', 'w') as escaped:
+            escaped.write('still running')
+else:
+    time.sleep(30)
+'''
+        try:
+            with patch.object(cache, 'COMMAND_TIMEOUT', 0.5):
+                with self.assertRaisesRegex(cache.CommandFailure, 'timed out'):
+                    cache.run(self.root, sys.executable, '-c', script, capture=False)
+
+            self.assertTrue(marker.exists(), 'The descendant must start before timeout.')
+            with (self.root / 'descendant.lock').open() as lock:
+                # A live descendant still owns this independent lock, even after
+                # its direct parent has exited. Allow bounded kernel teardown
+                # after SIGKILL; a surviving child retains the lock for 30 s.
+                deadline = time.monotonic() + 1
+                while True:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            self.fail('A descendant survived the command timeout.')
+                        time.sleep(0.01)
+            self.assertFalse((self.root / 'escaped-child').exists())
+        finally:
+            if marker.exists():
+                try:
+                    os.kill(int(marker.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_interrupted_worker_command_retains_exclusive_checkout_ownership(self):
+        self.store.mkdir(parents=True)
+        marker = self.root / 'command-ready'
+        release = self.root / 'release-command'
+        os.mkfifo(release)
+        release_fd = os.open(release, os.O_RDWR)
+        script = '''import os
+with open('release-command') as release:
+    with open('command-ready', 'w') as marker:
+        marker.write(str(os.getpid()))
+    release.read(1)
+'''
+        worker = os.fork()
+        if worker == 0:
+            try:
+                os.close(release_fd)
+                lock = cache.acquire_worker(self.store)
+                cache.COMMAND_LOCK = lock.fileno()
+                cache.run(self.root, sys.executable, '-c', script, capture=False)
+            except BaseException:
+                os._exit(1)
+            os._exit(0)
+        try:
+            deadline = time.monotonic() + 5
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(marker.exists(), 'The maintenance command must start.')
+
+            os.kill(worker, signal.SIGKILL)
+            os.waitpid(worker, 0)
+            worker = None
+            contender = cache.acquire_worker(self.store)
+            if contender is not None:
+                contender.close()
+            self.assertIsNone(contender, 'The surviving command must exclude another worker.')
+
+            os.write(release_fd, b'1')
+            deadline = time.monotonic() + 5
+            while cache.active_worker(self.store) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(cache.active_worker(self.store))
+        finally:
+            os.close(release_fd)
+            if worker is not None:
+                os.kill(worker, signal.SIGKILL)
+                os.waitpid(worker, 0)
+            if marker.exists():
+                try:
+                    os.kill(int(marker.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_main_request_arriving_during_refresh_is_not_acknowledged_by_old_batch(self):
+        self.submit()
+        commits = []
+
+        def check(root, store, project, commit, directory):
+            commits.append(commit)
+            if len(commits) == 1:
+                (self.root / 'source.php').write_text('next merged feature')
+                self.next_commit = self.commit_change('next main')
+                cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.next_commit)
+                self.submit()
+            return {'commit': commit, 'success': True, 'checks': []}
+
+        with patch.object(cache, 'project_checks', side_effect=check):
+            self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
+        self.assertEqual([self.commit, self.next_commit], commits)
+        state = cache.load_requests(self.store)
+        self.assertEqual({}, state['pending'])
+        self.assertEqual(self.next_commit, state['results'][self.project]['commit'])
+
+    def test_interrupted_worker_leaves_request_for_a_later_worker(self):
+        self.submit()
+        with patch.object(cache, 'project_checks', side_effect=SystemExit('interrupted')):
+            with self.assertRaises(SystemExit):
+                cache.drain(self.common, self.store, cache.acquire_worker(self.store))
+        self.assertFalse(cache.active_worker(self.store))
+        self.assertIn(self.project, cache.load_requests(self.store)['pending'])
+        with patch.object(cache, 'project_checks', return_value={'commit': self.commit, 'success': True, 'checks': []}):
+            self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
+        self.assertEqual({}, cache.load_requests(self.store)['pending'])
+
+    def test_launch_failure_keeps_a_durable_request_without_an_active_owner(self):
+        with patch.object(cache, 'known_main', return_value=self.commit), \
+                patch.object(cache, 'worker_key', return_value='runner'), \
+                patch.object(cache.subprocess, 'Popen', side_effect=OSError('spawn failed')):
+            with self.assertRaisesRegex(OSError, 'spawn failed'):
+                cache.start_background(self.common, self.store, [self.project])
+        self.assertIn(self.project, cache.load_requests(self.store)['pending'])
+        self.assertFalse(cache.active_worker(self.store))
+
+    def test_old_worker_leaves_upgraded_request_for_the_new_runner(self):
+        with patch.object(cache, 'worker_key', return_value='new-runner'):
+            self.submit()
+        with patch.object(cache, 'worker_key', return_value='old-runner'), \
+                patch.object(cache, 'project_checks') as checks:
+            cache.drain(self.common, self.store, cache.acquire_worker(self.store))
+            checks.assert_not_called()
+        self.assertFalse(cache.active_worker(self.store))
+        self.assertIn(self.project, cache.load_requests(self.store)['pending'])
+        with patch.object(cache, 'worker_key', return_value='new-runner'), \
+                patch.object(cache, 'project_checks', return_value={'commit': self.commit, 'success': True, 'checks': []}):
+            self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
+        self.assertEqual({}, cache.load_requests(self.store)['pending'])
+
+    def test_correctness_hold_survives_environment_failure_until_the_failed_check_passes(self):
+        outcomes = [
+            {'commit': self.commit, 'success': False, 'checks': [
+                {'tool': 'tia', 'kind': 'check_failure', 'exit_code': 2}]},
+            {'commit': self.commit, 'success': False, 'checks': [
+                {'tool': 'install', 'kind': 'maintenance_failure', 'exit_code': 1}]},
+            {'commit': self.commit, 'success': True, 'checks': [
+                {'tool': 'install', 'exit_code': 0}, {'tool': 'tia', 'exit_code': 0}]},
+        ]
+        for index, outcome in enumerate(outcomes):
+            self.submit()
+            with patch.object(cache, 'project_checks', return_value=outcome):
+                cache.drain(self.common, self.store, cache.acquire_worker(self.store))
+            unresolved = cache.status(self.common, self.store)['correctness_failures']
+            self.assertEqual(index < 2, bool(unresolved))
+            if unresolved:
+                self.assertEqual(2, unresolved[self.project]['tia']['exit_code'])
+
+    def test_check_failure_is_distinct_from_install_failure_and_does_not_skip_quality_checks(self):
+        self.store.mkdir(parents=True)
+        with patch.object(cache, 'install_project'), \
+                patch.object(cache, 'refresh_project', side_effect=cache.CommandFailure('test failed', 2)), \
+                patch.object(cache, 'refresh_quality') as quality:
+            result = cache.project_checks(self.root, self.store, self.project, self.commit, self.store)
+        self.assertFalse(result['success'])
+        self.assertEqual('check_failure', result['checks'][1]['kind'])
+        self.assertEqual(2, quality.call_count)
+        with patch.object(cache, 'install_project', side_effect=cache.CommandFailure('download failed', 1)):
+            result = cache.project_checks(self.root, self.store, self.project, self.commit, self.store)
+        self.assertEqual(1, len(result['checks']))
+        self.assertEqual('maintenance_failure', result['checks'][0]['kind'])
+
+    def test_status_reads_remote_main_without_advancing_primary_or_queueing_work(self):
+        old = self.commit
+        (self.root / 'source.php').write_text('new main')
+        current = self.commit_change('next')
+        self.assertEqual(old, cache.known_main(self.common))
+        result = cache.status(self.common, self.store, remote=True)
+        self.assertEqual(current, result['main'])
+        self.assertTrue(result['needed'])
+        self.assertEqual({}, result['pending'])
+        self.assertFalse((self.store / 'requests.json').exists())
+        self.assertEqual(old, cache.known_main(self.common))
+
+
+class QualityPublicationTest(unittest.TestCase):
+    commit_change = MainCacheTest.commit_change
+    feature = MainCacheTest.feature
+
+    def setUp(self):
+        MainCacheTest.setUp(self)
+        project = self.root / self.project
+        project.mkdir(parents=True)
+        (self.root / '.gitignore').write_text('**/vendor/\n')
+        (project / 'composer.lock').write_text('{"packages":[]}')
+        (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}')
+        (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
+        self.commit = self.commit_change('quality configuration')
+
+    def publish(self, tool='pint', failure=None):
+        original = cache.run
+
+        def run(root, *args, **kwargs):
+            if args[0] == 'composer':
+                if failure:
+                    raise cache.CommandFailure(failure, 1)
+                path = self.root / self.project / cache.QUALITY[tool][1]
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'portable tool result')
+                return
+            return original(root, *args, **kwargs)
+
+        with patch.object(cache, 'run', side_effect=run):
+            cache.refresh_quality(self.root, self.store, self.project, self.commit, tool)
+
+    def seed(self, worktree):
+        return subprocess.run([sys.executable, str(Path(cache.__file__).with_name('worktree-cache')),
+                               '--worktree', str(worktree)], capture_output=True, text=True)
+
+    def test_published_quality_caches_seed_without_a_live_donor_and_writes_stay_private(self):
+        for tool in cache.QUALITY:
+            self.publish(tool)
+            (self.root / self.project / cache.QUALITY[tool][1]).unlink()
+        feature = self.feature()
+        result = self.seed(feature)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('published main', result.stdout)
+        for tool in cache.QUALITY:
+            path = feature / self.project / cache.QUALITY[tool][1]
+            self.assertEqual(b'portable tool result', path.read_bytes())
+            path.write_bytes(b'private edit')
+            publication = json.loads(cache.quality_path(self.store, self.project, tool).read_text())
+            self.assertEqual(b'portable tool result', cache.quality_data(publication, self.project, tool))
+        self.seed(feature)
+        self.assertEqual(b'private edit', (feature / self.project / cache.QUALITY['pint'][1]).read_bytes())
+        self.assertFalse((feature / self.project / 'vendor/phpstan/cache/cache').exists())
+
+    def test_failed_quality_check_retains_successful_publication(self):
+        self.publish()
+        path = cache.quality_path(self.store, self.project, 'pint')
+        original = path.read_bytes()
+        (self.root / 'source.php').write_text('bad formatting')
+        self.commit = self.commit_change('new main')
+        with self.assertRaisesRegex(cache.CommandFailure, 'format failed'):
+            self.publish(failure='format failed')
+        self.assertEqual(original, path.read_bytes())
+
+    def test_corrupt_incompatible_and_future_quality_publications_are_not_seeded(self):
+        self.publish()
+        (self.root / self.project / cache.QUALITY['pint'][1]).unlink()
+        feature = self.feature()
+        path = cache.quality_path(self.store, self.project, 'pint')
+        original = json.loads(path.read_text())
+        (self.root / 'source.php').write_text('future main')
+        future = self.commit_change('future')
+        for change in [{'sha256': 'corrupt'}, {'fingerprint': 'wrong'}, {'tested_commit': future},
+                       {'project': 'apps/cli'}, {'tool': 'phpstan'}, {'data': 'invalid base64'}]:
+            with self.subTest(change=change):
+                path.write_text(json.dumps({**original, **change}))
+                self.assertEqual(0, self.seed(feature).returncode)
+                self.assertFalse((feature / self.project / cache.QUALITY['pint'][1]).exists())
 
 
 class ReviewGateTest(unittest.TestCase):

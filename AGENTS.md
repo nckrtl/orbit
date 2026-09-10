@@ -24,6 +24,9 @@ invoke any one directly; no private orchestration order is implied.
 - `domain-modeling` — sharpen Orbit terms, relationships, and decision boundaries against current evidence.
 - `grill-with-docs` — explicitly run both shaping disciplines and produce a confirmed handoff before issue creation.
 - `resolve-pipeline-issues` — make `Blocked` and `Backlog` Linear work ready for `Todo`, or return a read-only resolution proposal for one exact issue.
+- `maintaining-monorepo` — diagnose and repair main-check or cache-maintenance
+  failures as one owner across all five projects, then return verified recovery
+  or an independent-review handoff to the orchestrator.
 - `recording-decisions` — draft, lint, and accept one architecture decision record.
 - `writing-documentation` — write or change one maintained page under `docs/`.
 - `auditing-documentation` — find and fix documentation drift for one issue, or for the whole corpus on request.
@@ -79,8 +82,13 @@ invoke any one directly; no private orchestration order is implied.
 - Run `composer docs-lint` when maintained documentation changes.
 - GitHub CI is disabled and is not a merge gate. Retain the reviewer's exact-head local check receipt.
 - Before creating a feature worktree, fetch and fast-forward clean primary main,
-  refresh its TIA baselines, then bootstrap and seed the new worktree with
-  `bin/worktree-create`. Preserve unrelated edits before advancing main.
+  then bootstrap and seed the new worktree with `bin/worktree-create`. It queues
+  cache maintenance in the background and uses compatible successful publications
+  immediately. Preserve unrelated edits before advancing main.
+- One maintenance owner covers all five projects. Routine warming uses repository
+  scripts; `maintaining-monorepo` handles failures. Cache availability does not
+  gate delivery. A failed correctness check on main holds unrelated feature
+  merges until a reviewed repair or revert is verified on main.
 
 ## Durable knowledge
 

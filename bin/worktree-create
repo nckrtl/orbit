@@ -118,9 +118,8 @@ fi
 git fetch --prune origin
 git -C "$primary_root" merge --ff-only origin/main
 
-# Finish pending main recording before copying caches into the next worktree.
-# Failed recording leaves the last successful publication and a cold-run fallback.
-"$script_root/bin/tia-cache" refresh --repository="$primary_root" || printf 'TIA refresh failed; compatible prior baselines or a recording run will be used.\n' >&2
+# Seed immediately from successful compatible publications while main catches up.
+"$script_root/bin/tia-cache" refresh --background --repository="$primary_root" || printf 'Cache refresh could not be queued; compatible prior caches or cold checks will be used.\n' >&2
 
 if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; then
     if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then

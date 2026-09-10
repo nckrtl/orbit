@@ -48,13 +48,13 @@ Gateway, SDK, and E2E harness at one commit, so cross-project changes stay
 atomic.
 
 ```bash
-bin/worktree-create NCK-123 concise-feature-name
+bin/worktree-create ORB-217
 ```
 
-The command creates `.worktrees/nck-123-concise-feature-name` on branch
-`nck-123-concise-feature-name`, initializes an ignored `.loop/plan.md` beside
+The command creates `/fast/worktrees/orbit/orb-217` on branch
+`orb-217`, initializes an ignored `.loop/plan.md` beside
 `.loop/proof/`, and bootstraps all projects. Publish the workspace with
-`bin/loop-artifacts publish NCK-123` after committing the candidate. Review and
+`bin/loop-artifacts publish ORB-217` after committing the candidate. Review and
 merge that same candidate. See [the implementation loop](docs/reference/implementation-loop.md).
 
 Repository-owned skills under `.agents/skills/` are independently invokable
