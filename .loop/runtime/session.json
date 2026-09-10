@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "issue": "ORB-230",
+  "phase": "implementing",
+  "dispatch": {
+    "id": "3e48697256634ef39578b4fc45069fa4",
+    "phase": "implementing",
+    "agent": "orb-230-builder",
+    "instruction": "This existing implementation is now script-owned. Preserve all completed work, the approved plan, helpers, and current corrections. Finish this phase or report its real blocker, then record your own complete handoff receipt. Do not restart planning or rerun a successful check just for adoption.",
+    "inputs": {
+      "adoption": {
+        "observed_at": 1789062562.1502485,
+        "head": "c448ee9467c815c4ae3d332415ec66671eed94a1",
+        "approved_plan": "8494eecf1cf0c1c3939fa864c20fdb13d83b941e",
+        "plan_rounds": 2,
+        "agents": [
+          {
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": "/fast/worktrees/orbit/orb-230",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+            "interactive_ready": true,
+            "name": "orb-230-builder",
+            "pane_id": "w1V:p1",
+            "revision": 34,
+            "state_change_seq": 2145,
+            "tab_id": "w1V:t1",
+            "terminal_id": "term_65b22bf83309fb4",
+            "terminal_title": "\u280b Plan ORB-230 proof retention | orb-230",
+            "terminal_title_stripped": "Plan ORB-230 proof retention | orb-230",
+            "workspace_id": "w1V"
+          },
+          {
+            "agent": "codex",
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-230",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+            "interactive_ready": true,
+            "name": "orb-230-plan-review",
+            "pane_id": "w1V:p2",
+            "revision": 36,
+            "state_change_seq": 2143,
+            "tab_id": "w1V:t1",
+            "terminal_id": "term_65b231a64ae45b8",
+            "terminal_title": "Review ORB-230 discovery plan | orb-230",
+            "terminal_title_stripped": "Review ORB-230 discovery plan | orb-230",
+            "workspace_id": "w1V"
+          }
+        ],
+        "reviews": [],
+        "handoff": "",
+        "startup_gate": "Not rerun or claimed during adoption."
+      }
+    },
+    "created_at": 1789062563.0754883,
+    "codex_fallback": false,
+    "structural_retry": false,
+    "gate_since": 1789062563.075489
+  },
+  "agents": {
+    "orb-230-builder": {
+      "agent": "codex",
+      "agent_status": "working",
+      "cwd": "/fast/worktrees/orbit/orb-230",
+      "focused": false,
+      "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+      "interactive_ready": true,
+      "name": "orb-230-builder",
+      "pane_id": "w1V:p1",
+      "revision": 34,
+      "state_change_seq": 2145,
+      "tab_id": "w1V:t1",
+      "terminal_id": "term_65b22bf83309fb4",
+      "terminal_title": "\u280b Plan ORB-230 proof retention | orb-230",
+      "terminal_title_stripped": "Plan ORB-230 proof retention | orb-230",
+      "workspace_id": "w1V"
+    },
+    "orb-230-plan-review": {
+      "agent": "codex",
+      "agent_status": "done",
+      "cwd": "/fast/worktrees/orbit/orb-230",
+      "focused": false,
+      "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+      "interactive_ready": true,
+      "name": "orb-230-plan-review",
+      "pane_id": "w1V:p2",
+      "revision": 36,
+      "state_change_seq": 2143,
+      "tab_id": "w1V:t1",
+      "terminal_id": "term_65b231a64ae45b8",
+      "terminal_title": "Review ORB-230 discovery plan | orb-230",
+      "terminal_title_stripped": "Review ORB-230 discovery plan | orb-230",
+      "workspace_id": "w1V"
+    }
+  },
+  "history": [
+    {
+      "adoption": {
+        "observed_at": 1789062562.1502485,
+        "head": "c448ee9467c815c4ae3d332415ec66671eed94a1",
+        "approved_plan": "8494eecf1cf0c1c3939fa864c20fdb13d83b941e",
+        "plan_rounds": 2,
+        "agents": [
+          {
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": "/fast/worktrees/orbit/orb-230",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+            "interactive_ready": true,
+            "name": "orb-230-builder",
+            "pane_id": "w1V:p1",
+            "revision": 34,
+            "state_change_seq": 2145,
+            "tab_id": "w1V:t1",
+            "terminal_id": "term_65b22bf83309fb4",
+            "terminal_title": "\u280b Plan ORB-230 proof retention | orb-230",
+            "terminal_title_stripped": "Plan ORB-230 proof retention | orb-230",
+            "workspace_id": "w1V"
+          },
+          {
+            "agent": "codex",
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-230",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+            "interactive_ready": true,
+            "name": "orb-230-plan-review",
+            "pane_id": "w1V:p2",
+            "revision": 36,
+            "state_change_seq": 2143,
+            "tab_id": "w1V:t1",
+            "terminal_id": "term_65b231a64ae45b8",
+            "terminal_title": "Review ORB-230 discovery plan | orb-230",
+            "terminal_title_stripped": "Review ORB-230 discovery plan | orb-230",
+            "workspace_id": "w1V"
+          }
+        ],
+        "reviews": [],
+        "handoff": "",
+        "startup_gate": "Not rerun or claimed during adoption."
+      }
+    }
+  ],
+  "plan_rounds": 2,
+  "pr_rounds": 0,
+  "worktree": "/fast/worktrees/orbit/orb-230",
+  "workspace": "w1V",
+  "issue_uuid": "fe22cf20-c543-47e7-8f39-e90ed00ace83",
+  "herdr_session": "orbit",
+  "role_agents": {
+    "planning": "orb-230-builder",
+    "implementing": "orb-230-builder",
+    "plan_review": "orb-230-plan-review"
+  },
+  "issue_contract": "28709c7cda5feb1ab16970c60c9c06402128e28f44c53b14c176932975ae0c46",
+  "adoption": {
+    "observed_at": 1789062562.1502485,
+    "head": "c448ee9467c815c4ae3d332415ec66671eed94a1",
+    "approved_plan": "8494eecf1cf0c1c3939fa864c20fdb13d83b941e",
+    "plan_rounds": 2,
+    "agents": [
+      {
+        "agent": "codex",
+        "agent_status": "working",
+        "cwd": "/fast/worktrees/orbit/orb-230",
+        "focused": false,
+        "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+        "interactive_ready": true,
+        "name": "orb-230-builder",
+        "pane_id": "w1V:p1",
+        "revision": 34,
+        "state_change_seq": 2145,
+        "tab_id": "w1V:t1",
+        "terminal_id": "term_65b22bf83309fb4",
+        "terminal_title": "\u280b Plan ORB-230 proof retention | orb-230",
+        "terminal_title_stripped": "Plan ORB-230 proof retention | orb-230",
+        "workspace_id": "w1V"
+      },
+      {
+        "agent": "codex",
+        "agent_status": "done",
+        "cwd": "/fast/worktrees/orbit/orb-230",
+        "focused": false,
+        "foreground_cwd": "/fast/worktrees/orbit/orb-230",
+        "interactive_ready": true,
+        "name": "orb-230-plan-review",
+        "pane_id": "w1V:p2",
+        "revision": 36,
+        "state_change_seq": 2143,
+        "tab_id": "w1V:t1",
+        "terminal_id": "term_65b231a64ae45b8",
+        "terminal_title": "Review ORB-230 discovery plan | orb-230",
+        "terminal_title_stripped": "Review ORB-230 discovery plan | orb-230",
+        "workspace_id": "w1V"
+      }
+    ],
+    "reviews": [],
+    "handoff": "",
+    "startup_gate": "Not rerun or claimed during adoption."
+  },
+  "updated_at": 1789062563.1124244,
+  "status": "agent_starting",
+  "wait": {
+    "agent": "orb-230-builder",
+    "agent_status": "working"
+  }
+}

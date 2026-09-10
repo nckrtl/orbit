@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "discovery-extension",
+            "node": "app-prod-2",
+            "argv": [
+                "/usr/bin/true"
+            ],
+            "timeout_seconds": 30
+        }
+    ],
+    "extension": "app-prod"
+}
