@@ -1,0 +1,120 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      },
+      {
+        "title": "ADR 0050",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0050-release-successful-proof-resources-before-landing.md"
+      },
+      {
+        "title": "ADR 0040",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0040-extend-issue-proof-with-one-app-prod-node.md"
+      },
+      {
+        "title": "ADR 0051",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0051-select-discovery-only-feature-delivery.md"
+      },
+      {
+        "title": "ADR 0015",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md"
+      },
+      {
+        "title": "ADR 0056",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0056-retain-proof-topologies-for-interactive-review.md"
+      },
+      {
+        "title": "ADR 0006",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0006-topology-led-feature-development.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "Only when the proof flow is enabled for the specific issue implementation, reviewers can inspect and exercise the complete successful topology while the original evidence remains intact, and closeout releases it after the verified merge and snapshot refresh.\n\n## Scope\n\n* In: proof capture and retained-attempt state, reviewer shell and exec access, review records and evaluation, release guards, closeout cleanup, and contributor and harness guidance.\n* Out: new topology shapes, scenario authority, production release, changes to the discovery flow, and product feature behavior.\n\n## Acceptance\n\n- [ ] Before reviewer access is granted, the harness captures the successful result, every action's evidence, complete topology inventory, input manifest, and candidate identity; incomplete or failed capture gives no successful-review access. Proof: `apps/e2e/tests/Unit/E2E/TopologyProofRunnerTest.php` and Incus harness acceptance `proof-review-capture`.\n- [ ] Reviewers can use supported shell and exec operations on every retained standard or extended proof Node and run commands that change application or machine state, with the ordinary guest privilege boundary. Proof: Incus harness acceptance `proof-review-standard-and-extended`.\n- [ ] Interactive actions leave the original captured proof bytes and hashes unchanged; the separate review record identifies issue, candidate, attempt, actions, results, and findings, including required checks and any incomplete interactive record. Proof: harness review-record tests and Incus harness acceptance `proof-review-evidence-isolation`.\n- [ ] A failed required reviewer check or incomplete required review record prevents approval despite a passing original proof; an exploratory command's failure is distinguishable from a required-check failure. Proof: harness review-evaluation tests.\n- [ ] After a code or configuration fix, the submitted candidate and declared inputs reproduce the fix on fresh proof; evidence equivalence or an edit left on a reviewed machine cannot satisfy that requirement. Proof: `apps/e2e/tests/Unit/E2E/ProofEquivalenceEvaluatorTest.php` and Incus harness acceptance `proof-review-fix-reproof`.\n- [ ] Snapshot promotion refuses reviewer-modified live state; closeout verifies the accepted merge, refreshes from merged main, and releases the complete retained topology only after refresh succeeds. Proof: `apps/e2e/tests/Feature/Commands/TopologySnapshotCommandsTest.php` and Incus harness acceptance `proof-review-closeout`.\n- [ ] Failed refresh retains the complete proof topology and evidence for retry; replacing an obsolete attempt or explicitly abandoning it permits exact cleanup while preserving captured evidence and review findings. Proof: Incus harness acceptance `proof-review-retention-and-replacement`.\n- [ ] Only the issue implementation with proof flow enabled gains the retained-review lifecycle; another issue using discovery gains no proof, fresh-proof-after-fix, retention, or snapshot-closeout gate even while the first issue has active proof machines. Failed proof keeps its existing explicit diagnosis and release path. Proof: `apps/e2e/tests/Unit/E2E/LoopFlowTest.php` and the harness lifecycle suites.\n- [ ] The implementation loop, reviewer and closeout guidance, AGENTS.md, and proof references agree with the shipped capture, inspection, and release commands; generated context is current. Proof: the agent-role guidance suites and `composer docs-lint`.\n- [ ] Harness checks pass. Proof: `cd apps/e2e && composer check`.",
+  "id": "fe22cf20-c543-47e7-8f39-e90ed00ace83",
+  "identifier": "ORB-230",
+  "inverseRelations": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/e2e"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Retain captured proof machines for interactive review",
+  "updatedAt": "2026-09-10T15:37:33.833Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-230/retain-captured-proof-machines-for-interactive-review"
+}
