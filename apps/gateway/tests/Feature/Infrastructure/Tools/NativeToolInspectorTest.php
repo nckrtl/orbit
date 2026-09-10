@@ -24,9 +24,9 @@ it('returns bounded installed state and normalized version', function (): void {
     $manager = new FakeToolManager;
     $manager->installedVersions = ['1.2.3'];
     $tool = Tool::make(['package' => 'example']);
-    $node = \App\Models\Node::make();
+    $node = Node::make();
     $node->setAttribute('id', 1);
-    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
+    $record = ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', $record);
 
@@ -39,9 +39,9 @@ it('returns absent state when the manager reports no installed version', functio
     $manager = new FakeToolManager;
     $manager->installedVersions = [null];
     $tool = Tool::make(['package' => 'example']);
-    $node = \App\Models\Node::make();
+    $node = Node::make();
     $node->setAttribute('id', 1);
-    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
+    $record = ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', $record);
 
@@ -63,7 +63,8 @@ it('reports an APT package with retained configuration as bounded absence', func
     $manager = new AptToolManager(
         commands: new RemoteToolCommandRunner(
             ssh: $ssh,
-            keys: new class implements SshKeyProvider {
+            keys: new class implements SshKeyProvider
+            {
                 public function privateKeyPath(): string
                 {
                     return '/tmp/orbit/id_ed25519';
@@ -74,7 +75,8 @@ it('reports an APT package with retained configuration as bounded absence', func
                     return 'ssh-ed25519 AAAATEST orbit@test';
                 }
             },
-            knownHosts: new class implements KnownHostsStore {
+            knownHosts: new class implements KnownHostsStore
+            {
                 public function path(): string
                 {
                     return '/tmp/orbit/known_hosts';
@@ -109,10 +111,10 @@ it('reports an APT package with retained configuration as bounded absence', func
 
 it('fails closed when ownership is invalid', function (): void {
     $tool = Tool::make(['package' => 'example']);
-    $node = \App\Models\Node::make();
+    $node = Node::make();
     $node->setAttribute('id', 1);
     $tool->setRelation('node', $node);
-    $tool->setRelation('manager', \App\Models\ToolManagerRecord::make([
+    $tool->setRelation('manager', ToolManagerRecord::make([
         'node_id' => 2,
         'name' => ToolManagerName::Apt->value,
     ]));
@@ -122,9 +124,9 @@ it('fails closed when ownership is invalid', function (): void {
 });
 
 it('fails closed for unsupported, unknown, throwing, and unnormalizable managers', function (): void {
-    $node = \App\Models\Node::make();
+    $node = Node::make();
     $node->setAttribute('id', 1);
-    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
+    $record = ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
     $tool = Tool::make(['package' => 'example']);
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', $record);
@@ -145,10 +147,10 @@ it('uses only the read-only installed version interaction and ignores stored ver
     $manager = new FakeToolManager;
     $manager->installedVersions = ['1.2.3'];
     $tool = Tool::make(['package' => 'example', 'installed_version' => '99.99.99']);
-    $node = \App\Models\Node::make();
+    $node = Node::make();
     $node->setAttribute('id', 1);
     $tool->setRelation('node', $node);
-    $tool->setRelation('manager', \App\Models\ToolManagerRecord::make([
+    $tool->setRelation('manager', ToolManagerRecord::make([
         'node_id' => 1,
         'name' => ToolManagerName::Apt->value,
     ]));

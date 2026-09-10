@@ -25,10 +25,9 @@ final class WireGuardEndpoint
         }
 
         if (preg_match('/\A\[([^]]+)]:(\d{1,5})\z/D', $endpoint, $matches) === 1) {
-            return (
+            return
                 filter_var($matches[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
-                && self::isValidPort($matches[2])
-            );
+                && self::isValidPort($matches[2]);
         }
 
         if (substr_count(haystack: $endpoint, needle: ':') !== 1) {
@@ -42,10 +41,9 @@ final class WireGuardEndpoint
 
     private static function isValidHost(string $host): bool
     {
-        return (
+        return
             filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            || filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false
-        );
+            || filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false;
     }
 
     private static function isValidPort(string $port): bool

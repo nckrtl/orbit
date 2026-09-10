@@ -12,7 +12,6 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 
-/** @mago-expect lint:too-many-methods Peer publication keeps one locked host transaction in one adapter. */
 final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerProjectionManager
 {
     private const string GENERATED_CONFIG_PATH = '/generated/wireguard/orbit.conf';

@@ -13,8 +13,6 @@ use RuntimeException;
  * The promoted topology snapshot generation and its recorded siblings, under
  * `<primary>/.e2e/topology-snapshot/`. Generations a disposable topology still
  * runs on are read from the Incus inventory, never from a ledger.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect Manifest persistence validates each exact lifecycle state.
  */
 final readonly class TopologySnapshotManifestStore
 {

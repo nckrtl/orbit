@@ -18,6 +18,13 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
+use App\Domain\Nodes\Storage\EffectiveStorageRoots;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
+use App\Domain\Nodes\Storage\ProtectedPathCatalog;
+use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -240,7 +247,8 @@ it('uses the node user for VPN prerequisite SSH connections', function (): void 
 
     $baseline = new VpnRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
-        new class($events) implements SshExecutor {
+        new class($events) implements SshExecutor
+        {
             /** @param list<string> $events */
             public function __construct(
                 private array &$events,
@@ -271,7 +279,8 @@ it('passes a nondefault managed account into every baseline prerequisite command
     [$appDevNode, $appDevAssignment] = role_baseline_models(RoleName::AppDev, name: 'app-dev-managed-account');
     [$appProdNode, $appProdAssignment] = role_baseline_models(RoleName::AppProd, name: 'app-prod-managed-account');
     $accounts = baseline_account_resolver($account);
-    $ssh = new class($events) implements SshExecutor {
+    $ssh = new class($events) implements SshExecutor
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -297,44 +306,48 @@ it('passes a nondefault managed account into every baseline prerequisite command
     new AppDevRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
         new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
-        new class implements AppDevCaddyManager {
+        new class implements AppDevCaddyManager
+        {
             public function converge(Node $node): void {}
 
             public function remove(Node $node): void {}
         },
         baseline_firewall($events),
-        new class implements PrivateDnsManager {
+        new class implements PrivateDnsManager
+        {
             public function converge(?Node $pendingNode = null): void {}
         },
         $accounts,
-        new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
-        new class implements App\Domain\Nodes\Storage\NodeStorageRootPreparer {
+        new NodeSettingsNormalizer,
+        new class implements NodeStorageRootPreparer
+        {
             public function inspect(
                 Node $node,
-                App\Domain\Nodes\ManagedUserAccount $account,
-                App\Domain\Nodes\Storage\StoragePath $path,
+                ManagedUserAccount $account,
+                StoragePath $path,
             ): void {}
 
             public function prepare(
                 Node $node,
-                App\Domain\Nodes\ManagedUserAccount $account,
-                App\Domain\Nodes\Storage\EffectiveStorageRoots $roots,
+                ManagedUserAccount $account,
+                EffectiveStorageRoots $roots,
             ): void {}
         },
-        new App\Domain\Nodes\Storage\ConfiguredStoragePathValidator(
-            new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
-            new App\Domain\Nodes\Storage\StorageRootResolver(
-                new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
-                new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+        new ConfiguredStoragePathValidator(
+            new NodeSettingsNormalizer,
+            new StorageRootResolver(
+                new NodeSettingsNormalizer,
+                new ProtectedPathCatalog,
             ),
-            new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+            new ProtectedPathCatalog,
         ),
     )->converge($appDevNode, $appDevAssignment);
 
     new AppProdRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
         new AppProdSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
-        new class implements AppProdCaddyManager {
+        new class implements AppProdCaddyManager
+        {
             public function converge(Node $node): void {}
 
             public function remove(Node $node): void {}
@@ -614,7 +627,8 @@ it('stops baseline convergence when the remote operating system guard fails', fu
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
-            new class($events) implements SshExecutor {
+            new class($events) implements SshExecutor
+            {
                 /** @param list<string> $events */
                 public function __construct(
                     private array &$events,
@@ -646,7 +660,8 @@ it('stops baseline convergence when the remote operating system guard fails', fu
 /** @param list<string> $events */
 function baseline_guard_ssh(array &$events): SshExecutor
 {
-    return new class($events) implements SshExecutor {
+    return new class($events) implements SshExecutor
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -662,7 +677,7 @@ function baseline_guard_ssh(array &$events): SshExecutor
                     '10.44.0.5' => 'app-prod',
                     default => 'unknown',
                 }
-                : 'unknown';
+            : 'unknown';
             $this->events[] = "guard:{$role}";
 
             return new CommandResult(0, "ID=ubuntu\nVERSION_CODENAME=resolute\n", '', 1, false);
@@ -708,7 +723,8 @@ function role_baseline_roles(): array
 /** @param list<string> $events */
 function app_dev_role_baseline(array &$events): AppDevRoleBaseline
 {
-    $caddy = new class($events) implements AppDevCaddyManager {
+    $caddy = new class($events) implements AppDevCaddyManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -724,7 +740,8 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
             $this->events[] = 'caddy:remove';
         }
     };
-    $dns = new class($events) implements PrivateDnsManager {
+    $dns = new class($events) implements PrivateDnsManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -743,27 +760,28 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
         baseline_firewall($events),
         $dns,
         baseline_account_resolver(),
-        new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
-        new class implements App\Domain\Nodes\Storage\NodeStorageRootPreparer {
+        new NodeSettingsNormalizer,
+        new class implements NodeStorageRootPreparer
+        {
             public function inspect(
                 Node $node,
-                App\Domain\Nodes\ManagedUserAccount $account,
-                App\Domain\Nodes\Storage\StoragePath $path,
+                ManagedUserAccount $account,
+                StoragePath $path,
             ): void {}
 
             public function prepare(
                 Node $node,
-                App\Domain\Nodes\ManagedUserAccount $account,
-                App\Domain\Nodes\Storage\EffectiveStorageRoots $roots,
+                ManagedUserAccount $account,
+                EffectiveStorageRoots $roots,
             ): void {}
         },
-        new App\Domain\Nodes\Storage\ConfiguredStoragePathValidator(
-            new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
-            new App\Domain\Nodes\Storage\StorageRootResolver(
-                new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
-                new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+        new ConfiguredStoragePathValidator(
+            new NodeSettingsNormalizer,
+            new StorageRootResolver(
+                new NodeSettingsNormalizer,
+                new ProtectedPathCatalog,
             ),
-            new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+            new ProtectedPathCatalog,
         ),
     );
 }
@@ -771,7 +789,8 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
 /** @param list<string> $events */
 function app_prod_role_baseline(array &$events): AppProdRoleBaseline
 {
-    $caddy = new class($events) implements AppProdCaddyManager {
+    $caddy = new class($events) implements AppProdCaddyManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -800,7 +819,8 @@ function app_prod_role_baseline(array &$events): AppProdRoleBaseline
 /** @param list<string> $events */
 function router_role_baseline(array &$events): RouterRoleBaseline
 {
-    $caddy = new class($events) implements AppDevCaddyManager {
+    $caddy = new class($events) implements AppDevCaddyManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -828,8 +848,8 @@ function router_role_baseline(array &$events): RouterRoleBaseline
 
 function baseline_account_resolver(?ManagedUserAccount $account = null): ManagedUserAccountResolver
 {
-    return new class($account ?? new ManagedUserAccount('orbit', 'orbit', '/home/orbit')) implements
-        ManagedUserAccountResolver {
+    return new class($account ?? new ManagedUserAccount('orbit', 'orbit', '/home/orbit')) implements ManagedUserAccountResolver
+    {
         public function __construct(
             private readonly ManagedUserAccount $account,
         ) {}
@@ -863,7 +883,8 @@ final class NodeRoleBaselineClusterRouterOperationLock implements ClusterRouterO
 /** @param list<string> $events */
 function baseline_firewall(array &$events): NodeRoleFirewallManager
 {
-    return new class($events) implements NodeRoleFirewallManager {
+    return new class($events) implements NodeRoleFirewallManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -889,7 +910,8 @@ function baseline_firewall(array &$events): NodeRoleFirewallManager
 /** @param list<string> $events */
 function baseline_ssh(array &$events): SshExecutor
 {
-    return new class($events) implements SshExecutor {
+    return new class($events) implements SshExecutor
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -906,7 +928,8 @@ function baseline_ssh(array &$events): SshExecutor
 
 function baseline_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-test-key';
@@ -921,7 +944,8 @@ function baseline_keys(): SshKeyProvider
 
 function baseline_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-known-hosts';

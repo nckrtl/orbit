@@ -6,7 +6,6 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list Exact evidence is validated at construction. */
 final readonly class SourceState
 {
     /** @param list<string> $overlayPaths */
@@ -103,7 +102,6 @@ final readonly class SourceState
         }
 
         $overlayPaths = [];
-        /** @mago-expect analysis:mixed-assignment Serialized input is validated one path at a time. */
         foreach ($value['overlay_paths'] as $path) {
             if (! is_string($path)) {
                 throw new InvalidArgumentException('The source state schema is invalid.');

@@ -10,10 +10,13 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
+use App\E2E\Value\TopologyExtension;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
+use Illuminate\Filesystem\Filesystem;
 
 function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): FeatureTopology
 {
@@ -151,14 +154,14 @@ describe('feature topology mounts', function () {
 });
 
 it('round-trips the exact extended mixed-source construction inventory', function (): void {
-    $recipe = \App\E2E\Value\TopologyRecipe::extendedAppProd();
+    $recipe = TopologyRecipe::extendedAppProd();
     $target = TopologyTarget::feature('TST-321', attemptId(), $recipe);
     $generation = mountedTopologyFixture(false)->generation;
-    $construction = \App\E2E\Value\TopologyConstructionInputs::create(
+    $construction = TopologyConstructionInputs::create(
         $target,
         $generation,
         7,
-        \App\E2E\Value\TopologyExtension::AppProd,
+        TopologyExtension::AppProd,
         str_repeat('f', 64),
     );
     $topology = new FeatureTopology(
@@ -211,7 +214,7 @@ describe('mount paths', function () {
                 ->and(MountPath::isMountableDirectory($root.'/tree/'))
                 ->toBeFalse();
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+            new Filesystem()->deleteDirectory($root);
         }
     });
 });

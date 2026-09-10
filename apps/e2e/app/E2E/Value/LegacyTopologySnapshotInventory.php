@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 namespace App\E2E\Value;
 
-/** @mago-expect lint:cyclomatic-complexity The retained record validates every nested inventory section. */
 final readonly class LegacyTopologySnapshotInventory
 {
     /**
-     * @param array{remote:string,project:string,pool:string}|array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope
-     * @param array<string, mixed> $promotedManifest
-     * @param list<array<string, mixed>> $recordedManifests
-     * @param array<string, array<string, mixed>> $instances
-     * @param array<string, list<array{name:string,created_at:string}>> $snapshots
-     * @param array<string, mixed>|null $network
-     * @mago-expect lint:excessive-parameter-list The inventory sections form one canonical authorization record.
+     * @param  array{remote:string,project:string,pool:string}|array{remote:string,project:string,pool:string,topology_snapshot_namespace:string}  $scope
+     * @param  array<string, mixed>  $promotedManifest
+     * @param  list<array<string, mixed>>  $recordedManifests
+     * @param  array<string, array<string, mixed>>  $instances
+     * @param  array<string, list<array{name:string,created_at:string}>>  $snapshots
+     * @param  array<string, mixed>|null  $network
      */
     public function __construct(
         public array $scope,
@@ -100,7 +98,6 @@ final readonly class LegacyTopologySnapshotInventory
         $instances = $value['instances'];
         /** @var array<string, list<array{name:string,created_at:string}>> $snapshots */
         $snapshots = $value['snapshots'];
-        /** @var array<string, mixed>|null $network */
         $network = $value['network'];
 
         return new self(

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Firewall;
 
-/** @mago-expect lint:excessive-parameter-list The value keeps the complete comparable UFW shape typed. */
 final readonly class UfwRuleShape
 {
     public function __construct(
@@ -22,7 +21,7 @@ final readonly class UfwRuleShape
 
     public function matches(self $observed): bool
     {
-        return (
+        return
             $this->comment === $observed->comment
             && $this->action === $observed->action
             && $this->direction === $observed->direction
@@ -32,7 +31,6 @@ final readonly class UfwRuleShape
             && $this->protocol === $observed->protocol
             && $this->inInterface === $observed->inInterface
             && $this->outInterface === $observed->outInterface
-            && ($this->family === null || $this->family === $observed->family)
-        );
+            && ($this->family === null || $this->family === $observed->family);
     }
 }

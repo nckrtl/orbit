@@ -21,7 +21,6 @@ use App\Models\NodeRole;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
-/** @mago-expect lint:halstead The focused matrix keeps each Composer input, parser, and fixed-command boundary observable. */
 describe(ComposerToolManager::class, function (): void {
     it('implements the Composer tool manager adapter', function (): void {
         [$manager] = composer_tool_manager([]);
@@ -538,7 +537,7 @@ describe(ComposerToolManager::class, function (): void {
 });
 
 /**
- * @param list<CommandResult> $results
+ * @param  list<CommandResult>  $results
  * @return array{ComposerToolManager, ToolManagerFakeSshExecutor}
  */
 function composer_tool_manager(array $results): array
@@ -646,7 +645,6 @@ function composer_remove_arguments(string $package, bool $dryRun = false): array
 
 /**
  * @return non-empty-list<string>
- * @mago-expect lint:no-boolean-flag-parameter The flag selects the fixed live or dry-run command fixture.
  */
 function composer_operation_arguments(string $operation, string $package, bool $dryRun): array
 {
@@ -674,7 +672,8 @@ function composer_prefix(): array
 
 function composer_tool_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit/id_ed25519';
@@ -689,7 +688,8 @@ function composer_tool_keys(): SshKeyProvider
 
 function composer_tool_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit/known_hosts';

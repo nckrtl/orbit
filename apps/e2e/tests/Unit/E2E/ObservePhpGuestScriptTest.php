@@ -104,7 +104,7 @@ it('keeps Sury FPM compatible with Orbit privileged convergence', function (): v
     expect($script)
         ->toContain(
             'orbit-e2e-sury.conf',
-            "[Service]\\nProtectSystem=false\\n",
+            '[Service]\\nProtectSystem=false\\n',
             'systemctl daemon-reload',
         );
 });

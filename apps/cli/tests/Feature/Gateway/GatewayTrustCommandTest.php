@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\RootCertificate;
+use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallerResolver;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Process\PendingProcess;
@@ -629,8 +630,7 @@ it('fails closed when a pinned gateway CA changes without explicit acceptance', 
     $expected = json_encode([
         'error' => [
             'code' => 'gateway.ca_changed',
-            'message' =>
-                'The gateway root CA differs from the pinned certificate. '
+            'message' => 'The gateway root CA differs from the pinned certificate. '
                     .'Re-run with --accept-ca-change only after you verify the new fingerprint.',
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ],
@@ -646,8 +646,7 @@ it('fails closed when a pinned gateway CA changes without explicit acceptance', 
     expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
         'error' => [
             'code' => 'gateway.ca_changed',
-            'message' =>
-                'The gateway root CA differs from the pinned certificate. '
+            'message' => 'The gateway root CA differs from the pinned certificate. '
                     .'Re-run with --accept-ca-change only after you verify the new fingerprint.',
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ],
@@ -742,12 +741,14 @@ it('bounds unexpected local trust-store errors', function (): void {
             'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
         ]),
     ]);
-    app()->instance(TrustStoreInstallerResolver::class, new class extends TrustStoreInstallerResolver {
-        public function resolve(): \App\Services\Trust\TrustStoreInstaller
+    app()->instance(TrustStoreInstallerResolver::class, new class extends TrustStoreInstallerResolver
+    {
+        public function resolve(): TrustStoreInstaller
         {
-            return new class implements \App\Services\Trust\TrustStoreInstaller {
+            return new class implements TrustStoreInstaller
+            {
                 public function isTrusted(
-                    \App\Services\Trust\RootCertificate $certificate,
+                    RootCertificate $certificate,
                     string $label,
                 ): bool {
                     throw new RuntimeException('secret operating-system diagnostic');
@@ -850,12 +851,13 @@ it('fails closed when the persisted gateway profile is corrupted', function (): 
 });
 function gateway_trust_linux_resolver(string $trustStore): TrustStoreInstallerResolver
 {
-    return new class($trustStore) extends TrustStoreInstallerResolver {
+    return new class($trustStore) extends TrustStoreInstallerResolver
+    {
         public function __construct(
             private readonly string $trustStore,
         ) {}
 
-        public function resolve(): \App\Services\Trust\TrustStoreInstaller
+        public function resolve(): TrustStoreInstaller
         {
             return new LinuxTrustStoreInstaller($this->trustStore);
         }

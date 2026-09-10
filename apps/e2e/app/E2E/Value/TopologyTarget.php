@@ -6,7 +6,6 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity,too-many-methods One identity boundary derives every attempt-scoped resource name. */
 final readonly class TopologyTarget
 {
     private const string ISSUE_PATTERN = '/\A[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}\z/D';
@@ -79,11 +78,10 @@ final readonly class TopologyTarget
     /** The topology snapshot identity of a topology snapshot target; a feature target has none. */
     public function requireTopologySnapshotIdentity(): TopologySnapshotIdentity
     {
-        return (
+        return
             $this->topologySnapshot ?? throw new InvalidArgumentException(
                 'The feature target has no topology snapshot identity.',
-            )
-        );
+            );
     }
 
     public function matchesBranch(string $branch): bool
@@ -99,12 +97,11 @@ final readonly class TopologyTarget
     {
         self::assertIssue($issue);
 
-        return (
+        return
             preg_match(
                 '/(?:\A|[^a-z0-9])'.preg_quote($issue, '/').'(?=\z|[^a-z0-9])/i',
                 $branch,
-            ) === 1
-        );
+            ) === 1;
     }
 
     public function network(): string

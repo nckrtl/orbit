@@ -10,7 +10,6 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-/** @mago-expect lint:cyclomatic-complexity Human output renders each optional Node identity field defensively. */
 final class ShowNodeCommand extends GatewayCommand
 {
     #[\Override]

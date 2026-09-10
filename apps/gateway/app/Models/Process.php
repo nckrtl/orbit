@@ -27,7 +27,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  */
 final class Process extends Model
 {
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'owner_type',
@@ -43,7 +43,7 @@ final class Process extends Model
         'error_code',
     ];
 
-    /** @var array<array-key, string> */
+    /** @var list<string> */
     #[\Override]
     protected $hidden = [
         'runtime_config',

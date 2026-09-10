@@ -10,8 +10,7 @@ use SensitiveParameter;
 final readonly class AppInstanceRegistrationResponse
 {
     /**
-     * @param list<AppInstanceResponse> $appInstances
-     * @mago-expect lint:excessive-parameter-list The response keeps its complete bounded registration summary typed.
+     * @param  list<AppInstanceResponse>  $appInstances
      */
     public function __construct(
         public AppResponse $app,
@@ -35,7 +34,6 @@ final readonly class AppInstanceRegistrationResponse
         $rows = is_array($data['app_instances'] ?? null) ? $data['app_instances'] : [];
         $instances = [];
 
-        /** @mago-expect analysis:mixed-assignment Gateway registration members remain mixed until bounded DTO parsing. */
         foreach ($rows as $row) {
             $instance = self::stringArray($row);
 
@@ -81,7 +79,6 @@ final readonly class AppInstanceRegistrationResponse
 
         $result = [];
 
-        /** @mago-expect analysis:mixed-assignment Gateway response values remain intentionally mixed until DTO parsing. */
         foreach ($value as $key => $item) {
             if (! is_string($key)) {
                 continue;

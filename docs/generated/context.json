@@ -1236,6 +1236,9 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "App",
+                "Gateway",
+                "Tool",
                 "Workspace"
             ],
             "governing_adrs": [

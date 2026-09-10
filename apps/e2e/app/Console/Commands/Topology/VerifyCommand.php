@@ -12,6 +12,7 @@ final class VerifyCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:verify {issue} '.self::WORKTREE_OPTION.' {--json}';
+
     #[\Override]
     protected $description = 'Verify the discovery topology of the issue';
 

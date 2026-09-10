@@ -366,8 +366,8 @@ function known_hosts_run_contending_writers(string $path, string $directory, arr
 }
 
 /**
- * @param array{host: string, port: int, key: string} $write
- * @param array{ready: string, start: string, attempted: string} $markers
+ * @param  array{host: string, port: int, key: string}  $write
+ * @param  array{ready: string, start: string, attempted: string}  $markers
  */
 function known_hosts_writer_process(string $path, array $write, array $markers): Process
 {

@@ -20,7 +20,7 @@ final class NodeAccess extends Model
     #[\Override]
     protected $table = 'node_access';
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'consumer_node_id',

@@ -91,11 +91,10 @@ final class CreateWorkspaceCommand extends GatewayCommand
 
     private function isSafeCheckoutPath(string $path): bool
     {
-        return (
+        return
             preg_match(
                 '/\A\/(?!\z)(?:(?!\.{1,2}(?:\/|\z))[A-Za-z0-9._-]+\/)*(?!\.{1,2}\z)[A-Za-z0-9._-]+\z/D',
                 $path,
-            ) === 1
-        );
+            ) === 1;
     }
 }

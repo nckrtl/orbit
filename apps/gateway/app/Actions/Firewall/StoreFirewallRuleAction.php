@@ -95,12 +95,11 @@ final readonly class StoreFirewallRuleAction
     /** @param array{action: FirewallAction, source: string, protocol: string, port: string} $attributes */
     private function matches(FirewallRule $rule, array $attributes): bool
     {
-        return (
+        return
             $rule->action === $attributes['action']
             && $rule->source === $attributes['source']
             && $rule->protocol === $attributes['protocol']
-            && $rule->port === $attributes['port']
-        );
+            && $rule->port === $attributes['port'];
     }
 
     private function guardRecoverySsh(Node $node, StoreFirewallRuleData $data): void

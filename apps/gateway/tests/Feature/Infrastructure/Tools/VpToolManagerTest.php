@@ -19,7 +19,6 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
-/** @mago-expect lint:halstead The VP matrix keeps package grammar, node gating, JSON parsing, and fixed argv observable. */
 describe(VpToolManager::class, function (): void {
     it('implements the VP tool manager adapter', function (): void {
         expect(new VpToolManager(
@@ -328,7 +327,7 @@ describe(VpToolManager::class, function (): void {
         'malformed json' => [vp_result('{"version":"5.0.0"}'), 'candidate-version'],
         'non-string' => [vp_result('["5.0.0"]'), 'candidate-version'],
         'duplicate documents' => [vp_result("\"5.0.0\"\n\"6.0.0\""), 'candidate-version'],
-        'control bearing' => [vp_result("\"5.0.0\\u0000hidden\""), 'candidate-version'],
+        'control bearing' => [vp_result('"5.0.0\\u0000hidden"'), 'candidate-version'],
         'oversized' => [vp_result('"'.str_repeat('1', times: 256).'"'), 'candidate-version'],
     ]);
 
@@ -435,7 +434,7 @@ describe(VpToolManager::class, function (): void {
 });
 
 /**
- * @param list<CommandResult> $results
+ * @param  list<CommandResult>  $results
  * @return array{VpToolManager, ToolManagerFakeSshExecutor}
  */
 function vp_tool_manager(array $results): array
@@ -457,7 +456,7 @@ function vp_tool_manager(array $results): array
 }
 
 /**
- * @param list<array{0: 'gateway'|'vpn'|'app-dev'|'app-prod', 1: 'provisioning'|'active'|'failed'|'removing'}> $roles
+ * @param  list<array{0: 'gateway'|'vpn'|'app-dev'|'app-prod', 1: 'provisioning'|'active'|'failed'|'removing'}>  $roles
  */
 function vp_tool_node(string $platform = 'linux', array $roles = [['app-dev', 'active']]): Node
 {
@@ -501,7 +500,8 @@ function vp_result(
 
 function vp_tool_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit/id_ed25519';
@@ -516,7 +516,8 @@ function vp_tool_keys(): SshKeyProvider
 
 function vp_tool_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit/known_hosts';

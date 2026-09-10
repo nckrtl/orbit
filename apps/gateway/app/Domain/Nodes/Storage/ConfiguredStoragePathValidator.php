@@ -12,7 +12,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 
-/** @mago-expect lint:kan-defect Path grammar, overlap, and protected-root checks stay in one validator. */
 final readonly class ConfiguredStoragePathValidator
 {
     public function __construct(

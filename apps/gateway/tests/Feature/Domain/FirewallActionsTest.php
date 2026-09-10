@@ -192,7 +192,6 @@ function firewall_action_rule(Node $node, string $name = 'web'): FirewallRule
     ]);
 }
 
-/** @mago-expect lint:file-name Test-local fake makes retry order explicit. */
 final class FirewallFakeManager implements FirewallManager
 {
     /** @var list<string> */
@@ -202,8 +201,8 @@ final class FirewallFakeManager implements FirewallManager
     public array $removed = [];
 
     /**
-     * @param list<FirewallBackendStatus> $convergence
-     * @param list<FirewallBackendStatus> $removals
+     * @param  list<FirewallBackendStatus>  $convergence
+     * @param  list<FirewallBackendStatus>  $removals
      */
     public function __construct(
         private array $convergence,

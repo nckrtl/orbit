@@ -8,8 +8,6 @@ use InvalidArgumentException;
 
 /**
  * One exact scoped selector for a preserved Incus pool or base image.
- *
- * @mago-expect lint:cyclomatic-complexity Both supported resource kinds share one strict validation boundary.
  */
 final readonly class PreservedIncusReference
 {

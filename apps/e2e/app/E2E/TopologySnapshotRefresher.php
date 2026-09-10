@@ -20,7 +20,6 @@ use App\E2E\Value\VerificationMode;
 use RuntimeException;
 use Throwable;
 
-/** @mago-expect lint:excessive-parameter-list,cyclomatic-complexity,kan-defect,too-many-methods Explicit workflow dependencies preserve the promotion boundary. */
 final readonly class TopologySnapshotRefresher
 {
     private const int GENERATION_MUTATION_LOCK_TIMEOUT_SECONDS = 3600;
@@ -250,9 +249,6 @@ final readonly class TopologySnapshotRefresher
                     throw new RuntimeException('Cold base changed; recovery-required cold topology snapshot rebuild.');
                 }
             }
-            if ($promoted !== null && ! $promotedStructural instanceof PreparedFingerprint) {
-                throw new RuntimeException('The promoted topology snapshot fingerprint is unavailable.');
-            }
             if (
                 ! is_string($desired->manifest['base_image_alias'] ?? null)
                 || $desired->manifest['base_image_alias'] === ''
@@ -260,7 +256,7 @@ final readonly class TopologySnapshotRefresher
                 throw new RuntimeException('The prepared fingerprint has no base image alias.');
             }
             $alias = $desired->manifest['base_image_alias'];
-            $baseImageFingerprint = $promoted?->baseImageFingerprint ?? $this->host->imageFingerprint($alias);
+            $baseImageFingerprint = $promoted->baseImageFingerprint ?? $this->host->imageFingerprint($alias);
             if (
                 $promoted !== null
                 && ! $promoted->isLegacy()
@@ -437,7 +433,9 @@ final readonly class TopologySnapshotRefresher
 
     /**
      * @template T
-     * @param callable(): T $operation
+     *
+     * @param  array<string, float>  $timings
+     * @param  callable(): T  $operation
      * @return T
      */
     private function measure(array &$timings, string $phase, callable $operation): mixed
@@ -504,6 +502,7 @@ final readonly class TopologySnapshotRefresher
         throw new RuntimeException('The topology snapshot VMs did not stop within the bounded wait.');
     }
 
+    /** @param array<string, mixed> $manifest */
     private function snapshot(
         string $mainSha,
         string $fingerprint,
@@ -692,9 +691,9 @@ final readonly class TopologySnapshotRefresher
         foreach ($deletions as $name => $candidate) {
             $times = array_map(
                 strtotime(...),
-                array_values($candidate['created_at'] ?? []),
+                array_values($candidate['created_at']),
             );
-            if ($times === [] || in_array(false, $times, true)) {
+            if (in_array(false, $times, true)) {
                 throw new RuntimeException('Incus snapshot creation metadata is missing or invalid.');
             }
             $ordered[$name] = max($times);

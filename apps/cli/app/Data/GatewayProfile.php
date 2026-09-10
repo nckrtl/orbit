@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data;
 
-/** @mago-expect lint:cyclomatic-complexity Profile fields require independent security checks. */
 final readonly class GatewayProfile
 {
     public function __construct(
@@ -14,9 +13,7 @@ final readonly class GatewayProfile
     ) {}
 
     /**
-     * @mago-expect analysis:mixed-assignment Persisted profile values enter through a validated JSON boundary.
-     *
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public static function fromArray(string $name, array $data): ?self
     {
@@ -60,7 +57,7 @@ final readonly class GatewayProfile
             filter_var($hostValue, FILTER_VALIDATE_IP) !== false
             || filter_var($hostValue, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false;
 
-        return (
+        return
             is_array($parts)
             && ($parts['scheme'] ?? null) === 'https'
             && $validHost
@@ -69,18 +66,16 @@ final readonly class GatewayProfile
             && ! array_key_exists('query', $parts)
             && ! array_key_exists('fragment', $parts)
             && in_array($parts['path'] ?? '', ['', '/'], strict: true)
-            && ($port === null || $port >= 1)
-        );
+            && ($port === null || $port >= 1);
     }
 
     public static function hasValidCaPath(?string $caPath): bool
     {
-        return (
+        return
             $caPath === null
             || str_starts_with($caPath, '/')
             && strlen($caPath) <= 4096
-            && preg_match('/[\x00\r\n]/', $caPath) !== 1
-        );
+            && preg_match('/[\x00\r\n]/', $caPath) !== 1;
     }
 
     /** @return array{url: string, ca_path: ?string} */

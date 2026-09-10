@@ -17,6 +17,7 @@ use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
@@ -24,7 +25,6 @@ use Illuminate\Support\Facades\Process;
 
 function cold_constructor_service(IncusHost $host): ColdTopologyConstructor
 {
-    /** @mago-expect analysis:possibly-invalid-argument Test helpers resolve only known class names. */
     $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
 
     return new ColdTopologyConstructor(
@@ -56,7 +56,6 @@ function cold_constructor_instance(string $name, string $network, string $operat
     ];
 }
 
-/** @mago-expect lint:too-many-properties,cyclomatic-complexity The fake models one complete mutable Incus transaction. */
 final class ColdConstructorProcessState
 {
     /** @var array<string, string> */
@@ -79,7 +78,7 @@ final class ColdConstructorProcessState
         public readonly string $operation,
     ) {}
 
-    public function result(PendingProcess $process): \Illuminate\Contracts\Process\ProcessResult
+    public function result(PendingProcess $process): ProcessResult
     {
         $command = $process->command;
         assert(is_array($command));
@@ -180,7 +179,6 @@ final class ColdConstructorProcessState
 
 function cold_constructing_service(IncusHost $host, StatePaths $paths): ColdTopologyConstructor
 {
-    /** @mago-expect analysis:possibly-invalid-argument The failure is injected before convergence. */
     $converger = new ReflectionClass(TopologyConverger::class)->newInstanceWithoutConstructor();
 
     return new ColdTopologyConstructor(

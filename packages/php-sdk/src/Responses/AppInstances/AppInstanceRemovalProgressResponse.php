@@ -7,10 +7,8 @@ namespace Orbit\Sdk\Responses\AppInstances;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/** @mago-expect lint:cyclomatic-complexity Parsing validates every bounded progress field independently. */
 final readonly class AppInstanceRemovalProgressResponse
 {
-    /** @mago-expect lint:excessive-parameter-list Each parameter is one field of the bounded removal progress contract. */
     public function __construct(
         public string $operationId,
         public int $id,

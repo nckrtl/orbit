@@ -22,8 +22,6 @@ use Throwable;
  * including roles without a checkout. Each role then reports the installed
  * inventory, which must equal the digest computed on the host. The guest
  * script inventory stays closed; fixtures are a separate, per-issue layer.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect Staging keeps its exact ordered guest batches together.
  */
 final readonly class ProofFixtureStager
 {
@@ -36,8 +34,8 @@ final readonly class ProofFixtureStager
     /** The guest prints the installed inventory in the exact host layout. */
     private const string INVENTORY_SCRIPT =
         'cd -- "$1" && test -z "$(find . -mindepth 1 ! -type f ! -type d)" '
-            .'&& find . -mindepth 1 -type f -printf \'%P\\n\' | LC_ALL=C sort | while IFS= read -r f; do '
-            .'printf \'%s\\t%s\\t%s\\n\' "$f" "$(stat -c %a -- "$f")" "$(sha256sum -- "$f" | cut -c1-64)"; done';
+        .'&& find . -mindepth 1 -type f -printf \'%P\\n\' | LC_ALL=C sort | while IFS= read -r f; do '
+        .'printf \'%s\\t%s\\t%s\\n\' "$f" "$(stat -c %a -- "$f")" "$(sha256sum -- "$f" | cut -c1-64)"; done';
 
     public function __construct(
         private GuestTransport $incus,
@@ -105,9 +103,9 @@ final readonly class ProofFixtureStager
     }
 
     /**
-     * @param array<string, string> $instances
-     * @param array<string, array{mode:string, sha256:string, content:string}> $inventory
-     * @param array<string, array{mode:string, sha256:string}> $files
+     * @param  array<string, string>  $instances
+     * @param  array<string, array{mode:string, sha256:string, content:string}>  $inventory
+     * @param  array<string, array{mode:string, sha256:string}>  $files
      * @return array<string, string>
      */
     private function install(
@@ -215,8 +213,8 @@ final readonly class ProofFixtureStager
     /**
      * Every role prints its installed inventory; the digest of that text must equal the host digest.
      *
-     * @param array<string, string> $instances
-     * @param array<string, array{mode:string, sha256:string}> $files
+     * @param  array<string, string>  $instances
+     * @param  array<string, array{mode:string, sha256:string}>  $files
      * @return array<string, string>
      */
     private function verify(array $instances, array $files): array

@@ -12,6 +12,7 @@ use App\E2E\PreparedStateFingerprint;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
+use App\E2E\TopologyConverger;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptPurpose;
@@ -210,7 +211,7 @@ it('constructs an extended discovery without adopting proof resources or sharing
         TopologySnapshotIdentity::primary(),
         $root,
         fn () => attemptId('a'),
-        new \App\E2E\TopologyConverger($host),
+        new TopologyConverger($host),
     )->acquire(new TopologyRequest('TST-123', $worktree));
 
     $commands = array_map(

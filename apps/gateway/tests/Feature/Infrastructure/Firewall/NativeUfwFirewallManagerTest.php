@@ -7,6 +7,7 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -276,7 +277,6 @@ final class FirewallFakeSshExecutor implements SshExecutor
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps filesystem isolation explicit. */
 final readonly class FirewallFakeSshKeys implements SshKeyProvider
 {
     public function privateKeyPath(): string
@@ -290,10 +290,9 @@ final readonly class FirewallFakeSshKeys implements SshKeyProvider
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps filesystem isolation explicit. */
 final readonly class FirewallFakeKnownHosts implements KnownHostsStore
 {
-    public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $hostKey): void {}
+    public function put(string $host, int $port, HostKey $hostKey): void {}
 
     public function path(): string
     {

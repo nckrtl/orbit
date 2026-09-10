@@ -13,7 +13,6 @@ use App\Models\Process;
 use App\Models\Workspace;
 use SensitiveParameter;
 
-/** @mago-expect lint:too-many-methods Active and removal target policies stay explicit at this security boundary. */
 final readonly class ProcessTargetResolver
 {
     public function resolve(ProcessTargetType $type, int $id): ProcessTarget

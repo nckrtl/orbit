@@ -167,7 +167,7 @@ describe('Cluster requests', function (): void {
 });
 
 /**
- * @param class-string $requestClass
+ * @param  class-string  $requestClass
  * @return array{GatewayConnector, MockClient}
  */
 function cluster_connector(string $requestClass, mixed $data, int $status = 200): array

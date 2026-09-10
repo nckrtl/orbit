@@ -6,6 +6,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRenderer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
+use Dotenv\Dotenv;
 
 it('resolves each selected owner from one stored expression while retaining literals', function (): void {
     $renderer = new AppInstanceEnvironmentRenderer;
@@ -15,11 +16,11 @@ it('resolves each selected owner from one stored expression while retaining lite
         'APP_URL' => 'https://{{app_instance.hostname}}/path',
     ];
 
-    $development = \Dotenv\Dotenv::parse($renderer->render(
+    $development = Dotenv::parse($renderer->render(
         rendering_environment_context('development.example.test', 'development'),
         $values,
     ));
-    $production = \Dotenv\Dotenv::parse($renderer->render(
+    $production = Dotenv::parse($renderer->render(
         rendering_environment_context('production.example.test', 'production'),
         $values,
     ));
@@ -54,9 +55,9 @@ it('renders deterministic dotenv that round trips every accepted literal shape',
 
     expect($second)
         ->toBe($first)
-        ->and(array_keys(\Dotenv\Dotenv::parse($first)))
+        ->and(array_keys(Dotenv::parse($first)))
         ->toBe(['A_EMPTY', 'B_LINES', 'C_QUOTES', 'D_DOLLAR', 'E_SLASHES', 'Z_LAST'])
-        ->and(\Dotenv\Dotenv::parse($first))
+        ->and(Dotenv::parse($first))
         ->toBe([
             'A_EMPTY' => '',
             'B_LINES' => "first\nsecond\rthird\tend",

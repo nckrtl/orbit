@@ -42,7 +42,6 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
     }
 
     /** @param Collection<int, Tool> $tools */
-    /** @mago-expect lint:no-boolean-flag-parameter The context contract exposes one reachability gate. */
     private function inspectTools(Collection $tools, bool $reachable): DoctorFamilyReportData
     {
         if ($tools->isEmpty()) {
@@ -81,10 +80,10 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
                         true,
                         false,
                     );
+
                     continue;
                 }
 
-                /** @mago-expect analysis:mixed-assignment Eloquent attributes are runtime-cast. */
                 $constraint = $tool->getAttribute('version_constraint');
                 if ($constraint !== null && ! is_string($constraint)) {
                     $issues[] = new DoctorIssueData(
@@ -97,6 +96,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
                         'verifiable',
                         'unverifiable',
                     );
+
                     continue;
                 }
 
@@ -118,6 +118,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
                         'verifiable',
                         'unverifiable',
                     );
+
                     continue;
                 }
 

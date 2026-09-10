@@ -7,7 +7,6 @@ namespace Orbit\Sdk\Support;
 use SensitiveParameter;
 
 /** @internal */
-/** @mago-expect lint:cyclomatic-complexity Safe origins reject each unsafe URL component. */
 final class GatewayOrigin
 {
     public static function fromTransport(#[SensitiveParameter] string $url): ?string

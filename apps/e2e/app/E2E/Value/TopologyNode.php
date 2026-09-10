@@ -9,8 +9,7 @@ use InvalidArgumentException;
 final readonly class TopologyNode
 {
     /**
-     * @param list<string> $roles
-     * @mago-expect lint:excessive-parameter-list Each parameter is part of the validated physical Node declaration.
+     * @param  list<string>  $roles
      */
     public function __construct(
         public string $key,
@@ -30,14 +29,7 @@ final readonly class TopologyNode
         if ($address < 10 || $address > 254) {
             throw new InvalidArgumentException('The topology Node address position is invalid.');
         }
-        if (! array_is_list($roles) || count($roles) !== count(array_unique($roles))) {
-            throw new InvalidArgumentException('The topology Node roles must be a unique ordered list.');
-        }
-        foreach ($roles as $role) {
-            if (preg_match('/\A[a-z][a-z0-9-]{0,31}\z/D', $role) !== 1) {
-                throw new InvalidArgumentException('The topology Node role is invalid.');
-            }
-        }
+        $this->assertRoles($roles);
     }
 
     public static function assertKey(string $key): void
@@ -50,5 +42,18 @@ final readonly class TopologyNode
     public function wireGuardAddress(): string
     {
         return '10.44.0.'.($this->address - 9);
+    }
+
+    /** @param array<array-key, string> $roles */
+    private function assertRoles(array $roles): void
+    {
+        if (! array_is_list($roles) || count($roles) !== count(array_unique($roles))) {
+            throw new InvalidArgumentException('The topology Node roles must be a unique ordered list.');
+        }
+        foreach ($roles as $role) {
+            if (preg_match('/\A[a-z][a-z0-9-]{0,31}\z/D', $role) !== 1) {
+                throw new InvalidArgumentException('The topology Node role is invalid.');
+            }
+        }
     }
 }

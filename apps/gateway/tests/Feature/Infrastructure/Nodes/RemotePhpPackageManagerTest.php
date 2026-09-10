@@ -288,7 +288,7 @@ it('does not execute a malicious os-release payload in either remote script', fu
         $osRelease = $root.'/etc/os-release';
         file_put_contents(
             $osRelease,
-            "ID=\$(touch ".escapeshellarg($marker).")\nVERSION_CODENAME=\$(touch ".escapeshellarg($marker).")\n",
+            'ID=$(touch '.escapeshellarg($marker).")\nVERSION_CODENAME=\$(touch ".escapeshellarg($marker).")\n",
         );
         file_put_contents(
             $root.'/bin/dpkg-query',
@@ -581,8 +581,7 @@ function php_runtime_fixture(string $root, array $binaries): void
         $effective .= "{$key} => {$value} => {$value}\n";
     }
     $defaults = [
-        'phpenmod' =>
-            "#!/usr/bin/env bash\necho \"phpenmod \$*\" >> "
+        'phpenmod' => "#!/usr/bin/env bash\necho \"phpenmod \$*\" >> "
                 .escapeshellarg($root.'/calls')
                 ."\n"
                 .'case "$*" in *orbit-runtime*) ln -s '
@@ -723,8 +722,7 @@ it('rejects a runtime module whose effective FPM values differ from the rendered
 
     try {
         php_runtime_fixture($root, [
-            'php-fpm8.5' =>
-                "#!/usr/bin/env bash\nprintf 'Additional .ini files parsed => %s\\nopcache.enable => On => On\\nopcache.memory_consumption => 128 => 128\\n' "
+            'php-fpm8.5' => "#!/usr/bin/env bash\nprintf 'Additional .ini files parsed => %s\\nopcache.enable => On => On\\nopcache.memory_consumption => 128 => 128\\n' "
                     .escapeshellarg($enabled)
                     ."\n",
         ]);
@@ -946,7 +944,6 @@ it('renders syntactically valid fixed shell programs', function (): void {
     }
 });
 
-/** @mago-expect lint:excessive-parameter-list The dataset keeps release selection and candidate-origin rejection in one executable shell scenario. */
 it('executes the source program with the selected Ubuntu suite', function (
     string $id,
     string $codename,
@@ -1358,7 +1355,8 @@ function php_package_app_prod_ssh(AppDevFakeSshExecutor $transport): AppProdSshE
 
 function php_package_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-test-key';
@@ -1373,7 +1371,8 @@ function php_package_keys(): SshKeyProvider
 
 function php_package_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-test-known-hosts';

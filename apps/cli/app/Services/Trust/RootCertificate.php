@@ -33,7 +33,6 @@ final readonly class RootCertificate
             throw new InvalidArgumentException('Root CA material must contain one PEM certificate.');
         }
 
-        /** @mago-expect analysis:invalid-argument OpenSSL accepts PEM strings at runtime. */
         $certificate = openssl_x509_read(certificate: $pem);
 
         if (! $certificate instanceof OpenSSLCertificate) {
@@ -42,7 +41,6 @@ final readonly class RootCertificate
 
         $details = openssl_x509_parse($certificate);
         $publicKey = openssl_pkey_get_public($certificate);
-        /** @mago-expect analysis:mixed-assignment OpenSSL certificate extension values are untyped. */
         $basicConstraints = is_array($details)
             ? $details['extensions']['basicConstraints'] ?? null
             : null;

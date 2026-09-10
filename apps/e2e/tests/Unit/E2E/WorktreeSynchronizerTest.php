@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\CandidateSync;
 use App\E2E\Value\DirtyOverlay;
 use App\E2E\Value\GuestCommand;
@@ -17,10 +18,6 @@ use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
 
-/**
- * @mago-expect lint:cyclomatic-complexity,kan-defect The fake models all guest transport outcomes at one test boundary.
- * @mago-expect lint:too-many-properties Each recorded interaction kind is asserted separately by the synchronizer tests.
- */
 final class WorktreeSynchronizerGuestFake implements GuestTransport
 {
     /** @var list<array{instance:string, command:GuestCommand}> */
@@ -63,7 +60,6 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
     public ?Closure $onPush = null;
 
     /** @param string|array<string, string> $sha */
-    /** @mago-expect lint:excessive-parameter-list Explicit fake state keeps each transport outcome independently configurable. */
     public function __construct(
         private string|array $sha,
         private ?string $markerHash = null,
@@ -86,7 +82,7 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
     }
 
     /**
-     * @param array<string, array{instance:string, command:GuestCommand}> $commands
+     * @param  array<string, array{instance:string, command:GuestCommand}>  $commands
      * @return array<string, GuestCommandResult>
      */
     public function execAll(array $commands): array
@@ -516,7 +512,6 @@ describe('WorktreeSynchronizer', function () {
             $target = featureTarget('TST-130');
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $tree = new GitRepository($worktree)->effectiveTreeHash();
-            /** @mago-expect lint:cyclomatic-complexity The fixture callback keeps its exact hydration assertions together. */
             $scriptHash = hash('sha256', implode('', array_map(
                 static fn (string $name): string => (
                     $name
@@ -1762,8 +1757,6 @@ function synchronizerCandidateScriptContentHashes(array $scripts): string
 
 /**
  * A fake whose checkout roles already hold the candidate scripts and will prove the candidate tree.
- *
- * @mago-expect lint:excessive-parameter-list Each guest outcome stays independently configurable per test.
  */
 function candidateGuestFake(
     TopologyTarget $target,
@@ -1836,7 +1829,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
         try {
             $target = TopologyTarget::disposableCold(
                 'SCN-1',
-                new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+                new AttemptId(str_repeat('a', 32)),
                 TopologyRecipe::coldAcceptance(),
             );
             $guest = candidateGuestFake($target, $worktree, $candidate, $fixture['candidateTree']);

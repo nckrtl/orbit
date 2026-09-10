@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
@@ -15,6 +16,7 @@ use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteHostnameProjector;
@@ -31,6 +33,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\Workspace;
+use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create([
@@ -47,23 +50,26 @@ beforeEach(function (): void {
     $this->markAsGateway($this->node);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.10']);
 
-    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
         public function resolve(Node $node): ManagedUserAccount
         {
             return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
         }
     });
-    $this->destinationGuard = new class implements AppInstanceDestinationGuard {
+    $this->destinationGuard = new class implements AppInstanceDestinationGuard
+    {
         /** @var list<string> */
         public array $paths = [];
 
-        public function assertUnoccupied(Node $node, App\Domain\Nodes\Storage\StoragePath $destination): void
+        public function assertUnoccupied(Node $node, StoragePath $destination): void
         {
             $this->paths[] = $destination->value;
         }
     };
     app()->instance(AppInstanceDestinationGuard::class, $this->destinationGuard);
-    app()->instance(RepositoryDefaultBranchResolver::class, new class implements RepositoryDefaultBranchResolver {
+    app()->instance(RepositoryDefaultBranchResolver::class, new class implements RepositoryDefaultBranchResolver
+    {
         public function resolve(string $repository): string
         {
             return 'main';
@@ -71,7 +77,8 @@ beforeEach(function (): void {
 
         public function verify(string $repository, string $branch): void {}
     });
-    $this->configuration = new class implements DevelopmentAppInstanceConfigurator {
+    $this->configuration = new class implements DevelopmentAppInstanceConfigurator
+    {
         public ?string $unsafePath = null;
 
         /** @var list<string> */
@@ -82,7 +89,7 @@ beforeEach(function (): void {
             $this->inspected[] = $appInstance->checkout_path;
 
             if ($appInstance->checkout_path === $this->unsafePath) {
-                throw new App\Domain\AppDev\RuntimeConvergenceException(
+                throw new RuntimeConvergenceException(
                     'source-classification',
                     'app-dev.source_metadata_unsafe',
                     'The development source metadata is invalid or unsupported.',
@@ -95,7 +102,8 @@ beforeEach(function (): void {
         public function configureLaravelUrl(AppInstance $appInstance, string $url): void {}
     };
     app()->instance(DevelopmentAppInstanceConfigurator::class, $this->configuration);
-    $this->projection = new class implements DevelopmentRouteProjector {
+    $this->projection = new class implements DevelopmentRouteProjector
+    {
         public bool $fail = false;
 
         public function converge(AppInstance $appInstance, Route $route): void
@@ -106,7 +114,8 @@ beforeEach(function (): void {
         }
     };
     app()->instance(DevelopmentRouteProjector::class, $this->projection);
-    $this->registrationSource = new class implements RegistrationSourceManager {
+    $this->registrationSource = new class implements RegistrationSourceManager
+    {
         /** @var list<RegistrationSourceFacts> */
         public array $facts = [];
 
@@ -931,7 +940,7 @@ it('refuses retained registration evidence that omits one requested worktree', f
         'root' => 'public',
     ]);
     $paths = ['/work/primary/source', '/work/linked/feature'];
-    $requestId = (string) Illuminate\Support\Str::uuid();
+    $requestId = (string) Str::uuid();
     AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
@@ -989,7 +998,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
     ]);
     $paths = ['/work/acme', '/work/feature'];
     $facts = registration_set_facts($paths);
-    $requestId = (string) Illuminate\Support\Str::uuid();
+    $requestId = (string) Str::uuid();
     $instances = collect($facts)->map(function (RegistrationSourceFacts $fact, int $index) use (
         $app,
         $requestId,
@@ -1118,7 +1127,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
     $destinations = $includeWorktrees
         ? ['/srv/orbit/apps/acme/default', '/srv/orbit/apps/acme/feature']
         : ['/srv/orbit/apps/acme/default'];
-    $requestId = (string) Illuminate\Support\Str::uuid();
+    $requestId = (string) Str::uuid();
     $routeIds = [];
     $instances = collect($facts)->map(function (RegistrationSourceFacts $fact, int $index) use (
         $app,
@@ -1350,7 +1359,7 @@ it('resumes a manual migration from the durable post-transition boundary', funct
         'selected_php_version' => '8.4',
         'source_is_laravel' => false,
         'registration_original_path' => '/work/acme',
-        'registration_request_id' => (string) Illuminate\Support\Str::uuid(),
+        'registration_request_id' => (string) Str::uuid(),
         'registration_primary' => true,
         'registration_repository_url' => 'git@github.com:acme/acme.git',
         'registration_repository_identity' => 'github.com/acme/acme',
@@ -1444,7 +1453,7 @@ it('finishes the same published registration without downgrading its active prov
         'source_is_laravel' => true,
         'provisioning_step' => 'active',
         'registration_original_path' => '/work/acme',
-        'registration_request_id' => (string) Illuminate\Support\Str::uuid(),
+        'registration_request_id' => (string) Str::uuid(),
         'registration_primary' => true,
         'registration_repository_url' => 'git@github.com:acme/acme.git',
         'registration_repository_identity' => 'github.com/acme/acme',
@@ -2316,7 +2325,8 @@ function bind_route_hostname_update_for_registration_test(): void
         'cleanup' => null,
     ]);
     app()->instance(RouteHostnameProjector::class, $projector);
-    app()->instance(DevelopmentProjectionOperationLock::class, new class implements DevelopmentProjectionOperationLock {
+    app()->instance(DevelopmentProjectionOperationLock::class, new class implements DevelopmentProjectionOperationLock
+    {
         public function run(Closure $operation): mixed
         {
             return $operation();
@@ -2348,7 +2358,7 @@ function registration_evidence_for_test(string $source): array
 {
     return [
         'registration_original_path' => $source,
-        'registration_request_id' => (string) Illuminate\Support\Str::uuid(),
+        'registration_request_id' => (string) Str::uuid(),
         'registration_primary' => true,
         'registration_include_worktrees' => false,
         'registration_repository_url' => 'git@github.com:acme/acme.git',

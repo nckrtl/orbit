@@ -9,7 +9,6 @@ use Spatie\LaravelData\Data;
 
 final class UpdateClusterData extends Data
 {
-    /** @mago-expect lint:excessive-parameter-list The patch preserves omission separately for each field. */
     public function __construct(
         public bool $nameProvided,
         public ?string $name,

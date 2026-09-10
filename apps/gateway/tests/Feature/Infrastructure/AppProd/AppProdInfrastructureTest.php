@@ -27,7 +27,9 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\Instance;
 use App\Models\Node;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevCaddyPublishHarness;
 use Tests\Support\AppDevCaddyPublishScenario;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -802,7 +804,8 @@ it('restores the exact Caddy symlink before the recovery reload when activation 
 it('converges and removes production runtime components in recovery-safe order', function (): void {
     [, $instance] = app_prod_runtime_models();
     $calls = [];
-    $users = new class($calls) implements AppProdUserManager {
+    $users = new class($calls) implements AppProdUserManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -818,7 +821,8 @@ it('converges and removes production runtime components in recovery-safe order',
             $this->calls[] = 'user:remove';
         }
     };
-    $source = new class($calls) implements AppProdSourceManager {
+    $source = new class($calls) implements AppProdSourceManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -834,7 +838,8 @@ it('converges and removes production runtime components in recovery-safe order',
             $this->calls[] = 'source:remove';
         }
     };
-    $fpm = new class($calls) implements AppProdPhpFpmManager {
+    $fpm = new class($calls) implements AppProdPhpFpmManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -845,7 +850,8 @@ it('converges and removes production runtime components in recovery-safe order',
             $this->calls[] = 'fpm';
         }
     };
-    $caddy = new class($calls) implements AppProdCaddyManager {
+    $caddy = new class($calls) implements AppProdCaddyManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -881,7 +887,8 @@ it('converges and removes production runtime components in recovery-safe order',
 it('unpublishes production runtime repeatedly without removing source or its user', function (): void {
     [, $instance] = app_prod_runtime_models();
     $calls = [];
-    $users = new class($calls) implements AppProdUserManager {
+    $users = new class($calls) implements AppProdUserManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -894,7 +901,8 @@ it('unpublishes production runtime repeatedly without removing source or its use
             $this->calls[] = 'user';
         }
     };
-    $source = new class($calls) implements AppProdSourceManager {
+    $source = new class($calls) implements AppProdSourceManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -907,7 +915,8 @@ it('unpublishes production runtime repeatedly without removing source or its use
             $this->calls[] = 'source';
         }
     };
-    $fpm = new class($calls) implements AppProdPhpFpmManager {
+    $fpm = new class($calls) implements AppProdPhpFpmManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -918,7 +927,8 @@ it('unpublishes production runtime repeatedly without removing source or its use
             $this->calls[] = 'fpm';
         }
     };
-    $caddy = new class($calls) implements AppProdCaddyManager {
+    $caddy = new class($calls) implements AppProdCaddyManager
+    {
         /** @param list<string> $calls */
         public function __construct(
             public array &$calls,
@@ -1021,15 +1031,13 @@ it('removes an app production fragment from a direct Caddyfile and restores that
 
 /**
  * @return array{exitCode: int, stderr: string, liveIsLink: bool, liveMain: string, publishedFragments: array<string, string>, serviceCalls: list<string>}
- * @mago-expect lint:halstead The local process harness verifies filesystem and service rollback state.
- * @mago-expect lint:no-boolean-flag-parameter The flag selects the success or activation-failure scenario.
  */
 function run_app_prod_direct_caddy_removal(bool $failActivation): array
 {
     $root = sys_get_temp_dir().'/orbit-caddy-remove-'.bin2hex(random_bytes(8));
     $etc = $root.'/etc/caddy';
     $bin = $root.'/bin';
-    $files = new \Illuminate\Filesystem\Filesystem;
+    $files = new Filesystem;
     $files->ensureDirectoryExists(path: $etc.'/fragments', mode: 0o777, recursive: true);
     $files->ensureDirectoryExists(path: $bin, mode: 0o777, recursive: true);
     file_put_contents(filename: $etc.'/Caddyfile', data: "import fragments/*.caddy\n");
@@ -1058,7 +1066,7 @@ function run_app_prod_direct_caddy_removal(bool $failActivation): array
         $etc.'/orbit-locks/caddy.lock',
     );
     $command = $publisher->removeCommand('remove-version');
-    $process = new \Symfony\Component\Process\Process(array_slice(array: $command->arguments, offset: 1), $root, [
+    $process = new Process(array_slice(array: $command->arguments, offset: 1), $root, [
         'PATH' => $bin.':'.getenv('PATH'),
         'HARNESS_SERVICE_LOG' => $root.'/service.log',
         'HARNESS_FAIL_ACTIVATION' => $failActivation ? '1' : '0',
@@ -1124,7 +1132,8 @@ function app_prod_runtime_models(): array
 
 function app_prod_ssh(AppDevFakeSshExecutor $ssh): AppProdSshExecutor
 {
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/home/orbit/.orbit/ssh/id_ed25519';
@@ -1135,7 +1144,8 @@ function app_prod_ssh(AppDevFakeSshExecutor $ssh): AppProdSshExecutor
             return 'ssh-ed25519 AAAA';
         }
     };
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/home/orbit/.orbit/ssh/known_hosts';

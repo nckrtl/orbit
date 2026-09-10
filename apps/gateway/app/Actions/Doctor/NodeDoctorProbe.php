@@ -13,7 +13,6 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Shared\LifecycleStatus;
 
-/** @mago-expect lint:cyclomatic-complexity The probe keeps each stable node issue branch explicit. */
 final readonly class NodeDoctorProbe implements DoctorFamilyProbe
 {
     public function family(): DoctorFamily

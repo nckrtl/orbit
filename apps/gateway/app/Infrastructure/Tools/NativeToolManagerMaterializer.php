@@ -18,7 +18,6 @@ use App\Models\ToolManagerRecord;
 use Closure;
 use LogicException;
 
-/** @mago-expect lint:cyclomatic-complexity The materializer coordinates canonical multi-manager locking and failure recovery. */
 final readonly class NativeToolManagerMaterializer implements ToolManagerMaterializer
 {
     public function __construct(
@@ -72,7 +71,9 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
             $this->withScopes(
                 $node,
                 $scopeNames,
-                fn (): mixed => $this->materializeWave($node, $managers, $onFailure),
+                function () use ($node, $managers, $onFailure): void {
+                    $this->materializeWave($node, $managers, $onFailure);
+                },
             );
         } catch (ToolManagerScopeLockException $exception) {
             throw new NodeProvisioningException(
@@ -85,7 +86,7 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
     }
 
     /**
-     * @param list<ToolManager> $managers
+     * @param  list<ToolManager>  $managers
      * @return list<ToolManager>
      */
     private function uniqueManagers(array $managers): array
@@ -100,8 +101,8 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
     }
 
     /**
-     * @param list<ToolManagerName> $managerNames
-     * @param callable(): mixed $callback
+     * @param  list<ToolManagerName>  $managerNames
+     * @param  callable(): mixed  $callback
      */
     private function withScopes(Node $node, array $managerNames, callable $callback): mixed
     {

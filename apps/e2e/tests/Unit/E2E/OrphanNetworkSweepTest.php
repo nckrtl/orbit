@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\OrphanNetworkSweep;
+use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusNetwork;
@@ -13,6 +14,7 @@ use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
@@ -30,12 +32,12 @@ function sweepNetwork(string $name, array $usedBy = []): IncusNetwork
 }
 
 /**
- * @param list<array{name:string,used_by?:list<string>}> $networks
- * @param list<array<int, string>> $commands
+ * @param  list<array{name:string,used_by?:list<string>}>  $networks
+ * @param  list<array<int, string>>  $commands
  */
 function fakeSweepIncus(array &$networks, array &$commands): void
 {
-    Process::fake(function (\Illuminate\Process\PendingProcess $process) use (&$networks, &$commands) {
+    Process::fake(function (PendingProcess $process) use (&$networks, &$commands) {
         $command = $process->command;
         $commands[] = $command;
         if (($command[0] ?? null) === 'python3') {
@@ -173,7 +175,7 @@ describe('orphan network sweep', function () {
 
     it('waits for the topology creation lock before sweeping', function () {
         $paths = new StatePaths(temporaryPath('orbit-sweep-', 8));
-        $holder = new \App\E2E\State\OperationLock($paths);
+        $holder = new OperationLock($paths);
         $holder->acquire(OrphanNetworkSweep::CREATION_LOCK, new OperationId(str_repeat('b', 32)));
         $commands = [];
         $networks = [['name' => 'oe-orphan', 'used_by' => []]];
@@ -222,7 +224,7 @@ describe('orphan network sweep', function () {
 
     it('fails when a reaped network is still listed after deletion', function () {
         $paths = new StatePaths(temporaryPath('orbit-sweep-', 8));
-        Process::fake(function (\Illuminate\Process\PendingProcess $process) {
+        Process::fake(function (PendingProcess $process) {
             if (($process->command[0] ?? null) === 'python3') {
                 return Process::result('{"changed":true}');
             }

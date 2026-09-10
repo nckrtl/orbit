@@ -11,7 +11,7 @@ interface NodeProvisioningLock
     /**
      * @template T
      *
-     * @param Closure(): T $callback
+     * @param  Closure(): T  $callback
      * @return T
      */
     public function run(string $nodeName, Closure $callback): mixed;

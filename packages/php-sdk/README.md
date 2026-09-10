@@ -52,6 +52,6 @@ order, issues, and summary aggregates without applying Doctor policy.
 
 ```bash
 composer test       # full Pest suite (parallel, no TIA)
-composer format     # Mago formatter
-composer check      # guidance, Rector, and Mago checks
+composer format     # Laravel Pint formatter
+composer check      # guidance, Rector, and Pint and PHPStan checks
 ```

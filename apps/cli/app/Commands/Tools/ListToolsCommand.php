@@ -13,6 +13,7 @@ final class ListToolsCommand extends ToolCommand
 {
     #[\Override]
     protected $signature = 'tool:list {--node= : Numeric target node ID} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'List tools for a node.';
 

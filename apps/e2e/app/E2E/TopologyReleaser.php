@@ -25,8 +25,6 @@ use Throwable;
  * before deletion. The worktree's attempt lease and record are dropped; the
  * last proof result and the log stay. Every release ends with the orphan
  * network sweep.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect Exact ordered cleanup keeps every ownership guard visible.
  */
 final readonly class TopologyReleaser
 {
@@ -84,7 +82,7 @@ final readonly class TopologyReleaser
     /**
      * Release one ordered set of captured attempts only when every current identity still matches.
      *
-     * @param array<string, AttemptId> $attempts Keyed by an AttemptPurpose value.
+     * @param  array<string, AttemptId>  $attempts  Keyed by an AttemptPurpose value.
      * @return array{state:string,issue:string,attempts:list<array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>}>,released:list<string>,already_absent:list<string>,networks_reaped:list<string>}
      */
     public function releaseExact(TopologyRequest $request, array $attempts): array
@@ -137,7 +135,7 @@ final readonly class TopologyReleaser
     }
 
     /**
-     * @param array<string, AttemptId> $attempts
+     * @param  array<string, AttemptId>  $attempts
      * @return list<array{AttemptPurpose, AttemptId}>
      */
     private function capturedAttempts(TopologyRequest $request, IssueState $state, array $attempts): array
@@ -149,7 +147,7 @@ final readonly class TopologyReleaser
         $captured = [];
         foreach ($attempts as $purposeValue => $attempt) {
             $purpose = AttemptPurpose::tryFrom($purposeValue);
-            if ($purpose === null || ! $attempt instanceof AttemptId) {
+            if ($purpose === null) {
                 throw new RuntimeException('The captured attempt cleanup set is invalid.');
             }
             if (! $state->hasAttempt($purpose)) {
@@ -280,6 +278,7 @@ final readonly class TopologyReleaser
             $instance = $observed[$name] ?? null;
             if ($instance === null) {
                 $absent[] = $name;
+
                 continue;
             }
             $this->assertOwnership($instance->metadata, $target, $name);

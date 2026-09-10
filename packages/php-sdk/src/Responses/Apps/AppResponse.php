@@ -7,7 +7,6 @@ namespace Orbit\Sdk\Responses\Apps;
 use Orbit\Sdk\Support\CredentialRedactor;
 use SensitiveParameter;
 
-/** @mago-expect lint:excessive-parameter-list */
 final readonly class AppResponse
 {
     /** @param array<array-key, mixed>|null $defaults */

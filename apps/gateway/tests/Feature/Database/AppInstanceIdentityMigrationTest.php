@@ -133,10 +133,9 @@ it('migrates stable source identity without changing legacy rows or relationship
 
 function app_instance_identity_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php',
+    );
 }
 
 function app_instance_identity_removal_migration(): object

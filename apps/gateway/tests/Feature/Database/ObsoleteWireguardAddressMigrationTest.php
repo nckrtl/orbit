@@ -102,10 +102,9 @@ describe('obsolete WireGuard address migration', function (): void {
 
 function obsoleteWireguardAddressMigration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_07_091259_remove_obsolete_wireguard_address_from_nodes_table.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_07_091259_remove_obsolete_wireguard_address_from_nodes_table.php',
+    );
 }
 
 /** @return array<string, mixed> */

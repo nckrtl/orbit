@@ -10,11 +10,6 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter keeps local DNS mutation and recovery fail closed.
- * @mago-expect lint:kan-defect Local DNS convergence must account for partial privileged changes.
- * @mago-expect lint:too-many-methods Narrow methods keep each filesystem and process boundary explicit.
- */
 final readonly class LocalResolver implements ResolvesLocalDns
 {
     private Filesystem $files;

@@ -12,6 +12,7 @@ use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -391,8 +392,6 @@ function gateway_vpn_compare_script(string $script, string $path, string $expect
  * a conf directory that does or does not still hold the retired snippet.
  *
  * @return array{int, string}
- *
- * @mago-expect lint:no-boolean-flag-parameter The flag models the observed conf directory state.
  */
 function gateway_vpn_conflict_script(string $script, bool $present): array
 {
@@ -449,7 +448,6 @@ final class GatewayVpnInspectorSsh implements SshExecutor
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps key material isolated. */
 final readonly class GatewayVpnInspectorKeys implements SshKeyProvider
 {
     public function privateKeyPath(): string
@@ -463,7 +461,6 @@ final readonly class GatewayVpnInspectorKeys implements SshKeyProvider
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps host state isolated. */
 final readonly class GatewayVpnInspectorKnownHosts implements KnownHostsStore
 {
     public function path(): string
@@ -471,5 +468,5 @@ final readonly class GatewayVpnInspectorKnownHosts implements KnownHostsStore
         return '/known';
     }
 
-    public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+    public function put(string $host, int $port, HostKey $key): void {}
 }

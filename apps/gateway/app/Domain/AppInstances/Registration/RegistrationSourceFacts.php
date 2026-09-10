@@ -6,7 +6,6 @@ namespace App\Domain\AppInstances\Registration;
 
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 
-/** @mago-expect lint:excessive-parameter-list The tuple records every verified source fact used by relocation. */
 final readonly class RegistrationSourceFacts
 {
     /** @param list<string> $worktreePaths */

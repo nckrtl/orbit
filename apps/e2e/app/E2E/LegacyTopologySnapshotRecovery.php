@@ -19,8 +19,6 @@ use RuntimeException;
 
 /**
  * Prove exact ownership and retain evidence for the bounded schema-4/5 topology snapshot recovery.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Exact authorization and evidence validation stay at one transaction boundary.
  */
 final readonly class LegacyTopologySnapshotRecovery
 {
@@ -419,7 +417,7 @@ final readonly class LegacyTopologySnapshotRecovery
             $url = parse_url($user);
             $path = is_array($url) ? $url['path'] ?? null : null;
             $query = is_array($url) ? $url['query'] ?? '' : '';
-            parse_str(is_string($query) ? $query : '', $parameters);
+            parse_str($query, $parameters);
             $name = is_string($path) ? basename($path) : '';
             $projectMatches =
                 $parameters === ['project' => $network->project]

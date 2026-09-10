@@ -6,11 +6,10 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity Probe validation keeps the serialized evidence contract explicit. */
 final readonly class VerificationReport
 {
     /**
-     * @param array<array-key, mixed> $probes
+     * @param  array<array-key, mixed>  $probes
      */
     public function __construct(
         public bool $passed,
@@ -46,7 +45,7 @@ final readonly class VerificationReport
             }
         }
 
-        $failed = array_filter($probes, static fn (mixed $probe): bool => ($probe['passed'] ?? false) !== true);
+        $failed = array_filter($probes, static fn (mixed $probe): bool => ($probe['passed']) !== true);
         if ($passed !== ($failed === [])) {
             throw new InvalidArgumentException('The verification result does not match its probes.');
         }

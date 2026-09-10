@@ -25,7 +25,6 @@ final class ListToolsRequest extends GatewayRequest
         return '/api/v1/tools';
     }
 
-    /** @mago-expect analysis:mixed-assignment Gateway collection members remain mixed until validated. */
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ToolsResponse
     {
         $data = $response->json('data');

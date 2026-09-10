@@ -17,7 +17,6 @@ use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
-/** @mago-expect lint:halstead The focused matrix keeps each APT input, parser, and fixed-command boundary observable. */
 describe(AptToolManager::class, function (): void {
     it('implements the APT tool manager adapter', function (): void {
         expect(new AptToolManager(
@@ -392,7 +391,7 @@ describe(AptToolManager::class, function (): void {
 });
 
 /**
- * @param list<CommandResult> $results
+ * @param  list<CommandResult>  $results
  * @return array{AptToolManager, ToolManagerFakeSshExecutor}
  */
 function apt_tool_manager(array $results): array
@@ -442,7 +441,8 @@ function apt_result(
 
 function apt_tool_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit/id_ed25519';
@@ -457,7 +457,8 @@ function apt_tool_keys(): SshKeyProvider
 
 function apt_tool_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit/known_hosts';

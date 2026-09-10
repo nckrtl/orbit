@@ -22,7 +22,6 @@ it('fetches only the root CA endpoint through a non-verifying HTTPS bootstrap tr
 
     $response = new GatewayRootCaClient()->fetch('https://10.44.0.1:8443');
     $pendingRequest = $mockClient->getLastPendingRequest();
-    /** @mago-expect analysis:mixed-assignment Saloon header values are dynamically typed. */
     $requestId = $pendingRequest?->headers()->get('X-Orbit-Request-Id');
 
     expect($response)
@@ -63,7 +62,8 @@ it('discards resolver state after one valid-origin bootstrap attempt', function 
     ?string $firstFailureClass,
 ): void {
     $credential = substr(hash('sha256', __METHOD__), offset: 0, length: 20);
-    $resolverState = new class($credential) {
+    $resolverState = new class($credential)
+    {
         public function __construct(
             public readonly string $credential,
         ) {}
@@ -358,7 +358,7 @@ function gateway_root_ca_exception_has_marker(Throwable $exception, string $need
 }
 
 /**
- * @param list<string> $needles
+ * @param  list<string>  $needles
  * @return list<string>
  */
 function gateway_root_ca_exception_leak_sources(Throwable $exception, array $needles): array

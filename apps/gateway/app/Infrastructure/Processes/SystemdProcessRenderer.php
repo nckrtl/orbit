@@ -9,7 +9,6 @@ use App\Domain\Processes\ProcessTarget;
 use App\Models\Process;
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity Unit and certificate validation keep independent failure gates explicit. */
 final readonly class SystemdProcessRenderer
 {
     public function unitName(Process $process): string
@@ -26,7 +25,6 @@ final readonly class SystemdProcessRenderer
         return '/etc/systemd/system/'.$this->unitName($process);
     }
 
-    /** @mago-expect analysis:mixed-assignment Persisted runtime configuration is validated before rendering. */
     public function render(Process $process, ProcessTarget $target, ?ManagedUserAccount $managedAccount = null): string
     {
         $runtimeConfig = $this->runtimeConfig($process);
@@ -114,8 +112,6 @@ final readonly class SystemdProcessRenderer
 
     /**
      * @return list<string>
-     *
-     * @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary.
      */
     private function stringList(mixed $value): array
     {
@@ -138,15 +134,14 @@ final readonly class SystemdProcessRenderer
 
     private function quoteArgument(string $argument): string
     {
-        return (
+        return
             '"'
             .str_replace(
                 ['\\', '"', '$', '%'],
                 ['\\\\', '\\"', '$$', '%%'],
                 $argument,
             )
-            .'"'
-        );
+            .'"';
     }
 
     private function escapeDirectivePath(string $value): string

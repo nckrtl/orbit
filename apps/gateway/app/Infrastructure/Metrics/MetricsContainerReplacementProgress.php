@@ -17,9 +17,9 @@ final class MetricsContainerReplacementProgress
     public bool $backupDeleted = false;
 
     /**
-     * @param array<string, string>|null $state
-     * @param array<string, string>|null $backupState
-     * @param array<string, string>|null $volumeState
+     * @param  array<string, string>|null  $state
+     * @param  array<string, string>|null  $backupState
+     * @param  array<string, string>|null  $volumeState
      */
     public function __construct(
         public readonly MetricsContainerSpec $spec,

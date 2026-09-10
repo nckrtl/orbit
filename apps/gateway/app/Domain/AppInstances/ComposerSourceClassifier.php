@@ -7,7 +7,6 @@ namespace App\Domain\AppInstances;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use JsonException;
 
-/** @mago-expect lint:cyclomatic-complexity Source classification keeps every malformed Composer and Laravel marker refusal explicit. */
 final readonly class ComposerSourceClassifier
 {
     public function __construct(

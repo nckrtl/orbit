@@ -34,6 +34,7 @@ final class UpdateRouteRequest extends FormRequest
         ];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

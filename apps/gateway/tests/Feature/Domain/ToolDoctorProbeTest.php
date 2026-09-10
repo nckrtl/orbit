@@ -6,6 +6,7 @@ use App\Actions\Doctor\ToolDoctorProbe;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Tools\ToolInspectionData;
+use App\Domain\Tools\ToolInspectionException;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\VersionConstraint;
 use App\Models\Node;
@@ -20,7 +21,8 @@ function tool_probe_node(): Node
 
 it('reports no rows as healthy', function (): void {
     $node = tool_probe_node();
-    $inspector = new class implements ToolInspector {
+    $inspector = new class implements ToolInspector
+    {
         public function inspect(Tool $tool): ToolInspectionData
         {
             throw new RuntimeException('unexpected');
@@ -40,7 +42,8 @@ it('reports an absent managed tool as drift', function (): void {
         'package' => 'example',
         'status' => 'installed',
     ]);
-    $inspector = new class implements ToolInspector {
+    $inspector = new class implements ToolInspector
+    {
         public function inspect(Tool $tool): ToolInspectionData
         {
             return new ToolInspectionData(false, null);
@@ -61,7 +64,8 @@ it('keeps an installed tool healthy when its normalized version satisfies valid 
         'version_constraint' => '^1.2',
         'status' => 'installed',
     ]);
-    $inspector = new class implements ToolInspector {
+    $inspector = new class implements ToolInspector
+    {
         public function inspect(Tool $tool): ToolInspectionData
         {
             return new ToolInspectionData(true, '1.2.3');
@@ -87,7 +91,8 @@ it('does not inspect rows when unreachable', function (): void {
         'status' => 'installed',
     ]);
     $calls = 0;
-    $inspector = new class($calls) implements ToolInspector {
+    $inspector = new class($calls) implements ToolInspector
+    {
         public function __construct(
             public int &$calls,
         ) {}
@@ -131,7 +136,8 @@ it('keeps unconstrained installed tools healthy and reports bounded mismatch and
         'version_constraint' => '^2.0',
         'status' => 'installed',
     ]);
-    $inspector = new class implements ToolInspector {
+    $inspector = new class implements ToolInspector
+    {
         public function inspect(Tool $tool): ToolInspectionData
         {
             return new ToolInspectionData(true, $tool->package === 'mismatch' ? '1.0.0' : '1.2.3');
@@ -157,10 +163,11 @@ it('converts inspector failures to bounded unverifiable findings', function (): 
         'package' => 'example',
         'status' => 'installed',
     ]);
-    $inspector = new class implements ToolInspector {
+    $inspector = new class implements ToolInspector
+    {
         public function inspect(Tool $tool): ToolInspectionData
         {
-            throw new \App\Domain\Tools\ToolInspectionException;
+            throw new ToolInspectionException;
         }
     };
     $report = new ToolDoctorProbe($inspector, new VersionConstraint)->inspect(
@@ -196,7 +203,8 @@ it('queries only the selected node and preserves tool id order', function (): vo
         'status' => 'installed',
     ]);
     $seen = [];
-    $inspector = new class($seen) implements ToolInspector {
+    $inspector = new class($seen) implements ToolInspector
+    {
         public function __construct(
             public array &$seen,
         ) {}
@@ -237,7 +245,8 @@ it('eager loads inspector relationships in the bounded tool query', function ():
     DB::listen(static function () use (&$queries): void {
         $queries++;
     });
-    $inspector = new class implements ToolInspector {
+    $inspector = new class implements ToolInspector
+    {
         public function inspect(Tool $tool): ToolInspectionData
         {
             $tool->node;

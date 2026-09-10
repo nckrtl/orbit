@@ -6,16 +6,10 @@ namespace App\Commands\Processes;
 
 use App\Commands\GatewayCommand;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Process response redaction covers recursive mixed SDK values.
- * @mago-expect lint:kan-defect Each branch applies one bounded redaction rule.
- */
 abstract class ProcessCommand extends GatewayCommand
 {
     /** @param array<string, mixed> $payload
-     *  @return array<string, mixed>
-     *
-     * @mago-expect lint:inline-variable-return The local assertion preserves the DTO's string-keyed shape.
+     * @return array<string, mixed>
      */
     protected function sanitizedProcessPayload(array $payload): array
     {
@@ -36,7 +30,7 @@ abstract class ProcessCommand extends GatewayCommand
     }
 
     /** @param list<array<string, mixed>> $payloads
-     *  @return list<array<string, mixed>>
+     * @return list<array<string, mixed>>
      */
     protected function sanitizedProcessCollection(array $payloads): array
     {
@@ -78,9 +72,7 @@ abstract class ProcessCommand extends GatewayCommand
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Process DTO runtime configuration has recursive mixed values.
-     *
-     * @param array<array-key, mixed> $values
+     * @param  array<array-key, mixed>  $values
      * @return array<array-key, mixed>
      */
     private function sanitizedProcessValues(array $values): array
@@ -111,10 +103,8 @@ abstract class ProcessCommand extends GatewayCommand
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Corrupted SDK command elements are sanitized by runtime type below.
-     *
-     * @param list<mixed> $arguments
-     *  @return list<mixed>
+     * @param  list<mixed>  $arguments
+     * @return list<mixed>
      */
     private function sanitizedCommand(array $arguments): array
     {
@@ -150,22 +140,20 @@ abstract class ProcessCommand extends GatewayCommand
 
     private function isSensitiveRuntimeKey(string $key): bool
     {
-        return (
+        return
             preg_match(
                 '/\A'.$this->sensitiveNamePattern().'\z/iD',
                 $key,
-            ) === 1
-        );
+            ) === 1;
     }
 
     private function sensitiveNamePattern(): string
     {
-        return (
+        return
             '[A-Z0-9_.-]*(?:APP[_-]?KEY|APPLICATION[_-]?KEY|API[_-]?KEY|ACCESS[_-]?TOKEN|'
             .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
             .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|PASSWD|PWD|SECRET|TOKEN|'
-            .'BEARER[_-]?TOKEN|CREDENTIAL|COOKIE)[A-Z0-9_.-]*'
-        );
+            .'BEARER[_-]?TOKEN|CREDENTIAL|COOKIE)[A-Z0-9_.-]*';
     }
 
     /** @return array{type: string, id: int}|null */

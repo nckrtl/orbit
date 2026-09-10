@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
 
 final class ListInstancesCommand extends GatewayCommand
@@ -88,7 +89,7 @@ final class ListInstancesCommand extends GatewayCommand
         return self::SUCCESS;
     }
 
-    private function removalSummary(\Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse $removal): string
+    private function removalSummary(AppInstanceRemovalProgressResponse $removal): string
     {
         $summary =
             ($removal->force ? 'forced' : 'normal')

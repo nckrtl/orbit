@@ -7,7 +7,6 @@ namespace App\Repositories;
 use App\Exceptions\GatewayConfigException;
 use Closure;
 
-/** @mago-expect lint:cyclomatic-complexity */
 final readonly class GatewayConfigLock
 {
     private const int LOCK_RETRY_MICROSECONDS = 10_000;

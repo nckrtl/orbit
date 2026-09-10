@@ -20,25 +20,22 @@ use JsonException;
 use RuntimeException;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Exact Incus operations keep validation at the process boundary.
- * @mago-expect lint:kan-defect The boundary fails closed for each identity and ownership check.
- * @mago-expect lint:too-many-methods The approved adapter contract requires this exact method surface.
- */
 final class IncusHost implements GuestTransport
 {
     private const int GUEST_READINESS_POLL_INTERVAL_MICROSECONDS = 1_000_000;
+
     private const string DEFAULT_ROUTE_INTERFACE_RESOLUTION = 'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ]';
+
     private const string GLOBAL_IPV4_PROBE =
         self::DEFAULT_ROUTE_INTERFACE_RESOLUTION.' && ip -4 -o addr show dev "$interface" scope global';
+
     private const string CLONED_HOST_STATE_RESET_SUFFIX = ' && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev "$interface" scope global && ip link set dev "$interface" down && ip link set dev "$interface" up && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
 
     /** @var array<string, IncusInstance> */
     private array $ownedInstanceCache = [];
 
     /**
-     * @param array<string, string> $ownershipMetadata
-     * @mago-expect lint:excessive-parameter-list Explicit dependencies keep this infrastructure boundary configurable and testable.
+     * @param  array<string, string>  $ownershipMetadata
      */
     public function __construct(
         private readonly string $remote = 'local',
@@ -86,6 +83,7 @@ final class IncusHost implements GuestTransport
         return $instances;
     }
 
+    /** @phpstan-impure */
     public function instance(string $name): ?IncusInstance
     {
         $this->validateName($name, 'instance');
@@ -101,7 +99,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param list<string> $names
+     * @param  list<string>  $names
      * @return array<string, IncusInstance>
      */
     public function instances(array $names): array
@@ -163,7 +161,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<array-key, mixed> $resource
+     * @param  array<array-key, mixed>  $resource
      * @return list<string>
      */
     private function usedBy(array $resource): array
@@ -173,7 +171,6 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException('Incus network inventory identity is invalid.');
         }
         $users = [];
-        /** @mago-expect analysis:mixed-assignment Incus output is validated one user at a time. */
         foreach ($usedBy as $user) {
             if (! is_string($user)) {
                 throw new RuntimeException('Incus network inventory identity is invalid.');
@@ -297,7 +294,10 @@ final class IncusHost implements GuestTransport
         );
     }
 
-    /** @param array<string, array{image:string,name:string,network:string,role:string,address?:int,topology:string,slot:int,metadata:array<string,string>}> $vms */
+    /**
+     * @param  array<string, array{image:string,name:string,network:string,role:string,address?:int,topology:string,slot:int,metadata:array<string,string>}>  $vms
+     * @return array<string, IncusInstance>
+     */
     public function initVms(array $vms): array
     {
         if ($vms === []) {
@@ -383,7 +383,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}> $copies
+     * @param  array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}>  $copies
      * @return array<string, IncusInstance>
      */
     public function copySnapshots(array $copies): array
@@ -436,7 +436,7 @@ final class IncusHost implements GuestTransport
      * one network. The copies carry the source configuration; the ownership
      * metadata and the given metadata override it.
      *
-     * @param array<string, array{source:string,target:string,metadata:array<string, string>,network:string,role:string,topology:string,slot:int}> $copies
+     * @param  array<string, array{source:string,target:string,metadata:array<string, string>,network:string,role:string,topology:string,slot:int}>  $copies
      * @return array<string, IncusInstance>
      */
     public function copyInstances(array $copies): array
@@ -501,7 +501,7 @@ final class IncusHost implements GuestTransport
     /**
      * Drop harness metadata keys from one Orbit-owned instance; the ownership keys stay.
      *
-     * @param list<string> $keys
+     * @param  list<string>  $keys
      */
     public function unsetMetadata(string $instance, array $keys): void
     {
@@ -583,7 +583,7 @@ final class IncusHost implements GuestTransport
         ?TopologyTarget $target = null,
         bool $requireRunning = false,
     ): void {
-        $recipe = $target?->recipe ?? TopologyRecipe::registered();
+        $recipe = $target->recipe ?? TopologyRecipe::registered();
         $this->validateName($network, 'network');
         $this->validateUniqueInstances(array_values($instancesByRole), 'topology network validation');
         foreach (array_keys($instancesByRole) as $role) {
@@ -798,7 +798,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<string, string> $instances
+     * @param  array<string, string>  $instances
      * @return array<string, string>
      */
     public function globalIpv4All(array $instances): array
@@ -894,7 +894,7 @@ final class IncusHost implements GuestTransport
      * Advance each clone independently instead of waiting for the slowest role
      * at three separate global barriers.
      *
-     * @param list<string> $instances
+     * @param  list<string>  $instances
      */
     public function prepareClonedHostStates(array $instances): void
     {
@@ -967,10 +967,8 @@ final class IncusHost implements GuestTransport
 
                     continue;
                 }
-                if ($state === 'ipv4') {
-                    unset($states[$instance]);
-                    $advanced = true;
-                }
+                unset($states[$instance]);
+                $advanced = true;
             }
 
             if ($states !== [] && ! $advanced) {
@@ -983,7 +981,11 @@ final class IncusHost implements GuestTransport
         }
     }
 
-    /** Wait for restored guests without changing their machine identity. */
+    /**
+     * Wait for restored guests without changing their machine identity.
+     *
+     * @param  array<array-key, string>  $instances
+     */
     public function waitForRestoredHostStates(array $instances): void
     {
         assert(array_is_list($instances));
@@ -999,7 +1001,7 @@ final class IncusHost implements GuestTransport
             foreach ($states as $instance => $state) {
                 $commands[$instance] = match ($state) {
                     'agent' => ['exec', $this->target($instance), '--', '/bin/true'],
-                    'ipv4' => [
+                    default => [
                         'exec',
                         $this->target($instance),
                         '--',
@@ -1007,7 +1009,6 @@ final class IncusHost implements GuestTransport
                         '-c',
                         self::GLOBAL_IPV4_PROBE,
                     ],
-                    default => throw new RuntimeException('Restored host-state readiness entered an invalid state.'),
                 };
             }
 
@@ -1161,8 +1162,9 @@ final class IncusHost implements GuestTransport
     /** @param array<string,string> $snapshots */
     public function snapshotAll(array $snapshots): void
     {
-        if ($snapshots === [])
+        if ($snapshots === []) {
             throw new RuntimeException('Incus snapshot batch must be non-empty.');
+        }
         $this->ownedInstances(array_keys($snapshots), 'snapshot creation');
         $commands = [];
         foreach ($snapshots as $instance => $snapshot) {
@@ -1175,8 +1177,9 @@ final class IncusHost implements GuestTransport
     /** @param array<string,string> $snapshots */
     public function restoreAll(array $snapshots): void
     {
-        if ($snapshots === [])
+        if ($snapshots === []) {
             throw new RuntimeException('Incus restore batch must be non-empty.');
+        }
         $this->assertOwnedSnapshots($snapshots);
         $commands = [];
         foreach ($snapshots as $instance => $snapshot) {
@@ -1228,7 +1231,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param list<string> $instanceNames
+     * @param  list<string>  $instanceNames
      * @return array<string, list<array{name:string,created_at:string}>>
      */
     public function ownedSnapshotNames(array $instanceNames): array
@@ -1394,7 +1397,7 @@ final class IncusHost implements GuestTransport
         $this->run(['file', 'push', $source, "{$this->target($instance)}{$destination}"], 300);
     }
 
-    /** @param array<string, array{instance:string, source:string, destination:string}> $files */
+    /** @param array<string, array<array-key, mixed>> $files */
     public function pushFiles(array $files): void
     {
         if ($files === []) {
@@ -1447,7 +1450,7 @@ final class IncusHost implements GuestTransport
         return new GuestCommandResult($result->output(), $result->errorOutput(), (int) $result->exitCode());
     }
 
-    /** @param array<string, array{instance:string, command:GuestCommand}> $commands
+    /** @param array<string, array<array-key, mixed>> $commands
      *  @return array<string, GuestCommandResult> */
     public function execAll(array $commands): array
     {
@@ -1565,7 +1568,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param list<string> $names
+     * @param  list<string>  $names
      * @return array<string, array<array-key, mixed>>
      */
     private function instanceInventory(array $names, string $label): array
@@ -1653,7 +1656,7 @@ final class IncusHost implements GuestTransport
     /**
      * Every non-root disk device with a host source: the exact mount identity release must re-check.
      *
-     * @param array<array-key, mixed> $resource
+     * @param  array<array-key, mixed>  $resource
      * @return array<string, array{source:string,path:string}>
      */
     private function disks(array $resource, string $name): array
@@ -1711,7 +1714,7 @@ final class IncusHost implements GuestTransport
         if (! is_array($resource)) {
             return false;
         }
-        $observedName = $resource['name'] ?? null;
+        $observedName = $resource['name'];
 
         if ($observedName !== $snapshot && $observedName !== "{$instance}/{$snapshot}") {
             throw new RuntimeException('Incus snapshot identity changed before mutation.');
@@ -1724,8 +1727,8 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<string, string> $snapshots
-     * @param array<string, IncusInstance> $instances
+     * @param  array<string, string>  $snapshots
+     * @param  array<string, IncusInstance>  $instances
      * @return array<string, string>
      */
     private function existingOwnedSnapshots(array $snapshots, array $instances): array
@@ -1778,7 +1781,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param list<string> $arguments
+     * @param  list<string>  $arguments
      * @return array<mixed>
      */
     private function readJson(array $arguments): array
@@ -1799,7 +1802,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<string, list<string>> $commands
+     * @param  array<string, list<string>>  $commands
      * @return array<string, ProcessResult>
      */
     private function runParallel(
@@ -1826,7 +1829,7 @@ final class IncusHost implements GuestTransport
                 foreach ($fullCommands as $label => $command) {
                     $pool->as($label)->timeout($timeout)->command($command);
                 }
-            })->run();
+            })->run()->collect()->all();
         } catch (Throwable $exception) {
             $message = $this->redactor->redact($exception->getMessage());
 
@@ -1871,10 +1874,9 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<string, string> $acquisitionMetadata
-     * @param array{device:string,source:string,path:string}|null $mount A host directory attached as a virtiofs disk at copy time.
+     * @param  array<string, string>  $acquisitionMetadata
+     * @param  array{device:string,source:string,path:string}|null  $mount  A host directory attached as a virtiofs disk at copy time.
      * @return array{list<string>, IncusInstance}
-     * @mago-expect lint:excessive-parameter-list Snapshot transfer inputs remain explicit at the Incus trust boundary.
      */
     private function snapshotCopy(
         string $source,
@@ -1965,7 +1967,7 @@ final class IncusHost implements GuestTransport
      * A source mount must name an existing host directory; the guest path and the
      * device name are passed to Incus verbatim, so they must be free of separators.
      *
-     * @param array{device:string,source:string,path:string} $mount
+     * @param  array{device:string,source:string,path:string}  $mount
      */
     private function validateMount(array $mount): void
     {
@@ -2050,7 +2052,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param list<string> $instances
+     * @param  list<string>  $instances
      * @return array<string, IncusInstance>
      */
     private function ownedInstances(array $instances, string $label): array
@@ -2071,7 +2073,7 @@ final class IncusHost implements GuestTransport
      * Reuse ownership proof only within one CLI operation. A new command builds
      * a new IncusHost, so it must validate external state again.
      *
-     * @param list<string> $instances
+     * @param  list<string>  $instances
      * @return array<string, IncusInstance>
      */
     private function operationOwnedInstances(array $instances, string $label): array
@@ -2156,18 +2158,18 @@ final class IncusHost implements GuestTransport
     /** @param list<string> $command */
     private function isGuestExecCommand(array $command): bool
     {
-        return (
+        return
             count($command) >= 6
-            && ($command[0] ?? null) === 'incus'
-            && ($command[1] ?? null) === '--project'
-            && is_string($command[2] ?? null)
-            && ($command[3] ?? null) === 'exec'
-            && is_string($command[4] ?? null)
-            && ($command[5] ?? null) === '--'
-        );
+            && $command[0] === 'incus'
+            && $command[1] === '--project'
+            && $command[3] === 'exec'
+            && $command[5] === '--';
     }
 
-    /** @return array<string, string> */
+    /**
+     * @param  array<array-key, mixed>  $resource
+     * @return array<string, string>
+     */
     private function metadata(array $resource): array
     {
         $configuration = $resource['config'] ?? [];
@@ -2178,7 +2180,10 @@ final class IncusHost implements GuestTransport
         return $this->e2eMetadata($configuration);
     }
 
-    /** @return array<string, string> */
+    /**
+     * @param  array<array-key, mixed>  $resource
+     * @return array<string, string>
+     */
     private function configuration(array $resource): array
     {
         $configuration = $resource['config'] ?? [];
@@ -2197,7 +2202,10 @@ final class IncusHost implements GuestTransport
         return $validated;
     }
 
-    /** @return array<string, string> */
+    /**
+     * @param  array<array-key, mixed>  $configuration
+     * @return array<string, string>
+     */
     private function e2eMetadata(array $configuration): array
     {
         $metadata = [];
@@ -2262,6 +2270,7 @@ final class IncusHost implements GuestTransport
         }
     }
 
+    /** @param array<array-key, mixed> $values */
     private function validateStringMap(array $values, string $label): void
     {
         foreach ($values as $key => $value) {

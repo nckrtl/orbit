@@ -7,7 +7,6 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 
 describe('node access API', function (): void {
-    /** @mago-expect lint:halstead The API test keeps the full idempotent add/remove envelope visible in one flow. */
     it('lets an implicit Gateway peer add and remove node access idempotently', function (): void {
         $caller = $this->markAsGateway(node_access_api_node('gateway-peer'));
         $serving = node_access_api_node('app-dev');

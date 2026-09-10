@@ -9,11 +9,6 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The command validates one explicit option shape before transport.
- * @mago-expect lint:halstead The option contract maps two runtime shapes to one typed request.
- * @mago-expect lint:kan-defect Each branch fails fast before the one HTTP request.
- */
 final class AddProcessCommand extends ProcessCommand
 {
     #[\Override]

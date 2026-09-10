@@ -21,12 +21,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Exact UFW ownership keeps convergence and deletion fail closed.
- * @mago-expect lint:excessive-parameter-list The manager receives active and stored UFW parsers plus the shared catalog.
- * @mago-expect lint:kan-defect Each branch protects recovery access or rejects ambiguous owned state.
- * @mago-expect lint:too-many-methods Narrow methods keep each UFW mutation independently verifiable.
- */
 final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallManager
 {
     public function __construct(
@@ -125,8 +119,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     }
 
     /**
-     * @param non-empty-list<UfwManagedRule> $rules
-     * @mago-expect lint:no-boolean-flag-parameter Connection and activation flags keep one exact UFW protocol.
+     * @param  non-empty-list<UfwManagedRule>  $rules
      */
     private function convergeRules(
         Node $node,
@@ -274,7 +267,6 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         return $this->ssh->execute($this->connection($node, $publicConnection, $managedUser), $command);
     }
 
-    /** @mago-expect lint:no-boolean-flag-parameter The flag selects the public recovery or private role boundary. */
     private function connection(Node $node, bool $publicConnection, string $managedUser): SshConnection
     {
         $host = $publicConnection ? $node->public_ssh_host : $node->wireguard_ip;
@@ -326,7 +318,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     }
 
     /**
-     * @param non-empty-list<UfwManagedRule> $rules
+     * @param  non-empty-list<UfwManagedRule>  $rules
      * @return non-empty-list<UfwManagedRule>
      */
     private function uniqueRules(array $rules): array
@@ -337,9 +329,6 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         }
 
         $values = array_values($unique);
-        if ($values === []) {
-            throw new \LogicException('At least one managed firewall rule is required.');
-        }
 
         return $values;
     }

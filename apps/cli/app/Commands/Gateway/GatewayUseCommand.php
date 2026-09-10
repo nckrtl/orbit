@@ -21,7 +21,7 @@ final class GatewayUseCommand extends GatewayCommand
 
     public function handle(GatewayConfigRepository $repository): int
     {
-        $name = $this->argument('name');
+        $name = $this->input->getArgument('name');
 
         if (! is_string($name)) {
             return $this->renderGatewayFailure(

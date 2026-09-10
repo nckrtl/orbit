@@ -13,6 +13,7 @@ final class QuarantineCommand extends Command
 {
     #[\Override]
     protected $signature = 'legacy:quarantine {--inventory=} {--ack-sha256=} {--freeze-evidence=} {--json}';
+
     #[\Override]
     protected $description = 'Quarantine an exact reviewed legacy inventory';
 

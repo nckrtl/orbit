@@ -50,10 +50,8 @@ final readonly class IssueSections
     private function bulletMessage(string $section, string $text): ?string
     {
         return match (true) {
-            $section === 'Scope' && preg_match('/^- (In|Out): \S/', $text) !== 1
-                => 'Scope bullets are shaped `- In: <change>` or `- Out: <unchanged behavior>`.',
-            $section === 'Acceptance' && preg_match(self::CRITERION_PATTERN, $text) !== 1
-                => 'Acceptance items are shaped `- [ ] <criterion>. Proof: <action>.`.',
+            $section === 'Scope' && preg_match('/^- (In|Out): \S/', $text) !== 1 => 'Scope bullets are shaped `- In: <change>` or `- Out: <unchanged behavior>`.',
+            $section === 'Acceptance' && preg_match(self::CRITERION_PATTERN, $text) !== 1 => 'Acceptance items are shaped `- [ ] <criterion>. Proof: <action>.`.',
             $section === 'Readiness' && ! str_starts_with($text, '- ') => 'Readiness items are bullets.',
             default => null,
         };

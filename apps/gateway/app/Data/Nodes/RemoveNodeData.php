@@ -12,10 +12,8 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class RemoveNodeData extends Data
 {
     /**
-     * @param list<string> $rolesShed
-     * @param list<string> $retainedOnNode
-     *
-     * @mago-expect lint:excessive-parameter-list Removal reports every outcome the operator has to act on.
+     * @param  list<string>  $rolesShed
+     * @param  list<string>  $retainedOnNode
      */
     public function __construct(
         public int $id,

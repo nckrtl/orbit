@@ -10,6 +10,8 @@ enum TopologyExtension: string
 
     public function recipe(string $image = TopologyRecipe::BASE_IMAGE): TopologyRecipe
     {
-        return match ($this) { self::AppProd => TopologyRecipe::extendedAppProd($image) };
+        return match ($this) {
+            self::AppProd => TopologyRecipe::extendedAppProd($image)
+        };
     }
 }

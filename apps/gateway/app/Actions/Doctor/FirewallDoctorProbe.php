@@ -21,7 +21,6 @@ use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
 
-/** @mago-expect lint:cyclomatic-complexity The probe preserves ordered lifecycle, observation, and issue mapping branches. */
 final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
@@ -71,6 +70,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
                     'active',
                     $rule->status->value,
                 );
+
                 continue;
             }
 
@@ -90,6 +90,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
         foreach ($entries as $entry) {
             if ($entry instanceof DoctorIssueData) {
                 $issues[] = $entry;
+
                 continue;
             }
 
@@ -105,7 +106,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
     }
 
     /**
-     * @param list<FirewallInspectionTarget> $targets
+     * @param  list<FirewallInspectionTarget>  $targets
      */
     private function inspectTargets(array $targets): ?FirewallInspectionBatchData
     {

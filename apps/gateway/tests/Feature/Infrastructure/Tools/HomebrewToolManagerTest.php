@@ -19,7 +19,6 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
-/** @mago-expect lint:halstead The focused matrix keeps Homebrew bootstrap, bottle policy, and argv observable. */
 describe(HomebrewToolManager::class, function (): void {
     it('is the role-independent Linux Homebrew manager', function (
         string $platform,
@@ -253,7 +252,7 @@ describe(HomebrewToolManager::class, function (): void {
 });
 
 /**
- * @param list<CommandResult> $results
+ * @param  list<CommandResult>  $results
  * @return array{HomebrewToolManager, ToolManagerFakeSshExecutor}
  */
 function homebrew_tool_manager(array $results): array
@@ -346,7 +345,8 @@ function homebrew_result(
 
 function homebrew_tool_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit/id_ed25519';
@@ -361,7 +361,8 @@ function homebrew_tool_keys(): SshKeyProvider
 
 function homebrew_tool_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit/known_hosts';

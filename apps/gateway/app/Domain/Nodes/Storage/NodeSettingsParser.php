@@ -9,7 +9,6 @@ use App\Data\Nodes\NodeSettingsData;
 use App\Domain\Shared\ResourceOperationException;
 use stdClass;
 
-/** @mago-expect lint:cyclomatic-complexity Closed-key parsing keeps omit, null, and nested objects together. */
 final readonly class NodeSettingsParser
 {
     /** @var list<string> */
@@ -79,7 +78,10 @@ final readonly class NodeSettingsParser
         return new AppsSettingsData(is_string($path) ? $path : null);
     }
 
-    /** @param array<array-key, mixed> $value */
+    /**
+     * @param  array<array-key, mixed>  $value
+     * @param  list<string>  $allowed
+     */
     private function assertClosedKeys(array $value, array $allowed): void
     {
         foreach (array_keys($value) as $key) {

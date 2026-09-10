@@ -13,19 +13,7 @@ final readonly class ConvergenceReport
         public bool $converged,
         public array $steps,
     ) {
-        /** @mago-expect analysis:impossible-type-comparison Runtime callers can violate the declared array shape. */
-        if ($steps === [] || array_is_list($steps)) {
-            throw new InvalidArgumentException('Convergence steps must be named.');
-        }
-        foreach ($steps as $name => $passed) {
-            /** @mago-expect analysis:redundant-type-comparison Runtime callers can violate the declared array shape. */
-            if (! is_string($name) || preg_match('/\A[a-z][a-z0-9_.-]{0,63}\z/D', $name) !== 1 || ! is_bool($passed)) {
-                throw new InvalidArgumentException('A convergence step is invalid.');
-            }
-        }
-        if ($converged !== ! in_array(false, haystack: $steps, strict: true)) {
-            throw new InvalidArgumentException('Convergence result does not match steps.');
-        }
+        $this->assertSteps($steps);
     }
 
     /** @param array<string, bool> $steps */
@@ -55,5 +43,21 @@ final readonly class ConvergenceReport
         $steps = $value['steps'];
 
         return new self($value['converged'], $steps);
+    }
+
+    /** @param array<array-key, mixed> $steps */
+    private function assertSteps(array $steps): void
+    {
+        if ($steps === [] || array_is_list($steps)) {
+            throw new InvalidArgumentException('Convergence steps must be named.');
+        }
+        foreach ($steps as $name => $passed) {
+            if (! is_string($name) || preg_match('/\A[a-z][a-z0-9_.-]{0,63}\z/D', $name) !== 1 || ! is_bool($passed)) {
+                throw new InvalidArgumentException('A convergence step is invalid.');
+            }
+        }
+        if ($this->converged !== ! in_array(false, haystack: $steps, strict: true)) {
+            throw new InvalidArgumentException('Convergence result does not match steps.');
+        }
     }
 }

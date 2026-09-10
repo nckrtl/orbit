@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\E2E\State;
 
-/** @mago-expect lint:cyclomatic-complexity Redaction covers each supported secret representation at one boundary. */
 final readonly class SecretRedactor
 {
     private const string REDACTED = '[REDACTED]';
+
     private const array SENSITIVE_KEYS = [
         'authorization',
         'password',
@@ -47,7 +47,10 @@ final readonly class SecretRedactor
         return $value;
     }
 
-    /** @param array<array-key, mixed> $value @return array<array-key, mixed> */
+    /**
+     * @param  array<array-key, mixed>  $value
+     * @return array<array-key, mixed>
+     */
     public function redactArray(array $value): array
     {
         foreach ($value as $key => $item) {
@@ -63,7 +66,10 @@ final readonly class SecretRedactor
         return $value;
     }
 
-    /** @param list<string> $argv @return list<string> */
+    /**
+     * @param  list<string>  $argv
+     * @return list<string>
+     */
     public function redactArgv(array $argv): array
     {
         $redacted = [];
@@ -72,6 +78,7 @@ final readonly class SecretRedactor
             if ($redactNext) {
                 $redacted[] = self::REDACTED;
                 $redactNext = false;
+
                 continue;
             }
             if (

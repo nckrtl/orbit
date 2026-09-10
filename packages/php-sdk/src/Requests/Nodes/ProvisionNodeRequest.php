@@ -12,9 +12,6 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-/**
- * @mago-expect lint:excessive-parameter-list
- */
 final class ProvisionNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;

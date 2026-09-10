@@ -20,7 +20,8 @@ use Symfony\Component\Process\Process;
 it('runs one fixed remote operating-system preflight through WireGuard as orbit', function (): void {
     $calls = [];
     $guard = new NodeRoleOperatingSystemGuard(
-        ssh: new class($calls) implements SshExecutor {
+        ssh: new class($calls) implements SshExecutor
+        {
             /** @param list<array{host: string, user: string, arguments: list<string>, input: string}> $calls */
             public function __construct(
                 private array &$calls,
@@ -73,7 +74,8 @@ it('runs one fixed remote operating-system preflight through WireGuard as orbit'
 it('rejects nodes without a WireGuard address before SSH', function (): void {
     $calls = 0;
     $guard = new NodeRoleOperatingSystemGuard(
-        ssh: new class($calls) implements SshExecutor {
+        ssh: new class($calls) implements SshExecutor
+        {
             public function __construct(
                 private int &$calls,
             ) {}
@@ -295,7 +297,8 @@ function node_role_guard_node(): Node
 
 function node_role_guard_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-test-key';
@@ -310,7 +313,8 @@ function node_role_guard_keys(): SshKeyProvider
 
 function node_role_guard_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-known-hosts';
@@ -322,7 +326,8 @@ function node_role_guard_known_hosts(): KnownHostsStore
 
 function node_role_guard_fixture_ssh(NodeRoleGuardHarness $harness): SshExecutor
 {
-    return new class($harness) implements SshExecutor {
+    return new class($harness) implements SshExecutor
+    {
         public function __construct(
             private NodeRoleGuardHarness $harness,
         ) {}
@@ -359,7 +364,6 @@ function node_role_guard_fixture_ssh(NodeRoleGuardHarness $harness): SshExecutor
     };
 }
 
-/** @mago-expect lint:file-name Test-local harness keeps the real Bash fixture flow in one file. */
 final class NodeRoleGuardHarness
 {
     /** @var list<array{host: string, user: string, arguments: list<string>, result: CommandResult, mutationMarkerExists: bool}> */

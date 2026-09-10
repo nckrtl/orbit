@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Domain\AppDev\AppDevRuntimeConverger;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -17,6 +18,7 @@ use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
@@ -29,11 +31,12 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\Tool;
+use App\Models\ToolManagerRecord;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:halstead The removal group keeps ordered recovery and failure state observable. */
 describe(RemoveNodeRoleAction::class, function (): void {
     it('rejects app role removal before mutation when a manager scope is busy', function (): void {
         [$node, $assignment] = removal_role_fixture();
@@ -229,7 +232,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
             $cleaner,
             $baseline,
-            app(\App\Domain\Nodes\RoleRegistry::class),
+            app(RoleRegistry::class),
             $guard,
             app(ToolManagerScopeLock::class),
             new RemovalReachabilityFake(null),
@@ -269,8 +272,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
             new RemovalInspectorFake($dependencies),
             new RemovalCleanerFake,
             new RemovalBaselineFake,
-            app(\App\Domain\Nodes\RoleRegistry::class),
-            app(\App\Domain\Nodes\NodeRoleToolIntentGuard::class),
+            app(RoleRegistry::class),
+            app(NodeRoleToolIntentGuard::class),
             app(ToolManagerScopeLock::class),
             new RemovalReachabilityFake(null),
             new NodeSideResidue,
@@ -334,8 +337,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
             new RemovalInspectorFake($dependencies),
             new RemovalCleanerFake,
             new RemovalBaselineFake,
-            app(\App\Domain\Nodes\RoleRegistry::class),
-            app(\App\Domain\Nodes\NodeRoleToolIntentGuard::class),
+            app(RoleRegistry::class),
+            app(NodeRoleToolIntentGuard::class),
             app(ToolManagerScopeLock::class),
             new RemovalReachabilityFake(null),
             new NodeSideResidue,
@@ -568,11 +571,11 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $baseline = new RemovalBaselineFake;
 
         if ($step === 'baseline') {
-            $baseline->failure = new \RuntimeException('baseline failed');
+            $baseline->failure = new RuntimeException('baseline failed');
         }
 
         if ($step !== 'baseline') {
-            $cleaner->failure = new \App\Domain\AppDev\RuntimeConvergenceException(
+            $cleaner->failure = new RuntimeConvergenceException(
                 step: $step,
                 errorCode: "cleanup.{$step}_failed",
                 message: "{$step} failed",
@@ -625,7 +628,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $inspector = app(NodeRoleDependencyInspector::class);
         $cleaner = new RemovalCleanerFake;
         $cleaner->afterClean = function () use ($dependencies): void {
-            $instance = \App\Models\Instance::query()->findOrFail($dependencies->instanceIds[0]);
+            $instance = Instance::query()->findOrFail($dependencies->instanceIds[0]);
             removal_process(owner: $instance, name: 'late-process', status: LifecycleStatus::Active);
         };
         $baseline = new RemovalBaselineFake;
@@ -668,7 +671,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->times($stage === 'process-runtime' ? 0 : 1)
             ->andReturnUsing(function () use ($stage): void {
                 if ($stage === 'workspace-runtime') {
-                    throw new \App\Domain\AppDev\RuntimeConvergenceException(
+                    throw new RuntimeConvergenceException(
                         'private-dns',
                         'app-dev.dns_config_failed',
                         'DNS failed',
@@ -678,7 +681,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $appDev
             ->shouldReceive('unpublishInstance')
             ->times($stage === 'instance-runtime' ? 1 : 0)
-            ->andThrow(new \App\Domain\AppDev\RuntimeConvergenceException(
+            ->andThrow(new RuntimeConvergenceException(
                 'certificate',
                 'app-dev.certificate_remove_failed',
                 'Certificate failed',
@@ -743,7 +746,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
     it('keeps a reachable node fail-closed even when the offline claim is made', function (): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
         $cleaner = new RemovalCleanerFake;
-        $cleaner->failure = new \App\Domain\AppDev\RuntimeConvergenceException(
+        $cleaner->failure = new RuntimeConvergenceException(
             step: 'instance-runtime',
             errorCode: 'cleanup.instance-runtime_failed',
             message: 'instance-runtime failed',
@@ -774,7 +777,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
     it('names the offline flag on a node-side teardown failure', function (): void {
         [$node, , $dependencies] = removal_role_fixture(withDependents: true);
         $cleaner = new RemovalCleanerFake;
-        $cleaner->failure = new \App\Domain\AppDev\RuntimeConvergenceException(
+        $cleaner->failure = new RuntimeConvergenceException(
             step: 'instance-runtime',
             errorCode: 'cleanup.instance-runtime_failed',
             message: 'instance-runtime failed',
@@ -791,7 +794,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
     it('still fails closed when the Gateway side cannot be converged for an unreachable node', function (): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
         $baseline = new RemovalBaselineFake;
-        $baseline->failure = new \RuntimeException('gateway projection failed');
+        $baseline->failure = new RuntimeException('gateway projection failed');
         $action = removal_action(
             new RemovalInspectorFake($dependencies),
             new RemovalCleanerFake,
@@ -831,7 +834,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
     });
 });
 
-/** @mago-expect lint:excessive-parameter-list The fixture mirrors the action's explicit collaborator list. */
 function removal_action(
     NodeRoleDependencyInspector $inspector,
     NodeRoleDependentCleaner $cleaner,
@@ -843,7 +845,7 @@ function removal_action(
         $inspector,
         $cleaner,
         $baseline,
-        app(\App\Domain\Nodes\RoleRegistry::class),
+        app(RoleRegistry::class),
         $toolIntentGuard ?? app(NodeRoleToolIntentGuard::class),
         app(ToolManagerScopeLock::class),
         $reachability ?? new RemovalReachabilityFake(null),
@@ -851,7 +853,6 @@ function removal_action(
     );
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fakes keep the removal collaborators visible to this suite. */
 final class RemovalReachabilityFake implements NodeReachabilityProbe
 {
     public int $calls = 0;
@@ -869,8 +870,7 @@ final class RemovalReachabilityFake implements NodeReachabilityProbe
 }
 
 /**
- * @return array{\App\Models\ToolManagerRecord, \App\Models\Tool}
- * @mago-expect lint:excessive-parameter-list The Tool fixture exposes the persisted policy dimensions under test.
+ * @return array{ToolManagerRecord, Tool}
  */
 function removal_tool(
     Node $node,
@@ -898,7 +898,6 @@ function removal_tool(
 
 /**
  * @return array{Node, NodeRole, 2?: NodeRoleDependencySet}
- * @mago-expect lint:no-boolean-flag-parameter The fixture optionally creates the dependent graph under test.
  */
 function removal_role_fixture(bool $withDependents = false, RoleName $role = RoleName::AppDev): array
 {
@@ -995,11 +994,10 @@ function removal_process(Instance|Workspace $owner, string $name, LifecycleStatu
 
 function removal_dependency_rows_exist(NodeRoleDependencySet $dependencies): bool
 {
-    return (
-        \App\Models\Instance::query()->whereIn('id', $dependencies->instanceIds)->exists()
-        && \App\Models\Workspace::query()->whereIn('id', $dependencies->workspaceIds)->exists()
-        && \App\Models\Process::query()->whereIn('id', $dependencies->processIds)->exists()
-    );
+    return
+        Instance::query()->whereIn('id', $dependencies->instanceIds)->exists()
+        && Workspace::query()->whereIn('id', $dependencies->workspaceIds)->exists()
+        && Process::query()->whereIn('id', $dependencies->processIds)->exists();
 }
 
 final class RemovalInspectorFake implements NodeRoleDependencyInspector
@@ -1014,7 +1012,6 @@ final class RemovalInspectorFake implements NodeRoleDependencyInspector
     }
 }
 
-/** @mago-expect lint:single-class-per-file Small test fakes stay next to their single consumer. */
 final class RemovalToolIntentGuardFake implements NodeRoleToolIntentGuard
 {
     public int $assertCalls = 0;
@@ -1045,7 +1042,6 @@ final class RemovalToolIntentGuardFake implements NodeRoleToolIntentGuard
     public function retireUnsupportedManagers(Node $node): void {}
 }
 
-/** @mago-expect lint:single-class-per-file Small test fakes stay next to their single consumer. */
 final class RemovalCleanerFake implements NodeRoleDependentCleaner
 {
     public int $calls = 0;
@@ -1066,9 +1062,9 @@ final class RemovalCleanerFake implements NodeRoleDependentCleaner
         $this->events[] = 'clean:'.DB::transactionLevel();
         if ($dependencies->processIds !== []) {
             $this->observedStatuses = [
-                \App\Models\Process::query()->findOrFail($dependencies->processIds[0])->status,
-                \App\Models\Workspace::query()->findOrFail($dependencies->workspaceIds[0])->status,
-                \App\Models\Instance::query()->findOrFail($dependencies->instanceIds[0])->status,
+                Process::query()->findOrFail($dependencies->processIds[0])->status,
+                Workspace::query()->findOrFail($dependencies->workspaceIds[0])->status,
+                Instance::query()->findOrFail($dependencies->instanceIds[0])->status,
             ];
         }
 
@@ -1082,7 +1078,6 @@ final class RemovalCleanerFake implements NodeRoleDependentCleaner
     }
 }
 
-/** @mago-expect lint:single-class-per-file Small test fakes stay next to their single consumer. */
 final class RemovalBaselineFake implements RoleBaselineConverger
 {
     public int $calls = 0;

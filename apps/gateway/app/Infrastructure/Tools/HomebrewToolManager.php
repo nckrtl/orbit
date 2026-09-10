@@ -15,11 +15,6 @@ use App\Models\Node;
 use JsonException;
 use stdClass;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter fails closed at every Homebrew metadata boundary.
- * @mago-expect lint:kan-defect The score reflects explicit bootstrap and bottle eligibility gates.
- * @mago-expect lint:too-many-methods The closed manager contract keeps the complete lifecycle on one adapter.
- */
 final readonly class HomebrewToolManager implements ToolManager
 {
     private const string BREW = '/home/linuxbrew/.linuxbrew/bin/brew';
@@ -59,11 +54,10 @@ final readonly class HomebrewToolManager implements ToolManager
 
     public function validatePackage(string $package): bool
     {
-        return (
+        return
             $package !== ''
             && strlen($package) <= self::MAX_PACKAGE_LENGTH
-            && preg_match(self::PACKAGE_PATTERN, $package) === 1
-        );
+            && preg_match(self::PACKAGE_PATTERN, $package) === 1;
     }
 
     public function materialize(Node $node): void
@@ -482,11 +476,10 @@ final readonly class HomebrewToolManager implements ToolManager
 
     private function isSafeText(string $value): bool
     {
-        return (
+        return
             $value !== ''
             && strlen($value) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1
-        );
+            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1;
     }
 
     private function coordinate(string $package): string

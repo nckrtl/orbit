@@ -45,11 +45,10 @@ final class UpdateToolCommand extends ToolActionCommand
     #[\Override]
     protected function accepts(ToolResponse $tool): bool
     {
-        return (
+        return
             in_array($tool->outcome, ['applied', 'unchanged'], strict: true)
             || $tool->outcome === 'blocked_by_constraint'
             && $tool->versionConstraint !== null
-            && $tool->versionConstraint !== ''
-        );
+            && $tool->versionConstraint !== '';
     }
 }

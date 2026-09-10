@@ -15,14 +15,15 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\MetricsController;
 use App\Models\Node;
+use Illuminate\Routing\Route;
 
 it('exposes the seven focused metrics routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
-        ->filter(static fn (\Illuminate\Routing\Route $route): bool => str_starts_with(
+        ->filter(static fn (Route $route): bool => str_starts_with(
             (string) $route->getName(),
             'metrics:',
         ))
-        ->mapWithKeys(static fn (\Illuminate\Routing\Route $route): array => [
+        ->mapWithKeys(static fn (Route $route): array => [
             $route->getName() => [$route->uri(), $route->methods()],
         ])
         ->all();
@@ -87,7 +88,8 @@ it('returns status data through the API envelope', function (): void {
         'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
-    app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader {
+    app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader
+    {
         public function status(): MetricsStatusData
         {
             return new MetricsStatusData(false, null, null, 'http://prom', 'http://grafana', []);
@@ -110,7 +112,8 @@ it('allows the active Gateway caller without a directed grant', function (): voi
         'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
-    app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader {
+    app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader
+    {
         public function status(): MetricsStatusData
         {
             return new MetricsStatusData(false, null, null, '', '', []);
@@ -164,7 +167,8 @@ it('allows a caller with a directed grant to the active Gateway', function (): v
     ]);
     $this->markAsGateway($gateway);
     $caller->accessibleNodes()->attach($gateway);
-    app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader {
+    app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader
+    {
         public function status(): MetricsStatusData
         {
             return new MetricsStatusData(false, null, null, 'disabled', 'disabled', []);

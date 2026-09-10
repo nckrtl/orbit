@@ -11,7 +11,6 @@ use App\Infrastructure\Processes\ProcessRunner;
 use Closure;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity Root validation and signing fail closed at each trust boundary. */
 final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSigner
 {
     private const string LEAF_VALIDITY_DAYS = '397';
@@ -146,14 +145,12 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
             throw new RuntimeException('Orbit root CA material is not readable.');
         }
 
-        /** @mago-expect analysis:invalid-argument OpenSSL accepts PEM strings at runtime. */
         $parsedCertificate = openssl_x509_read(certificate: $certificate);
         $parsedPrivateKey = openssl_pkey_get_private($privateKey);
         $privateKeyDetails = $parsedPrivateKey !== false
             ? openssl_pkey_get_details($parsedPrivateKey)
             : false;
         $details = $parsedCertificate !== false ? openssl_x509_parse($parsedCertificate) : false;
-        /** @mago-expect analysis:mixed-assignment OpenSSL certificate extension values are untyped. */
         $basicConstraints = is_array($details)
             ? $details['extensions']['basicConstraints'] ?? null
             : null;
@@ -208,10 +205,9 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
 
         $details = openssl_pkey_get_details($publicKey);
 
-        return (
+        return
             is_array($details)
             && ($details['type'] ?? null) === OPENSSL_KEYTYPE_RSA
-            && ($details['bits'] ?? null) === 2048
-        );
+            && ($details['bits'] ?? null) === 2048;
     }
 }

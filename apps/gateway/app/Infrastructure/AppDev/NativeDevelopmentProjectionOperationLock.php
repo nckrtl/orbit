@@ -21,8 +21,8 @@ final class NativeDevelopmentProjectionOperationLock implements DevelopmentProje
     private readonly Closure $wait;
 
     /**
-     * @param (Closure(): float)|null $clock
-     * @param (Closure(int): void)|null $wait
+     * @param  (Closure(): float)|null  $clock
+     * @param  (Closure(int): void)|null  $wait
      */
     public function __construct(
         private readonly string $orbitHome,

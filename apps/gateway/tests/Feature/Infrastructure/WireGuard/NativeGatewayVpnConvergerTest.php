@@ -13,10 +13,12 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
 use App\Infrastructure\WireGuard\RetiredDnsmasqSnippets;
 use App\Infrastructure\WireGuard\UplinkDnsResolvers;
+use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 it('activates the gateway WireGuard address through a validated atomic server config', function (): void {
     [$converger, $processes, $orbitHome] = gateway_vpn_converger();
@@ -910,8 +912,6 @@ it('restores and restarts the previous gateway WireGuard config when activation 
 });
 
 /**
- * @mago-expect lint:excessive-parameter-list Scenario flags keep each failure test explicit at the call site.
- *
  * @return array{NativeGatewayVpnConverger, GatewayVpnFakeProcessRunner, string}
  */
 /**
@@ -938,7 +938,7 @@ function gateway_dnsmasq_restart_failure(string $script): array
     $helper = Str::match('/^restart_dnsmasq\(\) \{$.*?^\}$/ms', $script);
 
     try {
-        $process = new Symfony\Component\Process\Process(['bash', '-seu'], $root, [
+        $process = new Process(['bash', '-seu'], $root, [
             'PATH' => $root.'/bin:'.getenv('PATH'),
         ]);
         $process->setInput($helper."\nrestart_dnsmasq\n");
@@ -1003,7 +1003,7 @@ function gateway_vpn_converger(
 
     return [
         new NativeGatewayVpnConverger(
-            renderer: new \App\Infrastructure\WireGuard\WireGuardServerConfigRenderer,
+            renderer: new WireGuardServerConfigRenderer,
             files: new ProtectedFileWriter,
             processes: $processes,
             firewallParser: new UfwStatusParser,
@@ -1031,11 +1031,6 @@ function gateway_bootstrap_data(
     );
 }
 
-/**
- * @mago-expect lint:cyclomatic-complexity The fake models independent protected-host failure gates.
- * @mago-expect lint:file-name The test-local fake remains beside the interaction contract it supports.
- * @mago-expect lint:kan-defect The score reflects explicit independent failure scenarios in one fake adapter.
- */
 final class GatewayVpnFakeProcessRunner implements ProcessRunner
 {
     /** @var list<ProcessInvocation> */
@@ -1052,7 +1047,6 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
 
     public bool $observedProjectionLock = false;
 
-    /** @mago-expect lint:excessive-parameter-list Scenario flags keep failure setup explicit. */
     public function __construct(
         private readonly bool $failValidation,
         private readonly bool $failForwarding,

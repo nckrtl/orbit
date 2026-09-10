@@ -18,6 +18,7 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @param list<string>|null $families */
     public function __construct(
         private readonly ?int $nodeId = null,
         #[\SensitiveParameter]
@@ -39,7 +40,7 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
         return DoctorReportResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    protected function defaultBody(): ?string
+    protected function defaultBody(): string
     {
         $body = array_filter(
             ['node_id' => $this->nodeId, 'families' => $this->families],

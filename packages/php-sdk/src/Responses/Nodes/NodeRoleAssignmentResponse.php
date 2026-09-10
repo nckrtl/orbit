@@ -8,10 +8,6 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Assignment transport rejects each invalid field explicitly.
- * @mago-expect lint:excessive-parameter-list Stable assignment DTO fields are part of the public contract.
- */
 final readonly class NodeRoleAssignmentResponse
 {
     private const array STATUSES = ['active', 'failed', 'provisioning', 'removing'];
@@ -34,7 +30,6 @@ final readonly class NodeRoleAssignmentResponse
         #[SensitiveParameter]
         string $requestId,
     ): self {
-        /** @mago-expect analysis:mixed-assignment Gateway assignment data is an untyped transport boundary. */
         $id = $data['id'] ?? null;
 
         if (! is_int($id) || $id < 1) {
@@ -44,7 +39,6 @@ final readonly class NodeRoleAssignmentResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway assignment data is an untyped transport boundary. */
         $role = $data['role'] ?? null;
 
         if (! self::isSafeRole($role)) {
@@ -54,7 +48,6 @@ final readonly class NodeRoleAssignmentResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway assignment data is an untyped transport boundary. */
         $status = $data['status'] ?? null;
 
         if (! is_string($status) || ! in_array($status, self::STATUSES, strict: true)) {
@@ -64,7 +57,6 @@ final readonly class NodeRoleAssignmentResponse
             );
         }
 
-        /** @mago-expect analysis:mixed-assignment Gateway assignment data is an untyped transport boundary. */
         $failedStep = $data['failed_step'] ?? null;
 
         if (! self::isSafeFailedStep($failedStep)) {
@@ -75,8 +67,6 @@ final readonly class NodeRoleAssignmentResponse
         }
 
         /** @var ?string $failedStep */
-
-        /** @mago-expect analysis:mixed-assignment Gateway assignment data is an untyped transport boundary. */
         $rawErrorCode = $data['error_code'] ?? null;
 
         if (! is_string($rawErrorCode) && $rawErrorCode !== null) {
@@ -112,22 +102,20 @@ final readonly class NodeRoleAssignmentResponse
 
     private static function isSafeRole(mixed $value): bool
     {
-        return (
+        return
             is_string($value)
             && $value !== ''
             && strlen($value) <= 128
-            && preg_match('/\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\z/D', $value) === 1
-        );
+            && preg_match('/\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\z/D', $value) === 1;
     }
 
     private static function isSafeFailedStep(mixed $value): bool
     {
-        return (
+        return
             $value === null
             || is_string($value)
             && $value !== ''
             && strlen($value) <= self::MAX_FAILED_STEP_LENGTH
-            && preg_match('/\A[a-z][a-z0-9]*(?::[a-z0-9]+(?:[._-][a-z0-9]+)*)?\z/D', $value) === 1
-        );
+            && preg_match('/\A[a-z][a-z0-9]*(?::[a-z0-9]+(?:[._-][a-z0-9]+)*)?\z/D', $value) === 1;
     }
 }

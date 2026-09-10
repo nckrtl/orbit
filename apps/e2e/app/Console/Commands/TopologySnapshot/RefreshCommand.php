@@ -15,6 +15,7 @@ final class RefreshCommand extends E2ECommand
         {--main-sha=}
         {--allow-cold : Permit initial construction from the generic base image}
         {--json}';
+
     #[\Override]
     protected $description = 'Refresh and promote the topology snapshot generation';
 

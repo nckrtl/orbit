@@ -22,7 +22,6 @@ final class ListActivitiesRequest extends FormRequest
         return (int) ($this->validated('limit') ?? 25);
     }
 
-    /** @mago-expect analysis:mixed-assignment Validated request values are untyped until inspected below. */
     public function requestId(): ?string
     {
         $requestId = $this->validated('request_id');

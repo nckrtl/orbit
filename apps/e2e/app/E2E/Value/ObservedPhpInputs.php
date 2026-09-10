@@ -8,8 +8,6 @@ use InvalidArgumentException;
 
 /**
  * Complete, normalized PCOV evidence collected from disposable proof guests.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect The immutable evidence schema validates every nested process boundary.
  */
 final readonly class ObservedPhpInputs
 {
@@ -30,8 +28,8 @@ final readonly class ObservedPhpInputs
     public array $phases;
 
     /**
-     * @param list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}> $runtimes
-     * @param array{setup:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>,acceptance:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>} $phases
+     * @param  list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}>  $runtimes
+     * @param  array{setup:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>,acceptance:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>}  $phases
      */
     public function __construct(array $runtimes, array $phases)
     {
@@ -89,7 +87,7 @@ final readonly class ObservedPhpInputs
     }
 
     /**
-     * @param array{setup:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>,acceptance:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>} $phases
+     * @param  array<array-key, mixed>  $phases
      * @return array{setup:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>,acceptance:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>}
      */
     private function validatePhases(array $phases): array
@@ -98,7 +96,7 @@ final readonly class ObservedPhpInputs
             throw new InvalidArgumentException('The observed PHP phase inventory is invalid.');
         }
         foreach ($phases as $phase => $surfaces) {
-            if (! array_is_list($surfaces)) {
+            if (! is_array($surfaces) || ! array_is_list($surfaces)) {
                 throw new InvalidArgumentException("The observed PHP {$phase} surfaces are invalid.");
             }
             $keys = [];
@@ -129,7 +127,7 @@ final readonly class ObservedPhpInputs
         return $phases;
     }
 
-    /** @param list<array{id:string,started_at:string,finished_at:string}> $processes */
+    /** @param array<array-key, mixed> $processes */
     private function assertProcesses(array $processes, string $phase, string $surface): void
     {
         if (! array_is_list($processes) || $processes === []) {
@@ -155,7 +153,7 @@ final readonly class ObservedPhpInputs
         }
     }
 
-    /** @param list<string> $paths */
+    /** @param array<array-key, mixed> $paths */
     private function assertPaths(array $paths, string $phase, string $surface): void
     {
         if (! array_is_list($paths) || $paths === []) {
@@ -174,22 +172,20 @@ final readonly class ObservedPhpInputs
 
     private function timestamp(mixed $value): bool
     {
-        return (
+        return
             is_string($value)
-            && preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z\z/D', $value) === 1
-        );
+            && preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z\z/D', $value) === 1;
     }
 
     private function safePath(string $path): bool
     {
-        return (
+        return
             $path !== ''
             && ! str_starts_with($path, '/')
             && ! str_contains($path, "\0")
             && ! str_contains($path, '\\')
             && ! in_array('', explode('/', $path), true)
             && ! in_array('.', explode('/', $path), true)
-            && ! in_array('..', explode('/', $path), true)
-        );
+            && ! in_array('..', explode('/', $path), true);
     }
 }

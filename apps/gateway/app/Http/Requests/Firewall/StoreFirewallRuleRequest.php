@@ -57,7 +57,6 @@ final class StoreFirewallRuleRequest extends FormRequest
         );
     }
 
-    /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
     private function validateSource(Validator $validator): void
     {
         $source = $this->input('source', 'any');
@@ -73,7 +72,6 @@ final class StoreFirewallRuleRequest extends FormRequest
         }
     }
 
-    /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
     private function validatePort(Validator $validator): void
     {
         $port = $this->input('port');

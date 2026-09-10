@@ -11,7 +11,6 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:too-many-methods The fake implements the complete closed manager lifecycle contract. */
 final class FakeToolManager implements ToolManager
 {
     /** @var list<string|null|Throwable> */

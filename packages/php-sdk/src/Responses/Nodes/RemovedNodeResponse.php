@@ -6,15 +6,11 @@ namespace Orbit\Sdk\Responses\Nodes;
 
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway values are validated at the DTO boundary.
- * @mago-expect lint:excessive-parameter-list
- */
 final readonly class RemovedNodeResponse
 {
     /**
-     * @param list<string> $rolesShed
-     * @param list<string> $retainedOnNode
+     * @param  list<string>  $rolesShed
+     * @param  list<string>  $retainedOnNode
      */
     public function __construct(
         public int $id,
@@ -81,8 +77,6 @@ final readonly class RemovedNodeResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway role values remain mixed until validated.
-     *
      * @return list<string>
      */
     private static function stringList(mixed $value): array

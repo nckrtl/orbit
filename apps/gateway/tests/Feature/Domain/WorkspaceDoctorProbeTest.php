@@ -21,7 +21,8 @@ it('returns a healthy empty workspace report and excludes other nodes', function
     workspace_probe_workspace(workspace_probe_instance($other));
     $calls = 0;
 
-    $report = new WorkspaceDoctorProbe(new class($calls) implements WorkspaceStateInspector {
+    $report = new WorkspaceDoctorProbe(new class($calls) implements WorkspaceStateInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -43,7 +44,8 @@ it('checks healthy workspaces in id order', function (): void {
     $second = workspace_probe_workspace($instance);
     $seen = [];
 
-    $report = new WorkspaceDoctorProbe(new class($seen) implements WorkspaceStateInspector {
+    $report = new WorkspaceDoctorProbe(new class($seen) implements WorkspaceStateInspector
+    {
         public function __construct(
             private array &$seen,
         ) {}
@@ -69,7 +71,8 @@ it('short-circuits workspace inspection when the node is unreachable', function 
     workspace_probe_workspace(workspace_probe_instance($node));
     $calls = 0;
 
-    $report = new WorkspaceDoctorProbe(new class($calls) implements WorkspaceStateInspector {
+    $report = new WorkspaceDoctorProbe(new class($calls) implements WorkspaceStateInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -95,7 +98,8 @@ it('reports lifecycle and every false workspace field in stable order without pr
     $node = workspace_probe_node();
     $workspace = workspace_probe_workspace(workspace_probe_instance($node), LifecycleStatus::Failed);
 
-    $report = new WorkspaceDoctorProbe(new class implements WorkspaceStateInspector {
+    $report = new WorkspaceDoctorProbe(new class implements WorkspaceStateInspector
+    {
         public function inspect(Workspace $workspace): WorkspaceInspectionData
         {
             return new WorkspaceInspectionData(false, false, false, false, false, false, false, false);
@@ -128,7 +132,8 @@ it('continues after a typed workspace inspection failure', function (): void {
     $failed = workspace_probe_workspace($instance);
     $healthy = workspace_probe_workspace($instance);
 
-    $report = new WorkspaceDoctorProbe(new class($failed) implements WorkspaceStateInspector {
+    $report = new WorkspaceDoctorProbe(new class($failed) implements WorkspaceStateInspector
+    {
         public function __construct(
             private Workspace $failed,
         ) {}

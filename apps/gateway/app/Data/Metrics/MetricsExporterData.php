@@ -9,7 +9,6 @@ use App\Domain\Metrics\ExporterSelectionReason;
 
 final readonly class MetricsExporterData
 {
-    /** @mago-expect lint:excessive-parameter-list The value preserves the complete bounded exporter status row. */
     public function __construct(
         public int $id,
         public string $name,

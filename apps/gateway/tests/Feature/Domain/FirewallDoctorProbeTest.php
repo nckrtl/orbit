@@ -34,7 +34,8 @@ it('returns a healthy empty report without calling the inspector', function (): 
         'user' => 'orbit',
     ]);
     $calls = 0;
-    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector {
+    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -68,7 +69,8 @@ it('short-circuits unreachable nodes without inspector calls', function (): void
         'status' => LifecycleStatus::Active,
     ]);
     $calls = 0;
-    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector {
+    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -118,7 +120,8 @@ it('checks real database rows in id order and skips non-active rows during inspe
     $context = new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true));
 
     $calls = [];
-    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector {
+    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector
+    {
         public function __construct(
             private array &$calls,
         ) {}
@@ -192,7 +195,8 @@ it('maps ordered rule results and typed failures and excludes other nodes', func
         'status' => LifecycleStatus::Active,
     ]);
     $calls = [];
-    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector {
+    $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector
+    {
         public function __construct(
             private array &$calls,
         ) {}
@@ -241,7 +245,8 @@ it('orders persisted issues before bounded Metrics issues without increasing che
     ]);
     $exporter = firewallMetricsTarget($node, 'orbit:metrics-node-exporter', 'Metrics node exporter');
     $publication = firewallMetricsTarget($node, 'orbit:metrics-grafana-upstream', 'Metrics Grafana upstream');
-    $inspector = new class implements FirewallInspector {
+    $inspector = new class implements FirewallInspector
+    {
         public function inspect(array $targets): FirewallInspectionBatchData
         {
             return new FirewallInspectionBatchData(FirewallBackendStatus::Active, [
@@ -286,7 +291,8 @@ it('makes every target in a failed observation unverifiable without leaking diag
     ]);
     $synthetic = firewallMetricsTarget($node, 'orbit:metrics-node-exporter', 'Metrics node exporter');
     $calls = 0;
-    $inspector = new class($calls) implements FirewallInspector {
+    $inspector = new class($calls) implements FirewallInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -325,7 +331,8 @@ it('checks a Metrics expectation with zero persisted rows and short-circuits whe
     ]);
     $target = firewallMetricsTarget($node, 'orbit:metrics-node-exporter', 'Metrics node exporter');
     $calls = 0;
-    $inspector = new class($calls) implements FirewallInspector {
+    $inspector = new class($calls) implements FirewallInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -383,7 +390,6 @@ function firewallMetricsTarget(Node $node, string $resourceId, string $resourceN
     );
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps expectation input explicit. */
 final readonly class FirewallExpectationProviderFake implements MetricsFirewallExpectationProvider
 {
     /** @param list<FirewallInspectionTarget> $targets */

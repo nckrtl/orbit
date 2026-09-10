@@ -43,7 +43,6 @@ function lifecycleDnsmasq(): string
     return 'port=0';
 }
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Exact process cases share one lifecycle boundary. */
 describe('IncusNetworkLifecycle', function (): void {
     it('uses one owned host firewall transaction for network setup', function (): void {
         $firewallRequests = [];

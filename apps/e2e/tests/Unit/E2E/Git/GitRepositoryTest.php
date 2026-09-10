@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
+use App\E2E\Value\AttemptId;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
@@ -168,7 +169,6 @@ describe('GitRepository', function (): void {
             ->toThrow(InvalidArgumentException::class);
     })->with([
         'traversal' => '../outside.txt',
-        /** @mago-expect lint:no-literal-password The fixture verifies secret-path rejection. */
         'secret' => 'nested/.env.production',
     ]);
 
@@ -285,7 +285,7 @@ describe('GitRepository', function (): void {
         $repository = new GitRepository($this->path);
         $proved = $repository->commit();
         $originalBranch = $repository->branch();
-        $attempt = new \App\E2E\Value\AttemptId(str_repeat('a', 32));
+        $attempt = new AttemptId(str_repeat('a', 32));
         $repository->pinProof('AUX-99', $attempt, $proved);
 
         git($this->path, ['switch', '--orphan', 'replacement']);
@@ -347,7 +347,6 @@ function configureProcessFacade(): void
     $container = new Container;
     $container->instance(ProcessFactory::class, new ProcessFactory);
     Facade::clearResolvedInstances();
-    /** @mago-expect analysis:possibly-invalid-argument The process facade only needs the container contract. */
     Facade::setFacadeApplication($container);
 }
 

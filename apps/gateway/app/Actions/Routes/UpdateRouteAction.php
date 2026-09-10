@@ -9,12 +9,12 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Routes\RouteHostname;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:cyclomatic-complexity The action preserves validation, active convergence, and pending mutation order. */
 final readonly class UpdateRouteAction
 {
     public function __construct(
@@ -65,11 +65,11 @@ final readonly class UpdateRouteAction
         $publicationChanges =
             $data->publicationProvided && $data->publication !== null && $route->publication !== $data->publication;
 
-        if ($route->status === \App\Domain\Routes\RouteStatus::Active && $publicationChanges) {
+        if ($route->status === RouteStatus::Active && $publicationChanges) {
             $this->reconciliation->refuse();
         }
 
-        if ($route->status === \App\Domain\Routes\RouteStatus::Active && $hostname !== null) {
+        if ($route->status === RouteStatus::Active && $hostname !== null) {
             return $this->converge->execute($route, $hostname);
         }
 
@@ -99,10 +99,9 @@ final readonly class UpdateRouteAction
                 static function (mixed $value, string $key) use ($locked): bool {
                     $current = $locked->getAttribute($key);
 
-                    return (
+                    return
                         ($current instanceof \BackedEnum ? $current->value : $current)
-                        !== ($value instanceof \BackedEnum ? $value->value : $value)
-                    );
+                        !== ($value instanceof \BackedEnum ? $value->value : $value);
                 },
                 ARRAY_FILTER_USE_BOTH,
             );

@@ -19,12 +19,7 @@ use RuntimeException;
 use SensitiveParameter;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter owns one bounded Metrics host transaction and recovery protocol.
- * @mago-expect lint:kan-defect The explicit branches preserve fail-closed verification and exact recovery at the SSH boundary.
- * @mago-expect lint:too-many-methods The private methods keep each fixed Metrics SSH operation narrow and non-generic.
- */
-final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCredentialRuntime
+final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, MetricsRuntimeHost
 {
     private const string ConfigurationDirectory = MetricsFootprint::ConfigurationDirectory;
 

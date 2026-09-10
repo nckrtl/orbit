@@ -13,8 +13,8 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class NodeAccessData extends Data
 {
     /**
-     * @param list<NodeAccessNodeData> $canAccess
-     * @param list<NodeAccessNodeData> $accessibleBy
+     * @param  list<NodeAccessNodeData>  $canAccess
+     * @param  list<NodeAccessNodeData>  $accessibleBy
      */
     public function __construct(
         public array $canAccess,

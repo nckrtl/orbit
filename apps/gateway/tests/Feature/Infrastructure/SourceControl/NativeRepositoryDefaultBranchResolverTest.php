@@ -140,7 +140,8 @@ it('maps thrown process timeouts from resolution and verification to the stable 
     $process = new Process(['git', 'ls-remote']);
     $process->setTimeout(30.0);
     $timeout = new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL);
-    $processes = new class($timeout) implements ProcessRunner {
+    $processes = new class($timeout) implements ProcessRunner
+    {
         public function __construct(
             private readonly ProcessTimedOutException $timeout,
         ) {}
@@ -161,7 +162,8 @@ it('maps thrown process timeouts from resolution and verification to the stable 
 it('uses bounded argv-only Git calls and redacts timeout, error, and malformed output details', function (
     CommandResult $result,
 ): void {
-    $processes = new class($result) implements ProcessRunner {
+    $processes = new class($result) implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $invocations = [];
 

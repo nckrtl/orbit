@@ -7,9 +7,9 @@ namespace App\E2E\Value;
 final readonly class ColdTopologyCleanupResult
 {
     /**
-     * @param list<string> $removed
-     * @param list<string> $absent
-     * @param list<string> $refused
+     * @param  list<string>  $removed
+     * @param  list<string>  $absent
+     * @param  list<string>  $refused
      */
     public function __construct(
         public array $removed,

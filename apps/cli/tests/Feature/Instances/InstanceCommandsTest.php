@@ -28,7 +28,8 @@ beforeEach(function (): void {
         url: 'https://10.44.0.1',
         caPath: '/home/orbit/.orbit/ca/root.pem',
     ));
-    $this->registrationGit = new class implements GitRegistrationDiscovery {
+    $this->registrationGit = new class implements GitRegistrationDiscovery
+    {
         public ?GitRegistrationFacts $facts;
 
         public function __construct()
@@ -774,6 +775,7 @@ function registration_json(): string
                 'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
                 'request_id' => instance_request_id(),
             ];
+
             continue;
         }
         $data[$key] = array_map(static fn (array $row): array => [

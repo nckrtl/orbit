@@ -7,14 +7,13 @@ namespace App\Infrastructure\Metrics;
 final readonly class MetricsContainerSpec
 {
     /**
-     * @param array<string, string> $labels
-     * @param array<string, string> $volumeLabels
-     * @param list<string> $command
-     * @param list<string> $mounts
-     * @param array<string, string> $environment
-     * @param non-empty-list<string> $healthCommand
-     * @param array<string, string> $logOptions
-     * @mago-expect lint:excessive-parameter-list The immutable value keeps the complete bounded container specification.
+     * @param  array<string, string>  $labels
+     * @param  array<string, string>  $volumeLabels
+     * @param  list<string>  $command
+     * @param  list<string>  $mounts
+     * @param  array<string, string>  $environment
+     * @param  non-empty-list<string>  $healthCommand
+     * @param  array<string, string>  $logOptions
      */
     public function __construct(
         public MetricsService $service,

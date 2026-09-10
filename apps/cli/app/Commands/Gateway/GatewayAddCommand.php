@@ -29,7 +29,7 @@ final class GatewayAddCommand extends GatewayCommand
         GatewayRootCaTrustService $trust,
     ): int {
         $name = $this->option('name');
-        $gateway = $this->argument('gateway');
+        $gateway = $this->input->getArgument('gateway');
         $caPath = $this->option('ca');
 
         if (! is_string($name) || ! is_string($gateway)) {

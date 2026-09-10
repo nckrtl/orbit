@@ -35,9 +35,6 @@ final readonly class NodeSettings
         return $this->apps === null;
     }
 
-    /**
-     * @mago-expect analysis:mixed-assignment Gateway nested settings remain mixed until keyed.
-     */
     private static function nestedApps(mixed $value): ?AppsSettings
     {
         if (! is_array($value)) {

@@ -214,7 +214,6 @@ it('binds identical firewall rule names through the requested node', function ()
     expect($this->firewall->removed)->toBe(['private-web']);
 });
 
-/** @mago-expect lint:file-name Test-local fake makes API lifecycle states explicit. */
 final class FirewallApiFakeManager implements FirewallManager
 {
     /** @var list<FirewallBackendStatus> */

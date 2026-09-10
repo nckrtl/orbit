@@ -19,7 +19,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
 use App\Models\Node;
 
-/** @mago-expect lint:cyclomatic-complexity The inspector validates both application modes and every managed checkout. */
 final readonly class NativeAppStateInspector implements AppStateInspector
 {
     public function __construct(
@@ -110,7 +109,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                             $checkout['slug'],
                             $checkout['instance'],
                             $checkout['mode'],
-                            $account?->home ?? '',
+                            $account->home ?? '',
                         ],
                         input: 'repository=$1'
                         ."\n"

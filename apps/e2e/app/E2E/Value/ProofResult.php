@@ -10,18 +10,15 @@ use InvalidArgumentException;
  * The compact verdict of one proof: `proved`, or `diagnosis` with the action
  * or phase that ended it. Full guest output is never stored; a failure keeps
  * the tail of the failing action's streams.
- *
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The result validates every field at construction.
  */
-/** @mago-expect lint:kan-defect The proof evidence schema validates every recorded trust boundary. */
 final readonly class ProofResult
 {
     public const int TAIL_LIMIT = 4_096;
 
     /**
-     * @param list<array{id:string,node:string,exit_code:int,stdout:string,stderr:string}> $actions
-     * @param ?TopologyEndState $endsWith The topology the plan declared it ends with; null means the whole profile.
-     * @param list<string> $skippedProbes The standard probes the declaration did not run, for the record.
+     * @param  list<array{id:string,node:string,exit_code:int,stdout:string,stderr:string}>  $actions
+     * @param  ?TopologyEndState  $endsWith  The topology the plan declared it ends with; null means the whole profile.
+     * @param  list<string>  $skippedProbes  The standard probes the declaration did not run, for the record.
      */
     public function __construct(
         public string $issue,
@@ -49,26 +46,11 @@ final readonly class ProofResult
         if ($status === ProofStatus::Proved && $manifestSha256 === null) {
             throw new InvalidArgumentException('A proved result requires a proof-input manifest.');
         }
-        foreach ($actions as $action) {
-            if (
-                array_keys($action) !== ['id', 'node', 'exit_code', 'stdout', 'stderr']
-                || ! is_string($action['id'])
-                || ! in_array($action['node'], $endsWith?->recipeNodes() ?? TopologyProfile::ROLES, true)
-                || ! is_int($action['exit_code'])
-                || ! is_string($action['stdout'])
-                || ! is_string($action['stderr'])
-            ) {
-                throw new InvalidArgumentException('A proof action result is invalid.');
-            }
-        }
+        $this->assertActions($actions, $endsWith);
         if ($status === ProofStatus::Proved && ($error !== null || $this->failedAction() !== null)) {
             throw new InvalidArgumentException('A proved result cannot carry a failure.');
         }
-        foreach ($skippedProbes as $probe) {
-            if (! is_string($probe) || $probe === '') {
-                throw new InvalidArgumentException('A skipped proof probe name is invalid.');
-            }
-        }
+        $this->assertSkippedProbes($skippedProbes);
         // Nothing is skipped without a declaration that says which node went, so a
         // record can never name a skipped probe the plan did not pay for.
         if ($skippedProbes !== [] && $endsWith?->declaresAbsence() !== true) {
@@ -151,5 +133,32 @@ final readonly class ProofResult
         }
 
         return $payload;
+    }
+
+    /** @param array<array-key, array<array-key, mixed>> $actions */
+    private function assertActions(array $actions, ?TopologyEndState $endsWith): void
+    {
+        foreach ($actions as $action) {
+            if (
+                array_keys($action) !== ['id', 'node', 'exit_code', 'stdout', 'stderr']
+                || ! is_string($action['id'])
+                || ! in_array($action['node'], $endsWith?->recipeNodes() ?? TopologyProfile::ROLES, true)
+                || ! is_int($action['exit_code'])
+                || ! is_string($action['stdout'])
+                || ! is_string($action['stderr'])
+            ) {
+                throw new InvalidArgumentException('A proof action result is invalid.');
+            }
+        }
+    }
+
+    /** @param array<array-key, mixed> $skippedProbes */
+    private function assertSkippedProbes(array $skippedProbes): void
+    {
+        foreach ($skippedProbes as $probe) {
+            if (! is_string($probe) || $probe === '') {
+                throw new InvalidArgumentException('A skipped proof probe name is invalid.');
+            }
+        }
     }
 }

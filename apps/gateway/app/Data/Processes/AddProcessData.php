@@ -8,14 +8,13 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
 use SensitiveParameter;
 
-/** @mago-expect lint:excessive-parameter-list */
 final readonly class AddProcessData
 {
     /**
-     * @param list<string> $command
-     * @param array<string, string> $environment
-     * @param list<string> $ports
-     * @param list<array{source: string, target: string, read_only: bool}> $volumes
+     * @param  list<string>  $command
+     * @param  array<string, string>  $environment
+     * @param  list<string>  $ports
+     * @param  list<array{source: string, target: string, read_only: bool}>  $volumes
      */
     public function __construct(
         public ProcessTargetType $targetType,

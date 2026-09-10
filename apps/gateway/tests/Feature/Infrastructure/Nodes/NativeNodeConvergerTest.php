@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
@@ -32,7 +33,8 @@ it('fails closed before SSH when no host adapter supports the node platform', fu
     $node = base_provisionable_node();
     $node->update(['platform' => 'windows']);
     $scans = 0;
-    $scanner = new class($scans) implements HostKeyScanner {
+    $scanner = new class($scans) implements HostKeyScanner
+    {
         public function __construct(
             private int &$scans,
         ) {}
@@ -46,7 +48,8 @@ it('fails closed before SSH when no host adapter supports the node platform', fu
     };
     $converger = base_node_converger(
         scanner: $scanner,
-        ssh: new class implements SshExecutor {
+        ssh: new class implements SshExecutor
+        {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
                 throw new LogicException('SSH must not run for an unsupported platform.');
@@ -195,7 +198,8 @@ it('pins the host and converges only base node identity and connectivity', funct
 
     $node = base_provisionable_node();
     $node->roles()->delete();
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         /** @var list<string> */
         public array $hosts = [];
 
@@ -213,7 +217,8 @@ it('pins the host and converges only base node identity and connectivity', funct
     $baseNodes = [];
     $firewallRoles = [];
     $firewall = base_firewall_spy($baseNodes, $firewallRoles);
-    $wireGuard = new class implements WireGuardPeerConverger {
+    $wireGuard = new class implements WireGuardPeerConverger
+    {
         public bool $converged = false;
 
         public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
@@ -262,9 +267,10 @@ it('pins the host and converges only base node identity and connectivity', funct
 
 it('reprovisions active role-bearing nodes only through WireGuard', function (): void {
     $node = base_provisionable_node();
-    $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $scans = [];
-    $scanner = new class($scans) implements HostKeyScanner {
+    $scanner = new class($scans) implements HostKeyScanner
+    {
         /** @param list<string> $scans */
         public function __construct(
             private array &$scans,
@@ -279,7 +285,8 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
     };
     $ssh = new BaseNodeSshExecutor;
     $wireGuardConnections = [];
-    $wireGuard = new class($wireGuardConnections) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
+    $wireGuard = new class($wireGuardConnections) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+    {
         /** @param list<string> $connections */
         public function __construct(
             private array &$connections,
@@ -333,9 +340,10 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
 it('commits recoverable peer publication before activating orbit SSH for active roleless reprovisioning', function (): void {
     $node = base_provisionable_node();
     $node->roles()->delete();
-    $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $events = [];
-    $wireGuard = new class($events) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
+    $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+    {
         public function __construct(
             private array &$events,
         ) {}
@@ -383,9 +391,10 @@ it('commits recoverable peer publication before activating orbit SSH for active 
 it('rolls back recoverable peer publication when roleless private ssh verification fails', function (): void {
     $node = base_provisionable_node();
     $node->roles()->delete();
-    $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $events = [];
-    $wireGuard = new class($events) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
+    $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+    {
         public function __construct(
             private array &$events,
         ) {}
@@ -409,7 +418,8 @@ it('rolls back recoverable peer publication when roleless private ssh verificati
             }
         }
     };
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $calls = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -447,7 +457,8 @@ it('rolls back recoverable peer publication when roleless private ssh verificati
 
 it('retries a transient private WireGuard SSH connection with bounded backoff', function (): void {
     $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $calls = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -474,7 +485,8 @@ it('retries a transient private WireGuard SSH connection with bounded backoff', 
         sshKeys: base_test_keys(),
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger {
+        wireGuard: new class implements WireGuardPeerConverger
+        {
             public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
@@ -492,7 +504,8 @@ it('retries a transient private WireGuard SSH connection with bounded backoff', 
 
 it('preserves the final transient private SSH failure after retries', function (): void {
     $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $calls = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -520,7 +533,8 @@ it('preserves the final transient private SSH failure after retries', function (
         sshKeys: base_test_keys(),
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger {
+        wireGuard: new class implements WireGuardPeerConverger
+        {
             public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
@@ -551,7 +565,8 @@ it('preserves the final transient private SSH failure after retries', function (
 
 it('does not retry semantic private SSH exit 255 failures', function (): void {
     $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $calls = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -570,7 +585,8 @@ it('does not retry semantic private SSH exit 255 failures', function (): void {
         sshKeys: base_test_keys(),
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger {
+        wireGuard: new class implements WireGuardPeerConverger
+        {
             public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
@@ -602,7 +618,8 @@ it('uses passwordless sudo for the same fixed base command when reconnecting as 
         sshKeys: base_test_keys(),
         ssh: $ssh,
         bootstrapCommand: $factory,
-        wireGuard: new class implements WireGuardPeerConverger {
+        wireGuard: new class implements WireGuardPeerConverger
+        {
             public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
@@ -621,7 +638,8 @@ it('reports a bounded base bootstrap failure before later convergence', function
 
     $node = base_provisionable_node();
     $failure = new CommandResult(1, '', 'sudo failed', 10, false);
-    $ssh = new class($failure) implements SshExecutor {
+    $ssh = new class($failure) implements SshExecutor
+    {
         public function __construct(
             private CommandResult $failure,
         ) {}
@@ -650,7 +668,8 @@ it('translates base firewall failures to node provisioning failures', function (
     $node = base_provisionable_node();
     $node->roles()->delete();
     $result = new CommandResult(1, '', 'ufw failed', 10, false);
-    $firewall = new class($result) implements NodeRoleFirewallManager {
+    $firewall = new class($result) implements NodeRoleFirewallManager
+    {
         public function __construct(
             private CommandResult $result,
         ) {}
@@ -693,7 +712,8 @@ it('guards first-contact and stored SSH fingerprints before remote effects', fun
     $node = base_provisionable_node();
     $node->update(['ssh_host_fingerprint' => $stored]);
     $calls = 0;
-    $ssh = new class($calls) implements SshExecutor {
+    $ssh = new class($calls) implements SshExecutor
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -705,7 +725,8 @@ it('guards first-contact and stored SSH fingerprints before remote effects', fun
             return new CommandResult(0, '', '', 1, false);
         }
     };
-    $scanner = new class($observed) implements HostKeyScanner {
+    $scanner = new class($observed) implements HostKeyScanner
+    {
         public function __construct(
             private string $observed,
         ) {}
@@ -748,7 +769,8 @@ function base_provisionable_node(): Node
 
 function base_test_scanner(): HostKeyScanner
 {
-    return new class implements HostKeyScanner {
+    return new class implements HostKeyScanner
+    {
         public function scan(string $host, int $port): HostKey
         {
             return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
@@ -758,7 +780,8 @@ function base_test_scanner(): HostKeyScanner
 
 function base_test_known_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-known-hosts';
@@ -770,7 +793,8 @@ function base_test_known_hosts(): KnownHostsStore
 
 function base_test_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-key';
@@ -846,7 +870,8 @@ it('bootstraps a supplied nckrtl identity without orbit literals or package conf
 
 it('reports the selected managed user when its SSH verification fails', function (): void {
     $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $calls = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -922,14 +947,14 @@ function base_node_converger(
         sshKeys: base_test_keys(),
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger {
+        wireGuard: new class implements WireGuardPeerConverger
+        {
             public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: $firewall ?? base_firewall_spy(),
     );
 }
 
-/** @mago-expect lint:file-name The fake stays with its base convergence tests. */
 final class BaseNodeSshExecutor implements SshExecutor
 {
     /** @var list<array{connection: SshConnection, command: RemoteCommand}> */
@@ -944,8 +969,8 @@ final class BaseNodeSshExecutor implements SshExecutor
 }
 
 /**
- * @param list<int>|null $baseNodes
- * @param list<RoleName>|null $roles
+ * @param  list<int>|null  $baseNodes
+ * @param  list<RoleName>|null  $roles
  */
 function base_firewall_spy(?array &$baseNodes = null, ?array &$roles = null): NodeRoleFirewallManager
 {

@@ -51,9 +51,9 @@ function availabilityInventoryJson(array $instances): string
 }
 
 /**
- * @param list<string> $instances the VMs the host holds
- * @param list<string> $withSnapshot the VMs that still hold the promoted snapshot
- * @param string $owner the ownership metadata of the snapshots
+ * @param  list<string>  $instances  the VMs the host holds
+ * @param  list<string>  $withSnapshot  the VMs that still hold the promoted snapshot
+ * @param  string  $owner  the ownership metadata of the snapshots
  */
 function fakeAvailabilityHost(
     array $instances,

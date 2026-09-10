@@ -44,7 +44,8 @@ beforeEach(function (): void {
         'user' => 'orbit',
     ]);
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $this->source = new class implements ProductionAppInstanceSourceLifecycle {
+    $this->source = new class implements ProductionAppInstanceSourceLifecycle
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -92,7 +93,8 @@ beforeEach(function (): void {
             }
         }
     };
-    $this->projection = new class implements ProductionRouteProjector {
+    $this->projection = new class implements ProductionRouteProjector
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -396,7 +398,7 @@ final class ProvisionProductionSourceLock implements AppDevSourceOperationLock
 {
     public bool $inside = false;
 
-    public function synchronized(int $nodeId, \Closure $operation): mixed
+    public function synchronized(int $nodeId, Closure $operation): mixed
     {
         $this->inside = true;
 
@@ -412,11 +414,11 @@ final class ProvisionProductionProjectionOwner implements DevelopmentProjectionO
 {
     public int $runs = 0;
 
-    public ?\Closure $onEnter = null;
+    public ?Closure $onEnter = null;
 
-    public ?\Closure $onLeave = null;
+    public ?Closure $onLeave = null;
 
-    public function run(\Closure $operation): mixed
+    public function run(Closure $operation): mixed
     {
         $this->runs++;
         ($this->onEnter ?? static fn () => null)();

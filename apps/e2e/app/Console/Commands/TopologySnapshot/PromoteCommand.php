@@ -14,8 +14,9 @@ final class PromoteCommand extends E2ECommand
     #[\Override]
     protected $signature =
         'topology-snapshot:promote {issue} '
-            .self::WORKTREE_OPTION
-            .' {--plan= : The proof plan of the proved attempt; defaults to .loop/proof/<ISSUE>.json} {--json}';
+        .self::WORKTREE_OPTION
+        .' {--plan= : The proof plan of the proved attempt; defaults to .loop/proof/<ISSUE>.json} {--json}';
+
     #[\Override]
     protected $description = 'Promote the proved topology of the issue to the topology snapshot generation and release it';
 

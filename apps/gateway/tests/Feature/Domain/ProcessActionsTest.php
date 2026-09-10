@@ -538,7 +538,6 @@ function process_actions_record(Instance $instance): Process
     ]);
 }
 
-/** @mago-expect lint:file-name Test-local fake keeps the lifecycle assertions visible. */
 final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
 {
     /** @var list<array{id: int, desired_state: string}> */

@@ -20,15 +20,15 @@ use Illuminate\Support\Str;
 
 it('leaves only bootstrap discovery and trust commands outside active peer authentication', function (): void {
     $unprotectedCommands = collect(Route::getRoutes()->getRoutes())
-        ->filter(static fn (\Illuminate\Routing\Route $route): bool => str_starts_with($route->uri(), 'api/v1/'))
+        ->filter(static fn (Illuminate\Routing\Route $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->reject(
-            static fn (\Illuminate\Routing\Route $route): bool => in_array(
+            static fn (Illuminate\Routing\Route $route): bool => in_array(
                 RequireActiveWireGuardPeer::class,
                 $route->gatherMiddleware(),
                 strict: true,
             ),
         )
-        ->map(static fn (\Illuminate\Routing\Route $route): ?string => $route->getName())
+        ->map(static fn (Illuminate\Routing\Route $route): ?string => $route->getName())
         ->sort()
         ->values()
         ->all();
@@ -387,7 +387,6 @@ function peer_boundary_process(Node $node): Process
     ]);
 }
 
-/** @mago-expect lint:file-name The fake belongs to the peer middleware API scenarios. */
 final class PeerBoundaryFakeProcessRuntimeManager implements ProcessRuntimeManager
 {
     public int $logCalls = 0;

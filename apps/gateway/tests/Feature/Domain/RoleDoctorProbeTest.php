@@ -45,7 +45,8 @@ it('inspects active roles in ID order and checks the VPN projection once', funct
     $seen = [];
     $vpnCalls = 0;
     $report = new RoleDoctorProbe(
-        new class($seen) implements RoleStateInspector {
+        new class($seen) implements RoleStateInspector
+        {
             public function __construct(
                 private array &$seen,
             ) {}
@@ -252,7 +253,8 @@ it('continues after a typed per-row inspection failure and does not expose excep
     $seen = [];
     $vpnCalls = 0;
     $report = new RoleDoctorProbe(
-        new class($failed, $seen) implements RoleStateInspector {
+        new class($failed, $seen) implements RoleStateInspector
+        {
             public function __construct(
                 private NodeRole $failed,
                 private array &$seen,
@@ -452,7 +454,6 @@ function role_probe_node(string $name): Node
     ]);
 }
 
-/** @mago-expect lint:excessive-parameter-list The fixture exposes each persisted lifecycle field under test. */
 function role_probe_assignment(
     Node $node,
     RoleName $role,
@@ -479,7 +480,8 @@ function role_probe_state_inspector(
     int &$calls,
     ?RoleInspectionData $state = null,
 ): RoleStateInspector {
-    return new class($calls, $state ?? new RoleInspectionData(true, true, true)) implements RoleStateInspector {
+    return new class($calls, $state ?? new RoleInspectionData(true, true, true)) implements RoleStateInspector
+    {
         public function __construct(
             private int &$calls,
             private RoleInspectionData $state,
@@ -499,8 +501,8 @@ function role_probe_vpn_inspector(
     ?GatewayVpnInspectionData $state = null,
     bool $throws = false,
 ): GatewayVpnStateInspector {
-    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true, true), $throws) implements
-        GatewayVpnStateInspector {
+    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true, true), $throws) implements GatewayVpnStateInspector
+    {
         public function __construct(
             private int &$calls,
             private GatewayVpnInspectionData $state,

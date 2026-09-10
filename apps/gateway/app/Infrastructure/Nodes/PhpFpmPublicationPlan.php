@@ -73,7 +73,7 @@ final readonly class PhpFpmPublicationPlan
         }
 
         return new self(
-            movingPoolNames: array_values(array_keys($movingPoolNames)),
+            movingPoolNames: array_keys($movingPoolNames),
             publications: $publications,
         );
     }

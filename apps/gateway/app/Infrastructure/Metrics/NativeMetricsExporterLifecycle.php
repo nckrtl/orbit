@@ -37,7 +37,9 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
     {
         $this->mutateFleet(
             $node,
-            fn (MetricsExporterProjectionItem $item): mixed => $this->executor->remove($item->node, $node),
+            function (MetricsExporterProjectionItem $item) use ($node): void {
+                $this->executor->remove($item->node, $node);
+            },
         );
     }
 

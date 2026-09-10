@@ -25,11 +25,6 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The install state machine keeps every ordered validation and retry gate explicit.
- * @mago-expect lint:kan-defect The score reflects the required fail-closed lifecycle branches.
- * @mago-expect lint:too-many-methods Narrow helpers keep the synchronous install boundary explicit.
- */
 final readonly class InstallToolAction
 {
     use MarksToolFailures;
@@ -129,7 +124,6 @@ final readonly class InstallToolAction
         );
     }
 
-    /** @mago-expect lint:halstead The method preserves the required install transition order under both locks. */
     private function underLock(
         Node $node,
         ToolManager $manager,
@@ -557,12 +551,11 @@ final readonly class InstallToolAction
 
     private function isSafeRawVersion(?string $version): bool
     {
-        return (
+        return
             $version !== null
             && $version !== ''
             && strlen($version) <= 255
-            && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1
-        );
+            && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1;
     }
 
     private function knownInstalledVersion(Tool $tool, ?string $observed): ?string
@@ -606,7 +599,6 @@ final readonly class InstallToolAction
         );
     }
 
-    /** @mago-expect lint:excessive-parameter-list The stable operation envelope requires each public field. */
     private function failure(
         string $errorCode,
         ToolOutcome $outcome,

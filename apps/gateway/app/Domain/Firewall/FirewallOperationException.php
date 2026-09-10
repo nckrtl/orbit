@@ -8,7 +8,6 @@ use App\Infrastructure\Processes\CommandResult;
 use RuntimeException;
 use Throwable;
 
-/** @mago-expect lint:excessive-parameter-list The exception carries one stable host-operation envelope. */
 final class FirewallOperationException extends RuntimeException
 {
     public function __construct(

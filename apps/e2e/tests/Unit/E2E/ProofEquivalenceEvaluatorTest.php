@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
+use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\ProofEquivalenceEvaluator;
+use App\E2E\ProofEvidence;
 use App\E2E\ProofInputManifestBuilder;
+use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\StaticProofInputPolicy;
+use App\E2E\TopologyReleaser;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
@@ -21,6 +25,7 @@ use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
@@ -28,7 +33,9 @@ use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
     $container = new Container;
@@ -112,7 +119,7 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
         'AUX-99',
         '.loop/proof/AUX-99.json',
         $plan,
-        \App\E2E\Value\TopologyConstructionInputs::forGeneration(
+        TopologyConstructionInputs::forGeneration(
             featureTarget('AUX-99'),
             'equivalence-generation',
             2,
@@ -401,7 +408,7 @@ describe('ProofEquivalenceEvaluator', function (): void {
 
 it('evaluates captured proof after the proof lease and topology are released', function (): void {
     $fixture = proofEquivalenceFixture();
-    $evidence = App\E2E\ProofEvidence::capture($fixture['state'], $fixture['plan']);
+    $evidence = ProofEvidence::capture($fixture['state'], $fixture['plan']);
     $fixture['state']->captureProof($evidence);
     $fixture['state']->forgetAttempt(AttemptPurpose::Proof);
 
@@ -423,7 +430,7 @@ it('refuses capture when action evidence is incomplete', function (): void {
     $proof['actions'] = [];
     $fixture['state']->writeProof($proof);
 
-    expect(fn () => App\E2E\ProofEvidence::capture($fixture['state'], $fixture['plan']))
+    expect(fn () => ProofEvidence::capture($fixture['state'], $fixture['plan']))
         ->toThrow(RuntimeException::class, 'complete zero-exit');
 });
 
@@ -431,14 +438,14 @@ it('archives proof before cleanup and keeps that evidence through a release retr
     $fixture = proofEquivalenceFixture();
     $hostPaths = new StatePaths($fixture['root'].'-host');
     $host = new IncusHost;
-    $releaser = new App\E2E\TopologyReleaser(
+    $releaser = new TopologyReleaser(
         $host,
-        new App\E2E\IncusNetworkLifecycle($host),
+        new IncusNetworkLifecycle($host),
         $hostPaths,
         new OperationId(str_repeat('c', 32)),
     );
     $failInventory = true;
-    Illuminate\Support\Facades\Process::fake(function (Illuminate\Process\PendingProcess $process) use (
+    Process::fake(function (PendingProcess $process) use (
         &$failInventory,
     ) {
         $command = $process->command;
@@ -446,16 +453,16 @@ it('archives proof before cleanup and keeps that evidence through a release retr
             return new ProcessFactory()->path($process->path)->run($command);
         }
         if ($failInventory) {
-            return Illuminate\Support\Facades\Process::result(errorOutput: 'injected inventory failure', exitCode: 1);
+            return Process::result(errorOutput: 'injected inventory failure', exitCode: 1);
         }
 
-        return Illuminate\Support\Facades\Process::result('[]');
+        return Process::result('[]');
     });
     $request = new TopologyRequest('AUX-99', $fixture['root']);
     expect(fn () => $releaser->release($request, AttemptPurpose::Proof, capture: true))
         ->toThrow(RuntimeException::class);
     $attempt = $fixture['state']->attemptId(AttemptPurpose::Proof)->value;
-    $archive = new App\E2E\State\AtomicJsonStore($hostPaths);
+    $archive = new AtomicJsonStore($hostPaths);
     $saved = $archive->read('proof-evidence/AUX-99/'.$attempt.'.json');
     expect($saved['proof'])->toBe($fixture['state']->proof());
     $failInventory = false;

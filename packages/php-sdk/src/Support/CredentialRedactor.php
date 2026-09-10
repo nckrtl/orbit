@@ -10,7 +10,6 @@ use Throwable;
 
 /**
  * @internal
- * @mago-expect lint:cyclomatic-complexity Credential redaction chains several independent safety checks.
  */
 final readonly class CredentialRedactor
 {
@@ -18,18 +17,16 @@ final readonly class CredentialRedactor
 
     private const string SECRET_KEY_CORE =
         '(?:APP[_-]?KEY|APPLICATION[_-]?KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
-            .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
-            .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD[_-]?CONFIRMATION|PASSWORD|'
-            .'SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
+        .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
+        .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD[_-]?CONFIRMATION|PASSWORD|'
+        .'SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
 
     private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
 
     private const string PEM_BLOCK_PATTERN = '/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?(?:-----END [A-Z0-9 ]+-----|\z)/';
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway error details contain recursive JSON values.
-     *
-     * @param array<string, mixed> $values
+     * @param  array<string, mixed>  $values
      * @return array<string, mixed>
      */
     public function redactArray(#[SensitiveParameter] array $values): array
@@ -50,9 +47,7 @@ final readonly class CredentialRedactor
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway payloads contain recursive JSON values.
-     *
-     * @param array<array-key, mixed> $values
+     * @param  array<array-key, mixed>  $values
      * @return array<array-key, mixed>
      */
     public function redactTransportArray(#[SensitiveParameter] array $values): array
@@ -125,13 +120,12 @@ final readonly class CredentialRedactor
                 subject: $redacted,
             ) ?? $redacted;
 
-        return (
+        return
             preg_replace(
                 pattern: '/\b('.self::SECRET_KEY_IDENTIFIER.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
-            ) ?? $redacted
-        );
+            ) ?? $redacted;
     }
 
     public function redactThrowable(#[SensitiveParameter] ?Throwable $throwable): ?Throwable
@@ -169,12 +163,11 @@ final readonly class CredentialRedactor
 
     private function isSensitiveKey(#[SensitiveParameter] string $key): bool
     {
-        return (
+        return
             preg_match(
                 '/(?:^|_)(app_?key|application_?key|password(?:_hash|_confirmation)?|secret|token|api_?key|api_?token|access_?token|refresh_?token|operation_?token|executor_?secret|private_?key|pre_?shared_?key|bearer(?:_?token)?)$/',
                 $this->normalizeKey($key),
-            ) === 1
-        );
+            ) === 1;
     }
 
     private function normalizeKey(#[SensitiveParameter] string $key): string

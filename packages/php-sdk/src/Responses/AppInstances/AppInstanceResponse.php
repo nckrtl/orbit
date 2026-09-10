@@ -7,10 +7,6 @@ namespace Orbit\Sdk\Responses\AppInstances;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The DTO bounds every AppInstance response field in one factory.
- * @mago-expect lint:excessive-parameter-list The DTO exposes the complete bounded AppInstance response.
- */
 final readonly class AppInstanceResponse
 {
     public function __construct(
@@ -100,7 +96,6 @@ final readonly class AppInstanceResponse
         ];
     }
 
-    /** @mago-expect analysis:mixed-assignment Gateway values remain mixed until their string keys are retained. */
     private static function route(#[SensitiveParameter] mixed $value, string $requestId): ?RouteResponse
     {
         if (! is_array($value)) {
@@ -128,7 +123,6 @@ final readonly class AppInstanceResponse
 
         $removal = [];
 
-        /** @mago-expect analysis:mixed-assignment Gateway response values remain intentionally mixed until DTO parsing. */
         foreach ($value as $key => $item) {
             if (! is_string($key)) {
                 continue;

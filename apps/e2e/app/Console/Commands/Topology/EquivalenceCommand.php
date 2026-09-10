@@ -17,8 +17,9 @@ final class EquivalenceCommand extends E2ECommand
     #[\Override]
     protected $signature =
         'topology:equivalence {issue} '
-            .self::WORKTREE_OPTION
-            .' {--plan= : The retained proof plan; defaults to .loop/proof/<ISSUE>.json} {--json}';
+        .self::WORKTREE_OPTION
+        .' {--plan= : The retained proof plan; defaults to .loop/proof/<ISSUE>.json} {--json}';
+
     #[\Override]
     protected $description = 'Compare the worktree HEAD with the immutable inputs of its retained proof';
 

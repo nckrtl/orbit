@@ -30,7 +30,6 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         $gateway = $this->gateways->resolve();
         $exporters = false;
         $runtime = false;
-        $publication = false;
 
         try {
             $this->exporters->converge($node, $assignment);
@@ -38,13 +37,8 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
             $this->runtime->converge($node, $assignment);
             $runtime = true;
             $this->publication->converge($gateway, $node);
-            $publication = true;
         } catch (\Throwable $exception) {
             try {
-                if ($publication) {
-                    $this->publication->remove($gateway, $node);
-                }
-
                 if ($runtime) {
                     $this->runtime->remove($node, $assignment, false);
                 }

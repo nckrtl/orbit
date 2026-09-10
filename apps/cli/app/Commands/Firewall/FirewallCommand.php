@@ -6,7 +6,6 @@ namespace App\Commands\Firewall;
 
 use App\Commands\GatewayCommand;
 
-/** @mago-expect lint:cyclomatic-complexity Firewall options require independent fail-closed validation. */
 abstract class FirewallCommand extends GatewayCommand
 {
     protected function nodeId(): ?int
@@ -122,7 +121,7 @@ abstract class FirewallCommand extends GatewayCommand
         }
 
         $start = (int) $matches[1];
-        $end = ($matches[2] ?? null) !== null && $matches[2] !== '' ? (int) $matches[2] : $start;
+        $end = isset($matches[2]) ? (int) $matches[2] : $start;
 
         if ($start >= 1 && $start <= 65_535 && $end >= $start && $end <= 65_535) {
             return $port;

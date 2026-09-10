@@ -8,7 +8,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         /** @var array<int, string> $identities */
@@ -35,7 +36,7 @@ return new class extends Migration {
         sort($conflictingIds, SORT_NUMERIC);
 
         if ($conflictingIds !== []) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'Cannot enforce one App per repository while duplicate identities exist: '
                     .implode(', ', $conflictingIds),
             );

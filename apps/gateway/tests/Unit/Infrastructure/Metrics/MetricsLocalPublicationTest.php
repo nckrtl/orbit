@@ -173,15 +173,14 @@ final class MetricsLocalPublicationProcessRunner implements ProcessRunner
     {
         $this->invocations[] = $invocation;
 
-        return (
+        return
             array_shift($this->results) ?? new CommandResult(
                 0,
                 "orbit-metrics-publication:created\n",
                 '',
                 1,
                 false,
-            )
-        );
+            );
     }
 }
 

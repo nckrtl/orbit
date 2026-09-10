@@ -7,7 +7,6 @@ use Orbit\Sdk\Responses\Doctor\DoctorIssueResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorNodeResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 
-/** @mago-expect analysis:mixed-array-assignment The test mutates an untyped Gateway report fixture. */
 it('preserves the exact report, received order, aggregates, and scalar variants', function (): void {
     $data = doctor_report_data();
     $data['nodes'][0]['families'] = [
@@ -58,7 +57,6 @@ it('preserves the exact report, received order, aggregates, and scalar variants'
         ->toBe([7, 3]);
 });
 
-/** @mago-expect analysis:mixed-array-assignment The test mutates an untyped Gateway report fixture. */
 it('accepts every family and all statuses', function (): void {
     $families = ['node', 'role', 'app', 'instance', 'workspace', 'tool', 'process', 'firewall'];
     $statuses = ['healthy', 'drift', 'unverifiable'];
@@ -78,7 +76,6 @@ it('accepts every family and all statuses', function (): void {
         ->toBe(['healthy', 'drift', 'unverifiable', 'healthy', 'drift', 'unverifiable', 'healthy', 'drift']);
 });
 
-/** @mago-expect analysis:mixed-array-assignment The test injects malformed values into an untyped wire fixture. */
 it('drops malformed nested members without fallback DTOs', function (string $level, mixed $value): void {
     $data = doctor_report_data();
     if ($level === 'node') {
@@ -104,7 +101,6 @@ it('drops malformed nested members without fallback DTOs', function (string $lev
     'issue' => ['issue', false],
 ]);
 
-/** @mago-expect analysis:mixed-array-assignment The test injects malformed values into an untyped wire fixture. */
 it('drops the owning nested member for malformed collections', function (string $level, mixed $value): void {
     $data = doctor_report_data();
     if ($level === 'families') {
@@ -153,7 +149,6 @@ it('fails closed for invalid required top-level data', function (Closure $mutate
     }],
 ]);
 
-/** @mago-expect analysis:mixed-array-assignment The test injects malformed values into an untyped wire fixture. */
 it('drops invalid nested required values', function (string $level, string $key, mixed $value): void {
     $data = doctor_report_data();
     if ($level === 'node') {
@@ -204,7 +199,6 @@ it('drops an issue when a required nullable key is missing', function (string $k
     'observed' => ['observed'],
 ]);
 
-/** @mago-expect analysis:mixed-array-assignment The test mutates an untyped Gateway report fixture. */
 it('redacts every string before enforcing its final bound', function (string $level, string $key): void {
     $credential = 'doctor-bounds-secret';
     $value = 'token='.$credential.str_repeat('x', times: 250);
@@ -234,7 +228,6 @@ it('redacts every string before enforcing its final bound', function (string $le
     'observed' => ['issue', 'observed'],
 ]);
 
-/** @mago-expect analysis:mixed-array-assignment The test mutates an untyped Gateway report fixture. */
 it('drops members whose redacted strings remain over the bound', function (string $level, string $key): void {
     $data = doctor_report_data();
     if ($level === 'node') {
@@ -289,7 +282,7 @@ function doctor_report_data(): array
 }
 
 /**
- * @param list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>|null $issues
+ * @param  list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>|null  $issues
  * @return array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}
  */
 function doctor_family_data(
@@ -307,7 +300,6 @@ function doctor_family_data(
 }
 
 /**
- * @mago-expect lint:excessive-parameter-list The helper mirrors the exact issue wire shape.
  * @return array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}
  */
 function doctor_issue_data(

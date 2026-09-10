@@ -8,7 +8,6 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Infrastructure\Files\ProtectedFileWriter;
 
-/** @mago-expect lint:excessive-parameter-list Gateway web convergence composes four explicit host service boundaries. */
 final readonly class NativeGatewayWebConverger implements GatewayWebConverger
 {
     public function __construct(

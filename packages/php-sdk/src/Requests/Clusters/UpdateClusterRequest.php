@@ -18,7 +18,6 @@ final class UpdateClusterRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::PATCH;
 
-    /** @mago-expect lint:excessive-parameter-list Each mutable field needs an explicit omission flag. */
     public function __construct(
         private readonly int $clusterId,
         private readonly bool $hasName = false,

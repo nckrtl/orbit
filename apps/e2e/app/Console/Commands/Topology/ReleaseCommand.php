@@ -15,13 +15,14 @@ final class ReleaseCommand extends E2ECommand
     #[\Override]
     protected $signature =
         'topology:release {issue} '
-            .self::WORKTREE_OPTION
-            .' {--proof : Release the retained proof topology instead of discovery}'
-            .' {--candidate : Release the candidate-convergence topology instead of discovery}'
-            .' {--recover-extension= : Recover a legacy lease target as none or app-prod}'
-            .' {--expected-attempt= : Full attempt ID required with --recover-extension}'
-            .' {--capture : Preserve verified proof evidence before releasing its VMs}'
-            .' {--json}';
+        .self::WORKTREE_OPTION
+        .' {--proof : Release the retained proof topology instead of discovery}'
+        .' {--candidate : Release the candidate-convergence topology instead of discovery}'
+        .' {--recover-extension= : Recover a legacy lease target as none or app-prod}'
+        .' {--expected-attempt= : Full attempt ID required with --recover-extension}'
+        .' {--capture : Preserve verified proof evidence before releasing its VMs}'
+        .' {--json}';
+
     #[\Override]
     protected $description = 'Release discovery, or explicitly the retained proof, and sweep orphaned networks';
 

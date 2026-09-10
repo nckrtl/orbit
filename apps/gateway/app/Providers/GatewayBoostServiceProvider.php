@@ -19,7 +19,8 @@ final class GatewayBoostServiceProvider extends ServiceProvider
             return;
         }
 
-        $this->app->register(new class($this->app) extends BoostServiceProvider {
+        $this->app->register(new class($this->app) extends BoostServiceProvider
+        {
             protected function registerRoutes(): void {}
         });
     }

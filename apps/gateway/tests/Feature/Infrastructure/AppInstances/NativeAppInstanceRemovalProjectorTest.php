@@ -318,7 +318,8 @@ function orb183_projector_production_member(bool $shared): array
 function orb181_removal_projector(object $test): array
 {
     $ssh = new Orb181RemovalSshExecutor;
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/orbit-test-key';
@@ -329,7 +330,8 @@ function orb181_removal_projector(object $test): array
             return 'ssh-ed25519 AAAA';
         }
     };
-    $knownHosts = new class implements KnownHostsStore {
+    $knownHosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/orbit-test-known-hosts';
@@ -339,7 +341,8 @@ function orb181_removal_projector(object $test): array
     };
     $executor = new AppDevSshExecutor($ssh, $keys, $knownHosts);
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-    $accounts = new class($account) implements ManagedUserAccountResolver {
+    $accounts = new class($account) implements ManagedUserAccountResolver
+    {
         public function __construct(
             private readonly ManagedUserAccount $account,
         ) {}
@@ -349,7 +352,8 @@ function orb181_removal_projector(object $test): array
             return $this->account;
         }
     };
-    $signer = new class implements LeafCertificateSigner {
+    $signer = new class implements LeafCertificateSigner
+    {
         public function sign(string $hostname, string $certificateRequest): string
         {
             return "LEAF\n";

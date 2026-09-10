@@ -23,12 +23,6 @@ use App\Models\Node;
 use Closure;
 use InvalidArgumentException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The converger keeps dependent VPN safety gates in execution order.
- * @mago-expect lint:excessive-parameter-list Active and protected stored UFW sources use distinct typed parsers.
- * @mago-expect lint:kan-defect The score reflects explicit rollback and recovery branches at the host boundary.
- * @mago-expect lint:too-many-methods Private methods keep each protected host operation bounded and testable.
- */
 final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
 {
     private const string CANDIDATE_CONFIG = '/etc/wireguard/orbit-candidate.conf';
@@ -439,7 +433,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
     }
 
     /**
-     * @param list<UfwManagedRule> $rules
+     * @param  list<UfwManagedRule>  $rules
      * @return list<UfwManagedRule>
      */
     private function missingFirewallRules(CommandResult $status, array $rules): array
@@ -841,7 +835,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         );
     }
 
-    /** @mago-expect lint:no-boolean-flag-parameter The flag selects whether a failed live swap created a backup. */
     private function cleanupCandidate(bool $includeBackup = false): void
     {
         $paths = [

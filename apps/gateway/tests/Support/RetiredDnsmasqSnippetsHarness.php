@@ -11,8 +11,6 @@ use Symfony\Component\Process\Process;
 /**
  * Runs the rendered stock dnsmasq snippet retirement script against a
  * sandboxed conf directory with shimmed root-owned `install` and `systemctl`.
- *
- * @mago-expect lint:too-many-methods The harness exposes one seam per sandboxed host observation.
  */
 final class RetiredDnsmasqSnippetsHarness
 {

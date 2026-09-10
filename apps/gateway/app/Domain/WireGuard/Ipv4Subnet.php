@@ -6,9 +6,7 @@ namespace App\Domain\WireGuard;
 
 use Generator;
 use InvalidArgumentException;
-use LogicException;
 
-/** @mago-expect lint:cyclomatic-complexity Canonical subnet parsing keeps validation and address rules together. */
 final readonly class Ipv4Subnet
 {
     private function __construct(
@@ -77,10 +75,6 @@ final readonly class Ipv4Subnet
         $first = long2ip($this->networkStart + 1);
         $last = long2ip($this->networkEnd - 1);
 
-        if (! is_string($first) || ! is_string($last)) {
-            throw new LogicException('A validated IPv4 subnet produced an invalid usable range.');
-        }
-
         return [$first, $last];
     }
 
@@ -103,10 +97,6 @@ final readonly class Ipv4Subnet
     {
         for ($candidate = $this->networkStart + 1; $candidate < $this->networkEnd; $candidate++) {
             $address = long2ip($candidate);
-
-            if (! is_string($address)) {
-                throw new LogicException('A validated IPv4 subnet produced an invalid usable address.');
-            }
 
             yield $address;
         }

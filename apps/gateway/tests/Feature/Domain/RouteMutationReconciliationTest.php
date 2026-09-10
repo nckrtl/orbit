@@ -38,6 +38,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use Tests\Support\FakeToolManagerMaterializer;
 
@@ -243,7 +244,7 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
 
     $replacement = reconciliation_node('router-replacement-refusal', null);
     $replacement->update(['cluster_id' => $cluster->id]);
-    $assignmentsBefore = \App\Models\NodeRole::query()
+    $assignmentsBefore = NodeRole::query()
         ->where('cluster_id', $cluster->id)
         ->get()
         ->map
@@ -255,7 +256,7 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
             expect($exception->errorCode)->toBe('route.reconciliation_required');
         });
     expect(
-        \App\Models\NodeRole::query()
+        NodeRole::query()
             ->where('cluster_id', $cluster->id)
             ->get()
             ->map
@@ -587,7 +588,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
             'node_tld' => 'new.test',
             'node_status' => LifecycleStatus::Provisioning,
             'route_hostname' => 'feature.acme.new.test',
-            'route_status' => \App\Domain\Routes\RouteStatus::Pending,
+            'route_status' => RouteStatus::Pending,
         ])
         ->and($route->refresh()->only(['hostname', 'generation_basis_node_id', 'failed_step', 'error_code']))
         ->toBe([
@@ -731,7 +732,7 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
             'hostname' => 'production.example.test',
             'node_id' => $this->node->id,
             'cluster_id' => null,
-            'status' => \App\Domain\Routes\RouteStatus::Pending,
+            'status' => RouteStatus::Pending,
             'failed_step' => null,
             'error_code' => null,
         ]);
@@ -795,7 +796,8 @@ function reconciliation_node(string $name, ?string $tld): Node
 
 function bind_route_reconciliation_provisioning(?Closure $onConverge = null): void
 {
-    app()->instance(NodeConverger::class, new class($onConverge) implements NodeConverger {
+    app()->instance(NodeConverger::class, new class($onConverge) implements NodeConverger
+    {
         public function __construct(
             private readonly ?Closure $onConverge,
         ) {}
@@ -811,7 +813,8 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
             }
         }
     });
-    app()->instance(AppDevTldConverger::class, new class implements AppDevTldConverger {
+    app()->instance(AppDevTldConverger::class, new class implements AppDevTldConverger
+    {
         public function converge(Node $node): void {}
     });
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
@@ -883,7 +886,6 @@ function reconciliation_update(
     );
 }
 
-/** @mago-expect lint:file-name Test-local owner executes one synchronous development projection operation. */
 final readonly class RouteMutationProjectionOwner implements DevelopmentProjectionOperationLock
 {
     public function run(Closure $operation): mixed

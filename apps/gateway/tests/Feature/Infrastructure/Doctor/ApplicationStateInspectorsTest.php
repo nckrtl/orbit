@@ -31,6 +31,8 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
@@ -710,7 +712,8 @@ function application_workspace_inspector(
 
 function application_inspector_accounts(): ManagedUserAccountResolver
 {
-    return new class implements ManagedUserAccountResolver {
+    return new class implements ManagedUserAccountResolver
+    {
         public function resolve(Node $node): ManagedUserAccount
         {
             return new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
@@ -720,7 +723,8 @@ function application_inspector_accounts(): ManagedUserAccountResolver
 
 function application_inspector_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/tmp/doctor-key';
@@ -735,7 +739,8 @@ function application_inspector_keys(): SshKeyProvider
 
 function application_inspector_hosts(): KnownHostsStore
 {
-    return new class implements KnownHostsStore {
+    return new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/tmp/doctor-known-hosts';
@@ -838,14 +843,14 @@ final class ApplicationInspectorProcessRunner implements ProcessRunner
     public array $invocations = [];
 
     public function __construct(
-        private CommandResult|\Throwable $result,
+        private CommandResult|Throwable $result,
     ) {}
 
     public function run(ProcessInvocation $invocation): CommandResult
     {
         $this->invocations[] = $invocation;
 
-        if ($this->result instanceof \Throwable) {
+        if ($this->result instanceof Throwable) {
             throw $this->result;
         }
 
@@ -853,18 +858,17 @@ final class ApplicationInspectorProcessRunner implements ProcessRunner
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local timeout fake keeps boundary coverage focused. */
-final class ApplicationInspectorTimeoutSshExecutor implements \App\Infrastructure\Ssh\SshExecutor
+final class ApplicationInspectorTimeoutSshExecutor implements SshExecutor
 {
     public array $connections = [];
 
     public function __construct(
-        private \Throwable $timeout,
+        private Throwable $timeout,
     ) {}
 
     public function execute(
-        \App\Infrastructure\Ssh\SshConnection $connection,
-        \App\Infrastructure\Ssh\RemoteCommand $command,
+        SshConnection $connection,
+        RemoteCommand $command,
     ): CommandResult {
         $this->connections[] = $connection;
         throw $this->timeout;

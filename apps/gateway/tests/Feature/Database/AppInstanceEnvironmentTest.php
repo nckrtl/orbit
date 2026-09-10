@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Node;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
@@ -42,17 +45,17 @@ it('adds no values during migration and cascades values only when the owner is d
     expect(AppInstanceEnvironmentValue::query()->count())->toBe(0);
 });
 
-/** @return array{\App\Models\AppInstance, \App\Models\AppInstance} */
+/** @return array{AppInstance, AppInstance} */
 function environment_database_instances(): array
 {
-    $app = \App\Models\App::query()->create([
+    $app = App::query()->create([
         'name' => 'Environment database',
         'slug' => 'environment-database',
         'repository_url' => 'https://example.test/environment.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $node = \App\Models\Node::query()->create([
+    $node = Node::query()->create([
         'name' => 'environment-node',
         'status' => 'active',
         'platform' => 'linux',
@@ -62,13 +65,13 @@ function environment_database_instances(): array
     ]);
 
     return [
-        \App\Models\AppInstance::query()->create([
+        AppInstance::query()->create([
             'app_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'first',
             'checkout_path' => '/srv/orbit/first',
         ]),
-        \App\Models\AppInstance::query()->create([
+        AppInstance::query()->create([
             'app_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'second',

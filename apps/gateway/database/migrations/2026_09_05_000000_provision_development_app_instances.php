@@ -7,7 +7,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         $invalid = DB::table('app_instances')
@@ -21,7 +22,7 @@ return new class extends Migration {
             ->all();
 
         if ($invalid !== []) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'Active AppInstances must have exactly one Route before upgrade: '.implode(', ', $invalid),
             );
         }

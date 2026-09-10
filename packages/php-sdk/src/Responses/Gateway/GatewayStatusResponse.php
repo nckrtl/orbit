@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Gateway;
 
-/** @mago-expect lint:excessive-parameter-list */
 final readonly class GatewayStatusResponse
 {
     public function __construct(

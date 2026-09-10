@@ -15,7 +15,6 @@ use Illuminate\Http\JsonResponse;
 
 final class DoctorRunsController extends Controller
 {
-    /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function store(
         RunDoctorRequest $request,

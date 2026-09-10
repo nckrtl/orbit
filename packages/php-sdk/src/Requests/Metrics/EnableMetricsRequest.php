@@ -28,6 +28,7 @@ final class EnableMetricsRequest extends GatewayRequest implements HasBody
         return '/api/v1/metrics';
     }
 
+    /** @return array{node_id: int} */
     protected function defaultBody(): array
     {
         return ['node_id' => $this->nodeId];

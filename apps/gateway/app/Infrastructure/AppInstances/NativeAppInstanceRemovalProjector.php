@@ -17,7 +17,6 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:cyclomatic-complexity Projection distinguishes shared and final Routes across resumable checkpoints. */
 final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRemovalProjector
 {
     public function __construct(

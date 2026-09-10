@@ -7,7 +7,7 @@ Laravel 13 control plane for Orbit.
 - Use Form Requests and typed data objects for input.
 - Keep infrastructure execution synchronous and idempotent.
 - Use Pest 5 with `describe()` and `it()`.
-- Use Mago for formatting, linting, and analysis.
+- Use Pint for formatting and Larastan for static analysis.
 - Do not add queues, agents, a UI, or Docker orchestration.
 - Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.
 
@@ -209,5 +209,12 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 ## URL Generation
 
 - When generating links to other pages, prefer named routes and the `route()` function.
+
+=== pint/core rules ===
+
+# Laravel Pint Code Formatter
+
+- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
+- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
 
 </laravel-boost-guidelines>

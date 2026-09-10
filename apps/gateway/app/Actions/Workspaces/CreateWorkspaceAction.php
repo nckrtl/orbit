@@ -20,7 +20,6 @@ use App\Models\Instance;
 use App\Models\Workspace;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list Workspace creation keeps role, path, and immutable identity gates together. */
 final readonly class CreateWorkspaceAction
 {
     public function __construct(
