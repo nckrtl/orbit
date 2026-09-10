@@ -1196,6 +1196,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0057-limit-metrics-exporters-to-managed-nodes.md",
+            "title": "ADR 0057: Limit Metrics exporters to managed Nodes",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0003",
+                "0012",
+                "0057"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
