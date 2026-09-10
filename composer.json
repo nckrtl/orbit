@@ -18,5 +18,8 @@
     "config": {
         "preferred-install": "dist",
         "sort-packages": true
+    },
+    "require-dev": {
+        "laravel/pao": "^1.1"
     }
 }
