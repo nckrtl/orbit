@@ -42,6 +42,14 @@ it('maps product roles onto separate physical Node keys', function () {
     expect($recipe->checkoutNodeKeys())->toBe(['gateway', 'operator']);
 });
 
+it('round trips and fingerprints the normalized variable-size recipe', function () {
+    $recipe = TopologyRecipe::coldAcceptance();
+
+    expect(TopologyRecipe::fromArray($recipe->toArray())->toArray())->toBe($recipe->toArray());
+    expect($recipe->fingerprint())->toMatch('/\A[a-f0-9]{64}\z/');
+    expect(TopologyRecipe::registered()->fingerprint())->not->toBe($recipe->fingerprint());
+});
+
 it('rejects an invalid Node declaration', function (TopologyNode $node) {
     expect(
         fn () => new TopologyRecipe('invalid-recipe', [

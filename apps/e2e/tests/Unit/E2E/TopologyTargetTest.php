@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\ScenarioId;
+use App\E2E\Value\ScenarioRunId;
 use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyRecipe;
@@ -99,6 +101,25 @@ describe('TopologyTarget', function () {
             ->not->toBe($second->network())->and($first->instance('gateway'))
             ->not->toBe($second->instance('gateway'))->and($first->mac('gateway'))
             ->not->toBe($second->mac('gateway'));
+    });
+
+    it('binds scenario resources to the exact run, definition, attempt, and physical Node', function () {
+        $run = new ScenarioRunId(str_repeat('b', 32));
+        $scenario = new ScenarioId('cold-four-node');
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $target = TopologyTarget::disposableScenario($run, $scenario, $attempt, TopologyRecipe::coldAcceptance());
+        $otherRun = TopologyTarget::disposableScenario(
+            new ScenarioRunId(str_repeat('c', 32)),
+            $scenario,
+            $attempt,
+            TopologyRecipe::coldAcceptance(),
+        );
+
+        expect($target->requireScenarioRun())->toBe($run);
+        expect($target->scenario)->toBe($scenario);
+        expect($target->instance('operator'))->toStartWith('orbit-e2e-scn-bbbbbbbb-');
+        expect(strlen($target->instance(str_repeat('a', 1).'pp-prod')))->toBeLessThanOrEqual(63);
+        expect($target->network())->not->toBe($otherRun->network());
     });
 
     it('derives disposable identities from physical Nodes instead of assigned roles', function () {

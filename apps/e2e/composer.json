@@ -67,6 +67,11 @@
             "Composer\\Config::disableProcessTimeout",
             "vendor/bin/pest --no-tia --compact tests/Scenario/ColdTopologyAcceptanceTest.php"
         ],
+        "scenario:cold": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan scenario:cold"
+        ],
+        "scenario:cleanup": "@php artisan scenario:cleanup",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

@@ -218,10 +218,18 @@ describe('ColdTopologyConstructor cleanup', function () {
         $state = new ColdConstructorProcessState($target, $operation->value);
         Process::fake($state->result(...));
 
-        expect(fn () => cold_constructing_service(
-            new IncusHost(pool: 'orbit-e2e'),
-            new StatePaths(temporaryPath('cold-construction-', 4)),
-        )->construct(cold_constructing_plan($target, $operation)))
+        $phases = [];
+        expect(function () use ($target, $operation, &$phases): void {
+            cold_constructing_service(
+                new IncusHost(pool: 'orbit-e2e'),
+                new StatePaths(temporaryPath('cold-construction-', 4)),
+            )->construct(
+                cold_constructing_plan($target, $operation),
+                function (string $name, float $started, float $finished, bool $passed, ?string $error) use (&$phases): void {
+                    $phases[$name] = compact('started', 'finished', 'passed', 'error');
+                },
+            );
+        })
             ->toThrow(InvalidArgumentException::class, 'The Git command failed.');
 
         expect($state->instances)->toBe([]);
@@ -233,6 +241,11 @@ describe('ColdTopologyConstructor cleanup', function () {
             $target->instance('gateway'),
             $target->network(),
         ]);
+        expect(array_keys($phases))->toBe([
+            'preflight', 'create-resources', 'start-instances', 'prepare-host-state', 'synchronize-source',
+        ]);
+        expect($phases['synchronize-source']['passed'])->toBeFalse();
+        expect($phases['synchronize-source']['error'])->toBe('The Git command failed.');
     });
 
     it('reports cleanup refusal and preserves the primary construction failure', function () {
@@ -341,5 +354,6 @@ describe('ColdTopologyConstructor cleanup', function () {
         expect($result->removed)->toBe([]);
         expect($result->refused)->toHaveCount(1);
         expect($result->refused[0])->toContain('belongs to another operation');
+        expect($result->remaining)->toBe([...$instances, $target->network()]);
     });
 });

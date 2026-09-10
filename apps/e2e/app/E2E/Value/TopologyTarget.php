@@ -15,6 +15,8 @@ final readonly class TopologyTarget
         public ?AttemptId $attempt,
         public TopologyRecipe $recipe,
         private ?TopologySnapshotIdentity $topologySnapshot = null,
+        public ?ScenarioRunId $scenarioRun = null,
+        public ?ScenarioId $scenario = null,
     ) {}
 
     public static function feature(string $issue, AttemptId $attempt, ?TopologyRecipe $recipe = null): self
@@ -29,6 +31,15 @@ final readonly class TopologyTarget
         self::assertIssue($issue);
 
         return new self($issue, $attempt, $recipe);
+    }
+
+    public static function disposableScenario(
+        ScenarioRunId $run,
+        ScenarioId $scenario,
+        AttemptId $attempt,
+        TopologyRecipe $recipe,
+    ): self {
+        return new self('SCN-1', $attempt, $recipe, scenarioRun: $run, scenario: $scenario);
     }
 
     /** The current or retired physical topology snapshot. */
@@ -110,7 +121,11 @@ final readonly class TopologyTarget
             return $this->topologySnapshot->network();
         }
 
-        return 'oe-'.substr(hash('sha256', $this->issue.':'.$this->requireAttempt()->value), 0, 12);
+        $identity = $this->scenario === null
+            ? $this->issue.':'.$this->requireAttempt()->value
+            : $this->requireScenarioRun()->value.':'.$this->scenario->value.':'.$this->requireAttempt()->value;
+
+        return 'oe-'.substr(hash('sha256', $identity), 0, 12);
     }
 
     public function instance(string $nodeOrRole): string
@@ -119,6 +134,12 @@ final readonly class TopologyTarget
 
         if ($this->topologySnapshot !== null) {
             return $this->topologySnapshot->instance($node->key);
+        }
+
+        if ($this->scenario !== null) {
+            return 'orbit-e2e-scn-'.$this->requireScenarioRun()->short().'-'
+                .substr(hash('sha256', $this->scenario->value), 0, 6).'-'
+                .$this->requireAttempt()->short().'-'.$node->key;
         }
 
         return 'orbit-e2e-'.strtolower($this->issue).'-'.$this->requireAttempt()->short().'-'.$node->key;
@@ -147,5 +168,10 @@ final readonly class TopologyTarget
     public function requireAttempt(): AttemptId
     {
         return $this->attempt ?? throw new InvalidArgumentException('The feature target has no attempt identity.');
+    }
+
+    public function requireScenarioRun(): ScenarioRunId
+    {
+        return $this->scenarioRun ?? throw new InvalidArgumentException('The topology target has no scenario run.');
     }
 }

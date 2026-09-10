@@ -13,6 +13,7 @@ use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyTarget;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
+use Closure;
 use RuntimeException;
 use Throwable;
 
@@ -30,35 +31,39 @@ final readonly class ColdTopologyConstructor
         private StatePaths $hostPaths,
     ) {}
 
-    public function construct(ColdTopologyPlan $plan): SourceState
+    /** @param (Closure(string, float, float, bool, ?string): void)|null $observePhase */
+    public function construct(ColdTopologyPlan $plan, ?Closure $observePhase = null): SourceState
     {
-        $this->preflight($plan);
+        $this->phase('preflight', fn () => $this->preflight($plan), $observePhase);
 
         try {
-            $this->createResources($plan);
+            $this->phase('create-resources', fn () => $this->createResources($plan), $observePhase);
             $instances = array_map($plan->target->instance(...), $plan->target->recipe->nodeKeys());
-            $this->host->startAll($instances);
-            $this->host->prepareClonedHostStates($instances);
+            $this->phase('start-instances', fn () => $this->host->startAll($instances), $observePhase);
+            $this->phase('prepare-host-state', fn () => $this->host->prepareClonedHostStates($instances), $observePhase);
 
-            if ($plan->isDisposable()) {
-                $candidate = $this->synchronizer->syncCommit(
-                    $plan->target,
-                    $plan->sourceWorktree,
-                    $plan->sourceSha,
-                );
-                $source = new SourceState(
-                    $candidate->candidateSha,
-                    $candidate->candidateSha,
-                    operationId: $candidate->operationId,
-                );
-            } else {
-                $source = $this->synchronizer->sync($plan->target, $plan->sourceWorktree);
-            }
+            $source = $this->phase('synchronize-source', function () use ($plan): SourceState {
+                if ($plan->isDisposable()) {
+                    $candidate = $this->synchronizer->syncCommit(
+                        $plan->target,
+                        $plan->sourceWorktree,
+                        $plan->sourceSha,
+                    );
+
+                    return new SourceState(
+                        $candidate->candidateSha,
+                        $candidate->candidateSha,
+                        operationId: $candidate->operationId,
+                    );
+                }
+
+                return $this->synchronizer->sync($plan->target, $plan->sourceWorktree);
+            }, $observePhase);
             if ($source->hostSha !== $plan->sourceSha || $source->guestSha !== $plan->sourceSha || $source->dirty) {
                 throw new RuntimeException('Cold topology source is not the requested clean commit.');
             }
 
-            $this->converger->converge($plan->target, $source, $plan->laravel);
+            $this->phase('converge', fn () => $this->converger->converge($plan->target, $source, $plan->laravel), $observePhase);
 
             return $source;
         } catch (Throwable $constructionFailure) {
@@ -115,7 +120,10 @@ final readonly class ColdTopologyConstructor
 
             return new ColdTopologyCleanupResult($removed, $absent, []);
         } catch (Throwable $cleanupFailure) {
-            return new ColdTopologyCleanupResult($removed, $absent, [$cleanupFailure->getMessage()]);
+            $expected = [...$instanceNames, $target->network()];
+            $remaining = array_values(array_diff($expected, $removed, $absent));
+
+            return new ColdTopologyCleanupResult($removed, $absent, [$cleanupFailure->getMessage()], $remaining);
         }
     }
 
@@ -180,6 +188,29 @@ final readonly class ColdTopologyConstructor
         }
         if (($metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value) {
             throw new RuntimeException("Cold topology resource {$resource} belongs to another operation.");
+        }
+    }
+
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $action
+     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observer
+     * @return T
+     */
+    private function phase(string $name, Closure $action, ?Closure $observer): mixed
+    {
+        $started = microtime(true);
+
+        try {
+            $result = $action();
+            $observer?->__invoke($name, $started, microtime(true), true, null);
+
+            return $result;
+        } catch (Throwable $exception) {
+            $observer?->__invoke($name, $started, microtime(true), false, $exception->getMessage());
+
+            throw $exception;
         }
     }
 }
