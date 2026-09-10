@@ -19,6 +19,10 @@ not replace this review or approve the candidate.
 
 Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
 
+Apply that page's current local check policy when an issue or plan still names generic full no-TIA CI suites. Report the text correction to the orchestrator; do not run `bin/test` to satisfy superseded wording. A focused acceptance check may bypass TIA. An intentional full-suite exception needs a current explicit instruction or a concrete diagnostic reason. A full test run does not replace the root gate's quality checks and exact-candidate receipt.
+
+Use the [shared review handoff](../../../docs/reference/implementation-loop.md#review-handoff) for PR evidence. Concise acceptance rows with observed results and precise artifact references are sufficient; do not demand copied logs or immutable discovery proof. Distinguish an omitted publication from missing verification. Return body corrections to the orchestrator and continue substantive review; restoring already supplied evidence on the same candidate needs no new commit, preflight, or repeated passing gate. Preserve actual correctness findings and require adequate evidence before approval.
+
 ## Steps
 
 1. **Bind the candidate.** Record the exact remote PR head SHA. Require a clean local checkout equal to it.

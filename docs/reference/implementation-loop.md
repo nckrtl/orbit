@@ -51,6 +51,8 @@ The proof flow uses the same worktree, preflight, documentation, review, artifac
 
 Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, Pint formatting and syntax checks, and static analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. The independent reviewer runs root `composer check` on the clean submitted candidate before approval. This local gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
 
+Apply this check policy when an issue or retained plan still names generic full no-TIA CI suites. The planner maps that wording to focused development checks and the reviewer's local gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. An intentional issue-specific full run needs a current explicit instruction or a concrete diagnostic reason; copied generic CI wording does not supply either. A focused test command with an explicit path and `--no-tia` remains valid: it runs the named acceptance tests, not every project suite.
+
 Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
 
 Every project runs analysis at level 6. The configured paths keep the existing analysis scopes. Tests remain covered by Pint and Pest.
@@ -97,6 +99,23 @@ The reviewer runs root `composer check` in a clean review worktree at the submit
 The gate writes command logs and `result.json` under the Git common directory at `orbit-checks/<candidate>/review-*/`. The receipt records the exact candidate and tree, each command, exit code, duration, and log path. It reports success only when every check passes and the candidate remains clean and unchanged. The reviewer retains the receipt with the acceptance assessment; the orchestrator verifies that its candidate matches the approved and merged head. A later candidate needs a new gate and approval.
 
 GitHub's workflow is available only for manual diagnostics and remains disabled in the repository settings. It does not run automatically on pushes or pull requests. Focused acceptance tests remain required; TIA selection alone does not establish acceptance. Missing or incompatible caches can cause the local gate to record a full project suite. Root `bin/test` remains available for an explicit full run without TIA.
+
+## Review handoff
+
+The implementer returns one proposed PR body. The orchestrator publishes its evidence without replacing it with aggregate test counts, then reads back the body before requesting review. The reviewer uses that same body and the referenced artifacts. Keep the body concise and put detailed command output in the retained development record.
+
+| Body field | Required content |
+| --- | --- |
+| Binding | `Issue: <ID>`, selected flow, candidate SHA, artifact ref and SHA |
+| Acceptance | One row per item, in order: item number or brief outcome, test or discovery check, observed result, and precise artifact path or log reference for details |
+| Checks | Focused tests and changed-project checks with results; mark the independent root gate pending until the reviewer supplies its receipt |
+| Documentation | Every changed maintained page with its purpose, audit findings and owners, or the applicable reason for unchanged documentation |
+| Deviations and limits | Actual deviations and unverified behavior, or `none` |
+| Discovery | Actual observations and resource state, plus `Discovery development only; isolated acceptance proof not run` |
+
+One check can support several acceptance rows. A test count alone does not identify which outcome was checked. Discovery observations need enough context to inspect or repeat the check; they do not require a separate proof plan or immutable runtime capture. The reviewer assesses the evidence and performs additional focused checks when a concrete uncertainty warrants them.
+
+If publication omits supplied evidence, the orchestrator restores it from the implementation handoff. If evidence is absent, the implementer supplies the missing check or states the limitation. The reviewer can continue substantive review while the body is corrected. Correcting only PR text or superseded generic check wording does not change the candidate, restart preflight, or require repeating a passing gate on that unchanged candidate. Product contract changes, source changes, and changes to published candidate artifacts follow their existing review rules. Approval still requires adequate acceptance evidence and the reviewer's passing receipt.
 
 ## Main test baselines
 
