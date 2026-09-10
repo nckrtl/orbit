@@ -19,7 +19,7 @@ def git(root, *args):
 def selected(root):
     path = root / '.loop/flow.json'
     if not path.exists() and not path.is_symlink():
-        return 'proof'
+        return 'discovery'
     if path.is_symlink() or not path.is_file() or path.parent.is_symlink():
         raise RuntimeError('Flow selection must be a regular .loop/flow.json file.')
     data = json.loads(path.read_text())
@@ -32,7 +32,7 @@ def default(root):
     result = subprocess.run(['git', '-C', str(root), 'config', '--local', '--get', 'orbit.loopFlow'],
                             capture_output=True)
     if result.returncode == 1:
-        return 'proof'
+        return 'discovery'
     if result.returncode:
         raise RuntimeError(result.stderr.decode().strip())
     flow = result.stdout.decode().strip()

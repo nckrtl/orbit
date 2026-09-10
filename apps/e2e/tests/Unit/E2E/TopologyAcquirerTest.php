@@ -303,10 +303,11 @@ it('uses the saved snapshot for discovery after main changes while proof flow st
         fn () => attemptId(),
     );
     $request = new TopologyRequest('TST-123', $worktree);
+    mkdir($worktree.'/.loop', 0700, true);
+    file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"proof"}');
     expect(fn () => $acquirer->acquire($request))->toThrow(RuntimeException::class, 'snapshot is stale');
     expect($events)->toBeEmpty();
-    mkdir($worktree.'/.loop', 0700, true);
-    file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"discovery"}');
+    unlink($worktree.'/.loop/flow.json');
 
     $topology = $acquirer->acquire($request);
     $synced = $acquirer->sync($request);

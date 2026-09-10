@@ -13,7 +13,7 @@ final class DeliveryFlow
     {
         $path = $worktree.'/.loop/flow.json';
         if (! file_exists($path) && ! is_link($path)) {
-            return 'proof';
+            return 'discovery';
         }
         if (! is_file($path) || is_link($path) || is_link(dirname($path))) {
             throw new InvalidArgumentException('Flow selection must be a regular .loop/flow.json file.');

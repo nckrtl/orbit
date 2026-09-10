@@ -36,8 +36,9 @@ it('pins a repository default per worktree and requires explicit switching', fun
     ['root' => $root, 'script' => $script, 'run' => $run] = loopFlowFixture();
     $head = $run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output();
     $index = $run->path($root)->run(['git', 'write-tree'])->output();
-    expect($run->path($root)->run([$script, 'status'])->output())->toBe("proof\n");
-    expect($run->path($root)->run([$script, 'default', '--flow=discovery'])->successful())->toBeTrue();
+    expect($run->path($root)->run([$script, 'status'])->output())->toBe("discovery\n");
+    expect($run->path($root)->run([$script, 'default'])->output())->toBe("discovery\n");
+    expect(DeliveryFlow::forWorktree($root))->toBe('discovery');
     expect($run->path($root)->run([$script, 'init'])->output())->toBe("discovery\n");
     expect($run->path($root)->run([$script, 'default', '--flow=proof'])->successful())->toBeTrue();
     expect($run->path($root)->run([$script, 'init'])->output())->toBe("discovery\n");
@@ -46,6 +47,7 @@ it('pins a repository default per worktree and requires explicit switching', fun
 
     expect($run->path($root)->run([$script, 'select', '--flow=proof'])->output())->toBe("proof\n");
     expect(DeliveryFlow::forWorktree($root))->toBe('proof');
+    DeliveryFlow::requireProof($root);
     expect($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output())->toBe($head);
     expect($run->path($root)->run(['git', 'write-tree'])->output())->toBe($index);
 });
@@ -56,7 +58,6 @@ it('creates worktrees with the flag or shared default and preserves existing sel
     expect($run->run(['git', 'init', '--bare', $remote])->successful())->toBeTrue();
     expect($run->path($root)->run(['git', 'remote', 'add', 'origin', $remote])->successful())->toBeTrue();
     expect($run->path($root)->run(['git', 'push', '-u', 'origin', 'main'])->successful())->toBeTrue();
-    expect($run->path($root)->run([$script, 'default', '--flow=discovery'])->successful())->toBeTrue();
     $create = $root.'/bin/worktree-create';
 
     $first = $run->path($root)->run([$create, 'TST-42', 'feature']);
@@ -68,6 +69,9 @@ it('creates worktrees with the flag or shared default and preserves existing sel
     expect($run->path($root)->run([$create, 'TST-43', 'feature'])->successful())->toBeTrue();
     expect(DeliveryFlow::forWorktree($root.'/.worktrees/tst-43-feature'))->toBe('proof');
     expect(file_exists($root.'/.worktrees/tst-42-feature/.loop/plan.md'))->toBeTrue();
+    expect($run->path($root)->run([$script, 'default', '--flow=proof'])->successful())->toBeTrue();
+    expect($run->path($root)->run([$create, 'TST-44', 'feature'])->successful())->toBeTrue();
+    expect(DeliveryFlow::forWorktree($root.'/.worktrees/tst-44-feature'))->toBe('proof');
 });
 
 it('accepts a conflict-free merge after main advances only in discovery flow', function (): void {
@@ -85,6 +89,7 @@ it('accepts a conflict-free merge after main advances only in discovery flow', f
     $merge = trim($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output());
     $args = [$script, 'verify-merge', '--candidate='.$candidate, '--merge='.$merge];
 
+    $run->path($root)->run([$script, 'select', '--flow=proof']);
     expect($run->path($root)->run($args)->successful())->toBeFalse();
     $run->path($root)->run([$script, 'select', '--flow=discovery']);
     $result = $run->path($root)->run($args);
@@ -104,6 +109,7 @@ it('accepts a conflict-free merge after main advances only in discovery flow', f
 
 it('keeps proof merge validation and rejects a different approved candidate', function (): void {
     ['root' => $root, 'script' => $script, 'run' => $run] = loopFlowFixture();
+    $run->path($root)->run([$script, 'select', '--flow=proof']);
     $base = trim($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output());
     $run->path($root)->run(['git', 'switch', '-c', 'feature']);
     file_put_contents($root.'/shared.txt', "feature\n");

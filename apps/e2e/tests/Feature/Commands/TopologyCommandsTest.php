@@ -682,10 +682,15 @@ function commandInstanceFixture(\App\E2E\Value\FeatureTopology $topology, string
     ];
 }
 
-it('refuses proof-only commands before any transport in discovery flow', function (string $command): void {
+it('refuses proof-only commands before transport without an explicit proof selection', function (
+    string $command,
+    bool $explicit,
+): void {
     ['worktree' => $worktree] = commandPrimaryFixture();
-    mkdir($worktree.'/.loop', 0700, true);
-    file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"discovery"}');
+    if ($explicit) {
+        mkdir($worktree.'/.loop', 0700, true);
+        file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"discovery"}');
+    }
     Process::fake();
 
     $this
@@ -694,4 +699,4 @@ it('refuses proof-only commands before any transport in discovery flow', functio
         ->assertFailed();
 
     Process::assertNothingRan();
-})->with(['topology:prove', 'topology:equivalence', 'topology:candidate']);
+})->with(['topology:prove', 'topology:equivalence', 'topology:candidate'])->with([false, true]);
