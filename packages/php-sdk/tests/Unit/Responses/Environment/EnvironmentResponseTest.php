@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
@@ -14,9 +15,11 @@ use Saloon\Http\Faking\MockResponse;
 describe('AppInstance environment response', function (): void {
     it('exposes one immutable bounded correlated operation result', function (): void {
         $mock = new MockClient([
-            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(environment_success_envelope('update')),
+            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(environment_response_success_envelope(
+                'update',
+            )),
         ]);
-        $response = environment_connector($mock)
+        $response = environment_response_connector($mock)
             ->send(new UpdateAppInstanceEnvironmentRequest(17, 'KEY', 'value'))
             ->dto();
 
@@ -54,7 +57,7 @@ describe('AppInstance environment response', function (): void {
         ]);
 
         try {
-            environment_connector($mock)->send(new ImportAppInstanceEnvironmentRequest(17))->dto();
+            environment_response_connector($mock)->send(new ImportAppInstanceEnvironmentRequest(17))->dto();
             $this->fail('Expected malformed environment response rejection.');
         } catch (GatewayApiException $exception) {
             $diagnostics = implode("\n", [
@@ -141,7 +144,7 @@ describe('AppInstance environment response', function (): void {
         ]);
 
         expect(
-            fn (): mixed => environment_connector($mock)
+            fn (): mixed => environment_response_connector($mock)
                 ->send(new SynchronizeAppInstanceEnvironmentRequest(17))
                 ->dto(),
         )
@@ -168,7 +171,7 @@ describe('AppInstance environment response', function (): void {
                 ['X-Orbit-Request-Id' => $requestId],
             ),
         ]);
-        $connector = environment_connector($mock);
+        $connector = environment_response_connector($mock);
 
         try {
             $connector->send($request)->dto();
@@ -231,7 +234,7 @@ describe('AppInstance environment response', function (): void {
         ]);
 
         try {
-            environment_connector($mock)->send(new ImportAppInstanceEnvironmentRequest(17))->dto();
+            environment_response_connector($mock)->send(new ImportAppInstanceEnvironmentRequest(17))->dto();
             $this->fail('Expected malformed response rejection.');
         } catch (GatewayApiException $exception) {
             $diagnostics = implode("\n", [
@@ -245,6 +248,28 @@ describe('AppInstance environment response', function (): void {
         }
     });
 });
+
+function environment_response_connector(MockClient $mock): GatewayConnector
+{
+    $connector = new GatewayConnector('https://gateway.test');
+    $connector->withMockClient($mock);
+
+    return $connector;
+}
+
+/** @return array{data: array{app_instance_id: int, operation: string, changed: bool, key_count: int}, meta: array{request_id: string}} */
+function environment_response_success_envelope(string $operation): array
+{
+    return [
+        'data' => [
+            'app_instance_id' => 17,
+            'operation' => $operation,
+            'changed' => true,
+            'key_count' => 3,
+        ],
+        'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
+    ];
+}
 
 function environment_sdk_trace(Throwable $exception): string
 {
