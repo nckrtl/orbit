@@ -98,7 +98,9 @@ describe('repository guidance bootstrap', function (): void {
             ->not->toContain('local TIA');
 
         expect(repository_guidance_contents('AGENTS.md'))
-            ->toContain('Use focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA.');
+            ->toContain(
+                'Use focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA.',
+            );
 
         foreach ([
             '.ai/rules/index.md',
