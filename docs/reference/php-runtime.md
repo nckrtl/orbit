@@ -32,7 +32,7 @@ The production identity follows fixed names that an operator can inspect.
 | --- | --- | --- | --- |
 | Service | `orbit-<production-user>-php<version>-fpm.service` | Gateway | Created and activated for the recorded production user; removed with that AppInstance's runtime projection. |
 | Socket | `/run/php/<production-user>.sock` | Gateway | Created by the owning service and removed when that service stops. |
-| Generated identity | Generated PHP-FPM files below `/etc/orbit/php-fpm/<production-user>/generated/` | Gateway | Replaced only after the complete candidate validates against the recorded user, service, pool, socket, version, home, and source paths. |
+| Generated identity | Generated PHP-FPM files below `/etc/orbit/php-fpm/<production-user>/generated/`, including the service-specific `master.ini` | Gateway | Replaced only after the complete candidate validates against the recorded user, service, pool, socket, version, home, source paths, and effective master settings. |
 | Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operating agent | Seeded with Orbit defaults for a new runtime and then preserved byte-for-byte by provisioning, retry, and cleanup. |
 
 The generated configuration establishes runtime identity and includes the separate local tuning file. Before activation or an Orbit-owned reload, the Gateway validates the effective configuration and refuses a local or conflicting file that changes the recorded user, service, pool, socket, PHP version, home, or application path. It does not adopt an existing user, service, socket, generated directory, or file whose identity or ownership conflicts with the AppInstance record.
@@ -49,7 +49,7 @@ The Gateway reloads the shared service only when its managed shared module, enab
 
 ## Runtime defaults
 
-The shared development module and each new production local tuning file start with these directives; [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records the reason for each value.
+The shared development module and each generated dedicated production master profile apply these directives; [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records the reason for each value.
 
 | Directive | app-dev | app-prod |
 | --- | --- | --- |
@@ -70,10 +70,10 @@ php_admin_value[opcache.validate_timestamps] = 1
 php_admin_value[opcache.revalidate_freq] = 0
 ```
 
-An `app-prod` pool never revalidates a cached file, so compiled code stays in its owning master's memory until a verified cache refresh:
+An `app-prod` service sets timestamp validation in its generated service-specific `master.ini`, so compiled code stays in its owning master's memory until a verified cache refresh:
 
 ```ini
-php_admin_value[opcache.validate_timestamps] = 0
+opcache.validate_timestamps = 0
 ```
 
 [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records why each role gets its policy.

@@ -56,6 +56,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     base64_encode($configuration->main),
                     base64_encode($configuration->pool),
                     base64_encode($configuration->localDefaults),
+                    base64_encode($configuration->masterIni),
                     base64_encode($configuration->unit),
                     base64_encode($identity->marker()),
                 ],
@@ -117,8 +118,9 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             main_configuration=${14}
             pool_configuration=${15}
             local_defaults=${16}
-            unit_configuration=${17}
-            marker_configuration=${18}
+            master_ini=${17}
+            unit_configuration=${18}
+            marker_configuration=${19}
             test "$operation" = converge
 
             test "$home" = "/home/$user"
@@ -217,6 +219,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
             printf '%s' "$main_configuration" | base64 --decode > "$work_directory/php-fpm.conf"
             printf '%s' "$pool_configuration" | base64 --decode > "$work_directory/pool.conf"
+            printf '%s' "$master_ini" | base64 --decode > "$work_directory/master.ini"
             printf '%s' "$unit_configuration" | base64 --decode > "$work_directory/unit"
             cp -- "$local_tuning" "$work_directory/local.conf"
             sha256sum -- "$work_directory/local.conf" | awk '{print $1}' > "$work_directory/local.sha256"
@@ -225,7 +228,28 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 -e "s#^include = .*/generated/pool[.]conf\$#include = $work_directory/pool.conf#" \
                 -e "s#^include = .*/local[.]conf\$#include = $work_directory/local.conf#" \
                 "$work_directory/php-fpm.validate.conf"
-            /usr/sbin/php-fpm"$version" -y "$work_directory/php-fpm.validate.conf" -t
+            PHP_INI_SCAN_DIR="/etc/php/$version/fpm/conf.d:$work_directory" \
+                /usr/sbin/php-fpm"$version" -y "$work_directory/php-fpm.validate.conf" -t
+            fpm_ini=$(PHP_INI_SCAN_DIR="/etc/php/$version/fpm/conf.d:$work_directory" \
+                /usr/sbin/php-fpm"$version" -i)
+            printf '%s\n' "$fpm_ini" | grep -qF -- "$work_directory/master.ini"
+            while IFS= read -r runtime_line || [ -n "$runtime_line" ]; do
+                case "$runtime_line" in ''|';'*) continue ;; esac
+                runtime_key=${runtime_line%%=*}
+                runtime_key=${runtime_key%"${runtime_key##*[! ]}"}
+                runtime_expected=${runtime_line#*=}
+                runtime_expected=${runtime_expected#"${runtime_expected%%[! ]*}"}
+                if [ "$runtime_key" = opcache.validate_timestamps ] && [ "$runtime_expected" = 0 ]; then
+                    runtime_expected=Off
+                fi
+                if ! printf '%s\n' "$fpm_ini" \
+                    | grep -qxF -- "$runtime_key => $runtime_expected => $runtime_expected"
+                then
+                    printf 'PHP %s dedicated fpm does not apply %s = %s from %s.\n' \
+                        "$version" "$runtime_key" "$runtime_expected" "$work_directory/master.ini" >&2
+                    exit 1
+                fi
+            done < "$work_directory/master.ini"
 
             had_generated=0
             had_unit=0
@@ -236,7 +260,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test ! -L "$generated_directory"
                 test "$(stat -c '%U:%G:%a' -- "$generated_directory")" = root:root:755
                 unexpected_generated=$(find -P "$generated_directory" -mindepth 1 -maxdepth 1 \
-                    ! -name php-fpm.conf ! -name pool.conf ! -name local.sha256 -print -quit)
+                    ! -name php-fpm.conf ! -name pool.conf ! -name master.ini ! -name local.sha256 -print -quit)
                 test -z "$unexpected_generated"
                 for generated_file in php-fpm.conf pool.conf local.sha256; do
                     generated_path="$generated_directory/$generated_file"
@@ -244,6 +268,11 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     test ! -L "$generated_path"
                     test "$(stat -c '%U:%G:%a' -- "$generated_path")" = root:root:644
                 done
+                if [ -e "$generated_directory/master.ini" ] || [ -L "$generated_directory/master.ini" ]; then
+                    test -f "$generated_directory/master.ini"
+                    test ! -L "$generated_directory/master.ini"
+                    test "$(stat -c '%U:%G:%a' -- "$generated_directory/master.ini")" = root:root:644
+                fi
                 cp -a -- "$generated_directory" "$work_directory/generated.backup"
                 had_generated=1
             fi
@@ -261,7 +290,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test "$(stat -c '%U:%G:%a' -- "$socket")" = "$user:caddy:660"
             fi
             runtime_changed=0
-            for comparison in php-fpm.conf pool.conf local.sha256; do
+            for comparison in php-fpm.conf pool.conf master.ini local.sha256; do
                 if [ ! -f "$generated_directory/$comparison" ] \
                     || ! cmp -s -- "$work_directory/$comparison" "$generated_directory/$comparison"
                 then
@@ -303,9 +332,10 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 install -d -o root -g root -m 0755 -- "$generated_candidate"
                 printf '%s' "$main_configuration" | base64 --decode > "$generated_candidate/php-fpm.conf"
                 printf '%s' "$pool_configuration" | base64 --decode > "$generated_candidate/pool.conf"
+                printf '%s' "$master_ini" | base64 --decode > "$generated_candidate/master.ini"
                 cp -- "$work_directory/local.sha256" "$generated_candidate/local.sha256"
-                chown root:root -- "$generated_candidate/php-fpm.conf" "$generated_candidate/pool.conf" "$generated_candidate/local.sha256"
-                chmod 0644 -- "$generated_candidate/php-fpm.conf" "$generated_candidate/pool.conf" "$generated_candidate/local.sha256"
+                chown root:root -- "$generated_candidate/php-fpm.conf" "$generated_candidate/pool.conf" "$generated_candidate/master.ini" "$generated_candidate/local.sha256"
+                chmod 0644 -- "$generated_candidate/php-fpm.conf" "$generated_candidate/pool.conf" "$generated_candidate/master.ini" "$generated_candidate/local.sha256"
                 unit_candidate="/etc/systemd/system/.$service.$$.candidate"
                 printf '%s' "$unit_configuration" | base64 --decode > "$unit_candidate"
                 chown root:root -- "$unit_candidate"
@@ -316,6 +346,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 fi
                 mv -fT -- "$generated_candidate/php-fpm.conf" "$generated_directory/php-fpm.conf"
                 mv -fT -- "$generated_candidate/pool.conf" "$generated_directory/pool.conf"
+                mv -fT -- "$generated_candidate/master.ini" "$generated_directory/master.ini"
                 mv -fT -- "$generated_candidate/local.sha256" "$generated_directory/local.sha256"
                 rmdir -- "$generated_candidate"
                 mv -fT -- "$unit_candidate" "$unit_path"
@@ -403,6 +434,13 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test ! -e "$unit_path"
                 systemctl stop "$service" >/dev/null 2>&1 || true
             fi
+            if systemctl is-active --quiet "$service"; then
+                exit 1
+            fi
+            main_pid=$(systemctl show --property MainPID --value "$service" 2>/dev/null || true)
+            if [ -z "$main_pid" ]; then main_pid=0; fi
+            case "$main_pid" in *[!0-9]*) exit 1 ;; esac
+            test "$main_pid" -eq 0
             rm -rf -- "$generated_directory"
             rm -f -- "$unit_path"
             systemctl daemon-reload

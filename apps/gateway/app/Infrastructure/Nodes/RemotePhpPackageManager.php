@@ -112,6 +112,7 @@ final readonly class RemotePhpPackageManager
         }
 
         $allPackages = array_values(array_unique(array_merge(...array_values($profiles))));
+        $allowCliPcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
         $this->convergeSource(
             $node,
             $allPackages,
@@ -121,7 +122,7 @@ final readonly class RemotePhpPackageManager
         );
 
         foreach ($profiles as $version => $packages) {
-            $this->installPackagesOnlyProfile($node, $version, $packages, $ssh);
+            $this->installPackagesOnlyProfile($node, $version, $packages, $allowCliPcov, $ssh);
         }
     }
 
@@ -625,6 +626,7 @@ final readonly class RemotePhpPackageManager
         Node $node,
         string $version,
         array $packages,
+        bool $allowCliPcov,
         AppProdSshExecutor $ssh,
     ): void {
         $ssh->execute(
@@ -635,6 +637,7 @@ final readonly class RemotePhpPackageManager
                     '-seu',
                     '--',
                     $version,
+                    $allowCliPcov ? '1' : '0',
                     self::EXPECTED_DISTRIBUTION,
                     UbuntuRelease::unsupportedText(),
                     (string) count(UbuntuRelease::forRole(RoleName::AppProd)),
@@ -646,7 +649,8 @@ final readonly class RemotePhpPackageManager
                 ],
                 input: <<<'BASH'
                     version=$1
-                    shift
+                    allow_cli_pcov=$2
+                    shift 2
                     BASH."\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
                     missing_packages=()
                     for package in "$@"; do
@@ -708,9 +712,12 @@ final readonly class RemotePhpPackageManager
                         printf '%s\n' "$cli_modules" | grep -qxF "$module"
                         printf '%s\n' "$fpm_modules" | grep -qxF "$module"
                     done
-                    if printf '%s\n' "$cli_modules" | grep -qxF pcov \
-                        || printf '%s\n' "$fpm_modules" | grep -qxF pcov
-                    then
+                    if [ "$allow_cli_pcov" = 1 ]; then
+                        printf '%s\n' "$cli_modules" | grep -qxF pcov
+                    elif printf '%s\n' "$cli_modules" | grep -qxF pcov; then
+                        exit 1
+                    fi
+                    if printf '%s\n' "$fpm_modules" | grep -qxF pcov; then
                         exit 1
                     fi
                     BASH,

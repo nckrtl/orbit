@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Infrastructure\Nodes\PhpFpmRuntimeIniRenderer;
 
 final readonly class ProductionPhpRuntimeConfigRenderer
 {
@@ -42,10 +43,22 @@ final readonly class ProductionPhpRuntimeConfigRenderer
             pm.process_idle_timeout = 10s
             pm.max_requests = 500
             catch_workers_output = yes
-            php_admin_value[opcache.memory_consumption] = 256
-            php_admin_value[opcache.validate_timestamps] = 0
 
             FPM;
+
+        $sizing = PhpFpmRuntimeIniRenderer::sizing('app-prod');
+        $files = PhpFpmRuntimeIniRenderer::MAX_ACCELERATED_FILES;
+        $masterIni = <<<INI
+            ; Managed by Orbit for this dedicated production PHP-FPM master.
+            opcache.enable = On
+            opcache.memory_consumption = {$sizing['memory_consumption']}
+            opcache.interned_strings_buffer = {$sizing['interned_strings_buffer']}
+            opcache.max_accelerated_files = {$files}
+            opcache.validate_timestamps = 0
+            opcache.jit = disable
+            opcache.jit_buffer_size = 0
+
+            INI;
 
         $unit = <<<SYSTEMD
             [Unit]
@@ -54,6 +67,7 @@ final readonly class ProductionPhpRuntimeConfigRenderer
 
             [Service]
             Type=notify
+            Environment=PHP_INI_SCAN_DIR=/etc/php/{$identity->version}/fpm/conf.d:{$identity->generatedDirectory}
             ExecStart=/usr/sbin/php-fpm{$identity->version} --nodaemonize --fpm-config {$identity->generatedDirectory}/php-fpm.conf
             ExecReload=/bin/kill -USR2 \$MAINPID
             PIDFile=/run/php/{$identity->user}.pid
@@ -64,6 +78,6 @@ final readonly class ProductionPhpRuntimeConfigRenderer
 
             SYSTEMD;
 
-        return new ProductionPhpRuntimeConfiguration($main, $pool, $localDefaults, $unit);
+        return new ProductionPhpRuntimeConfiguration($main, $pool, $localDefaults, $masterIni, $unit);
     }
 }

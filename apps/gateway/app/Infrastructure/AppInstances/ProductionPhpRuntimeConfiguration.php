@@ -10,6 +10,7 @@ final readonly class ProductionPhpRuntimeConfiguration
         public string $main,
         public string $pool,
         public string $localDefaults,
+        public string $masterIni,
         public string $unit,
     ) {}
 }

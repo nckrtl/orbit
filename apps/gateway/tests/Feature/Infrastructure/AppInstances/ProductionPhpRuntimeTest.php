@@ -20,7 +20,9 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('records a canonical dedicated PHP runtime identity without converting existing placements', function (): void {
@@ -140,13 +142,22 @@ it('renders generated identity separately from preserved local defaults', functi
         ->toContain(
             '[orbit-orbit-app-9]',
             'pm = ondemand',
-            'opcache.memory_consumption] = 256',
-            'opcache.validate_timestamps] = 0',
         )
         ->not
-        ->toContain('user =', 'listen =', 'chdir =', 'include =')
+        ->toContain('user =', 'listen =', 'chdir =', 'include =', 'opcache.')
+        ->and($rendered->masterIni)
+        ->toContain(
+            'opcache.enable = On',
+            'opcache.memory_consumption = 256',
+            'opcache.interned_strings_buffer = 32',
+            'opcache.max_accelerated_files = 65407',
+            'opcache.validate_timestamps = 0',
+            'opcache.jit = disable',
+            'opcache.jit_buffer_size = 0',
+        )
         ->and($rendered->unit)
         ->toContain(
+            'Environment=PHP_INI_SCAN_DIR=/etc/php/8.5/fpm/conf.d:/etc/orbit/php-fpm/orbit-app-9/generated',
             'ExecStart=/usr/sbin/php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-app-9/generated/php-fpm.conf',
             'PIDFile=/run/php/orbit-app-9.pid',
         );
@@ -182,6 +193,11 @@ it('publishes and removes only the recorded service while preserving local tunin
             'if [ ! -e "$local_tuning" ]',
             'local_before=$(sha256sum -- "$local_tuning"',
             'cp -- "$work_directory/php-fpm.conf" "$work_directory/php-fpm.validate.conf"',
+            'PHP_INI_SCAN_DIR="/etc/php/$version/fpm/conf.d:$work_directory"',
+            'PHP %s dedicated fpm does not apply %s = %s from %s.',
+            '! -name master.ini',
+            'if [ -e "$generated_directory/master.ini" ] || [ -L "$generated_directory/master.ini" ]; then',
+            'for comparison in php-fpm.conf pool.conf master.ini local.sha256',
             'local_after=$(sha256sum -- "$local_tuning"',
             'test "$local_before" = "$local_after"',
             'if [ "$was_active" = 1 ] && [ "$runtime_changed" = 0 ]; then',
@@ -200,6 +216,52 @@ it('publishes and removes only the recorded service while preserving local tunin
         ->not->toContain('rm -f -- "$local_tuning"', 'rm -rf -- "$runtime_directory"');
 
     expect($node->wireguard_ip)->toBe('10.44.0.214');
+});
+
+it('does not delete runtime state while a partially unlinked service still has an active master', function (): void {
+    [$instance] = orb214_runtime_instance();
+    $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
+    $instance->update($identity->attributes());
+    $ssh = new AppDevFakeSshExecutor;
+    $manager = new RemoteProductionPhpRuntimeManager(
+        renderer: new ProductionPhpRuntimeConfigRenderer,
+        ssh: orb214_app_prod_ssh($ssh),
+    );
+    $manager->remove($instance->refresh());
+    $script = $ssh->commands[0]->input ?? '';
+    $start = mb_strpos($script, 'if ! systemctl disable --now "$service"');
+    $end = mb_strpos($script, 'rm -rf -- "$generated_directory"');
+    $block = substr($script, (int) $start, (int) $end - (int) $start);
+    $root = sys_get_temp_dir().'/orbit-production-runtime-remove-'.bin2hex(random_bytes(6));
+
+    try {
+        mkdir($root, 0700, true);
+        $process = new Process(['bash', '-seu', '--', $root]);
+        $process->setInput(<<<'BASH'
+            root=$1
+            service=orbit-orbit-app-9-php8.5-fpm.service
+            unit_path="$root/missing.service"
+            systemctl() {
+                case "$1" in
+                    disable|stop) return 1 ;;
+                    is-active) return 0 ;;
+                    show) printf '4242\n' ;;
+                    *) return 1 ;;
+                esac
+            }
+            BASH."\n".$block."\n".<<<'BASH'
+            touch "$root/cleanup-reached"
+            BASH);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and(file_exists($root.'/cleanup-reached'))
+            ->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
 });
 
 it('keeps a dedicated production route in Caddy and out of shared FPM publication', function (): void {
