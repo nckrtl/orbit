@@ -13,7 +13,6 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleRemovalOutcome;
-use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -40,7 +39,6 @@ final readonly class RemoveNodeRoleAction
         private NodeRoleDependentCleaner $cleaner,
         private RoleBaselineConverger $baselines,
         private RoleRegistry $registry,
-        private NodeRoleToolIntentGuard $toolIntentGuard,
         private ToolManagerScopeLock $managerScope,
         private NodeReachabilityProbe $reachability,
         private NodeSideResidue $residue,
@@ -71,12 +69,7 @@ final readonly class RemoveNodeRoleAction
         }
 
         $this->guardPolicy($node, $role);
-        $this->toolIntentGuard->assertRemovalSafe($node, $role);
-        $preview = $this->withRetirementPreview(
-            $this->inspector->inspect($node, $role),
-            $node,
-            $role,
-        );
+        $preview = $this->inspector->inspect($node, $role);
 
         if (! $force) {
             throw new NodeRoleValidationException(
@@ -295,19 +288,13 @@ final readonly class RemoveNodeRoleAction
                 );
             }
 
-            $this->toolIntentGuard->assertRemovalSafe($node, $role);
-
             if (! $this->canClaim($assignment)) {
                 throw new NodeRoleValidationException(
                     "Role [{$role->value}] cannot be removed from status [{$assignment->status->value}].",
                 );
             }
 
-            $dependencies = $this->withRetirementPreview(
-                $this->inspector->inspect($node, $role),
-                $node,
-                $role,
-            );
+            $dependencies = $this->inspector->inspect($node, $role);
             $assignment->update([
                 'status' => LifecycleStatus::Removing,
                 'failed_step' => null,
@@ -363,8 +350,6 @@ final readonly class RemoveNodeRoleAction
             Workspace::query()->whereIn('id', $captured->workspaceIds)->delete();
             Instance::query()->whereIn('id', $captured->instanceIds)->delete();
             $assignment->delete();
-            $this->toolIntentGuard->assertRemovalSafe($node, $role);
-            $this->toolIntentGuard->retireUnsupportedManagers($node);
         });
     }
 
@@ -403,31 +388,6 @@ final readonly class RemoveNodeRoleAction
             $captured->instanceIds === $current->instanceIds
             && $captured->workspaceIds === $current->workspaceIds
             && $captured->processIds === $current->processIds;
-    }
-
-    private function withRetirementPreview(
-        NodeRoleDependencySet $dependencies,
-        Node $node,
-        RoleName $role,
-    ): NodeRoleDependencySet {
-        $retirementPreview = $this->toolIntentGuard->retirementPreview($node, $role);
-
-        if ($retirementPreview === []) {
-            return $dependencies;
-        }
-
-        $summaries = [
-            ...$dependencies->summaries,
-            ...$retirementPreview,
-        ];
-        sort($summaries, SORT_STRING);
-
-        return new NodeRoleDependencySet(
-            $dependencies->instanceIds,
-            $dependencies->workspaceIds,
-            $dependencies->processIds,
-            $summaries,
-        );
     }
 
     private function cleanupFailure(Throwable $exception): NodeRoleOperationException
