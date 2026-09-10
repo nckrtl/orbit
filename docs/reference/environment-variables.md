@@ -8,6 +8,22 @@ The import and update endpoints accept either a positive numeric AppInstance ID 
 
 The Gateway accepts an active AppInstance only after its recorded placement is complete and no source migration or Route hostname change is pending. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
 
+## Use the PHP SDK
+
+The PHP software development kit (SDK) provides typed import, update, and synchronization requests. Each request accepts a positive numeric AppInstance ID or an exact Route hostname and encodes the selector as one path segment. The update request also encodes its environment key as one path segment. The SDK forwards these inputs without looking up the AppInstance or resolving placeholders.
+
+The SDK sends one JSON object for each operation and preserves every supplied value for Gateway validation.
+
+| Operation | Method and path | Typed JSON body |
+| --- | --- | --- |
+| Import | `POST /api/v1/instances/{instance}/environment/import` | Optional boolean `replace`; omission and explicit `false` remain distinct |
+| Update | `PUT /api/v1/instances/{instance}/environment/{key}` | Required string `value`, including empty text, multiline text, `false`, `0`, and placeholder expressions |
+| Synchronize | `POST /api/v1/instances/{instance}/environment/sync` | Empty object `{}` |
+
+A successful SDK result contains only a positive `app_instance_id`, the expected `operation` token, a boolean `changed`, a `key_count` from 0 through 1,024, and the correlated `request_id`. The SDK rejects missing, wrongly typed, contradictory, extra, or value-bearing result data through a bounded error. Environment values remain available only to the intended HTTP request-body serialization and do not appear in normal request, response, error, exception, or debugging state.
+
+The SDK keeps a valid structured Gateway error code and request ID for an import conflict, unavailable target, failed preflight, unresolved reference, failed synchronization, or unconfirmed synchronization. It omits remote response content from that error boundary.
+
 ## Import an environment file
 
 Use the Gateway API to import the existing file from the recorded placement:
