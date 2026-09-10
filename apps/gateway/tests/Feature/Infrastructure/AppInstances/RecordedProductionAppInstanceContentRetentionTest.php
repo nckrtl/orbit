@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
 use App\Models\App as OrbitApp;
@@ -55,7 +56,19 @@ it('records retained production identity without changing content bytes or owner
         ->load('app');
     $bytesBefore = file_get_contents($this->marker);
     $identityBefore = stat($this->marker);
-    $retention = new RecordedProductionAppInstanceContentRetention;
+    $layout = new class implements ProductionReleaseLayout
+    {
+        /** @var list<int> */
+        public array $cleared = [];
+
+        public function validateCurrent(AppInstance $appInstance): void {}
+
+        public function clearCurrent(AppInstance $appInstance): void
+        {
+            $this->cleared[] = $appInstance->id;
+        }
+    };
+    $retention = new RecordedProductionAppInstanceContentRetention($layout);
     $inventory = $retention->inventory($instance);
     $member = new AppInstanceRemovalMember([
         'app_instance_id' => $instance->id,
@@ -85,6 +98,8 @@ it('records retained production identity without changing content bytes or owner
         ->toBe([])
         ->and($receipt)
         ->toBe(hash('sha256', "production-retained\0{$inventory->digest}"))
+        ->and($layout->cleared)
+        ->toBe([$instance->id])
         ->and(file_get_contents($this->marker))
         ->toBe($bytesBefore)
         ->and($identityAfter['uid'])

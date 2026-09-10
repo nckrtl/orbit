@@ -31,6 +31,7 @@ use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
+use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
@@ -223,6 +224,7 @@ final class AppServiceProvider extends ServiceProvider
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,
         ProductionAppInstanceSourceLifecycle::class => RemoteProductionAppInstanceSourceLifecycle::class,
+        ProductionReleaseLayout::class => RemoteProductionAppInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
         RouteHostnameProjector::class => NativeDevelopmentRouteProjector::class,

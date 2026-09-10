@@ -8,7 +8,7 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **App** — Orbit's application record owning one repository identity and a relative web root inherited by AppInstances, with `default_branch` as branch fallback after explicit input and matching-name selection. See [Apps](reference/apps.md).
 - **Repository identity** — The transport-independent Git host and path that one App owns after optional terminal `.git` removal. See [Apps](reference/apps.md) and [ADR 0026](decisions/0026-identify-each-app-by-one-repository.md).
 - **AppInstance** — One managed placement of an App on one Node. Development owns a `checkout` or `worktree`; production records initial source evidence. An active AppInstance has one Route. See [Applications](domains/applications.md).
-- **Effective web root** — The web root an AppInstance serves. An AppInstance override replaces the App root. Both are normalized relative paths.
+- **Effective web root** — The web root an AppInstance serves. An AppInstance override replaces the App root. Both are normalized relative paths, and production resolves the value beneath the selected release. See [Production release layout](reference/deployments.md).
 - **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use AppInstance.
 - **Workspace** — A Git worktree owned by a legacy Instance. AppInstance creation does not use or change Workspace source.
 - **Route** — An App-owned hostname with stored provenance and one Node or active Cluster scope. A generated Route follows its target Node. See [Routes](reference/routes.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md).

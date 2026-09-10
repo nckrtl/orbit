@@ -116,13 +116,22 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
     {
         $expectedUser = "orbit-app-{$app->id}";
         $expectedHome = "/home/{$expectedUser}";
+        $expectedCheckout = "{$expectedHome}/releases/initial";
         $existing = AppInstance::query()
             ->where('app_id', $app->id)
             ->where('name', $data->name)
             ->first();
 
         if ($existing instanceof AppInstance) {
-            $this->assertRetryIdentity($existing, $node, $root, $data->branch, $expectedUser, $expectedHome);
+            $this->assertRetryIdentity(
+                $existing,
+                $node,
+                $root,
+                $data->branch,
+                $expectedUser,
+                $expectedHome,
+                $expectedCheckout,
+            );
 
             return [$existing, false];
         }
@@ -147,7 +156,7 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
                 'name' => $data->name,
                 'environment' => 'production',
                 'source_layout' => AppInstanceSourceLayout::Checkout,
-                'checkout_path' => $expectedHome,
+                'checkout_path' => $expectedCheckout,
                 'production_user' => $expectedUser,
                 'production_home' => $expectedHome,
                 'root' => $root,
@@ -173,6 +182,7 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         ?string $branchOverride,
         string $expectedUser,
         string $expectedHome,
+        string $expectedCheckout,
     ): void {
         if ($appInstance->status === AppInstanceState::Removing) {
             throw $this->conflict('instance.removal_conflict', 'The AppInstance is being removed.');
@@ -182,7 +192,9 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
             $appInstance->environment !== 'production'
             || $appInstance->node_id !== $node->id
             || $appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value
-            || $appInstance->checkout_path !== $expectedHome
+            || $appInstance->checkout_path !== $expectedCheckout
+            && ! ($appInstance->status === AppInstanceState::Active
+            && $appInstance->checkout_path === $expectedHome)
             || $appInstance->production_user !== $expectedUser
             || $appInstance->production_home !== $expectedHome
             || $appInstance->root !== $root

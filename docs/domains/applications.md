@@ -2,7 +2,7 @@
 
 This page tells an operator how Orbit creates or adopts, configures, and exposes an AppInstance on one manually selected application Node. An App stores shared source defaults, and each AppInstance owns one placement and one Route.
 
-[ADR 0009](../decisions/0009-clustered-app-instance-routing.md) defines the development source boundary. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines stable default identity, [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) defines owned source layouts, and [ADR 0032](../decisions/0032-preserve-explicit-appinstance-branch-selection.md) defines explicit branch selection. [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md) defines the separate production placement contract.
+[ADR 0009](../decisions/0009-clustered-app-instance-routing.md) defines the development source boundary. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines stable default identity, [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) defines owned source layouts, and [ADR 0032](../decisions/0032-preserve-explicit-appinstance-branch-selection.md) defines explicit branch selection. [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md) defines production placement, and [ADR 0046](../decisions/0046-own-production-release-deployment-in-orbit.md) defines its release layout.
 
 ## Create an App
 
@@ -88,20 +88,24 @@ For a cross-filesystem move, Orbit stages and verifies the complete source at th
 Select one active standalone Node with an active app-prod role. The same command creates a production placement when the selected Node carries that role:
 
 ```text
-orbit instance:new <app-id> <app-prod-node-id> primary [--branch=release] [--root=current/public] [--hostname=app.example.test]
+orbit instance:new <app-id> <app-prod-node-id> primary [--branch=release] [--root=public] [--hostname=app.example.test]
 ```
 
-The Gateway records one dedicated system user and `/home/<app-user>` home for the App on that Node. It clones the App repository into that home before runtime or Route publication. An omitted branch selects the App `default_branch`, even when a remote branch matches the AppInstance name. An explicit branch must exist and remains independent from the AppInstance name. The response returns the recorded user, home, absolute effective root, selected initial branch, exact starting commit, nullable branch override, and sole Route.
+The Gateway records one dedicated system user and `/home/<app-user>` home for the App on that Node. It prepares `releases/` in that home, keeps persistent files at the home root, and prepares initial repository source as a release before runtime or Route publication. An omitted branch selects the App `default_branch`, even when a remote branch matches the AppInstance name. An explicit branch must exist and remains independent from the AppInstance name.
+
+The response returns the recorded user, home, absolute effective root beneath the future `current` link, selected initial branch, exact starting commit, nullable branch override, and sole Route. The [production release-layout reference](../reference/deployments.md) describes the home paths, source selection, and safety boundary.
 
 A given App can have one production AppInstance per app-prod Node. The same App can use another app-prod Node, where it receives an independent user home and runtime. The recorded user and home do not change when the App slug changes.
 
-Production source preparation retains the same `reserved`, `checkout_prepared`, and `source_resolved` checkpoints. The Gateway records the complete source profile before runtime work. A plain PHP source gets a dedicated PHP-FPM service, pool, socket, and OPcache instance for its recorded production user while sharing the installed version packages. A non-PHP source gets no PHP runtime. Detected Laravel source stops at its safely recorded initial-source checkpoint until the separate Laravel production contract is available; Orbit does not change Laravel files or publish its Route in this state.
+Production source preparation retains the same `reserved`, `checkout_prepared`, and `source_resolved` checkpoints. Creation stages the initial release beneath `releases/` and leaves `current` absent. An explicit first deployment selects code later. The Gateway records the complete staged-source profile before runtime work. A plain PHP source gets a dedicated PHP-FPM service, pool, socket, and OPcache instance for its recorded production user while sharing the installed version packages. A non-PHP source gets no PHP runtime. Detected Laravel source stops at its safely recorded initial-source checkpoint until the separate Laravel production contract is available; Orbit does not change Laravel files or publish its Route in this state.
 
 Production creation requires an explicit Route hostname or a TLD from the standalone Node. A Node in an active Cluster is outside this creation path. Both refusals happen before production source or runtime mutation.
 
 A standalone Node cannot accept a private production AppInstance while it still serves a provisioning or active legacy public production Instance. The Gateway returns `instance.legacy_production_conflict` with HTTP 409 before it reserves an AppInstance or changes a Route, source checkout, runtime, certificate, or firewall. Mark or remove the legacy Instance through its existing lifecycle, then repeat the production creation request.
 
-An identical retry resumes only incomplete Orbit-owned preparation, including its recorded production PHP service association. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, local PHP-FPM tuning, or other operator content. The operator or deployment agent owns every later production source change; the [PHP runtime reference](../reference/php-runtime.md#production-cache-boundary) defines the separate cache boundary.
+An identical retry resumes only incomplete Orbit-owned preparation, including its recorded production PHP service association. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, local PHP-FPM tuning, or other operator content.
+
+Orbit owns later release preparation, activation, and explicit code rollback. The operating agent configures application steps and owns compatibility and recovery decisions. The [PHP runtime reference](../reference/php-runtime.md#production-cache-boundary) defines the separate cache boundary.
 
 ## Complete a required source migration
 
@@ -156,7 +160,7 @@ orbit instance:new <app-id> <node-id> feature-one \
   --root=site/public
 ```
 
-The effective root is the AppInstance root when set and the App root otherwise. Development output returns this relative value. Production output resolves it below the recorded home. Orbit rejects empty values, absolute paths, and parent traversal. A production path such as `current/public` can remain unresolved until deployment; when it resolves, every component must stay in the recorded home and have the expected ownership.
+The effective root is the AppInstance root when set and the App root otherwise. Development output returns this relative value. Production output resolves it beneath the selected release through the recorded home's `current` link. Orbit rejects empty values, absolute paths, parent traversal, and a resolved production path that escapes the selected release. A missing `current` link represents a prepared production home without selected code.
 
 ## Remove an AppInstance
 

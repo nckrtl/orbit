@@ -306,6 +306,37 @@ it('synchronizes by the existing selector with a narrow value-free result', func
         ->assertJsonPath('data.changed', false);
 });
 
+it('keeps a release-layout production environment at the persistent home', function (): void {
+    $home = '/home/orbit-app-216';
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => "{$home}/releases/initial",
+        'production_user' => 'orbit-app-216',
+        'production_home' => $home,
+    ]);
+    $this->instance
+        ->environmentValues()
+        ->create([
+            'env_key' => 'DB_DATABASE',
+            'env_value' => '/srv/orb216/literal.sqlite',
+        ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertOk();
+
+    expect($this->access->paths)
+        ->toBe([$home])
+        ->and($this->access->writes)
+        ->toBe(["DB_DATABASE=\"/srv/orb216/literal.sqlite\"\n"]);
+});
+
 it('requires exactly an empty JSON object before synchronization work', function (string $body): void {
     $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'value']);
 
@@ -514,6 +545,9 @@ final class EnvironmentApiAccess implements AppInstanceEnvironmentReader, AppIns
     /** @var list<string> */
     public array $writes = [];
 
+    /** @var list<string> */
+    public array $paths = [];
+
     public bool $refuseWritePreflight = false;
 
     public AppInstanceEnvironmentWriteResult $writeResult;
@@ -536,6 +570,7 @@ final class EnvironmentApiAccess implements AppInstanceEnvironmentReader, AppIns
     ): void {
         $this->writePreflights++;
         $this->requiredCapacities[] = $requiredCapacityBytes;
+        $this->paths[] = $context->path;
 
         if ($this->refuseWritePreflight) {
             throw new ResourceOperationException(

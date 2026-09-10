@@ -1210,7 +1210,8 @@
                 "0011",
                 "0025",
                 "0027",
-                "0032"
+                "0032",
+                "0046"
             ]
         },
         {
@@ -1245,7 +1246,8 @@
                 "0028",
                 "0031",
                 "0041",
-                "0045"
+                "0045",
+                "0046"
             ]
         },
         {
@@ -1264,6 +1266,22 @@
                 "0016",
                 "0025",
                 "0026"
+            ]
+        },
+        {
+            "path": "docs/reference/deployments.md",
+            "title": "Production release layout",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Effective web root",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0046"
             ]
         },
         {

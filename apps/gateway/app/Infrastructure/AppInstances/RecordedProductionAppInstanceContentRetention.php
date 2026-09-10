@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\Shared\ResourceOperationException;
@@ -12,6 +13,10 @@ use App\Models\AppInstanceRemovalMember;
 
 final readonly class RecordedProductionAppInstanceContentRetention implements ProductionAppInstanceContentRetention
 {
+    public function __construct(
+        private ProductionReleaseLayout $releaseLayout,
+    ) {}
+
     public function inventory(AppInstance $appInstance): AppInstanceSourceInventory
     {
         $appInstance->loadMissing('app');
@@ -70,6 +75,8 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
     public function finalize(AppInstanceRemovalMember $member): string
     {
         $this->assertRecorded($member);
+        $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($member->app_instance_id);
+        $this->releaseLayout->clearCurrent($appInstance);
 
         return hash('sha256', "production-retained\0{$member->source_digest}");
     }
