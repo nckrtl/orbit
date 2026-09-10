@@ -11,9 +11,9 @@ Discovery is the built-in default for new clones and unselected worktrees. Proof
 | `bin/loop-flow default --flow=discovery` | Selects discovery-only delivery for new worktrees in this repository |
 | `bin/loop-flow default --flow=proof` | Selects the proof flow for new worktrees |
 | `bin/loop-flow default` | Prints the repository default; an unset default is `discovery` |
-| `bin/worktree-create ISSUE slug --flow=discovery` | Creates and bootstraps a worktree with discovery-only delivery |
-| `bin/worktree-create ISSUE slug --flow=proof` | Creates and bootstraps a worktree with the proof flow |
-| `bin/worktree-create ISSUE slug` | Creates a worktree using the repository default; keeps an existing worktree's selection |
+| `bin/worktree-create ISSUE --flow=discovery` | Creates and bootstraps a worktree with discovery-only delivery |
+| `bin/worktree-create ISSUE --flow=proof` | Creates and bootstraps a worktree with the proof flow |
+| `bin/worktree-create ISSUE` | Creates a worktree using the repository default; keeps an existing worktree's selection |
 | `bin/loop-flow init` | Initializes a manually created worktree from the repository default without replacing an existing selection |
 | `bin/loop-flow status` | Prints the current worktree's flow; an unselected worktree is `discovery` |
 | `bin/loop-flow select --flow=discovery` | Explicitly changes the current worktree's flow |
@@ -41,7 +41,7 @@ An advance of main alone does not require integration, another approval, proof, 
 
 GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0053](../decisions/0053-use-local-review-checks-for-feature-landing.md) governs the local review gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
 
-Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases discovery, and runs `bin/worktree-remove ISSUE slug`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
+Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases discovery, and runs `bin/worktree-remove ISSUE`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
 
 ## Proof delivery
 
@@ -68,6 +68,10 @@ CLI and E2E have counted exceptions for Larastan findings on inherited command h
 `bin/bootstrap` seeds missing quality caches after installing dependencies, so `bin/worktree-create` gives new worktrees a warm starting point. It copies each project's most recent compatible Pint and PHPStan result caches from registered worktrees. Compatibility requires identical project Composer lock files and that tool's configuration. Existing destination caches are preserved, and copied caches are independent files. Run `bin/worktree-cache` to seed an existing checkout after installing dependencies.
 
 Pint stores its cache in `vendor/pint.cache`. PHPStan stores analysis results in `vendor/phpstan/cache/resultCache.php`. Both tools validate cached results and recheck changed inputs. PHPStan's path-specific compiled container and Larastan's migration cache stay local and rebuild when needed; bootstrap copies only portable result caches. A missing or incompatible source cache falls back to a normal first run.
+
+`bin/worktree-create ORB-217` creates `/fast/worktrees/orbit/orb-217` on branch `orb-217`. The issue ID determines both names; no slug is needed. Set a different absolute base path with `git config orbit.worktreeRoot /path/to/worktrees/orbit`. The base must be outside the primary checkout, which prevents an enclosing ignore rule from hiding TIA inputs. Git stores this setting locally and shares it among linked worktrees.
+
+Creation and `bin/worktree-remove ORB-217` also resolve an existing branch with an issue-ID prefix and legacy slug. Multiple matching branches are refused before worktree changes. Creation reuses an already registered branch at its current path. Existing worktrees can finish in their original locations. Discovery commands locate registered worktrees by issue branch or directory name; `--worktree=PATH` resolves an ambiguity. Cleanup also follows the registered branch, including after a worktree moves. The legacy `.worktrees` directory can be removed after its remaining worktrees have closed out.
 
 Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and TIA baselines. Run checks in each project that a change affects.
 
@@ -108,7 +112,7 @@ The repository commands manage this lifecycle.
 | `bin/tia-cache refresh --background` | Queues a serialized refresh and returns its process ID and log path immediately |
 | `bin/tia-cache refresh` | Refreshes in the foreground; exits nonzero if any project fails |
 | `bin/tia-cache status` | Prints each publication's tested main commit, graph anchor, compatibility, checksum, and publication time, plus the refresh log path |
-| `bin/worktree-remove ISSUE slug` | Verifies the feature merged, queues background refresh, then releases resources and removes the worktree |
+| `bin/worktree-remove ISSUE` | Verifies the feature merged, queues background refresh, then releases resources and removes the worktree |
 
 Each cache command accepts `--repository=PATH` and repeatable `--project=apps/docs` options. The default covers all five Composer projects. Seed reports missing or incompatible graphs and leaves those projects cold; a cache miss does not fail setup.
 

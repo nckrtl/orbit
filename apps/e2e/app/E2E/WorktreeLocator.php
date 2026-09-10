@@ -7,10 +7,11 @@ namespace App\E2E;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 /**
- * Find the one worktree of an issue: `<primary>/.worktrees/<issue-lowercase>-*`,
- * as `bin/worktree-create` names them. An explicit path wins.
+ * Find the issue's registered Git worktree by branch or directory name.
+ * An explicit path wins, including for retained evidence at another location.
  */
 final readonly class WorktreeLocator
 {
@@ -25,16 +26,34 @@ final readonly class WorktreeLocator
             return new TopologyRequest($issue, $explicit);
         }
 
-        $pattern = $this->primaryRoot.'/.worktrees/'.strtolower($issue).'-*';
-        $candidates = array_values(array_filter(glob($pattern, GLOB_ONLYDIR) ?: [], is_dir(...)));
+        $process = new Process(['git', 'worktree', 'list', '--porcelain', '-z'], $this->primaryRoot);
+        $process->mustRun();
+        $name = strtolower($issue);
+        $candidates = [];
+        foreach (explode("\0\0", trim($process->getOutput(), "\0")) as $record) {
+            $path = null;
+            $branch = '';
+            foreach (explode("\0", $record) as $field) {
+                if (str_starts_with($field, 'worktree ')) {
+                    $path = substr($field, strlen('worktree '));
+                } elseif (str_starts_with($field, 'branch refs/heads/')) {
+                    $branch = substr($field, strlen('branch refs/heads/'));
+                }
+            }
+            if ($path !== null && is_dir($path)
+                && ($branch === $name || str_starts_with($branch, $name.'-')
+                    || basename($path) === $name || str_starts_with(basename($path), $name.'-'))) {
+                $candidates[] = $path;
+            }
+        }
         if ($candidates === []) {
             throw new RuntimeException(
-                "No worktree matches {$pattern}; create one with bin/worktree-create or pass --worktree=.",
+                "No registered worktree matches {$issue}; create one with bin/worktree-create or pass --worktree=.",
             );
         }
         if (count($candidates) > 1) {
             throw new RuntimeException(
-                "More than one worktree matches {$pattern}; pass --worktree= to choose: ".implode(', ', $candidates),
+                "More than one worktree matches {$issue}; pass --worktree= to choose: ".implode(', ', $candidates),
             );
         }
 

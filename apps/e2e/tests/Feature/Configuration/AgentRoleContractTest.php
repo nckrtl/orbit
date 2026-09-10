@@ -57,7 +57,7 @@ it('releases retained proof and discovery only for a merged branch, before remov
 
     expect($script)
         ->toContain('awk -v ref="branch refs/heads/$branch"')
-        ->toContain('[[ -n "$worktree" ]] || worktree="$primary_root/.worktrees/$name"');
+        ->toContain('[[ -n "$worktree" ]] || worktree="$worktree_root/$name"');
 
     $mergeCheck = strpos($script, 'git merge-base --is-ancestor "$branch" origin/main');
     $proofRelease = strpos($script, 'release "$linear_id" "--worktree=$worktree" --proof');
@@ -178,7 +178,7 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>')
         ->toContain('A failed refresh retains captured evidence and requires retry')
         ->toContain('bin/e2e-topology release <ISSUE> --proof --capture')
-        ->toContain('bin/worktree-remove <ISSUE> <slug>')
+        ->toContain('bin/worktree-remove <ISSUE>')
         ->toContain('GitHub evidence is read-only');
 
     expect($read('.agents/skills/developing-features/SKILL.md'))
@@ -284,7 +284,7 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
         ->toContain('absence of `.loop/` from main')
         ->toContain('complete acceptance proof')
         ->toContain('Keep artifact refs and the primary checkout')
-        ->toContain('bin/worktree-remove <ISSUE> <slug>');
+        ->toContain('bin/worktree-remove <ISSUE>');
     expect($planReviewer)
         ->toContain('bin/loop-artifacts save <ISSUE>')
         ->toContain('Do not commit `.loop/` to the feature branch');
