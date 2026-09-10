@@ -84,7 +84,9 @@ After every declared proof action and general verification exits `0`, the harnes
 
 A required review check that fails or has an incomplete record prevents approval. An exploratory command failure remains distinct and does not replace a required result. A code or configuration fix requires a new candidate and fresh proof from declared inputs; an edit left on a reviewed machine and an equivalence report for the old proof cannot establish the fix. The old attempt may be released before replacement or explicit abandonment, but its captured proof and review record remain available.
 
-After the approved candidate merges, `bin/e2e-topology closeout` verifies the accepted merge and refreshes the shared snapshot from merged main without promoting reviewer-modified live state. A failed refresh keeps the complete retained proof topology, captured evidence, and review record for retry. Only a successful refresh permits the command to release the retained topology. Failed proof keeps its diagnosis and explicit release path.
+After the approved candidate merges, `bin/e2e-topology closeout` verifies the accepted merge and refreshes the shared snapshot from merged main without promoting reviewer-modified live state. When the proof plan declared a cold snapshot replacement before construction, closeout instead constructs and verifies a clean replacement from merged main and its recorded inputs, then installs it transactionally.
+
+A failed refresh or replacement keeps the complete retained proof topology, captured evidence, and review record for retry and preserves the prior usable generation or an explicit recovery state. Only a successful snapshot step permits the command to release the retained topology. Failed proof keeps its diagnosis and explicit release path.
 
 ## Local checks
 

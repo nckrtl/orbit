@@ -1,6 +1,6 @@
 # Incus topology registry
 
-This page is for a contributor or agent who proves an issue on Incus. It answers which topologies an issue has, which state each one is in, and which `bin/e2e-topology` command from the `apps/e2e` harness moves it. The plan a proof runs is on [Proof plans](proof-plans.md). The persistent snapshot every topology is copied from is on [Topology snapshot](topology-snapshot.md).
+This page is for a contributor or agent who proves an issue on Incus. It answers which topologies an issue has, which state each one is in, and which `bin/e2e-topology` command from the `apps/e2e` harness moves it. The plan a proof runs is on [Proof plans](proof-plans.md). The persistent snapshot supplies ordinary topology clones and is described on [Topology snapshot](topology-snapshot.md).
 
 ## Discovery and proof
 
@@ -8,7 +8,7 @@ An issue with the `incus` label uses a disposable discovery topology for develop
 
 ## Registered profile and issue extension
 
-Orbit registers the three-Node profile `gateway_app-dev_app-prod`. A discovery or proof attempt uses that profile unless its issue proof plan declares `"extension": "app-prod"`. The declaration adds the physical Node key `app-prod-2` to that attempt and accepts no other extension value. [ADR 0040](../decisions/0040-extend-issue-proof-with-one-app-prod-node.md) governs the extension.
+Orbit registers the three-Node profile `gateway_app-dev_app-prod`. A discovery or proof attempt uses that profile unless its issue proof plan declares `"extension": "app-prod"`. The declaration adds the physical Node key `app-prod-2` to that attempt and accepts no other extension value. A proof plan can instead declare `"snapshot_replacement": true`; that declaration keeps the registered three-Node profile and selects cold construction for proof only. [ADR 0040](../decisions/0040-extend-issue-proof-with-one-app-prod-node.md) governs the extension, and [ADR 0037](../decisions/0037-promote-fresh-three-node-topology-snapshots.md) governs the replacement.
 
 | Field | Value |
 | --- | --- |
@@ -26,7 +26,7 @@ An extended attempt keeps the three cloned Nodes and constructs one Node from th
 | --- | --- | --- | --- | --- |
 | `app-prod-2` | Generic base image | `.13` | `10.44.0.4` | `app-prod` |
 
-The attempt record stores the normalized extension, the complete physical Node inventory, the promoted source generation, and the extra Node's image alias and fingerprint. Discovery and proof construct separate `app-prod-2` VMs and never adopt one from another attempt.
+The attempt record stores the normalized construction declaration, the complete physical Node inventory, its snapshot generation or generic-base inputs, and every image alias and fingerprint used for cold construction. Discovery and proof construct separate `app-prod-2` VMs and never adopt one from another attempt. A replacement proof constructs all three registered Nodes from the generic base and never adopts records, source, or runtime from the promoted generation.
 
 Convergence gives `app-prod-2` active app-prod services and a usable PHP runtime, with PHP-FPM and Caddy active. The `e2e-dev` AppInstance stays on `app-dev`; neither app-prod Node contains an AppInstance. The extension creates no legacy Instance or Workspace and no Route target or other graph edge that creates multi-target routing.
 
@@ -40,7 +40,7 @@ Each topology is one attempt with a purpose, a lease, and a record under `<workt
 | `proof` | `prove` | `proof-attempt.json`, `proof-topology.json`, `proof.json`, captured evidence, and review records | Exact release after replacement, abandonment, or successful closeout refresh |
 | `candidate-convergence` | `candidate` | `candidate-attempt.json`, `candidate-topology.json`, `candidate-convergence.json` | `release --candidate` or `promote` |
 
-A lease names the issue, attempt ID, purpose, operation ID, acquisition time, and topology extension. The extension is `null` or `app-prod` and is stored before the harness creates a network or VM. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved.
+A lease names the issue, attempt ID, purpose, operation ID, acquisition time, topology extension, and construction declaration. The extension is `null` or `app-prod`, the replacement flag is boolean, and both are stored before the harness creates a network or VM. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved.
 
 A successful proof becomes reviewable only after the harness captures its complete evidence. Its proof topology then stays alive through review and closeout. The proof result, captured evidence, review records, `proof-inputs/`, `equivalence/`, and the `log` file survive release. [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md) governs this retained-proof review lifecycle.
 
@@ -67,17 +67,17 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 
 | Command | What it does |
 | --- | --- |
-| `acquire ISSUE WORKTREE` | Creates discovery and verifies readiness; when the issue plan exists, validates its extension before resource creation; refuses a second discovery, a worktree without `vendor/`, or a generation whose fingerprint differs from `main` |
+| `acquire ISSUE WORKTREE` | Creates discovery from the saved generation, validates plan topology declarations, and refuses duplicate discovery or a missing vendor tree |
 | `shell ISSUE NODE [--proof --review-action=ID --required]` | Opens a login shell as `orbit` on one physical Node key of discovery, a retained diagnosis, or a captured successful proof; successful-proof use starts a separate interactive review action |
 | `exec ISSUE NODE --argv=JSON [--proof --review-action=ID --required]` | Runs one argument vector as `orbit` on one physical Node key; `--argv-file=PATH` replaces `--argv`; successful-proof use records its result as a required or exploratory review action |
 | `sync ISSUE` | Proves the mount, re-verifies the mounted source identity, and verifies readiness |
 | `verify ISSUE` | Verifies discovery readiness and records the report |
-| `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; the plan defaults to `.loop/proof/ISSUE.json` |
+| `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; a declared snapshot replacement starts from the generic base, and the plan defaults to `.loop/proof/ISSUE.json` |
 | `capture ISSUE [--plan=PATH]` | Captures and archives complete successful proof evidence without releasing the topology, then permits interactive review |
 | `review ISSUE [--complete=ACTION --result=passed\|failed --finding=TEXT]` | Completes an interactive action when supplied, then evaluates required and exploratory review records |
 | `equivalence ISSUE [--plan=PATH]` | Compares the clean HEAD with the retained proof using the plan that defaults to `.loop/proof/ISSUE.json`, then writes an immutable report; see [Equivalence outcomes](proof-plans.md#equivalence-outcomes) |
 | `candidate ISSUE` | Converges and verifies the accepted head on a candidate-convergence topology after an `equivalent` report that requires it |
-| `closeout ISSUE --candidate=SHA --artifact=SHA --merge=SHA --main-sha=SHA` | Verifies the accepted merge, refreshes the snapshot from that merged main, records closeout, and releases the exact retained proof topology only after refresh succeeds |
+| `closeout ISSUE --candidate=SHA --artifact=SHA --merge=SHA --main-sha=SHA` | Verifies the accepted merge, refreshes the snapshot or installs its declared clean replacement, records closeout, and releases the exact retained proof topology only after the snapshot step succeeds |
 | `status ISSUE` | Reports the state files, capture identity, retained topology, and review evaluation without touching Incus |
 | `release ISSUE [--proof\|--candidate] [--replace\|--abandon] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. A successful proof requires explicit replacement or abandonment; ordinary closeout owns post-refresh release. Recovery options identify one exact legacy lease. |
 
@@ -108,6 +108,24 @@ A successful proved attempt also requires a lifecycle guard: explicit replacemen
 The retained proof topology can exercise lease files, identity validation, capture and review records, and refusal before transport from inside a guest. Actual Incus deletion is a host boundary: an issue that changes release selection uses a separately reviewed host rehearsal bound to the same candidate and leaves the captured proof and review evidence unchanged.
 
 Every Incus network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep that deletes each harness network in the configured Incus project with an empty `used_by`, except `oe-topo-snap` and `oe-standby`. The sweep holds the `topology-create` lock, so a network created moments before its first VM is never swept.
+
+## Declared cold snapshot replacement
+
+### Construction and evidence
+
+A proof plan with `"snapshot_replacement": true` grants replacement authority before proof construction. The proof attempt remains issue-owned and uses normal setup, acceptance, manifest, capture, review, and exact-release records. It constructs only the registered Gateway, app-dev, and app-prod Nodes from the recorded generic base and exact candidate. Convergence must produce native AppInstance samples and App-owned Routes, and verification refuses legacy sample state or any inventory other than those three Nodes.
+
+The promoted generation stays stopped and unchanged during construction, proof, capture, and review. After the verified merge, closeout constructs a clean replacement from merged main and the recorded inputs. It verifies that clean topology before it starts the installation transaction, so reviewer changes to the retained proof topology cannot enter the shared snapshot.
+
+### Installation and cleanup
+
+Installation records the replacement, current generation, exact resources, and each swap step. It prepares the complete stopped candidate generation before it replaces any promoted resource. Failure before the swap removes only recorded candidate resources. Failure during the swap either restores the prior usable generation or leaves an explicit recovery record and no success result. Successful installation leaves one stopped three-Node promoted generation, and later ordinary discovery and proof acquire from it.
+
+Successful closeout removes only the recorded clean replacement resources and the replaced snapshot resources after it verifies the installed generation. Explicit abandonment removes only the recorded issue replacement. Both paths retain the original captured proof and interactive review records.
+
+### Other cold paths
+
+This lifecycle is not a cold scenario, ordinary refresh, or disaster recovery. A cold scenario remains disposable and has no issue-proof or promotion authority. Refresh converges the current promoted generation in place from main. `rebuild` and `recover-legacy` restore availability when snapshot state is absent or inconsistent; they cannot reclassify their result as issue proof.
 
 ## On-demand cold scenario
 
