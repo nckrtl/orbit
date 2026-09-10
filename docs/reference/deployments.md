@@ -15,7 +15,7 @@ The Gateway prepares each new production home with these paths before it publish
 
 Each prepared release contains a `.env` symbolic link that resolves to the production home's `.env` file. Production creation stages initial source under `releases/` and leaves `current` absent. The explicit first deployment selects code later. Staged source does not become serving state merely because it exists.
 
-Orbit keeps `database.sqlite` at the production-home path. The operating agent must configure the application to use that path. Orbit provides no database-path environment placeholder and does not infer or rewrite a stored literal database value.
+Orbit keeps `database.sqlite` at the production-home path. The operating agent must configure the application to use that path. Orbit provides no database-path environment placeholder and does not infer or rewrite a stored literal database value. The [AppInstance cloning reference](appinstance-cloning.md) describes optional SQLite seeding into this path.
 
 ## Resolve the serving path
 
