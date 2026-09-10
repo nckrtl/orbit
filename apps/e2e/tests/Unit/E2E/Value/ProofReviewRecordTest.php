@@ -8,7 +8,7 @@ use App\E2E\Value\ProofReviewRecord;
 
 it('appends ordered unique actions and retains completed history', function (): void {
     $record = ProofReviewRecord::empty(
-        'ORB-230',
+        'AUX-230',
         str_repeat('a', 40),
         new AttemptId(str_repeat('b', 32)),
         '2026-09-10T10:00:00Z',
@@ -50,7 +50,7 @@ it('rejects duplicate action identities', function (): void {
     );
 
     expect(fn () => new ProofReviewRecord(
-        'ORB-230',
+        'AUX-230',
         str_repeat('a', 40),
         new AttemptId(str_repeat('b', 32)),
         [$action, $action],

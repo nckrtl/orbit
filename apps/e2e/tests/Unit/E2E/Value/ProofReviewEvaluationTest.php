@@ -16,7 +16,7 @@ it('blocks required incomplete and failed actions while listing exploratory fail
     $exploratoryFailed = ProofReviewAction::incomplete('explore-failed', 'exec', 'app-prod', false, ['false'], null, $started)
         ->complete('failed', 1, '', 'failed', null, $finished);
     $record = new ProofReviewRecord(
-        'ORB-230',
+        'AUX-230',
         str_repeat('a', 40),
         new AttemptId(str_repeat('b', 32)),
         [$requiredIncomplete, $requiredFailed, $exploratoryFailed],
@@ -48,7 +48,7 @@ it('is ready when only exploratory checks fail', function (): void {
         '2026-09-10T10:00:00Z',
     )->complete('failed', 1, '', 'failed', null, '2026-09-10T10:01:00Z');
     $record = new ProofReviewRecord(
-        'ORB-230',
+        'AUX-230',
         str_repeat('a', 40),
         new AttemptId(str_repeat('b', 32)),
         [$action],
