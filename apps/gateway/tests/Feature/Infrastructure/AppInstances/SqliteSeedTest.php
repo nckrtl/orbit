@@ -7,6 +7,7 @@ use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -169,6 +170,52 @@ it('creates one valid snapshot while WAL writes continue without source workload
             ->toBe(['source:prepare', 'target:prepare', 'target:install', 'source:cleanup'])
             ->and($ssh->hasOnlyFixedPythonCommands())
             ->toBeTrue();
+    } finally {
+        file_put_contents($stopPath, 'stop');
+
+        if ($writer->isRunning()) {
+            $writer->wait();
+        }
+
+        sqlite_seed_remove_directory($sandbox);
+    }
+});
+
+it('completes a large live WAL snapshot within a bounded command deadline', function (): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = "{$sandbox}/source/database.sqlite";
+    $stopPath = "{$sandbox}/stop-writer";
+    sqlite_seed_create_database($sourcePath, rows: 200, wal: true);
+    $source = new PDO("sqlite:{$sourcePath}");
+    $source->exec('CREATE TABLE seed_payload (content BLOB NOT NULL)');
+    $source->exec('INSERT INTO seed_payload (content) VALUES (zeroblob(67108864))');
+    unset($source);
+    $writer = sqlite_seed_wal_writer($sourcePath, $stopPath, delayMicroseconds: 0);
+    $deadline = new CommandDeadline;
+    $deadline->start(10);
+
+    try {
+        $writer->start();
+
+        if (! $writer->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'READY'))) {
+            throw new RuntimeException('The WAL writer did not become ready.');
+        }
+
+        $ssh = new SqliteSeedLocalSshExecutor(new NativeProcessRunner(deadline: $deadline), $sandbox);
+        $result = sqlite_seed_seeder($ssh, new SqliteSeedLocalTransfer($ssh))->seed(
+            sqlite_seed_source_placement($sandbox),
+            sqlite_seed_target_placement(),
+            $sourcePath,
+        );
+
+        expect($result->confirmed)
+            ->toBeTrue()
+            ->and($result->changed)
+            ->toBeTrue();
+        expect(sqlite_seed_integrity("{$sandbox}/target/database.sqlite"))
+            ->toBe('ok')
+            ->and(filesize("{$sandbox}/target/database.sqlite"))
+            ->toBeGreaterThan(67_108_864);
     } finally {
         file_put_contents($stopPath, 'stop');
 
@@ -598,6 +645,78 @@ it('retains owned source and target preparation after a lost target receipt', fu
     }
 });
 
+it('regenerates a missing retained snapshot and replaces stale incomplete target state', function (bool $mutateSource): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = "{$sandbox}/source/database.sqlite";
+    sqlite_seed_create_database($sourcePath, rows: 30);
+
+    try {
+        $ssh = new SqliteSeedLocalSshExecutor(new NativeProcessRunner, $sandbox);
+        $transfer = new SqliteSeedLocalTransfer($ssh, failures: 1);
+        $seeder = sqlite_seed_seeder($ssh, $transfer);
+
+        try {
+            $seeder->seed(
+                sqlite_seed_source_placement($sandbox),
+                sqlite_seed_target_placement(),
+                $sourcePath,
+            );
+            $this->fail('The interrupted transfer unexpectedly reported success.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)
+                ->toBe('sqlite.seed_transfer_failed');
+        }
+
+        $retainedSnapshots = glob("{$sandbox}/snapshots/*") ?: [];
+        expect($retainedSnapshots)
+            ->toHaveCount(1)
+            ->and($transfer->incomingPaths)
+            ->toHaveCount(1);
+        unlink($retainedSnapshots[0]);
+
+        if ($mutateSource) {
+            $source = new PDO("sqlite:{$sourcePath}");
+            $source->exec("INSERT INTO seed_events (value) VALUES ('after-interruption')");
+            unset($source);
+        }
+
+        $retry = $seeder->seed(
+            sqlite_seed_source_placement($sandbox),
+            sqlite_seed_target_placement(),
+            $sourcePath,
+        );
+
+        expect($retry->confirmed)
+            ->toBeTrue()
+            ->and($retry->changed)
+            ->toBeTrue()
+            ->and(sqlite_seed_row_count("{$sandbox}/target/database.sqlite"))
+            ->toBe($mutateSource ? 31 : 30)
+            ->and(sqlite_seed_integrity("{$sandbox}/target/database.sqlite"))
+            ->toBe('ok')
+            ->and(glob("{$sandbox}/snapshots/*") ?: [])
+            ->toBe([])
+            ->and(file_exists("{$sandbox}/state/source-11-target-22"))
+            ->toBeFalse()
+            ->and(file_exists("{$sandbox}/state/target-22/state.json"))
+            ->toBeTrue()
+            ->and(glob("{$sandbox}/target/.database.sqlite.orbit-*") ?: [])
+            ->toBe([])
+            ->and($transfer->transfers)
+            ->toHaveCount(2);
+
+        foreach ($transfer->incomingPaths as $incomingPath) {
+            expect(glob("{$incomingPath}*") ?: [])
+                ->toBe([]);
+        }
+    } finally {
+        sqlite_seed_remove_directory($sandbox);
+    }
+})->with([
+    'unchanged source' => false,
+    'mutated source' => true,
+]);
+
 it('retains a completed target when the live source changes before an identical retry', function (): void {
     $sandbox = sqlite_seed_sandbox();
     $sourcePath = "{$sandbox}/source/database.sqlite";
@@ -723,12 +842,13 @@ function sqlite_seed_journal_mode(string $path): string
     return (string) $database->query('PRAGMA journal_mode')->fetchColumn();
 }
 
-function sqlite_seed_wal_writer(string $databasePath, string $stopPath): Process
+function sqlite_seed_wal_writer(string $databasePath, string $stopPath, int $delayMicroseconds = 1_000): Process
 {
     $program = <<<'PYTHON'
         import os, sqlite3, sys, time
 
-        database_path, stop_path = sys.argv[1:]
+        database_path, stop_path, delay_microseconds = sys.argv[1:]
+        delay_seconds = int(delay_microseconds) / 1000000
         database = sqlite3.connect(database_path, timeout=5.0)
         database.execute("PRAGMA journal_mode = WAL")
         print("READY", flush=True)
@@ -737,11 +857,12 @@ function sqlite_seed_wal_writer(string $databasePath, string $stopPath): Process
             counter += 1
             database.execute("INSERT INTO seed_events (value) VALUES (?)", (f"live-row-{counter}",))
             database.commit()
-            time.sleep(0.001)
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
         database.close()
         PYTHON;
 
-    return new Process(['python3', '-c', $program, $databasePath, $stopPath]);
+    return new Process(['python3', '-c', $program, $databasePath, $stopPath, (string) $delayMicroseconds]);
 }
 
 function sqlite_seed_source_placement(string $sandbox): SqliteSeedPlacement
@@ -960,7 +1081,7 @@ final class SqliteSeedLocalSshExecutor implements SshExecutor
 
         if ($this->remainingFailurePoint === 'snapshot' && $key === 'source:prepare') {
             $arguments[2] = str_replace(
-                'source.backup(destination, pages=256, progress=progress, sleep=0.01)',
+                'source.backup(destination, pages=-1, progress=progress, sleep=0.01)',
                 '(_ for _ in ()).throw(sqlite3.DatabaseError())',
                 $arguments[2],
             );

@@ -23,7 +23,7 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
     private const string StateRoot = '/var/lib/orbit/app-instance-sqlite-seeds';
 
     private const string SourceProgram = <<<'PYTHON'
-        import contextlib, hashlib, json, os, pwd, sqlite3, stat, sys, tempfile, urllib.parse
+        import contextlib, hashlib, json, os, pwd, sqlite3, stat, sys, tempfile, time, urllib.parse
 
         mode, base, source_path, source_user, transport_user, operation, state_dir, snapshot_path = sys.argv[1:]
         state_path = os.path.join(state_dir, "state.json")
@@ -227,11 +227,17 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
             if state is not None:
                 expected_state(state)
                 if state.get("status") == "ready":
-                    metadata = validate_snapshot(state, transport_account.pw_uid)
-                    print(f"READY\t{metadata.st_size}\t{state['digest']}\t{snapshot_path}")
-                    raise SystemExit(0)
-                remove_owned_snapshot(state, source_account.pw_uid, transport_account.pw_uid)
-                os.unlink(state_path)
+                    try:
+                        metadata = validate_snapshot(state, transport_account.pw_uid)
+                    except FileNotFoundError:
+                        os.unlink(state_path)
+                        state = None
+                    else:
+                        print(f"READY\t{metadata.st_size}\t{state['digest']}\t{snapshot_path}")
+                        raise SystemExit(0)
+                if state is not None:
+                    remove_owned_snapshot(state, source_account.pw_uid, transport_account.pw_uid)
+                    os.unlink(state_path)
             elif os.path.lexists(snapshot_path):
                 raise BoundaryError
 
@@ -281,12 +287,15 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
                         os.umask(previous_umask)
                     try:
                         maximum_pages = (available - reserve) // page_size
+                        backup_deadline = time.monotonic() + 30.0
 
                         def progress(status, remaining, total):
                             if total > maximum_pages:
                                 raise BoundaryError
+                            if status != sqlite3.SQLITE_DONE and time.monotonic() >= backup_deadline:
+                                raise BoundaryError
 
-                        source.backup(destination, pages=256, progress=progress, sleep=0.01)
+                        source.backup(destination, pages=-1, progress=progress, sleep=0.01)
                         integrity = destination.execute("PRAGMA integrity_check").fetchall()
                         if integrity != [("ok",)]:
                             raise BoundaryError
@@ -504,10 +513,18 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
             ):
                 raise BoundaryError
 
-        def exact_state(value):
-            operation_state(value)
-            if value.get("expected_size") != expected_size or value.get("expected_digest") != expected_digest:
+        def state_payload(value):
+            payload_size = value.get("expected_size")
+            payload_digest = value.get("expected_digest")
+            if (
+                not isinstance(payload_size, int)
+                or payload_size <= 0
+                or not isinstance(payload_digest, str)
+                or len(payload_digest) != 64
+                or any(character not in "0123456789abcdef" for character in payload_digest)
+            ):
                 raise BoundaryError
+            return payload_size, payload_digest
 
         def remove_owned(path, inode):
             if not isinstance(path, str) or not safe_absolute(path):
@@ -529,7 +546,13 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
             return path, metadata.st_ino
 
         def complete_state(state, target_uid):
-            destination = valid_payload(destination_path, target_uid)
+            payload_size, payload_digest = state_payload(state)
+            destination = valid_payload(
+                destination_path,
+                target_uid,
+                payload_size=payload_size,
+                payload_digest=payload_digest,
+            )
             candidate = state.get("candidate")
             candidate_inode = state.get("candidate_inode")
             if isinstance(candidate, str) and isinstance(candidate_inode, int):
@@ -594,17 +617,9 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
                 status = state.get("status")
                 if status == "complete":
                     operation_state(state)
-                    completed_size = state.get("expected_size")
-                    completed_digest = state.get("expected_digest")
+                    completed_size, completed_digest = state_payload(state)
                     destination_inode = state.get("destination_inode")
-                    if (
-                        not isinstance(completed_size, int)
-                        or completed_size <= 0
-                        or not isinstance(completed_digest, str)
-                        or len(completed_digest) != 64
-                        or any(character not in "0123456789abcdef" for character in completed_digest)
-                        or not isinstance(destination_inode, int)
-                    ):
+                    if not isinstance(destination_inode, int):
                         raise BoundaryError
                     valid_payload(
                         destination_path,
@@ -615,19 +630,25 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
                     )
                     print("COMPLETE")
                     raise SystemExit(0)
-                exact_state(state)
+                operation_state(state)
+                state_size, state_digest = state_payload(state)
                 if status == "installing":
                     try:
                         destination = destination_metadata(target_account.pw_uid)
                         if destination is not None:
-                            valid_payload(destination_path, target_account.pw_uid)
+                            valid_payload(
+                                destination_path,
+                                target_account.pw_uid,
+                                payload_size=state_size,
+                                payload_digest=state_digest,
+                            )
                             complete_state(state, target_account.pw_uid)
                             print("COMPLETE")
                             raise SystemExit(0)
                     except BoundaryError:
                         abandon_state(state)
                         raise
-                if status == "prepared":
+                elif status == "prepared":
                     try:
                         destination = destination_metadata(target_account.pw_uid)
                     except BoundaryError:
@@ -636,6 +657,11 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
                     if destination is not None:
                         abandon_state(state)
                         raise BoundaryError
+                else:
+                    raise BoundaryError
+                if state_size != expected_size or state_digest != expected_digest:
+                    abandon_state(state)
+                    state = None
             elif destination_metadata(target_account.pw_uid) is not None:
                 raise BoundaryError
 
