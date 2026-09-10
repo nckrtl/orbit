@@ -307,18 +307,38 @@ it('recovers exact cleanup and records infrastructure-error when Pest writes no 
     expect($paths->path($runs->aggregatePath($aggregate->run)))->toBeFile();
 });
 
-it('recovers the exact attempt and retains recovery after the scenario process is interrupted', function (): void {
+it('recovers a signal-killed real process, continues, and writes the complete aggregate', function (): void {
     $root = dirname(__DIR__, 5);
     $repository = new GitRepository($root);
     $candidate = $repository->commit();
     $paths = new StatePaths(temporaryPath('scenario-interruption-', 5));
     $runs = new ScenarioRunStore(new AtomicJsonStore($paths));
-    $definition = wrapperScenarioDefinitions()[0];
-    $catalog = new ScenarioCatalog($repository, fn (): array => [$definition]);
-    $process = new ScenarioPestProcess(
-        base_path(),
-        fn (): ScenarioProcessResult => new ScenarioProcessResult(143, 'Scenario interrupted by signal 15.'),
-    );
+    $definitions = wrapperScenarioDefinitions();
+    $catalog = new ScenarioCatalog($repository, fn (): array => $definitions);
+    $processRoot = temporaryPath('scenario-signal-process-', 5);
+    $primary = temporaryPath('scenario-signal-primary-', 5);
+    mkdir("{$processRoot}/vendor/bin", 0o700, true);
+    mkdir($primary, 0o700, true);
+    file_put_contents("{$processRoot}/vendor/bin/pest", <<<'PHP'
+        <?php
+
+        declare(strict_types=1);
+
+        $scenario = getenv('ORBIT_SCENARIO_ID');
+        $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
+        if (! is_string($scenario) || ! is_string($primary)) {
+            exit(64);
+        }
+        file_put_contents("{$primary}/invocations.log", "{$scenario}\n", FILE_APPEND | LOCK_EX);
+        echo "started {$scenario}\n";
+        flush();
+        if ($scenario === 'first-flow') {
+            posix_kill(getmypid(), SIGKILL);
+        }
+        fwrite(STDERR, "second flow returned without a result\n");
+        exit(70);
+        PHP);
+    $process = new ScenarioPestProcess($processRoot);
     $constructor = (new ReflectionClass(ColdTopologyConstructor::class))->newInstanceWithoutConstructor();
     $recoveries = [];
     $recovery = new ScenarioRecovery(
@@ -328,8 +348,8 @@ it('recovers the exact attempt and retains recovery after the scenario process i
             $recoveries[] = [$run->value, $scenario->value, $attempt->value];
 
             return new ColdTopologyCleanupResult(
-                ['exact-vm'],
-                ['exact-network'],
+                ["removed-{$scenario->value}"],
+                [],
                 [],
                 [],
                 "bin/e2e-scenarios cleanup {$run->value} {$scenario->value} {$attempt->value}",
@@ -338,20 +358,26 @@ it('recovers the exact attempt and retains recovery after the scenario process i
     );
     $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
 
-    $aggregate = $runner->run($candidate, $root, $root);
-    $result = $aggregate->results[0];
+    $aggregate = $runner->run($candidate, $root, $primary);
+    $first = $aggregate->results[0];
 
-    expect($recoveries)->toHaveCount(1);
-    expect($result->status)->toBe(ScenarioStatus::InfrastructureError);
-    expect($result->diagnostics)->toBe(['Scenario interrupted by signal 15.']);
-    expect($result->cleanup)
+    expect(file("{$primary}/invocations.log", FILE_IGNORE_NEW_LINES))->toBe(['first-flow', 'second-flow']);
+    expect($recoveries)->toHaveCount(2);
+    expect($recoveries[0])->toBe([$first->run->value, $first->scenario->value, $first->attempt->value]);
+    expect($first->status)->toBe(ScenarioStatus::InfrastructureError);
+    expect($first->diagnostics)->toBe(["started first-flow\nScenario process was terminated by signal 9."]);
+    expect($first->cleanup)
         ->toMatchArray([
-            'removed' => ['exact-vm'],
-            'absent' => ['exact-network'],
+            'removed' => ['removed-first-flow'],
+            'absent' => [],
             'refused' => [],
             'remaining' => [],
         ]);
-    expect($result->cleanup['recovery_command'] ?? null)
-        ->toBe("bin/e2e-scenarios cleanup {$result->run->value} {$result->scenario->value} {$result->attempt->value}");
-    expect($paths->path($runs->aggregatePath($aggregate->run)))->toBeFile();
+    expect($first->cleanup['recovery_command'] ?? null)
+        ->toBe("bin/e2e-scenarios cleanup {$first->run->value} {$first->scenario->value} {$first->attempt->value}");
+    expect(array_column($aggregate->toArray()['results'], 'scenario_id'))->toBe(['first-flow', 'second-flow']);
+    $aggregatePath = $paths->path($runs->aggregatePath($aggregate->run));
+    expect($aggregatePath)->toBeFile();
+    $persisted = json_decode((string) file_get_contents($aggregatePath), true, flags: JSON_THROW_ON_ERROR);
+    expect(array_column($persisted['results'] ?? [], 'scenario_id'))->toBe(['first-flow', 'second-flow']);
 });

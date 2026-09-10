@@ -31,9 +31,15 @@ final readonly class ColdTopologyConstructor
         private StatePaths $hostPaths,
     ) {}
 
-    /** @param (Closure(string, float, float, bool, ?string): void)|null $observePhase */
-    public function construct(ColdTopologyPlan $plan, ?Closure $observePhase = null): SourceState
-    {
+    /**
+     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observePhase
+     * @param  (Closure(ColdTopologyCleanupResult, float, float): void)|null  $observeCleanup
+     */
+    public function construct(
+        ColdTopologyPlan $plan,
+        ?Closure $observePhase = null,
+        ?Closure $observeCleanup = null,
+    ): SourceState {
         $this->phase('preflight', fn () => $this->preflight($plan), $observePhase);
 
         try {
@@ -67,7 +73,9 @@ final readonly class ColdTopologyConstructor
 
             return $source;
         } catch (Throwable $constructionFailure) {
+            $cleanupStarted = microtime(true);
             $cleanup = $this->cleanup($plan->target, $plan->operation);
+            $observeCleanup?->__invoke($cleanup, $cleanupStarted, microtime(true));
             if (! $cleanup->successful()) {
                 throw new ColdTopologyCleanupException($cleanup, $constructionFailure);
             }

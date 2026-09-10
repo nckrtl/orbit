@@ -9,6 +9,7 @@ use App\E2E\IncusNetworkLifecycle;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\ColdTopologyCleanupResult;
 use App\E2E\Value\ColdTopologyPlan;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
@@ -219,7 +220,17 @@ describe('ColdTopologyConstructor cleanup', function () {
         Process::fake($state->result(...));
 
         $phases = [];
-        expect(function () use ($target, $operation, &$phases): void {
+        $observedCleanup = null;
+        $cleanupStarted = null;
+        $cleanupFinished = null;
+        expect(function () use (
+            $target,
+            $operation,
+            &$phases,
+            &$observedCleanup,
+            &$cleanupStarted,
+            &$cleanupFinished,
+        ): void {
             cold_constructing_service(
                 new IncusHost(pool: 'orbit-e2e'),
                 new StatePaths(temporaryPath('cold-construction-', 4)),
@@ -227,6 +238,15 @@ describe('ColdTopologyConstructor cleanup', function () {
                 cold_constructing_plan($target, $operation),
                 function (string $name, float $started, float $finished, bool $passed, ?string $error) use (&$phases): void {
                     $phases[$name] = compact('started', 'finished', 'passed', 'error');
+                },
+                function (ColdTopologyCleanupResult $result, float $started, float $finished) use (
+                    &$observedCleanup,
+                    &$cleanupStarted,
+                    &$cleanupFinished,
+                ): void {
+                    $observedCleanup = $result;
+                    $cleanupStarted = $started;
+                    $cleanupFinished = $finished;
                 },
             );
         })
@@ -246,6 +266,21 @@ describe('ColdTopologyConstructor cleanup', function () {
         ]);
         expect($phases['synchronize-source']['passed'])->toBeFalse();
         expect($phases['synchronize-source']['error'])->toBe('The Git command failed.');
+        expect($observedCleanup?->toArray())->toBe([
+            'removed' => [
+                $target->instance('extra'),
+                $target->instance('app-prod'),
+                $target->instance('operator'),
+                $target->instance('gateway'),
+                $target->network(),
+            ],
+            'absent' => [],
+            'refused' => [],
+            'remaining' => [],
+            'recovery_command' => null,
+        ]);
+        expect($cleanupStarted)->toBeFloat();
+        expect($cleanupFinished)->toBeGreaterThanOrEqual($cleanupStarted);
     });
 
     it('reports cleanup refusal and preserves the primary construction failure', function () {

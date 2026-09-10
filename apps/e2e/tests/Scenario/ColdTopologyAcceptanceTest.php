@@ -10,7 +10,9 @@ use App\E2E\TopologySnapshotAvailability;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ScenarioStatus;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologyTarget;
 
 /** @return array<string, mixed>|null */
 function stableScenarioPromotion(
@@ -72,9 +74,22 @@ it('cold-scenario-suite-cleanup releases exact resources after construction fail
 
     $result = $this->app->make(ScenarioColdExecutor::class)
         ->executeFromEnvironment('cold-construction-cleanup');
+    $target = TopologyTarget::disposableScenario(
+        $result->run,
+        $result->scenario,
+        $result->attempt,
+        TopologyRecipe::coldAcceptance(),
+    );
 
     expect($result->status)->toBe(ScenarioStatus::Passed);
     expect($result->actions[0]['name'] ?? null)->toBe('injected-source-failure');
+    expect($result->cleanup['removed'] ?? null)->toBe([
+        $target->instance('extra'),
+        $target->instance('app-prod'),
+        $target->instance('operator'),
+        $target->instance('gateway'),
+        $target->network(),
+    ]);
     expect($result->cleanup['remaining'] ?? null)->toBe([]);
     expect($result->cleanup['recovery_command'] ?? null)
         ->toBe("bin/e2e-scenarios cleanup {$result->run->value} {$result->scenario->value} {$result->attempt->value}");

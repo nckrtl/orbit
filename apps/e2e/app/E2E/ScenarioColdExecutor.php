@@ -82,6 +82,8 @@ final readonly class ScenarioColdExecutor
         $verification = null;
         $primary = ScenarioStatus::InfrastructureError;
         $cleanup = null;
+        $cleanupStarted = null;
+        $cleanupFinished = null;
         $source = null;
 
         $this->installSignalHandlers();
@@ -148,7 +150,15 @@ final readonly class ScenarioColdExecutor
                     $release,
                     $operation,
                     $metadata,
-                ), $observer);
+                ), $observer, function (
+                    ColdTopologyCleanupResult $result,
+                    float $started,
+                    float $finished,
+                ) use (&$cleanup, &$cleanupStarted, &$cleanupFinished): void {
+                    $cleanup = $result;
+                    $cleanupStarted = $started;
+                    $cleanupFinished = $finished;
+                });
                 $this->cancelDeadline();
                 $constructionPassed = ! $definition->expectsConstructionFailure;
                 $actions[] = $this->action(
@@ -165,7 +175,7 @@ final readonly class ScenarioColdExecutor
             } catch (Throwable $exception) {
                 $this->cancelDeadline();
                 [$constructionFailure, $failedCleanup] = $this->constructionFailure($exception);
-                $cleanup = $failedCleanup;
+                $cleanup ??= $failedCleanup;
                 if (
                     $definition->expectsConstructionFailure
                     && $constructionFailure instanceof InvalidArgumentException
@@ -223,12 +233,16 @@ final readonly class ScenarioColdExecutor
             $diagnostics[] = $this->redactor->redact($exception->getMessage());
             $primary = ScenarioStatus::InfrastructureError;
         } finally {
-            $cleanupStarted = microtime(true);
-            $cleanup ??= $this->constructor->cleanup($target, $operation);
+            if ($cleanupStarted === null) {
+                $cleanupStarted = microtime(true);
+                $cleanup ??= $this->constructor->cleanup($target, $operation);
+                $cleanupFinished = microtime(true);
+            }
+            $cleanupFinished ??= microtime(true);
             $cleanupTiming = [
                 'started_at' => self::timestamp($cleanupStarted),
-                'finished_at' => self::timestamp(microtime(true)),
-                'duration_ms' => (int) round((microtime(true) - $cleanupStarted) * 1000),
+                'finished_at' => self::timestamp($cleanupFinished),
+                'duration_ms' => (int) round(($cleanupFinished - $cleanupStarted) * 1000),
                 'passed' => $cleanup->successful(),
                 'error' => $cleanup->successful() ? null : implode('; ', $cleanup->refused),
             ];

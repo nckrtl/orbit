@@ -10,6 +10,7 @@ use App\E2E\Value\ScenarioDefinition;
 use App\E2E\Value\ScenarioProcessResult;
 use App\E2E\Value\ScenarioRunId;
 use Closure;
+use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
 final readonly class ScenarioPestProcess
@@ -51,7 +52,18 @@ final readonly class ScenarioPestProcess
             'ORBIT_SCENARIO_OPERATION_ID' => $operation->value,
         ]);
         $process->setTimeout(null);
-        $process->run();
+
+        try {
+            $process->run();
+        } catch (ProcessSignaledException $exception) {
+            $output = $process->getOutput().$process->getErrorOutput();
+            $separator = $output === '' || str_ends_with($output, "\n") ? '' : "\n";
+
+            return new ScenarioProcessResult(
+                128 + $exception->getSignal(),
+                $output.$separator."Scenario process was terminated by signal {$exception->getSignal()}.\n",
+            );
+        }
 
         return new ScenarioProcessResult(
             $process->getExitCode() ?? 70,

@@ -131,7 +131,7 @@ The JSON aggregate and the standard Pest report use these outcomes:
 | --- | --- |
 | `passed` | Every required action and verification passed, and exact cleanup completed. |
 | `failed` | A scenario action or product assertion failed. |
-| `blocked` | A required run-scoped checkpoint was unavailable, so the dependent flow did not run. |
+| `blocked` | The result schema reserves this status for an unavailable required run-scoped checkpoint. The current cold catalog has no checkpoint-dependent flow and does not produce this status. |
 | `infrastructure-error` | Construction, reporting, verification infrastructure, or cleanup could not produce a valid scenario result. |
 
 The process exits nonzero when any selected scenario is not `passed`, but only after it writes the complete aggregate. Cleanup failure keeps the original outcome, reports `infrastructure-error`, and retains the remaining exact inventory and recovery command. Recovery revalidates the recorded owner, run, scenario, attempt, and operation before deleting anything. It never selects a resource by prefix, age, glob, or an unresolved value.
