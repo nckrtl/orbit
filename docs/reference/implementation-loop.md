@@ -21,6 +21,21 @@ Discovery is the built-in default for new clones and unselected worktrees. Proof
 
 The default uses repository-local Git configuration `orbit.loopFlow`, shared across linked worktrees. It does not change selections already saved in worktrees. Selection commands also accept `--worktree=PATH`. A malformed selection fails instead of falling back. A flow switch changes reviewed artifacts: update the plan, publish for a new candidate, and review under the new flow. Switching flows never creates or deletes topology resources.
 
+## Incus requirement
+
+The `incus` issue label identifies acceptance that needs real machines. [ADR 0058](../decisions/0058-separate-incus-requirements-from-delivery-flow.md) separates that requirement from the selected flow. The implementer resolves the label and flow before acquiring resources; preflight and independent plan review precede acquisition.
+
+| Issue label | Selected flow | Required topology |
+| --- | --- | --- |
+| No `incus` | `discovery` | None; use focused local tests and the local review gate |
+| `incus` | `discovery` | Discovery for development and acceptance observations |
+| No `incus` | Explicit `proof` | None for automated-only acceptance; the other selected-flow rules still apply |
+| `incus` | Explicit `proof` | Discovery for development plus a separate proof topology for isolated acceptance evidence |
+
+Apply `incus` when acceptance depends on a real operating system, service manager, privilege boundary, network, certificate, filesystem ownership, or multiple machines. Planning and review check this classification. An acceptance item that needs Incus without the label is a contract mismatch to correct, not permission to omit its machine checks. The label never changes `.loop/flow.json` or the repository default.
+
+Retained issue snapshots and plans may call this label `proof:incus`; interpret that name as the same Incus requirement. A label rename alone does not change acceptance or the selected flow and does not require new candidate artifacts or another preflight. Publish new issues and handoffs with `incus`.
+
 ## Discovery-only delivery
 
 The discovery flow follows this order.
@@ -28,10 +43,10 @@ The discovery flow follows this order.
 1. Run `bin/worktree-create` to update clean primary main and bootstrap the selected flow using compatible caches. Cache maintenance runs in the background.
 2. Run preflight through `planning-features`, including the documentation audit and acceptance map.
 3. Obtain an independent preflight review through `reviewing-feature-plans`.
-4. Acquire discovery with `bin/e2e-topology acquire ISSUE WORKTREE` after preflight passes.
-5. Implement using `shell`, `exec`, `sync`, and `verify` on discovery as development tools. Run focused local tests and project checks.
+4. For an `incus` issue, acquire discovery with `bin/e2e-topology acquire ISSUE WORKTREE` after preflight passes. Otherwise proceed without a topology.
+5. Implement and run focused local tests and project checks. For an `incus` issue, use `shell`, `exec`, `sync`, and `verify` on discovery as development tools.
 6. Commit and push the candidate, publish the artifacts, and obtain independent code review with a passing local review gate.
-7. Merge the approved candidate, then release discovery and remove the worktree.
+7. Merge the approved candidate, then release any discovery resources and remove the worktree.
 
 The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, focused tests, and the local review gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
 
@@ -41,11 +56,11 @@ An advance of main alone does not require integration, another approval, proof, 
 
 GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0053](../decisions/0053-use-local-review-checks-for-feature-landing.md) governs the local review gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
 
-Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases discovery, and runs `bin/worktree-remove ISSUE`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
+Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases any discovery resources, and runs `bin/worktree-remove ISSUE`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
 
 ## Proof delivery
 
-The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `proof:incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](proof-plans.md). Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. Successful proof resources are captured and released before review, and closeout refreshes the shared snapshot from merged main. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
+The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](proof-plans.md). Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. Successful proof resources are captured and released before review, and closeout refreshes the shared snapshot from merged main. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
 
 ## Local checks
 
@@ -106,12 +121,12 @@ The implementer returns one proposed PR body. The orchestrator publishes its evi
 
 | Body field | Required content |
 | --- | --- |
-| Binding | `Issue: <ID>`, selected flow, candidate SHA, artifact ref and SHA |
+| Binding | `Issue: <ID>`, Incus required or not required, selected flow, candidate SHA, artifact ref and SHA |
 | Acceptance | One row per item, in order: item number or brief outcome, test or discovery check, observed result, and precise artifact path or log reference for details |
 | Checks | Focused tests and changed-project checks with results; mark the independent root gate pending until the reviewer supplies its receipt |
 | Documentation | Every changed maintained page with its purpose, audit findings and owners, or the applicable reason for unchanged documentation |
 | Deviations and limits | Actual deviations and unverified behavior, or `none` |
-| Discovery | Actual observations and resource state, plus `Discovery development only; isolated acceptance proof not run` |
+| Discovery | Observations and resource state for `incus` issues, or `Incus: not required`; include `Discovery development only; isolated acceptance proof not run` for discovery flow |
 
 One check can support several acceptance rows. A test count alone does not identify which outcome was checked. Discovery observations need enough context to inspect or repeat the check; they do not require a separate proof plan or immutable runtime capture. The reviewer assesses the evidence and performs additional focused checks when a concrete uncertainty warrants them.
 

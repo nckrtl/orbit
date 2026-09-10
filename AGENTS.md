@@ -62,8 +62,11 @@ orchestrator assigns the formal reviewers and coordinates phase transitions.
   `bin/e2e-*`; the tests under `apps/e2e/tests/Feature/**` and
   `apps/e2e/tests/Unit/**` are not harness code. Harness changes require a dedicated issue with
   repository-owner-approved behavior and issue-specific proof.
-- The `proof:incus` label uses the repository's disposable topology and proof commands.
-  Automated-only changes use project checks and the local review gate.
+- The `incus` label requires real-machine verification; it does not select a
+  delivery flow. Use discovery for labeled issues, adding a separate proof
+  topology only when `proof` is explicitly selected. Automated-only issues
+  without the label use local checks without a required topology. ADR 0058
+  governs this distinction. Planning and review check the label against acceptance.
 - Proof plans and fixtures live locally under ignored `.loop/proof/` and are
   published with `bin/loop-artifacts` on immutable candidate-bound refs. Per-worktree harness state lives in `<worktree>/.e2e/`.
 - Discovery remains the default development target while a separate fresh

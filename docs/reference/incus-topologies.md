@@ -4,7 +4,7 @@ This page is for a contributor or agent who proves an issue on Incus. It answers
 
 ## Discovery and proof
 
-An issue with the `proof:incus` label gets disposable topologies, each a proof topology as [Concepts](../concepts.md) defines the term. [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs the rolling topology snapshot they are copied from. [ADR 0006](../decisions/0006-topology-led-feature-development.md) separates discovery from proof and requires fresh proof, immutable proved attempts. Those fresh-proof requirements apply to the `proof` delivery flow. The `discovery` flow uses only discovery as a development tool, including for automated-only issues. [Implementation loop](implementation-loop.md) describes selection under [ADR 0051](../decisions/0051-select-discovery-only-feature-delivery.md).
+An issue with the `incus` label uses a disposable discovery topology for development. Explicit `proof` delivery adds a separate proof topology; the label itself does not select that flow. Automated-only issues without the label need no topology. [Implementation loop](implementation-loop.md#incus-requirement) describes this selection under [ADR 0058](../decisions/0058-separate-incus-requirements-from-delivery-flow.md). [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs the rolling topology snapshot they are copied from. [ADR 0006](../decisions/0006-topology-led-feature-development.md) separates discovery from proof. Its fresh-proof requirements apply only to explicit proof delivery under [ADR 0051](../decisions/0051-select-discovery-only-feature-delivery.md).
 
 ## Registered profile and issue extension
 

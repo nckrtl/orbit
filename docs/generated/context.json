@@ -1394,6 +1394,7 @@
             "concepts": [
                 "App",
                 "Gateway",
+                "Proof topology",
                 "Tool",
                 "Workspace"
             ],
@@ -1402,7 +1403,8 @@
                 "0051",
                 "0052",
                 "0053",
-                "0054"
+                "0054",
+                "0058"
             ]
         },
         {
@@ -1422,7 +1424,6 @@
                 "Node",
                 "Proof topology",
                 "Route",
-                "Tool",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -1431,7 +1432,8 @@
                 "0019",
                 "0040",
                 "0049",
-                "0051"
+                "0051",
+                "0058"
             ]
         },
         {
