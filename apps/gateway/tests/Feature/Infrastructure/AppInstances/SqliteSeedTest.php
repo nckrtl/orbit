@@ -534,6 +534,81 @@ it('retries owned snapshot transfer and installation failures without touching u
     'install',
 ]);
 
+it('re-prepares when a recorded incomplete target file is missing', function (string $missingFile): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = "{$sandbox}/source/database.sqlite";
+    sqlite_seed_create_database($sourcePath, rows: 45);
+    file_put_contents("{$sandbox}/target/unrelated.txt", 'target-unrelated');
+
+    try {
+        $ssh = new SqliteSeedLocalSshExecutor(
+            new NativeProcessRunner,
+            $sandbox,
+            failurePoint: $missingFile === 'candidate' ? 'install' : null,
+        );
+        $transfer = new SqliteSeedLocalTransfer($ssh, failures: $missingFile === 'incoming' ? 1 : 0);
+        $seeder = sqlite_seed_seeder($ssh, $transfer);
+
+        try {
+            $seeder->seed(
+                sqlite_seed_source_placement($sandbox),
+                sqlite_seed_target_placement(),
+                $sourcePath,
+            );
+            $this->fail('The interrupted SQLite seed unexpectedly reported success.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)
+                ->toBe($missingFile === 'incoming' ? 'sqlite.seed_transfer_failed' : 'sqlite.seed_failed');
+        }
+
+        $lostPath = $missingFile === 'incoming'
+            ? $transfer->incomingPaths[0]
+            : (glob("{$sandbox}/target/.database.sqlite.orbit-*") ?: [])[0];
+        unlink($lostPath);
+
+        $retry = $seeder->seed(
+            sqlite_seed_source_placement($sandbox),
+            sqlite_seed_target_placement(),
+            $sourcePath,
+        );
+
+        expect($retry->confirmed)
+            ->toBeTrue()
+            ->and($retry->changed)
+            ->toBeTrue()
+            ->and(sqlite_seed_row_count("{$sandbox}/target/database.sqlite"))
+            ->toBe(45)
+            ->and(sqlite_seed_integrity("{$sandbox}/target/database.sqlite"))
+            ->toBe('ok')
+            ->and(file_exists($lostPath))
+            ->toBeFalse()
+            ->and(file_get_contents("{$sandbox}/target/unrelated.txt"))
+            ->toBe('target-unrelated')
+            ->and(glob("{$sandbox}/snapshots/*") ?: [])
+            ->toBe([])
+            ->and(glob("{$sandbox}/target/.database.sqlite.orbit-*") ?: [])
+            ->toBe([])
+            ->and(file_exists("{$sandbox}/state/source-11-target-22"))
+            ->toBeFalse()
+            ->and(file_exists("{$sandbox}/state/target-22/state.json"))
+            ->toBeTrue()
+            ->and($transfer->transfers)
+            ->toHaveCount(2)
+            ->and($transfer->incomingPaths)
+            ->toHaveCount(2);
+
+        foreach ($transfer->incomingPaths as $incomingPath) {
+            expect(glob("{$incomingPath}*") ?: [])
+                ->toBe([]);
+        }
+    } finally {
+        sqlite_seed_remove_directory($sandbox);
+    }
+})->with([
+    'missing prepared incoming' => 'incoming',
+    'missing installing candidate' => 'candidate',
+]);
+
 it('keeps the installed inode when acknowledgement or cleanup is interrupted', function (string $interruption): void {
     $sandbox = sqlite_seed_sandbox();
     $sourcePath = "{$sandbox}/source/database.sqlite";

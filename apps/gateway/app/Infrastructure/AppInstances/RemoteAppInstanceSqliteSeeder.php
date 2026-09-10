@@ -648,6 +648,15 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
                     except BoundaryError:
                         abandon_state(state)
                         raise
+                    candidate = state.get("candidate")
+                    candidate_inode = state.get("candidate_inode")
+                    if not isinstance(candidate, str) or not isinstance(candidate_inode, int):
+                        raise BoundaryError
+                    try:
+                        os.lstat(candidate)
+                    except FileNotFoundError:
+                        abandon_state(state)
+                        state = None
                 elif status == "prepared":
                     try:
                         destination = destination_metadata(target_account.pw_uid)
@@ -657,9 +666,18 @@ final readonly class RemoteAppInstanceSqliteSeeder implements AppInstanceSqliteS
                     if destination is not None:
                         abandon_state(state)
                         raise BoundaryError
+                    incoming = state.get("incoming")
+                    incoming_inode = state.get("incoming_inode")
+                    if not isinstance(incoming, str) or not isinstance(incoming_inode, int):
+                        raise BoundaryError
+                    try:
+                        os.lstat(incoming)
+                    except FileNotFoundError:
+                        abandon_state(state)
+                        state = None
                 else:
                     raise BoundaryError
-                if state_size != expected_size or state_digest != expected_digest:
+                if state is not None and (state_size != expected_size or state_digest != expected_digest):
                     abandon_state(state)
                     state = None
             elif destination_metadata(target_account.pw_uid) is not None:
