@@ -1158,6 +1158,23 @@
             ]
         },
         {
+            "path": "docs/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers.md",
+            "title": "ADR 0055: Restrict Grafana access to authorized Gateway peers",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0003",
+                "0033",
+                "0055"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
