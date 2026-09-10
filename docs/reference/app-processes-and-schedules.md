@@ -23,7 +23,7 @@ A development systemd Process runs as the Node's managed runtime user. It reads 
 
 A production systemd Process runs as the AppInstance's dedicated production user. It reads the persistent environment file in the recorded production home and uses the `current` path as its default working directory. Orbit resolves the recorded Node, user, home, and current release when it performs an operation, independent of Node role co-location or certificate mode.
 
-A prepared production home without `current` accepts a stopped systemd Process installation. Starting that Process fails before application code runs until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
+A prepared production home without `current` accepts a stopped Process installation for either runtime. An initial start requested by `process:add` and a later `process:start` both fail before the Process record or runtime changes until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
 
 Repeating an identical add returns the same Process and preserves its desired running or stopped state. A changed specification with the same AppInstance and name returns `process.name_taken` and changes neither the record nor its runtime. To change a specification, remove that AppInstance-owned Process and add it again.
 

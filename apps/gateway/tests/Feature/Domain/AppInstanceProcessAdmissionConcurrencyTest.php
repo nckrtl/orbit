@@ -342,6 +342,8 @@ final class Orb131AdmissionRuntimeManager implements ProcessRuntimeManager
     /** @var (Closure(): mixed)|null */
     public ?Closure $duringConverge = null;
 
+    public function assertCanStart(Process $process): void {}
+
     public function converge(Process $process): void
     {
         $this->converged[] = $process->id;

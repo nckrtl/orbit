@@ -49,9 +49,20 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         private DockerProcessRenderer $docker,
     ) {}
 
+    public function assertCanStart(#[SensitiveParameter] Process $process): void
+    {
+        $target = $this->targets->forStart($process);
+        $this->assertReleaseAvailable($process, $target, 'start', 'process.start_failed');
+    }
+
     public function converge(#[SensitiveParameter] Process $process): void
     {
         $target = $this->targets->forProcess($process);
+
+        if ($process->desired_state === DesiredProcessState::Running) {
+            $this->assertReleaseAvailable($process, $target, 'start', 'process.start_failed');
+        }
+
         $this->withRuntimeLock($process, function () use ($process, $target): void {
             match ($process->runtime) {
                 ProcessRuntime::Systemd => $this->convergeAndActivateSystemd($process, $target),

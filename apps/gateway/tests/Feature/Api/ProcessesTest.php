@@ -653,6 +653,8 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
 
     public ?ProcessOperationException $lastConvergeFailure = null;
 
+    public function assertCanStart(Process $process): void {}
+
     public function converge(#[SensitiveParameter] Process $process): void
     {
         $this->convergedProcessIds[] = (int) $process->getKey();

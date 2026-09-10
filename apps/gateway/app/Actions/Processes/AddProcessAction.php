@@ -72,6 +72,13 @@ final readonly class AddProcessAction
             $process->fill([
                 ...$attributes,
                 'desired_state' => $desiredState,
+            ]);
+
+            if ($desiredState === DesiredProcessState::Running) {
+                $this->runtime->assertCanStart($process);
+            }
+
+            $process->fill([
                 'status' => LifecycleStatus::Provisioning,
                 'failed_step' => null,
                 'error_code' => null,

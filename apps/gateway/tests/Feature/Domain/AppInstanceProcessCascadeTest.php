@@ -130,6 +130,8 @@ final class Orb131CascadeRuntimeManager implements ProcessRuntimeManager
 
     public ?int $failureId = null;
 
+    public function assertCanStart(Process $process): void {}
+
     public function converge(Process $process): void {}
 
     public function start(Process $process): void {}

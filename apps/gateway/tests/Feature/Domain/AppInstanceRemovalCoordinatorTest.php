@@ -257,6 +257,35 @@ it('returns force guidance before inspecting unsafe checkout content', function 
         ->toBe(3);
 });
 
+it('leaves an owned running Process unchanged when source preflight refuses removal', function (): void {
+    $instance = orb181_coordinator_instance();
+    $process = Process::query()->create([
+        'owner_type' => AppInstance::class,
+        'owner_id' => $instance->id,
+        'name' => 'queue',
+        'runtime' => 'systemd',
+        'working_directory' => $instance->checkout_path,
+        'runtime_config' => ['command' => ['/bin/true']],
+        'restart_policy' => 'always',
+        'desired_state' => 'running',
+        'status' => LifecycleStatus::Active,
+    ]);
+    $original = $process->fresh()->getRawOriginal();
+    $this->orb181Inspector->normalUnsafeIds = [$instance->id];
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.remove_refused');
+        });
+
+    expect($process->refresh()->getRawOriginal())
+        ->toBe($original)
+        ->and($this->orb131ProcessLock->owners)
+        ->toBeEmpty()
+        ->and($this->orb131ProcessRuntime->removed)
+        ->toBeEmpty();
+});
+
 it('keeps normal refusal semantics when checkout inventory inspection fails', function (): void {
     [$checkout] = orb182_coordinator_graph();
     $this->orb181Inspector->inspectionFailureIds = [$checkout->id];
@@ -1065,6 +1094,8 @@ final class Orb131CoordinatorProcessRuntimeManager implements ProcessRuntimeMana
 {
     /** @var list<int> */
     public array $removed = [];
+
+    public function assertCanStart(Process $process): void {}
 
     public function converge(Process $process): void {}
 

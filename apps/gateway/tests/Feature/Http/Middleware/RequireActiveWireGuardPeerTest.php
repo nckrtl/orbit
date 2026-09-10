@@ -389,6 +389,8 @@ final class PeerBoundaryFakeProcessRuntimeManager implements ProcessRuntimeManag
 {
     public int $logCalls = 0;
 
+    public function assertCanStart(Process $process): void {}
+
     public function converge(Process $process): void {}
 
     public function start(Process $process): void {}

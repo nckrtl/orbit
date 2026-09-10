@@ -245,6 +245,102 @@ it('adds and starts one Docker container process with explicit configuration', f
         ->toBeEmpty();
 });
 
+it('refuses a new desired-running production process before admission when no release is selected', function (): void {
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    $this->runtime->startUnavailable = true;
+    $data = new AddProcessData(
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
+        name: 'queue',
+        runtime: ProcessRuntime::Systemd,
+        command: ['/usr/bin/php', 'artisan', 'queue:work'],
+        image: null,
+        workingDirectory: null,
+        environment: [],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'always',
+        start: true,
+    );
+
+    expect(fn () => new AddProcessAction(
+        $this->targets,
+        $this->runtime,
+        app(ProcessAdmissionLock::class),
+    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('process.release_unavailable');
+    });
+
+    expect(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->startPreflights)
+        ->toBe([['name' => 'queue', 'exists' => false]])
+        ->and($this->runtime->converged)
+        ->toBeEmpty();
+});
+
+it('refuses an idempotent desired-running production add without changing its record or runtime', function (): void {
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    $process = Process::query()->create([
+        'owner_type' => AppInstance::class,
+        'owner_id' => $this->instance->id,
+        'name' => 'worker',
+        'runtime' => ProcessRuntime::Docker,
+        'working_directory' => '/app',
+        'runtime_config' => [
+            'image' => 'php:8.5-cli',
+            'command' => ['php', 'artisan', 'queue:work'],
+            'environment' => [],
+            'ports' => [],
+            'volumes' => [],
+        ],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $original = $process->fresh()->getRawOriginal();
+    $this->runtime->startUnavailable = true;
+    $data = new AddProcessData(
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
+        name: 'worker',
+        runtime: ProcessRuntime::Docker,
+        command: ['php', 'artisan', 'queue:work'],
+        image: 'php:8.5-cli',
+        workingDirectory: '/app',
+        environment: [],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'unless-stopped',
+        start: true,
+    );
+
+    expect(fn () => new AddProcessAction(
+        $this->targets,
+        $this->runtime,
+        app(ProcessAdmissionLock::class),
+    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('process.release_unavailable');
+    });
+
+    expect($process->refresh()->getRawOriginal())
+        ->toBe($original)
+        ->and($this->runtime->startPreflights)
+        ->toBe([['name' => 'worker', 'exists' => true]])
+        ->and($this->runtime->converged)
+        ->toBeEmpty();
+});
+
 it('retains a failed desired-running process definition and clears recovery state on retry', function (): void {
     $data = new AddProcessData(
         targetType: ProcessTargetType::AppInstance,
@@ -562,6 +658,24 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
     public ?ProcessOperationException $startFailure = null;
 
     public ?ProcessOperationException $removeFailure = null;
+
+    /** @var list<array{name: string, exists: bool}> */
+    public array $startPreflights = [];
+
+    public bool $startUnavailable = false;
+
+    public function assertCanStart(Process $process): void
+    {
+        $this->startPreflights[] = ['name' => $process->name, 'exists' => $process->exists];
+
+        if ($this->startUnavailable) {
+            throw new ResourceOperationException(
+                errorCode: 'process.release_unavailable',
+                message: "Process [{$process->name}] has no selected production release.",
+                status: 409,
+            );
+        }
+    }
 
     public function converge(#[SensitiveParameter] Process $process): void
     {
