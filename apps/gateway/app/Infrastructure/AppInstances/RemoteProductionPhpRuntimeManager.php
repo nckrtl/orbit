@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\DeploymentLayout\ProductionPhpRuntimeAdopter;
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
@@ -12,7 +13,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use Illuminate\Support\Collection;
 
-final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpRuntimeManager
+final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpRuntimeAdopter, ProductionPhpRuntimeManager
 {
     public function __construct(
         private ProductionPhpRuntimeConfigRenderer $renderer,
@@ -22,6 +23,16 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
     ) {}
 
     public function converge(AppInstance $appInstance): void
+    {
+        $this->convergeWithTuning($appInstance, null);
+    }
+
+    public function adopt(AppInstance $appInstance, string $initialLocalTuning): void
+    {
+        $this->convergeWithTuning($appInstance, $initialLocalTuning);
+    }
+
+    private function convergeWithTuning(AppInstance $appInstance, ?string $initialLocalTuning): void
     {
         $identity = ProductionPhpRuntimeIdentity::from($appInstance);
         $configuration = $this->renderer->render($identity);
@@ -60,6 +71,8 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     base64_encode($configuration->masterIni),
                     base64_encode($configuration->unit),
                     base64_encode($identity->marker()),
+                    base64_encode($initialLocalTuning ?? ''),
+                    $initialLocalTuning === null ? '0' : '1',
                 ],
                 input: $this->convergeScript(),
             ),
@@ -122,6 +135,8 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             master_ini=${17}
             unit_configuration=${18}
             marker_configuration=${19}
+            initial_local_tuning=${20}
+            has_initial_local_tuning=${21}
             test "$operation" = converge
 
             test "$home" = "/home/$user"
@@ -191,7 +206,11 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
             if [ ! -e "$local_tuning" ]; then
                 test ! -L "$local_tuning"
-                printf '%s' "$local_defaults" | base64 --decode > "$work_directory/local.defaults"
+                if [ "$has_initial_local_tuning" = 1 ]; then
+                    printf '%s' "$initial_local_tuning" | base64 --decode > "$work_directory/local.defaults"
+                else
+                    printf '%s' "$local_defaults" | base64 --decode > "$work_directory/local.defaults"
+                fi
                 local_candidate="$runtime_directory/.local.conf.$$.candidate"
                 install -o root -g root -m 0644 -- "$work_directory/local.defaults" "$local_candidate"
                 mv -fT -- "$local_candidate" "$local_tuning"
@@ -199,6 +218,10 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test -f "$local_tuning"
                 test ! -L "$local_tuning"
                 test "$(stat -c '%U:%G:%a' -- "$local_tuning")" = root:root:644
+                if [ "$has_initial_local_tuning" = 1 ]; then
+                    printf '%s' "$initial_local_tuning" | base64 --decode > "$work_directory/local.expected"
+                    cmp -s -- "$work_directory/local.expected" "$local_tuning"
+                fi
             fi
             local_before=$(sha256sum -- "$local_tuning" | awk '{print $1}')
 

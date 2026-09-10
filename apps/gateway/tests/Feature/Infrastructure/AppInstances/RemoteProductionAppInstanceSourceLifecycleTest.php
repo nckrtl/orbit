@@ -155,7 +155,7 @@ it('permits an unresolved root and revalidates complete ownership immediately be
     $command = $ssh->commands[0];
     $userOwnership = strpos($command->input, 'sudo find -P "$home" -xdev ! -user "$user"');
     $groupOwnership = strpos($command->input, 'sudo find -P "$home" -xdev ! -group "$user"');
-    $firstAclMutation = strpos($command->input, 'sudo setfacl -P -R -m u:caddy:--- "$home"');
+    $firstAclMutation = strpos($command->input, 'sudo setfacl -n -P -R -m u:caddy:--- "$home"');
 
     expect($command->arguments)
         ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public'])
@@ -166,6 +166,7 @@ it('permits an unresolved root and revalidates complete ownership immediately be
             'case "$selected" in "$releases"/*)',
             'if [ "$document_root_exists" = 1 ]; then',
             'ancestor_paths+=("$ancestor")',
+            'sudo setfacl -n -P -R -m u:caddy:--- "$home"',
             'sudo setfacl -m u:caddy:--x "$ancestor"',
         )
         ->and($userOwnership)

@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
@@ -206,9 +207,10 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(75)
+            ->toBe(76)
             ->and($requestClasses)
-            ->toHaveCount(72)
+            ->toHaveCount(73)
+            ->toContain(AppInstanceDeploymentLayoutRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
             ->toContain(RemoveAppInstanceRequest::class)
@@ -220,12 +222,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ClearClusterRouterRequest::class);
     });
 
-    it('documents the 72-operation SDK surface including AppInstance environment transport', function (): void {
+    it('documents the 73-operation SDK surface including AppInstance conversion and environment transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 72 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 73 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -234,7 +236,7 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain(
-                '- AppInstance: list, show, create, register, remove, environment import, environment update, and environment synchronization through the concise Instance routes.',
+                '- AppInstance: list, show, create, register, remove, deployment-layout preparation, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
@@ -249,6 +251,9 @@ describe('repository guidance bootstrap', function (): void {
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
             )
             ->toContain(
+                'Keep AppInstance deployment-layout transport limited to the numeric AppInstance ID and an optional explicit SQLite source path.',
+            )
+            ->toContain(
                 'Keep AppInstance environment transport limited to an ID-or-hostname selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
             );
 
@@ -259,7 +264,8 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 72 public Gateway operations.',
+                'The SDK exposes exactly 73 public Gateway operations.',
+                'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
                 'The SDK exposes typed import, update, and synchronization requests for AppInstance environment configuration.',
                 'Environment values remain outside normal SDK diagnostics and errors.',
             );

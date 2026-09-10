@@ -49,7 +49,7 @@ it('records retained production identity without changing content bytes or owner
             'name' => 'production',
             'environment' => 'production',
             'checkout_path' => $this->checkout,
-            'branch' => 'main',
+            'branch' => null,
             'starting_commit' => str_repeat('a', 40),
             'status' => AppInstanceState::SourceResolved,
         ])
@@ -96,6 +96,8 @@ it('records retained production identity without changing content bytes or owner
 
     expect($inventory->linkedWorktreePaths)
         ->toBe([])
+        ->and($inventory->branch)
+        ->toBeNull()
         ->and($receipt)
         ->toBe(hash('sha256', "production-retained\0{$inventory->digest}"))
         ->and($layout->cleared)

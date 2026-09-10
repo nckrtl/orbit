@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\AppInstanceDeploymentLayoutsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentSynchronizationsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
@@ -129,6 +130,10 @@ Route::prefix('v1')->group(function (): void {
         Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:remove');
+        Route::post(
+            'instances/{instance}/deployment-layout',
+            [AppInstanceDeploymentLayoutsController::class, 'store'],
+        )->name('instance:deployment-layout:prepare');
         Route::post(
             'instances/{instance}/environment/import',
             [AppInstanceEnvironmentImportsController::class, 'store'],
