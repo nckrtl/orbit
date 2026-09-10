@@ -40,10 +40,10 @@ it('reports bounded node drift and unreachable state', function (): void {
         ->toBeFalse();
 });
 
-it('reports lifecycle and identity drift', function (): void {
+it('reports bounded identity drift for an active managed node', function (): void {
     $node = new Node([
         'name' => 'edge',
-        'status' => LifecycleStatus::Provisioning,
+        'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'architecture' => 'amd64',
         'wireguard_ip' => '10.44.0.2',
@@ -55,38 +55,37 @@ it('reports lifecycle and identity drift', function (): void {
     expect($report->status->value)
         ->toBe('drift')
         ->and($report->issues)
-        ->toHaveCount(4)
+        ->toHaveCount(3)
         ->and(array_map(fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
         ->toBe([
-            'node.lifecycle_not_active',
             'node.platform_mismatch',
             'node.architecture_mismatch',
             'node.wireguard_ip_mismatch',
         ])
+        ->and($report->issues[0]->kind->value)
+        ->toBe('drift')
+        ->and($report->issues[0]->expected)
+        ->toBe('linux')
+        ->and($report->issues[0]->observed)
+        ->toBe('darwin')
         ->and($report->issues[1]->kind->value)
         ->toBe('drift')
         ->and($report->issues[1]->expected)
-        ->toBe('linux')
+        ->toBe('x86_64')
         ->and($report->issues[1]->observed)
-        ->toBe('darwin')
+        ->toBe('aarch64')
         ->and($report->issues[2]->kind->value)
         ->toBe('drift')
         ->and($report->issues[2]->expected)
-        ->toBe('x86_64')
-        ->and($report->issues[2]->observed)
-        ->toBe('aarch64')
-        ->and($report->issues[3]->kind->value)
-        ->toBe('drift')
-        ->and($report->issues[3]->expected)
         ->toBeTrue()
-        ->and($report->issues[3]->observed)
+        ->and($report->issues[2]->observed)
         ->toBeFalse();
 });
 
 it('reports bounded inspection failure before unreachable', function (): void {
     $node = new Node([
         'name' => 'edge',
-        'status' => LifecycleStatus::Provisioning,
+        'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'wireguard_ip' => '10.44.0.2',
         'ssh_host_fingerprint' => 'SHA256:managed',
@@ -99,17 +98,35 @@ it('reports bounded inspection failure before unreachable', function (): void {
         ->and($report->checked)
         ->toBe(1)
         ->and($report->issues[0]->code)
-        ->toBe('node.lifecycle_not_active')
-        ->and($report->issues[0]->kind->value)
-        ->toBe('drift')
-        ->and($report->issues[1]->code)
         ->toBe('node.inspection_failed')
-        ->and($report->issues[1]->kind->value)
+        ->and($report->issues[0]->kind->value)
         ->toBe('unverifiable')
-        ->and($report->issues[1]->expected)
+        ->and($report->issues[0]->expected)
         ->toBeNull()
-        ->and($report->issues[1]->observed)
+        ->and($report->issues[0]->observed)
         ->toBeNull();
+});
+
+it('reports only lifecycle drift for an inactive record', function (): void {
+    $node = new Node([
+        'name' => 'edge',
+        'status' => LifecycleStatus::Provisioning,
+        'platform' => 'linux',
+        'architecture' => 'amd64',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+
+    $report = new NodeDoctorProbe()->inspect(
+        new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null), inspectionFailed: true),
+    );
+
+    expect($report->status->value)
+        ->toBe('drift')
+        ->and($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('node.lifecycle_not_active');
 });
 
 it('reports a healthy node with bounded values', function (): void {
@@ -125,6 +142,27 @@ it('reports a healthy node with bounded values', function (): void {
         new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)),
     );
     expect($report->status->value)->toBe('healthy')->and($report->checked)->toBe(1)->and($report->issues)->toBeEmpty();
+});
+
+it('suppresses managed SSH expectations for an ineligible record', function (): void {
+    $sentinel = 'credential=doctor-secret';
+    $node = new Node([
+        'name' => 'edge',
+        'status' => LifecycleStatus::Active,
+        'platform' => $sentinel,
+        'architecture' => $sentinel,
+    ]);
+
+    $report = new NodeDoctorProbe()->inspect(
+        new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)),
+    );
+
+    expect($report->status->value)
+        ->toBe('healthy')
+        ->and($report->issues)
+        ->toBeEmpty()
+        ->and(json_encode($report, JSON_THROW_ON_ERROR))
+        ->not->toContain($sentinel);
 });
 
 it('redacts an unsupported stored architecture for an eligible node', function (): void {

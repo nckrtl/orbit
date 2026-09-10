@@ -78,7 +78,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         if (! $this->eligibility->allows($node)) {
             throw new ResourceOperationException(
                 'metrics.exporter_node_ineligible',
-                'Metrics exporters require a managed Linux node with WireGuard and pinned SSH identity.',
+                'Metrics exporters require an active managed Linux node with WireGuard and Gateway SSH management.',
                 409,
             );
         }

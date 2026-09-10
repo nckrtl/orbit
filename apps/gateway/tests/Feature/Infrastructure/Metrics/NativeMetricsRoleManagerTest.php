@@ -108,6 +108,7 @@ it('omits the publication key from mutations that do not touch it', function ():
 
 it('refuses ineligible exporter enablement before preference or fleet work', function (): void {
     $node = metricsRoleManagerNode('unmanaged', '10.44.0.5', RoleName::AppProd);
+    $node->roles()->delete();
     $node->update(['ssh_host_fingerprint' => null]);
     $fleet = Mockery::mock(MetricsFleetReconciler::class);
     $fleet->shouldNotReceive('reconcile');

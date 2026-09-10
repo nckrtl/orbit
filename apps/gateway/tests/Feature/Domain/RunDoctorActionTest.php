@@ -178,6 +178,7 @@ describe('RunDoctorAction', function (): void {
             'role' => RoleName::AppDev,
             'status' => LifecycleStatus::Active,
         ]);
+        $selected->update(['ssh_host_fingerprint' => null]);
         bind_run_doctor_inspector(new NodeInspectionData(false, null, null, null));
 
         $report = app(RunDoctorAction::class)->execute(

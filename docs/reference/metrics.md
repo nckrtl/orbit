@@ -28,7 +28,7 @@ The Gateway converges each container against the files it reads: Prometheus agai
 
 ## Exporter selection
 
-The Gateway selects exporters only on active Nodes that use the supported managed-node platform and have a managed WireGuard address and pinned SSH host identity. Within that eligible managed fleet, it evaluates the stored exporter preference and role assignments that are active or still provisioning:
+The Gateway selects exporters only on active Nodes that use the supported managed-node platform, have a managed WireGuard address, and have Gateway-owned Secure Shell (SSH) management. A non-empty stored SSH fingerprint proves that management for a roleless Node. An active or provisioning managed role also preserves it for a Node whose fingerprint is not stored. Within that eligible managed fleet, the Gateway evaluates the stored exporter preference and role assignments that are active or still provisioning:
 
 | Preference | Node state | Result |
 | --- | --- | --- |

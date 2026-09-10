@@ -17,8 +17,10 @@ use App\Models\Node;
 it('projects selected exporter and Gateway-only publication expectations in catalog order', function (): void {
     $metrics = metricsFirewallExpectationNode('metrics', '10.44.0.3');
     $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
+    $metrics->update(['ssh_host_fingerprint' => null]);
     $gateway = metricsFirewallExpectationNode('gateway', '10.44.0.1');
     $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $gateway->update(['ssh_host_fingerprint' => null]);
     $app = metricsFirewallExpectationNode('app', '10.44.0.4');
     $app->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $excluded = metricsFirewallExpectationNode('excluded', '10.44.0.5');
