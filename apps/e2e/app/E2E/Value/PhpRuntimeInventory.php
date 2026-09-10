@@ -8,8 +8,6 @@ use InvalidArgumentException;
 
 /**
  * Canonical PHP runtime inventory shared by live collection and retained evidence.
- *
- * @mago-expect lint:cyclomatic-complexity The codec validates every field in both inventory modes at one boundary.
  */
 final readonly class PhpRuntimeInventory
 {
@@ -33,7 +31,7 @@ final readonly class PhpRuntimeInventory
     public array $runtimes;
 
     /**
-     * @param list<array<string, mixed>> $runtimes
+     * @param  list<array<string, mixed>>  $runtimes
      */
     private function __construct(array $runtimes, bool $pcovRequired)
     {
@@ -80,7 +78,7 @@ final readonly class PhpRuntimeInventory
     }
 
     /**
-     * @param array<string, mixed> $payloads
+     * @param  array<string, mixed>  $payloads
      * @return list<array<string, mixed>>
      */
     private static function entries(array $payloads): array
@@ -106,7 +104,7 @@ final readonly class PhpRuntimeInventory
     }
 
     /**
-     * @param list<array<string, mixed>> $runtimes
+     * @param  array<array-key, mixed>  $runtimes
      * @return list<array{role:string,php_version:string,fpm_version:string,pcov_version:?string,package_versions:array<string,string>}>
      */
     private function validate(array $runtimes, bool $pcovRequired): array

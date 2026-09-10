@@ -22,8 +22,6 @@ use RuntimeException;
  * `proof.json` is the last proof result and `log` is a plain-text line per
  * harness command. Legacy single proof leases remain readable and are migrated
  * when discovery is acquired.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods One state boundary owns every file under `.e2e/`.
  */
 final readonly class IssueState
 {
@@ -67,11 +65,10 @@ final readonly class IssueState
             return $this->rawAttempt($purpose) !== null;
         }
 
-        return (
+        return
             $this->hasAttempt(AttemptPurpose::Discovery)
             || $this->hasAttempt(AttemptPurpose::Proof)
-            || $this->hasAttempt(AttemptPurpose::CandidateConvergence)
-        );
+            || $this->hasAttempt(AttemptPurpose::CandidateConvergence);
     }
 
     /**
@@ -280,11 +277,10 @@ final readonly class IssueState
         }
         $this->assertFingerprint($pointer['fingerprint']);
 
-        return (
+        return
             $this->store->read('equivalence/'.$pointer['fingerprint'].'.json') ?? throw new RuntimeException(
                 'The equivalence report is missing.',
-            )
-        );
+            );
     }
 
     /** @param array<array-key, mixed> $report */
@@ -300,12 +296,11 @@ final readonly class IssueState
     {
         $proof = $this->proof();
 
-        return (
+        return
             $proof !== null
             && ($proof['status'] ?? null) === 'proved'
             && $this->hasAttempt(AttemptPurpose::Proof)
-            && ($proof['attempt_id'] ?? null) === $this->attempt(AttemptPurpose::Proof)['attempt_id']
-        );
+            && ($proof['attempt_id'] ?? null) === $this->attempt(AttemptPurpose::Proof)['attempt_id'];
     }
 
     /** Captured evidence remains usable after the lease and virtual machines are released. */

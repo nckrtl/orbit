@@ -20,11 +20,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The narrow executor keeps one ownership and recovery boundary.
- * @mago-expect lint:kan-defect The narrow executor keeps remote mutation and exact recovery together.
- * @mago-expect lint:too-many-methods Private command helpers keep every remote operation fixed and typed.
- */
 final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntime
 {
     private const string ConfigurationPath = MetricsFootprint::ExporterDropIn;
@@ -253,14 +248,13 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     private function expectedConfiguration(Node $node): string
     {
-        return (
+        return
             self::OwnershipMarker
             ."\n[Service]\nExecStart=\nExecStart=/usr/bin/"
             .MetricsFootprint::ExporterService
             ." --web.listen-address={$this->address($node)}:"
             .MetricsFootprint::ExporterPort
-            ."\n"
-        );
+            ."\n";
     }
 
     private function configuration(Node $node): ?string

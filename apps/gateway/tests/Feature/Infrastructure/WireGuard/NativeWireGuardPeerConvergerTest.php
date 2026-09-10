@@ -23,7 +23,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
-/** @mago-expect lint:halstead This end-to-end interaction test keeps the command ordering in one observable flow. */
 it('validates a candidate config under /etc/wireguard before replacing the live server config', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
@@ -57,7 +56,8 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
             dnsServer: '10.0.0.2',
         );
 
-        $processes = new class implements ProcessRunner {
+        $processes = new class implements ProcessRunner
+        {
             /** @var list<ProcessInvocation> */
             public array $calls = [];
 
@@ -68,7 +68,8 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 return new CommandResult(0, '', '', 2, false);
             }
         };
-        $ssh = new class implements SshExecutor {
+        $ssh = new class implements SshExecutor
+        {
             /** @var list<RemoteCommand> */
             public array $commands = [];
 
@@ -251,7 +252,8 @@ it('does not replace or restart the live service when candidate validation fails
             dnsServer: '10.0.0.2',
         );
 
-        $processes = new class implements ProcessRunner {
+        $processes = new class implements ProcessRunner
+        {
             /** @var list<ProcessInvocation> */
             public array $calls = [];
 
@@ -273,7 +275,8 @@ it('does not replace or restart the live service when candidate validation fails
                 return new CommandResult(0, '', '', 2, false);
             }
         };
-        $ssh = new class implements SshExecutor {
+        $ssh = new class implements SshExecutor
+        {
             /** @var list<RemoteCommand> */
             public array $commands = [];
 
@@ -370,7 +373,8 @@ it('attempts candidate cleanup and preserves the original failure when atomic re
             dnsServer: '10.0.0.2',
         );
 
-        $processes = new class implements ProcessRunner {
+        $processes = new class implements ProcessRunner
+        {
             /** @var list<ProcessInvocation> */
             public array $calls = [];
 
@@ -407,7 +411,8 @@ it('attempts candidate cleanup and preserves the original failure when atomic re
                 return new CommandResult(0, '', '', 2, false);
             }
         };
-        $ssh = new class implements SshExecutor {
+        $ssh = new class implements SshExecutor
+        {
             /** @var list<RemoteCommand> */
             public array $commands = [];
 
@@ -485,7 +490,8 @@ it('attempts candidate cleanup and preserves the original failure when atomic re
 });
 
 it('restores and restarts the previous server config when peer publication cannot activate it', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $calls = [];
 
@@ -503,7 +509,8 @@ it('restores and restarts the previous server config when peer publication canno
             return new CommandResult(0, '', '', 2, false);
         }
     };
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         /** @var list<RemoteCommand> */
         public array $commands = [];
 
@@ -546,13 +553,15 @@ it('restores and restarts the previous server config when peer publication canno
 });
 
 it('restores and restarts the previous peer config when remote activation fails', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public function run(ProcessInvocation $invocation): CommandResult
         {
             return new CommandResult(0, '', '', 2, false);
         }
     };
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         /** @var list<RemoteCommand> */
         public array $commands = [];
 
@@ -658,7 +667,8 @@ it('rejects a missing or mismatched recoverable key before persisted, gateway, o
     CommandResult $keyResult,
     string $errorCode,
 ): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $calls = [];
 
@@ -669,7 +679,8 @@ it('rejects a missing or mismatched recoverable key before persisted, gateway, o
             return new CommandResult(0, '', '', 1, false);
         }
     };
-    $ssh = new class($keyResult) implements SshExecutor {
+    $ssh = new class($keyResult) implements SshExecutor
+    {
         /** @var list<RemoteCommand> */
         public array $commands = [];
 
@@ -1211,13 +1222,15 @@ it('restores supported persistent and runtime systemd states after recoverable f
 ]);
 
 it('retries a peer install with bounded exponential backoff after ssh transport failures', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public function run(ProcessInvocation $invocation): CommandResult
         {
             return new CommandResult(0, '', '', 2, false);
         }
     };
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $peerInstallAttempts = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -1266,13 +1279,15 @@ it('retries a peer install with bounded exponential backoff after ssh transport 
 });
 
 it('preserves the final transport failure after exhausting peer install retries', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public function run(ProcessInvocation $invocation): CommandResult
         {
             return new CommandResult(0, '', '', 2, false);
         }
     };
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $peerInstallAttempts = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -1325,13 +1340,15 @@ it('preserves the final transport failure after exhausting peer install retries'
 });
 
 it('does not retry a connected peer install with an exit-255 semantic failure', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public function run(ProcessInvocation $invocation): CommandResult
         {
             return new CommandResult(0, '', '', 2, false);
         }
     };
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public int $peerInstallAttempts = 0;
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -1403,7 +1420,8 @@ it('uses a wg-quick compatible candidate filename', function (): void {
             dnsServer: '10.0.0.2',
         );
 
-        $processes = new class implements ProcessRunner {
+        $processes = new class implements ProcessRunner
+        {
             /** @var list<ProcessInvocation> */
             public array $calls = [];
 
@@ -1414,7 +1432,8 @@ it('uses a wg-quick compatible candidate filename', function (): void {
                 return new CommandResult(0, '', '', 2, false);
             }
         };
-        $ssh = new class implements SshExecutor {
+        $ssh = new class implements SshExecutor
+        {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
                 return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
@@ -1463,7 +1482,7 @@ it('uses a wg-quick compatible candidate filename', function (): void {
 });
 
 /** @return array{NativeWireGuardPeerConverger, Node, SshConnection, string} */
-function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?\Closure $sleep = null): array
+function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Closure $sleep = null): array
 {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
@@ -1602,12 +1621,6 @@ it('restores every prior DNS domain after a successive underlay convergence fail
     'retained rollback' => 'retained',
 ]);
 
-/**
- * @mago-expect lint:halstead The harness keeps the complete remote transaction in one executable fixture.
- * @mago-expect lint:excessive-parameter-list The fixture exposes optional DNS inputs for executable route cases.
- * @mago-expect lint:no-boolean-flag-parameter The flag sets the prior managed-file fixture state.
- * @mago-expect lint:cyclomatic-complexity The fixture models each supported file and service state through executable shims.
- */
 function remote_wireguard_peer_install_harness(
     bool $filesPresent,
     string $activeState,
@@ -1809,14 +1822,16 @@ function remote_wireguard_peer_install_harness(
         'wireguard_public_key' => str_repeat(string: 'A', times: 43).'=',
         'tld' => $peerTld,
     ]);
-    $gatewayPeers = new class implements GatewayPeerProjectionManager {
+    $gatewayPeers = new class implements GatewayPeerProjectionManager
+    {
         public function converge(Node $node): void {}
 
         public function remove(Node $node): void {}
 
         public function restore(Node $node): void {}
     };
-    $ssh = new class($root) implements SshExecutor {
+    $ssh = new class($root) implements SshExecutor
+    {
         /** @var list<RemoteCommand> */
         public array $commands = [];
 
@@ -1879,32 +1894,22 @@ function remote_wireguard_peer_install_harness(
         knownHostsFile: '/tmp/known_hosts',
     );
 
-    $converge = static function (bool $lateFailure) use ($root, $converger, $peer, $connection): ?\Throwable {
+    $converge = static function (bool $lateFailure) use ($root, $converger, $peer, $connection): ?Throwable {
         if ($lateFailure) {
             file_put_contents(filename: $root.'/state/late-failure', data: '1');
         }
 
         try {
             $converger->converge($peer, $connection);
-        } catch (\Throwable $throwable) {
+        } catch (Throwable $throwable) {
             return $throwable;
         }
 
         return null;
     };
 
-    /** @mago-expect lint:too-many-methods The transaction fixture exposes each public failure trigger and observable host state. */
-    return new class(
-        $root,
-        $originalLiveContent,
-        $originalDnsContent,
-        $converger,
-        $peer,
-        $connection,
-        $converge,
-        $ssh,
-    ) {
-        /** @mago-expect lint:excessive-parameter-list The fixture retains every concrete dependency needed by its public lifecycle methods. */
+    return new class($root, $originalLiveContent, $originalDnsContent, $converger, $peer, $connection, $converge, $ssh)
+    {
         public function __construct(
             private readonly string $root,
             private readonly string $originalLiveContent,
@@ -1912,7 +1917,7 @@ function remote_wireguard_peer_install_harness(
             private readonly NativeWireGuardPeerConverger $converger,
             private readonly Node $peer,
             private readonly SshConnection $connection,
-            private readonly \Closure $converge,
+            private readonly Closure $converge,
             private readonly object $ssh,
         ) {}
 
@@ -1927,7 +1932,7 @@ function remote_wireguard_peer_install_harness(
             ];
         }
 
-        public function convergeRecoverably(?\Closure $completion = null): array
+        public function convergeRecoverably(?Closure $completion = null): array
         {
             try {
                 $this->converger->convergeRecoverably(
@@ -1936,7 +1941,7 @@ function remote_wireguard_peer_install_harness(
                     $completion ?? static function (): void {},
                 );
                 $exception = null;
-            } catch (\Throwable $throwable) {
+            } catch (Throwable $throwable) {
                 $exception = $throwable;
             }
 

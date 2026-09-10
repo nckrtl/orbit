@@ -2,20 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Domain\Doctor\DoctorInspectionException;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
 it('maps a bounded successful SSH observation', function (): void {
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public function execute(
             SshConnection $connection,
-            \App\Infrastructure\Ssh\RemoteCommand $command,
+            RemoteCommand $command,
         ): CommandResult {
             expect($connection->host)
                 ->toBe('10.44.0.7')
@@ -39,7 +43,8 @@ it('maps a bounded successful SSH observation', function (): void {
             return new CommandResult(0, "Linux\nx86_64\n1\n", 'secret stderr', 1, false);
         }
     };
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/key';
@@ -50,13 +55,14 @@ it('maps a bounded successful SSH observation', function (): void {
             return 'key';
         }
     };
-    $hosts = new class implements KnownHostsStore {
+    $hosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/known';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
     $node = new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7']);
 
@@ -73,15 +79,17 @@ it('maps a bounded successful SSH observation', function (): void {
 });
 
 it('rejects malformed successful output and bounds architecture aliases', function (): void {
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public function execute(
             SshConnection $connection,
-            \App\Infrastructure\Ssh\RemoteCommand $command,
+            RemoteCommand $command,
         ): CommandResult {
             return new CommandResult(0, "Linux\nunknown\n1\nsecret", 'secret', 1, false);
         }
     };
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/key';
@@ -92,33 +100,36 @@ it('rejects malformed successful output and bounds architecture aliases', functi
             return 'key';
         }
     };
-    $hosts = new class implements KnownHostsStore {
+    $hosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/known';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
     expect(fn (): mixed => new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.7',
     ])))
-        ->toThrow(\App\Domain\Doctor\DoctorInspectionException::class);
+        ->toThrow(DoctorInspectionException::class);
 });
 
 it('rejects truncated successful output', function (): void {
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public function execute(
             SshConnection $connection,
-            \App\Infrastructure\Ssh\RemoteCommand $command,
+            RemoteCommand $command,
         ): CommandResult {
             return new CommandResult(0, "Linux\nx86_64\n1\n", '', 1, true);
         }
     };
     expect(fn (): mixed => new SshNodeStateInspector(
         $ssh,
-        new class implements SshKeyProvider {
+        new class implements SshKeyProvider
+        {
             public function privateKeyPath(): string
             {
                 return '/key';
@@ -129,29 +140,32 @@ it('rejects truncated successful output', function (): void {
                 return 'key';
             }
         },
-        new class implements KnownHostsStore {
+        new class implements KnownHostsStore
+        {
             public function path(): string
             {
                 return '/known';
             }
 
-            public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+            public function put(string $host, int $port, HostKey $key): void {}
         },
         new CommandDeadline,
     )->inspect(new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7'])))
-        ->toThrow(\App\Domain\Doctor\DoctorInspectionException::class);
+        ->toThrow(DoctorInspectionException::class);
 });
 
 it('returns reachable with a missing interface and maps arm aliases', function (): void {
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public function execute(
             SshConnection $connection,
-            \App\Infrastructure\Ssh\RemoteCommand $command,
+            RemoteCommand $command,
         ): CommandResult {
             return new CommandResult(0, "Linux\narm64\n0\n", '', 1, false);
         }
     };
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/key';
@@ -162,13 +176,14 @@ it('returns reachable with a missing interface and maps arm aliases', function (
             return 'key';
         }
     };
-    $hosts = new class implements KnownHostsStore {
+    $hosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/known';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',
@@ -183,15 +198,17 @@ it('returns reachable with a missing interface and maps arm aliases', function (
 });
 
 it('maps transport exceptions and missing addresses to unreachable', function (): void {
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public function execute(
             SshConnection $connection,
-            \App\Infrastructure\Ssh\RemoteCommand $command,
+            RemoteCommand $command,
         ): CommandResult {
             throw new RuntimeException('secret');
         }
     };
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/key';
@@ -202,13 +219,14 @@ it('maps transport exceptions and missing addresses to unreachable', function ()
             return 'key';
         }
     };
-    $hosts = new class implements KnownHostsStore {
+    $hosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/known';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
     $inspector = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline);
     expect($inspector->inspect(new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7']))->reachable)
@@ -218,15 +236,17 @@ it('maps transport exceptions and missing addresses to unreachable', function ()
 });
 
 it('maps timeouts to an unreachable bounded observation', function (): void {
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public function execute(
             SshConnection $connection,
-            \App\Infrastructure\Ssh\RemoteCommand $command,
+            RemoteCommand $command,
         ): CommandResult {
             throw new RuntimeException('Command timed out.');
         }
     };
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/key';
@@ -237,13 +257,14 @@ it('maps timeouts to an unreachable bounded observation', function (): void {
             return 'key';
         }
     };
-    $hosts = new class implements KnownHostsStore {
+    $hosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/known';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',
@@ -260,15 +281,17 @@ it('maps timeouts to an unreachable bounded observation', function (): void {
 });
 
 it('maps command failures to an unreachable bounded observation', function (): void {
-    $ssh = new class implements SshExecutor {
+    $ssh = new class implements SshExecutor
+    {
         public function execute(
             SshConnection $connection,
-            \App\Infrastructure\Ssh\RemoteCommand $command,
+            RemoteCommand $command,
         ): CommandResult {
             return new CommandResult(255, 'secret', 'secret', 1, false);
         }
     };
-    $keys = new class implements SshKeyProvider {
+    $keys = new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/key';
@@ -279,13 +302,14 @@ it('maps command failures to an unreachable bounded observation', function (): v
             return 'key';
         }
     };
-    $hosts = new class implements KnownHostsStore {
+    $hosts = new class implements KnownHostsStore
+    {
         public function path(): string
         {
             return '/known';
         }
 
-        public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+        public function put(string $host, int $port, HostKey $key): void {}
     };
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',

@@ -11,6 +11,7 @@ use App\E2E\PreparedStateFingerprint;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\StaticProofInputPolicy;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologySnapshotPromoter;
@@ -29,9 +30,12 @@ use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
+use App\E2E\Value\TopologyExtension;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
@@ -86,17 +90,17 @@ function promotableFixture(
         $target->requireAttempt(),
         $purpose,
         $operation,
-        $extended ? \App\E2E\Value\TopologyExtension::AppProd : null,
+        $extended ? TopologyExtension::AppProd : null,
     );
     $construction = $extended
-        ? \App\E2E\Value\TopologyConstructionInputs::create(
+        ? TopologyConstructionInputs::create(
             $target,
             $promoted,
             2,
-            \App\E2E\Value\TopologyExtension::AppProd,
+            TopologyExtension::AppProd,
             str_repeat('f', 64),
         )
-        : \App\E2E\Value\TopologyConstructionInputs::create($target, $promoted, 2);
+        : TopologyConstructionInputs::create($target, $promoted, 2);
     $state->writeTopology(new FeatureTopology(
         $construction,
         $purpose,
@@ -133,7 +137,7 @@ function promotableFixture(
     $plan = ProofPlan::fromFile($planPath);
     if ($purpose === AttemptPurpose::Proof) {
         $manifest = new ProofInputManifest(
-            \App\E2E\StaticProofInputPolicy::VERSION,
+            StaticProofInputPolicy::VERSION,
             $candidate,
             $candidate,
             [],
@@ -256,7 +260,7 @@ function candidatePromotionFixture(): array
         $surface('gateway', 'fpm', '3'),
     ];
     $manifest = new ProofInputManifest(
-        \App\E2E\StaticProofInputPolicy::VERSION,
+        StaticProofInputPolicy::VERSION,
         $fixture['candidate'],
         $fixture['candidate'],
         [],
@@ -321,7 +325,7 @@ function candidatePromotionFixture(): array
         new OperationId(str_repeat('c', 32)),
     );
     $state->writeTopology(new FeatureTopology(
-        \App\E2E\Value\TopologyConstructionInputs::create(
+        TopologyConstructionInputs::create(
             $candidateTarget,
             $proofTopology->generation,
             2,
@@ -351,7 +355,7 @@ function candidatePromotionFixture(): array
         new OperationId(str_repeat('d', 32)),
     );
     $state->writeTopology(new FeatureTopology(
-        \App\E2E\Value\TopologyConstructionInputs::create(
+        TopologyConstructionInputs::create(
             $discoveryTarget,
             $proofTopology->generation,
             2,
@@ -369,8 +373,7 @@ function candidatePromotionFixture(): array
  * A stateful Incus fake: the topology snapshot, proof, and optional discovery
  * resources, mutated by every command that promotion and release issue.
  *
- * @param list<string> $events
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,halstead,kan-defect The fake maps one complete promotion process boundary.
+ * @param  list<string>  $events
  */
 function fakePromotionHost(
     TopologyTarget $target,
@@ -462,7 +465,7 @@ function fakePromotionHost(
         ]];
     }
     $realProcess = new ProcessFactory;
-    $vm = static function (string $name, array $instance) use ($target): array {
+    $vm = static function (string $name, array $instance): array {
         $role = str_ends_with($name, '-gateway')
             ? 'gateway'
             : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
@@ -641,7 +644,6 @@ function fakePromotionHost(
     });
 }
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect The promotion test asserts the complete ordered command chain. */
 describe('TopologySnapshotPromoter', function (): void {
     it('refuses an extended proved topology before any Incus command', function (): void {
         $fixture = promotableFixture(extended: true);
@@ -678,7 +680,7 @@ describe('TopologySnapshotPromoter', function (): void {
         $legacy['schema'] = 4;
         $legacy['prepared_schema'] = 1;
         unset($legacy['topology']['assignments']);
-        $fixture['manifests']->promote(\App\E2E\Value\TopologySnapshotGeneration::fromArray($legacy));
+        $fixture['manifests']->promote(TopologySnapshotGeneration::fromArray($legacy));
         $events = [];
         fakePromotionHost($fixture['target'], $events);
 
@@ -689,7 +691,6 @@ describe('TopologySnapshotPromoter', function (): void {
         expect($events)->toBe([]);
     });
 
-    /** @mago-expect lint:kan-defect The promotion test asserts the complete ordered command chain. */
     it('promotes the proved topology and releases both proof and discovery', function (): void {
         $fixture = promotableFixture();
         $target = $fixture['target'];
@@ -702,7 +703,7 @@ describe('TopologySnapshotPromoter', function (): void {
             new OperationId(str_repeat('d', 32)),
         );
         $state->writeTopology(new FeatureTopology(
-            \App\E2E\Value\TopologyConstructionInputs::create(
+            TopologyConstructionInputs::create(
                 $discoveryTarget,
                 $proofTopology->generation,
                 2,
@@ -819,7 +820,7 @@ describe('TopologySnapshotPromoter', function (): void {
                     new OperationId(str_repeat('d', 32)),
                 );
                 $state->writeTopology(new FeatureTopology(
-                    \App\E2E\Value\TopologyConstructionInputs::create(
+                    TopologyConstructionInputs::create(
                         $discoveryTarget,
                         $proofTopology->generation,
                         2,
@@ -874,7 +875,7 @@ describe('TopologySnapshotPromoter', function (): void {
                     new OperationId(str_repeat('f', 32)),
                 );
                 $state->writeTopology(new FeatureTopology(
-                    \App\E2E\Value\TopologyConstructionInputs::create(
+                    TopologyConstructionInputs::create(
                         $replacementTarget,
                         $proofTopology->generation,
                         2,
@@ -917,7 +918,7 @@ describe('TopologySnapshotPromoter', function (): void {
             new OperationId(str_repeat('d', 32)),
         );
         $state->writeTopology(new FeatureTopology(
-            \App\E2E\Value\TopologyConstructionInputs::create(
+            TopologyConstructionInputs::create(
                 $discoveryTarget,
                 $proofTopology->generation,
                 2,

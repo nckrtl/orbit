@@ -23,10 +23,6 @@ use App\Models\Node;
 use App\Models\Process;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The inspector keeps both bounded native state parsers explicit.
- * @mago-expect lint:kan-defect The score reflects closed ownership, absence, and native state branches.
- */
 final readonly class NativeProcessStateInspector implements ProcessStateInspector
 {
     private const string DOCKER_INSPECT_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}{{ printf "\\n" }}{{ .State.Status }}';
@@ -54,7 +50,6 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
         'dead',
     ];
 
-    /** @mago-expect lint:excessive-parameter-list The inspector receives only its read-only SSH boundary and renderers. */
     public function __construct(
         private ProcessTargetResolver $targets,
         private SshExecutor $ssh,
@@ -208,21 +203,19 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
 
     private function isExactSilentResult(CommandResult $result, int $exitCode): bool
     {
-        return (
+        return
             ! $result->truncated
             && $result->exitCode === $exitCode
             && $result->stdout === ''
-            && $result->stderr === ''
-        );
+            && $result->stderr === '';
     }
 
     private function isDockerMissing(CommandResult $result): bool
     {
-        return (
+        return
             ! $result->succeeded()
             && $result->stdout === ''
-            && (str_contains($result->stderr, 'No such object') || str_contains($result->stderr, 'No such container'))
-        );
+            && (str_contains($result->stderr, 'No such object') || str_contains($result->stderr, 'No such container'));
     }
 
     private function singleLine(string $output): string

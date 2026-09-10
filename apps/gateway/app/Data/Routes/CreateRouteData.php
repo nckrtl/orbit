@@ -6,7 +6,6 @@ namespace App\Data\Routes;
 
 use App\Domain\Routes\RoutePublication;
 
-/** @mago-expect lint:excessive-parameter-list The value carries the complete bounded Route creation contract. */
 final readonly class CreateRouteData
 {
     public function __construct(

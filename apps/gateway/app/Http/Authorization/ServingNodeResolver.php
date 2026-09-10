@@ -19,11 +19,6 @@ use App\Models\Workspace;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Each serving scope has one explicit resolution path.
- * @mago-expect lint:kan-defect The cohesive resolver keeps route vocabulary and 404/422 boundaries together.
- * @mago-expect lint:too-many-methods Each private method resolves one closed serving-node scope.
- */
 final readonly class ServingNodeResolver
 {
     /** @return list<Node> */
@@ -206,7 +201,6 @@ final readonly class ServingNodeResolver
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Request input is an untyped boundary.
      * @return list<Node>
      */
     private function processOwning(Request $request): array
@@ -314,7 +308,6 @@ final readonly class ServingNodeResolver
 
     /**
      * @return list<Node>
-     * @mago-expect analysis:mixed-assignment Route and request input are untyped transport boundaries.
      */
     private function roleMutation(Request $request): array
     {

@@ -10,7 +10,6 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 
-/** @mago-expect lint:cyclomatic-complexity The command validates one bounded repository reference before transport. */
 final class CreateAppCommand extends GatewayCommand
 {
     #[\Override]

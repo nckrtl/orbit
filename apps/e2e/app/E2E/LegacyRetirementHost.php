@@ -8,7 +8,6 @@ use App\E2E\Value\PreservedIncusReference;
 use Illuminate\Support\Facades\Process;
 
 /**
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The quarantined host boundary keeps
  * every destructive target and operation check explicit.
  */
 final readonly class LegacyRetirementHost
@@ -25,7 +24,7 @@ final readonly class LegacyRetirementHost
     }
 
     /**
-     * @param array<string, list<array<string, mixed>>>|null $requested
+     * @param  array<string, list<array<string, mixed>>>|null  $requested
      * @return array<string, list<array<string, mixed>>>
      */
     public function observeCurrent(?array $requested = null): array
@@ -96,8 +95,8 @@ final readonly class LegacyRetirementHost
     }
 
     /**
-     * @param array<string, list<array<string, mixed>>> $frozen
-     * @param array<string, list<array<string, mixed>>> $requested
+     * @param  array<string, list<array<string, mixed>>>  $frozen
+     * @param  array<array-key, list<mixed>>  $requested
      * @return array<string, list<array<string, mixed>>>
      */
     private function requestedObservation(array $frozen, array $requested): array
@@ -142,7 +141,6 @@ final readonly class LegacyRetirementHost
             throw new \RuntimeException('ORBIT_E2E_LEGACY_OBSERVATION must name a protected JSON manifest.');
         }
 
-        /** @var array<string, list<array<string, mixed>>> $value */
         $value = LegacyRetirement::readProtectedJson($path);
         foreach (['source_paths', 'manifests', 'locks', 'evidence'] as $kind) {
             foreach ($value[$kind] ?? [] as &$resource) {

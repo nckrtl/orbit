@@ -21,7 +21,8 @@ beforeEach(function (): void {
     ]);
     $this->markAsGateway($operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
-    $this->branches = new class implements RepositoryDefaultBranchResolver {
+    $this->branches = new class implements RepositoryDefaultBranchResolver
+    {
         /** @var list<string> */
         public array $resolvedRepositories = [];
 
@@ -281,7 +282,8 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
 ]);
 
 it('returns 422 without persistence when the remote default branch is malformed UTF-8', function (): void {
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public function run(ProcessInvocation $invocation): CommandResult
         {
             return new CommandResult(0, "ref: refs/heads/bad-\xC3\x28\tHEAD\n", '', 1, false);

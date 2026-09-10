@@ -16,7 +16,6 @@ use App\Models\AppInstance;
 
 final readonly class SynchronizeAppInstanceEnvironmentAction
 {
-    /** @mago-expect lint:excessive-parameter-list Synchronization names each storage, preflight, rendering, and write boundary explicitly. */
     public function __construct(
         private AppInstanceEnvironmentOperationLock $operations,
         private AppInstanceEnvironmentContextResolver $contexts,

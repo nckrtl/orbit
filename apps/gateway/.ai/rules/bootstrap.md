@@ -8,6 +8,8 @@ paths:
   - 'boost.json'
   - 'composer.json'
   - 'composer.lock'
+  - 'pint.json'
+  - 'phpstan.neon'
   - '.ai/**'
   - '.agents/**'
   - '.codex/**'

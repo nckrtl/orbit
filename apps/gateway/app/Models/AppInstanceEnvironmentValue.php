@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class AppInstanceEnvironmentValue extends Model
 {
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'app_instance_id',
@@ -24,7 +24,7 @@ final class AppInstanceEnvironmentValue extends Model
         'env_value',
     ];
 
-    /** @var array<array-key, string> */
+    /** @var list<string> */
     #[\Override]
     protected $hidden = [
         'env_value',

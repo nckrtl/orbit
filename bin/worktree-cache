@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Seed missing, portable quality caches from compatible Git worktrees."""
+
+import argparse
+import os
+from pathlib import Path
+import shutil
+import stat
+import subprocess
+import tempfile
+
+
+PROJECTS = ("apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk")
+CACHES = (
+    ("Pint", "pint.json", "vendor/pint.cache"),
+    ("PHPStan", "phpstan.neon", "vendor/phpstan/cache/resultCache.php"),
+)
+
+
+def worktrees(root):
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "worktree", "list", "--porcelain", "-z"],
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+    return [
+        Path(os.fsdecode(field[len(b"worktree "):])).resolve()
+        for field in result.stdout.split(b"\0")
+        if field.startswith(b"worktree ")
+    ]
+
+
+def fingerprint(project, config):
+    try:
+        return ((project / "composer.lock").read_bytes(), (project / config).read_bytes())
+    except OSError:
+        return None
+
+
+def copy_missing(source, destination):
+    """Publish a complete, independent copy without replacing an existing cache."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=".cache-seed-", dir=destination.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as output, source.open("rb") as input_file:
+            shutil.copyfileobj(input_file, output)
+        try:
+            os.link(temporary, destination)
+        except FileExistsError:
+            return False
+        return True
+    finally:
+        os.unlink(temporary)
+
+
+def seed(root):
+    sources = [source for source in worktrees(root) if source != root]
+    for relative_project in PROJECTS:
+        project = root / relative_project
+        for tool, config, relative_cache in CACHES:
+            destination = project / relative_cache
+            if os.path.lexists(destination):
+                continue
+            expected = fingerprint(project, config)
+            if expected is None:
+                continue
+            candidates = []
+            for source in sources:
+                source_project = source / relative_project
+                if fingerprint(source_project, config) != expected:
+                    continue
+                cache = source_project / relative_cache
+                try:
+                    info = cache.lstat()
+                except OSError:
+                    continue
+                if stat.S_ISREG(info.st_mode) and info.st_size > 0:
+                    candidates.append((info.st_mtime_ns, cache))
+            for _, source in sorted(candidates, key=lambda item: item[0], reverse=True):
+                try:
+                    copied = copy_missing(source, destination)
+                except OSError:
+                    # A cache can disappear while another worktree is removed or checked.
+                    continue
+                if copied:
+                    print(f"[{relative_project}] seeded {tool} cache from {source}")
+                break
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--worktree", type=Path, default=Path(__file__).resolve().parent.parent)
+    args = parser.parse_args()
+    seed(args.worktree.resolve())
+
+
+if __name__ == "__main__":
+    main()

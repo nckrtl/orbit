@@ -49,7 +49,8 @@ it('removes and restores only the selected peer in the serialized gateway projec
             dnsServer: '10.44.0.1',
         );
 
-        $processes = new class($orbitHome) implements ProcessRunner {
+        $processes = new class($orbitHome) implements ProcessRunner
+        {
             /** @var list<ProcessInvocation> */
             public array $calls = [];
 
@@ -350,10 +351,6 @@ it('deletes the insecure temp and never writes stripped secret bytes when chmod 
     }
 });
 
-/**
- * @mago-expect lint:cyclomatic-complexity The harness models independent service and command failure states.
- * @mago-expect lint:no-boolean-flag-parameter The flags set the initial systemd fixture state.
- */
 function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $failure = null): object
 {
     $root = sys_get_temp_dir().'/orbit-wireguard-shell-'.Str::uuid();
@@ -469,7 +466,8 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
     ]);
     $node->roles()->create(['role' => RoleName::Vpn]);
 
-    $processes = new class($root) implements ProcessRunner {
+    $processes = new class($root) implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $calls = [];
 
@@ -477,7 +475,6 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
             private readonly string $root,
         ) {}
 
-        /** @mago-expect lint:halstead The fake preserves the complete host transaction boundary. */
         public function run(ProcessInvocation $invocation): CommandResult
         {
             $this->calls[] = $invocation;
@@ -602,13 +599,14 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
 
     $converge = static fn () => $manager->converge($node);
 
-    return new class($root, $secret, $originalLiveConfig, $converge, $processes) {
+    return new class($root, $secret, $originalLiveConfig, $converge, $processes)
+    {
         public function __construct(
             private readonly string $root,
-            #[\SensitiveParameter]
+            #[SensitiveParameter]
             private readonly string $secret,
             private readonly string $originalLiveConfig,
-            private readonly \Closure $converge,
+            private readonly Closure $converge,
             private readonly object $processes,
         ) {}
 
@@ -618,7 +616,7 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
 
             try {
                 ($this->converge)();
-            } catch (\Throwable $throwable) {
+            } catch (Throwable $throwable) {
                 $exception = $throwable;
             }
 

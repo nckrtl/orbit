@@ -9,7 +9,6 @@ use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity Static gateway identity validation centralizes independent boundary checks before host effects. */
 final readonly class GatewayBootstrapIdentityValidator
 {
     public function validate(BootstrapGatewayData $data): void
@@ -52,10 +51,9 @@ final readonly class GatewayBootstrapIdentityValidator
 
     private function isHost(string $host): bool
     {
-        return (
+        return
             filter_var($host, FILTER_VALIDATE_IP) !== false
-            || filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false
-        );
+            || filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false;
     }
 
     private function validateSubnet(string $subnet, string $address): void

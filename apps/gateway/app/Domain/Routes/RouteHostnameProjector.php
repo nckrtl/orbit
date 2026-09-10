@@ -7,7 +7,6 @@ namespace App\Domain\Routes;
 use App\Models\AppInstance;
 use App\Models\Route;
 
-/** @mago-expect lint:too-many-methods Each method names one ordered hostname convergence boundary. */
 interface RouteHostnameProjector
 {
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void;

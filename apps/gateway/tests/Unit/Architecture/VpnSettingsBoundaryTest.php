@@ -14,12 +14,12 @@ it('keeps known VPN setting keys inside the typed VPN settings boundary', functi
         'vpn.private_interface',
     ];
     $violations = [];
-    $files = new \RecursiveIteratorIterator(
-        new \RecursiveDirectoryIterator($appDirectory, \FilesystemIterator::SKIP_DOTS),
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($appDirectory, FilesystemIterator::SKIP_DOTS),
     );
 
     foreach ($files as $file) {
-        if (! $file instanceof \SplFileInfo || $file->getExtension() !== 'php' || $file->getPathname() === $owner) {
+        if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php' || $file->getPathname() === $owner) {
             continue;
         }
 

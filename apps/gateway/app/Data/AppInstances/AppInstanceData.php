@@ -12,7 +12,6 @@ use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** @mago-expect lint:excessive-parameter-list The response includes its sole serving Route. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class AppInstanceData extends Data
 {

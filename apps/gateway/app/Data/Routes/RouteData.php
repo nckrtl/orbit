@@ -10,7 +10,6 @@ use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** @mago-expect lint:excessive-parameter-list The value mirrors the complete bounded Route response. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class RouteData extends Data
 {

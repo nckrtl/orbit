@@ -382,8 +382,8 @@ final class MetricsExporterDegradingRuntimeFake implements MetricsExporterRuntim
     public array $events = [];
 
     /**
-     * @param array<string, ResourceOperationException> $snapshotFailures keyed by node name
-     * @param list<string> $removeFailures node names whose removal fails
+     * @param  array<string, ResourceOperationException>  $snapshotFailures  keyed by node name
+     * @param  list<string>  $removeFailures  node names whose removal fails
      */
     public function __construct(
         private readonly array $snapshotFailures = [],

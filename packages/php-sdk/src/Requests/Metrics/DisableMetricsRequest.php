@@ -29,6 +29,7 @@ final class DisableMetricsRequest extends GatewayRequest implements HasBody
         return '/api/v1/metrics';
     }
 
+    /** @return array{force: bool, purge_data: bool} */
     protected function defaultBody(): array
     {
         return ['force' => $this->force, 'purge_data' => $this->purgeData];

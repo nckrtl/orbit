@@ -18,6 +18,7 @@ final class RemoveAppInstanceRequest extends FormRequest
         return ['force' => ['sometimes', $this->strictBoolean(...)]];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         $content = $this->getContent();

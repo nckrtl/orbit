@@ -9,6 +9,7 @@ use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -33,7 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
  * @property-read Node|null $generationBasisNode
- * @property-read \Illuminate\Database\Eloquent\Collection<int, RouteTarget> $targets
+ * @property-read Collection<int, RouteTarget> $targets
  */
 final class Route extends Model
 {
@@ -43,7 +44,7 @@ final class Route extends Model
         'status' => 'pending',
     ];
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'app_id',

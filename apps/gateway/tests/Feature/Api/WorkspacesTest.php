@@ -12,23 +12,27 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\CheckoutPathOrigin;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
+use Illuminate\Support\Str;
 
-/** @mago-expect lint:halstead The shared fixture keeps all workspace API state transitions consistent. */
 describe('workspace API', function (): void {
     beforeEach(function (): void {
-        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
+        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+        {
             public function resolve(Node $node): ManagedUserAccount
             {
                 return new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
             }
         });
-        $this->runtime = new class implements AppDevRuntimeConverger {
+        $this->runtime = new class implements AppDevRuntimeConverger
+        {
             /** @var list<string> */
             public array $calls = [];
 
@@ -105,7 +109,8 @@ describe('workspace API', function (): void {
 
     it('returns a safe error when managed user resolution fails', function (): void {
         $sentinel = 'managed-user resolver secret';
-        app()->instance(ManagedUserAccountResolver::class, new class($sentinel) implements ManagedUserAccountResolver {
+        app()->instance(ManagedUserAccountResolver::class, new class($sentinel) implements ManagedUserAccountResolver
+        {
             public function __construct(
                 private readonly string $sentinel,
             ) {}
@@ -133,7 +138,7 @@ describe('workspace API', function (): void {
     });
 
     it('creates a workspace with default branch, path, hostname, and inherited php', function (): void {
-        $requestId = (string) \Illuminate\Support\Str::uuid();
+        $requestId = (string) Str::uuid();
         $response = $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson('/api/v1/workspaces', [
             'instance_id' => $this->instance->id,
             'name' => 'feature-one',
@@ -150,7 +155,7 @@ describe('workspace API', function (): void {
 
         expect($this->runtime->calls)->toBe(['workspace:1:']);
 
-        $activity = \App\Models\Activity::query()->where('request_id', $requestId)->sole();
+        $activity = Activity::query()->where('request_id', $requestId)->sole();
 
         expect($activity->subject_type)
             ->toBe(Workspace::class)
@@ -159,8 +164,8 @@ describe('workspace API', function (): void {
             ->and($activity->target_node_id)
             ->toBe($this->node->id);
 
-        expect(\App\Models\Workspace::query()->sole()->checkout_path_origin)
-            ->toBe(\App\Domain\Nodes\Storage\CheckoutPathOrigin::Derived->value);
+        expect(Workspace::query()->sole()->checkout_path_origin)
+            ->toBe(CheckoutPathOrigin::Derived->value);
     });
 
     it('records explicit origin for an overridden workspace checkout', function (): void {
@@ -173,8 +178,8 @@ describe('workspace API', function (): void {
             ->assertCreated()
             ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/custom-worktrees/acme-feature-one');
 
-        expect(\App\Models\Workspace::query()->sole()->checkout_path_origin)
-            ->toBe(\App\Domain\Nodes\Storage\CheckoutPathOrigin::Explicit->value);
+        expect(Workspace::query()->sole()->checkout_path_origin)
+            ->toBe(CheckoutPathOrigin::Explicit->value);
     });
 
     it('rejects workspaces on an active app-prod node with a stable error', function (): void {
@@ -260,7 +265,8 @@ describe('workspace API', function (): void {
 
     it('deletes a workspace before releasing its per-node source lock', function (): void {
         $workspace = create_workspace_for_api_test($this->instance);
-        $lock = new class($workspace) implements AppDevSourceOperationLock {
+        $lock = new class($workspace) implements AppDevSourceOperationLock
+        {
             public int $calls = 0;
 
             public bool $workspaceWasDeletedBeforeRelease = false;

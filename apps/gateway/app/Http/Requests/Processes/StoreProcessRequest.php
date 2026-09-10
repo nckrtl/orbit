@@ -12,10 +12,6 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity One request validates both explicit supported runtime shapes.
- * @mago-expect lint:kan-defect Runtime-specific validation stays at the HTTP boundary.
- */
 final class StoreProcessRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
@@ -107,7 +103,7 @@ final class StoreProcessRequest extends FormRequest
             targetId: (int) $validated['target_id'],
             name: (string) $validated['name'],
             runtime: ProcessRuntime::from((string) $validated['runtime']),
-            command: array_values($command),
+            command: $command,
             image: is_string($validated['image'] ?? null) ? $validated['image'] : null,
             workingDirectory: is_string($validated['working_directory'] ?? null)
                 ? $validated['working_directory']
@@ -122,7 +118,6 @@ final class StoreProcessRequest extends FormRequest
         );
     }
 
-    /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
     private function validateSystemdExecutable(#[SensitiveParameter] Validator $validator): void
     {
         if ($this->input('runtime') !== ProcessRuntime::Systemd->value) {
@@ -138,7 +133,6 @@ final class StoreProcessRequest extends FormRequest
         $validator->errors()->add('command.0', 'The systemd executable must be an absolute path.');
     }
 
-    /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
     private function validateEnvironmentNames(#[SensitiveParameter] Validator $validator): void
     {
         $environment = $this->input('environment');
@@ -169,7 +163,6 @@ final class StoreProcessRequest extends FormRequest
         }
     }
 
-    /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
     private function validatePorts(#[SensitiveParameter] Validator $validator): void
     {
         $ports = $this->input('ports');
@@ -203,8 +196,6 @@ final class StoreProcessRequest extends FormRequest
 
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
-     *
-     * @mago-expect analysis:mixed-assignment Validated request arrays start at an untyped boundary.
      */
     private function volumes(mixed $value): array
     {

@@ -13,6 +13,7 @@ use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -20,11 +21,6 @@ use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The action keeps the bounded forward and rollback state machine visible.
- * @mago-expect lint:kan-defect Each branch protects durable evidence or an authoritative traffic boundary.
- * @mago-expect lint:too-many-methods Narrow methods name every durable transition and side-effect boundary.
- */
 final readonly class ConvergeRouteAction
 {
     public function __construct(
@@ -171,7 +167,7 @@ final readonly class ConvergeRouteAction
     private function eligibleTarget(Route $route): AppInstance
     {
         if ($route->targets->count() !== 1) {
-            app(\App\Domain\Routes\RouteReconciliationGuard::class)->refuse();
+            app(RouteReconciliationGuard::class)->refuse();
         }
 
         $target = $route->targets->firstOrFail()->appInstance;
@@ -184,7 +180,7 @@ final readonly class ConvergeRouteAction
             || $target->environment !== 'development'
             || $target->source_is_laravel === null
         ) {
-            app(\App\Domain\Routes\RouteReconciliationGuard::class)->refuse();
+            app(RouteReconciliationGuard::class)->refuse();
         }
 
         return $target;

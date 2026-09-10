@@ -47,6 +47,7 @@ final readonly class GatewayOperatingSystemGuard
             if (array_key_exists($name, $seen)) {
                 $invalid = true;
                 unset($values[$name]);
+
                 continue;
             }
 
@@ -59,6 +60,7 @@ final readonly class GatewayOperatingSystemGuard
                 $matches,
             )) {
                 $invalid = true;
+
                 continue;
             }
 

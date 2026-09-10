@@ -10,23 +10,28 @@ use Orbit\Sdk\Support\GatewayErrorCode;
 use Orbit\Sdk\Support\GatewayRequestId;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway Tool fields are validated at one DTO boundary.
- * @mago-expect lint:too-many-methods DTO validation remains at the transport boundary.
- * @mago-expect lint:too-many-properties DTO mirrors the Gateway response contract.
- */
 final readonly class ToolResponse
 {
     public int $id;
+
     public int $nodeId;
+
     public string $manager;
+
     public string $package;
+
     public ?string $versionConstraint;
+
     public string $status;
+
     public ?string $installedVersion;
+
     public ?string $failedOperation;
+
     public ?string $errorCode;
+
     public ?string $outcome;
+
     public string $requestId;
 
     private const int MANAGER_MAX_LENGTH = 32;
@@ -37,7 +42,6 @@ final readonly class ToolResponse
 
     private const string TOKEN_PATTERN = '/\A[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*\z/D';
 
-    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         int $id,
         int $nodeId,
@@ -219,7 +223,6 @@ final readonly class ToolResponse
     /** @param array<string, mixed> $data */
     private static function stringOrNull(#[SensitiveParameter] array $data, string $key): ?string
     {
-        /** @mago-expect analysis:mixed-assignment Gateway Tool fields are decoded from mixed transport data. */
         $value = $data[$key] ?? null;
 
         return is_string($value) ? $value : null;

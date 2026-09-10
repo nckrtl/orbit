@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Shared\LifecycleStatus;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $failed_step
  * @property string|null $error_code
  * @property-read Node $node
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Tool> $tools
+ * @property-read Collection<int, Tool> $tools
  */
 final class ToolManagerRecord extends Model
 {
@@ -26,7 +27,7 @@ final class ToolManagerRecord extends Model
     #[\Override]
     protected $table = 'tool_managers';
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'node_id',

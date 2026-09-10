@@ -7,7 +7,6 @@ namespace App\E2E;
 use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
-use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
@@ -22,8 +21,6 @@ use Throwable;
 
 /**
  * Compare one exact current head with the immutable inputs of its retained proof.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect,excessive-parameter-list The evaluator keeps the complete fail-closed decision at one trust boundary.
  */
 final readonly class ProofEquivalenceEvaluator
 {
@@ -218,7 +215,11 @@ final readonly class ProofEquivalenceEvaluator
     }
 
     /**
-     * @param array{path:string,previous_path:?string,change:string} $change
+     * @param  array<string, array{mode: string, type: string, object: string}>  $provedEntries
+     * @param  array<string, array{mode: string, type: string, object: string}>  $acceptedEntries
+     * @param  array<string, array{mode: string, type: string, object: string}>  $provedMainEntries
+     * @param  array<string, array{mode: string, type: string, object: string}>  $acceptedMainEntries
+     * @param  array{path:string,previous_path:?string,change:string}  $change
      */
     private function changeClassification(
         array $change,
@@ -297,8 +298,8 @@ final readonly class ProofEquivalenceEvaluator
     }
 
     /**
-     * @param list<array{path:string,previous_path:?string,change:string,classification:string}> $changedPaths
-     * @param list<string> $errors
+     * @param  list<array{path:string,previous_path:?string,change:string,classification:string}>  $changedPaths
+     * @param  list<string>  $errors
      */
     private function result(
         GitRepository $repository,

@@ -12,7 +12,6 @@ use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** @mago-expect lint:excessive-parameter-list */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class NodeData extends Data
 {
@@ -103,7 +102,6 @@ final class NodeData extends Data
         /** @var Collection<int, RoleName> $roles */
         $roles = $node->roles->pluck('role');
 
-        /** @mago-expect lint:inline-variable-return Static analysis needs the explicit typed local to preserve list<string>. */
         /** @var list<string> $sortedRoles */
         $sortedRoles = $roles
             ->sortBy(

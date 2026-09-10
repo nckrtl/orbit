@@ -22,11 +22,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\NodeRole;
 use Illuminate\Database\Eloquent\Collection;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The probe keeps every stable role issue branch explicit.
- * @mago-expect lint:kan-defect The score reflects the closed lifecycle, conflict, and projection matrix.
- * @mago-expect lint:too-many-methods Each helper reports one stable role issue category.
- */
 final readonly class RoleDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
@@ -118,8 +113,8 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
     }
 
     /**
-     * @param array<int, list<DoctorIssueData>> $issues
-     * @param Collection<int, NodeRole> $roles
+     * @param  array<int, list<DoctorIssueData>>  $issues
+     * @param  Collection<int, NodeRole>  $roles
      */
     private function addAssignmentConflicts(array &$issues, Collection $roles): void
     {
@@ -150,8 +145,8 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
     }
 
     /**
-     * @param array<int, list<DoctorIssueData>> $issues
-     * @param Collection<int, NodeRole> $roles
+     * @param  array<int, list<DoctorIssueData>>  $issues
+     * @param  Collection<int, NodeRole>  $roles
      */
     private function addIngressClusterIssues(array &$issues, Collection $roles): void
     {
@@ -212,8 +207,8 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
     }
 
     /**
-     * @param array<int, list<DoctorIssueData>> $issues
-     * @param Collection<int, NodeRole> $roles
+     * @param  array<int, list<DoctorIssueData>>  $issues
+     * @param  Collection<int, NodeRole>  $roles
      */
     private function addSingletonConflicts(array &$issues, Collection $roles): void
     {
@@ -319,7 +314,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
     }
 
     /**
-     * @param array<int, list<DoctorIssueData>> $issues
+     * @param  array<int, list<DoctorIssueData>>  $issues
      * @return list<DoctorIssueData>
      */
     private function ordered(array $issues): array
@@ -329,7 +324,6 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         return array_merge(...array_values($issues));
     }
 
-    /** @mago-expect lint:excessive-parameter-list A bounded issue needs its stable identity and comparison. */
     private function issue(
         NodeRole $role,
         RoleDoctorIssueCode $code,

@@ -145,7 +145,6 @@ it('describes the environment lifecycle in command help', function (): void {
         ->toBe('Synchronize stored AppInstance configuration to the workload environment file.');
 });
 
-/** @mago-expect lint:halstead The explicit matrix protects the approved minimal command vocabulary. */
 it('keeps the exact approved arguments options and defaults', function (): void {
     $expected = [
         'activity:list' => [[], ['limit' => '25', 'request-id' => null, 'json' => false]],
@@ -393,7 +392,6 @@ it('does not execute local or remote shell processes from command classes', func
     }
 });
 
-/** @mago-expect lint:halstead The exhaustive matrix locks every public command to one JSON failure contract. */
 it('renders one exact json failure envelope for every Orbit product command', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-cli-command-surface-'.Str::uuid();
     config()->set('orbit.home', $orbitHome);

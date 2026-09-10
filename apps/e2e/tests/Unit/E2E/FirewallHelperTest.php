@@ -5,8 +5,8 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process as NativeProcess;
 
 /**
- * @param list<list<string>> $prefix
- * @param list<list<string>> $suffix
+ * @param  list<list<string>>  $prefix
+ * @param  list<list<string>>  $suffix
  * @return array{current: bool, desired: list<list<string>>, owned: list<list<string>>, transaction: string}
  */
 function probeFirewallHelper(array $prefix = [], array $suffix = [], ?string $mutation = null): array

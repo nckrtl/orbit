@@ -7,10 +7,6 @@ namespace Orbit\Sdk\Responses\Firewall;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway scalar fields are validated independently.
- * @mago-expect lint:excessive-parameter-list
- */
 final readonly class FirewallRuleResponse
 {
     public function __construct(

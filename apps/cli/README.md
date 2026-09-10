@@ -93,6 +93,6 @@ and version decisions.
 
 ```bash
 composer test       # full Pest 5 suite in parallel, without TIA
-composer format     # Mago formatter
-composer check      # parallel no-TIA tests and all Mago checks
+composer format     # Laravel Pint formatter
+composer check      # parallel no-TIA tests and all Pint and Larastan checks
 ```

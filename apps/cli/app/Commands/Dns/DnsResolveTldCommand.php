@@ -7,7 +7,6 @@ namespace App\Commands\Dns;
 use App\Commands\GatewayCommand;
 use App\Services\Dns\ResolvesLocalDns;
 
-/** @mago-expect lint:cyclomatic-complexity Resolve and reset share one exclusive public command contract. */
 final class DnsResolveTldCommand extends GatewayCommand
 {
     #[\Override]

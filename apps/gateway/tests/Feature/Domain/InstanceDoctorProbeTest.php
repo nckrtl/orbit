@@ -20,7 +20,8 @@ it('returns a healthy empty instance report and excludes other nodes', function 
     instance_probe_instance(instance_probe_app(), $other);
     $calls = 0;
 
-    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -41,7 +42,8 @@ it('checks healthy AppInstances in id order', function (): void {
     $second = instance_probe_instance(instance_probe_app(), $node);
     $seen = [];
 
-    $report = new InstanceDoctorProbe(new class($seen) implements InstanceStateInspector {
+    $report = new InstanceDoctorProbe(new class($seen) implements InstanceStateInspector
+    {
         public function __construct(
             private array &$seen,
         ) {}
@@ -67,7 +69,8 @@ it('short-circuits instance inspection when the node is unreachable', function (
     instance_probe_instance(instance_probe_app(), $node);
     $calls = 0;
 
-    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -97,7 +100,8 @@ it('reports lifecycle and every false instance field in stable order', function 
         AppInstanceState::Reserved,
     );
 
-    $report = new InstanceDoctorProbe(new class implements InstanceStateInspector {
+    $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
+    {
         public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
             return new InstanceInspectionData(false, false, false, false);
@@ -127,7 +131,8 @@ it('continues after a typed instance inspection failure', function (): void {
     $failed = instance_probe_instance(instance_probe_app(), $node);
     $healthy = instance_probe_instance(instance_probe_app(), $node);
 
-    $report = new InstanceDoctorProbe(new class($failed) implements InstanceStateInspector {
+    $report = new InstanceDoctorProbe(new class($failed) implements InstanceStateInspector
+    {
         public function __construct(
             private AppInstance $failed,
         ) {}
@@ -162,7 +167,8 @@ it('inspects the supported worktree source layout', function (): void {
     $instance->update(['source_layout' => 'worktree']);
     $calls = 0;
 
-    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}

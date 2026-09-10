@@ -28,7 +28,7 @@ final class CreateClusterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $tld = $this->option('tld');
+        $tld = $this->input->getOption('tld');
 
         if ($tld !== null && ! is_string($tld)) {
             return $this->renderGatewayFailure('cluster.tld_invalid', 'TLD must be one DNS label.');

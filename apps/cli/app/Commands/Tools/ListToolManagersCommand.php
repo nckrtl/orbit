@@ -13,6 +13,7 @@ final class ListToolManagersCommand extends ToolCommand
 {
     #[\Override]
     protected $signature = 'tool:manager:list {--node= : Numeric target node ID} {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'List tool managers for a node.';
 

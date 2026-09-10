@@ -13,6 +13,7 @@ use App\E2E\HostRelativeDeleter;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueTopologyConstructor;
+use App\E2E\LaravelReleaseResolver;
 use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
@@ -46,8 +47,8 @@ use App\E2E\WorktreeSynchronizer;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
+use Symfony\Component\Process\Process;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Infrastructure bindings validate their complete configuration at startup. */
 final class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -249,7 +250,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(WorktreeSynchronizer::class),
             $app->make(TopologyConverger::class),
             $app->make(TopologyVerifier::class),
-            $app->make(\App\E2E\LaravelReleaseResolver::class),
+            $app->make(LaravelReleaseResolver::class),
             $app->make(OperationLock::class),
             new OperationLock($app->make(StatePaths::class)),
             $app->make(AtomicJsonStore::class),
@@ -267,7 +268,6 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
             $app->make(TopologySnapshotManifestStore::class),
-            $app->make(StatePaths::class),
             $app->make(OperationLock::class),
             $app->make(OperationId::class),
             $app->make(TopologySnapshotIdentity::class),
@@ -281,7 +281,7 @@ final class AppServiceProvider extends ServiceProvider
      */
     private static function primaryCheckout(string $repositoryRoot): string
     {
-        $process = new \Symfony\Component\Process\Process(['git', 'worktree', 'list', '--porcelain'], $repositoryRoot);
+        $process = new Process(['git', 'worktree', 'list', '--porcelain'], $repositoryRoot);
         $process->run();
         if (! $process->isSuccessful() || preg_match('/^worktree (.+)$/m', $process->getOutput(), $match) !== 1) {
             throw new \RuntimeException('The primary Git worktree cannot be determined.');
@@ -296,7 +296,6 @@ final class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        /** @mago-expect lint:no-ini-set Exception arguments must stay out of infrastructure failure traces. */
         ini_set('zend.exception_ignore_args', '1');
     }
 }

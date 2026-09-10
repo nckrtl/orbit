@@ -6,7 +6,6 @@ namespace App\Infrastructure\Activity;
 
 use Illuminate\Support\Str;
 
-/** @mago-expect lint:cyclomatic-complexity Sanitization keeps all secret-shape rules in one boundary. */
 final readonly class CommandActivityInputSanitizer
 {
     private const string REDACTED = '[REDACTED]';
@@ -38,8 +37,8 @@ final readonly class CommandActivityInputSanitizer
 
     private const string SECRET_KEY_CORE =
         '(?:APP[_-]?KEY|APPLICATION[_-]?KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
-            .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
-            .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
+        .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
+        .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
 
     private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
 
@@ -63,11 +62,8 @@ final readonly class CommandActivityInputSanitizer
     }
 
     /**
-     * @param array<array-key, mixed> $properties
-     *
+     * @param  array<array-key, mixed>  $properties
      * @return array<array-key, mixed>
-     *
-     * @mago-expect analysis:mixed-assignment Recursive activity properties have a mixed value boundary.
      */
     public function sanitizeProperties(array $properties): array
     {
@@ -134,13 +130,12 @@ final readonly class CommandActivityInputSanitizer
                 subject: $redacted,
             ) ?? $redacted;
 
-        return (
+        return
             preg_replace(
                 pattern: '/\b('.$keys.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
-            ) ?? $redacted
-        );
+            ) ?? $redacted;
     }
 
     private function isSensitiveKey(string $key): bool
@@ -154,17 +149,15 @@ final readonly class CommandActivityInputSanitizer
             return true;
         }
 
-        return (
+        return
             preg_match(
                 '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api_?key|api_?token|access_?token|refresh_?token|private_?key|pre_?shared_?key|bearer(?:_?token)?)$/',
                 $normalized,
-            ) === 1
-        );
+            ) === 1;
     }
 
     /**
-     * @param array<array-key, mixed> $environment
-     *
+     * @param  array<array-key, mixed>  $environment
      * @return array<string, string>
      */
     private function sanitizeEnvironment(array $environment): array

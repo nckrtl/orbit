@@ -12,12 +12,36 @@ use App\Console\Commands\Topology\ShellCommand;
 use App\Console\Commands\Topology\StatusCommand;
 use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
+use App\E2E\DiscoveryGuestPreparer;
+use App\E2E\HostCapacity;
+use App\E2E\IncusHost;
+use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
+use App\E2E\IssueTopologyConstructor;
+use App\E2E\PreparedStateFingerprint;
+use App\E2E\State\StatePaths;
+use App\E2E\TopologyAcquirer;
+use App\E2E\TopologyConverger;
+use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
+use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
+use App\E2E\Value\TopologyExtension;
+use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologyTarget;
+use App\E2E\Value\VerificationReport;
 use App\E2E\WorktreeLocator;
+use App\E2E\WorktreeSynchronizer;
+use Illuminate\Console\Command;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
@@ -61,7 +85,7 @@ describe('topology commands', function () {
     });
 
     it('takes the issue and finds the worktree; only acquire names the worktree as an argument', function () {
-        $arguments = static fn (\Illuminate\Console\Command $command): array => array_keys(
+        $arguments = static fn (Command $command): array => array_keys(
             $command->getDefinition()->getArguments(),
         );
 
@@ -365,33 +389,33 @@ describe('topology commands', function () {
             $proof,
             AttemptPurpose::Proof,
             new OperationId(str_repeat('b', 32)),
-            \App\E2E\Value\TopologyExtension::AppProd,
+            TopologyExtension::AppProd,
         );
         $state->writeProof(['status' => 'proved', 'attempt_id' => $proof->value]);
         $state->writeTopology(commandTopologyFixture(
             'TST-12',
             $proof,
-            recipe: \App\E2E\Value\TopologyRecipe::extendedAppProd(),
+            recipe: TopologyRecipe::extendedAppProd(),
         ));
         app()->instance(
-            \App\E2E\State\StatePaths::class,
-            new \App\E2E\State\StatePaths(temporaryPath('orbit-command-host-', 6)),
+            StatePaths::class,
+            new StatePaths(temporaryPath('orbit-command-host-', 6)),
         );
-        app()->instance(\App\E2E\TopologyAcquirer::class, new \App\E2E\TopologyAcquirer(
-            app(\App\E2E\IncusHost::class),
-            app(\App\E2E\IncusNetworkLifecycle::class),
-            app(\App\E2E\PreparedStateFingerprint::class),
-            app(\App\E2E\TopologySnapshotManifestStore::class),
-            app(\App\E2E\WorktreeSynchronizer::class),
-            app(\App\E2E\TopologyVerifier::class),
-            app(\App\E2E\DiscoveryGuestPreparer::class),
-            app(\App\E2E\HostCapacity::class),
-            app(\App\E2E\State\StatePaths::class),
-            app(\App\E2E\Value\OperationId::class),
-            app(\App\E2E\Value\TopologySnapshotIdentity::class),
+        app()->instance(TopologyAcquirer::class, new TopologyAcquirer(
+            app(IncusHost::class),
+            app(IncusNetworkLifecycle::class),
+            app(PreparedStateFingerprint::class),
+            app(TopologySnapshotManifestStore::class),
+            app(WorktreeSynchronizer::class),
+            app(TopologyVerifier::class),
+            app(DiscoveryGuestPreparer::class),
+            app(HostCapacity::class),
+            app(StatePaths::class),
+            app(OperationId::class),
+            app(TopologySnapshotIdentity::class),
             $primary,
-            converger: app(\App\E2E\TopologyConverger::class),
-            constructor: app(\App\E2E\IssueTopologyConstructor::class),
+            converger: app(TopologyConverger::class),
+            constructor: app(IssueTopologyConstructor::class),
         ));
         $commands = [];
         Process::fake(function (PendingProcess $process) use (&$commands) {
@@ -437,18 +461,18 @@ describe('topology commands', function () {
             'AUX-132',
             $attempt,
             AttemptPurpose::Discovery,
-            \App\E2E\Value\TopologyRecipe::extendedAppProd(),
+            TopologyRecipe::extendedAppProd(),
         );
         $state->writeAttempt(
             $attempt,
             AttemptPurpose::Discovery,
             new OperationId(str_repeat('b', 32)),
-            \App\E2E\Value\TopologyExtension::AppProd,
+            TopologyExtension::AppProd,
         );
         $state->writeTopology($topology);
         app()->instance(
-            \App\E2E\State\StatePaths::class,
-            new \App\E2E\State\StatePaths(temporaryPath('orbit-command-host-', 6)),
+            StatePaths::class,
+            new StatePaths(temporaryPath('orbit-command-host-', 6)),
         );
         $commands = [];
         Process::fake(function (PendingProcess $process) use (&$commands, $topology) {
@@ -465,8 +489,8 @@ describe('topology commands', function () {
             return Process::result("extra-node-ok\n");
         });
 
-        $shellInstance = app(\App\E2E\TopologyAcquirer::class)->instance(
-            new \App\E2E\Value\TopologyRequest('AUX-132', $worktree),
+        $shellInstance = app(TopologyAcquirer::class)->instance(
+            new TopologyRequest('AUX-132', $worktree),
             'app-prod-2',
         );
 
@@ -526,8 +550,8 @@ describe('topology commands', function () {
         $state->writeTopology($proofTopology);
         $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $proof->value]);
         app()->instance(
-            \App\E2E\State\StatePaths::class,
-            new \App\E2E\State\StatePaths(temporaryPath('orbit-command-host-', 6)),
+            StatePaths::class,
+            new StatePaths(temporaryPath('orbit-command-host-', 6)),
         );
         $commands = [];
         Process::fake(function (PendingProcess $process) use (&$commands, $discoveryTopology, $proofTopology) {
@@ -603,8 +627,8 @@ describe('topology commands', function () {
     it('reads the attempt from the worktree and names an absent one', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
         app()->instance(
-            \App\E2E\State\StatePaths::class,
-            new \App\E2E\State\StatePaths(temporaryPath('orbit-command-host-', 6)),
+            StatePaths::class,
+            new StatePaths(temporaryPath('orbit-command-host-', 6)),
         );
 
         $this
@@ -625,16 +649,16 @@ function commandTopologyFixture(
     string $issue,
     AttemptId $attempt,
     AttemptPurpose $purpose = AttemptPurpose::Proof,
-    ?\App\E2E\Value\TopologyRecipe $recipe = null,
-): \App\E2E\Value\FeatureTopology {
-    $target = \App\E2E\Value\TopologyTarget::feature($issue, $attempt, $recipe);
-    $generation = new \App\E2E\Value\TopologySnapshotGeneration(
+    ?TopologyRecipe $recipe = null,
+): FeatureTopology {
+    $target = TopologyTarget::feature($issue, $attempt, $recipe);
+    $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
         str_repeat('c', 64),
         str_repeat('d', 64),
-        new \App\E2E\Value\LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+        new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
         str_repeat('e', 64),
         2,
         'ubuntu-26.04-amd64-v1',
@@ -643,27 +667,27 @@ function commandTopologyFixture(
         ['gateway', 'app-dev', 'app-prod'],
         ['gateway', 'app-dev'],
     );
-    $construction = $recipe?->nodeKeys() === \App\E2E\Value\TopologyRecipe::extendedAppProd()->nodeKeys()
-        ? \App\E2E\Value\TopologyConstructionInputs::create(
+    $construction = $recipe?->nodeKeys() === TopologyRecipe::extendedAppProd()->nodeKeys()
+        ? TopologyConstructionInputs::create(
             $target,
             $generation,
             2,
-            \App\E2E\Value\TopologyExtension::AppProd,
+            TopologyExtension::AppProd,
             str_repeat('f', 64),
         )
-        : \App\E2E\Value\TopologyConstructionInputs::create($target, $generation, 2);
+        : TopologyConstructionInputs::create($target, $generation, 2);
 
-    return new \App\E2E\Value\FeatureTopology(
+    return new FeatureTopology(
         $construction,
         $purpose,
         $generation,
-        new \App\E2E\Value\SourceState(str_repeat('d', 40), str_repeat('d', 40)),
-        new \App\E2E\Value\VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
+        new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
+        new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
     );
 }
 
 /** @return array<string, mixed> */
-function commandInstanceFixture(\App\E2E\Value\FeatureTopology $topology, string $role): array
+function commandInstanceFixture(FeatureTopology $topology, string $role): array
 {
     return [
         'name' => $topology->target->instance($role),

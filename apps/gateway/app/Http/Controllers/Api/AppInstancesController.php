@@ -28,7 +28,6 @@ final class AppInstancesController extends Controller
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function index(Request $request, ListAppInstancesAction $action): JsonResponse
     {
-        /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
         $consumer = $request->user();
         assert($consumer instanceof Node, description: 'Authenticated peer must be a Node.');
 
@@ -59,7 +58,6 @@ final class AppInstancesController extends Controller
     #[RequiresNodeAccess(ServingNode::Caller)]
     public function register(RegisterAppInstanceRequest $request, RegisterAppInstanceAction $action): JsonResponse
     {
-        /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
         $caller = $request->user();
         assert($caller instanceof Node);
         $result = $action->execute($caller, $request->payload());

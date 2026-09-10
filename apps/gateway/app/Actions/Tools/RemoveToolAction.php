@@ -20,7 +20,6 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity The removal state machine keeps exact planning and verification gates explicit. */
 final readonly class RemoveToolAction
 {
     use MarksToolFailures;

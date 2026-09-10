@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Gateway\BootstrapGatewayAction;
+use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
+use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
@@ -27,7 +29,8 @@ use Illuminate\Support\Str;
 
 it('initializes the portable gateway authority idempotently', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
-    $web = new class implements GatewayWebConverger {
+    $web = new class implements GatewayWebConverger
+    {
         /** @var list<array{hostname: string, address: string}> */
         public array $calls = [];
 
@@ -36,7 +39,8 @@ it('initializes the portable gateway authority idempotently', function (): void 
             $this->calls[] = ['hostname' => $hostname, 'address' => $wireguardIp];
         }
     };
-    $selfAccess = new class implements GatewaySelfAccessConverger {
+    $selfAccess = new class implements GatewaySelfAccessConverger
+    {
         /** @var list<string> */
         public array $calls = [];
 
@@ -46,8 +50,8 @@ it('initializes the portable gateway authority idempotently', function (): void 
         }
     };
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
@@ -134,7 +138,8 @@ it('activates only bootstrap roles while preserving colocated role outcomes', fu
         'failed_step' => 'converge:metrics-runtime',
         'error_code' => 'metrics.runtime_failed',
     ]);
-    $baselines = new class implements RoleBaselineConverger {
+    $baselines = new class implements RoleBaselineConverger
+    {
         /** @var list<RoleName> */
         public array $convergedRoles = [];
 
@@ -206,7 +211,8 @@ it('fails closed without mutating a partial root CA containing only :filename', 
     chmod(filename: $partialPath, permissions: 0o640);
     mkdir(directory: $orbitHome.'/ca/.root-ca.candidate', permissions: 0o700);
     file_put_contents($orbitHome.'/ca/.root-ca.candidate/root.key', data: 'stale-candidate');
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $invocations = [];
 
@@ -218,14 +224,15 @@ it('fails closed without mutating a partial root CA containing only :filename', 
         }
     };
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
-        web: new class implements GatewayWebConverger {
+        web: new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run after CA generation fails.');
@@ -307,14 +314,15 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
     $originalKey = file_get_contents($ca.'/root.key');
     $originalCertificate = file_get_contents($ca.'/root.pem');
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
-        web: new class implements GatewayWebConverger {
+        web: new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run for an invalid CA pair.');
@@ -376,14 +384,15 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
         'keyUsage=critical,keyCertSign,cRLSign',
     ]));
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
-        web: new class implements GatewayWebConverger {
+        web: new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void {}
         },
         selfAccess: gateway_self_access_noop(),
@@ -410,7 +419,8 @@ it('rejects an invalid static identity before persistence or host side effects',
     string $wireguardEndpoint,
 ): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public int $calls = 0;
 
         public function run(ProcessInvocation $invocation): CommandResult
@@ -421,14 +431,15 @@ it('rejects an invalid static identity before persistence or host side effects',
         }
     };
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
-        web: new class implements GatewayWebConverger {
+        web: new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run.');
@@ -474,7 +485,7 @@ it('rejects an invalid static identity before persistence or host side effects',
 it('accepts the shared WireGuard endpoint forms at the bootstrap boundary', function (string $endpoint): void {
     $data = bootstrap_gateway_action_data();
 
-    expect(fn () => new App\Actions\Gateway\GatewayBootstrapIdentityValidator()->validate(new BootstrapGatewayData(
+    expect(fn () => new GatewayBootstrapIdentityValidator()->validate(new BootstrapGatewayData(
         publicHost: $data->publicHost,
         wireguardIp: $data->wireguardIp,
         wireguardSubnet: $data->wireguardSubnet,
@@ -504,7 +515,8 @@ it('records provisioning and failed host convergence state and activates an idem
         'failed_step' => 'converge:metrics-runtime',
         'error_code' => 'metrics.runtime_failed',
     ]);
-    $web = new class implements GatewayWebConverger {
+    $web = new class implements GatewayWebConverger
+    {
         public bool $shouldFail = true;
 
         /** @var list<array{node: LifecycleStatus, roles: array<string, array{status: LifecycleStatus, failed_step: ?string, error_code: ?string}>}> */
@@ -528,8 +540,8 @@ it('records provisioning and failed host convergence state and activates an idem
         }
     };
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
@@ -661,14 +673,15 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
         'error_code' => 'metrics.runtime_failed',
     ]);
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
-        web: new class implements GatewayWebConverger {
+        web: new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new RuntimeException('Unexpected gateway web failure.');
@@ -745,7 +758,8 @@ it('fails only bootstrap roles when VPN convergence fails', function (): void {
         'failed_step' => 'converge:metrics-runtime',
         'error_code' => 'metrics.runtime_failed',
     ]);
-    $vpn = new class implements GatewayVpnConverger {
+    $vpn = new class implements GatewayVpnConverger
+    {
         public int $calls = 0;
 
         public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -759,7 +773,8 @@ it('fails only bootstrap roles when VPN convergence fails', function (): void {
             );
         }
     };
-    $web = new class implements GatewayWebConverger {
+    $web = new class implements GatewayWebConverger
+    {
         public int $calls = 0;
 
         public function converge(string $hostname, string $wireguardIp): void
@@ -838,7 +853,8 @@ it('fails the assigned bootstrap role when the second role assignment fails', fu
         'failed_step' => 'converge:metrics-runtime',
         'error_code' => 'metrics.runtime_failed',
     ]);
-    $vpn = new class implements GatewayVpnConverger {
+    $vpn = new class implements GatewayVpnConverger
+    {
         public int $calls = 0;
 
         public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -846,7 +862,8 @@ it('fails the assigned bootstrap role when the second role assignment fails', fu
             $this->calls++;
         }
     };
-    $web = new class implements GatewayWebConverger {
+    $web = new class implements GatewayWebConverger
+    {
         public int $calls = 0;
 
         public function converge(string $hostname, string $wireguardIp): void
@@ -854,7 +871,8 @@ it('fails the assigned bootstrap role when the second role assignment fails', fu
             $this->calls++;
         }
     };
-    $selfAccess = new class implements GatewaySelfAccessConverger {
+    $selfAccess = new class implements GatewaySelfAccessConverger
+    {
         public int $calls = 0;
 
         public function converge(Node $node): void
@@ -928,7 +946,8 @@ it('rejects unsupported local gateway operating systems before any persistence o
         file_put_contents($osReleasePath, $fixtureContents);
     }
 
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         public int $calls = 0;
 
         public function run(ProcessInvocation $invocation): CommandResult
@@ -938,7 +957,8 @@ it('rejects unsupported local gateway operating systems before any persistence o
             return new CommandResult(0, '', '', 1, false);
         }
     };
-    $vpn = new class implements GatewayVpnConverger {
+    $vpn = new class implements GatewayVpnConverger
+    {
         public int $calls = 0;
 
         public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -946,7 +966,8 @@ it('rejects unsupported local gateway operating systems before any persistence o
             $this->calls++;
         }
     };
-    $web = new class implements GatewayWebConverger {
+    $web = new class implements GatewayWebConverger
+    {
         public int $calls = 0;
 
         public function converge(string $hostname, string $wireguardIp): void
@@ -955,8 +976,8 @@ it('rejects unsupported local gateway operating systems before any persistence o
         }
     };
     $action = new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
@@ -1009,14 +1030,15 @@ function bootstrap_gateway_action(
     ?GatewaySelfAccessConverger $selfAccess = null,
 ): BootstrapGatewayAction {
     return new BootstrapGatewayAction(
-        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
-        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
         vpn: $vpn ?? gateway_vpn_noop(),
-        web: $web ?? new class implements GatewayWebConverger {
+        web: $web ?? new class implements GatewayWebConverger
+        {
             public function converge(string $hostname, string $wireguardIp): void {}
         },
         selfAccess: $selfAccess ?? gateway_self_access_noop(),
@@ -1062,14 +1084,16 @@ function bootstrap_gateway_role_states(Node $node): array
 
 function gateway_vpn_noop(): GatewayVpnConverger
 {
-    return new class implements GatewayVpnConverger {
+    return new class implements GatewayVpnConverger
+    {
         public function converge(Node $gateway, BootstrapGatewayData $data): void {}
     };
 }
 
 function gateway_self_access_noop(): GatewaySelfAccessConverger
 {
-    return new class implements GatewaySelfAccessConverger {
+    return new class implements GatewaySelfAccessConverger
+    {
         public function converge(Node $node): void {}
     };
 }
@@ -1113,11 +1137,10 @@ function gateway_root_ca_pair_matches(string $orbitHome): bool
         '-pubout',
     ]));
 
-    return (
+    return
         $certificatePublicKey->succeeded()
         && $privatePublicKey->succeeded()
-        && trim($certificatePublicKey->stdout) === trim($privatePublicKey->stdout)
-    );
+        && trim($certificatePublicKey->stdout) === trim($privatePublicKey->stdout);
 }
 
 function gateway_root_ca_validity_days(string $orbitHome): int

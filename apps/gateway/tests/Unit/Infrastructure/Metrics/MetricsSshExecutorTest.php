@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationSnapshot;
+use App\Infrastructure\Metrics\MetricsContainerSpec;
 use App\Infrastructure\Metrics\MetricsRuntimeSpec;
 use App\Infrastructure\Metrics\MetricsService;
 use App\Infrastructure\Metrics\MetricsSshExecutor;
@@ -401,7 +403,7 @@ describe(MetricsSshExecutor::class, function (): void {
         try {
             $executor->convergeContainers(metricsSshNode(), [$spec]);
             test()->fail('Expected container convergence to fail after successful recovery.');
-        } catch (\App\Domain\Shared\ResourceOperationException $exception) {
+        } catch (ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('metrics.container_convergence_failed');
         }
 
@@ -538,7 +540,7 @@ describe(MetricsSshExecutor::class, function (): void {
         try {
             $executor->convergeContainers(metricsSshNode(), [$spec]);
             test()->fail('Expected container rollback to fail closed.');
-        } catch (\App\Domain\Shared\ResourceOperationException $exception) {
+        } catch (ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('metrics.container_rollback_failed');
         }
 
@@ -557,7 +559,7 @@ describe(MetricsSshExecutor::class, function (): void {
         try {
             metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), $specs);
             test()->fail('Expected container convergence to fail.');
-        } catch (\App\Domain\Shared\ResourceOperationException $exception) {
+        } catch (ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('metrics.container_convergence_failed');
         }
 
@@ -616,7 +618,7 @@ describe(MetricsSshExecutor::class, function (): void {
         try {
             metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), $specs);
             test()->fail('Expected committed cleanup to fail.');
-        } catch (\App\Domain\Shared\ResourceOperationException $exception) {
+        } catch (ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('metrics.container_cleanup_failed');
         }
 
@@ -669,7 +671,7 @@ describe(MetricsSshExecutor::class, function (): void {
     ]);
 });
 
-/** @return non-empty-list<\App\Infrastructure\Metrics\MetricsContainerSpec> */
+/** @return non-empty-list<MetricsContainerSpec> */
 function metricsReplacementSpecs(): array
 {
     $runtime = new MetricsRuntimeSpec;
@@ -750,10 +752,6 @@ final class MetricsCapturingSshExecutor implements SshExecutor
     }
 }
 
-/**
- * @mago-expect lint:cyclomatic-complexity The fake models the fixed Docker command protocol and its remote state transitions.
- * @mago-expect lint:kan-defect The explicit branches let each transition fail before or after its remote mutation.
- */
 final class MetricsStatefulSshExecutor implements SshExecutor
 {
     /** @var array<string, array{labels: array<string, string>, running: bool}> */
@@ -765,7 +763,7 @@ final class MetricsStatefulSshExecutor implements SshExecutor
     private bool $faulted = false;
 
     /**
-     * @param non-empty-list<\App\Infrastructure\Metrics\MetricsContainerSpec> $specs
+     * @param  non-empty-list<MetricsContainerSpec>  $specs
      */
     public function __construct(
         array $specs,
@@ -919,7 +917,7 @@ final class MetricsStatefulSshExecutor implements SshExecutor
         );
     }
 
-    private function transition(string $transition, string $name, \Closure $mutation): CommandResult
+    private function transition(string $transition, string $name, Closure $mutation): CommandResult
     {
         $faultMatches =
             ! $this->faulted
@@ -967,7 +965,7 @@ final readonly class MetricsKnownHostsStoreFake implements KnownHostsStore
 
 describe('credential file snapshots', function (): void {
     it('snapshots a lagging Grafana credential file as protected content instead of refusing', function (): void {
-        $renderer = new App\Infrastructure\Metrics\MetricsConfigurationRenderer;
+        $renderer = new MetricsConfigurationRenderer;
         $bundle = $renderer->render([['name' => 'app-dev', 'address' => '10.44.0.3']], 'rotated-credential-sentinel');
         $results = [metricsCommandResult(), metricsCommandResult(stdout: "metrics\n")];
 

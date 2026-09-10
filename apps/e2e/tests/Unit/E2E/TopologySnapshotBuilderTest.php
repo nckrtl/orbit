@@ -31,7 +31,6 @@ function topology_snapshot_dnsmasq(): string
 
 function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePaths $paths): TopologySnapshotBuilder
 {
-    /** @mago-expect analysis:possibly-invalid-argument Test helpers resolve only known class names. */
     $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
 
     return new TopologySnapshotBuilder(
@@ -58,11 +57,10 @@ function topology_snapshot_incus_command(string ...$arguments): array
 /** @param list<string> $command */
 function topology_snapshot_builder_is_global_ipv4_probe(array $command): bool
 {
-    return (
+    return
         ($command[3] ?? null) === 'exec'
         && in_array('sh', $command, true)
-        && str_contains(implode(' ', $command), 'ip -4 route show default')
-    );
+        && str_contains(implode(' ', $command), 'ip -4 route show default');
 }
 
 /** @param list<string> $command */
@@ -82,16 +80,11 @@ function topology_snapshot_firewall_result(array $command): ?ProcessResult
     return in_array('-C', $command, true) ? Process::result('', '', 1) : Process::result();
 }
 
-/**
- * @mago-expect lint:cyclomatic-complexity Cold-build fixtures map complete Incus command lifecycles.
- * @mago-expect lint:kan-defect Exact Incus command fixtures must remain fail closed.
- */
 describe('TopologySnapshotBuilder', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
         Facade::clearResolvedInstances();
-        /** @mago-expect analysis:possibly-invalid-argument Process fakes only require the facade container contract. */
         Facade::setFacadeApplication($container);
     });
 
@@ -111,7 +104,6 @@ describe('TopologySnapshotBuilder', function () {
     });
 
     it('requires explicit cold-build permission before touching Incus', function () {
-        /** @mago-expect analysis:possibly-invalid-argument Test helpers resolve only known class names. */
         $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
         $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
@@ -136,7 +128,6 @@ describe('TopologySnapshotBuilder', function () {
             ->toThrow(RuntimeException::class, 'explicit permission');
     });
 
-    /** @mago-expect lint:cyclomatic-complexity The cold-build fixture keeps one complete lifecycle assertion. */
     it('starts every newly initialized VM before source synchronization', function () {
         $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
@@ -144,7 +135,6 @@ describe('TopologySnapshotBuilder', function () {
         $initialized = [];
         $events = [];
         $ipv4Probes = [];
-        /** @mago-expect lint:cyclomatic-complexity The process fake maps each Incus cold-build command explicitly. */
         Process::fake(function (PendingProcess $process) use (&$started, &$initialized, &$events, &$ipv4Probes) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');

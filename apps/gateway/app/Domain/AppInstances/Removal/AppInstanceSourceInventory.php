@@ -7,8 +7,7 @@ namespace App\Domain\AppInstances\Removal;
 final readonly class AppInstanceSourceInventory
 {
     /**
-     * @param list<string> $linkedWorktreePaths
-     * @mago-expect lint:excessive-parameter-list Each parameter binds one immutable source-removal fact.
+     * @param  list<string>  $linkedWorktreePaths
      */
     public function __construct(
         public int $appInstanceId,

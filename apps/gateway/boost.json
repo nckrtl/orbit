@@ -13,10 +13,10 @@
     "skills": [
         "laravel-best-practices",
         "testing-best-practices",
-        "pest-testing",
         "spatie-laravel-php",
         "spatie-security",
         "spatie-version-control",
-        "orbit-gateway-development"
+        "orbit-gateway-development",
+        "pest-testing"
     ]
 }

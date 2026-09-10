@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use InvalidArgumentException;
@@ -223,7 +224,7 @@ final readonly class MetricsCaddyPublisher
         ));
     }
 
-    private function run(ProcessInvocation $invocation): \App\Infrastructure\Processes\CommandResult
+    private function run(ProcessInvocation $invocation): CommandResult
     {
         $result = $this->processes->run($invocation);
 

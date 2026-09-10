@@ -74,9 +74,8 @@ final readonly class RoleRegistry
 
     public function conflicts(RoleName $first, RoleName $second): bool
     {
-        return (
+        return
             in_array($second, $this->definition($first)->conflicts, strict: true)
-            || in_array($first, $this->definition($second)->conflicts, strict: true)
-        );
+            || in_array($first, $this->definition($second)->conflicts, strict: true);
     }
 }

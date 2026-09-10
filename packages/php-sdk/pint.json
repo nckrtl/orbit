@@ -1,0 +1,10 @@
+{
+    "preset": "laravel",
+    "in": [
+        "."
+    ],
+    "cache-file": "vendor/pint.cache",
+    "notPath": [
+        "#^(?!(?:src|tests)/)#"
+    ]
+}

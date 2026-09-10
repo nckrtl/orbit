@@ -10,7 +10,6 @@ use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Workspace;
 
-/** @mago-expect lint:cyclomatic-complexity Origin-specific removal roots stay in one fail-closed boundary. */
 final readonly class CheckoutRemovalBoundary
 {
     public function __construct(

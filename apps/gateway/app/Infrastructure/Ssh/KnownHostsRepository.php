@@ -7,7 +7,6 @@ namespace App\Infrastructure\Ssh;
 use InvalidArgumentException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity The repository keeps one bounded locked file transaction explicit. */
 final readonly class KnownHostsRepository implements KnownHostsStore
 {
     private const int LockRetryMicroseconds = 10_000;

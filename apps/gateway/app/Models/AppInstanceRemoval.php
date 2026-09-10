@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property AppInstanceRemovalStep|null $current_step
  * @property AppInstanceRemovalStep|null $failed_step
  * @property string|null $error_code
- * @property-read \Illuminate\Database\Eloquent\Collection<int, AppInstanceRemovalMember> $members
+ * @property-read Collection<int, AppInstanceRemovalMember> $members
  */
 final class AppInstanceRemoval extends Model
 {
@@ -30,7 +31,7 @@ final class AppInstanceRemoval extends Model
     #[\Override]
     protected $keyType = 'string';
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'id',

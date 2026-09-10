@@ -22,6 +22,7 @@ use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
+use App\E2E\Value\TopologyExtension;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
@@ -43,9 +44,6 @@ use Throwable;
  * converges, runs every action in order, and verifies. A failure before the
  * VMs hold the candidate rolls the proof back; every later failure records a
  * `diagnosis` and keeps the proof topology alive for explicit inspection.
- *
- * @mago-expect lint:excessive-parameter-list The proof dependencies are explicit trust boundaries.
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The proof keeps its exact ordered operations together.
  */
 final readonly class TopologyProofRunner
 {
@@ -355,15 +353,12 @@ final readonly class TopologyProofRunner
             $plan->endsWith,
             TopologyVerifier::skippedProbes($plan->endsWith),
             $plan->fingerprint(),
-            $status === ProofStatus::Proved && $manifest instanceof ProofInputManifest
+            $status === ProofStatus::Proved
                 ? $manifest->fingerprint()
                 : null,
         );
         $this->record($state, $generation, $source, $verification, construction: $construction);
         if ($status === ProofStatus::Proved) {
-            if (! $manifest instanceof ProofInputManifest) {
-                throw new RuntimeException('The successful proof has no proof-input manifest.');
-            }
             $repository->pinProof($request->issue, $target->requireAttempt(), $candidateSha);
             try {
                 $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
@@ -461,7 +456,7 @@ final readonly class TopologyProofRunner
     private function createTopology(
         TopologyTarget $target,
         TopologySnapshotGeneration $generation,
-        ?\App\E2E\Value\TopologyExtension $extension = null,
+        ?TopologyExtension $extension = null,
     ): TopologyConstructionInputs {
         $metadata = [
             'user.orbit.e2e.issue' => $target->issue,
@@ -477,8 +472,8 @@ final readonly class TopologyProofRunner
     }
 
     /**
-     * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $declared
-     * @param list<array{id:string,node:string,exit_code:int,stdout:string,stderr:string}> $actions
+     * @param  list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>  $declared
+     * @param  list<array{id:string,node:string,exit_code:int,stdout:string,stderr:string}>  $actions
      */
     private function runActions(TopologyTarget $target, string $section, array $declared, array &$actions): void
     {
@@ -612,7 +607,7 @@ final readonly class TopologyProofRunner
 
     private function issueConstructor(): IssueTopologyConstructor
     {
-        return (
+        return
             $this->constructor ?? new IssueTopologyConstructor(
                 $this->host,
                 $this->networks,
@@ -621,8 +616,7 @@ final readonly class TopologyProofRunner
                 $this->operation,
                 $this->topologySnapshot,
                 $this->topologySnapshotIdentity,
-            )
-        );
+            );
     }
 
     private function mintAttempt(): AttemptId

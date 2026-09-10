@@ -6,10 +6,10 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect The promoted generation validates one atomic identity record. */
 final readonly class TopologySnapshotGeneration
 {
     public const int SCHEMA = 5;
+
     public const int LEGACY_SCHEMA = 4;
 
     /** @param array<string, string> $snapshots */
@@ -199,7 +199,7 @@ final readonly class TopologySnapshotGeneration
                     throw new InvalidArgumentException('The generation schema is invalid.');
                 }
                 /** @var list<string> $orderedRoles */
-                $orderedRoles = array_values($rolesForNode);
+                $orderedRoles = $rolesForNode;
                 $assignments[$node] = $orderedRoles;
             }
         }

@@ -11,7 +11,8 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 
 it('builds strict argument-safe SSH invocations', function (): void {
-    $runner = new class implements ProcessRunner {
+    $runner = new class implements ProcessRunner
+    {
         public ?ProcessInvocation $invocation = null;
 
         public function run(ProcessInvocation $invocation): CommandResult
@@ -67,7 +68,8 @@ it('builds strict argument-safe SSH invocations', function (): void {
 it('passes protected stdin without adding its bytes to the local SSH invocation', function (): void {
     $sensitiveValue = 'ALPHA=opaque-value';
     $input = ProtectedInput::fromString($sensitiveValue);
-    $runner = new class implements ProcessRunner {
+    $runner = new class implements ProcessRunner
+    {
         public ?ProcessInvocation $invocation = null;
 
         public ?string $inputHash = null;

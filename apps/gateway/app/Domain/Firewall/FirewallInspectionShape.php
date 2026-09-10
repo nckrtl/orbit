@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Firewall;
 
-/** @mago-expect lint:excessive-parameter-list The value keeps the complete comparable firewall shape typed. */
 final readonly class FirewallInspectionShape
 {
     public function __construct(

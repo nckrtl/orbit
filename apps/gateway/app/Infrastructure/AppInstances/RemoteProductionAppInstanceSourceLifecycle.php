@@ -13,7 +13,6 @@ use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 
-/** @mago-expect lint:cyclomatic-complexity The adapter keeps every fail-closed production source gate explicit. */
 final readonly class RemoteProductionAppInstanceSourceLifecycle implements ProductionAppInstanceSourceLifecycle
 {
     public function __construct(
@@ -351,7 +350,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         }
 
         try {
-            return $this->classifier->classify($json, $parts[1] ?? 'absent');
+            return $this->classifier->classify($json, $parts[1]);
         } catch (RuntimeConvergenceException $exception) {
             throw $this->failure(
                 'production-source-classification',

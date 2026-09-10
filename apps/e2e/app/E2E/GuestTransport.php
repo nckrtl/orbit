@@ -12,7 +12,7 @@ interface GuestTransport
     public function exec(string $instance, GuestCommand $command): GuestCommandResult;
 
     /**
-     * @param array<string, array{instance:string, command:GuestCommand}> $commands
+     * @param  array<string, array{instance:string, command:GuestCommand}>  $commands
      * @return array<string, GuestCommandResult>
      */
     public function execAll(array $commands): array;

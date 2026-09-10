@@ -8,8 +8,6 @@ use InvalidArgumentException;
 
 /**
  * Immutable evidence that a later accepted candidate converged without rerunning feature actions.
- *
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The evidence record validates every field at construction.
  */
 final readonly class CandidateConvergenceResult
 {

@@ -11,7 +11,6 @@ use App\Models\Node;
 
 final readonly class NodeBootstrapCommandFactory
 {
-    /** @var non-empty-list<string> */
     public function __construct(
         private SshKeyProvider $keys,
         private NodeBootstrapPackageCatalog $packages = new NodeBootstrapPackageCatalog,

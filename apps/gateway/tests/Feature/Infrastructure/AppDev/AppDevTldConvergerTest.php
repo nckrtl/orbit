@@ -203,7 +203,8 @@ function tld_converger_workspace(
 /** @param list<string> $events */
 function tld_converger_runtime(array &$events): NativeAppDevTldConverger
 {
-    $certificates = new class($events) implements AppDevCertificateManager {
+    $certificates = new class($events) implements AppDevCertificateManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -223,7 +224,8 @@ function tld_converger_runtime(array &$events): NativeAppDevTldConverger
 
         public function removeWorkspace(Workspace $workspace): void {}
     };
-    $caddy = new class($events) implements AppDevCaddyManager {
+    $caddy = new class($events) implements AppDevCaddyManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -236,7 +238,8 @@ function tld_converger_runtime(array &$events): NativeAppDevTldConverger
 
         public function remove(Node $node): void {}
     };
-    $dns = new class($events) implements PrivateDnsManager {
+    $dns = new class($events) implements PrivateDnsManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,
@@ -247,7 +250,8 @@ function tld_converger_runtime(array &$events): NativeAppDevTldConverger
             $this->events[] = "dns:{$pendingNode?->id}";
         }
     };
-    $routes = new class($events) implements AppDevTldRouteManager {
+    $routes = new class($events) implements AppDevTldRouteManager
+    {
         /** @param list<string> $events */
         public function __construct(
             private array &$events,

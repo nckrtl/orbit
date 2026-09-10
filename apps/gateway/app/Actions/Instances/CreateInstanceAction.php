@@ -22,7 +22,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list Instance creation keeps role, placement, and immutable identity gates together. */
 final readonly class CreateInstanceAction
 {
     public function __construct(

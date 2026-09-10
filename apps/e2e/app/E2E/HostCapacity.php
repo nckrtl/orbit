@@ -68,6 +68,7 @@ final readonly class HostCapacity
                         'Incus network inventory contains malformed deterministic IPv4 address.',
                     );
                 }
+
                 continue;
             }
             $occupied[(int) $match[1]] = true;

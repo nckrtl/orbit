@@ -17,6 +17,7 @@ final class EmptyRouteRequest extends FormRequest
         return [];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         $content = $this->getContent();

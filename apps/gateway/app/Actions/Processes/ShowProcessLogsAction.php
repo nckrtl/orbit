@@ -26,7 +26,6 @@ final readonly class ShowProcessLogsAction
         return $this->sanitizer->redactText($logs);
     }
 
-    /** @mago-expect analysis:mixed-assignment Persisted runtime configuration starts at an untyped boundary. */
     private function redactEnvironmentValues(
         #[SensitiveParameter]
         Process $process,

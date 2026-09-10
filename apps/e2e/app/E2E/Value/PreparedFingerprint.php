@@ -8,6 +8,7 @@ use InvalidArgumentException;
 
 final readonly class PreparedFingerprint implements \Stringable
 {
+    /** @param array<string, mixed> $manifest */
     public function __construct(
         public string $value,
         public array $manifest = [],

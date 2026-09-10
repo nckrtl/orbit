@@ -19,8 +19,6 @@ use Closure;
  * can reach the gateway as a registered node: the managed public key must be
  * authorized for the node's account, and the gateway's own SSH host key must
  * be pinned in the managed known_hosts file.
- *
- * @mago-expect lint:cyclomatic-complexity Fail-closed validation of every self-access precondition stays in one converger.
  */
 final readonly class NativeGatewaySelfAccessConverger implements GatewaySelfAccessConverger
 {
@@ -144,7 +142,6 @@ final readonly class NativeGatewaySelfAccessConverger implements GatewaySelfAcce
         ));
     }
 
-    /** @return never */
     private function fail(string $message): never
     {
         throw new NodeProvisioningException(

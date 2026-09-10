@@ -194,7 +194,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         '| app/Http/**, routes/** | .ai/rules/boost/http-routes.md |',
         '| app/Models/** | .ai/rules/boost/models.md |',
         '| tests/** | .ai/rules/boost/tests.md |',
-        '| app/Console/**, app/Providers/**, bootstrap/**, config/**, AGENTS.md, boost.json, composer.json, composer.lock, .ai/**, .agents/**, .codex/** | .ai/rules/bootstrap.md |',
+        '| app/Console/**, app/Providers/**, bootstrap/**, config/**, AGENTS.md, boost.json, composer.json, composer.lock, pint.json, phpstan.neon, .ai/**, .agents/**, .codex/** | .ai/rules/bootstrap.md |',
         '| app/Models/**, database/** | .ai/rules/database.md |',
         '| app/Http/**, routes/** | .ai/rules/http.md |',
         '| app/Infrastructure/** | .ai/rules/infrastructure.md |',
@@ -244,7 +244,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         '## Search proven behavior before infrastructure design',
         '## Use only pinned Sury PHP packages',
         '## Route project JavaScript work through Vite+',
-        '## Run the Pest and Mago gates',
+        '## Run the Pest, Pint, and Larastan gates',
         '## Track tool intent, not host inventory',
         '## Keep tool input narrow',
         '## Use the closed tool manager registry',
@@ -317,7 +317,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'never port the retired Agent',
         );
     expect($testRules)
-        ->toContain('Pest 5 TDD', 'full parallel Pest suite without TIA', 'Rector', 'Mago', 'git diff --check')
+        ->toContain('Pest 5 TDD', 'full parallel Pest suite without TIA', 'Rector', 'Pint', 'Larastan', 'git diff --check')
         ->not->toContain('Test Impact Analysis', 'with TIA', 'test:full');
 });
 
@@ -354,7 +354,7 @@ it('preserves project and installed testing guidance', function (): void {
     expect($readProjectFile('AGENTS.md'))
         ->toContain(
             'Use Pest 5 with `describe()` and `it()`.',
-            'Use Mago for formatting, linting, and analysis.',
+            'Use Pint for formatting and Larastan for static analysis.',
             'Always activate the `spatie-laravel-php` skill',
             'Always activate the `spatie-version-control` skill',
             'Always activate the `spatie-security` skill',
@@ -437,7 +437,7 @@ it('preserves project and installed testing guidance', function (): void {
             'Linux privilege escalation',
             'legacy project is optional research',
             'CI runs the full parallel suites without TIA',
-            'Mago format/lint/analyse',
+            'Pint format checks and Larastan analysis',
         )
         ->not->toContain('with TIA', 'test:full');
 

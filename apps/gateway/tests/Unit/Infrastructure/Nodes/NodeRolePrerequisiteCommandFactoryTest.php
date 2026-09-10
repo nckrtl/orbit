@@ -6,6 +6,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -885,7 +886,6 @@ function role_javascript_runtime_harness(
 
 /**
  * @return array{root: string, composer: string, manifest: string, owner: string, group: string, first: Process, second: Process}
- * @mago-expect lint:halstead The harness exercises publication success, rollback, and race recovery against the rendered script.
  */
 function role_composer_harness(?string $conflict = null, string $mode = 'success'): array
 {
@@ -1062,7 +1062,7 @@ function role_prerequisite_process_arguments(
 }
 
 /** @return list<string> */
-function role_prerequisite_packages(\App\Infrastructure\Ssh\RemoteCommand $command): array
+function role_prerequisite_packages(RemoteCommand $command): array
 {
     $arguments = $command->arguments;
     $releaseCount = (int) $arguments[10];

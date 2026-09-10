@@ -12,7 +12,6 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class AppInstanceRemovalData extends Data
 {
-    /** @mago-expect lint:excessive-parameter-list Each parameter is one field of the bounded public removal progress contract. */
     public function __construct(
         public string $operationId,
         public int $id,

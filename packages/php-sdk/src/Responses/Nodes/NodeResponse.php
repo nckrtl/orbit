@@ -7,10 +7,6 @@ namespace Orbit\Sdk\Responses\Nodes;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway values are validated at the DTO boundary.
- * @mago-expect lint:excessive-parameter-list
- */
 final readonly class NodeResponse
 {
     /** @param list<string> $roles */
@@ -116,9 +112,6 @@ final readonly class NodeResponse
         return $data;
     }
 
-    /**
-     * @mago-expect analysis:mixed-assignment Gateway settings remain mixed until keyed.
-     */
     private static function settings(mixed $value): ?NodeSettings
     {
         if (! is_array($value)) {
@@ -139,8 +132,6 @@ final readonly class NodeResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway role values remain mixed until validated.
-     *
      * @return list<string>
      */
     private static function stringList(mixed $value): array

@@ -37,14 +37,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-/**
- * @mago-expect lint:too-many-methods One coordinator owns the closed removal state machine.
- * @mago-expect lint:cyclomatic-complexity The coordinator advances each durable checkpoint and refusal boundary explicitly.
- * @mago-expect lint:kan-defect Retry safety requires each accepted and resumed transition to fail closed.
- */
 final readonly class RemoveAppInstanceAction
 {
-    /** @mago-expect lint:excessive-parameter-list The coordinator names each source, Route, overlap, and lock boundary explicitly. */
     public function __construct(
         private DevelopmentAppInstanceSourceRemoval $sourceInspector,
         private DevelopmentAppInstanceSourceFinalizer $sourceFinalizer,
@@ -596,7 +590,7 @@ final readonly class RemoveAppInstanceAction
             $node = $requested->node;
             $placement = $this->routeState->forNode($node);
 
-            return (
+            return
                 $route->node_id === $requested->node_id
                 && $route->publication === RoutePublication::Private
                 && $route->targets->count() === 1
@@ -611,8 +605,7 @@ final readonly class RemoveAppInstanceAction
                         $role->role === RoleName::AppProd
                         && $role->status === LifecycleStatus::Active
                     ),
-                )
-            );
+                );
         }
 
         if ($route->provenance !== RouteProvenance::Explicit) {
@@ -824,7 +817,7 @@ final readonly class RemoveAppInstanceAction
     }
 
     /**
-     * @param Collection<int, AppInstanceRemovalMember> $members
+     * @param  Collection<int, AppInstanceRemovalMember>  $members
      */
     private function revalidateUnfinishedSourcesLocked(
         Collection $members,
@@ -842,8 +835,8 @@ final readonly class RemoveAppInstanceAction
     }
 
     /**
-     * @param Collection<int, AppInstanceRemovalMember> $members
-     * @param array<int, AppInstanceSourceRevalidationState> $states
+     * @param  Collection<int, AppInstanceRemovalMember>  $members
+     * @param  array<int, AppInstanceSourceRevalidationState>  $states
      */
     private function expectationFor(
         AppInstanceRemovalMember $current,

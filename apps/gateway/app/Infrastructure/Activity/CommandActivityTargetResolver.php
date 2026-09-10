@@ -19,10 +19,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Route vocabulary requires explicit model resolution branches.
- * @mago-expect lint:kan-defect The branches fail closed when route input cannot identify one subject.
- */
 final readonly class CommandActivityTargetResolver
 {
     /** @return array{subject_type?: string, subject_id?: int, target_node_id: ?int}|null */
@@ -60,7 +56,6 @@ final readonly class CommandActivityTargetResolver
         return $result;
     }
 
-    /** @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary. */
     private function tool(Request $request, ?ToolOperationException $exception): ?Tool
     {
         $snapshot = $request->attributes->get('orbit.tool_snapshot');
@@ -95,7 +90,6 @@ final readonly class CommandActivityTargetResolver
 
     /**
      * @return array{node_id: int, manager: string, package: string}|null
-     * @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary.
      */
     private function toolIdentity(Request $request, ?ToolOperationException $exception): ?array
     {
@@ -125,7 +119,6 @@ final readonly class CommandActivityTargetResolver
         ];
     }
 
-    /** @mago-expect analysis:mixed-assignment The database value is checked before return. */
     private function toolNodeId(
         Request $request,
         ?Tool $tool,
@@ -197,7 +190,6 @@ final readonly class CommandActivityTargetResolver
         };
     }
 
-    /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
     private function createdFirewallRule(Request $request): ?FirewallRule
     {
         $node = $request->route('node');
@@ -213,7 +205,6 @@ final readonly class CommandActivityTargetResolver
             ->first();
     }
 
-    /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
     private function createdProcess(Request $request): ?OrbitProcess
     {
         $targetType = $request->input('target_type');

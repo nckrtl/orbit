@@ -28,7 +28,6 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-/** @mago-expect lint:no-ini-set Exception arguments must be disabled before Laravel handles input. */
 if (
     ini_get('zend.exception_ignore_args') !== '1'
     && (! function_exists('ini_set')
@@ -50,10 +49,6 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
     })
     ->withExceptions(
-        /**
-         * @mago-expect lint:cyclomatic-complexity API exception types map to explicit stable envelopes.
-         * @mago-expect lint:halstead The closure keeps the public error contract visible in bootstrap order.
-         */
         function (Exceptions $exceptions): void {
             $exceptions->render(function (AppInstanceRemovalException $exception, Request $request): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);

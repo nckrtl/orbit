@@ -8,7 +8,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity Peer allocation centralizes format, subnet, and uniqueness checks. */
 final readonly class WireGuardAddressAllocator
 {
     public function __construct(

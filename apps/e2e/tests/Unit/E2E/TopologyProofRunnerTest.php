@@ -31,6 +31,7 @@ use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
@@ -163,7 +164,7 @@ function candidateConvergenceFixture(): array
     $operation = new OperationId(str_repeat('b', 32));
     $state = IssueState::forWorktree('TST-123', $worktree);
     $state->writeAttempt($target->requireAttempt(), AttemptPurpose::Proof, $operation);
-    $construction = \App\E2E\Value\TopologyConstructionInputs::create($target, $generation, 2);
+    $construction = TopologyConstructionInputs::create($target, $generation, 2);
     $verification = new VerificationReport(true, [
         'proof.verify' => [
             'passed' => true,
@@ -262,7 +263,7 @@ function candidateConvergenceFixture(): array
     );
     $state->writeEquivalence($report->fingerprint(), $report->toArray());
 
-    return (
+    return
         compact(
             'root',
             'worktree',
@@ -273,8 +274,7 @@ function candidateConvergenceFixture(): array
             'proved',
             'report',
             'operation',
-        ) + ['request' => new TopologyRequest('TST-123', $worktree)]
-    );
+        ) + ['request' => new TopologyRequest('TST-123', $worktree)];
 }
 
 it('converges and verifies an authorized exact candidate without rerunning acceptance actions', function (): void {
@@ -488,7 +488,7 @@ function candidateConvergenceRunner(
 /**
  * Run candidate convergence behind a real issue-lock waiter while changing its authorization state.
  *
- * @param array{paths:StatePaths,operation:OperationId} $fixture
+ * @param  array{paths:StatePaths,operation:OperationId}  $fixture
  */
 function contendCandidateAuthorization(array $fixture, Closure $mutation, Closure $convergence): void
 {

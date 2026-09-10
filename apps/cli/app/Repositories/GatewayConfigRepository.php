@@ -8,11 +8,6 @@ use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use JsonException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity
- * @mago-expect lint:kan-defect
- * @mago-expect lint:too-many-methods Profile reads and guarded mutations share one validation and lock boundary.
- */
 final readonly class GatewayConfigRepository
 {
     public function __construct(
@@ -115,8 +110,6 @@ final readonly class GatewayConfigRepository
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment JSON decoding starts at an untyped boundary.
-     *
      * @return array{active_gateway: ?string, gateways: array<string, array<string, mixed>>}
      */
     private function read(): array
@@ -248,8 +241,6 @@ final readonly class GatewayConfigRepository
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment JSON profile values are validated below.
-     *
      * @return array<string, array<string, mixed>>
      */
     private function gatewayProfiles(mixed $value): array
@@ -282,10 +273,7 @@ final readonly class GatewayConfigRepository
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment JSON values remain mixed by design.
-     *
-     * @param array<array-key, mixed> $value
-     *
+     * @param  array<array-key, mixed>  $value
      * @return array<string, mixed>
      */
     private function stringKeyedArray(array $value): array

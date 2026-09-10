@@ -16,6 +16,7 @@ final class SetRouteTargetCommand extends RouteCommand
         {route : Numeric Route ID}
         {target : Numeric AppInstance target ID}
         {--json : Return machine-readable JSON}';
+
     #[\Override]
     protected $description = 'Set the single configured Route target.';
 

@@ -34,7 +34,8 @@ helps humans and agents find pages about the part of Orbit they are working on.
 Orbit uses these tools to keep its code and documentation consistent:
 
 - Pest runs the automated test suites.
-- Mago formats, lints, and analyzes PHP code.
+- Laravel Pint formats PHP code and checks syntax and style.
+- Larastan analyzes the Laravel applications. PHPStan analyzes the framework-neutral SDK.
 - Rector checks PHP refactoring rules.
 - Librarian checks documentation.
 - Incus creates temporary Linux machines for end-to-end testing.

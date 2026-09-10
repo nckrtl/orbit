@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
@@ -19,7 +20,6 @@ use App\Models\ToolManagerRecord;
 use Tests\Support\FakeToolManager;
 use Tests\Support\ImmediateToolOperationLock;
 
-/** @mago-expect lint:halstead The update matrix keeps every required state transition and failure contract visible. */
 describe(UpdateToolAction::class, function (): void {
     it('returns unchanged and applied for equal and different raw versions', function (
         string $before,
@@ -586,7 +586,7 @@ function update_action_fixture_for_node(Node $node, ToolManagerName $managerName
             managers: new ToolManagerRegistry([$manager]),
             constraints: new VersionConstraint,
             lock: $lock,
-            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
+            eligibility: new ToolNodeEligibility,
         ),
         $manager,
         $lock,
@@ -628,7 +628,6 @@ function update_action_manager(
     ]);
 }
 
-/** @mago-expect lint:excessive-parameter-list The fixture exposes every persisted retry field used by the matrix. */
 function update_action_tool(
     Node $node,
     ToolManagerRecord $record,

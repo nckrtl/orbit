@@ -22,8 +22,9 @@ final class ShellCommand extends E2ECommand
     #[\Override]
     protected $signature =
         'topology:shell {issue} {role} '
-            .self::WORKTREE_OPTION
-            .' {--proof : Open the retained failed proof topology} {--json}';
+        .self::WORKTREE_OPTION
+        .' {--proof : Open the retained failed proof topology} {--json}';
+
     #[\Override]
     protected $description = 'Open an interactive shell as orbit on one discovery or failed-proof role';
 
@@ -65,9 +66,7 @@ final class ShellCommand extends E2ECommand
     {
         $prefix = GuestCommand::ORBIT_USER_PREFIX;
         $cwd = array_search('-C', $prefix, true);
-        if ($cwd !== false) {
-            $prefix[$cwd + 1] = $directory;
-        }
+        $prefix[$cwd + 1] = $directory;
 
         return [...$prefix, 'bash', '-l'];
     }

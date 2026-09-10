@@ -19,7 +19,6 @@ final readonly class ProductionPhpRuntimeIdentity
 
     public string $markerPath;
 
-    /** @mago-expect lint:excessive-parameter-list The complete recorded identity stays explicit and immutable. */
     public function __construct(
         public string $user,
         public string $home,

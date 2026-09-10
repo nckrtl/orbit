@@ -54,8 +54,8 @@ final readonly class OrphanNetworkSweep
     /**
      * The orphan names of one network inventory, sorted.
      *
-     * @param array<string, IncusNetwork> $networks
-     * @param list<string> $protected Network names that are never orphans.
+     * @param  array<string, IncusNetwork>  $networks
+     * @param  list<string>  $protected  Network names that are never orphans.
      * @return list<string>
      */
     public static function orphans(array $networks, array $protected = []): array

@@ -40,7 +40,7 @@ final class Instance extends Model
         'status' => 'provisioning',
     ];
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'app_id',

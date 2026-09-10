@@ -46,5 +46,6 @@ it('rejects duplicate unresolved invalid and oversized dotenv input atomically',
     'unresolved local expansion' => ['KEY=${MISSING}'],
     'gateway environment fallback' => ['KEY=${GATEWAY_FALLBACK}'],
     'invalid syntax' => ['KEY value'],
+    'numeric key' => ['123=value'],
     'oversized' => [str_repeat('x', 1_048_577)],
 ]);

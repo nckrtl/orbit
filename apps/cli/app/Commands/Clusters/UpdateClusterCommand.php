@@ -9,7 +9,6 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Clusters\UpdateClusterRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 
-/** @mago-expect lint:cyclomatic-complexity Each optional Cluster patch field has an independent local validation gate. */
 final class UpdateClusterCommand extends ClusterCommand
 {
     #[\Override]
@@ -31,9 +30,9 @@ final class UpdateClusterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $name = $this->option('name');
-        $tld = $this->option('tld');
-        $state = $this->option('state');
+        $name = $this->input->getOption('name');
+        $tld = $this->input->getOption('tld');
+        $state = $this->input->getOption('state');
         $hasName = $name !== null;
         $hasTld = $tld !== null;
         $hasState = $state !== null;

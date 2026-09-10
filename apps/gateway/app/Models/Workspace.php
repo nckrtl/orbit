@@ -29,7 +29,7 @@ final class Workspace extends Model
     #[\Override]
     protected $attributes = ['status' => 'provisioning'];
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'instance_id',

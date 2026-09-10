@@ -23,7 +23,7 @@ final readonly class HostRelativeDeleter
             throw new RuntimeException('The host deletion target is outside its safe root.');
         }
         $relative = substr($path, strlen($prefix));
-        if ($relative === false || $relative === '') {
+        if ($relative === '') {
             throw new RuntimeException('The host deletion target cannot be the safe root.');
         }
         try {

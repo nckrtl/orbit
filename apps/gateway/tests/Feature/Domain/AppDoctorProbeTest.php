@@ -20,7 +20,8 @@ it('returns a healthy empty report when no app projects a checkout on the node',
     app_probe_projection(app_probe_app(), $other);
     $calls = 0;
 
-    $report = new AppDoctorProbe(new class($calls) implements AppStateInspector {
+    $report = new AppDoctorProbe(new class($calls) implements AppStateInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -46,7 +47,8 @@ it('checks selected apps in id order and reports a bounded origin mismatch', fun
     app_probe_projection(app_probe_app(), $other);
     $seen = [];
 
-    $report = new AppDoctorProbe(new class($seen, $second) implements AppStateInspector {
+    $report = new AppDoctorProbe(new class($seen, $second) implements AppStateInspector
+    {
         public function __construct(
             private array &$seen,
             private App $mismatch,
@@ -83,7 +85,8 @@ it('short-circuits app inspection when the node is unreachable', function (): vo
     app_probe_projection(app_probe_app(), $node);
     $calls = 0;
 
-    $report = new AppDoctorProbe(new class($calls) implements AppStateInspector {
+    $report = new AppDoctorProbe(new class($calls) implements AppStateInspector
+    {
         public function __construct(
             private int &$calls,
         ) {}
@@ -112,7 +115,8 @@ it('continues after a typed app inspection failure and counts the projected app'
     app_probe_projection($failed, $node);
     app_probe_projection($healthy, $node);
 
-    $report = new AppDoctorProbe(new class($failed) implements AppStateInspector {
+    $report = new AppDoctorProbe(new class($failed) implements AppStateInspector
+    {
         public function __construct(
             private App $failed,
         ) {}

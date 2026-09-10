@@ -8,7 +8,6 @@ use RuntimeException;
 
 final class ToolOperationException extends RuntimeException
 {
-    /** @mago-expect lint:excessive-parameter-list Stable operation failures expose each required field directly. */
     public function __construct(
         public readonly string $step,
         public readonly string $errorCode,

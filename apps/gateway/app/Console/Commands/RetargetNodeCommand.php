@@ -19,8 +19,8 @@ final class RetargetNodeCommand extends Command
 
     public function handle(RetargetNodeAction $action): int
     {
-        $name = $this->argument('name');
-        $host = $this->argument('host');
+        $name = $this->input->getArgument('name');
+        $host = $this->input->getArgument('host');
         $port = $this->option('ssh-port');
 
         if (! is_string($name) || ! is_string($host) || ! is_numeric($port) || (int) $port < 1 || (int) $port > 65535) {

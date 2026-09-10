@@ -13,7 +13,8 @@ use Illuminate\Support\Str;
 it('returns only the current public root CA with request correlation', function (): void {
     [$directory, , $certificate] = root_ca_endpoint_certificate();
     $requestId = (string) Str::uuid();
-    app()->instance(LeafCertificateSigner::class, new class($certificate) implements LeafCertificateSigner {
+    app()->instance(LeafCertificateSigner::class, new class($certificate) implements LeafCertificateSigner
+    {
         public function __construct(
             private readonly string $certificate,
         ) {}
@@ -86,7 +87,8 @@ it('does not serve an expired root CA', function (): void {
 
 it('returns 503 with a bounded error when the root CA is unavailable', function (): void {
     $requestId = 'c5d56319-b820-440c-a7c5-f6bf8b6bf310';
-    app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner {
+    app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+    {
         public function sign(string $hostname, string $certificateRequest): string
         {
             throw new LogicException('Signing is outside the root CA endpoint.');

@@ -7,10 +7,6 @@ namespace Orbit\Sdk\Responses\Workspaces;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway values are validated at the DTO boundary.
- * @mago-expect lint:excessive-parameter-list
- */
 final readonly class WorkspaceResponse
 {
     public function __construct(

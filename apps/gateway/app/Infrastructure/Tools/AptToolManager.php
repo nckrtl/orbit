@@ -13,11 +13,6 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-/**
- * @mago-expect lint:cyclomatic-complexity The adapter keeps each fail-closed APT parsing branch explicit.
- * @mago-expect lint:kan-defect The score reflects explicit package-state parsing and failure gates.
- * @mago-expect lint:too-many-methods The closed manager contract requires every lifecycle method on one adapter.
- */
 final readonly class AptToolManager implements ToolManager
 {
     private const int MAX_PACKAGE_LENGTH = 128;
@@ -54,12 +49,11 @@ final readonly class AptToolManager implements ToolManager
     {
         $length = strlen($package);
 
-        return (
+        return
             $length >= 2
             && $length <= self::MAX_PACKAGE_LENGTH
             && preg_match(self::PACKAGE_PATTERN, $package) === 1
-            && preg_match('/[a-z]/', $package) === 1
-        );
+            && preg_match('/[a-z]/', $package) === 1;
     }
 
     public function materialize(Node $node): void
@@ -313,11 +307,10 @@ final readonly class AptToolManager implements ToolManager
 
     private function isSafeVersion(string $version): bool
     {
-        return (
+        return
             $version !== ''
             && strlen($version) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1
-        );
+            && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1;
     }
 
     /** @param non-empty-list<string> $arguments */

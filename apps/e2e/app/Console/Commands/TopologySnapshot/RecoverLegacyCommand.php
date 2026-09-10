@@ -16,6 +16,7 @@ final class RecoverLegacyCommand extends E2ECommand
     protected $signature = 'topology-snapshot:recover-legacy
         {--main-sha=}
         {--json}';
+
     #[\Override]
     protected $description = 'Recover exact legacy resources for the persistent topology snapshot';
 

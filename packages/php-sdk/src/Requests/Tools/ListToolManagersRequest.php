@@ -25,7 +25,6 @@ final class ListToolManagersRequest extends GatewayRequest
         return '/api/v1/tool-managers';
     }
 
-    /** @mago-expect analysis:mixed-assignment Gateway collection members remain mixed until validated. */
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ToolManagersResponse
     {
         $data = $response->json('data');

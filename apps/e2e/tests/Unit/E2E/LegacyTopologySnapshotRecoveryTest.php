@@ -106,14 +106,12 @@ function legacyRecoveryMacs(?TopologySnapshotIdentity $identity = null): array
     return $macs;
 }
 
-/** @mago-expect lint:cyclomatic-complexity The fake models each exact Incus inventory and mutation command. */
 function fakeLegacyRecoveryHost(
     LegacyRecoveryHost $state,
     ?TopologySnapshotIdentity $identity = null,
 ): void {
     $identity ??= TopologySnapshotIdentity::primary();
     $macs = legacyRecoveryMacs($identity);
-    /** @mago-expect lint:cyclomatic-complexity One process fake keeps the mutable host inventory coherent. */
     Process::fake(function (PendingProcess $process) use ($state, $identity, $macs): ProcessResult {
         $command = $process->command;
         assert(is_array($command));
@@ -579,7 +577,7 @@ it('rejects non-empty lists and mixed map shapes in retained inventory', functio
     $mutate($value);
 
     expect(fn () => LegacyTopologySnapshotInventory::fromArray($value))
-        ->toThrow(\InvalidArgumentException::class, 'The legacy topology snapshot inventory is invalid.');
+        ->toThrow(InvalidArgumentException::class, 'The legacy topology snapshot inventory is invalid.');
 })->with([
     'non-empty instance list' => [function (array &$value): void {
         $value['instances'] = [['name' => 'orbit-e2e-topology-snapshot-gateway']];
@@ -673,7 +671,6 @@ it('keeps one refresh lock through teardown and the construction boundary', func
         $host,
         new IncusNetworkLifecycle($host),
         $manifests,
-        $paths,
         new OperationLock($paths),
         $operation,
         $identity,

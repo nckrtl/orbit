@@ -10,6 +10,7 @@ use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
+use Illuminate\Support\Collection;
 
 final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpRuntimeManager
 {
@@ -24,7 +25,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
     {
         $identity = ProductionPhpRuntimeIdentity::from($appInstance);
         $configuration = $this->renderer->render($identity);
-        /** @var \Illuminate\Support\Collection<int, string> $versions */
+        /** @var Collection<int, string> $versions */
         $versions = collect([$identity->version]);
         $this->packages->installPackagesOnlyForAppProd(
             $appInstance->node->loadMissing('roles'),

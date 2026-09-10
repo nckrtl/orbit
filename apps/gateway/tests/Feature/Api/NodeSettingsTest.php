@@ -21,7 +21,8 @@ use Tests\Support\FakeToolManagerMaterializer;
 
 function fake_storage_preparer(): NodeStorageRootPreparer
 {
-    return new class implements NodeStorageRootPreparer {
+    return new class implements NodeStorageRootPreparer
+    {
         public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
 
         public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void {}
@@ -31,14 +32,16 @@ function fake_storage_preparer(): NodeStorageRootPreparer
 describe('node storage settings', function (): void {
     beforeEach(function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+        {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
 
             public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
-        app()->instance(NodeConverger::class, new class implements NodeConverger {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
@@ -47,7 +50,8 @@ describe('node storage settings', function (): void {
             ): void {}
         });
         app()->instance(NodeStorageRootPreparer::class, fake_storage_preparer());
-        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
+        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+        {
             public function resolve(Node $node): ManagedUserAccount
             {
                 return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
@@ -469,7 +473,8 @@ describe('node storage settings', function (): void {
     });
 
     it('leaves stored settings unchanged when preparing defaults for the last unset fails', function (): void {
-        app()->instance(NodeStorageRootPreparer::class, new class implements NodeStorageRootPreparer {
+        app()->instance(NodeStorageRootPreparer::class, new class implements NodeStorageRootPreparer
+        {
             public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
 
             public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
@@ -588,10 +593,11 @@ describe('node storage settings', function (): void {
 
 function recording_storage_preparer(array &$inspected, array &$prepared): NodeStorageRootPreparer
 {
-    return new class($inspected, $prepared) implements NodeStorageRootPreparer {
+    return new class($inspected, $prepared) implements NodeStorageRootPreparer
+    {
         /**
-         * @param list<string> $inspected
-         * @param list<string> $prepared
+         * @param  list<string>  $inspected
+         * @param  list<string>  $prepared
          */
         public function __construct(
             private array &$inspected,

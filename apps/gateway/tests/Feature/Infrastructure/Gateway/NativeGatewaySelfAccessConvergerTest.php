@@ -112,7 +112,8 @@ it('fails closed when authorized_keys is a symlink instead of a regular file', f
 it('fails closed when the home directory cannot be resolved', function (): void {
     $home = sys_get_temp_dir().'/orbit-gateway-self-access-'.Str::uuid();
     $converger = new NativeGatewaySelfAccessConverger(
-        processes: new class implements ProcessRunner {
+        processes: new class implements ProcessRunner
+        {
             public function run(ProcessInvocation $invocation): CommandResult
             {
                 return new CommandResult(1, '', 'unexpected process invocation', 1, false);
@@ -147,7 +148,8 @@ function gateway_self_access_node(): Node
 
 function gateway_self_access_fake_ssh_keys(): SshKeyProvider
 {
-    return new class implements SshKeyProvider {
+    return new class implements SshKeyProvider
+    {
         public function privateKeyPath(): string
         {
             return '/does/not/matter';
@@ -175,7 +177,8 @@ function gateway_self_access_converger(): array
     $hostPublicKeyPath = $home.'/etc-ssh/ssh_host_ed25519_key.pub';
     mkdir(directory: dirname($hostPublicKeyPath), permissions: 0o700, recursive: true);
     file_put_contents($hostPublicKeyPath, data: "ssh-ed25519 HOSTKEYVALUE root@gateway\n");
-    $processes = new class implements ProcessRunner {
+    $processes = new class implements ProcessRunner
+    {
         /** @var list<ProcessInvocation> */
         public array $invocations = [];
 

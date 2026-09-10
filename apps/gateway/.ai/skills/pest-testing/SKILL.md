@@ -25,4 +25,4 @@ vendor/bin/pest --compact tests/Feature/Path/To/Test.php
 vendor/bin/pest --compact --filter='test name'
 ```
 
-`composer test` runs the full Pest suite in parallel without Test Impact Analysis (`--parallel --no-tia`). Run the repository Rector and Mago gates before handoff.
+`composer test` runs the full Pest suite in parallel without Test Impact Analysis (`--parallel --no-tia`). Run the repository Rector and Pint and Larastan gates before handoff.

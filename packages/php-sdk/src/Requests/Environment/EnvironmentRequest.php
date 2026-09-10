@@ -30,7 +30,7 @@ abstract class EnvironmentRequest extends GatewayRequest implements HasBody
     }
 
     /** @return class-string<EnvironmentTransportResponse> */
-    final public function resolveResponseClass(): ?string
+    final public function resolveResponseClass(): string
     {
         return EnvironmentTransportResponse::class;
     }
@@ -61,7 +61,7 @@ abstract class EnvironmentRequest extends GatewayRequest implements HasBody
         Response $response,
         #[SensitiveParameter]
         ?Throwable $senderException,
-    ): ?Throwable {
+    ): Throwable {
         return new GatewayApiException(
             "Gateway environment operation failed with HTTP status {$response->status()}.",
             errorCode: $this->errorCode($response),
@@ -72,8 +72,6 @@ abstract class EnvironmentRequest extends GatewayRequest implements HasBody
     abstract protected function expectedOperation(): string;
 
     /**
-     * @mago-expect analysis:mixed-assignment JSON values remain mixed until the environment DTO validates them.
-     *
      * @return array<array-key, mixed>
      */
     private function environmentData(#[SensitiveParameter] Response $response): array
@@ -99,7 +97,6 @@ abstract class EnvironmentRequest extends GatewayRequest implements HasBody
         return $body['data'];
     }
 
-    /** @mago-expect analysis:mixed-assignment Gateway errors begin at an untrusted JSON boundary. */
     private function errorCode(#[SensitiveParameter] Response $response): ?string
     {
         try {

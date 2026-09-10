@@ -8,18 +8,16 @@ use InvalidArgumentException;
 
 /**
  * The immutable, canonical inventory that makes one successful proof reusable.
- *
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The immutable evidence schema validates every independent input field.
  */
 final readonly class ProofInputManifest
 {
     public const int SCHEMA = 4;
 
     /**
-     * @param list<string> $featureRuntimePaths
-     * @param list<array{path:string,classification:string,mode:string,blob:string}> $staticInputs
-     * @param list<string> $extraInputs
-     * @param array{static_classification:bool,proof_contract:bool,checkout_literals:bool,observed_processes:bool,observed_paths:bool,pcov_cleanup:bool} $completeness
+     * @param  list<string>  $featureRuntimePaths
+     * @param  list<array{path:string,classification:string,mode:string,blob:string}>  $staticInputs
+     * @param  list<string>  $extraInputs
+     * @param  array{static_classification:bool,proof_contract:bool,checkout_literals:bool,observed_processes:bool,observed_paths:bool,pcov_cleanup:bool}  $completeness
      */
     public function __construct(
         public int $policyVersion,
@@ -43,46 +41,7 @@ final readonly class ProofInputManifest
         }
         $this->assertOrderedPaths($featureRuntimePaths, 'feature runtime');
         $this->assertOrderedPaths($extraInputs, 'extra input');
-        if (
-            array_keys($completeness) !== [
-                'static_classification',
-                'proof_contract',
-                'checkout_literals',
-                'observed_processes',
-                'observed_paths',
-                'pcov_cleanup',
-            ]
-            || ! array_all($completeness, static fn (mixed $value): bool => is_bool($value))
-        ) {
-            throw new InvalidArgumentException('The proof-input manifest completeness result is invalid.');
-        }
-        $paths = [];
-        foreach ($staticInputs as $input) {
-            if (
-                array_keys($input) !== ['path', 'classification', 'mode', 'blob']
-                || ! $this->safePath($input['path'])
-                || ! in_array(
-                    $input['classification'],
-                    [
-                        ProofInputClassification::Runtime->value,
-                        ProofInputClassification::ProofContract->value,
-                    ],
-                    true,
-                )
-                || preg_match('/\A[0-7]{6}\z/D', $input['mode']) !== 1
-                || preg_match('/\A[0-9a-f]{40}\z/D', $input['blob']) !== 1
-                || isset($paths[$input['path']])
-            ) {
-                throw new InvalidArgumentException('A proof-input manifest entry is invalid.');
-            }
-            $paths[$input['path']] = true;
-        }
-        $ordered = array_keys($paths);
-        $sorted = $ordered;
-        sort($sorted, SORT_STRING);
-        if ($ordered !== $sorted) {
-            throw new InvalidArgumentException('Proof-input manifest entries must be ordered.');
-        }
+        $this->assertInventory($completeness, $staticInputs);
     }
 
     public function fingerprint(): string
@@ -144,11 +103,11 @@ final readonly class ProofInputManifest
             throw new InvalidArgumentException('The proof-input manifest schema is invalid.');
         }
         /** @var list<string> $featureRuntimePaths */
-        $featureRuntimePaths = array_values($value['feature_runtime_paths']);
+        $featureRuntimePaths = $value['feature_runtime_paths'];
         /** @var list<array{path:string,classification:string,mode:string,blob:string}> $staticInputs */
-        $staticInputs = array_values($value['static_inputs']);
+        $staticInputs = $value['static_inputs'];
         /** @var list<string> $extraInputs */
-        $extraInputs = array_values($value['proof_contract']['extra_inputs']);
+        $extraInputs = $value['proof_contract']['extra_inputs'];
         /** @var array{static_classification:bool,proof_contract:bool,checkout_literals:bool,observed_processes:bool,observed_paths:bool,pcov_cleanup:bool} $completeness */
         $completeness = $value['completeness'];
         $observedInputs = is_array($value['observed_inputs'])
@@ -207,7 +166,7 @@ final readonly class ProofInputManifest
         ];
     }
 
-    /** @param list<mixed> $paths */
+    /** @param array<array-key, mixed> $paths */
     private function assertOrderedPaths(array $paths, string $label): void
     {
         if (
@@ -229,7 +188,7 @@ final readonly class ProofInputManifest
 
     private function safePath(string $path): bool
     {
-        return (
+        return
             $path !== ''
             && ! str_starts_with($path, '/')
             && ! str_contains($path, "\0")
@@ -237,7 +196,54 @@ final readonly class ProofInputManifest
             && preg_match('/[\r\n]/', $path) !== 1
             && ! in_array('', explode('/', $path), true)
             && ! in_array('.', explode('/', $path), true)
-            && ! in_array('..', explode('/', $path), true)
-        );
+            && ! in_array('..', explode('/', $path), true);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $completeness
+     * @param  array<array-key, array<array-key, mixed>>  $staticInputs
+     */
+    private function assertInventory(array $completeness, array $staticInputs): void
+    {
+        if (
+            array_keys($completeness) !== [
+                'static_classification',
+                'proof_contract',
+                'checkout_literals',
+                'observed_processes',
+                'observed_paths',
+                'pcov_cleanup',
+            ]
+            || ! array_all($completeness, static fn (mixed $value): bool => is_bool($value))
+        ) {
+            throw new InvalidArgumentException('The proof-input manifest completeness result is invalid.');
+        }
+        $paths = [];
+        foreach ($staticInputs as $input) {
+            if (
+                array_keys($input) !== ['path', 'classification', 'mode', 'blob']
+                || ! $this->safePath($input['path'])
+                || ! in_array(
+                    $input['classification'],
+                    [
+                        ProofInputClassification::Runtime->value,
+                        ProofInputClassification::ProofContract->value,
+                    ],
+                    true,
+                )
+                || preg_match('/\A[0-7]{6}\z/D', $input['mode']) !== 1
+                || preg_match('/\A[0-9a-f]{40}\z/D', $input['blob']) !== 1
+                || isset($paths[$input['path']])
+            ) {
+                throw new InvalidArgumentException('A proof-input manifest entry is invalid.');
+            }
+            $paths[$input['path']] = true;
+        }
+        $ordered = array_keys($paths);
+        $sorted = $ordered;
+        sort($sorted, SORT_STRING);
+        if ($ordered !== $sorted) {
+            throw new InvalidArgumentException('Proof-input manifest entries must be ordered.');
+        }
     }
 }

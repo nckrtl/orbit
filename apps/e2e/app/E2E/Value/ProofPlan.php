@@ -15,7 +15,6 @@ use stdClass;
  * The plan is validated once at construction and never carries stdin: a proof
  * must not hold secrets, and the record stores the plan verbatim.
  */
-/** @mago-expect lint:cyclomatic-complexity,kan-defect,excessive-parameter-list Every plan rule and input is checked fail-closed in one place. */
 final readonly class ProofPlan
 {
     public const int MAX_TIMEOUT_SECONDS = 900;
@@ -42,9 +41,9 @@ final readonly class ProofPlan
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
-     * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $setup
-     * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $acceptance
-     * @param list<string> $inputs
+     * @param  list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>  $setup
+     * @param  list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>  $acceptance
+     * @param  list<string>  $inputs
      */
     private function __construct(
         public array $setup,
@@ -170,14 +169,13 @@ final readonly class ProofPlan
     }
 
     /**
-     * @param list<mixed> $declared
-     * @param array<string, true> $ids
+     * @param  list<mixed>  $declared
+     * @param  array<string, true>  $ids
      * @return list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>
      */
     private static function actions(string $section, array $declared, array &$ids, TopologyRecipe $recipe): array
     {
         $actions = [];
-        /** @mago-expect analysis:mixed-assignment Each declared action is validated one field at a time. */
         foreach ($declared as $index => $action) {
             $label = "{$section}#{$index}";
             if (is_array($action) && array_key_exists('stdin', $action)) {
@@ -225,7 +223,6 @@ final readonly class ProofPlan
                 );
             }
             $arguments = [];
-            /** @mago-expect analysis:mixed-assignment Each argument is validated before it joins the vector. */
             foreach ($argv as $argument) {
                 if (! is_string($argument) || preg_match('/[\0\r\n]/', $argument) === 1) {
                     throw new InvalidArgumentException(
@@ -248,8 +245,8 @@ final readonly class ProofPlan
     }
 
     /**
-     * @param array<array-key, mixed> $value
-     * @param list<string> $keys
+     * @param  array<array-key, mixed>  $value
+     * @param  list<string>  $keys
      */
     private static function hasExactKeys(array $value, array $keys): bool
     {

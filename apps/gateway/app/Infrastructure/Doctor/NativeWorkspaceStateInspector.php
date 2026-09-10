@@ -20,7 +20,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Workspace;
 use Illuminate\Support\Collection;
 
-/** @mago-expect lint:excessive-parameter-list Read-only workspace projection checks reuse the production renderers. */
 final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInspector
 {
     public function __construct(

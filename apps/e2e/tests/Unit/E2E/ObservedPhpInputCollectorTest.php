@@ -55,7 +55,8 @@ function observedRuntimeInventory(string $phpVersion = '8.5.10', ?string $pcovVe
 
 function observedRuntimeTransport(array $inventories): GuestTransport
 {
-    return new class($inventories) implements GuestTransport {
+    return new class($inventories) implements GuestTransport
+    {
         public function __construct(
             private array $inventories,
         ) {}
@@ -97,7 +98,8 @@ function observedCollectedRuntimes(): array
 
 function observedTransport(array $roleRecords): GuestTransport
 {
-    return new class($roleRecords) implements GuestTransport {
+    return new class($roleRecords) implements GuestTransport
+    {
         public function __construct(
             private array $roleRecords,
         ) {}
@@ -129,7 +131,8 @@ function observedTransport(array $roleRecords): GuestTransport
 }
 
 it('uses Incus-safe batch labels for every process-surface probe', function (): void {
-    $transport = new class implements GuestTransport {
+    $transport = new class implements GuestTransport
+    {
         public function exec(string $instance, GuestCommand $command): GuestCommandResult
         {
             return new GuestCommandResult('', '', 0);

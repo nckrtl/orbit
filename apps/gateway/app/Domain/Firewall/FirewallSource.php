@@ -71,7 +71,7 @@ final class FirewallSource
 
         for ($index = 0; $index < strlen($packed); $index++) {
             $bits = min(8, max(0, $prefixLength - ($index * 8)));
-            $mask = $bits === 0 ? 0 : (0xff << (8 - $bits)) & 0xff;
+            $mask = $bits === 0 ? 0 : (0xFF << (8 - $bits)) & 0xFF;
             $network .= chr(ord($packed[$index]) & $mask);
         }
 

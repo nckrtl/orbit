@@ -15,8 +15,8 @@ use App\Models\NodeRole;
 final readonly class RouteStateResolver
 {
     /**
-     * @param array<int, array{tld?: ?string, cluster_id?: ?int}> $nodeOverrides
-     * @param array<int, array{tld?: ?string, state?: ClusterState}> $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      */
     public function forNode(Node $node, array $nodeOverrides = [], array $clusterOverrides = []): RoutePlacement
     {

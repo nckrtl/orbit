@@ -6,7 +6,6 @@ namespace App\Domain\AppInstances\Environment;
 
 use App\Models\Node;
 
-/** @mago-expect lint:excessive-parameter-list The immutable context captures every field used to reject stale mutations. */
 final readonly class AppInstanceEnvironmentContext
 {
     public function __construct(
@@ -25,7 +24,7 @@ final readonly class AppInstanceEnvironmentContext
 
     public function samePlacement(self $other): bool
     {
-        return (
+        return
             $this->appInstanceId === $other->appInstanceId
             && $this->appId === $other->appId
             && $this->nodeId === $other->nodeId
@@ -35,7 +34,6 @@ final readonly class AppInstanceEnvironmentContext
             && $this->laravel === $other->laravel
             && $this->routeId === $other->routeId
             && $this->routeHostname === $other->routeHostname
-            && $this->nodeStatus === $other->nodeStatus
-        );
+            && $this->nodeStatus === $other->nodeStatus;
     }
 }

@@ -14,23 +14,13 @@ use Closure;
 use DateTimeImmutable;
 use RuntimeException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Retirement deliberately validates every exact target before mutation.
- * @mago-expect lint:excessive-parameter-list Each lifecycle boundary is injected explicitly for deterministic recovery.
- * @mago-expect lint:kan-defect Exact fail-closed checks intentionally keep the lifecycle in one auditable service.
- * @mago-expect lint:too-many-methods Private validation methods keep the public lifecycle small.
- * @mago-expect analysis:mixed-argument PHPDoc array shapes are validated before each exact mutation.
- * @mago-expect analysis:less-specific-argument Serialized resource maps are validated at their use sites.
- * @mago-expect analysis:invalid-iterator Preserved resource lists come from validated immutable manifests.
- * @mago-expect analysis:invalid-destructuring-source Ordered candidates use the documented exact tuple shape.
- */
 final readonly class LegacyRetirement
 {
     /**
-     * @param Closure(): array<string, list<array<string, mixed>>> $observe
-     * @param Closure(string, array<string, mixed>): void $mutate
-     * @param Closure(): DateTimeImmutable $clock
-     * @param (Closure(array<string, list<array<string, mixed>>>): array<string, list<array<string, mixed>>>)|null $observeCurrent
+     * @param  Closure(): array<string, list<array<string, mixed>>>  $observe
+     * @param  Closure(string, array<string, mixed>): void  $mutate
+     * @param  Closure(): DateTimeImmutable  $clock
+     * @param  (Closure(array<string, list<array<string, mixed>>>): array<string, list<array<string, mixed>>>)|null  $observeCurrent
      */
     public function __construct(
         private Closure $observe,
@@ -44,7 +34,6 @@ final readonly class LegacyRetirement
     public function inventory(): RetirementInventory
     {
         $observed = ($this->observe)();
-        assert(is_array($observed));
 
         return $this->inventoryFrom($observed);
     }
@@ -72,7 +61,6 @@ final readonly class LegacyRetirement
         $candidates = $this->orderedGroups($candidates, RetirementInventory::CANDIDATE_KINDS);
         $preserved = $this->orderedGroups($preserved, RetirementInventory::PRESERVED_KINDS);
         $now = ($this->clock)();
-        assert($now instanceof DateTimeImmutable);
 
         /** @var array<string, list<array<string, mixed>>> $candidates */
         /** @var array<string, list<array<string, mixed>>> $preserved */
@@ -139,7 +127,6 @@ final readonly class LegacyRetirement
         }
         if ($resume === null) {
             $now = ($this->clock)();
-            assert($now instanceof DateTimeImmutable);
             $manifest = new QuarantineManifest(
                 $inventory->sha256(),
                 $evidenceIdentity,
@@ -210,7 +197,6 @@ final readonly class LegacyRetirement
             throw new RuntimeException('The acknowledged quarantine SHA-256 does not match.');
         }
         $now = ($this->clock)();
-        assert($now instanceof DateTimeImmutable);
         if ($now < new DateTimeImmutable($manifest->deleteAfter)) {
             throw new RuntimeException('The quarantine retention period has not elapsed.');
         }
@@ -245,7 +231,6 @@ final readonly class LegacyRetirement
             $deletedMap[$this->targetKey($target)] = true;
             $this->record($journalPath, $this->deleteJournalState($manifest, $deleted, null, 'pending'));
         }
-        /** @var list<array<string, mixed>> $deletedResults */
         $targetsByKey = [];
         foreach ($manifest->targets as $target) {
             $targetsByKey[$this->targetKey($target)] = $target;
@@ -279,10 +264,7 @@ final readonly class LegacyRetirement
     /** @param array<string, list<array<string, mixed>>>|null $observed */
     public function verify(RetirementResult $retirement, ?array $observed = null): RetirementResult
     {
-        if ($observed === null) {
-            $observed = ($this->observe)();
-            assert(is_array($observed));
-        }
+        $observed ??= ($this->observe)();
         $remaining = [];
         foreach ($retirement->deleted as $deleted) {
             $kind = $deleted['kind'] ?? null;
@@ -433,7 +415,7 @@ final readonly class LegacyRetirement
     }
 
     /**
-     * @param array<string, list<array<string, mixed>>>|null $requested
+     * @param  array<string, list<array<string, mixed>>>|null  $requested
      * @return array<string, list<array<string, mixed>>>
      */
     private function liveObservation(?array $requested = null): array
@@ -443,7 +425,6 @@ final readonly class LegacyRetirement
         } else {
             $observed = ($this->observe)();
         }
-        assert(is_array($observed));
 
         /** @var array<string, list<array<string, mixed>>> $observed */
         return $observed;
@@ -459,7 +440,10 @@ final readonly class LegacyRetirement
         return self::readProtectedJson($path);
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $preserved */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $preserved
+     */
     private function assertQuarantineMutationReady(array $target, array $preserved): void
     {
         $observed = $this->liveObservation($this->mutationResources($target, $preserved));
@@ -467,7 +451,10 @@ final readonly class LegacyRetirement
         $this->assertPreservedUnchanged($preserved, $observed);
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $preserved */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $preserved
+     */
     private function assertDeleteMutationReady(array $target, array $preserved): void
     {
         $observed = $this->liveObservation($this->mutationResources($target, $preserved));
@@ -476,8 +463,8 @@ final readonly class LegacyRetirement
     }
 
     /**
-     * @param array<string, mixed> $target
-     * @param array<string, list<array<string, mixed>>> $preserved
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $preserved
      * @return array<string, list<array<string, mixed>>>
      */
     private function mutationResources(array $target, array $preserved): array
@@ -494,7 +481,10 @@ final readonly class LegacyRetirement
         return $requested;
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function assertQuarantineTargetPreState(array $target, array $observed): void
     {
         $kind = $target['kind'] ?? null;
@@ -514,7 +504,10 @@ final readonly class LegacyRetirement
         $this->assertQuarantineTargetPostState($target, $observed);
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function assertQuarantineTargetPostState(array $target, array $observed): void
     {
         $kind = $target['kind'] ?? null;
@@ -532,7 +525,10 @@ final readonly class LegacyRetirement
         }
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function assertDeleteTargetMissing(array $target, array $observed): void
     {
         $kind = $target['kind'] ?? null;
@@ -545,7 +541,10 @@ final readonly class LegacyRetirement
         }
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function assertDeleteTargetPresent(array $target, array $observed): void
     {
         $kind = $target['kind'] ?? null;
@@ -566,7 +565,10 @@ final readonly class LegacyRetirement
         }
     }
 
-    /** @param array<string, mixed> $expected @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $expected
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function resourceMatches(string $kind, array $expected, array $observed): bool
     {
         $actual = $this->findExact($kind, $observed[$kind] ?? [], $expected);
@@ -575,17 +577,17 @@ final readonly class LegacyRetirement
         }
         $actual = $this->withFilesystemType($kind, $actual);
 
-        return (
+        return
             $this->canonical($this->withResourceDigest($actual)) === $this->canonical($this->withResourceDigest(
                 $expected,
-            ))
-        );
+            ));
     }
 
     /**
-     * @param array<string, mixed> $resume
-     * @param list<array<string, mixed>> $targets
-     * @param array<string, list<array<string, mixed>>> $preserved
+     * @param  array<string, mixed>  $resume
+     * @param  array<string, mixed>  $evidenceIdentity
+     * @param  list<array<string, mixed>>  $targets
+     * @param  array<string, list<array<string, mixed>>>  $preserved
      * @return array{QuarantineManifest, list<array{kind: string, identity: string}>}
      */
     private function resumeQuarantineEntries(
@@ -645,6 +647,7 @@ final readonly class LegacyRetirement
             $key = $this->targetKey($target);
             if (isset($completedMap[$key])) {
                 $this->assertQuarantineTargetPostState($target, $observed);
+
                 continue;
             }
             if ($pending !== null && $key === $pending['kind']."\0".$pending['identity']) {
@@ -654,6 +657,7 @@ final readonly class LegacyRetirement
                 if ($this->quarantineTargetHasPostState($target, $observed)) {
                     $completed[] = $pending;
                     $completedMap[$key] = true;
+
                     continue;
                 }
                 throw new RuntimeException('A quarantined resource drifted during recovery.');
@@ -662,20 +666,24 @@ final readonly class LegacyRetirement
                 if (! $this->quarantineTargetHasPreState($target, $observed)) {
                     throw new RuntimeException('An unrecorded quarantined resource changed state.');
                 }
+
                 continue;
             }
             $this->assertQuarantineTargetPostState($target, $observed);
         }
         $this->assertPreservedUnchanged($journalManifest->preserved, $observed);
 
-        if (($resume['phase'] ?? null) === 'complete' && count($completed) !== count($mutableTargets)) {
+        if (($resume['phase']) === 'complete' && count($completed) !== count($mutableTargets)) {
             throw new RuntimeException('The quarantine recovery journal is invalid.');
         }
 
         return [$journalManifest, $completed];
     }
 
-    /** @param array<string, mixed> $resume @return list<array{kind: string, identity: string}> */
+    /**
+     * @param  array<string, mixed>  $resume
+     * @return list<array{kind: string, identity: string}>
+     */
     private function resumeDeleteEntries(array $resume, QuarantineManifest $manifest): array
     {
         if (
@@ -720,6 +728,7 @@ final readonly class LegacyRetirement
             $key = $this->targetKey($target);
             if (isset($completedMap[$key])) {
                 $this->assertDeleteTargetMissing($target, $observed);
+
                 continue;
             }
             if ($pending !== null && $key === $pending['kind']."\0".$pending['identity']) {
@@ -729,6 +738,7 @@ final readonly class LegacyRetirement
                 if ($this->deleteTargetIsMissing($target, $observed)) {
                     $completed[] = $pending;
                     $completedMap[$key] = true;
+
                     continue;
                 }
                 throw new RuntimeException('A deletion target drifted during recovery.');
@@ -739,14 +749,17 @@ final readonly class LegacyRetirement
         }
         $this->assertPreservedUnchanged($manifest->preserved, $observed);
 
-        if (($resume['phase'] ?? null) === 'complete' && count($completed) !== count($manifest->targets)) {
+        if (($resume['phase']) === 'complete' && count($completed) !== count($manifest->targets)) {
             throw new RuntimeException('The deletion recovery journal is invalid.');
         }
 
         return $completed;
     }
 
-    /** @param array<string, list<array<string, mixed>>> $preserved @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $preserved
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function assertPreservedUnchanged(array $preserved, array $observed): void
     {
         foreach ($preserved as $kind => $resources) {
@@ -758,7 +771,9 @@ final readonly class LegacyRetirement
         }
     }
 
-    /** @param list<array<string, mixed>> $targets @param array<string, list<array<string, mixed>>> $preserved
+    /**
+     * @param  list<array<string, mixed>>  $targets
+     * @param  array<string, list<array<string, mixed>>>  $preserved
      * @return array<string, list<array<string, mixed>>>
      */
     private function requestedResources(array $targets, array $preserved): array
@@ -786,7 +801,10 @@ final readonly class LegacyRetirement
         return $requested;
     }
 
-    /** @param list<array<string, mixed>> $targets @return list<array<string, mixed>> */
+    /**
+     * @param  list<array<string, mixed>>  $targets
+     * @return list<array<string, mixed>>
+     */
     private function quarantineMutationTargets(array $targets): array
     {
         return array_values(array_filter(
@@ -798,7 +816,10 @@ final readonly class LegacyRetirement
         ));
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function quarantineTargetHasPreState(array $target, array $observed): bool
     {
         try {
@@ -810,7 +831,10 @@ final readonly class LegacyRetirement
         return true;
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function quarantineTargetHasPostState(array $target, array $observed): bool
     {
         try {
@@ -822,7 +846,10 @@ final readonly class LegacyRetirement
         return true;
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function deleteTargetIsPresent(array $target, array $observed): bool
     {
         try {
@@ -834,7 +861,10 @@ final readonly class LegacyRetirement
         return true;
     }
 
-    /** @param array<string, mixed> $target @param array<string, list<array<string, mixed>>> $observed */
+    /**
+     * @param  array<string, mixed>  $target
+     * @param  array<string, list<array<string, mixed>>>  $observed
+     */
     private function deleteTargetIsMissing(array $target, array $observed): bool
     {
         try {
@@ -846,7 +876,10 @@ final readonly class LegacyRetirement
         return true;
     }
 
-    /** @param array<string, mixed> $target @return array{kind: string, identity: string} */
+    /**
+     * @param  array<string, mixed>  $target
+     * @return array{kind: string, identity: string}
+     */
     private function journalIdentity(array $target): array
     {
         $kind = $target['kind'] ?? null;
@@ -870,7 +903,10 @@ final readonly class LegacyRetirement
         return $kind."\0".$identity;
     }
 
-    /** @param list<array<string, mixed>> $targets @return array<string, true> */
+    /**
+     * @param  list<array<string, mixed>>  $targets
+     * @return array<string, true>
+     */
     private function allowedEntryMap(array $targets): array
     {
         $allowed = [];
@@ -881,7 +917,10 @@ final readonly class LegacyRetirement
         return $allowed;
     }
 
-    /** @param list<array{kind: string, identity: string}> $entries @return array<string, true> */
+    /**
+     * @param  list<array{kind: string, identity: string}>  $entries
+     * @return array<string, true>
+     */
     private function entryMap(array $entries): array
     {
         $map = [];
@@ -892,7 +931,10 @@ final readonly class LegacyRetirement
         return $map;
     }
 
-    /** @param mixed $value @param array<string, true> $allowed @return list<array{kind: string, identity: string}> */
+    /**
+     * @param  array<string, true>  $allowed
+     * @return list<array{kind: string, identity: string}>
+     */
     private function validatedJournalEntries(mixed $value, array $allowed): array
     {
         if (! is_array($value) || ! array_is_list($value)) {
@@ -923,7 +965,11 @@ final readonly class LegacyRetirement
         return $entries;
     }
 
-    /** @param mixed $value @param array<string, true> $allowed @param list<array{kind: string, identity: string}> $completed @return array{kind: string, identity: string}|null */
+    /**
+     * @param  array<string, true>  $allowed
+     * @param  list<array{kind: string, identity: string}>  $completed
+     * @return array{kind: string, identity: string}|null
+     */
     private function validatedPendingEntry(mixed $value, array $allowed, array $completed): ?array
     {
         if ($value === null) {
@@ -949,7 +995,11 @@ final readonly class LegacyRetirement
         return $value;
     }
 
-    /** @param list<array{kind: string, identity: string}> $completed @param array{kind: string, identity: string}|null $pending @return array<string, mixed> */
+    /**
+     * @param  list<array{kind: string, identity: string}>  $completed
+     * @param  array{kind: string, identity: string}|null  $pending
+     * @return array<string, mixed>
+     */
     private function quarantineJournalState(
         QuarantineManifest $manifest,
         array $completed,
@@ -969,7 +1019,11 @@ final readonly class LegacyRetirement
         ];
     }
 
-    /** @param list<array{kind: string, identity: string}> $completed @param array{kind: string, identity: string}|null $pending @return array<string, mixed> */
+    /**
+     * @param  list<array{kind: string, identity: string}>  $completed
+     * @param  array{kind: string, identity: string}|null  $pending
+     * @return array<string, mixed>
+     */
     private function deleteJournalState(
         QuarantineManifest $manifest,
         array $completed,
@@ -1004,7 +1058,10 @@ final readonly class LegacyRetirement
         return true;
     }
 
-    /** @param array<string, list<array<string, mixed>>> $groups @return list<array{string, array<string, mixed>}> */
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $groups
+     * @return list<array{string, array<string, mixed>}>
+     */
     private function orderedCandidates(array $groups): array
     {
         $result = [];
@@ -1017,7 +1074,10 @@ final readonly class LegacyRetirement
         return $result;
     }
 
-    /** @param list<array<string, mixed>> $targets @return list<array<string, mixed>> */
+    /**
+     * @param  list<array<string, mixed>>  $targets
+     * @return list<array<string, mixed>>
+     */
     private function orderedTargets(array $targets): array
     {
         $order = array_flip(['snapshots', 'instances', 'networks', 'source_paths', 'manifests', 'locks']);
@@ -1119,7 +1179,10 @@ final readonly class LegacyRetirement
         $this->assertExactFilesystemResource($kind, $resource);
     }
 
-    /** @param array<string, mixed> $resource */
+    /**
+     * @param  array<string, mixed>  $resource
+     * @return array<string, mixed>
+     */
     private function withFilesystemType(string $kind, array $resource): array
     {
         $expected = $this->expectedFilesystemType($kind);
@@ -1241,7 +1304,11 @@ final readonly class LegacyRetirement
         );
     }
 
-    /** @param array<string, list<array<string, mixed>>> $groups @param list<string> $order @return array<string, list<array<string, mixed>>> */
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $groups
+     * @param  list<string>  $order
+     * @return array<string, list<array<string, mixed>>>
+     */
     private function orderedGroups(array $groups, array $order): array
     {
         $ordered = [];
@@ -1260,7 +1327,10 @@ final readonly class LegacyRetirement
         return $ordered;
     }
 
-    /** @param list<array<string, mixed>> $resources @return array<string, mixed>|null */
+    /**
+     * @param  list<array<string, mixed>>  $resources
+     * @return array<string, mixed>|null
+     */
     private function find(array $resources, string $identity): ?array
     {
         foreach ($resources as $resource) {
@@ -1272,7 +1342,11 @@ final readonly class LegacyRetirement
         return null;
     }
 
-    /** @param list<array<string, mixed>> $resources @param array<string, mixed> $expected @return array<string, mixed>|null */
+    /**
+     * @param  list<array<string, mixed>>  $resources
+     * @param  array<string, mixed>  $expected
+     * @return array<string, mixed>|null
+     */
     private function findExact(string $kind, array $resources, array $expected): ?array
     {
         $reference = $this->resourceSelectionKey($kind, $expected);
@@ -1309,10 +1383,13 @@ final readonly class LegacyRetirement
         return $kind."\0".$identity;
     }
 
-    /** @param array<string, mixed> $resource @return list<string> */
+    /**
+     * @param  array<string, mixed>  $resource
+     * @return list<string>
+     */
     private function recoveryCommands(string $kind, array $resource): array
     {
-        return (
+        return
             $kind === 'instances' && ($resource['status'] ?? null) === 'RUNNING'
                 ? [sprintf(
                     'incus --project %s start %s:%s',
@@ -1320,8 +1397,7 @@ final readonly class LegacyRetirement
                     escapeshellarg((string) ($resource['remote'] ?? '')),
                     escapeshellarg($this->identity($resource)),
                 )]
-                : []
-        );
+                : [];
     }
 
     private function canonical(mixed $value): string
@@ -1341,7 +1417,10 @@ final readonly class LegacyRetirement
         }
     }
 
-    /** @param array<string, mixed> $resource @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $resource
+     * @return array<string, mixed>
+     */
     private function withResourceDigest(array $resource): array
     {
         unset($resource['resource_sha256']);

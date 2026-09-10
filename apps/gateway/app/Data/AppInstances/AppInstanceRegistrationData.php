@@ -12,7 +12,6 @@ use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
 #[MapOutputName(SnakeCaseMapper::class)]
-/** @mago-expect lint:excessive-parameter-list The response keeps its bounded registration summary explicit. */
 final class AppInstanceRegistrationData extends Data
 {
     /** @param list<AppInstanceData> $appInstances */

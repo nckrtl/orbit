@@ -8,14 +8,13 @@ use JsonException;
 use stdClass;
 use UnexpectedValueException;
 
-/** @mago-expect lint:cyclomatic-complexity The scanner validates one bounded top-level JSON grammar. */
 final readonly class TopLevelJsonObjectInspector
 {
     /**
-     * @param list<string> $allowedKeys
+     * @param  list<string>  $allowedKeys
      * @return array<string, mixed>
+     *
      * @throws UnexpectedValueException
-     * @mago-expect analysis:mixed-assignment JSON decoding is an untyped transport boundary.
      */
     public function inspect(#[\SensitiveParameter] string $json, array $allowedKeys): array
     {
@@ -55,7 +54,6 @@ final readonly class TopLevelJsonObjectInspector
 
     /**
      * @return list<string>
-     * @mago-expect analysis:mixed-assignment JSON string decoding is an untyped transport boundary.
      */
     private function topLevelKeys(#[\SensitiveParameter] string $json): array
     {

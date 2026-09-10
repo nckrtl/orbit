@@ -63,7 +63,6 @@ function assertPromotionWasNotMutatedInPlace(?array $before, ?array $after): voi
     }
 }
 
-/** @mago-expect lint:cyclomatic-complexity Cleanup must preserve any primary scenario failure beside cleanup refusal. */
 it('constructs and releases the four-Node cold acceptance topology', function () {
     $candidate = getenv('ORBIT_SCENARIO_CANDIDATE_SHA');
     $repository = getenv('ORBIT_SCENARIO_REPOSITORY');

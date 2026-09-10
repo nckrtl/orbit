@@ -8,7 +8,6 @@ use Closure;
 use JsonException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Atomic I/O requires every failure to be checked. */
 final readonly class AtomicJsonStore
 {
     public function __construct(

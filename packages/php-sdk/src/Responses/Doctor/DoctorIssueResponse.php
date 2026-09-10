@@ -7,7 +7,6 @@ namespace Orbit\Sdk\Responses\Doctor;
 use Orbit\Sdk\Support\CredentialRedactor;
 use SensitiveParameter;
 
-/** @mago-expect lint:cyclomatic-complexity The immutable wire DTO validates eight independent fields. */
 final readonly class DoctorIssueResponse
 {
     private const int MAX_STRING_LENGTH = 255;
@@ -25,7 +24,6 @@ final readonly class DoctorIssueResponse
 
     private const array KINDS = ['drift', 'unverifiable'];
 
-    /** @mago-expect lint:excessive-parameter-list The constructor mirrors the exact Gateway issue shape. */
     private function __construct(
         public string $code,
         public string $kind,
@@ -38,8 +36,7 @@ final readonly class DoctorIssueResponse
     ) {}
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway issue values remain mixed until validated.
-     * @param array<array-key, mixed> $data
+     * @param  array<array-key, mixed>  $data
      */
     public static function fromGatewayData(#[SensitiveParameter] array $data): ?self
     {
@@ -131,8 +128,7 @@ final readonly class DoctorIssueResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment A nullable issue value remains mixed until type validation.
-     * @param array<array-key, mixed> $data
+     * @param  array<array-key, mixed>  $data
      */
     private static function nullableString(array $data, string $key): string|false|null
     {
@@ -151,8 +147,7 @@ final readonly class DoctorIssueResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment A nullable issue value remains mixed until type validation.
-     * @param array<array-key, mixed> $data
+     * @param  array<array-key, mixed>  $data
      */
     private static function nullableIntOrString(array $data, string $key): int|string|false|null
     {
@@ -171,8 +166,7 @@ final readonly class DoctorIssueResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment A nullable issue value remains mixed until type validation.
-     * @param array<array-key, mixed> $data
+     * @param  array<array-key, mixed>  $data
      * @return array{valid:bool,value:bool|string|null}
      */
     private static function nullableBoolOrString(array $data, string $key): array
@@ -188,10 +182,9 @@ final readonly class DoctorIssueResponse
 
         $redacted = new CredentialRedactor()->redactText($value);
 
-        return (
+        return
             strlen($redacted) <= self::MAX_STRING_LENGTH
                 ? ['valid' => true, 'value' => $redacted]
-                : ['valid' => false, 'value' => null]
-        );
+                : ['valid' => false, 'value' => null];
     }
 }

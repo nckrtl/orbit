@@ -26,9 +26,7 @@ final readonly class RequireNodeAccess
     ) {}
 
     /**
-     * @mago-expect lint:halstead The method keeps the fail-closed decision order explicit.
-     * @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node.
-     * @param Closure(Request): Response $next
+     * @param  Closure(Request): Response  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -81,10 +79,6 @@ final readonly class RequireNodeAccess
         return $this->required($consumer, $servingNodes[0]);
     }
 
-    /**
-     * @mago-expect analysis:impossible-condition The middleware also fails closed without a route.
-     * @mago-expect analysis:mixed-assignment Laravel resolves controller actions dynamically.
-     */
     private function scope(Request $request): ?ServingNode
     {
         $route = $request->route();

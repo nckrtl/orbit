@@ -40,9 +40,6 @@ use Throwable;
  * copy renamed into place; the manifest is promoted and the proved topology
  * is released. A failure before the swap leaves the topology snapshot untouched and the
  * proved topology stopped.
- *
- * @mago-expect lint:excessive-parameter-list The promotion dependencies are explicit trust boundaries.
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The promotion keeps its exact ordered operations together.
  */
 final readonly class TopologySnapshotPromoter
 {
@@ -269,7 +266,7 @@ final readonly class TopologySnapshotPromoter
         }
         try {
             $manifest = ProofInputManifest::fromArray($raw);
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             throw new RuntimeException($exception->getMessage(), previous: $exception);
         }
         if ($manifest->fingerprint() !== $fingerprint) {
@@ -329,7 +326,7 @@ final readonly class TopologySnapshotPromoter
             }
             try {
                 $equivalence = ProofEquivalenceReport::fromArray($raw);
-            } catch (\Throwable $exception) {
+            } catch (Throwable $exception) {
                 throw new RuntimeException($exception->getMessage(), previous: $exception);
             }
             if (
@@ -346,7 +343,7 @@ final readonly class TopologySnapshotPromoter
         }
         $acceptedFingerprint = $this->fingerprints->forCommit($accepted)->value;
         $mergedFingerprint = $this->fingerprints->forCommit($main)->value;
-        $promotionPath = $equivalence?->promotionPath ?? 'retained-proof';
+        $promotionPath = $equivalence->promotionPath ?? 'retained-proof';
         if ($promotionPath === 'candidate-convergence' && $manifest->observedInputs === null) {
             throw new RuntimeException('Candidate-convergence promotion requires complete observed-input evidence.');
         }
@@ -427,8 +424,6 @@ final readonly class TopologySnapshotPromoter
         }
         if (
             ! is_int($manifest['schema'] ?? null)
-            || ! is_string($manifest['cold_epoch'] ?? null)
-            || ! is_string($manifest['base_image_alias'] ?? null)
             || ! is_array($manifest['topology'] ?? null)
             || ! is_string($manifest['topology']['profile'] ?? null)
             || ! is_array($manifest['topology']['roles'] ?? null)
@@ -470,7 +465,7 @@ final readonly class TopologySnapshotPromoter
      * Remove the issue's proof fixtures while the proved instances still run, so the
      * promoted generation carries none of them into the next issue's proof.
      *
-     * @param list<string> $instances
+     * @param  list<string>  $instances
      */
     private function clearProofFixtures(array $instances): void
     {

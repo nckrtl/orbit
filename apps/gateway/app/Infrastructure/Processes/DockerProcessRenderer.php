@@ -9,10 +9,6 @@ use App\Models\Process;
 use InvalidArgumentException;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Docker arguments validate each supported explicit input shape.
- * @mago-expect lint:kan-defect Docker arguments fail closed on malformed persisted configuration.
- */
 final readonly class DockerProcessRenderer
 {
     public function containerName(#[SensitiveParameter] Process $process): string
@@ -26,8 +22,6 @@ final readonly class DockerProcessRenderer
 
     /**
      * @return non-empty-list<string>
-     *
-     * @mago-expect analysis:mixed-assignment Persisted runtime configuration is validated before rendering.
      */
     public function createArguments(
         #[SensitiveParameter]
@@ -96,7 +90,6 @@ final readonly class DockerProcessRenderer
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
-    /** @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary. */
     public function environmentInput(#[SensitiveParameter] Process $process): ProtectedInput
     {
         $contents = '';
@@ -125,8 +118,6 @@ final readonly class DockerProcessRenderer
 
     /**
      * @return list<string>
-     *
-     * @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary.
      */
     private function stringList(mixed $value): array
     {
@@ -149,8 +140,6 @@ final readonly class DockerProcessRenderer
 
     /**
      * @return array<string, string>
-     *
-     * @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary.
      */
     private function stringMap(#[SensitiveParameter] mixed $value): array
     {
@@ -184,8 +173,6 @@ final readonly class DockerProcessRenderer
 
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
-     *
-     * @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary.
      */
     private function volumes(mixed $value): array
     {

@@ -48,9 +48,8 @@ final readonly class DocumentationLintPolicy
             return true;
         }
 
-        return (
+        return
             in_array($finding->rule, $this->legacyDecisionRules, true)
-            && (int) $matches[1] < $this->decisionRulesFrom
-        );
+            && (int) $matches[1] < $this->decisionRulesFrom;
     }
 }

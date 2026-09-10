@@ -9,10 +9,9 @@ use InvalidArgumentException;
 final readonly class IncusNetwork
 {
     /**
-     * @param array<string, string> $metadata
-     * @param array<string, string> $config
-     * @param list<string> $usedBy Incus resource paths attached to the network.
-     * @mago-expect lint:excessive-parameter-list The network identity, metadata, configuration, and users are one Incus record.
+     * @param  array<string, string>  $metadata
+     * @param  array<string, string>  $config
+     * @param  list<string>  $usedBy  Incus resource paths attached to the network.
      */
     public function __construct(
         public string $remote,

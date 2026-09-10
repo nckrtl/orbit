@@ -98,7 +98,8 @@ it('records exactly one bounded doctor activity without report findings or diagn
     $caller = command_activity_doctor_node('doctor-caller');
     $selected = command_activity_doctor_node('doctor-selected');
     $caller->accessibleNodes()->attach($selected->id);
-    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector {
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
         public function inspect(Node $node): NodeInspectionData
         {
             return new NodeInspectionData(true, 'linux', 'x86_64', true);
@@ -501,7 +502,8 @@ it('records node role commands against the node with bounded inputs and stable f
 
 it('records complete SDK role removal input on success and before authentication', function (): void {
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
-    app()->instance(NodeReachabilityProbe::class, new class implements NodeReachabilityProbe {
+    app()->instance(NodeReachabilityProbe::class, new class implements NodeReachabilityProbe
+    {
         public function degradation(Node $node): ?ExporterDegradationReason
         {
             return null;
@@ -568,8 +570,7 @@ it('records complete SDK role removal input on success and before authentication
         ]);
 });
 
-/** @mago-expect lint:file-name Test-local fake isolates node role activity from remote effects. */
-final class CommandActivityNodeRoleLifecycleFake implements RoleBaselineConverger, NodeRoleDependentCleaner
+final class CommandActivityNodeRoleLifecycleFake implements NodeRoleDependentCleaner, RoleBaselineConverger
 {
     public function converge(Node $node, NodeRole $assignment): void {}
 
@@ -660,7 +661,7 @@ it('records successful install with the created tool and an exact safe projectio
         'name' => ToolManagerName::Apt,
         'status' => LifecycleStatus::Active,
     ]);
-    $fake = new Tests\Support\FakeToolManager;
+    $fake = new FakeToolManager;
     $fake->installedVersions = [null, '1.2.3'];
     $fake->candidateVersions = ['1.2.3'];
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
@@ -704,7 +705,7 @@ it('records pre-row tool failures safely without substituting the node subject',
         'wireguard_ip' => '10.44.0.34',
     ]);
     $this->markAsGateway($node);
-    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([new Tests\Support\FakeToolManager]));
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([new FakeToolManager]));
     $requestId = (string) Str::uuid();
     $this
         ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
@@ -766,7 +767,7 @@ it('records retained failed tools as subjects with safe outcomes', function (): 
         'package' => 'jq',
         'status' => ToolStatus::Installed,
     ]);
-    $fake = new Tests\Support\FakeToolManager;
+    $fake = new FakeToolManager;
     $fake->failures['install'] = [new ToolManagerException('install', 'RAW_EXCEPTION_SENTINEL')];
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
     $requestId = (string) Str::uuid();
@@ -812,7 +813,7 @@ it('does not persist command result data from manager failures', function (): vo
         'name' => ToolManagerName::Apt,
         'status' => LifecycleStatus::Active,
     ]);
-    $fake = new Tests\Support\FakeToolManager;
+    $fake = new FakeToolManager;
     $fake->failures['install'] = [new ToolManagerException(
         'install',
         'EXCEPTION_SENTINEL',
@@ -1187,11 +1188,7 @@ function command_activity_environment_fixture(): array
     return [$caller, $instance->fresh(['node'])];
 }
 
-/** @mago-expect lint:file-name Test-local adapter isolates environment activity from SSH. */
-final readonly class CommandActivityEnvironmentAccess implements
-    AppInstanceOperationPreflight,
-    AppInstanceEnvironmentReader,
-    AppInstanceEnvironmentWriter
+final readonly class CommandActivityEnvironmentAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
 {
     public function __construct(
         private string $contents,
@@ -1211,7 +1208,7 @@ final readonly class CommandActivityEnvironmentAccess implements
 
     public function write(
         AppInstanceEnvironmentContext $context,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         string $contents,
     ): AppInstanceEnvironmentWriteResult {
         return AppInstanceEnvironmentWriteResult::changed();

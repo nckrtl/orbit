@@ -13,6 +13,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -300,7 +301,6 @@ final class NativeProcessInspectorSsh implements SshExecutor
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps key material isolated. */
 final readonly class NativeProcessInspectorKeys implements SshKeyProvider
 {
     public function privateKeyPath(): string
@@ -314,7 +314,6 @@ final readonly class NativeProcessInspectorKeys implements SshKeyProvider
     }
 }
 
-/** @mago-expect lint:single-class-per-file Test-local fake keeps host state isolated. */
 final readonly class NativeProcessInspectorKnownHosts implements KnownHostsStore
 {
     public function path(): string
@@ -322,5 +321,5 @@ final readonly class NativeProcessInspectorKnownHosts implements KnownHostsStore
         return '/pinned-hosts';
     }
 
-    public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
+    public function put(string $host, int $port, HostKey $key): void {}
 }

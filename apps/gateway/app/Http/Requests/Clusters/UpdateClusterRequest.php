@@ -15,7 +15,6 @@ final class UpdateClusterRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        /** @mago-expect analysis:mixed-assignment Request input is an untyped boundary. */
         $tld = $this->input('tld');
 
         if (is_string($tld)) {

@@ -23,6 +23,7 @@ use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -147,7 +148,7 @@ it('holds one cross-process owner through synchronization so a later update rema
     } finally {
         foreach (glob("{$directory}/*") ?: [] as $path) {
             if (is_dir($path)) {
-                new \Illuminate\Filesystem\Filesystem()->deleteDirectory($path);
+                new Filesystem()->deleteDirectory($path);
             } else {
                 unlink($path);
             }

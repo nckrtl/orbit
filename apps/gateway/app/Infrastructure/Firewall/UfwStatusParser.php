@@ -8,10 +8,6 @@ use App\Domain\Firewall\FirewallPort;
 use App\Domain\Firewall\FirewallSource;
 use InvalidArgumentException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Exact UFW parsing rejects every unsupported managed shape.
- * @mago-expect lint:kan-defect The score reflects strict shape parsing and indexed multi-target ownership resolution.
- */
 final class UfwStatusParser
 {
     /** @return list<array{action: string, source: string, port: string, protocol: string, family: string}> */
@@ -47,7 +43,7 @@ final class UfwStatusParser
     }
 
     /**
-     * @param non-empty-list<UfwRuleShape> $expected
+     * @param  non-empty-list<UfwRuleShape>  $expected
      * @return list<UfwRuleOwnership>
      */
     public function ownerships(string $output, array $expected): array
@@ -179,7 +175,7 @@ final class UfwStatusParser
             ) === 1
         ) {
             try {
-                $endpoint = $this->normalizeEndpoint(($matches[1] ?? '') === '' ? 'any' : $matches[1]);
+                $endpoint = $this->normalizeEndpoint($matches[1] === '' ? 'any' : $matches[1]);
                 $port = FirewallPort::normalize($matches[2]);
             } catch (InvalidArgumentException) {
                 return null;

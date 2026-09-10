@@ -14,7 +14,6 @@ beforeEach(function (): void {
     $container = new Container;
     $container->instance(ProcessFactory::class, new ProcessFactory);
     Facade::clearResolvedInstances();
-    /** @mago-expect analysis:possibly-invalid-argument The process facade only needs the container contract. */
     Facade::setFacadeApplication($container);
 });
 

@@ -16,8 +16,6 @@ use RuntimeException;
  *
  * This boundary deliberately does not use a list operation. A reviewed
  * observation is evidence only; the command result is the authorization fact.
- *
- * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Exact resource validation is kept at the destructive-operation boundary.
  */
 final readonly class LegacyIncusRevalidator
 {
@@ -36,7 +34,7 @@ final readonly class LegacyIncusRevalidator
     }
 
     /**
-     * @param array<string, list<array<string, mixed>>> $groups
+     * @param  array<array-key, list<array<string, mixed>>>  $groups
      * @return array<string, list<array<string, mixed>>>
      */
     public function currentBatch(array $groups, ?string $operation = null): array
@@ -69,13 +67,10 @@ final readonly class LegacyIncusRevalidator
         try {
             $results = Process::pool(function (Pool $pool) use ($commands): void {
                 foreach ($commands as $label => $command) {
-                    if (! array_is_list($command) || array_filter($command, is_string(...)) !== $command) {
-                        throw new RuntimeException('The live Incus resource command is invalid.');
-                    }
                     /** @var list<string> $command */
                     $pool->as($label)->timeout(300)->command($command);
                 }
-            })->run();
+            })->run()->collect()->all();
         } catch (\Throwable $exception) {
             throw new RuntimeException('The live Incus resource read could not run.', 0, $exception);
         }
@@ -109,7 +104,10 @@ final readonly class LegacyIncusRevalidator
         return $current;
     }
 
-    /** @param array<string, mixed> $expected @return array<string, mixed>|null */
+    /**
+     * @param  array<string, mixed>  $expected
+     * @return array<string, mixed>|null
+     */
     public function current(string $kind, array $expected, ?string $operation = null): ?array
     {
         $remote = $expected['remote'] ?? null;
@@ -120,9 +118,6 @@ final readonly class LegacyIncusRevalidator
         }
 
         $command = $this->queryCommand($kind, $expected);
-        if (! array_is_list($command) || array_filter($command, is_string(...)) !== $command) {
-            throw new RuntimeException('The live Incus resource command is invalid.');
-        }
         /** @var list<string> $command */
         $result = $this->run($command);
         $live = $this->classifyResult($result);
@@ -133,11 +128,13 @@ final readonly class LegacyIncusRevalidator
         return $this->parseCurrent($kind, $expected, $live, $operation);
     }
 
-    /** @param array<string, mixed> $expected @return list<string> */
+    /**
+     * @param  array<string, mixed>  $expected
+     * @return list<string>
+     */
     private function queryCommand(string $kind, array $expected): array
     {
         [$remote, $project, $identity] = $this->scopedIdentity($kind, $expected);
-        assert(is_string($remote) && is_string($project) && is_string($identity));
         $path = PreservedIncusReference::supports($kind)
             ? PreservedIncusReference::fromResource($kind, $expected)->queryPath()
             : match ($kind) {
@@ -152,7 +149,11 @@ final readonly class LegacyIncusRevalidator
         return ['incus', 'query', '--raw', "{$remote}:{$path}?project={$project}"];
     }
 
-    /** @param array<string, mixed> $expected @param array<string, mixed> $live */
+    /**
+     * @param  array<string, mixed>  $expected
+     * @param  array<string, mixed>  $live
+     * @return array<string, mixed>
+     */
     private function parseCurrent(string $kind, array $expected, array $live, ?string $operation): array
     {
         $identity = $expected['identity'] ?? $expected['name'] ?? null;
@@ -223,7 +224,10 @@ final readonly class LegacyIncusRevalidator
         return $value;
     }
 
-    /** @param array<string, mixed> $expected @param array<string, mixed> $live */
+    /**
+     * @param  array<string, mixed>  $expected
+     * @param  array<string, mixed>  $live
+     */
     private function assertExact(string $kind, string $identity, array $expected, array $live, ?string $operation): void
     {
         if (PreservedIncusReference::supports($kind)) {
@@ -321,14 +325,16 @@ final readonly class LegacyIncusRevalidator
         }
     }
 
-    /** @param array<string, mixed> $metadata @return array<string, mixed> */
+    /**
+     * @param  array<array-key, mixed>  $metadata
+     * @return array<array-key, mixed>
+     */
     private function stableMetadata(array $metadata): array
     {
         foreach ($metadata as $key => $value) {
             if (is_string($key) && str_starts_with($key, 'volatile.')) {
                 unset($metadata[$key]);
             } elseif (is_array($value) && ! array_is_list($value)) {
-                /** @var array<string, mixed> $value */
                 $metadata[$key] = $this->stableMetadata($value);
             }
         }
@@ -361,7 +367,10 @@ final readonly class LegacyIncusRevalidator
         }
     }
 
-    /** @param array<array-key, mixed> $live @return list<string> */
+    /**
+     * @param  array<array-key, mixed>  $live
+     * @return list<string>
+     */
     private function dependencies(string $kind, array $live): array
     {
         $dependencies = $live['dependencies'] ?? null;
@@ -427,12 +436,14 @@ final readonly class LegacyIncusRevalidator
         }
 
         [$remote, $project, $identity] = $this->scopedIdentity($kind, $expected);
-        assert(is_string($remote) && is_string($project) && is_string($identity));
 
         return $kind."\0".$remote."\0".$project."\0".$identity;
     }
 
-    /** @param array<string, mixed> $expected @return array{string, string, string} */
+    /**
+     * @param  array<string, mixed>  $expected
+     * @return array{string, string, string}
+     */
     private function scopedIdentity(string $kind, array $expected): array
     {
         $remote = $expected['remote'] ?? null;

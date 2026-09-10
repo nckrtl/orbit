@@ -21,12 +21,6 @@ use Closure;
 use Illuminate\Support\Facades\Cache;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Runtime convergence keeps its ordered recovery gates together.
- * @mago-expect lint:kan-defect Runtime convergence fails closed at each remote state transition.
- * @mago-expect lint:too-many-methods Public lifecycle methods and private recovery steps form one runtime boundary.
- * @mago-expect lint:excessive-parameter-list The runtime needs the SSH boundary, target resolver, and two renderers.
- */
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
     private const string DOCKER_INSPECT_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.spec" }}{{ printf "\\n" }}{{ .State.Running }}';
@@ -725,7 +719,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     }
 
     /**
-     * @param non-empty-list<string> $createArguments
+     * @param  non-empty-list<string>  $createArguments
      */
     private function createDockerContainer(
         #[SensitiveParameter]
@@ -751,10 +745,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     }
 
     /**
-     * @param array{spec: string, running: bool, result: CommandResult}|null $canonicalState
-     * @param array{spec: string, running: bool, result: CommandResult}|null $candidateState
-     * @param array{spec: string, running: bool, result: CommandResult} $rollbackState
-     * @return array{spec: string, running: bool, result: CommandResult}|null
+     * @param  array{spec: string, running: bool, result: CommandResult}|null  $canonicalState
+     * @param  array{spec: string, running: bool, result: CommandResult}|null  $candidateState
+     * @param  array{spec: string, running: bool, result: CommandResult}  $rollbackState
+     * @return array{spec: string, running: bool, result: CommandResult}
      */
     private function recoverDockerRollback(
         #[SensitiveParameter]
@@ -766,7 +760,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         ?array $canonicalState,
         ?array $candidateState,
         array $rollbackState,
-    ): ?array {
+    ): array {
         if ($canonicalState === null) {
             if ($candidateState !== null && $candidateState['running']) {
                 $stopCandidate = $this->execute(
@@ -1301,14 +1295,13 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     private function isSystemdNotFound(CommandResult $result): bool
     {
-        return (
+        return
             ! $result->succeeded()
             && (
                 str_contains($result->stderr, 'No such file or directory')
                 || str_contains($result->stderr, 'could not be found')
                 || str_contains($result->stderr, 'not found')
-            )
-        );
+            );
     }
 
     private function isSystemdPathAbsent(CommandResult $result): bool
@@ -1318,10 +1311,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     private function isDockerNotFound(CommandResult $result): bool
     {
-        return (
+        return
             ! $result->succeeded()
-            && (str_contains($result->stderr, 'No such object') || str_contains($result->stderr, 'No such container'))
-        );
+            && (str_contains($result->stderr, 'No such object') || str_contains($result->stderr, 'No such container'));
     }
 
     /** @param non-empty-list<string> $arguments */
@@ -1415,7 +1407,6 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         );
     }
 
-    /** @mago-expect analysis:mixed-assignment Persisted JSON values start at an untyped boundary. */
     private function redactDockerEnvironment(
         #[SensitiveParameter]
         Process $process,

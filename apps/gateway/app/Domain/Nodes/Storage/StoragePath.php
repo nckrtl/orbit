@@ -6,7 +6,6 @@ namespace App\Domain\Nodes\Storage;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity,too-many-methods Directory-boundary path algebra stays on one value object. */
 final readonly class StoragePath
 {
     private function __construct(

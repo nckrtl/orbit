@@ -56,7 +56,6 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
         fi
         BASH;
 
-    /** @mago-expect lint:excessive-parameter-list Exact VPN inspection requires both renderers and the fixed SSH boundary. */
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,

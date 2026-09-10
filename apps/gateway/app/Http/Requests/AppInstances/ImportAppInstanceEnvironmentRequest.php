@@ -17,6 +17,7 @@ final class ImportAppInstanceEnvironmentRequest extends FormRequest
         return ['replace' => ['sometimes', 'boolean:strict']];
     }
 
+    /** @return array<string, mixed> */
     public function validationData(): array
     {
         try {

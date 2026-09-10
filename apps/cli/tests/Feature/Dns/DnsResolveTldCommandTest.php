@@ -6,7 +6,8 @@ use App\Services\Dns\ResolvesLocalDns;
 use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
-    $this->resolver = new class implements ResolvesLocalDns {
+    $this->resolver = new class implements ResolvesLocalDns
+    {
         public string $platform = 'macos';
 
         public bool $available = true;

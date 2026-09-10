@@ -152,7 +152,7 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
             throw $this->invalid('app-dev.php_version_unsupported');
         }
 
-        return $this->classifier->classify($json, $parts[1] ?? 'absent');
+        return $this->classifier->classify($json, $parts[1]);
     }
 
     private function invalid(string $errorCode, ?\Throwable $previous = null): RuntimeConvergenceException

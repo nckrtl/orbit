@@ -8,10 +8,6 @@ use Orbit\Sdk\Support\CredentialRedactor;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Gateway values are validated at the DTO boundary.
- * @mago-expect lint:excessive-parameter-list
- */
 final readonly class ProcessResponse
 {
     /** @param array<string, mixed> $runtimeConfig */
@@ -83,8 +79,6 @@ final readonly class ProcessResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway runtime values remain mixed after key validation.
-     *
      * @return array<string, mixed>
      */
     private static function stringKeyedArray(mixed $value): array

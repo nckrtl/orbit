@@ -9,7 +9,6 @@ use App\Infrastructure\AppProd\AppProdCaddyPublisher;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-/** @mago-expect lint:cyclomatic-complexity The harness models independent filesystem and service failure states. */
 final class AppDevCaddyPublishHarness
 {
     private string $root;

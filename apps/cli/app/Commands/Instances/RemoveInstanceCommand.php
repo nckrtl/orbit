@@ -13,7 +13,6 @@ use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
 
-/** @mago-expect lint:cyclomatic-complexity Removal has distinct bounded success and resumable-failure output paths. */
 final class RemoveInstanceCommand extends GatewayCommand
 {
     #[\Override]
@@ -75,7 +74,6 @@ final class RemoveInstanceCommand extends GatewayCommand
 
     private function renderRemovalFailure(GatewayApiException $exception): void
     {
-        /** @mago-expect analysis:mixed-assignment Gateway failure details remain mixed until the removal DTO parses them. */
         $value = $exception->details()['removal'] ?? null;
         $progress = null;
 

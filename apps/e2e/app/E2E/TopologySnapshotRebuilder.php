@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\State\OperationLock;
-use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusInstance;
+use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyProfile;
@@ -25,8 +25,6 @@ use RuntimeException;
  * proves that all configured VMs, promotion copies, and the network are absent.
  * Legacy recovery supplies a separate, hash-bound authorization before this
  * service removes any exact resource or manifest.
- *
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect,too-many-methods The recovery keeps its exact resource transaction at one boundary.
  */
 final readonly class TopologySnapshotRebuilder
 {
@@ -37,7 +35,6 @@ final readonly class TopologySnapshotRebuilder
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
         private TopologySnapshotManifestStore $manifests,
-        private StatePaths $paths,
         private OperationLock $lock,
         private OperationId $operation,
         private TopologySnapshotIdentity $identity,
@@ -81,7 +78,7 @@ final readonly class TopologySnapshotRebuilder
     }
 
     /**
-     * @param Closure(string, array<string, mixed>):void $record
+     * @param  Closure(string, array<string, mixed>):void  $record
      * @return array{instances_deleted:list<string>,networks_deleted:list<string>}
      */
     public function recover(
@@ -383,7 +380,7 @@ final readonly class TopologySnapshotRebuilder
     }
 
     /** @return array<string, mixed> */
-    private function networkArray(\App\E2E\Value\IncusNetwork $network): array
+    private function networkArray(IncusNetwork $network): array
     {
         return [
             'remote' => $network->remote,

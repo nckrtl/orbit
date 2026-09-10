@@ -6,7 +6,6 @@ use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Metrics\GrafanaConfigRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationBundle;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationSnapshot;

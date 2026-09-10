@@ -16,8 +16,6 @@ use RuntimeException;
 
 /**
  * Select the exact current or retired resource identity for explicit recovery.
- *
- * @mago-expect lint:excessive-parameter-list,cyclomatic-complexity,kan-defect The resolver assembles one exact recovery boundary.
  */
 final readonly class TopologySnapshotRecoveryResolver
 {
@@ -124,7 +122,7 @@ final readonly class TopologySnapshotRecoveryResolver
     }
 
     /**
-     * @param list<string> $resources
+     * @param  list<string>  $resources
      */
     private function matchesIdentity(array $resources, TopologySnapshotIdentity $identity): bool
     {
@@ -134,18 +132,17 @@ final readonly class TopologySnapshotRecoveryResolver
     }
 
     /**
-     * @param array<string, mixed> $instances
-     * @param array<string, mixed> $networks
+     * @param  array<string, mixed>  $instances
+     * @param  array<string, mixed>  $networks
      */
     private function resourcesExist(
         TopologySnapshotIdentity $identity,
         array $instances,
         array $networks,
     ): bool {
-        return (
+        return
             array_any($this->instanceNames($identity), static fn (string $name): bool => isset($instances[$name]))
-            || isset($networks[$identity->network()])
-        );
+            || isset($networks[$identity->network()]);
     }
 
     /** @return list<string> */
@@ -207,7 +204,6 @@ final readonly class TopologySnapshotRecoveryResolver
                 $this->host,
                 $this->networks,
                 $manifests,
-                $this->paths,
                 $this->lock,
                 $this->operation,
                 $identity,

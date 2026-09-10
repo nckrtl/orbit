@@ -8,25 +8,27 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\AppInstance;
+use App\Models\Cluster;
+use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-function production_route_target_set_migration(): Illuminate\Database\Migrations\Migration
+function production_route_target_set_migration(): Migration
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_08_200000_enable_production_route_target_sets.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_08_200000_enable_production_route_target_sets.php',
+    );
 }
 
-function route_hostname_change_migration(): Illuminate\Database\Migrations\Migration
+function route_hostname_change_migration(): Migration
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
-        );
+    return require base_path(
+        'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
+    );
 }
 
 it('stores exclusive Route scope, immutable provenance, basis, and pending lifecycle', function (): void {
@@ -215,7 +217,7 @@ it('enforces multi-target storage with compatible Cluster-scoped production rows
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
     ]);
-    $cluster = App\Models\Cluster::query()->create(['name' => 'cluster', 'state' => 'active']);
+    $cluster = Cluster::query()->create(['name' => 'cluster', 'state' => 'active']);
     $oneNode = route_migration_node('one');
     $twoNode = route_migration_node('two');
     $oneNode->update(['cluster_id' => $cluster->id]);
@@ -309,13 +311,13 @@ it('refuses rollback before discarding a compatible production target set', func
         ->toBeTrue();
 });
 
-function route_migration_node(string $name): App\Models\Node
+function route_migration_node(string $name): Node
 {
     static $suffix = 20;
 
     $suffix++;
 
-    return App\Models\Node::query()->create([
+    return Node::query()->create([
         'name' => $name,
         'status' => 'active',
         'public_ssh_host' => "{$name}.test",
@@ -325,11 +327,11 @@ function route_migration_node(string $name): App\Models\Node
 
 function route_migration_instance(
     App\Models\App $app,
-    App\Models\Node $node,
+    Node $node,
     string $name,
     string $environment = 'production',
-): App\Models\AppInstance {
-    return App\Models\AppInstance::query()->create([
+): AppInstance {
+    return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
@@ -350,7 +352,7 @@ function route_migration_hostname_change_route(
         'repository_url' => "https://example.test/hostname-{$suffix}.git",
     ]);
     $node = route_migration_node("hostname-{$suffix}");
-    $instance = App\Models\AppInstance::query()->create([
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $suffix,
@@ -384,7 +386,7 @@ function route_migration_hostname_change_attributes(string $target, ?string $pre
     ];
 }
 
-/** @return array{Route, App\Models\AppInstance, App\Models\AppInstance} */
+/** @return array{Route, AppInstance, AppInstance} */
 function route_migration_production_set(string $suffix, string $environment = 'production'): array
 {
     $app = App\Models\App::query()->create([
@@ -392,7 +394,7 @@ function route_migration_production_set(string $suffix, string $environment = 'p
         'slug' => "set-{$suffix}",
         'repository_url' => "https://example.test/set-{$suffix}.git",
     ]);
-    $cluster = App\Models\Cluster::query()->create(['name' => "set-{$suffix}", 'state' => 'active']);
+    $cluster = Cluster::query()->create(['name' => "set-{$suffix}", 'state' => 'active']);
     $oneNode = route_migration_node("{$suffix}-one");
     $twoNode = route_migration_node("{$suffix}-two");
     $oneNode->update(['cluster_id' => $cluster->id]);

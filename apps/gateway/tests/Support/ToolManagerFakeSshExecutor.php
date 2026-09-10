@@ -28,11 +28,10 @@ final class ToolManagerFakeSshExecutor implements SshExecutor
         $this->connections[] = $connection;
         $this->commands[] = $command;
 
-        return (
+        return
             array_shift($this->results) ?? throw new LogicException(
                 'The tool manager executed an unexpected SSH command.',
-            )
-        );
+            );
     }
 
     /** @return list<non-empty-list<string>> */

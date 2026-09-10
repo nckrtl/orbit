@@ -93,6 +93,8 @@ if ((failed != 0)); then
     exit "$failed"
 fi
 
+"$repository_root/bin/worktree-cache"
+
 ensure_gateway_app_key
 
 pids=()

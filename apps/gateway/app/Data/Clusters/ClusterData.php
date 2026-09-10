@@ -15,8 +15,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class ClusterData extends Data
 {
     /**
-     * @param list<ClusterNodeData> $nodes
-     * @mago-expect lint:excessive-parameter-list The value mirrors the complete Cluster response.
+     * @param  list<ClusterNodeData>  $nodes
      */
     public function __construct(
         public int $id,
