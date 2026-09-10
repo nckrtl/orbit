@@ -1,0 +1,122 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      },
+      {
+        "title": "ADR 0037",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0037-promote-fresh-three-node-topology-snapshots.md"
+      },
+      {
+        "title": "ADR 0036",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0036-support-only-appinstances.md"
+      },
+      {
+        "title": "ADR 0056",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0056-retain-proof-topologies-for-interactive-review.md"
+      },
+      {
+        "title": "ADR 0015",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An issue implementation with proof flow enabled can declare a fresh three-Node snapshot replacement before construction, prove and review it, and install a verified clean generation without first deleting the current promoted snapshot.\n\n## Scope\n\n* In: declared cold replacement construction through the existing constructor, issue-bound evidence, replacement evaluation, transactional generation installation, recovery, and snapshot guidance.\n* Out: production sample redesign, generic scenario authority, disaster-recovery rebuild semantics, extra shared Nodes, product changes, and workload migration.\n\n## Acceptance\n\n- [ ] A declaration made before construction selects the standard Gateway, app-dev, and app-prod recipe from the recorded generic base and exact candidate, with no copied records, source, or runtime from the promoted generation. Proof: `apps/e2e/tests/Unit/E2E/ColdTopologyConstructorTest.php` and Incus harness acceptance `cold-replacement-construction`.\n- [ ] The replacement uses native AppInstance and Route sample creation and records normal issue acceptance, complete input evidence, and exact three-Node inventory; an ordinary completed scenario or disaster-recovery rebuild cannot be reclassified as that proof. Proof: harness replacement-command tests and Incus harness acceptance `cold-replacement-proof`.\n- [ ] Successful replacement evidence is captured before interactive review; reviewer-modified state is never installed as the shared snapshot, and closeout constructs and verifies clean replacement state from the accepted merged source and recorded inputs when needed. Proof: Incus harness acceptance `cold-replacement-review-isolation`.\n- [ ] Before candidate acceptance and verified merge, the promoted generation remains unchanged; failed construction, verification, or installation retains the prior usable generation or explicit recovery state without a success claim. Proof: `apps/e2e/tests/Feature/Commands/TopologySnapshotCommandsTest.php` and Incus harness acceptance `cold-replacement-rollback`.\n- [ ] Successful installation leaves one stopped three-Node shared generation; subsequent ordinary discovery and proof acquire from that generation and observe native AppInstance samples. Proof: Incus harness acceptance `cold-replacement-reacquire`.\n- [ ] Cleanup after successful installation or explicit abandonment verifies and removes only the recorded replacement and replaced-snapshot resources, retaining original proof and review records. Proof: Incus harness acceptance `cold-replacement-cleanup`.\n- [ ] Maintained snapshot guidance distinguishes declared replacement from scenarios, ordinary refresh, and disaster recovery, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Harness checks pass. Proof: `cd apps/e2e && composer check`.",
+  "id": "38b11260-9e44-4e28-b2a0-d15091159834",
+  "identifier": "ORB-231",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-230",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/e2e"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Prove and install an explicitly declared cold snapshot replacement",
+  "updatedAt": "2026-09-10T18:12:45.238Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-231/prove-and-install-an-explicitly-declared-cold-snapshot-replacement"
+}

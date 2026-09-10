@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "issue": "ORB-231",
+  "flow": "discovery",
+  "candidate": "b63133b4ed0dcca4ec46d6e86fefaf41d04df730",
+  "promoted_generation": {
+    "id": "7940b101271d-a565831a39de",
+    "main_sha": "7940b101271db810426fa60de243dfb30f947907",
+    "prepared_fingerprint": "a565831a39de3c9dbd16b925d27a949760e6819104c0577049ff84aca4fd4242",
+    "unchanged_after_rehearsal": true
+  },
+  "rehearsal": {
+    "attempt_id": "cc4306d9be34027319bbde76ba8422ee",
+    "operation_id": "426d8654811970e08e8962201ab31b70",
+    "source_generation": "generic-base",
+    "base_image_alias": "orbit-base-ubuntu-26.04-runtime",
+    "base_image_fingerprint": "4e02d6ce34f5320e7e6cae69d82b018aaeaa52b1f5bcd60117ca7497d5688f0c",
+    "snapshot_replacement": true,
+    "extension": null,
+    "nodes": {
+      "gateway": {"source": "image", "address": "10.232.5.10"},
+      "app-dev": {"source": "image", "address": "10.232.5.11"},
+      "app-prod": {"source": "image", "address": "10.232.5.12"}
+    },
+    "strict_readiness_passed": true,
+    "strict_proof_passed": true,
+    "active_appinstances": 1,
+    "route_associations": 1,
+    "review_marker_exit": 0,
+    "cleanup": {
+      "removed": [
+        "orbit-e2e-orb-231-cc4306d9-app-prod",
+        "orbit-e2e-orb-231-cc4306d9-app-dev",
+        "orbit-e2e-orb-231-cc4306d9-gateway",
+        "oe-c4eb950202e5"
+      ],
+      "refused": [],
+      "remaining_instances": [],
+      "remaining_network": null
+    }
+  },
+  "reacquisition": {
+    "released_attempt_id": "8e03cb77b56ff8ce62a2126210ffd820",
+    "retained_attempt_id": "6f5b542748a3f7898514dd51a7c06530",
+    "source_generation": "7940b101271d-a565831a39de",
+    "candidate": "b63133b4ed0dcca4ec46d6e86fefaf41d04df730",
+    "verification_passed": true,
+    "sample_shape": "app_instances"
+  },
+  "observations": {
+    "cold-replacement-construction": "passed",
+    "cold-replacement-proof": "passed",
+    "cold-replacement-review-isolation": "passed",
+    "cold-replacement-rollback": "passed-pre-swap-boundary",
+    "cold-replacement-reacquire": "passed",
+    "cold-replacement-cleanup": "passed"
+  },
+  "isolated_acceptance_proof_run": false,
+  "shared_snapshot_mutated": false
+}
