@@ -1175,6 +1175,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0056-retain-proof-topologies-for-interactive-review.md",
+            "title": "ADR 0056: Retain proof topologies for interactive review",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Node",
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0006",
+                "0015",
+                "0040",
+                "0050",
+                "0051",
+                "0056"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
