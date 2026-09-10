@@ -242,7 +242,7 @@ function promoterReplacementInstallation(
     );
 
     return new TopologySnapshotReplacementInstallation(
-        'ORB-231',
+        'AUX-231',
         new AttemptId(str_repeat('a', 32)),
         new AttemptId(str_repeat('b', 32)),
         new OperationId(str_repeat('c', 32)),

@@ -30,7 +30,7 @@ function replacementRecoveryInstallationFixture(string $artifactSha = ''): Topol
     );
 
     return new TopologySnapshotReplacementInstallation(
-        'ORB-231', new AttemptId(str_repeat('a', 32)), new AttemptId(str_repeat('b', 32)),
+        'AUX-231', new AttemptId(str_repeat('a', 32)), new AttemptId(str_repeat('b', 32)),
         new OperationId(str_repeat('c', 32)), str_repeat('d', 40),
         $artifactSha === '' ? str_repeat('e', 40) : $artifactSha,
         str_repeat('f', 40), str_repeat('6', 40), str_repeat('a', 64), str_repeat('b', 64),

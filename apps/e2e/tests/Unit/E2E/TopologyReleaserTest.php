@@ -403,7 +403,7 @@ describe('TopologyReleaser', function () {
             static function () use (&$replacementConsulted): void {
                 $replacementConsulted = true;
 
-                throw new RuntimeException('ORB-231 has an active snapshot replacement.');
+                throw new RuntimeException('AUX-231 has an active snapshot replacement.');
             },
         );
 

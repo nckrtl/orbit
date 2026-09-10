@@ -35,7 +35,7 @@ function replacementStoreInstallationFixture(
     );
 
     return new TopologySnapshotReplacementInstallation(
-        'ORB-231', new AttemptId(str_repeat('a', 32)), new AttemptId(
+        'AUX-231', new AttemptId(str_repeat('a', 32)), new AttemptId(
             $replacementAttempt === '' ? str_repeat('b', 32) : $replacementAttempt,
         ),
         new OperationId($operation === '' ? str_repeat('c', 32) : $operation), str_repeat('d', 40),

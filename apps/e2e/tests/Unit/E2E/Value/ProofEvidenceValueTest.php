@@ -271,7 +271,7 @@ describe('proof reuse evidence', function (): void {
 
     it('records clean reconstruction as replacement promotion lineage', function (): void {
         $record = new ProofPromotionRecord(
-            'ORB-231',
+            'AUX-231',
             'generation-1',
             str_repeat('a', 40),
             str_repeat('b', 40),
