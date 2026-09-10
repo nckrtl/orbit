@@ -24,6 +24,9 @@ invoke any one directly; no private orchestration order is implied.
 - `domain-modeling` — sharpen Orbit terms, relationships, and decision boundaries against current evidence.
 - `grill-with-docs` — explicitly run both shaping disciplines and produce a confirmed handoff before issue creation.
 - `resolve-pipeline-issues` — make `Blocked` and `Backlog` Linear work ready for `Todo`, or return a read-only resolution proposal for one exact issue.
+- `maintaining-monorepo` — diagnose and repair main-check or cache-maintenance
+  failures as one owner across all five projects, then return verified recovery
+  or an independent-review handoff to the orchestrator.
 - `recording-decisions` — draft, lint, and accept one architecture decision record.
 - `writing-documentation` — write or change one maintained page under `docs/`.
 - `auditing-documentation` — find and fix documentation drift for one issue, or for the whole corpus on request.
