@@ -1,0 +1,149 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+      },
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      },
+      {
+        "title": "ADR 0047: Create production AppInstances from candidates",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+      },
+      {
+        "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+      },
+      {
+        "title": "Source: Solo todo #246 (F22)",
+        "url": "solo://proj/4/todo/complete-appinstance--246"
+      },
+      {
+        "title": "ADR 0004: Define the verify-only Doctor boundary",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0004-verify-only-doctor-boundary.md"
+      },
+      {
+        "title": "ADR 0036: Support only AppInstances",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0036-support-only-appinstances.md"
+      },
+      {
+        "title": "ADR 0011: Define clustered production ingress and app-prod placement",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0011-clustered-production-ingress-and-app-prod-placement.md"
+      },
+      {
+        "title": "ADR 0038: Cascade AppInstance removal through processes and schedules",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "Operators manage systemd services and Docker containers owned directly by AppInstances through the existing `process:*` commands. Removing an AppInstance also removes its managed processes under [ADR 0038](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md>), and legacy process targets are unsupported under [ADR 0036](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0036-support-only-appinstances.md>).\n\n## Scope\n\n* In: AppInstance-only Process ownership, target resolution, API validation, typed SDK transport, CLI selectors, activity attribution, and the process Doctor family.\n* In: development and production execution context, existing systemd and Docker lifecycle behavior, and AppInstance-removal integration.\n* In: maintained process and AppInstance-removal documentation.\n* Out: legacy Process record or runtime conversion, fleet preparation, Node-owned processes, new runtime backends, and Schedule implementation.\n* Out: automatic process movement, source relocation, deployment orchestration, new Route policy, and harness changes.\n\n## Acceptance\n\n- [ ] Gateway, SDK, and CLI process operations accept only an AppInstance owner; `--instance` and the public `instance` target token resolve an AppInstance ID, while `--workspace` and Workspace targets are absent or rejected before mutation. Proof: `apps/gateway/tests/Feature/Api/ProcessesTest.php`, `packages/php-sdk/tests/Unit/Requests/Processes/ProcessRequestsTest.php`, and `apps/cli/tests/Feature/Processes/ProcessCommandsTest.php`.\n- [ ] A development target derives its Node, managed runtime user, recorded checkout, and environment-file path from the AppInstance; a production target derives its Node, dedicated runtime user, and recorded home from production placement, independent of Node role co-location or certificate mode. Proof: `apps/gateway/tests/Feature/Domain/ProcessTargetResolverTest.php` and Incus action `appinstance-process-context`.\n- [ ] Systemd retains its explicit working-directory option and defaults to the development checkout or the production `current` path, resolved afresh at each start; Docker retains its explicit image, command, environment, ports, volumes, restart policy, and container working-directory behavior. Caller input cannot select a different target Node or host execution user. Proof: `apps/gateway/tests/Feature/Domain/ProcessActionsTest.php` and the systemd and Docker renderer suites.\n- [ ] Development systemd processes receive the AppInstance certificate projection for its Route hostname through the existing Vite certificate environment variables and never refer to a legacy Instance or Workspace certificate path. Proof: `apps/gateway/tests/Unit/Infrastructure/Processes/SystemdProcessRendererTest.php` and Incus action `appinstance-process-tls`.\n- [ ] Add, list, start, stop, restart, bounded logs, and remove complete for systemd and Docker processes on development and production AppInstances; runtime operations retain exact artifact-ownership checks, existing rollback behavior, and secret redaction. Proof: Incus action `appinstance-process-lifecycle` and `apps/gateway/tests/Feature/Infrastructure/Processes/RemoteProcessRuntimeManagerTest.php`.\n- [ ] Repeating an identical add resumes the same Process and preserves its desired state; a different specification with the same owner and name returns `process.name_taken` without modifying the existing process. Proof: `apps/gateway/tests/Feature/Domain/ProcessActionsTest.php`.\n- [ ] Unavailable or inactive targets refuse new or start operations before mutation; a provisioned release-layout target without `current` permits stopped installation but refuses starting a process until a release exists, while a removing or failed AppInstance still permits cleanup of its recorded owned processes when its Node is reachable. Proof: `apps/gateway/tests/Feature/Domain/ProcessTargetResolverTest.php`.\n- [ ] AppInstance source-preflight refusal leaves every owned process and its runtime unchanged; once removal is accepted, no new process can attach to any AppInstance in the fixed deletion set. Proof: `apps/gateway/tests/Feature/Domain/AppInstanceProcessCascadeTest.php`.\n- [ ] Normal and forced AppInstance removal stop and remove every owned running, stopped, failed, or removing process and its persistent runtime artifacts before reporting success; development source-removal and production home-retention rules remain intact. Proof: Incus action `appinstance-process-cascade`.\n- [ ] A forced linked-worktree AppInstance cascade removes the processes of every AppInstance in the accepted deletion set and leaves sibling AppInstances outside that set, unrelated services, containers, and source untouched. Proof: Incus action `appinstance-process-cascade-isolation`.\n- [ ] Cleanup failure keeps the AppInstance and unfinished Process cleanup resumable, reports no completed removal, and an identical retry completes only unfinished owned cleanup; an ownership conflict never authorizes artifact adoption or deletion. Proof: Incus action `appinstance-process-cascade-retry`.\n- [ ] Process activities identify the owning AppInstance and its Node, and Doctor inspects the same target without mutation, including bounded reports for unavailable or incomplete removal state. Proof: `apps/gateway/tests/Feature/Api/ProcessesTest.php`, `apps/gateway/tests/Feature/Domain/ProcessDoctorProbeTest.php`, and Incus action `appinstance-process-doctor`.\n- [ ] Maintained documentation states the AppInstance target, execution context, runtime options, cascade, failure, and operator-owned legacy transition boundaries, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Gateway, PHP SDK, CLI, and repository suites pass. Proof: `cd apps/gateway && composer check`, `cd packages/php-sdk && composer check`, `cd apps/cli && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.\n- [ ] A stopped Process completes installation without starting application code; an explicit start uses the then-selected production release, and an already running process is not restarted when the release pointer changes. Proof: Incus action `appinstance-process-release-context`.\n- [ ] An operator changes an instance-specific process specification explicitly through remove and add; these operations address only instance-owned records, while an identical add preserves desired runtime state. Proof: `apps/gateway/tests/Feature/Domain/ProcessActionsTest.php`.",
+  "id": "7c15adb8-701d-400c-83c9-9e6062f15826",
+  "identifier": "ORB-131",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-216",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-197",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "packages/php-sdk"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "apps/cli"
+      },
+      {
+        "name": "Improvement"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Manage processes owned by AppInstances",
+  "updatedAt": "2026-09-10T18:37:05.383Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-131/manage-processes-owned-by-appinstances"
+}
