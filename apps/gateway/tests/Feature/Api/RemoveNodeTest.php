@@ -718,6 +718,7 @@ function remove_node_record(string $name, string $wireguardIp): Node
         'public_ssh_port' => 22,
         'user' => 'orbit',
         'wireguard_ip' => $wireguardIp,
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 }
 
