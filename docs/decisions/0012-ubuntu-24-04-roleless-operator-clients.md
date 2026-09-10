@@ -1,8 +1,10 @@
-# ADR 0012: Allow Ubuntu 24.04 role-less operator clients
+# ADR 0012: Ubuntu 24.04 operator clients (no longer supported)
 
 ## Status
 
-Accepted on 2026-08-31.
+Accepted on 2026-08-31. Ubuntu 24.04 support withdrawn by the repository owner on 2026-09-10.
+
+Ubuntu 24.04 is no longer supported, including for roleless operator clients. The original support rationale and enrollment contract below remain only as historical context, not requirements to implement. This withdrawal does not authorize an operator-client platform or enrollment replacement. The management restrictions preserved by [ADR 0042](0042-provision-tool-managers-on-demand.md) and [ADR 0057](0057-limit-metrics-exporters-to-managed-nodes.md) remain applicable; they do not grant platform support.
 
 ## Context
 
@@ -24,9 +26,11 @@ the client's private key.
 
 ## Decision
 
+The following records the original decision. Its Ubuntu 24.04 support and enrollment provisions are withdrawn.
+
 ### Define a role-less operator-client boundary
 
-Orbit supports Ubuntu 24.04 as an operator client only when its Node has no
+Orbit originally allowed Ubuntu 24.04 as an operator client only when its Node had no
 managed infrastructure role. An Ubuntu 24.04 operator client is ineligible for
 Gateway, VPN, Router, Ingress, app-dev, app-prod, Metrics, and every other
 managed role.
@@ -76,8 +80,7 @@ fails without rewriting the existing peer.
 
 ## Consequences
 
-- Ubuntu 24.04 operators can use the CLI without becoming managed
-  infrastructure Nodes.
+- Withdrawn: Ubuntu 24.04 operators could use the CLI without becoming managed infrastructure Nodes.
 - Ubuntu 26.04 remains the single managed-role platform and its convergence
   contract stays closed.
 - The Gateway can authorize and revoke operator access without possessing

@@ -4,11 +4,11 @@ In the context of Metrics exporter selection, facing a rule that allows any acti
 
 ## Status
 
-Accepted on 2026-09-10. Supersedes [ADR 0003](0003-singleton-metrics-role.md) only where explicit exporter preference selects any active Node without a management eligibility check. Extends [ADR 0012](0012-ubuntu-24-04-roleless-operator-clients.md) to make its operator-client boundary explicit in Metrics selection and Doctor expectations. Retains ADR 0003's selection defaults and preference rules within the eligible managed fleet.
+Accepted on 2026-09-10. Supersedes [ADR 0003](0003-singleton-metrics-role.md) only where explicit exporter preference selects any active Node without a management eligibility check. Extends [ADR 0012 (platform support withdrawn)](0012-ubuntu-24-04-roleless-operator-clients.md) to make its operator-client boundary explicit in Metrics selection and Doctor expectations. Retains ADR 0003's selection defaults and preference rules within the eligible managed fleet.
 
 ## Context
 
-ADR 0003 permits an explicit exporter preference on any active Node, including a Node without roles. ADR 0012 introduces operator clients that need no Gateway SSH and receive no managed service convergence. The exporter selector uses roles and preference without distinguishing those clients from Nodes managed by the Gateway.
+ADR 0003 permits an explicit exporter preference on any active Node, including a Node without roles. ADR 0012 originally described operator clients that need no Gateway SSH and receive no managed service convergence. Ubuntu 24.04 support and that enrollment proposal are withdrawn; this decision retains the management eligibility restriction without authorizing client support. The exporter selector uses roles and preference without distinguishing those clients from Nodes managed by the Gateway.
 
 ## Decision
 
@@ -35,6 +35,6 @@ ADR 0003 permits an explicit exporter preference on any active Node, including a
 ## Affects
 
 - Components: apps/gateway
-- ADRs: supersedes [ADR 0003](0003-singleton-metrics-role.md) for unrestricted exporter eligibility; extends [ADR 0012](0012-ubuntu-24-04-roleless-operator-clients.md) for Metrics and Doctor scope
+- ADRs: supersedes [ADR 0003](0003-singleton-metrics-role.md) for unrestricted exporter eligibility; extends [ADR 0012 (platform support withdrawn)](0012-ubuntu-24-04-roleless-operator-clients.md) for Metrics and Doctor scope
 - Detail: [Metrics role](../reference/metrics.md)
 - Verify: Metrics selection, enablement, convergence, and Doctor tests covering managed roleless Nodes and operator clients; `composer docs-lint`

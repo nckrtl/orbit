@@ -259,7 +259,7 @@
         },
         {
             "path": "docs/decisions/0012-ubuntu-24-04-roleless-operator-clients.md",
-            "title": "ADR 0012: Allow Ubuntu 24.04 role-less operator clients",
+            "title": "ADR 0012: Ubuntu 24.04 operator clients (no longer supported)",
             "kind": "decision",
             "components": [],
             "concepts": [
@@ -268,10 +268,13 @@
                 "Gateway",
                 "Ingress",
                 "Node",
-                "Router"
+                "Router",
+                "Tool"
             ],
             "governing_adrs": [
-                "0012"
+                "0012",
+                "0042",
+                "0057"
             ]
         },
         {
@@ -1529,7 +1532,6 @@
             "governing_adrs": [
                 "0001",
                 "0004",
-                "0012",
                 "0042",
                 "0043"
             ]

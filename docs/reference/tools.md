@@ -4,7 +4,7 @@ This reference is for operators who manage packages on Nodes and need to underst
 
 ## Choose a Tool Manager
 
-Orbit exposes its code-owned Tool Managers on active Linux Nodes that the Gateway manages over Secure Shell (SSH). A Node role can require a manager during role convergence, but the role does not own the manager or its Tools. Roleless operator clients remain outside Tool management under [ADR 0012](../decisions/0012-ubuntu-24-04-roleless-operator-clients.md).
+Orbit exposes its code-owned Tool Managers on active Ubuntu 26.04 Nodes that the Gateway manages over Secure Shell (SSH). A Node role can require a manager during role convergence, but the role does not own the manager or its Tools. [ADR 0042](../decisions/0042-provision-tool-managers-on-demand.md) defines the management boundary.
 
 List every manager supported for a Node before choosing one.
 

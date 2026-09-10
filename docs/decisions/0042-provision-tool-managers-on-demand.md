@@ -8,13 +8,15 @@ Accepted on 2026-09-08. Extends [ADR 0001](0001-tool-management.md). Supersedes 
 
 ## Context
 
+Ubuntu 24.04 is no longer supported. The references to ADR 0012 preserve its management boundary only; they do not authorize client support or enrollment.
+
 [ADR 0001](0001-tool-management.md) makes APT available on managed Linux Nodes but makes VP and Composer available only through an application role. That prevents an operator from using a supported manager on another SSH-managed Node and makes role removal responsible for unrelated Tool intent. Installing every supported manager during Node provisioning would avoid that restriction at the cost of unnecessary software and mutations on every Node.
 
 ## Decision
 
 - The Gateway must treat each Tool Manager as a protected Node capability independent of Node roles.
 - The Gateway must allow Tool mutations only on an active Linux Node whose supported managed-node platform and SSH transport are controlled by the Gateway.
-- The Gateway must not manage Tools on a roleless operator client governed by [ADR 0012](0012-ubuntu-24-04-roleless-operator-clients.md).
+- The Gateway must not manage Tools on a roleless operator client governed by [ADR 0012 (platform support withdrawn)](0012-ubuntu-24-04-roleless-operator-clients.md).
 - The Gateway must materialize a missing Tool Manager when the first Tool operation needs it.
 - The Gateway must retain a failed materialization as retryable manager state.
 - The Gateway must not install every registered Tool Manager during Node provisioning.
@@ -39,6 +41,6 @@ Accepted on 2026-09-08. Extends [ADR 0001](0001-tool-management.md). Supersedes 
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0001](0001-tool-management.md); supersedes [ADR 0001](0001-tool-management.md) for Tool Manager availability, application-role ownership, and final application-role removal; preserves [ADR 0012](0012-ubuntu-24-04-roleless-operator-clients.md)
+- ADRs: extends [ADR 0001](0001-tool-management.md); supersedes [ADR 0001](0001-tool-management.md) for Tool Manager availability, application-role ownership, and final application-role removal; preserves [ADR 0012 (platform support withdrawn)](0012-ubuntu-24-04-roleless-operator-clients.md)
 - Detail: [Tools](../reference/tools.md)
 - Verify: `bin/test`

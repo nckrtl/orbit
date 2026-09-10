@@ -15,7 +15,7 @@ Every project requires PHP 8.5 and uses Composer. Each project's `composer.json`
 
 ## Managed machines
 
-Orbit manages Ubuntu Nodes. It installs PHP from the Sury apt source that `apps/gateway/app/Infrastructure/Nodes/RemotePhpPackageManager.php` pins and manages services with systemd. The [PHP runtime defaults](reference/php-runtime.md) page lists the settings Orbit publishes on those machines.
+Orbit supports Ubuntu 26.04 Resolute Nodes. Ubuntu 24.04 is unsupported, including for roleless operator clients. It installs PHP from the Sury apt source that `apps/gateway/app/Infrastructure/Nodes/RemotePhpPackageManager.php` pins and manages services with systemd. The [PHP runtime defaults](reference/php-runtime.md) page lists the settings Orbit publishes on those machines.
 
 Caddy handles HTTP and HTTPS traffic. WireGuard provides the private network
 between Nodes. Orbit runs these services directly instead of putting everything
