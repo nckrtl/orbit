@@ -46,11 +46,11 @@ orbit metrics:exporter:enable <node>
 orbit metrics:exporter:disable <node>
 ```
 
-Both commands answer `metrics.exporter_node_inactive` for a Node that is not active, and `metrics:exporter:disable` answers `node.role_conflict` for the Metrics Node. The enable command refuses a Node outside Gateway-owned SSH management before it saves the preference or starts remote work. A stored enabled preference cannot make an ineligible record an exporter target.
+Both commands answer `metrics.exporter_node_inactive` for a Node that is not active, and `metrics:exporter:disable` answers `node.role_conflict` for the Metrics Node. The enable command answers `metrics.exporter_node_ineligible` (HTTP 409) for a Node outside Gateway-owned SSH management before it saves the preference or starts remote work. A stored enabled preference cannot make an ineligible record an exporter target.
 
 A selected node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in at `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the node's WireGuard address on port 9100, and a UFW rule that the Metrics role owns admits that port only from the Metrics node's WireGuard address.
 
-Doctor does not expect an exporter service, exporter firewall rule, or exporter SSH reachability on an ineligible record. It keeps the managed-Node findings for eligible exporters, and a temporary SSH failure on an eligible managed Node remains an unverifiable managed-Node observation.
+Doctor does not expect an exporter service, exporter firewall rule, or exporter SSH reachability on an exporter-ineligible record. The Node family separately keeps lifecycle, reachability, and identity findings for a Node that the Gateway manages over SSH, even when that Node is not active. A stored fingerprint proves this observation contract in every lifecycle state. For a legacy Node without a stored fingerprint, any remaining managed role preserves the contract until the Gateway deletes that role. Doctor suppresses these Node-family findings only for records that the Gateway does not manage over SSH.
 
 ## Private access and credentials
 

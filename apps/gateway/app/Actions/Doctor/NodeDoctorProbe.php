@@ -42,7 +42,7 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 observed: $node->status->value,
             );
         }
-        if (! $this->eligibility->allows($node)) {
+        if (! $this->eligibility->isManagedForObservation($node)) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
         }
         if ($context->inspectionFailed) {

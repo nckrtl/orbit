@@ -9,6 +9,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Collection;
 
 it('reports bounded node drift and unreachable state', function (): void {
     $node = new Node([
@@ -40,10 +41,10 @@ it('reports bounded node drift and unreachable state', function (): void {
         ->toBeFalse();
 });
 
-it('reports bounded identity drift for an active managed node', function (): void {
+it('reports lifecycle and identity drift for a managed provisioning node', function (): void {
     $node = new Node([
         'name' => 'edge',
-        'status' => LifecycleStatus::Active,
+        'status' => LifecycleStatus::Provisioning,
         'platform' => 'linux',
         'architecture' => 'amd64',
         'wireguard_ip' => '10.44.0.2',
@@ -55,37 +56,38 @@ it('reports bounded identity drift for an active managed node', function (): voi
     expect($report->status->value)
         ->toBe('drift')
         ->and($report->issues)
-        ->toHaveCount(3)
+        ->toHaveCount(4)
         ->and(array_map(fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
         ->toBe([
+            'node.lifecycle_not_active',
             'node.platform_mismatch',
             'node.architecture_mismatch',
             'node.wireguard_ip_mismatch',
         ])
-        ->and($report->issues[0]->kind->value)
-        ->toBe('drift')
-        ->and($report->issues[0]->expected)
-        ->toBe('linux')
-        ->and($report->issues[0]->observed)
-        ->toBe('darwin')
         ->and($report->issues[1]->kind->value)
         ->toBe('drift')
         ->and($report->issues[1]->expected)
-        ->toBe('x86_64')
+        ->toBe('linux')
         ->and($report->issues[1]->observed)
-        ->toBe('aarch64')
+        ->toBe('darwin')
         ->and($report->issues[2]->kind->value)
         ->toBe('drift')
         ->and($report->issues[2]->expected)
-        ->toBeTrue()
+        ->toBe('x86_64')
         ->and($report->issues[2]->observed)
+        ->toBe('aarch64')
+        ->and($report->issues[3]->kind->value)
+        ->toBe('drift')
+        ->and($report->issues[3]->expected)
+        ->toBeTrue()
+        ->and($report->issues[3]->observed)
         ->toBeFalse();
 });
 
 it('reports bounded inspection failure before unreachable', function (): void {
     $node = new Node([
         'name' => 'edge',
-        'status' => LifecycleStatus::Active,
+        'status' => LifecycleStatus::Provisioning,
         'platform' => 'linux',
         'wireguard_ip' => '10.44.0.2',
         'ssh_host_fingerprint' => 'SHA256:managed',
@@ -98,24 +100,53 @@ it('reports bounded inspection failure before unreachable', function (): void {
         ->and($report->checked)
         ->toBe(1)
         ->and($report->issues[0]->code)
-        ->toBe('node.inspection_failed')
+        ->toBe('node.lifecycle_not_active')
         ->and($report->issues[0]->kind->value)
+        ->toBe('drift')
+        ->and($report->issues[1]->code)
+        ->toBe('node.inspection_failed')
+        ->and($report->issues[1]->kind->value)
         ->toBe('unverifiable')
-        ->and($report->issues[0]->expected)
+        ->and($report->issues[1]->expected)
         ->toBeNull()
-        ->and($report->issues[0]->observed)
+        ->and($report->issues[1]->observed)
         ->toBeNull();
 });
 
-it('reports only lifecycle drift for an inactive record', function (): void {
+it('keeps unreachable observation for a fingerprint-managed node in every inactive lifecycle', function (
+    LifecycleStatus $status,
+): void {
     $node = new Node([
         'name' => 'edge',
-        'status' => LifecycleStatus::Provisioning,
+        'status' => $status,
         'platform' => 'linux',
         'architecture' => 'amd64',
         'wireguard_ip' => '10.44.0.2',
         'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
+
+    $report = new NodeDoctorProbe()->inspect(
+        new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)),
+    );
+
+    expect(array_map(fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe(['node.lifecycle_not_active', 'node.ssh_unreachable']);
+})->with([
+    'provisioning Node' => LifecycleStatus::Provisioning,
+    'failed Node' => LifecycleStatus::Failed,
+    'removing Node' => LifecycleStatus::Removing,
+]);
+
+it('reports only lifecycle drift for an inactive unmanaged record', function (): void {
+    $node = new Node([
+        'name' => 'operator-client',
+        'status' => LifecycleStatus::Failed,
+        'platform' => 'linux',
+        'architecture' => 'amd64',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => null,
+    ]);
+    $node->setRelation('roles', new Collection);
 
     $report = new NodeDoctorProbe()->inspect(
         new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null), inspectionFailed: true),

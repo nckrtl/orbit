@@ -51,4 +51,78 @@ it('uses active or provisioning managed roles as stored SSH management intent', 
     'active managed role' => [LifecycleStatus::Active, true],
     'provisioning managed role' => [LifecycleStatus::Provisioning, true],
     'failed managed role' => [LifecycleStatus::Failed, false],
+    'removing managed role' => [LifecycleStatus::Removing, false],
+]);
+
+it('keeps pinned SSH management evidence for Doctor in every node lifecycle', function (
+    LifecycleStatus $nodeStatus,
+    bool $exporterEligible,
+): void {
+    $node = new Node([
+        'status' => $nodeStatus,
+        'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.1',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+    $node->setRelation('roles', new Collection);
+    $eligibility = new ManagedNodeEligibility;
+
+    expect($eligibility->allows($node))
+        ->toBe($exporterEligible)
+        ->and($eligibility->isManagedForObservation($node))
+        ->toBeTrue();
+})->with([
+    'provisioning Node' => [LifecycleStatus::Provisioning, false],
+    'active Node' => [LifecycleStatus::Active, true],
+    'failed Node' => [LifecycleStatus::Failed, false],
+    'removing Node' => [LifecycleStatus::Removing, false],
+]);
+
+it('keeps every stored managed role lifecycle as legacy Doctor evidence', function (
+    LifecycleStatus $roleStatus,
+): void {
+    $node = new Node([
+        'status' => LifecycleStatus::Failed,
+        'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.1',
+        'ssh_host_fingerprint' => null,
+    ]);
+    $node->setRelation('roles', new Collection([
+        new NodeRole([
+            'role' => RoleName::Gateway,
+            'status' => $roleStatus,
+        ]),
+    ]));
+    $eligibility = new ManagedNodeEligibility;
+
+    expect($eligibility->allows($node))
+        ->toBeFalse()
+        ->and($eligibility->isManagedForObservation($node))
+        ->toBeTrue();
+})->with([
+    'provisioning role' => LifecycleStatus::Provisioning,
+    'active role' => LifecycleStatus::Active,
+    'failed role' => LifecycleStatus::Failed,
+    'removing role' => LifecycleStatus::Removing,
+]);
+
+it('requires supported managed network identity and stored management evidence for Doctor', function (
+    array $attributes,
+    bool $managed,
+): void {
+    $node = new Node(array_merge([
+        'status' => LifecycleStatus::Failed,
+        'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.1',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ], $attributes));
+    $node->setRelation('roles', new Collection);
+
+    expect(new ManagedNodeEligibility()->isManagedForObservation($node))->toBe($managed);
+})->with([
+    'managed identity' => [[], true],
+    'unsupported platform' => [['platform' => 'darwin'], false],
+    'missing WireGuard identity' => [['wireguard_ip' => null], false],
+    'blank WireGuard identity' => [['wireguard_ip' => ''], false],
+    'missing SSH management evidence' => [['ssh_host_fingerprint' => null], false],
 ]);
