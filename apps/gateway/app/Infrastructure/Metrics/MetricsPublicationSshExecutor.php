@@ -47,10 +47,6 @@ final readonly class MetricsPublicationSshExecutor
             return false;
         }
 
-        if ($ownerships === [UfwRuleOwnership::Exact, UfwRuleOwnership::Exact]) {
-            $this->orderingDrift();
-        }
-
         if ($ownerships[1] === UfwRuleOwnership::Exact && ! $this->denyPrecedesTrust($status->stdout)) {
             $this->deleteComment($metricsNode, $status->stdout, MetricsFootprint::PublicationFirewallDenyComment);
             $status = $this->status($metricsNode);

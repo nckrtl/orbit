@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\WorkspacesController;
+use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
@@ -37,6 +38,7 @@ Route::prefix('v1')->group(function (): void {
         RequireActiveWireGuardPeer::class,
         RequireNodeAccess::class,
     ])->get('metrics/grafana/authorize', [GrafanaAccessAuthorizationController::class, 'show'])
+        ->withoutMiddleware(RecordCommandActivity::class)
         ->name('metrics:grafana:authorize');
 
     Route::middleware([

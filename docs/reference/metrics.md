@@ -2,7 +2,7 @@
 
 This page tells an operator what the `metrics` role runs, how to enable, inspect, and disable it, and what each command answers. [ADR 0003](../decisions/0003-singleton-metrics-role.md) records the role contract, and [ADR 0055](../decisions/0055-restrict-grafana-access-to-authorized-gateway-peers.md) records the Grafana access boundary; this page states what the operator observes.
 
-The role runs two Docker containers on one node, `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and the packaged `prometheus-node-exporter` unit on every selected node. Both containers use Docker host networking. Prometheus binds `127.0.0.1:9090` and has no firewall rule, so only a process on the Metrics node reaches it. Grafana binds the node's WireGuard address on port 3000, and a UFW rule the Metrics role owns admits that port only from the Gateway's WireGuard address. Both containers log through the `json-file` driver, capped at 10 MB per file and three files.
+The role runs two Docker containers on one node, `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and the packaged `prometheus-node-exporter` unit on every selected node. Both containers use Docker host networking. Prometheus binds `127.0.0.1:9090` and has no firewall rule, so only a process on the Metrics node reaches it. Grafana binds the node's WireGuard address on port 3000. Two UFW rules that the Metrics role owns admit the Gateway's WireGuard address and deny every other WireGuard peer before the general member-trust rule. Both containers log through the `json-file` driver, capped at 10 MB per file and three files.
 
 ## Placement and recovery
 
@@ -89,7 +89,7 @@ orbit metrics:disable --force --purge-data
 
 Interactive disable asks for confirmation. Non-interactive disable requires `--force`. Purge also requires `--force`.
 
-After a disable without `--purge-data`, the Metrics node runs neither container, `/etc/orbit/metrics` and the Grafana upstream firewall rule are gone, every exporter drop-in and exporter firewall rule is gone, and the Gateway has removed the `metrics.orbit` route, its certificate, and its DNS record. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
+After a disable without `--purge-data`, the Metrics node runs neither container, `/etc/orbit/metrics` and both Grafana firewall rules are gone, every exporter drop-in and exporter firewall rule is gone, and the Gateway has removed the `metrics.orbit` route, its certificate, and its DNS record. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
 
 With `--purge-data`, the Gateway also deletes both volumes and the active and pending password settings, and nothing else. When a volume of either name lacks the Orbit ownership labels, the Gateway deletes neither volume nor password, leaves the assignment failed at step `remove:baseline`, and answers `node_role.remove_failed` (HTTP 502).
 
@@ -119,5 +119,6 @@ The Metrics API exposes these routes on the active Gateway.
 | `GET` | `/api/v1/metrics/status` | Read status. |
 | `GET` | `/api/v1/metrics/credentials` | Read verified credentials. |
 | `POST` | `/api/v1/metrics/credentials/reset` | Reset credentials. |
+| `GET` | `/api/v1/metrics/grafana/authorize` | Authorize one Caddy Grafana request from its connection address. |
 | `PUT` | `/api/v1/metrics/exporters/{node}` | Enable one exporter. |
 | `DELETE` | `/api/v1/metrics/exporters/{node}` | Disable one exporter. |

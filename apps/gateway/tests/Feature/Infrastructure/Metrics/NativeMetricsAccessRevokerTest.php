@@ -12,11 +12,14 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 
-it('reloads Caddy to close streams while Metrics is active', function (): void {
-    $metrics = metricsAccessRevokerNode('metrics');
+it('reloads Caddy whenever a Metrics route may remain published', function (
+    LifecycleStatus $roleStatus,
+    LifecycleStatus $nodeStatus,
+): void {
+    $metrics = metricsAccessRevokerNode('metrics', $nodeStatus);
     $metrics->roles()->create([
         'role' => RoleName::Metrics,
-        'status' => LifecycleStatus::Active,
+        'status' => $roleStatus,
     ]);
     $processes = new MetricsAccessRevokerProcessRunner;
 
@@ -26,7 +29,13 @@ it('reloads Caddy to close streams while Metrics is active', function (): void {
         ->toHaveCount(1)
         ->and($processes->invocations[0]->arguments)
         ->toBe(['sudo', 'systemctl', 'reload', 'caddy']);
-});
+})->with([
+    'active assignment' => [LifecycleStatus::Active, LifecycleStatus::Active],
+    'provisioning assignment' => [LifecycleStatus::Provisioning, LifecycleStatus::Active],
+    'failed assignment' => [LifecycleStatus::Failed, LifecycleStatus::Active],
+    'removing assignment' => [LifecycleStatus::Removing, LifecycleStatus::Active],
+    'inactive Metrics node' => [LifecycleStatus::Active, LifecycleStatus::Failed],
+]);
 
 it('does not touch Caddy without an active Metrics assignment', function (): void {
     $processes = new MetricsAccessRevokerProcessRunner;
@@ -48,11 +57,13 @@ it('fails closed when the stream-closing reload fails', function (): void {
         ->toThrow(ResourceOperationException::class, 'Metrics Caddy publication did not complete.');
 });
 
-function metricsAccessRevokerNode(string $name): Node
-{
+function metricsAccessRevokerNode(
+    string $name,
+    LifecycleStatus $status = LifecycleStatus::Active,
+): Node {
     return Node::query()->create([
         'name' => $name,
-        'status' => LifecycleStatus::Active,
+        'status' => $status,
         'platform' => 'linux',
         'public_ssh_host' => $name.'.example.test',
         'user' => 'orbit',

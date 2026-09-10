@@ -120,20 +120,30 @@ it('refuses foreign Grafana firewall ownership before mutation', function (): vo
         ->toHaveCount(1);
 });
 
-it('refuses a complete boundary behind general WireGuard trust', function (): void {
+it('repairs a complete boundary wedged by a transient legacy upgrade failure', function (): void {
     $ssh = new MetricsPublicationCapturingSshExecutor([
-        metricsPublicationResult(stdout: metricsPublicationMisorderedFirewallStatus()),
+        metricsPublicationResult(stdout: metricsPublicationRetryFirewallStatus()),
+        metricsPublicationResult(),
+        metricsPublicationResult(stdout: metricsPublicationDenyOnlyFirewallStatus()),
+        metricsPublicationResult(),
+        metricsPublicationResult(stdout: metricsPublicationFirewallStatus()),
     ]);
 
-    try {
-        metricsPublicationSshExecutor($ssh)->converge(
-            metricsPublicationNode('metrics', '10.44.0.3'),
-            '10.44.0.1',
-        );
-        test()->fail('Expected the misordered boundary to fail closed.');
-    } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)->toBe('metrics.publication_firewall_ordering_drift');
-    }
+    expect(metricsPublicationSshExecutor($ssh)->converge(
+        metricsPublicationNode('metrics', '10.44.0.3'),
+        '10.44.0.1',
+    ))->toBeTrue();
+
+    expect(array_map(
+        static fn (RemoteCommand $command): array => $command->arguments,
+        $ssh->commands,
+    ))->toBe([
+        ['sudo', 'ufw', 'status', 'numbered'],
+        ['sudo', 'ufw', '--force', 'delete', '3'],
+        ['sudo', 'ufw', 'status', 'numbered'],
+        metricsPublicationInsertAllowArguments(),
+        ['sudo', 'ufw', 'status', 'numbered'],
+    ]);
 });
 
 it('removes only the proven Grafana firewall boundary and verifies absence', function (): void {
@@ -304,14 +314,14 @@ function metricsPublicationWireGuardOnlyStatus(): string
         STATUS;
 }
 
-function metricsPublicationMisorderedFirewallStatus(): string
+function metricsPublicationRetryFirewallStatus(): string
 {
     return <<<'STATUS'
         Status: active
 
-        [ 1] 10.44.0.3 on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members
-        [ 2] 10.44.0.3 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream
-        [ 3] 10.44.0.3 3000/tcp on orbit DENY IN Anywhere # orbit:metrics-grafana-isolation
+        [ 1] 10.44.0.3 3000/tcp on orbit DENY IN Anywhere # orbit:metrics-grafana-isolation
+        [ 2] 10.44.0.3 on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members
+        [ 3] 10.44.0.3 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream
         STATUS;
 }
 

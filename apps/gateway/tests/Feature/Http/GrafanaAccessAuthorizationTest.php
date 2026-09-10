@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Activity;
 use App\Models\Node;
 
 it('admits the active Gateway and a peer with directed Gateway access', function (): void {
@@ -67,6 +68,24 @@ it('trusts only the connection address and fails closed without one active Gatew
         ->getJson('/api/v1/metrics/grafana/authorize')
         ->assertForbidden()
         ->assertJsonPath('error.code', 'node_access.required');
+});
+
+it('does not record Grafana authorization checks as commands', function (): void {
+    $gateway = $this->markAsGateway(grafanaAuthorizationNode('gateway', '10.44.0.1'));
+    $granted = grafanaAuthorizationNode('granted', '10.44.0.2');
+    $granted->accessibleNodes()->attach($gateway);
+    $ungranted = grafanaAuthorizationNode('ungranted', '10.44.0.3');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $granted->wireguard_ip])
+        ->get('/api/v1/metrics/grafana/authorize')
+        ->assertNoContent();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $ungranted->wireguard_ip])
+        ->getJson('/api/v1/metrics/grafana/authorize')
+        ->assertForbidden();
+
+    expect(Activity::query()->count())->toBe(0);
 });
 
 function grafanaAuthorizationNode(
