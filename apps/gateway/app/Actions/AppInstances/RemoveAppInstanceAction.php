@@ -10,6 +10,7 @@ use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
@@ -49,12 +50,45 @@ final readonly class RemoveAppInstanceAction
         private DevelopmentAppInstanceSourceFinalizer $sourceFinalizer,
         private AppInstanceRemovalProjector $routes,
         private ManagedCheckoutOverlap $checkoutOverlap,
+        private AppInstanceEnvironmentOperationLock $environmentOperations,
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceContentRetention $productionContent,
         private RouteStateResolver $routeState,
     ) {}
 
     public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    {
+        if ($appInstance->environment === 'production') {
+            return $this->environmentOperations->run(
+                [$appInstance->id],
+                fn (): AppInstanceRemoval => $this->executeOwned($appInstance, $force),
+            );
+        }
+
+        $ownerIds = $this->removalEnvironmentOwnerIds($appInstance->refresh(), $force);
+
+        return $this->environmentOperations->run(
+            $ownerIds,
+            fn (): AppInstanceRemoval => $this->sourceLock->synchronized(
+                $appInstance->node_id,
+                function () use ($appInstance, $force, $ownerIds): AppInstanceRemoval {
+                    $currentOwnerIds = $this->removalEnvironmentOwnerIds($appInstance->refresh(), $force);
+
+                    if ($currentOwnerIds !== $ownerIds) {
+                        throw new ResourceOperationException(
+                            errorCode: 'instance.removal_conflict',
+                            message: 'The AppInstance removal owner set changed. Retry the request.',
+                            status: 409,
+                        );
+                    }
+
+                    return $this->executeOwned($appInstance, $force);
+                },
+            ),
+        );
+    }
+
+    private function executeOwned(AppInstance $appInstance, bool $force): AppInstanceRemoval
     {
         $snapshot = $appInstance->refresh()->load($this->removalRelations());
 
@@ -63,6 +97,41 @@ final readonly class RemoveAppInstanceAction
         }
 
         return $this->advance($this->accept($snapshot, $force));
+    }
+
+    /** @return list<int> */
+    private function removalEnvironmentOwnerIds(AppInstance $requested, bool $force): array
+    {
+        if (! $force || $requested->source_layout !== AppInstanceSourceLayout::Checkout->value) {
+            return [$requested->id];
+        }
+
+        $query = AppInstance::query()
+            ->where('app_id', $requested->app_id)
+            ->where('node_id', $requested->node_id)
+            ->where('environment', $requested->environment);
+        $paths = $requested->registration_worktree_paths;
+
+        if (is_array($paths) && $paths !== []) {
+            $query->whereIn('checkout_path', $paths);
+        } elseif (is_string($requested->registration_common_repository_path)) {
+            $query->where('registration_common_repository_path', $requested->registration_common_repository_path);
+        }
+
+        /** @var list<int> $ids */
+        $ids = $query
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if (! in_array($requested->id, $ids, true)) {
+            $ids[] = $requested->id;
+            sort($ids, SORT_NUMERIC);
+        }
+
+        return $ids;
     }
 
     private function resume(AppInstance $appInstance, bool $force): AppInstanceRemoval

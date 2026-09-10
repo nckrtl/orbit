@@ -25,6 +25,7 @@ use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
@@ -98,6 +99,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
+use App\Infrastructure\AppInstances\NativeAppInstanceEnvironmentOperationLock;
 use App\Infrastructure\AppInstances\NativeAppInstanceRemovalProjector;
 use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
@@ -276,6 +278,14 @@ final class AppServiceProvider extends ServiceProvider
             ClusterRouterOperationLock::class,
             static fn (): ClusterRouterOperationLock => new NativeClusterRouterOperationLock(
                 directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/cluster-router',
+                deadline: app(CommandDeadline::class),
+            ),
+        );
+        $this->app->scoped(
+            AppInstanceEnvironmentOperationLock::class,
+            static fn (): AppInstanceEnvironmentOperationLock => new NativeAppInstanceEnvironmentOperationLock(
+                directory: rtrim(string: (string) config('orbit.home'), characters: '/')
+                    .'/locks/app-instance-environment',
                 deadline: app(CommandDeadline::class),
             ),
         );

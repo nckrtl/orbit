@@ -10,6 +10,7 @@ use App\Models\AppInstanceEnvironmentValue;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 
+/** @mago-expect lint:cyclomatic-complexity The store keeps complete configuration validation and each atomic storage operation together. */
 final readonly class AppInstanceEnvironmentStore
 {
     public function __construct(
@@ -97,6 +98,54 @@ final readonly class AppInstanceEnvironmentStore
         return $result;
     }
 
+    public function synchronizationCapacity(AppInstanceEnvironmentContext $expected): int
+    {
+        /** @var int $requiredCapacity */
+        $requiredCapacity = DB::transaction(function () use ($expected): int {
+            $this->assertCurrent($expected, requireActiveNode: true);
+            $rows = DB::table('app_instance_environment_values')
+                ->where('app_instance_id', $expected->appInstanceId)
+                ->orderBy('env_key')
+                ->get(['env_key', 'env_value']);
+
+            if ($rows->isEmpty()) {
+                $this->configurationMissing();
+            }
+
+            $encryptedStorageBytes = 0;
+
+            foreach ($rows as $row) {
+                if (! is_string($row->env_key) || ! is_string($row->env_value)) {
+                    $this->configurationUnreadable();
+                }
+
+                $encryptedStorageBytes += strlen($row->env_key) + strlen($row->env_value) + 4;
+            }
+
+            return AppInstanceEnvironmentValidator::MaximumFileBytes + $encryptedStorageBytes;
+        });
+
+        return $requiredCapacity;
+    }
+
+    public function synchronizationSnapshot(
+        AppInstanceEnvironmentContext $expected,
+    ): AppInstanceEnvironmentSynchronizationSnapshot {
+        /** @var AppInstanceEnvironmentSynchronizationSnapshot $snapshot */
+        $snapshot = DB::transaction(function () use ($expected): AppInstanceEnvironmentSynchronizationSnapshot {
+            $this->assertCurrent($expected, requireActiveNode: true);
+            $values = $this->storedValues($expected->appInstanceId);
+
+            if ($values === []) {
+                $this->configurationMissing();
+            }
+
+            return new AppInstanceEnvironmentSynchronizationSnapshot($values);
+        });
+
+        return $snapshot;
+    }
+
     private function assertCurrent(AppInstanceEnvironmentContext $expected, bool $requireActiveNode): void
     {
         $instance = AppInstance::query()->lockForUpdate()->find($expected->appInstanceId);
@@ -129,11 +178,7 @@ final readonly class AppInstanceEnvironmentStore
                 ->mapWithKeys(static fn (AppInstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
                 ->all();
         } catch (DecryptException) {
-            throw new ResourceOperationException(
-                errorCode: 'env.configuration_unreadable',
-                message: 'The stored AppInstance environment configuration cannot be read.',
-                status: 409,
-            );
+            $this->configurationUnreadable();
         }
 
         return $values;
@@ -144,6 +189,24 @@ final readonly class AppInstanceEnvironmentStore
         throw new ResourceOperationException(
             errorCode: 'env.owner_changed',
             message: 'The AppInstance environment owner changed during the operation.',
+            status: 409,
+        );
+    }
+
+    private function configurationMissing(): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'env.configuration_missing',
+            message: 'The AppInstance has no stored environment configuration.',
+            status: 409,
+        );
+    }
+
+    private function configurationUnreadable(): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'env.configuration_unreadable',
+            message: 'The stored AppInstance environment configuration cannot be read.',
             status: 409,
         );
     }

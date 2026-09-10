@@ -98,6 +98,64 @@ it('serializes concurrent complete-result validation through SQLite immediate tr
     }
 });
 
+it('holds one cross-process owner through synchronization so a later update remains stored-only', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-env-sync-concurrency-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    $database = "{$directory}/gateway.sqlite";
+    $script = "{$directory}/worker.php";
+    file_put_contents($script, orb212_sync_concurrency_worker_script());
+
+    try {
+        new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'setup'])->mustRun();
+        $sync = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'sync']);
+        $sync->start();
+        orb212_wait_for_file("{$directory}/sync.ready", $sync);
+
+        $update = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'update']);
+        $update->start();
+        orb212_wait_for_file("{$directory}/update.started", $update);
+        usleep(150_000);
+
+        expect($update->isRunning())->toBeTrue()->and(file_exists("{$directory}/update.result"))->toBeFalse();
+
+        touch("{$directory}/release");
+        $sync->wait();
+        $update->wait();
+
+        expect($sync->isSuccessful())
+            ->toBeTrue()
+            ->and($update->isSuccessful())
+            ->toBeTrue()
+            ->and(json_decode((string) file_get_contents("{$directory}/sync.result"), true, flags: JSON_THROW_ON_ERROR))
+            ->toMatchArray(['operation' => 'sync', 'changed' => true, 'key_count' => 1])
+            ->and(json_decode(
+                (string) file_get_contents("{$directory}/update.result"),
+                true,
+                flags: JSON_THROW_ON_ERROR,
+            ))
+            ->toMatchArray(['operation' => 'update', 'changed' => true, 'key_count' => 2]);
+
+        $synced = (string) file_get_contents("{$directory}/sync.contents");
+        expect($synced)
+            ->toContain('INITIAL=')
+            ->not->toContain('PENDING');
+
+        $inspect = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'inspect']);
+        $inspect->mustRun();
+        expect(json_decode($inspect->getOutput(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['INITIAL' => 'before-sync', 'PENDING' => 'after-sync']);
+    } finally {
+        foreach (glob("{$directory}/*") ?: [] as $path) {
+            if (is_dir($path)) {
+                new \Illuminate\Filesystem\Filesystem()->deleteDirectory($path);
+            } else {
+                unlink($path);
+            }
+        }
+        rmdir($directory);
+    }
+});
+
 it('refuses a stale update after the supported removal boundary enters removing', function (): void {
     [$instance] = orb207_concurrency_fixture();
     $instance->environmentValues()->create(['env_key' => 'EXISTING', 'env_value' => 'kept']);
@@ -379,5 +437,149 @@ function orb207_concurrency_worker_script(): string
         }
 
         file_put_contents("{$directory}/{$mode}.result", json_encode($result, JSON_THROW_ON_ERROR));
+        PHP;
+}
+
+function orb212_wait_for_file(string $path, Process $process): void
+{
+    $deadline = microtime(true) + 5;
+
+    while (! file_exists($path) && $process->isRunning() && microtime(true) < $deadline) {
+        usleep(1_000);
+    }
+
+    if (! file_exists($path)) {
+        throw new RuntimeException(json_encode([
+            'stdout' => $process->getOutput(),
+            'stderr' => $process->getErrorOutput(),
+        ], JSON_THROW_ON_ERROR));
+    }
+}
+
+function orb212_sync_concurrency_worker_script(): string
+{
+    return <<<'PHP'
+        <?php
+
+        declare(strict_types=1);
+
+        [$script, $base, $database, $directory, $mode] = $argv;
+        $environment = [
+            'APP_ENV' => 'testing',
+            'APP_KEY' => 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            'DB_CONNECTION' => 'sqlite',
+            'DB_DATABASE' => $database,
+            'ORBIT_HOME' => "{$directory}/orbit-home",
+        ];
+        foreach ($environment as $name => $value) {
+            putenv("{$name}={$value}");
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+        require "{$base}/vendor/autoload.php";
+        $app = require "{$base}/bootstrap/app.php";
+        $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+        final class Orb212Preflight implements App\Domain\AppInstances\Environment\AppInstanceOperationPreflight
+        {
+            public function assertEnvironmentReadable(App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext $context): void {}
+
+            public function assertEnvironmentWritable(
+                App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext $context,
+                int $requiredCapacityBytes,
+            ): void {}
+        }
+
+        final readonly class Orb212Writer implements App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter
+        {
+            public function __construct(private string $directory) {}
+
+            public function write(
+                App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext $context,
+                #[SensitiveParameter]
+                string $contents,
+            ): App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult {
+                file_put_contents("{$this->directory}/sync.contents", $contents);
+                touch("{$this->directory}/sync.ready");
+                $deadline = microtime(true) + 5;
+                while (! file_exists("{$this->directory}/release") && microtime(true) < $deadline) {
+                    usleep(1_000);
+                }
+
+                if (! file_exists("{$this->directory}/release")) {
+                    throw new RuntimeException('The synchronization release barrier timed out.');
+                }
+
+                return App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult::changed();
+            }
+        }
+
+        if ($mode === 'setup') {
+            Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
+            $orbitApp = App\Models\App::query()->create([
+                'name' => 'Concurrent sync worker',
+                'slug' => 'concurrent-sync-worker',
+                'repository_url' => 'https://example.test/concurrent-sync-worker.git',
+                'default_branch' => 'main',
+                'root' => 'public',
+            ]);
+            $node = App\Models\Node::query()->create([
+                'name' => 'concurrent-sync-worker',
+                'status' => 'active',
+                'platform' => 'linux',
+                'public_ssh_host' => '192.0.2.221',
+                'wireguard_ip' => '10.44.0.221',
+                'user' => 'orbit',
+            ]);
+            $instance = App\Models\AppInstance::query()->create([
+                'app_id' => $orbitApp->id,
+                'node_id' => $node->id,
+                'name' => 'default',
+                'environment' => 'development',
+                'checkout_path' => '/srv/orbit/apps/concurrent-sync-worker/default',
+                'source_is_laravel' => false,
+                'provisioning_step' => 'active',
+                'status' => 'source_resolved',
+            ]);
+            $route = App\Models\Route::query()->create([
+                'app_id' => $orbitApp->id,
+                'node_id' => $node->id,
+                'hostname' => 'concurrent-sync-worker.example.test',
+                'provenance' => 'explicit',
+                'publication' => 'private',
+                'status' => 'pending',
+            ]);
+            $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+            $route->update(['status' => 'active']);
+            $instance->update(['status' => 'active']);
+            $instance->environmentValues()->create(['env_key' => 'INITIAL', 'env_value' => 'before-sync']);
+            exit(0);
+        }
+
+        $instance = App\Models\AppInstance::query()->firstOrFail();
+
+        if ($mode === 'inspect') {
+            echo json_encode($instance->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all(), JSON_THROW_ON_ERROR);
+            exit(0);
+        }
+
+        try {
+            if ($mode === 'sync') {
+                app()->instance(App\Domain\AppInstances\Environment\AppInstanceOperationPreflight::class, new Orb212Preflight);
+                app()->instance(App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter::class, new Orb212Writer($directory));
+                $result = app(App\Actions\AppInstances\SynchronizeAppInstanceEnvironmentAction::class)->execute($instance);
+            } else {
+                touch("{$directory}/update.started");
+                $result = app(App\Actions\AppInstances\UpdateAppInstanceEnvironmentAction::class)
+                    ->execute($instance, 'PENDING', 'after-sync');
+            }
+            file_put_contents("{$directory}/{$mode}.result", json_encode($result->toArray(), JSON_THROW_ON_ERROR));
+        } catch (Throwable $exception) {
+            file_put_contents("{$directory}/{$mode}.result", json_encode([
+                'class' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ], JSON_THROW_ON_ERROR));
+            throw $exception;
+        }
         PHP;
 }

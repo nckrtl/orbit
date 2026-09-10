@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
@@ -43,6 +45,7 @@ it('records environment commands without submitted imported or rejected values',
     $access = new CommandActivityEnvironmentAccess("IMPORTED={$imported}\n");
     app()->instance(AppInstanceOperationPreflight::class, $access);
     app()->instance(AppInstanceEnvironmentReader::class, $access);
+    app()->instance(AppInstanceEnvironmentWriter::class, $access);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
@@ -54,6 +57,15 @@ it('records environment commands without submitted imported or rejected values',
         ->assertOk();
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertOk();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->putJson("/api/v1/instances/{$instance->id}/environment/REJECTED", [
             'value' => 'safe',
             'unsupported' => $submitted,
@@ -62,7 +74,7 @@ it('records environment commands without submitted imported or rejected values',
 
     $activities = Activity::query()->orderBy('id')->get();
     expect($activities)
-        ->toHaveCount(3)
+        ->toHaveCount(4)
         ->and($activities[0]->command)
         ->toBe('instance:environment:update')
         ->and($activities[0]->properties?->get('input'))
@@ -71,7 +83,11 @@ it('records environment commands without submitted imported or rejected values',
         ->toBe('instance:environment:import')
         ->and($activities[1]->properties?->get('input'))
         ->toBe(['replace' => true])
+        ->and($activities[2]->command)
+        ->toBe('instance:environment:sync')
         ->and($activities[2]->properties?->get('input'))
+        ->toBe([])
+        ->and($activities[3]->properties?->get('input'))
         ->toBe([])
         ->and(json_encode($activities->toArray(), JSON_THROW_ON_ERROR))
         ->not->toContain($submitted, $imported);
@@ -1174,7 +1190,8 @@ function command_activity_environment_fixture(): array
 /** @mago-expect lint:file-name Test-local adapter isolates environment activity from SSH. */
 final readonly class CommandActivityEnvironmentAccess implements
     AppInstanceOperationPreflight,
-    AppInstanceEnvironmentReader
+    AppInstanceEnvironmentReader,
+    AppInstanceEnvironmentWriter
 {
     public function __construct(
         private string $contents,
@@ -1190,5 +1207,13 @@ final readonly class CommandActivityEnvironmentAccess implements
     public function read(AppInstanceEnvironmentContext $context): string
     {
         return $this->contents;
+    }
+
+    public function write(
+        AppInstanceEnvironmentContext $context,
+        #[\SensitiveParameter]
+        string $contents,
+    ): AppInstanceEnvironmentWriteResult {
+        return AppInstanceEnvironmentWriteResult::changed();
     }
 }

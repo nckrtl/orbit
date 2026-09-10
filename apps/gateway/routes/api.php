@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
+use App\Http\Controllers\Api\AppInstanceEnvironmentSynchronizationsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\AppInstancesController;
 use App\Http\Controllers\Api\AppsController;
@@ -123,6 +124,10 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/environment/import',
             [AppInstanceEnvironmentImportsController::class, 'store'],
         )->name('instance:environment:import');
+        Route::post(
+            'instances/{instance}/environment/sync',
+            [AppInstanceEnvironmentSynchronizationsController::class, 'store'],
+        )->name('instance:environment:sync');
         Route::put(
             'instances/{instance}/environment/{key}',
             [AppInstanceEnvironmentValuesController::class, 'update'],

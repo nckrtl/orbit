@@ -7,6 +7,7 @@ namespace App\Actions\Routes;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteHostnameProjector;
@@ -29,19 +30,51 @@ final readonly class ConvergeRouteAction
     public function __construct(
         private RouteHostnameProjector $projection,
         private DevelopmentAppInstanceConfigurator $configuration,
+        private AppInstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
     ) {}
 
     public function execute(Route $route, string $hostname): Route
     {
-        return $this->owner->run(fn (): Route => $this->convergeOwned($route->id, $hostname));
+        /** @var list<int> $targetIds */
+        $targetIds = $route
+            ->targets()
+            ->orderBy('app_instance_id')
+            ->pluck('app_instance_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        return $this->environmentOperations->run(
+            $targetIds,
+            fn (): Route => $this->owner->run(
+                fn (): Route => $this->convergeOwned($route->id, $hostname, $targetIds),
+            ),
+        );
     }
 
-    private function convergeOwned(int $routeId, string $hostname): Route
+    /** @param list<int> $expectedTargetIds */
+    private function convergeOwned(int $routeId, string $hostname, array $expectedTargetIds): Route
     {
         $route = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
             ->findOrFail($routeId);
+
+        $currentTargetIds = $route
+            ->targets
+            ->pluck('app_instance_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($currentTargetIds !== $expectedTargetIds) {
+            throw new ResourceOperationException(
+                errorCode: 'env.owner_changed',
+                message: 'The AppInstance environment owner changed during the operation.',
+                status: 409,
+            );
+        }
 
         if ($route->hostname === $hostname && $route->hostname_change_target === null) {
             return $route;

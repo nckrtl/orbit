@@ -58,9 +58,36 @@ The Gateway validates the complete result before it stores any part of an import
 
 Malformed or unknown placeholder expressions fail validation. Database-path placeholders, `{{instance.hostname}}`, and `{{app_instance.url}}` are not supported.
 
-## Replace a remote environment file
+## Synchronize stored configuration
 
-The Gateway can install a supplied complete environment file through a protected internal operation. For development, it selects `.env` in the recorded checkout. For production, it selects `.env` in the recorded application-user home and runs as that user even when the account has a disabled login shell. An App or AppInstance web root such as `public` does not change this location. Callers cannot override the Node, runtime user, directory, or filename.
+Use the Gateway API to replace the workload file from the complete stored configuration:
+
+```http
+POST /api/v1/instances/{instance}/environment/sync
+Content-Type: application/json
+
+{}
+```
+
+The request body must be an empty JSON object. Synchronization accepts the same positive AppInstance ID or exact Route hostname selectors as import and update. It requires an active, complete AppInstance owner, an active owning Node, and access from the active peer to that Node.
+
+The Gateway takes one consistent snapshot of the AppInstance owner, sole Route, and complete stored configuration. It resolves `{{app_instance.hostname}}` from that Route and `{{app_instance.environment}}` to the recorded `development` or `production` value. A missing Route, a Route transition, or an unavailable reference stops synchronization before replacement. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
+
+For development, synchronization selects `.env` in the recorded checkout. For production, it selects `.env` in the recorded application-user home and runs as that user even when the account has a disabled login shell. An App or AppInstance web root such as `public` does not change this location. Callers cannot override the Node, runtime user, directory, or filename.
+
+Before it decrypts any stored value, the Gateway checks trusted SSH access, the recorded execution identity, path containment, directory write access, destination type and ownership, replacement permission, read-only storage, and a conservative capacity bound derived without decrypting values. A missing parent, unsafe symlink, special file, wrong owner, failed or malformed observation, or insufficient capacity stops the operation without changing `.env`.
+
+Synchronization renders every stored key and installs one complete file. Stored configuration is the only input. The operation preserves stored `APP_KEY` values, while local-only keys and local edits disappear. It never changes stored database values to match the workload file. Import local edits first, or update the stored values, if those edits must remain.
+
+Concurrent import, update, synchronization, removal, and Route transitions share one bounded AppInstance operation owner. A competitor waits or returns `env.operation_busy` before effects. An update that runs after synchronization changes stored configuration only. Run synchronization again to install that pending value.
+
+A successful response contains only the AppInstance ID, `operation: sync`, whether the file changed, the total stored key count, and request-ID metadata. An identical protected file returns `changed: false` without replacement. Changed content or protection returns `changed: true` after complete replacement. A retry always rechecks current placement and stored configuration.
+
+Preflight, decryption, rendering, and confirmed writer failures leave the previous file intact. An unconfirmed writer result returns `env.sync_unconfirmed`; the replacement might have completed, so the response does not claim that the previous file remains. Retry the same request to recheck the current file and either accept the matching protected file or install the complete current result.
+
+## Remote replacement boundary
+
+Synchronization installs the rendered file through a protected internal operation. The reusable writer also remains available to other Gateway operations that already hold the AppInstance ownership and validation boundary.
 
 Before a write, the Gateway checks trusted SSH access, the recorded execution identity, path containment, directory write access, destination type and ownership, replacement permission, read-only storage, and conservative required capacity. A missing parent, unsafe symlink, special file, wrong owner, failed or malformed observation, or insufficient capacity stops the operation before it changes `.env`. This preflight reads no environment values and does not parse or decrypt configuration. Import uses the same boundary with read checks and needs no write permission or replacement capacity.
 
@@ -72,8 +99,10 @@ The remote operation does not expose supplied bytes or raw remote output in resu
 
 ## Read results and recover encrypted values
 
-A successful import or update returns only the AppInstance ID, operation, whether stored configuration changed, the total stored key count, and request-ID metadata. Responses, activity, logs, diagnostics, and model serialization omit environment values.
+A successful import, update, or synchronization returns only the AppInstance ID, operation, whether its owned boundary changed, the total stored key count, and request-ID metadata. Responses, activity, logs, diagnostics, and model serialization omit environment values.
 
 The Gateway encrypts every literal and placeholder expression with its application encryption key before database storage. Recovery of stored configuration depends on retaining that Gateway key material. Orbit does not generate or delete an application key through these endpoints, and it never displays plaintext stored values.
 
 Import and update change only stored Gateway configuration. They do not write the workload `.env`, run application code, refresh framework caches, restart services, or require an application database or installed framework dependencies.
+
+Synchronization changes only the workload `.env`. It does not run application code, refresh framework caches, restart services or application processes, change Git metadata or source, or touch application database files. Stale framework caches, missing dependencies, and an absent application database do not block it. Run the application's separate cache refresh or process restart step when the new file must become effective in already running application code.
