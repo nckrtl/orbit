@@ -241,8 +241,7 @@ describe('gateway object-state boundary', function (): void {
             'image' => 'orbit-worker:latest',
         ];
         $request = new AddProcessRequest(
-            targetType: 'instance',
-            targetId: 7,
+            appInstanceId: 7,
             name: 'worker',
             runtime: 'docker',
             command: ['php', 'artisan', 'queue:work'],
@@ -498,8 +497,7 @@ function gateway_object_state_process_constructor_exception(array $environment):
 {
     try {
         new AddProcessRequest(
-            targetType: 'instance',
-            targetId: 7,
+            appInstanceId: 7,
             name: 'worker',
             runtime: 'docker',
             command: ['php', 'artisan', 'queue:work'],

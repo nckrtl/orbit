@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\CertificateMode;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\ProcessOperationException;
@@ -25,7 +25,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
@@ -58,17 +58,15 @@ beforeEach(function (): void {
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = Instance::query()->create([
+    $this->instance = AppInstance::query()->create([
         'app_id' => $orbitApp->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/docs',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'hostname' => 'docs.app-dev.orbit',
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
     ]);
 });
 
@@ -146,56 +144,28 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
         ->and($this->ssh->commands[2]->input)
         ->toContain("X-Orbit-Process-ID={$process->id}")
         ->toContain(
-            "Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/cert.pem",
+            "Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/cert.pem",
         )
         ->toContain(
-            "Environment=VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/key.pem",
+            "Environment=VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/key.pem",
         )
         ->toContain(
-            "\"VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/cert.pem\"",
+            "\"VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/cert.pem\"",
         )
         ->toContain(
-            "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/key.pem\"",
+            "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/key.pem\"",
         )
         ->and($logs)
         ->toBe("line one\nline two\n");
 });
 
-it('renders the workspace certificate scope during systemd convergence', function (): void {
-    $workspace = Workspace::query()->create([
-        'instance_id' => $this->instance->id,
-        'name' => 'feature',
-        'branch' => 'feature',
-        'checkout_path' => $this->instance->checkout_path.'/feature',
-        'hostname' => 'feature.docs.app-dev.orbit',
-        'status' => LifecycleStatus::Active,
-    ]);
-    $process = runtime_manager_systemd_process_for_workspace($workspace);
-    $this->ssh->responses = [
-        process_runtime_result(1),
-        process_runtime_result(),
-        process_runtime_result(),
-        process_runtime_result(),
-        process_runtime_result(),
-        process_runtime_result(),
-        process_runtime_result(),
-    ];
+it('rejects legacy Workspace ownership before systemd convergence', function (): void {
+    $process = runtime_manager_legacy_workspace_process();
 
-    $this->manager->converge($process);
+    expect(fn () => $this->manager->converge($process))
+        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance');
 
-    expect($this->ssh->commands[2]->input)
-        ->toContain(
-            "Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/cert.pem",
-        )
-        ->toContain(
-            "Environment=VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/key.pem",
-        )
-        ->toContain(
-            "\"VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/cert.pem\"",
-        )
-        ->toContain(
-            "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/key.pem\"",
-        );
+    expect($this->ssh->commands)->toBeEmpty();
 });
 
 it('refuses to overwrite a systemd unit that is not owned by the process', function (): void {
@@ -1545,7 +1515,7 @@ it('requires a successful systemd stop before deleting an owned unit', function 
 it('removes an instance process after its role and resources enter removing state', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['status' => LifecycleStatus::Removing]);
-    $this->instance->update(['status' => LifecycleStatus::Removing]);
+    $this->instance->update(['status' => AppInstanceState::SourceResolved]);
     $this->instance->node->roles()->where('role', 'app-dev')->update(['status' => LifecycleStatus::Removing]);
     $ownedUnit = "[Unit]\nX-Orbit-Process-ID={$process->id}\n";
     $this->ssh->responses = [
@@ -1564,29 +1534,104 @@ it('removes an instance process after its role and resources enter removing stat
         ->toHaveCount(5);
 });
 
-it('derives the production removal target from persisted instance identity after role deactivation', function (): void {
+it('derives the production removal target from persisted AppInstance identity', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['status' => LifecycleStatus::Removing]);
     $this->instance->update([
-        'status' => LifecycleStatus::Removing,
-        'certificate_mode' => CertificateMode::Acme,
+        'status' => AppInstanceState::SourceResolved,
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
     ]);
-    $this->instance->node->roles()->delete();
-    $this->instance->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Removing]);
 
     $target = new ProcessTargetResolver()->forRemoval($process);
 
     expect($target->user)
         ->toBe('orbit-docs')
         ->and($target->checkoutPath)
-        ->toBe($this->instance->checkout_path)
+        ->toBe('/home/orbit-docs/current')
         ->and($target->node->is($this->instance->node))
         ->toBeTrue();
 });
 
+it('checks the selected production release with valid fixed argv before start', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['working_directory' => '/home/orbit-docs/current']);
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    $unit = "orbit-process-{$process->id}-queue.service";
+    $path = "/etc/systemd/system/{$unit}";
+    $this->ssh->responses = [
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID={$process->id}\n"),
+        process_runtime_result(),
+    ];
+
+    $this->manager->start($process);
+
+    expect(array_map(
+        static fn (RemoteCommand $command): array => $command->arguments,
+        $this->ssh->commands,
+    ))->toBe([
+        ['sudo', 'test', '-d', '/home/orbit-docs/current'],
+        ['sudo', 'test', '-e', $path],
+        ['sudo', 'cat', '--', $path],
+        ['sudo', 'systemctl', 'enable', '--now', $unit],
+    ]);
+});
+
+it('refuses production start when no current release is selected', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    $this->ssh->responses = [process_runtime_result(1)];
+
+    expect(fn () => $this->manager->start($process))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('process.release_unavailable');
+        });
+
+    expect($this->ssh->commands)
+        ->toHaveCount(1)
+        ->and($this->ssh->commands[0]->arguments)
+        ->toBe(['sudo', 'test', '-d', '/home/orbit-docs/current']);
+});
+
+it('refuses desired-running production convergence before runtime mutation when no release is selected', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['desired_state' => 'running']);
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    $this->ssh->responses = [process_runtime_result(1)];
+
+    expect(fn () => $this->manager->converge($process))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('process.release_unavailable');
+        });
+
+    expect($this->ssh->commands)
+        ->toHaveCount(1)
+        ->and($this->ssh->commands[0]->arguments)
+        ->toBe(['sudo', 'test', '-d', '/home/orbit-docs/current']);
+});
+
 it('keeps the active-node prerequisite on the removal-only target path', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->instance->update(['status' => LifecycleStatus::Removing]);
+    $this->instance->update(['status' => AppInstanceState::SourceResolved]);
     $this->instance->node->update(['status' => LifecycleStatus::Failed]);
 
     expect(fn () => new ProcessTargetResolver()->forRemoval($process))
@@ -1595,33 +1640,13 @@ it('keeps the active-node prerequisite on the removal-only target path', functio
         });
 });
 
-it('removes a workspace process after its role and resources enter removing state', function (): void {
-    $workspace = Workspace::query()->create([
-        'instance_id' => $this->instance->id,
-        'name' => 'feature',
-        'branch' => 'feature',
-        'checkout_path' => $this->instance->checkout_path.'/feature',
-        'hostname' => 'feature.docs.app-dev.orbit',
-        'status' => LifecycleStatus::Removing,
-    ]);
-    $process = runtime_manager_systemd_process_for_workspace($workspace, LifecycleStatus::Removing);
-    $this->instance->update(['status' => LifecycleStatus::Removing]);
-    $this->instance->node->roles()->where('role', 'app-dev')->update(['status' => LifecycleStatus::Removing]);
-    $ownedUnit = "[Unit]\nX-Orbit-Process-ID={$process->id}\n";
-    $this->ssh->responses = [
-        process_runtime_result(),
-        process_runtime_result(stdout: $ownedUnit),
-        process_runtime_result(),
-        process_runtime_result(),
-        process_runtime_result(),
-    ];
+it('rejects legacy Workspace ownership before runtime cleanup', function (): void {
+    $process = runtime_manager_legacy_workspace_process();
 
-    $this->manager->remove($process);
+    expect(fn () => $this->manager->remove($process))
+        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance');
 
-    expect($this->ssh->connections)
-        ->each(fn ($connection) => $connection->user->toBe('nckrtl'))
-        ->and($this->ssh->commands)
-        ->toHaveCount(5);
+    expect($this->ssh->commands)->toBeEmpty();
 });
 
 it('rechecks exact Docker ownership before lifecycle control', function (): void {
@@ -1736,10 +1761,10 @@ it('returns a stable status error for a failed Docker probe', function (): void 
     $this->fail('Expected a failed status probe to return a stable error.');
 });
 
-function runtime_manager_systemd_process(Instance $instance): Process
+function runtime_manager_systemd_process(AppInstance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
@@ -1754,31 +1779,29 @@ function runtime_manager_systemd_process(Instance $instance): Process
     ]);
 }
 
-function runtime_manager_systemd_process_for_workspace(
-    Workspace $workspace,
-    LifecycleStatus $status = LifecycleStatus::Active,
-): Process {
+function runtime_manager_legacy_workspace_process(): Process
+{
     return Process::query()->create([
         'owner_type' => Workspace::class,
-        'owner_id' => $workspace->id,
+        'owner_id' => 999_999,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
-        'working_directory' => $workspace->checkout_path,
+        'working_directory' => '/srv/legacy',
         'runtime_config' => [
             'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
-            'environment_file' => $workspace->checkout_path.'/.env',
+            'environment_file' => '/srv/legacy/.env',
         ],
         'restart_policy' => 'always',
         'desired_state' => 'stopped',
-        'status' => $status,
+        'status' => LifecycleStatus::Active,
     ]);
 }
 
 /** @param array<string, string> $environment */
-function runtime_manager_docker_process(Instance $instance, array $environment = []): Process
+function runtime_manager_docker_process(AppInstance $instance, array $environment = []): Process
 {
     return Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => 'redis',
         'runtime' => ProcessRuntime::Docker,

@@ -22,8 +22,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
         AddProcessRequest::class => MockResponse::make(process_envelope(), 201),
     ]);
     $request = new AddProcessRequest(
-        targetType: 'instance',
-        targetId: 7,
+        appInstanceId: 7,
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -64,8 +63,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
 
 it('forwards every explicit process field without applying runtime policy', function (): void {
     $request = new AddProcessRequest(
-        targetType: 'instance',
-        targetId: 7,
+        appInstanceId: 7,
         name: 'worker',
         runtime: 'systemd',
         command: ['php', 'artisan', 'queue:work'],
@@ -96,8 +94,7 @@ it('forwards every explicit process field without applying runtime policy', func
 
 it('omits every absent optional process field without applying runtime policy', function (): void {
     $request = new AddProcessRequest(
-        targetType: 'instance',
-        targetId: 7,
+        appInstanceId: 7,
         name: 'worker',
         runtime: 'systemd',
         command: ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -116,8 +113,7 @@ it('omits every absent optional process field without applying runtime policy', 
 
 it('preserves explicitly supplied empty process collections', function (): void {
     $request = new AddProcessRequest(
-        targetType: 'instance',
-        targetId: 7,
+        appInstanceId: 7,
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -142,8 +138,7 @@ it('preserves explicitly supplied empty process collections', function (): void 
 
 it('preserves an omitted optional volume read-only flag', function (): void {
     $request = new AddProcessRequest(
-        targetType: 'instance',
-        targetId: 7,
+        appInstanceId: 7,
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -162,7 +157,7 @@ it('lists only one target process collection', function (): void {
             'meta' => ['request_id' => process_request_id()],
         ]),
     ]);
-    $request = new ListProcessesRequest('instance', 7);
+    $request = new ListProcessesRequest(appInstanceId: 7);
     $response = process_connector($mock)->send($request)->dto();
 
     expect($request->getMethod())
@@ -175,6 +170,12 @@ it('lists only one target process collection', function (): void {
         ->toBeInstanceOf(ProcessesResponse::class)
         ->and($response->processes)
         ->toHaveCount(1)
+        ->and($response->processes[0]->targetType)
+        ->toBe('instance')
+        ->and($response->processes[0]->targetId)
+        ->toBe(7)
+        ->and($response->processes[0]->toArray())
+        ->not->toHaveKey('node_id')
         ->and($response->processes[0]->runtimeConfig)
         ->toBe([
             'image' => 'redis:8-alpine',

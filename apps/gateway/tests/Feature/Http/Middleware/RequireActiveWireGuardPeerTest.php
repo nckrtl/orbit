@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\CertificateMode;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Tool;
@@ -361,21 +361,19 @@ function peer_boundary_process(Node $node): Process
         'slug' => 'private-app',
         'repository_url' => 'https://example.test/private.git',
     ]);
-    $instance = Instance::query()->create([
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/private-app',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'hostname' => 'private-app.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
     ]);
 
     return Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => 'private-worker',
         'runtime' => 'systemd',
@@ -390,6 +388,8 @@ function peer_boundary_process(Node $node): Process
 final class PeerBoundaryFakeProcessRuntimeManager implements ProcessRuntimeManager
 {
     public int $logCalls = 0;
+
+    public function assertCanStart(Process $process): void {}
 
     public function converge(Process $process): void {}
 

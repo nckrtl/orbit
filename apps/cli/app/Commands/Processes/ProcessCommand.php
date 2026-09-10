@@ -156,52 +156,31 @@ abstract class ProcessCommand extends GatewayCommand
             .'BEARER[_-]?TOKEN|CREDENTIAL|COOKIE)[A-Z0-9_.-]*';
     }
 
-    /** @return array{type: string, id: int}|null */
-    protected function target(): ?array
+    protected function appInstanceId(): ?int
     {
         $instance = $this->option('instance');
-        $workspace = $this->option('workspace');
-        $instanceSelected = is_string($instance) && $instance !== '';
-        $workspaceSelected = is_string($workspace) && $workspace !== '';
 
-        if ($instanceSelected === $workspaceSelected) {
+        if (! is_string($instance) || $instance === '') {
             $this->renderGatewayFailure(
                 'process.target_invalid',
-                'Select exactly one instance or workspace target.',
+                'The --instance option is required.',
             );
 
             return null;
         }
 
-        if ($instanceSelected) {
-            return $this->validatedTarget('instance', $instance);
-        }
-
-        if ($workspaceSelected) {
-            return $this->validatedTarget('workspace', $workspace);
-        }
-
-        return null;
-    }
-
-    /** @return array{type: string, id: int}|null */
-    private function validatedTarget(string $type, string $value): ?array
-    {
-        $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $id = filter_var($instance, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         if (! is_int($id)) {
             $this->renderGatewayFailure(
                 'process.target_id_invalid',
-                'Process target ID must be a positive integer.',
+                'AppInstance ID must be a positive integer.',
             );
 
             return null;
         }
 
-        return [
-            'type' => $type,
-            'id' => $id,
-        ];
+        return $id;
     }
 
     /** @return list<string> */

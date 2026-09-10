@@ -1,6 +1,6 @@
 # AppInstance removal
 
-This page tells an operator how Orbit removes one AppInstance, what `--force` changes for development source, and how an interrupted removal resumes. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns development source-removal safety, [ADR 0031](../decisions/0031-clone-initial-production-source-during-provisioning.md) owns retained production content, [ADR 0046](../decisions/0046-own-production-release-deployment-in-orbit.md) owns the production serving layout, [ADR 0045](../decisions/0045-isolate-production-php-fpm-by-unix-user.md) owns dedicated production runtime cleanup, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) owns the coordinated Route boundary, and [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target Route deletion.
+This page tells an operator how Orbit removes one AppInstance, what `--force` changes for development source, how owned processes are removed, and how an interrupted removal resumes. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns development source-removal safety, [ADR 0031](../decisions/0031-clone-initial-production-source-during-provisioning.md) owns retained production content, [ADR 0046](../decisions/0046-own-production-release-deployment-in-orbit.md) owns the production serving layout, [ADR 0045](../decisions/0045-isolate-production-php-fpm-by-unix-user.md) owns dedicated production runtime cleanup, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) owns the coordinated Route boundary, [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target Route deletion, and [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns child cleanup.
 
 Registration transfers an adopted checkout or worktree into AppInstance ownership. Orbit removes that source through `instance:remove`; it exposes no separate unregister command or lifecycle.
 
@@ -31,7 +31,7 @@ Forced removal validates the configured origin identity locally and does not req
 
 ## Preflight the complete removal
 
-The Gateway validates the source boundary and active Route before it changes an AppInstance, Route, runtime, Git repository, directory, or database row. A development AppInstance must own its singleton Route. A production AppInstance can be one member of an explicit Cluster Route on distinct active app-prod Nodes for the same App. For development source, the Gateway holds the Node source-operation lock continuously through inspection, Route preflight, and removal acceptance. Source preparation and each retry revalidation acquire the same Node lock.
+The Gateway validates the source boundary and active Route before it changes an AppInstance, owned Process, Route, runtime, Git repository, directory, or database row. A refused source preflight leaves every Process record and managed runtime unchanged. A development AppInstance must own its singleton Route. A production AppInstance can be one member of an explicit Cluster Route on distinct active app-prod Nodes for the same App. For development source, the Gateway holds the Node source-operation lock continuously through inspection, Route preflight, and removal acceptance. Source preparation and each retry revalidation acquire the same Node lock.
 
 Preflight compares the recorded checkout with its source layout, App repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, starting commit ancestry, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
 
@@ -39,7 +39,7 @@ Preflight compares the recorded checkout with its source layout, App repository 
 
 Orbit accepts one development worktree in normal or forced mode. Normal checkout removal refuses registered linked worktrees and tells the operator to use `--force`. Forced checkout removal discovers every linked source from Git inventory and accepts the checkout only when each source is an active Orbit-owned AppInstance on the same Node, with the same App repository identity and safe Route and source ownership. An unregistered linked worktree refuses both modes before mutation.
 
-Forced checkout removal sorts worktrees by checkout path and puts the common checkout last. The Gateway inspects every member against the same linked-worktree inventory before one transaction records the ordered set and marks every member `removing`. Force never waives source identity, ownership, path, repository, linked-worktree, overlap, migration, or Route checks.
+Forced checkout removal sorts worktrees by checkout path and puts the common checkout last. The Gateway inspects every member against the same linked-worktree inventory before one transaction records the ordered set and marks every member `removing`. After acceptance, the Gateway refuses a new Process for every AppInstance in that fixed deletion set. Force never waives source identity, ownership, path, repository, linked-worktree, overlap, migration, Process artifact, or Route checks.
 
 ### Production target
 
@@ -54,12 +54,14 @@ After preflight succeeds, the Gateway records one immutable member for a worktre
 | `source_preparation` | Record verified development source identity or the production content-retention boundary without deleting content. |
 | `route_target_clear` | Stop the Route from forwarding to the AppInstance, republish an ordered surviving production set or delete the final-target Route after managed projection cleanup, and release a deleted Route's hostname. |
 | `source_finalization` | Delete the exact recorded development checkout or retain production application content, then store matching completion evidence. |
-| `runtime_cleanup` | Remove the AppInstance runtime artifacts after Route traffic stops reaching the checkout. |
+| `runtime_cleanup` | Stop and remove every owned Process and its exact managed artifacts, delete each completed Process record, and then remove the AppInstance runtime artifacts after Route traffic stops reaching the checkout. |
 | `row_deletion` | Delete the member's AppInstance row. The final member's transaction also marks the operation completed. |
 
 Development source finalization never starts before that member's Route deletion releases the hostname. The Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections before it deletes the Route. A projection failure keeps the AppInstance `removing` and keeps the unfinished checkpoint available for retry. The common checkout stays usable while Orbit removes its worktree members and their Git administration entries. Orbit deletes the common checkout only after every accepted worktree completes.
 
 Production source finalization starts after Route target cleanup completes. Removing one member of a shared production Route keeps the Route active, compacts its ordered target positions, republishes the complete survivor set, and removes the departing workload's Caddy, PHP FastCGI Process Manager (PHP-FPM), and private certificate projections.
+
+Process cleanup includes running, stopped, failed, and removing Process records for both systemd and Docker. Orbit checks every service unit, container, and recovery artifact for the exact Process owner before it stops or removes that artifact. An absent owned artifact is already complete. An ownership conflict stops the cascade and never authorizes Orbit to adopt or delete the conflicting artifact.
 
 Dedicated PHP cleanup disables and removes only the AppInstance's recorded service, generated identity files, pool, and socket after traffic stops. It leaves every other service PID and cache unchanged, including Gateway PHP, development PHP, another dedicated production runtime, and an existing shared service. Removing the final member clears the workload and Router Caddy, certificate, and Domain Name System (DNS) projections before it deletes the Route.
 
@@ -78,7 +80,9 @@ The API, PHP SDK, CLI human output, CLI JSON output, and activity use one bounde
 | `total`, `completed`, `remaining` | Immutable fixed-set member counts; completed counts row deletion, and remaining equals total minus completed. |
 | `failed_step`, `error_code` | Null outside failure; on failure, the unfinished step and a bounded safe error token or null. |
 
-Repeating the same removal request resumes the first unfinished member and step. The Gateway refuses a changed force value or a request owned by another operation. Before further source deletion, it revalidates every unfinished source under the same Node lock. A retry after Route deletion continues without recreating the Route or reclaiming its hostname. If final cascade completion cannot commit, the same transaction restores the final member checkpoint and requested checkout row, so the identical public request remains model-bindable.
+Repeating the same removal request resumes the first unfinished member and step. The Gateway refuses a changed force value or a request owned by another operation. Before further source deletion, it revalidates every unfinished source under the same Node lock. A retry after Route deletion continues without recreating the Route or reclaiming its hostname.
+
+Process cleanup retries only records and exact-owned runtime artifacts that remain unfinished. A Process cleanup failure keeps the AppInstance and its removal progress, reports no completed removal, and permits the same request to continue after the Node or artifact conflict is repaired. If final cascade completion cannot commit, the same transaction restores the final member checkpoint and requested checkout row, so the identical public request remains model-bindable.
 
 A production retry after shared target removal preserves the survivor set without restoring the departing target. If final completion cannot commit, the same transaction restores the final member checkpoint and AppInstance row, so the identical public request remains model-bindable.
 
@@ -88,4 +92,4 @@ Production finalization records deterministic retained-content evidence and does
 
 ## Limits
 
-AppInstance removal does not change App source settings, migrate a default source, adopt local source, delete branches, clean retained releases automatically, create production target pools, select a balancing policy, or reconcile unrelated Route changes. It retains production application content, persistent environment and SQLite files, the dedicated production user, and local PHP-FPM tuning.
+AppInstance removal does not change App source settings, migrate a default source, adopt local source, delete branches, clean retained releases automatically, create production target pools, select a balancing policy, or reconcile unrelated Route changes. It leaves other AppInstances' processes, unrelated services and containers, Node-owned state, and unrecognized runtime artifacts unchanged. It retains production application content, persistent environment and SQLite files, the dedicated production user, and local PHP-FPM tuning.

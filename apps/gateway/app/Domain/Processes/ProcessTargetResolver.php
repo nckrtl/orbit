@@ -4,141 +4,147 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Domain\Instances\CertificateMode;
-use App\Domain\Nodes\RoleName;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Process;
-use App\Models\Workspace;
 use SensitiveParameter;
 
 final readonly class ProcessTargetResolver
 {
     public function resolve(ProcessTargetType $type, int $id): ProcessTarget
     {
-        return match ($type) {
-            ProcessTargetType::Instance => $this->instance(
-                Instance::query()
-                    ->with(['app', 'node.roles'])
-                    ->findOrFail($id),
-            ),
-            ProcessTargetType::Workspace => $this->workspace(
-                Workspace::query()
-                    ->with(['instance.app', 'instance.node.roles'])
-                    ->findOrFail($id),
-            ),
-        };
+        return $this->forAdmission(
+            AppInstance::query()
+                ->with('node')
+                ->findOrFail($id),
+        );
+    }
+
+    public function forAdmission(AppInstance $instance): ProcessTarget
+    {
+        $instance->loadMissing('node');
+        $this->ensureActive($instance);
+
+        return $this->context($instance);
     }
 
     public function forProcess(#[SensitiveParameter] Process $process): ProcessTarget
     {
-        return $this->resolve(
-            ProcessTargetType::fromModelClass($process->owner_type),
-            $process->owner_id,
-        );
+        return $this->forAdmission($this->owner($process));
+    }
+
+    public function forStart(#[SensitiveParameter] Process $process): ProcessTarget
+    {
+        return $this->forAdmission($this->owner($process));
+    }
+
+    public function forInspection(#[SensitiveParameter] Process $process): ProcessTarget
+    {
+        return $this->context($this->owner($process));
     }
 
     public function forRemoval(#[SensitiveParameter] Process $process): ProcessTarget
     {
-        return match (ProcessTargetType::fromModelClass($process->owner_type)) {
-            ProcessTargetType::Instance => $this->removalInstance(
-                Instance::query()->with(['app', 'node'])->findOrFail($process->owner_id),
-            ),
-            ProcessTargetType::Workspace => $this->removalWorkspace(
-                Workspace::query()->with(['instance.app', 'instance.node'])->findOrFail($process->owner_id),
-            ),
-        };
+        $instance = $this->owner($process);
+        $this->ensureLinux($instance);
+
+        if ($instance->node->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException(
+                errorCode: 'process.target_inactive',
+                message: "Node [{$instance->node->name}] is not active.",
+            );
+        }
+
+        return $this->context($instance);
     }
 
-    private function instance(Instance $instance): ProcessTarget
+    private function owner(#[SensitiveParameter] Process $process): AppInstance
     {
-        $this->ensureActive($instance);
-        $appProd = $this->hasActiveAppProdRole($instance);
-        $user = $appProd
-            ? "orbit-{$instance->app->slug}"
-            : $instance->node->user;
+        if ($process->owner_type !== AppInstance::class) {
+            throw new ResourceOperationException(
+                errorCode: 'process.target_unsupported',
+                message: 'The Process owner is not a supported AppInstance.',
+                status: 409,
+            );
+        }
+
+        return AppInstance::query()
+            ->with('node')
+            ->findOrFail($process->owner_id);
+    }
+
+    private function context(AppInstance $instance): ProcessTarget
+    {
+        $this->ensureLinux($instance);
+
+        if ($instance->environment === 'development') {
+            $workingDirectory = $instance->checkout_path;
+            $environmentFile = "{$instance->checkout_path}/.env";
+            $user = $instance->node->user;
+            $certificateScope = "app-instance-{$instance->id}";
+            $productionReleaseLayout = false;
+        } elseif ($instance->environment === 'production') {
+            $home = $instance->production_home;
+            $user = $instance->production_user;
+
+            if (! is_string($home) || ! is_string($user)) {
+                $this->unavailable($instance);
+            }
+
+            $productionReleaseLayout = $instance->usesProductionReleaseLayout();
+
+            if ($instance->checkout_path !== $home && ! $productionReleaseLayout) {
+                $this->unavailable($instance);
+            }
+
+            $workingDirectory = $productionReleaseLayout ? "{$home}/current" : $home;
+            $environmentFile = "{$home}/.env";
+            $certificateScope = null;
+        } else {
+            $this->unavailable($instance);
+        }
+
+        if (! $this->safeAbsolutePath($workingDirectory) || ! $this->safeAbsolutePath($environmentFile)) {
+            $this->unavailable($instance);
+        }
+
+        if (preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user) !== 1) {
+            $this->unavailable($instance);
+        }
 
         return new ProcessTarget(
             node: $instance->node,
             user: $user,
-            checkoutPath: $instance->checkout_path,
-            certificateScope: $appProd ? null : "instance-{$instance->id}",
+            checkoutPath: $workingDirectory,
+            certificateScope: $certificateScope,
+            appInstance: $instance,
+            environmentFile: $environmentFile,
+            productionReleaseLayout: $productionReleaseLayout,
         );
     }
 
-    private function workspace(Workspace $workspace): ProcessTarget
-    {
-        $this->ensureActive($workspace->instance);
-
-        if ($this->hasActiveAppProdRole($workspace->instance)) {
-            throw new ResourceOperationException(
-                errorCode: 'process.workspace_not_allowed',
-                message: 'Workspaces cannot run processes on app-prod nodes.',
-            );
-        }
-
-        if ($workspace->status !== LifecycleStatus::Active) {
-            throw new ResourceOperationException(
-                errorCode: 'process.target_inactive',
-                message: "Workspace [{$workspace->name}] is not active.",
-            );
-        }
-
-        return new ProcessTarget(
-            node: $workspace->instance->node,
-            user: $workspace->instance->node->user,
-            checkoutPath: $workspace->checkout_path,
-            certificateScope: "workspace-{$workspace->id}",
-        );
-    }
-
-    private function removalInstance(Instance $instance): ProcessTarget
-    {
-        $this->ensureRemovalAllowed($instance);
-
-        return new ProcessTarget(
-            node: $instance->node,
-            user: $instance->certificate_mode === CertificateMode::Acme
-                ? "orbit-{$instance->app->slug}"
-                : $instance->node->user,
-            checkoutPath: $instance->checkout_path,
-        );
-    }
-
-    private function removalWorkspace(Workspace $workspace): ProcessTarget
-    {
-        $this->ensureRemovalAllowed($workspace->instance);
-
-        if ($workspace->instance->certificate_mode !== CertificateMode::OrbitCa) {
-            throw new ResourceOperationException(
-                errorCode: 'process.workspace_not_allowed',
-                message: 'Workspaces cannot run processes on app-prod nodes.',
-            );
-        }
-
-        return new ProcessTarget(
-            node: $workspace->instance->node,
-            user: $workspace->instance->node->user,
-            checkoutPath: $workspace->checkout_path,
-        );
-    }
-
-    private function ensureActive(Instance $instance): void
+    private function ensureActive(AppInstance $instance): void
     {
         $this->ensureLinux($instance);
 
-        if ($instance->status === LifecycleStatus::Active && $instance->node->status === LifecycleStatus::Active) {
+        if (
+            $instance->status === AppInstanceState::Active
+            && $instance->node->status === LifecycleStatus::Active
+            && ! $instance->migration_required
+            && $instance->provisioning_step === 'active'
+        ) {
             return;
         }
 
         throw new ResourceOperationException(
             errorCode: 'process.target_inactive',
-            message: "Instance [{$instance->name}] or its node is not active.",
+            message: "AppInstance [{$instance->name}] or its Node is not active.",
         );
     }
 
-    private function ensureLinux(Instance $instance): void
+    private function ensureLinux(AppInstance $instance): void
     {
         if ($instance->node->platform === 'linux') {
             return;
@@ -150,30 +156,24 @@ final readonly class ProcessTargetResolver
         );
     }
 
-    private function ensureRemovalAllowed(Instance $instance): void
+    private function safeAbsolutePath(string $path): bool
     {
-        $this->ensureLinux($instance);
-
-        if ($instance->node->status === LifecycleStatus::Active) {
-            return;
-        }
-
-        throw new ResourceOperationException(
-            errorCode: 'process.target_inactive',
-            message: "Node [{$instance->node->name}] is not active.",
-        );
+        return
+            str_starts_with($path, '/')
+            && ! str_contains($path, "\n")
+            && ! str_contains($path, "\r")
+            && array_all(
+                array_slice(explode('/', $path), 1),
+                static fn (string $segment): bool => ! in_array($segment, ['', '.', '..'], strict: true),
+            );
     }
 
-    private function hasActiveAppProdRole(Instance $instance): bool
+    private function unavailable(AppInstance $instance): never
     {
-        return $instance
-            ->node
-            ->roles
-            ->contains(
-                static fn ($role): bool => (
-                    $role->role === RoleName::AppProd
-                    && $role->status === LifecycleStatus::Active
-                ),
-            );
+        throw new ResourceOperationException(
+            errorCode: 'process.target_unavailable',
+            message: "AppInstance [{$instance->name}] has no valid Process placement.",
+            status: 409,
+        );
     }
 }

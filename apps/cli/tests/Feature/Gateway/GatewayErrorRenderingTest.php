@@ -427,13 +427,13 @@ it('renders local validation failures through the exact json boundary', function
         'process:add',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
         'process.target_invalid',
-        'Select exactly one instance or workspace target.',
+        'The --instance option is required.',
     ],
     'process target ID' => [
         'process:add',
         ['name' => 'worker', '--instance' => 'validation-secret', '--command' => ['/usr/bin/php']],
         'process.target_id_invalid',
-        'Process target ID must be a positive integer.',
+        'AppInstance ID must be a positive integer.',
     ],
     'process runtime' => [
         'process:add',

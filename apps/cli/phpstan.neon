@@ -26,11 +26,6 @@ parameters:
             count: 5
         -
             identifier: larastan.console.undefinedOption
-            message: '#^Command "(?:process:logs|process:remove|process:restart|process:start|process:stop)" does not have option "workspace"\.$#'
-            path: app/Commands/Processes/ProcessCommand.php
-            count: 5
-        -
-            identifier: larastan.console.undefinedOption
             message: '#^Command "(?:tool:remove|tool:show|tool:update)" does not have option "node"\.$#'
             path: app/Commands/Tools/ToolCommand.php
             count: 3
