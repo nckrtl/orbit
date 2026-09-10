@@ -27,6 +27,7 @@ function issueStateTopology(
     AttemptId $attempt,
     AttemptPurpose $purpose = AttemptPurpose::Discovery,
     ?TopologyExtension $extension = null,
+    bool $snapshotReplacement = false,
 ): FeatureTopology {
     $target = TopologyTarget::feature(
         $issue,
@@ -49,14 +50,23 @@ function issueStateTopology(
         ['gateway', 'app-dev'],
     );
 
-    return new FeatureTopology(
-        TopologyConstructionInputs::create(
+    $construction = $snapshotReplacement
+        ? TopologyConstructionInputs::forSnapshotReplacement(
+            $target,
+            2,
+            $generation->baseImageAlias,
+            $generation->baseImageFingerprint,
+        )
+        : TopologyConstructionInputs::create(
             $target,
             $generation,
             2,
             $extension,
             $extension === null ? null : str_repeat('f', 64),
-        ),
+        );
+
+    return new FeatureTopology(
+        $construction,
         $purpose,
         $generation,
         new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
@@ -256,6 +266,41 @@ describe('IssueState', function () {
 
         expect(fn () => $state->requireTopology(AttemptPurpose::Discovery))
             ->toThrow(RuntimeException::class, 'name different extensions');
+    });
+
+    it('persists replacement authority on the lease before matching topology state exists', function (): void {
+        $worktree = temporaryPath('orbit-issue-state-replacement-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('AUX-7', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $operation = new OperationId(str_repeat('b', 32));
+
+        $state->writeAttempt($attempt, AttemptPurpose::Proof, $operation, snapshotReplacement: true);
+
+        expect($state->leaseSnapshotReplacement(AttemptPurpose::Proof))
+            ->toBeTrue()
+            ->and($state->topology(AttemptPurpose::Proof))
+            ->toBeNull();
+
+        $state->writeTopology(issueStateTopology('AUX-7', $attempt, AttemptPurpose::Proof));
+        expect(fn () => $state->requireTopology(AttemptPurpose::Proof))
+            ->toThrow(RuntimeException::class, 'different snapshot replacement declarations');
+
+        $state->writeTopology(issueStateTopology(
+            'AUX-7',
+            $attempt,
+            AttemptPurpose::Proof,
+            snapshotReplacement: true,
+        ));
+        expect($state->requireTopology(AttemptPurpose::Proof)->construction->snapshotReplacement)
+            ->toBeTrue()
+            ->and(fn () => $state->writeAttempt(
+                new AttemptId(str_repeat('c', 32)),
+                AttemptPurpose::Discovery,
+                $operation,
+                snapshotReplacement: true,
+            ))
+            ->toThrow(RuntimeException::class, 'Only a standard proof attempt');
     });
 
     it('accepts a matching complete legacy record and recovers only a missing lease extension', function (): void {

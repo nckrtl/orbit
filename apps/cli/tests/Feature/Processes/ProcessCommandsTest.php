@@ -836,15 +836,18 @@ it('rejects invalid local process input before making a gateway request', functi
 
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'both targets' => [
+    'missing AppInstance' => [
         'process:add',
         [
             'name' => 'queue',
-            '--instance' => '7',
-            '--workspace' => '8',
             '--command' => ['/usr/bin/php'],
         ],
-        'Select exactly one instance or workspace target.',
+        'The --instance option is required.',
+    ],
+    'invalid AppInstance' => [
+        'process:list',
+        ['--instance' => '0'],
+        'AppInstance ID must be a positive integer.',
     ],
     'unbounded logs' => [
         'process:logs',
@@ -852,6 +855,15 @@ it('rejects invalid local process input before making a gateway request', functi
         'Log lines must be between 1 and 1000.',
     ],
 ]);
+
+it('exposes only the AppInstance selector on targeted process commands', function (): void {
+    $commands = Artisan::all();
+
+    expect($commands['process:add']->getDefinition()->hasOption('instance'))->toBeTrue()
+        ->and($commands['process:add']->getDefinition()->hasOption('workspace'))->toBeFalse()
+        ->and($commands['process:list']->getDefinition()->hasOption('instance'))->toBeTrue()
+        ->and($commands['process:list']->getDefinition()->hasOption('workspace'))->toBeFalse();
+});
 
 it('does not disclose malformed environment values', function (string $environment): void {
     $mock = MockClient::global();

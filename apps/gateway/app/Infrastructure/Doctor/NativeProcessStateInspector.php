@@ -63,7 +63,7 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
     public function inspect(Process $process): ProcessInspectionData
     {
         try {
-            $target = $this->targets->forProcess($process);
+            $target = $this->targets->forInspection($process);
             $connection = $this->connection($target->node);
 
             return match ($process->runtime) {

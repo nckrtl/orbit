@@ -10,6 +10,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "App",
                 "AppInstance",
                 "Cluster",
                 "Gateway",
@@ -1314,6 +1315,26 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/app-processes-and-schedules.md",
+            "title": "AppInstance processes",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Route",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0036",
+                "0038",
+                "0048"
+            ]
+        },
+        {
             "path": "docs/reference/appinstance-cloning.md",
             "title": "AppInstance cloning",
             "kind": "reference",
@@ -1347,6 +1368,7 @@
                 "0027",
                 "0028",
                 "0031",
+                "0038",
                 "0041",
                 "0045",
                 "0046"
@@ -1463,6 +1485,7 @@
                 "0005",
                 "0006",
                 "0019",
+                "0037",
                 "0040",
                 "0049",
                 "0051",
@@ -1609,6 +1632,8 @@
                 "0005",
                 "0028",
                 "0035",
+                "0036",
+                "0037",
                 "0049",
                 "0056"
             ]

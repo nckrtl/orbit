@@ -81,6 +81,7 @@ use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
@@ -172,6 +173,7 @@ use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
@@ -296,6 +298,13 @@ final class AppServiceProvider extends ServiceProvider
             static fn (): AppInstanceEnvironmentOperationLock => new NativeAppInstanceEnvironmentOperationLock(
                 directory: rtrim(string: (string) config('orbit.home'), characters: '/')
                     .'/locks/app-instance-environment',
+                deadline: app(CommandDeadline::class),
+            ),
+        );
+        $this->app->scoped(
+            ProcessAdmissionLock::class,
+            static fn (): ProcessAdmissionLock => new NativeProcessAdmissionLock(
+                directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/process-admission',
                 deadline: app(CommandDeadline::class),
             ),
         );

@@ -42,7 +42,12 @@ final readonly class FeatureTopology
         }
 
         $this->attempt = $target->attempt;
-        if ($this->construction->sourceGeneration !== $generation->id) {
+        $constructionMatchesGeneration = $this->construction->snapshotReplacement
+            ? $this->construction->sourceGeneration === TopologyConstructionInputs::GENERIC_BASE
+                && $this->construction->imageAlias === $generation->baseImageAlias
+                && $this->construction->imageFingerprint === $generation->baseImageFingerprint
+            : $this->construction->sourceGeneration === $generation->id;
+        if (! $constructionMatchesGeneration) {
             throw new InvalidArgumentException('The topology construction inputs do not match the target.');
         }
 

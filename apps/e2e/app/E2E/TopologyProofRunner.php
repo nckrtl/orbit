@@ -10,6 +10,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\CandidateConvergenceResult;
+use App\E2E\Value\ColdTopologyPlan;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\ObservedPhpInputs;
@@ -24,6 +25,7 @@ use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyExtension;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
@@ -65,6 +67,7 @@ final readonly class TopologyProofRunner
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
         private ?IssueTopologyConstructor $constructor = null,
+        private ?ColdTopologyConstructor $coldConstructor = null,
     ) {}
 
     /**
@@ -225,15 +228,26 @@ final readonly class TopologyProofRunner
             $generation->snapshots,
         ));
 
-        $target = TopologyTarget::feature($request->issue, $this->mintAttempt(), $plan->recipe());
+        $recipe = $plan->snapshotReplacement
+            ? TopologyRecipe::registered($generation->baseImageAlias)
+            : $plan->recipe();
+        $target = TopologyTarget::feature($request->issue, $this->mintAttempt(), $recipe);
         $state->writeAttempt(
             $target->requireAttempt(),
             AttemptPurpose::Proof,
             $this->operation,
             $plan->extension,
+            $plan->snapshotReplacement,
         );
         try {
-            $construction = $this->createTopology($target, $generation, $plan->extension);
+            $construction = $this->createTopology(
+                $target,
+                $generation,
+                $plan->extension,
+                $plan->snapshotReplacement,
+                $request->worktree,
+                $candidateSha,
+            );
         } catch (Throwable $exception) {
             $this->rollback($target, $state, AttemptPurpose::Proof, $exception);
         }
@@ -264,7 +278,12 @@ final readonly class TopologyProofRunner
             $phase = 'sury-runtime';
             $this->observedPhpInputs->normalizeRuntime($target);
             $phase = 'converge';
-            $this->converger->converge($target, $source, $generation->laravel);
+            $this->converger->converge(
+                $target,
+                $source,
+                $generation->laravel,
+                nativeSamplesOnly: $plan->snapshotReplacement,
+            );
             $entries = $repository->entries($repository->loopCommit($request->issue, $candidateSha));
             $observed = null;
             if ($plan->observedInputs) {
@@ -321,6 +340,7 @@ final readonly class TopologyProofRunner
                 $source,
                 $plan->endsWith,
                 $plan->recipe()->assignments(),
+                nativeSamplesOnly: $plan->snapshotReplacement,
             );
             if (! $verification->passed) {
                 throw new RuntimeException('Candidate proof verification failed.'.$verification->failedSummary());
@@ -457,12 +477,27 @@ final readonly class TopologyProofRunner
         TopologyTarget $target,
         TopologySnapshotGeneration $generation,
         ?TopologyExtension $extension = null,
+        bool $snapshotReplacement = false,
+        string $sourceWorktree = '',
+        string $sourceSha = '',
     ): TopologyConstructionInputs {
         $metadata = [
             'user.orbit.e2e.issue' => $target->issue,
             'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
             'user.orbit.e2e.operation' => $this->operation->value,
         ];
+        if ($snapshotReplacement) {
+            return $this->coldConstructor()->constructReplacement(new ColdTopologyPlan(
+                $target,
+                $sourceWorktree,
+                $sourceSha,
+                [$generation->baseImageAlias => $generation->baseImageFingerprint],
+                $generation->laravel,
+                $this->operation,
+                $metadata,
+                snapshotReplacement: true,
+            ));
+        }
         $construction = $this->issueConstructor()->construct($target, $generation, $metadata, extension: $extension);
         $instances = array_map($target->instance(...), $target->recipe->nodeKeys());
         $this->host->startAll($instances);
@@ -616,6 +651,19 @@ final readonly class TopologyProofRunner
                 $this->operation,
                 $this->topologySnapshot,
                 $this->topologySnapshotIdentity,
+            );
+    }
+
+    private function coldConstructor(): ColdTopologyConstructor
+    {
+        return
+            $this->coldConstructor ?? new ColdTopologyConstructor(
+                $this->host,
+                $this->networks,
+                $this->synchronizer,
+                $this->converger,
+                $this->capacity,
+                $this->hostPaths,
             );
     }
 

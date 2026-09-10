@@ -10,8 +10,9 @@ use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
 use App\Data\Processes\AddProcessData;
-use App\Domain\Nodes\RoleName;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -21,10 +22,10 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Workspace;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessActionsFakeRuntimeManager;
@@ -40,42 +41,26 @@ beforeEach(function (): void {
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.3',
     ]);
-    $this->node
-        ->roles()
-        ->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
     $this->orbitApp = OrbitApp::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = Instance::query()->create([
+    $this->instance = AppInstance::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/docs',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'hostname' => 'docs.app-dev.orbit',
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
-    ]);
-    $this->workspace = Workspace::query()->create([
-        'instance_id' => $this->instance->id,
-        'name' => 'feature',
-        'branch' => 'feature',
-        'checkout_path' => '/home/orbit/.orbit/worktrees/docs/feature',
-        'hostname' => 'feature.docs.app-dev.orbit',
-        'status' => LifecycleStatus::Active,
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
     ]);
 });
 
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -88,7 +73,7 @@ it('adds a stopped systemd process idempotently with the target defaults', funct
         restartPolicy: 'on-failure',
         start: false,
     );
-    $action = new AddProcessAction($this->targets, $this->runtime);
+    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
 
     $first = $action->execute($data);
     $second = $action->execute($data);
@@ -124,7 +109,7 @@ it('preserves the desired state when an existing process is added again', functi
     $process = process_actions_record($this->instance);
     $process->update(['desired_state' => 'running']);
     $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -138,7 +123,7 @@ it('preserves the desired state when an existing process is added again', functi
         start: false,
     );
 
-    $result = new AddProcessAction($this->targets, $this->runtime)->execute($data);
+    $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
 
     expect($result['created'])
         ->toBeFalse()
@@ -149,9 +134,9 @@ it('preserves the desired state when an existing process is added again', functi
 });
 
 it('canonicalizes Docker environment maps before persistence and idempotency comparison', function (): void {
-    $action = new AddProcessAction($this->targets, $this->runtime);
+    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $first = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -165,7 +150,7 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
         start: false,
     );
     $sameWithDifferentOrder = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -193,7 +178,7 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
 it('keeps Docker environment values out of action exception traces', function (): void {
     $sensitiveValue = 'action-boundary-secret';
     $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -213,7 +198,7 @@ it('keeps Docker environment values out of action exception traces', function ()
     );
 
     try {
-        new AddProcessAction($this->targets, $this->runtime)->execute($data);
+        new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     } catch (ProcessOperationException $exception) {
         expect(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))->not->toContain($sensitiveValue);
 
@@ -225,8 +210,8 @@ it('keeps Docker environment values out of action exception traces', function ()
 
 it('adds and starts one Docker container process with explicit configuration', function (): void {
     $data = new AddProcessData(
-        targetType: ProcessTargetType::Workspace,
-        targetId: $this->workspace->id,
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
         name: 'redis',
         runtime: ProcessRuntime::Docker,
         command: ['redis-server'],
@@ -239,11 +224,11 @@ it('adds and starts one Docker container process with explicit configuration', f
         start: true,
     );
 
-    $result = new AddProcessAction($this->targets, $this->runtime)->execute($data);
+    $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     $process = $result['process'];
 
     expect($process->owner)
-        ->toBeInstanceOf(Workspace::class)
+        ->toBeInstanceOf(AppInstance::class)
         ->and($process->runtime_config)
         ->toBe([
             'image' => 'redis:8-alpine',
@@ -260,9 +245,105 @@ it('adds and starts one Docker container process with explicit configuration', f
         ->toBeEmpty();
 });
 
+it('refuses a new desired-running production process before admission when no release is selected', function (): void {
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    $this->runtime->startUnavailable = true;
+    $data = new AddProcessData(
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
+        name: 'queue',
+        runtime: ProcessRuntime::Systemd,
+        command: ['/usr/bin/php', 'artisan', 'queue:work'],
+        image: null,
+        workingDirectory: null,
+        environment: [],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'always',
+        start: true,
+    );
+
+    expect(fn () => new AddProcessAction(
+        $this->targets,
+        $this->runtime,
+        app(ProcessAdmissionLock::class),
+    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('process.release_unavailable');
+    });
+
+    expect(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->startPreflights)
+        ->toBe([['name' => 'queue', 'exists' => false]])
+        ->and($this->runtime->converged)
+        ->toBeEmpty();
+});
+
+it('refuses an idempotent desired-running production add without changing its record or runtime', function (): void {
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    $process = Process::query()->create([
+        'owner_type' => AppInstance::class,
+        'owner_id' => $this->instance->id,
+        'name' => 'worker',
+        'runtime' => ProcessRuntime::Docker,
+        'working_directory' => '/app',
+        'runtime_config' => [
+            'image' => 'php:8.5-cli',
+            'command' => ['php', 'artisan', 'queue:work'],
+            'environment' => [],
+            'ports' => [],
+            'volumes' => [],
+        ],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $original = $process->fresh()->getRawOriginal();
+    $this->runtime->startUnavailable = true;
+    $data = new AddProcessData(
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
+        name: 'worker',
+        runtime: ProcessRuntime::Docker,
+        command: ['php', 'artisan', 'queue:work'],
+        image: 'php:8.5-cli',
+        workingDirectory: '/app',
+        environment: [],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'unless-stopped',
+        start: true,
+    );
+
+    expect(fn () => new AddProcessAction(
+        $this->targets,
+        $this->runtime,
+        app(ProcessAdmissionLock::class),
+    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('process.release_unavailable');
+    });
+
+    expect($process->refresh()->getRawOriginal())
+        ->toBe($original)
+        ->and($this->runtime->startPreflights)
+        ->toBe([['name' => 'worker', 'exists' => true]])
+        ->and($this->runtime->converged)
+        ->toBeEmpty();
+});
+
 it('retains a failed desired-running process definition and clears recovery state on retry', function (): void {
     $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -275,7 +356,7 @@ it('retains a failed desired-running process definition and clears recovery stat
         restartPolicy: 'unless-stopped',
         start: true,
     );
-    $action = new AddProcessAction($this->targets, $this->runtime);
+    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $this->runtime->startFailure = new ProcessOperationException(
         step: 'start',
         errorCode: 'process.start_failed',
@@ -308,9 +389,9 @@ it('retains a failed desired-running process definition and clears recovery stat
 });
 
 it('rejects a conflicting process definition with the same owner and name', function (): void {
-    $action = new AddProcessAction($this->targets, $this->runtime);
+    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $initial = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -324,7 +405,7 @@ it('rejects a conflicting process definition with the same owner and name', func
         start: true,
     );
     $changed = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -344,37 +425,33 @@ it('rejects a conflicting process definition with the same owner and name', func
 });
 
 it('uses an isolated app user for app-prod systemd processes', function (): void {
-    $this->node->roles()->delete();
-    $this->node
-        ->roles()
-        ->create([
-            'role' => RoleName::AppProd,
-            'status' => LifecycleStatus::Active,
-        ]);
+    $this->instance->update([
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
 
-    $target = $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id);
+    $target = $this->targets->resolve(ProcessTargetType::AppInstance, $this->instance->id);
 
     expect($target->user)
         ->toBe('orbit-docs')
+        ->and($target->defaultWorkingDirectory)
+        ->toBe('/home/orbit-docs/current')
         ->and($target->certificateScope)
         ->toBeNull();
 });
 
-it('uses the node managed user and certificate scope for app-dev targets', function (): void {
-    $instanceTarget = $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id);
-    $workspaceTarget = $this->targets->resolve(ProcessTargetType::Workspace, $this->workspace->id);
+it('uses the node managed user and AppInstance certificate scope for app-dev targets', function (): void {
+    $instanceTarget = $this->targets->resolve(ProcessTargetType::AppInstance, $this->instance->id);
 
     expect($instanceTarget->user)
         ->toBe('nckrtl')
         ->and($instanceTarget->certificateScope)
-        ->toBe("instance-{$this->instance->id}")
-        ->and($workspaceTarget->user)
-        ->toBe('nckrtl')
-        ->and($workspaceTarget->certificateScope)
-        ->toBe("workspace-{$this->workspace->id}");
+        ->toBe("app-instance-{$this->instance->id}");
 
     $removalTarget = $this->targets->forRemoval(Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $this->instance->id,
         'name' => 'removal-target',
         'runtime' => 'systemd',
@@ -387,23 +464,39 @@ it('uses the node managed user and certificate scope for app-dev targets', funct
     expect($removalTarget->user)->toBe('nckrtl');
 });
 
-it('rejects workspace process targets on app-prod nodes', function (): void {
-    $this->node->roles()->delete();
-    $this->node
-        ->roles()
-        ->create([
-            'role' => RoleName::AppProd,
-            'status' => LifecycleStatus::Active,
-        ]);
+it('rejects legacy Process owners before runtime removal', function (): void {
+    $legacy = Instance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'legacy',
+        'environment' => 'development',
+        'checkout_path' => '/home/orbit/apps/legacy',
+        'hostname' => 'legacy.app-dev.orbit',
+        'certificate_mode' => 'orbit-ca',
+        'status' => LifecycleStatus::Active,
+    ]);
+    $process = Process::query()->create([
+        'owner_type' => Instance::class,
+        'owner_id' => $legacy->id,
+        'name' => 'legacy',
+        'runtime' => ProcessRuntime::Systemd,
+        'working_directory' => $legacy->checkout_path,
+        'runtime_config' => ['command' => ['/bin/true']],
+        'restart_policy' => 'never',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
 
-    expect(fn () => $this->targets->resolve(ProcessTargetType::Workspace, $this->workspace->id))
-        ->toThrow(ResourceOperationException::class, 'Workspaces cannot run processes on app-prod nodes.');
+    expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
+        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance')
+        ->and($this->runtime->removed)
+        ->toBeEmpty();
 });
 
 it('rejects process targets on non-Linux nodes before runtime execution', function (): void {
     $this->node->update(['platform' => 'windows']);
     $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
+        targetType: ProcessTargetType::AppInstance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -418,7 +511,7 @@ it('rejects process targets on non-Linux nodes before runtime execution', functi
     );
 
     try {
-        new AddProcessAction($this->targets, $this->runtime)->execute($data);
+        new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)
             ->toBe('process.platform_unsupported')
@@ -469,10 +562,10 @@ it('lists runtime status and removes only the selected process', function (): vo
     $this->runtime->status = 'stopped';
 
     $listed = new ListProcessesAction($this->runtime)->execute(
-        ProcessTargetType::Instance,
+        ProcessTargetType::AppInstance,
         $this->instance->id,
     );
-    $removed = new RemoveProcessAction($this->runtime)->execute($process);
+    $removed = new RemoveProcessAction($this->runtime, $this->targets)->execute($process);
 
     expect($listed)
         ->toHaveCount(1)
@@ -511,7 +604,7 @@ it('retains the process definition when runtime removal fails', function (): voi
         message: 'The owned unit could not be stopped.',
     );
 
-    expect(fn () => new RemoveProcessAction($this->runtime)->execute($process))
+    expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
         ->toThrow(ProcessOperationException::class, 'could not be stopped');
 
     expect($process->refresh())
@@ -520,10 +613,10 @@ it('retains the process definition when runtime removal fails', function (): voi
         ->error_code->toBe('process.remove_failed')->and(Process::query()->count())->toBe(1);
 });
 
-function process_actions_record(Instance $instance): Process
+function process_actions_record(AppInstance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
@@ -565,6 +658,24 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
     public ?ProcessOperationException $startFailure = null;
 
     public ?ProcessOperationException $removeFailure = null;
+
+    /** @var list<array{name: string, exists: bool}> */
+    public array $startPreflights = [];
+
+    public bool $startUnavailable = false;
+
+    public function assertCanStart(Process $process): void
+    {
+        $this->startPreflights[] = ['name' => $process->name, 'exists' => $process->exists];
+
+        if ($this->startUnavailable) {
+            throw new ResourceOperationException(
+                errorCode: 'process.release_unavailable',
+                message: "Process [{$process->name}] has no selected production release.",
+                status: 409,
+            );
+        }
+    }
 
     public function converge(#[SensitiveParameter] Process $process): void
     {

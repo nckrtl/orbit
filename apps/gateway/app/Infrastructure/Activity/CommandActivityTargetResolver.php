@@ -148,6 +148,10 @@ final readonly class CommandActivityTargetResolver
             return $registration;
         }
 
+        if (str_starts_with((string) $request->route()?->getName(), 'process:')) {
+            return $this->processOwner($request);
+        }
+
         if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny'], strict: true)) {
             return $this->createdFirewallRule($request);
         }
@@ -183,8 +187,6 @@ final readonly class CommandActivityTargetResolver
                 ->where('instance_id', $request->integer('instance_id'))
                 ->where('name', $request->input('name'))
                 ->first(),
-            'process:add' => $this->createdProcess($request),
-            'process:list' => $this->processOwner($request),
             'firewall:allow', 'firewall:deny' => $this->createdFirewallRule($request),
             default => null,
         };
@@ -227,19 +229,33 @@ final readonly class CommandActivityTargetResolver
             ->first();
     }
 
-    private function processOwner(Request $request): ?Model
+    private function processOwner(Request $request): ?AppInstance
     {
+        $process = $request->route('process');
+
+        if (! $process instanceof OrbitProcess && $request->route()?->getName() === 'process:add') {
+            $process = $this->createdProcess($request);
+        }
+
+        if ($process instanceof OrbitProcess) {
+            if ($process->owner_type !== AppInstance::class) {
+                return null;
+            }
+
+            return AppInstance::query()->find($process->owner_id);
+        }
+
         $targetType = $request->query('target_type');
 
-        if (! is_string($targetType)) {
+        if ($request->isMethod('POST')) {
+            $targetType = $request->input('target_type');
+        }
+
+        if ($targetType !== ProcessTargetType::AppInstance->value) {
             return null;
         }
 
-        return match (ProcessTargetType::tryFrom($targetType)) {
-            ProcessTargetType::Instance => Instance::query()->find($request->integer('target_id')),
-            ProcessTargetType::Workspace => Workspace::query()->find($request->integer('target_id')),
-            null => null,
-        };
+        return AppInstance::query()->find($request->integer('target_id'));
     }
 
     private function targetNodeId(Model $subject): ?int

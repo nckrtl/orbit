@@ -208,7 +208,17 @@ final readonly class ServingNodeResolver
         $process = $request->route('process');
 
         if ($process instanceof Process) {
-            return [$this->ownerNode($process->owner)];
+            if ($process->owner_type !== AppInstance::class) {
+                throw new ResourceOperationException(
+                    errorCode: 'process.target_unsupported',
+                    message: 'The Process owner is not a supported AppInstance.',
+                    status: 409,
+                );
+            }
+
+            return [Node::query()->findOrFail(
+                AppInstance::query()->findOrFail($process->owner_id)->node_id,
+            )];
         }
 
         $targetType = $request->input('target_type');
@@ -219,16 +229,15 @@ final readonly class ServingNodeResolver
         }
 
         $owner = match ($targetType) {
-            'instance' => Instance::query()->findOrFail($targetId),
-            'workspace' => Workspace::query()->findOrFail($targetId),
+            'instance' => AppInstance::query()->findOrFail($targetId),
             default => null,
         };
 
-        if (! $owner instanceof Instance && ! $owner instanceof Workspace) {
+        if (! $owner instanceof AppInstance) {
             return [];
         }
 
-        return [$this->ownerNode($owner)];
+        return [Node::query()->findOrFail($owner->node_id)];
     }
 
     /** @return list<Node> */
@@ -318,17 +327,6 @@ final readonly class ServingNodeResolver
         }
 
         return $this->target($request);
-    }
-
-    private function ownerNode(Instance|Workspace $owner): Node
-    {
-        if ($owner instanceof Instance) {
-            return Node::query()->findOrFail($owner->node_id);
-        }
-
-        $instance = Instance::query()->findOrFail($owner->instance_id);
-
-        return Node::query()->findOrFail($instance->node_id);
     }
 
     private function positiveInteger(mixed $value): ?int

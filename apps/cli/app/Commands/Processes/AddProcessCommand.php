@@ -14,8 +14,7 @@ final class AddProcessCommand extends ProcessCommand
     #[\Override]
     protected $signature = 'process:add
         {name : Process name}
-        {--instance= : Numeric instance ID}
-        {--workspace= : Numeric workspace ID}
+        {--instance= : Positive AppInstance ID}
         {--runtime=systemd : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
@@ -50,9 +49,9 @@ final class AddProcessCommand extends ProcessCommand
             );
         }
 
-        $target = $this->target();
+        $appInstanceId = $this->appInstanceId();
 
-        if ($target === null) {
+        if ($appInstanceId === null) {
             return self::FAILURE;
         }
 
@@ -149,8 +148,7 @@ final class AddProcessCommand extends ProcessCommand
         $process = $this->send(
             $connector,
             new AddProcessRequest(
-                targetType: $target['type'],
-                targetId: $target['id'],
+                appInstanceId: $appInstanceId,
                 name: $name,
                 runtime: $runtime,
                 command: $command,

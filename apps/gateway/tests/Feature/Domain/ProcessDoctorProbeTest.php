@@ -14,10 +14,9 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Workspace;
 
 it('returns a healthy empty report without runtime inspection when the node has no processes', function (): void {
     $node = doctor_process_node();
@@ -47,18 +46,18 @@ it('compares selected process runtimes in process id order', function (): void {
         'slug' => 'app',
         'repository_url' => 'git@example.test:app.git',
     ]);
-    $instance = Instance::query()->create([
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/app',
-        'hostname' => 'app.test',
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
     ]);
     $first = Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => 'first',
         'runtime' => ProcessRuntime::Systemd,
@@ -208,53 +207,13 @@ it('bounds unknown status and reports absent runtime', function (): void {
         ->toBe('absent');
 });
 
-it('selects workspace processes only through the exact effective node morph', function (): void {
+it('selects only AppInstance processes on the exact target Node', function (): void {
     $node = doctor_process_node();
     $other = doctor_process_node();
-    $app = OrbitApp::query()->create([
-        'name' => 'Workspace App',
-        'slug' => fake()->unique()->slug(),
-        'repository_url' => 'git@example.test:workspace.git',
-    ]);
-    $instance = Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'instance',
-        'environment' => 'development',
-        'checkout_path' => '/home/orbit/app',
-        'hostname' => "workspace-instance-{$node->id}.test",
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
-    ]);
-    $otherInstance = $instance->replicate();
-    $otherInstance->node_id = $other->id;
-    $otherInstance->hostname = "workspace-other-{$other->id}.test";
-    $otherInstance->save();
-    $workspace = Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => 'workspace',
-        'branch' => 'main',
-        'checkout_path' => '/tmp/workspace',
-        'hostname' => fake()->unique()->domainName(),
-        'status' => LifecycleStatus::Active,
-    ]);
-    $otherWorkspace = Workspace::query()->create([
-        'instance_id' => $otherInstance->id,
-        'name' => 'other',
-        'branch' => 'main',
-        'checkout_path' => '/tmp/other',
-        'hostname' => fake()->unique()->domainName(),
-        'status' => LifecycleStatus::Active,
-    ]);
     $selected = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'selected');
-    $selected->owner_type = Workspace::class;
-    $selected->owner_id = $workspace->id;
-    $selected->save();
-    $excluded = $selected->replicate();
-    $excluded->owner_id = $otherWorkspace->id;
-    $excluded->save();
+    doctor_process($other, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'excluded');
     $wrongMorph = $selected->replicate();
-    $wrongMorph->owner_type = 'App\\Models\\App';
+    $wrongMorph->owner_type = 'App\\Models\\Instance';
     $wrongMorph->save();
     $manager = Mockery::mock(ProcessStateInspector::class);
     $manager
@@ -301,19 +260,19 @@ function doctor_process(
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
     ]);
-    $instance = Instance::query()->create([
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => fake()->word(),
         'environment' => 'development',
-        'checkout_path' => '/home/orbit/app',
-        'hostname' => "process-{$node->id}-{$name}.test",
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
+        'checkout_path' => "/home/orbit/app/{$slug}",
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
     ]);
 
     return Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => $runtime,

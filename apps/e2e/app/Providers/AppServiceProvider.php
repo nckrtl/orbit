@@ -20,6 +20,7 @@ use App\E2E\LegacyRetirementHost;
 use App\E2E\ObservedPhpInputCollector;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\PromotedTopologySnapshotResolver;
 use App\E2E\ProofCaptureService;
 use App\E2E\ProofCloseoutService;
 use App\E2E\ProofEquivalenceEvaluator;
@@ -44,6 +45,8 @@ use App\E2E\TopologySnapshotPromoter;
 use App\E2E\TopologySnapshotPromotionStore;
 use App\E2E\TopologySnapshotRebuilder;
 use App\E2E\TopologySnapshotRefresher;
+use App\E2E\TopologySnapshotReplacementInstaller;
+use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologySnapshotIdentity;
@@ -82,6 +85,7 @@ final class AppServiceProvider extends ServiceProvider
         );
         $this->app->singleton(AtomicJsonStore::class);
         $this->app->singleton(TopologySnapshotPromotionStore::class);
+        $this->app->singleton(TopologySnapshotReplacementStore::class);
         $this->app->singleton(
             WorktreeLocator::class,
             fn (): WorktreeLocator => new WorktreeLocator(self::primaryCheckout($repositoryRoot)),
@@ -172,6 +176,7 @@ final class AppServiceProvider extends ServiceProvider
         ));
         $this->app->singleton(DiscoveryGuestPreparer::class);
         $this->app->singleton(IssueTopologyConstructor::class);
+        $this->app->singleton(PromotedTopologySnapshotResolver::class);
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
@@ -187,6 +192,7 @@ final class AppServiceProvider extends ServiceProvider
             repositoryRoot: $repositoryRoot,
             converger: $app->make(TopologyConverger::class),
             constructor: $app->make(IssueTopologyConstructor::class),
+            snapshotResolver: $app->make(PromotedTopologySnapshotResolver::class),
         ));
         $this->app->singleton(
             TopologyProofRunner::class,
@@ -206,6 +212,7 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(ObservedPhpInputCollector::class),
                 $repositoryRoot,
                 constructor: $app->make(IssueTopologyConstructor::class),
+                coldConstructor: $app->make(ColdTopologyConstructor::class),
             ),
         );
         $this->app->singleton(ProofEquivalenceEvaluator::class, fn (Application $app): ProofEquivalenceEvaluator => new ProofEquivalenceEvaluator(
@@ -230,6 +237,9 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(StatePaths::class),
             $app->make(OperationId::class),
             $app->make(OrphanNetworkSweep::class),
+            function ($request, $capture) use ($app): void {
+                $app->make(TopologySnapshotReplacementInstaller::class)->abandon($request, $capture);
+            },
         ));
 
         $this->app->singleton(TopologySnapshotBuilder::class, fn (Application $app): TopologySnapshotBuilder => new TopologySnapshotBuilder(
@@ -252,6 +262,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(OperationId::class),
             $app->make(TopologySnapshotIdentity::class),
             $app->make(TopologySnapshotPromotionStore::class),
+            $app->make(TopologySnapshotReplacementStore::class),
         ));
         $this->app->singleton(TopologySnapshotRefresher::class, fn (Application $app): TopologySnapshotRefresher => new TopologySnapshotRefresher(
             $app->make(IncusHost::class),
@@ -271,10 +282,28 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(OperationId::class),
             $app->make(TopologySnapshotIdentity::class),
             $app->make(TopologySnapshotAvailability::class),
+            replacements: $app->make(TopologySnapshotReplacementStore::class),
         ));
         $this->app->singleton(TopologySnapshotAvailability::class, fn (Application $app): TopologySnapshotAvailability => new TopologySnapshotAvailability(
             $app->make(IncusHost::class),
             $app->make(TopologySnapshotIdentity::class),
+            $app->make(TopologySnapshotReplacementStore::class),
+        ));
+        $this->app->singleton(TopologySnapshotReplacementInstaller::class, fn (Application $app): TopologySnapshotReplacementInstaller => new TopologySnapshotReplacementInstaller(
+            $app->make(IncusHost::class),
+            $app->make(ColdTopologyConstructor::class),
+            $app->make(PreparedStateFingerprint::class),
+            $app->make(TopologyVerifier::class),
+            $app->make(TopologySnapshotManifestStore::class),
+            $app->make(TopologySnapshotPromotionStore::class),
+            $app->make(TopologySnapshotReplacementStore::class),
+            $app->make(OperationLock::class),
+            new OperationLock($app->make(StatePaths::class)),
+            new GitRepository(self::primaryCheckout($repositoryRoot)),
+            $app->make(OperationId::class),
+            $app->make(TopologySnapshotIdentity::class),
+            self::primaryCheckout($repositoryRoot),
+            $app->make(SecretRedactor::class),
         ));
         $this->app->singleton(ProofCloseoutService::class, fn (Application $app): ProofCloseoutService => new ProofCloseoutService(
             new GitRepository(self::primaryCheckout($repositoryRoot)),
@@ -284,6 +313,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(TopologySnapshotRefresher::class)->request(...),
             fn ($request, $capture): array => $app->make(TopologyReleaser::class)
                 ->releaseCapturedProof($request, $capture, issueLockHeld: true),
+            $app->make(TopologySnapshotReplacementInstaller::class)->install(...),
         ));
         $this->app->singleton(TopologySnapshotRebuilder::class, fn (Application $app): TopologySnapshotRebuilder => new TopologySnapshotRebuilder(
             $app->make(IncusHost::class),

@@ -274,6 +274,55 @@ function task7_production_placement(): array
 }
 
 describe('TopologyConverger', function () {
+    it('requires native AppInstance samples for declared replacement convergence', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result($process, $recorded);
+        });
+
+        expect(fn () => new TopologyConverger(task7_host())->converge(
+            featureTarget('TST-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+            nativeSamplesOnly: true,
+        ))->toThrow(RuntimeException::class, 'requires native AppInstance samples');
+
+        $commands = array_map(
+            static fn (array $command): string => implode(' ', array_map(strval(...), $command)),
+            $recorded,
+        );
+        expect(implode("\n", $commands))->toContain(
+            '/usr/local/bin/converge-sample-app.sh create-resources app-dev app-prod '
+            .str_repeat('b', 40)
+            .' native',
+        );
+    });
+
+    it('converges native AppInstance and App-owned Route samples for a declared replacement', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result($process, $recorded, typed: true);
+        });
+
+        $report = new TopologyConverger(task7_host())->converge(
+            featureTarget('TST-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+            nativeSamplesOnly: true,
+        );
+
+        expect($report->converged)->toBeTrue();
+        $commands = array_map(
+            static fn (array $command): string => implode(' ', array_map(strval(...), $command)),
+            $recorded,
+        );
+        expect(implode("\n", $commands))->toContain(
+            '/usr/local/bin/converge-sample-app.sh create-resources app-dev app-prod '
+            .str_repeat('b', 40)
+            .' native',
+        );
+    });
+
     it('hydrates both recorded typed placements without changing the topology', function (): void {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {

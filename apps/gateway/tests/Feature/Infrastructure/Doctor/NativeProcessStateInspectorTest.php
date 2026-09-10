@@ -20,7 +20,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -234,18 +234,18 @@ function native_process_inspector(
         'slug' => fake()->unique()->slug(),
         'repository_url' => 'git@example.test:app.git',
     ]);
-    $instance = Instance::query()->create([
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => fake()->word(),
         'environment' => 'development',
         'checkout_path' => '/home/orbit/app',
-        'hostname' => fake()->unique()->domainName(),
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
     ]);
     $process = Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => fake()->unique()->slug(2),
         'runtime' => $runtime,

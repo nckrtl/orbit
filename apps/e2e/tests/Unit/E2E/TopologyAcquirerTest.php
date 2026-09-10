@@ -9,12 +9,16 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\PromotedTopologySnapshotResolver;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
+use App\E2E\TopologySnapshotAvailability;
 use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\TopologyVerifier;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
@@ -23,6 +27,7 @@ use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologySnapshotReplacementInstallation;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -125,6 +130,52 @@ function topologyAcquirerWithLegacyGeneration(
     );
 }
 
+function acquirerConflictingReplacementInstallation(
+    TopologySnapshotGeneration $requested,
+): TopologySnapshotReplacementInstallation {
+    $oldValue = $requested->toArray();
+    $oldValue['id'] = 'replacement-old-generation';
+    $old = TopologySnapshotGeneration::fromArray($oldValue);
+    $new = new TopologySnapshotGeneration(
+        'replacement-new-generation',
+        str_repeat('6', 40),
+        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod'],
+        str_repeat('7', 64),
+        $old->baseImageFingerprint,
+        $old->laravel,
+        str_repeat('8', 64),
+        2,
+        $old->coldEpoch,
+        $old->baseImageAlias,
+        TopologyProfile::NAME,
+        TopologyProfile::ROLES,
+        TopologyProfile::CHECKOUT_ROLES,
+        $old->id,
+    );
+
+    return new TopologySnapshotReplacementInstallation(
+        'AUX-231',
+        new AttemptId(str_repeat('a', 32)),
+        new AttemptId(str_repeat('b', 32)),
+        new OperationId(str_repeat('c', 32)),
+        str_repeat('d', 40),
+        str_repeat('e', 40),
+        str_repeat('f', 40),
+        $new->mainSha,
+        str_repeat('a', 64),
+        str_repeat('b', 64),
+        $old,
+        $new,
+        $new->baseImageAlias,
+        $new->baseImageFingerprint,
+        'oe-replacement',
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
+    );
+}
+
 it('refuses acquisition from a schema 4 generation before creating an attempt', function () {
     $fixture = legacyAcquisitionWorktree();
 
@@ -148,6 +199,53 @@ it('refuses acquisition from a schema 4 generation before creating an attempt', 
     } finally {
         removeLegacyAcquisitionWorktree($fixture);
     }
+});
+
+it('refuses acquisition before Incus mutation when an active replacement conflicts with the promoted generation', function (): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-replacement-acquisition-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'replacement-acquisition');
+    $host = new IncusHost(pool: 'default');
+    $state = new AtomicJsonStore($paths);
+    $manifests = new TopologySnapshotManifestStore($state, $paths, $host);
+    $generation = $manifests->promoted();
+    assert($generation !== null);
+    $replacements = new TopologySnapshotReplacementStore($state);
+    $replacements->start(acquirerConflictingReplacementInstallation($generation), '2026-09-10T10:00:00Z');
+    $events = [];
+    fakePinnedWorktreeProcesses(featureTarget('TST-123'), $events);
+    $operation = new OperationId(str_repeat('f', 32));
+    $request = new TopologyRequest('TST-123', $worktree);
+    $acquirer = new TopologyAcquirer(
+        $host,
+        new IncusNetworkLifecycle($host),
+        new PreparedStateFingerprint(new GitRepository($root)),
+        $manifests,
+        new WorktreeSynchronizer($host, $root, $operation),
+        new TopologyVerifier($host, 1, 0),
+        new DiscoveryGuestPreparer($host),
+        new HostCapacity($host, 24),
+        $paths,
+        $operation,
+        TopologySnapshotIdentity::primary(),
+        $root,
+        fn () => attemptId(),
+        snapshotResolver: new PromotedTopologySnapshotResolver(
+            new PreparedStateFingerprint(new GitRepository($root)),
+            $manifests,
+            new TopologySnapshotAvailability(
+                $host,
+                TopologySnapshotIdentity::primary(),
+                $replacements,
+            ),
+        ),
+    );
+
+    expect(fn () => $acquirer->acquire($request))
+        ->toThrow(RuntimeException::class, 'replacement recovery is incomplete')
+        ->and($events)->toBeEmpty()
+        ->and(IssueState::forWorktree('TST-123', $worktree)->hasAttempt())->toBeFalse();
 });
 
 it('constructs an extended discovery without adopting proof resources or sharing attempt identities', function (): void {

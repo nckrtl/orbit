@@ -25,6 +25,7 @@ final class PromoteCommand extends E2ECommand
         try {
             $request = $this->request();
             $plan = ProofPlanFile::currentOrRetained($request, $this->option('plan'));
+            $promoter->assertDirectPromotionAllowed($plan->plan);
             $result = $promoter->promote($request, $plan->plan);
             $this->log($request, 'attempt='.$result['attempt_id'].' generation='.$result['generation_id'].' ok');
             $this->outputJson($result, 'promoted '.$result['generation_id']);
