@@ -79,6 +79,40 @@ it('creates worktrees with the flag or shared default and preserves existing sel
     expect(DeliveryFlow::forWorktree($root.'/.worktrees/tst-44-feature'))->toBe('proof');
 });
 
+it('pulls clean primary main and refreshes baselines before creating the next worktree', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $remote = temporaryPath('orbit-flow-new-main-', 6);
+    $run->run(['git', 'init', '--bare', $remote]);
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $remote]);
+    $run->path($root)->run(['git', 'push', '-u', 'origin', 'main']);
+    $source = $root.'/.worktrees/advance-main';
+    $run->path($root)->run(['git', 'worktree', 'add', '-b', 'advance-main', $source]);
+    file_put_contents($source.'/next.txt', 'new main');
+    $run->path($source)->run(['git', 'add', '.']);
+    $run->path($source)->run(['git', 'commit', '-m', 'advance main']);
+    $run->path($source)->run(['git', 'push', 'origin', 'HEAD:main']);
+
+    $result = $run->path($root)->run([$root.'/bin/worktree-create', 'TST-46', 'fresh']);
+
+    expect($result->successful())->toBeTrue($result->errorOutput());
+    expect(file_get_contents($root.'/next.txt'))->toBe('new main');
+    expect(file_get_contents($root.'/.worktrees/tst-46-fresh/next.txt'))->toBe('new main');
+    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --repository='.$root);
+    expect($run->path($root)->run(['git', 'status', '--porcelain'])->output())->toBe('');
+});
+
+it('preserves dirty primary main before attempting new worktree setup', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    file_put_contents($root.'/shared.txt', 'active migration');
+
+    $result = $run->path($root)->run([$root.'/bin/worktree-create', 'TST-47', 'dirty']);
+
+    expect($result->successful())->toBeFalse();
+    expect(file_get_contents($root.'/shared.txt'))->toBe('active migration');
+    expect(file_exists($root.'/.worktrees/tst-47-dirty'))->toBeFalse();
+    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
+});
+
 it('accepts a conflict-free merge after main advances only in discovery flow', function (): void {
     ['root' => $root, 'script' => $script, 'run' => $run] = loopFlowFixture();
     expect($run->path($root)->run(['git', 'switch', '-c', 'feature'])->successful())->toBeTrue();

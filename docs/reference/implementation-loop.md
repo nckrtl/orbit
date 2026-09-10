@@ -25,21 +25,21 @@ The default uses repository-local Git configuration `orbit.loopFlow`, shared acr
 
 The discovery flow follows this order.
 
-1. Create and bootstrap the issue worktree with its selected flow.
+1. Run `bin/worktree-create` from clean primary main. It fetches origin, fast-forwards main, refreshes main test baselines, and bootstraps the issue worktree with its selected flow.
 2. Run preflight through `planning-features`, including the documentation audit and acceptance map.
 3. Obtain an independent preflight review through `reviewing-feature-plans`.
 4. Acquire discovery with `bin/e2e-topology acquire ISSUE WORKTREE` after preflight passes.
 5. Implement using `shell`, `exec`, `sync`, and `verify` on discovery as development tools. Run focused local tests and project checks.
-6. Commit and push the candidate, publish the artifacts, and obtain independent code review with green CI.
+6. Commit and push the candidate, publish the artifacts, and obtain independent code review with a passing local review gate.
 7. Merge the approved candidate, then release discovery and remove the worktree.
 
-The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, focused tests, and CI. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
+The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, focused tests, and the local review gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
 
 Discovery uses the existing isolated topology machinery and mounts the changing worktree. Acquisition validates the saved snapshot against its recorded generation and checks cold-base compatibility, ownership, capacity, and readiness. It does not require that snapshot to match current main. An incompatible cold base or absent snapshot still needs an explicit infrastructure repair. Optional extended discovery reuses the existing extension declaration format described in [Incus topologies](incus-topologies.md); its actions do not run as acceptance proof.
 
-An advance of main alone does not require integration, another approval, proof, or CI on a replacement candidate. The orchestrator merges when GitHub reports the approved candidate can merge and its required CI checks are green. If actual conflicts block merging, the implementer fetches main, merges it into the branch, resolves conflicts, runs affected checks, publishes artifacts for the new head, and pushes again. The reviewer checks the resolution changes and affected acceptance items on that head; preflight does not restart.
+An advance of main alone does not require integration, another approval, proof, or local checks on a replacement candidate. The orchestrator merges when GitHub reports the approved candidate can merge and the reviewer has run the local gate successfully on that candidate. If actual conflicts block merging, the implementer fetches main, merges it into the branch, resolves conflicts, runs affected checks, publishes artifacts for the new head, and pushes again. The reviewer checks the resolution changes and affected acceptance items on that head; preflight does not restart.
 
-GitHub requires all five CI jobs with strict branch freshness disabled so conflict-free candidates can merge without including the latest main.
+GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0053](../decisions/0053-use-local-review-checks-for-feature-landing.md) governs the local review gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
 
 Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases discovery, and runs `bin/worktree-remove ISSUE slug`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
 
@@ -49,9 +49,9 @@ The proof flow uses the same worktree, preflight, documentation, review, artifac
 
 ## Local checks
 
-Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, formatting, lint, and analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. Continuous integration (CI) runs all five full suites without test impact analysis. The submitted candidate requires green CI. Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
+Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, formatting, lint, and analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. The independent reviewer runs root `composer check` on the clean submitted candidate before approval. This local gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
 
-Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and test impact analysis (TIA) baselines. Run checks in each project that a change affects.
+Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and TIA baselines. Run checks in each project that a change affects.
 
 Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. A modified or unsupported Pest build fails setup. Installations without development dependencies skip Pest setup.
 
@@ -64,15 +64,23 @@ Use these commands from the affected project directory.
 | `composer check` | Runs project quality checks without the full test suite |
 | `composer test` | Runs the full project suite with TIA disabled |
 
-TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and full CI remain required. A TIA skip or zero selected tests is not new acceptance evidence.
+TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and the local review gate remain required. A TIA skip or zero selected tests is not new acceptance evidence.
 
 Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Discovery and proof flow selection do not change test-runner setup.
+
+## Local review gate
+
+The reviewer runs root `composer check` in a clean review worktree at the submitted candidate. The command first seeds absent TIA caches, then runs strict Composer validation, project `composer check`, and `composer test:affected` in each project, sequentially. Project quality checks use the project's configured tools, including Rector in dry-run mode. A failure in any project prevents approval.
+
+The gate writes command logs and `result.json` under the Git common directory at `orbit-checks/<candidate>/review-*/`. The receipt records the exact candidate and tree, each command, exit code, duration, and log path. It reports success only when every check passes and the candidate remains clean and unchanged. The reviewer retains the receipt with the acceptance assessment; the orchestrator verifies that its candidate matches the approved and merged head. A later candidate needs a new gate and approval.
+
+GitHub's workflow is available only for manual diagnostics and remains disabled in the repository settings. It does not run automatically on pushes or pull requests. Focused acceptance tests remain required; TIA selection alone does not establish acceptance. Missing or incompatible caches can cause the local gate to record a full project suite. Root `bin/test` remains available for an explicit full run without TIA.
 
 ## Main test baselines
 
 [ADR 0052](../decisions/0052-seed-worktrees-from-successful-main-test-baselines.md) governs baseline ownership. Each repository stores one successful publication per Composer project in its Git common directory under `orbit-tia/v1/published`. Linked worktrees share these publications and keep their writable Pest caches separate. Other repositories and separate clones need their own initial refresh.
 
-Worktree creation calls bootstrap, which installs the patched Pest runner and copies a compatible main dependency graph into each absent private cache. Bootstrap preserves an existing cache and reports a cache miss without running tests. Manually created worktrees get the same setup through `bin/bootstrap`.
+Worktree creation requires clean primary main, fetches origin, fast-forwards main, and waits for main baseline refresh. It then calls bootstrap, which installs the patched Pest runner and copies a compatible main dependency graph into each absent private cache. Bootstrap preserves an existing cache and reports a cache miss without running tests. Manually created worktrees get the same setup through `bin/bootstrap`.
 
 The repository commands manage this lifecycle.
 
@@ -92,7 +100,7 @@ Maintenance installs dependencies and runs `composer test:affected` one project 
 
 Publication replaces one complete snapshot atomically after testing succeeds on clean main. The snapshot contains only the portable dependency graph and its metadata. Seed checks the project, Pest patch and test configuration, Pest fingerprint including dependencies and PHP minor version, checksum, and commit ancestry. It does not copy affected-test lists, worker partials, coverage reports, or download state. A no-affected-tests run can publish a newer tested main commit while retaining an older graph anchor; both commits are recorded.
 
-New worktrees may use the previous successful compatible publication while a refresh runs. Failed refreshes retain that publication and report the failure in `refresh.log`; retry with the refresh command after resolving the failure. Baseline maintenance does not delay merge, resource cleanup, or the next feature. TIA remains optional local feedback; a warm cache or zero selected tests does not establish acceptance evidence.
+New worktrees may use the previous successful compatible publication while a refresh runs. Failed refreshes retain that publication and report the failure in `refresh.log`; retry with the refresh command after resolving the failure. Background baseline maintenance does not delay merge or resource cleanup. New worktree setup waits for a refresh attempt after pulling main; a failed attempt reports a cache miss or uses a compatible prior publication. TIA remains optional local feedback; a warm cache or zero selected tests does not establish acceptance evidence.
 
 ## Artifact references
 
@@ -108,7 +116,7 @@ The local `.loop/` directory is ignored. It holds the flow selection, plan, plan
 
 Each published artifact commit has the candidate as its only parent. Its tree adds only `.loop/` paths. Repeating publication with identical contents succeeds. Different artifacts for an already published candidate require a new candidate commit. A symlink or special file causes publication to fail. Proof reads the committed artifact snapshot and refuses a working plan that differs from it.
 
-The developer includes the artifact ref and SHA in the pull request body. The reviewer fetches that ref, verifies its SHA and candidate binding, and reads the plan and every fixture. Approval binds both SHAs. The orchestrator merges that exact candidate after approval and CI. Main integration creates a new candidate and requires artifact publication, CI, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
+The developer includes the artifact ref and SHA in the pull request body. The reviewer fetches that ref, verifies its SHA and candidate binding, and reads the plan and every fixture. Approval binds both SHAs. The orchestrator merges that exact candidate after approval and the local review gate. Main integration creates a new candidate and requires artifact publication, local review checks, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
 
 ## Existing worktrees
 

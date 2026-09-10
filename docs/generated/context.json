@@ -1116,6 +1116,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0053-use-local-review-checks-for-feature-landing.md",
+            "title": "ADR 0053: Use local review checks for feature landing",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0051",
+                "0052",
+                "0053"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1265,7 +1285,8 @@
             "governing_adrs": [
                 "0049",
                 "0051",
-                "0052"
+                "0052",
+                "0053"
             ]
         },
         {

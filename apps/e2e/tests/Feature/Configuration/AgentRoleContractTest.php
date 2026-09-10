@@ -171,9 +171,9 @@ it('binds review and merge to one exact remote head', function () use ($read): v
     expect($merge)
         ->toContain('Close out one independently approved pull request')
         ->toContain('external orchestrator merges it')
-        ->toContain('green CI for it')
+        ->toContain('a passing reviewer-run root `composer check` receipt for it')
         ->toContain('current main included in that head')
-        ->toContain('A changed head needs fresh approval, CI, and an evidence decision')
+        ->toContain('A changed head needs fresh approval, local review checks, and an evidence decision')
         ->toContain('Never substitute snapshot refresh for missing acceptance proof')
         ->toContain('bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>')
         ->toContain('A failed refresh retains captured evidence and requires retry')
@@ -270,7 +270,7 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
         ->toContain('bin/loop-artifacts publish <ISSUE>')
         ->toContain('no removal commit or second approval')
         ->toContain('release <ISSUE> --proof --capture')
-        ->toContain('CI owns full suites');
+        ->toContain('The reviewer runs root `composer check` across all projects with TIA');
     expect($reviewer)
         ->toContain('verify its SHA against the handoff')
         ->toContain('only parent to be the candidate')

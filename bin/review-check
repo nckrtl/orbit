@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Run every project's quality checks and affected tests on one clean candidate."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+
+PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
+
+
+def git(root, *args):
+    return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+
+
+def main():
+    root = Path(__file__).resolve().parent.parent
+    head = git(root, 'rev-parse', 'HEAD')
+    if git(root, 'status', '--porcelain'):
+        raise RuntimeError('Review checks require a clean candidate. Commit changes first.')
+    common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    reports = common / 'orbit-checks' / head
+    reports.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
+    report = {'schema': 1, 'candidate': head, 'tree': git(root, 'rev-parse', 'HEAD^{tree}'),
+              'worktree': str(root), 'started_at': time.time(), 'checks': [], 'passed': False}
+    subprocess.run([str(root / 'bin/tia-cache'), 'seed', '--repository', str(root)], check=False)
+    for project in PROJECTS:
+        for command in COMMANDS:
+            log = directory / (project.replace('/', '-') + '-' + command[1] + '.log')
+            started = time.monotonic()
+            with log.open('w') as output:
+                result = subprocess.run(command, cwd=root / project, stdout=output, stderr=subprocess.STDOUT,
+                                        env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'})
+            report['checks'].append({'project': project, 'command': list(command), 'exit_code': result.returncode,
+                                     'seconds': round(time.monotonic() - started, 3), 'log': str(log)})
+            print(f'[{project}] {" ".join(command)}: {"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+            if result.returncode:
+                print(log.read_text(), flush=True)
+    report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and not git(root, 'status', '--porcelain')
+    report['passed'] = report['unchanged'] and all(check['exit_code'] == 0 for check in report['checks'])
+    report['finished_at'] = time.time()
+    path = directory / 'result.json'
+    path.write_text(json.dumps(report, indent=2) + '\n')
+    print(f'Review gate {"PASSED" if report["passed"] else "FAILED"} at {head}; receipt: {path}', flush=True)
+    if not report['unchanged']:
+        print('Candidate changed during checks; approval is not valid.', file=sys.stderr)
+    return 0 if report['passed'] else 1
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

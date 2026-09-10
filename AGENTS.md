@@ -41,7 +41,7 @@ invoke any one directly; no private orchestration order is implied.
   [implementation loop](docs/reference/implementation-loop.md) before planning,
   developing, reviewing, or closing out. Requirements below for isolated proof and snapshot closeout apply only to
   the `proof` flow. ADR 0051 governs the `discovery` alternative: preflight and
-  preflight review, discovery as a development tool, code review, CI, and merge;
+  preflight review, discovery as a development tool, code review, local quality checks, and merge;
   no proof, main-freshness, or snapshot-closeout gate. Each handoff names its flow.
 - An explicit user instruction for the current task overrides any conflicting
   rule in this repository, including an agent-role skill or workflow boundary.
@@ -55,7 +55,7 @@ invoke any one directly; no private orchestration order is implied.
   `apps/e2e/tests/Unit/**` are not harness code. Harness changes require a dedicated issue with
   repository-owner-approved behavior and issue-specific proof.
 - The `proof:incus` label uses the repository's disposable topology and proof commands.
-  Automated-only changes use project checks and CI.
+  Automated-only changes use project checks and the local review gate.
 - Proof plans and fixtures live locally under ignored `.loop/proof/` and are
   published with `bin/loop-artifacts` on immutable candidate-bound refs. Per-worktree harness state lives in `<worktree>/.e2e/`.
 - Discovery remains the default development target while a separate fresh
@@ -72,11 +72,15 @@ invoke any one directly; no private orchestration order is implied.
 
 ## Verification
 
-- Run focused Pest tests locally. CI runs all full Pest suites without TIA.
+- Developers run focused Pest tests locally. Independent reviewers run root
+  `composer check` across all five projects with TIA, as ADR 0053 requires.
 - Use `bin/test` only for an explicit full local run or failure diagnosis.
 - Run the nearest project's `composer check` for changed PHP code.
 - Run `composer docs-lint` when maintained documentation changes.
-- GitHub Actions runs each project as an independent matrix job.
+- GitHub CI is disabled and is not a merge gate. Retain the reviewer's exact-head local check receipt.
+- Before creating a feature worktree, fetch and fast-forward clean primary main,
+  refresh its TIA baselines, then bootstrap and seed the new worktree with
+  `bin/worktree-create`. Preserve unrelated edits before advancing main.
 
 ## Durable knowledge
 

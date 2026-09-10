@@ -248,5 +248,69 @@ class MainCacheTest(unittest.TestCase):
         self.assertNotIn('test:affected', calls.read_text())
 
 
+class ReviewGateTest(unittest.TestCase):
+    setUp = MainCacheTest.setUp
+    commit_change = MainCacheTest.commit_change
+    # Reuse repository setup, without repeating the cache test cases.
+    def gate_fixture(self):
+        (self.root / 'bin').mkdir()
+        runner = self.root / 'bin/review-check'
+        runner.write_bytes(Path(cache.__file__).with_name('review-check').read_bytes())
+        runner.chmod(0o755)
+        seed = self.root / 'bin/tia-cache'
+        seed.write_text('#!/bin/sh\nexit 0\n')
+        seed.chmod(0o755)
+        for project in cache.PROJECTS:
+            (self.root / project).mkdir(parents=True)
+        self.commit_change('gate fixture')
+        fake_bin = Path(self.temporary.name) / 'fake-bin'
+        fake_bin.mkdir()
+        composer = fake_bin / 'composer'
+        composer.write_text("""#!/bin/sh
+printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_CALLS"
+if [ "$1" = check ] && [ "${PWD##*/}" = e2e ]; then
+    case "$GATE_TEST_MODE" in
+        fail) exit 7 ;;
+        mutate) echo changed > "$GATE_TEST_ROOT/source.php" ;;
+    esac
+fi
+""")
+        composer.chmod(0o755)
+        self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
+                         'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root)}
+        return runner
+
+    def test_gate_runs_all_five_projects_and_records_exact_candidate(self):
+        runner = self.gate_fixture()
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertTrue(report['passed'])
+        self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
+        self.assertEqual([(project, command) for project in cache.PROJECTS
+                          for command in [['composer', 'validate', '--strict'], ['composer', 'check'],
+                                          ['composer', 'test:affected']]],
+                         [(item['project'], item['command']) for item in report['checks']])
+        self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
+
+    def test_gate_rejects_failed_checks_and_candidate_mutation(self):
+        runner = self.gate_fixture()
+        for mode in ['fail', 'mutate']:
+            with self.subTest(mode=mode):
+                result = subprocess.run([str(runner)], env={**self.gate_env, 'GATE_TEST_MODE': mode},
+                                        capture_output=True, text=True)
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        for path in (self.common / 'orbit-checks').glob('*/*/result.json'):
+            self.assertFalse(json.loads(path.read_text())['passed'])
+
+    def test_gate_refuses_dirty_input_without_running_checks(self):
+        runner = self.gate_fixture()
+        (self.root / 'source.php').write_text('uncommitted')
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('clean candidate', result.stderr)
+        self.assertFalse((self.common / 'calls').exists())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
