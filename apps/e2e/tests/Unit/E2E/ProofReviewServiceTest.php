@@ -50,7 +50,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
     }
     $attempt = new AttemptId(str_repeat('a', 32));
     $candidate = str_repeat('b', 40);
-    $target = TopologyTarget::feature('ORB-230', $attempt, TopologyRecipe::extendedAppProd());
+    $target = TopologyTarget::feature('AUX-230', $attempt, TopologyRecipe::extendedAppProd());
     $generation = new TopologySnapshotGeneration(
         'fixture-generation',
         str_repeat('c', 40),
@@ -86,7 +86,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
         str_repeat('3', 40),
         [],
         [],
-        '.loop/proof/ORB-230.json',
+        '.loop/proof/AUX-230.json',
         [],
         $construction,
         null,
@@ -102,7 +102,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
     $plan = str_repeat('4', 64);
     $proof = [
         'status' => 'proved',
-        'issue' => 'ORB-230',
+        'issue' => 'AUX-230',
         'attempt_id' => $attempt->value,
         'candidate_sha' => $candidate,
         'plan_sha256' => $plan,
@@ -110,7 +110,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
         'actions' => [],
     ];
     $capture = new CapturedProof(
-        'ORB-230',
+        'AUX-230',
         $attempt,
         $candidate,
         $plan,
@@ -120,14 +120,14 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
         $manifest->toArray(),
         '2026-09-10T10:00:00Z',
     );
-    $state = IssueState::forWorktree('ORB-230', $worktree);
+    $state = IssueState::forWorktree('AUX-230', $worktree);
     $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('5', 32)), TopologyExtension::AppProd);
     $state->writeTopology($topology);
     $state->writeProof($proof);
     $state->captureProof($capture);
     $hostPaths = new StatePaths(temporaryPath('orbit-proof-review-host-', 6));
     new AtomicJsonStore($hostPaths)->write(
-        'proof-evidence/ORB-230/'.$attempt->value.'.json',
+        'proof-evidence/AUX-230/'.$attempt->value.'.json',
         $capture->toArray(),
     );
     $tick = 0;
@@ -142,7 +142,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
     );
 
     return compact('worktree', 'state', 'capture', 'hostPaths', 'service') + [
-        'request' => new TopologyRequest('ORB-230', $worktree),
+        'request' => new TopologyRequest('AUX-230', $worktree),
     ];
 }
 
@@ -166,13 +166,13 @@ function fakeProofReviewHost(array &$commands, ?string $wrongOwner = null): void
                 'status_code' => 103,
                 'config' => [
                     'user.orbit.e2e.owner' => $wrongOwner ?? 'orbit-e2e',
-                    'user.orbit.e2e.issue' => 'ORB-230',
+                    'user.orbit.e2e.issue' => 'AUX-230',
                     'user.orbit.e2e.attempt' => str_repeat('a', 32),
                     'user.orbit.e2e.role' => $role,
                 ],
                 'devices' => [
                     'root' => ['pool' => 'default'],
-                    'eth0' => ['network' => 'oe-'.substr(hash('sha256', 'ORB-230:'.str_repeat('a', 32)), 0, 12)],
+                    'eth0' => ['network' => 'oe-'.substr(hash('sha256', 'AUX-230:'.str_repeat('a', 32)), 0, 12)],
                 ],
             ]], JSON_THROW_ON_ERROR));
         }
@@ -208,7 +208,7 @@ it('records an incomplete action before exec and then stores a redacted bounded 
                 'status_code' => 103,
                 'config' => [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
-                    'user.orbit.e2e.issue' => 'ORB-230',
+                    'user.orbit.e2e.issue' => 'AUX-230',
                     'user.orbit.e2e.attempt' => str_repeat('a', 32),
                 ],
                 'devices' => [
@@ -235,7 +235,7 @@ it('records an incomplete action before exec and then stores a redacted bounded 
     );
     $action = $fixture['state']->reviewRecord()?->action('inspect-extra');
     $archived = new AtomicJsonStore($fixture['hostPaths'])->read(
-        'proof-review/ORB-230/'.str_repeat('a', 32).'.json',
+        'proof-review/AUX-230/'.str_repeat('a', 32).'.json',
     );
 
     expect(rtrim($result->stdout))->toEndWith('top-secret')
@@ -311,7 +311,7 @@ it('reports an exploratory failure separately without blocking readiness', funct
                 'status_code' => 103,
                 'config' => [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
-                    'user.orbit.e2e.issue' => 'ORB-230',
+                    'user.orbit.e2e.issue' => 'AUX-230',
                     'user.orbit.e2e.attempt' => str_repeat('a', 32),
                 ],
                 'devices' => [

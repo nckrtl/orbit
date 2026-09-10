@@ -9,7 +9,7 @@ function closeoutRecord(string $state, ?string $generation, ?string $error, stri
 {
     return new ProofCloseoutRecord(
         $state,
-        'ORB-230',
+        'AUX-230',
         new AttemptId(str_repeat('a', 32)),
         str_repeat('b', 40),
         str_repeat('c', 40),

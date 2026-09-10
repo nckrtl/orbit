@@ -8,5 +8,5 @@ use App\Models\Node;
 
 interface GatewaySelfAccessConverger
 {
-    public function converge(Node $node): void;
+    public function converge(Node $node): string;
 }

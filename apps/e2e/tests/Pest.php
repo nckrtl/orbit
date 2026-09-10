@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use App\E2E\ColdTopologyConstructor;
+use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\ScenarioRunStore;
+use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
@@ -9,7 +13,18 @@ use App\E2E\Value\TopologyTarget;
 use Tests\Support\TemporaryPaths;
 use Tests\TestCase;
 
-uses(TestCase::class)->in('Feature', 'Scenario');
+uses(TestCase::class)->in('Feature');
+uses(TestCase::class)->beforeEach(function (): void {
+    $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
+    if (! is_string($primary) || ! str_starts_with($primary, '/')) {
+        throw new RuntimeException('Run scenario tests through bin/e2e-scenarios.');
+    }
+
+    $this->app->instance(StatePaths::class, StatePaths::forPrimary($primary));
+    foreach ([AtomicJsonStore::class, ScenarioRunStore::class, ColdTopologyConstructor::class] as $service) {
+        $this->app->forgetInstance($service);
+    }
+})->in('Scenario');
 
 pest()
     ->tia()

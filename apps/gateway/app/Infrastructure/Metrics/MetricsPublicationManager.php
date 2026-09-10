@@ -35,23 +35,21 @@ final readonly class MetricsPublicationManager implements PublicationManager
         $gatewayAddress = $this->address($gateway);
         $metricsAddress = $this->address($metrics);
         $certificateReceipt = MetricsPublicationReceipt::unchanged();
-        $firewallChanged = false;
+        $withdrawalReceipt = MetricsPublicationReceipt::unchanged();
         $caddyReceipt = MetricsPublicationReceipt::unchanged();
+        $configuration = $this->renderer->caddy($metricsAddress, $gatewayAddress);
 
         try {
             $certificate = $this->certificates->issue('metrics.orbit', $gatewayAddress);
             $certificateReceipt = $this->certificatePublisher->publish($certificate);
-            $firewallChanged = $this->firewall->converge($metrics, $gatewayAddress);
-            $caddyReceipt = $this->caddy->publish($this->renderer->caddy($metricsAddress, $gatewayAddress));
+            $withdrawalReceipt = $this->caddy->withdrawForCutover();
+            $this->firewall->converge($metrics, $gatewayAddress);
+            $caddyReceipt = $this->caddy->publish($configuration);
             $this->dns->converge($metrics);
         } catch (Throwable $exception) {
             try {
                 $this->caddy->restore($caddyReceipt);
-
-                if ($firewallChanged) {
-                    $this->firewall->remove($metrics, $gatewayAddress);
-                }
-
+                $this->caddy->restore($withdrawalReceipt);
                 $this->certificatePublisher->restore($certificateReceipt);
             } catch (Throwable) {
                 throw new ResourceOperationException(

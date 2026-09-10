@@ -44,9 +44,11 @@ it('initializes the portable gateway authority idempotently', function (): void 
         /** @var list<string> */
         public array $calls = [];
 
-        public function converge(Node $node): void
+        public function converge(Node $node): string
         {
             $this->calls[] = $node->name;
+
+            return 'SHA256:gateway';
         }
     };
     $action = new BootstrapGatewayAction(
@@ -117,6 +119,8 @@ it('initializes the portable gateway authority idempotently', function (): void 
             ])
             ->and($selfAccess->calls)
             ->toBe(['gateway', 'gateway'])
+            ->and($second->ssh_host_fingerprint)
+            ->toBe('SHA256:gateway')
             ->and(Node::query()->count())
             ->toBe(1);
     } finally {
@@ -875,9 +879,11 @@ it('fails the assigned bootstrap role when the second role assignment fails', fu
     {
         public int $calls = 0;
 
-        public function converge(Node $node): void
+        public function converge(Node $node): string
         {
             $this->calls++;
+
+            return 'SHA256:gateway';
         }
     };
     $action = bootstrap_gateway_action(
@@ -1094,7 +1100,10 @@ function gateway_self_access_noop(): GatewaySelfAccessConverger
 {
     return new class implements GatewaySelfAccessConverger
     {
-        public function converge(Node $node): void {}
+        public function converge(Node $node): string
+        {
+            return 'SHA256:gateway';
+        }
     };
 }
 

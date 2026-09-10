@@ -11,6 +11,7 @@
         "saloonphp/saloon": "^4.0"
     },
     "require-dev": {
+        "laravel/pao": "^1.1",
         "laravel/pint": "^1.32",
         "pestphp/pest": "^5.1",
         "phpstan/phpstan": "^2.2.13",

@@ -34,11 +34,13 @@ describe('Composer configuration', function (): void {
             ->toHaveKey('test:live-incus')
             ->and($composer['scripts']['test'])
             ->toBe('vendor/bin/pest --parallel --no-tia --compact');
-        expect($composer['scripts']['test:scenario-cold'])
+        expect($composer['scripts'])->not->toHaveKey('test:scenario-cold');
+        expect($composer['scripts']['scenario:cold'])
             ->toBe([
                 'Composer\\Config::disableProcessTimeout',
-                'vendor/bin/pest --no-tia --compact tests/Scenario/ColdTopologyAcceptanceTest.php',
+                '@php artisan scenario:cold',
             ]);
+        expect($composer['scripts']['scenario:cleanup'])->toBe('@php artisan scenario:cleanup');
         expect(file_get_contents(base_path('phpunit.xml')))->not->toContain('<directory>tests/Scenario</directory>');
         expect(file_get_contents(base_path('../../bin/test')))->not->toContain('incus-live');
         expect(file_get_contents(base_path('../../.github/workflows/ci.yml')))->not->toContain('incus-live');

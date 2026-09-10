@@ -172,6 +172,8 @@ function statusNode(string $name): Node
         'platform' => 'linux',
         'public_ssh_host' => '127.0.0.1',
         'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 20),
+        'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 }
 

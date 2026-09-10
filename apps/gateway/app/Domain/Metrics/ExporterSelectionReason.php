@@ -6,6 +6,7 @@ namespace App\Domain\Metrics;
 
 enum ExporterSelectionReason: string
 {
+    case Ineligible = 'ineligible';
     case MetricsNode = 'metrics_node';
     case ExplicitEnabled = 'explicit_enabled';
     case RoleDefault = 'role_default';

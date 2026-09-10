@@ -37,6 +37,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Proof topology",
                 "Route",
                 "Router",
                 "Workspace"
@@ -1231,6 +1232,19 @@
             ]
         },
         {
+            "path": "docs/decisions/0059-make-the-builder-own-the-candidate-quality-gate.md",
+            "title": "ADR 0059: Make the Builder own the candidate quality gate",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [],
+            "governing_adrs": [
+                "0053",
+                "0059"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1420,10 +1434,10 @@
                 "0049",
                 "0051",
                 "0052",
-                "0053",
                 "0054",
                 "0056",
-                "0058"
+                "0058",
+                "0059"
             ]
         },
         {
@@ -1463,12 +1477,15 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Route"
             ],
             "governing_adrs": [
-                "0003"
+                "0003",
+                "0055",
+                "0057"
             ]
         },
         {

@@ -64,6 +64,12 @@ final readonly class NativeMetricsFirewallExpectationProvider implements Metrics
                 MetricsFootprint::PublicationFirewallComment,
                 'Metrics Grafana upstream',
             );
+            $targets[] = $this->target(
+                $node,
+                $this->catalog->metricsGrafanaIsolation($metricsNode),
+                MetricsFootprint::PublicationFirewallDenyComment,
+                'Metrics Grafana isolation',
+            );
         }
 
         return $targets;

@@ -617,12 +617,13 @@ fi
                          'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root)}
         return runner
 
-    def test_gate_runs_all_five_projects_and_records_exact_candidate(self):
+    def test_gate_runs_all_five_projects_and_records_builder_and_exact_candidate(self):
         runner = self.gate_fixture()
         result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
         self.assertTrue(report['passed'])
+        self.assertEqual('builder', report['role'])
         self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
         self.assertEqual([(project, command) for project in cache.PROJECTS
                           for command in [['composer', 'validate', '--strict'], ['composer', 'check'],

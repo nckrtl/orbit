@@ -6,6 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Processes\CommandResult;
@@ -18,7 +19,7 @@ use App\Models\Node;
 
 final readonly class MetricsPublicationSshExecutor
 {
-    private const string FirewallComment = MetricsFootprint::PublicationFirewallComment;
+    private const string WireGuardTrustComment = 'orbit:wireguard-members';
 
     public function __construct(
         private SshExecutor $ssh,
@@ -30,52 +31,72 @@ final readonly class MetricsPublicationSshExecutor
 
     public function converge(Node $metricsNode, string $gatewayAddress): bool
     {
-        $rule = $this->firewallRules->metricsGrafanaUpstream($metricsNode, $gatewayAddress);
-        $shape = $rule->shape;
+        $allow = $this->firewallRules->metricsGrafanaUpstream($metricsNode, $gatewayAddress);
+        $deny = $this->firewallRules->metricsGrafanaIsolation($metricsNode);
         $status = $this->status($metricsNode);
-        $ownership = $this->parser->ownership($status->stdout, $shape);
+        $ownerships = $this->parser->ownerships($status->stdout, [$allow->shape, $deny->shape]);
 
-        if ($ownership === UfwRuleOwnership::Drift) {
+        if (in_array(UfwRuleOwnership::Drift, $ownerships, strict: true)) {
             $this->ownershipDrift();
         }
 
-        if ($ownership === UfwRuleOwnership::Exact) {
+        if (
+            $ownerships === [UfwRuleOwnership::Exact, UfwRuleOwnership::Exact]
+            && $this->ordered($status->stdout)
+        ) {
             return false;
         }
 
-        try {
-            $this->run(
-                $metricsNode,
-                new RemoteCommand($rule->arguments),
-                'metrics.publication_firewall_apply_failed',
-                'The Metrics Grafana firewall rule could not be applied.',
-            );
+        if ($ownerships[1] === UfwRuleOwnership::Exact && ! $this->denyPrecedesTrust($status->stdout)) {
+            $this->deleteComment($metricsNode, $status->stdout, MetricsFootprint::PublicationFirewallDenyComment);
+            $status = $this->status($metricsNode);
+            $ownerships[1] = UfwRuleOwnership::Missing;
+        }
 
-            if ($this->parser->ownership($this->status($metricsNode)->stdout, $shape) !== UfwRuleOwnership::Exact) {
+        if ($ownerships[1] === UfwRuleOwnership::Missing) {
+            $this->insert($metricsNode, $deny, 1);
+            $status = $this->status($metricsNode);
+
+            if ($this->parser->ownership($status->stdout, $deny->shape) !== UfwRuleOwnership::Exact) {
                 throw new ResourceOperationException(
                     'metrics.publication_firewall_verify_failed',
-                    'The Metrics Grafana firewall rule could not be verified.',
+                    'The Metrics Grafana isolation rule could not be verified.',
                     502,
-                );
-            }
-        } catch (\Throwable $exception) {
-            try {
-                $this->remove($metricsNode, $gatewayAddress);
-            } catch (\Throwable $rollback) {
-                throw new ResourceOperationException(
-                    'metrics.publication_firewall_rollback_failed',
-                    'The Metrics Grafana firewall rule could not be restored.',
-                    502,
-                    new ResourceOperationException(
-                        'metrics.publication_firewall_failed',
-                        $exception->getMessage(),
-                        502,
-                        $rollback,
-                    ),
                 );
             }
 
-            throw $exception;
+            if (! $this->denyPrecedesTrust($status->stdout)) {
+                $this->orderingDrift();
+            }
+        }
+
+        if ($this->parser->ownership($status->stdout, $allow->shape) === UfwRuleOwnership::Exact) {
+            $allowNumber = $this->singleRuleNumber($status->stdout, MetricsFootprint::PublicationFirewallComment);
+            $denyNumber = $this->singleRuleNumber($status->stdout, MetricsFootprint::PublicationFirewallDenyComment);
+
+            if ($allowNumber > $denyNumber) {
+                $this->deleteComment($metricsNode, $status->stdout, MetricsFootprint::PublicationFirewallComment);
+            }
+        }
+
+        $status = $this->status($metricsNode);
+
+        if ($this->parser->ownership($status->stdout, $allow->shape) === UfwRuleOwnership::Missing) {
+            $this->insert($metricsNode, $allow, 1);
+        }
+
+        $verification = $this->status($metricsNode);
+        $verified = $this->parser->ownerships($verification->stdout, [$allow->shape, $deny->shape]);
+
+        if (
+            $verified !== [UfwRuleOwnership::Exact, UfwRuleOwnership::Exact]
+            || ! $this->ordered($verification->stdout)
+        ) {
+            throw new ResourceOperationException(
+                'metrics.publication_firewall_verify_failed',
+                'The ordered Metrics Grafana firewall boundary could not be verified.',
+                502,
+            );
         }
 
         return true;
@@ -83,35 +104,33 @@ final readonly class MetricsPublicationSshExecutor
 
     public function remove(Node $metricsNode, string $gatewayAddress): void
     {
-        $shape = $this->firewallRules->metricsGrafanaUpstream($metricsNode, $gatewayAddress)->shape;
+        $allow = $this->firewallRules->metricsGrafanaUpstream($metricsNode, $gatewayAddress);
+        $deny = $this->firewallRules->metricsGrafanaIsolation($metricsNode);
         $status = $this->status($metricsNode);
-        $ownership = $this->parser->ownership($status->stdout, $shape);
+        $ownerships = $this->parser->ownerships($status->stdout, [$allow->shape, $deny->shape]);
 
-        if ($ownership === UfwRuleOwnership::Drift) {
+        if (in_array(UfwRuleOwnership::Drift, $ownerships, strict: true)) {
             $this->ownershipDrift();
         }
 
-        if ($ownership === UfwRuleOwnership::Missing) {
+        if ($ownerships === [UfwRuleOwnership::Missing, UfwRuleOwnership::Missing]) {
             return;
         }
 
-        $numbers = $this->ruleNumbers($status->stdout);
+        $this->deleteComments($metricsNode, $status->stdout, [
+            MetricsFootprint::PublicationFirewallComment,
+            MetricsFootprint::PublicationFirewallDenyComment,
+        ]);
 
-        if (count($numbers) !== 1) {
-            $this->ownershipDrift();
-        }
-
-        $this->run(
-            $metricsNode,
-            new RemoteCommand(['sudo', 'ufw', '--force', 'delete', $numbers[0]]),
-            'metrics.publication_firewall_remove_failed',
-            'The Metrics Grafana firewall rule could not be removed.',
+        $verification = $this->parser->ownerships(
+            $this->status($metricsNode)->stdout,
+            [$allow->shape, $deny->shape],
         );
 
-        if ($this->parser->ownership($this->status($metricsNode)->stdout, $shape) !== UfwRuleOwnership::Missing) {
+        if ($verification !== [UfwRuleOwnership::Missing, UfwRuleOwnership::Missing]) {
             throw new ResourceOperationException(
                 'metrics.publication_firewall_remove_verify_failed',
-                'The Metrics Grafana firewall rule remained after removal.',
+                'A Metrics Grafana firewall rule remained after removal.',
                 502,
             );
         }
@@ -127,24 +146,20 @@ final readonly class MetricsPublicationSshExecutor
      */
     public function abandon(Node $metricsNode): void
     {
-        $numbers = $this->ruleNumbers($this->status($metricsNode)->stdout);
+        $status = $this->status($metricsNode)->stdout;
+        $numbers = $this->ownedRuleNumbers($status);
 
         if ($numbers === []) {
             return;
         }
 
-        if (count($numbers) !== 1) {
-            $this->ownershipDrift();
+        rsort($numbers, SORT_NUMERIC);
+
+        foreach ($numbers as $number) {
+            $this->delete($metricsNode, $number);
         }
 
-        $this->run(
-            $metricsNode,
-            new RemoteCommand(['sudo', 'ufw', '--force', 'delete', $numbers[0]]),
-            'metrics.publication_firewall_remove_failed',
-            'The Metrics Grafana firewall rule could not be removed.',
-        );
-
-        if ($this->ruleNumbers($this->status($metricsNode)->stdout) !== []) {
+        if ($this->ownedRuleNumbers($this->status($metricsNode)->stdout) !== []) {
             throw new ResourceOperationException(
                 'metrics.publication_firewall_remove_verify_failed',
                 'The Metrics Grafana firewall rule remained after removal.',
@@ -223,16 +238,16 @@ final readonly class MetricsPublicationSshExecutor
      *
      * @return list<string>
      */
-    private function ruleNumbers(string $status): array
+    private function ruleNumbers(string $status, string $comment): array
     {
         $numbers = [];
-        $comment = '# '.self::FirewallComment;
+        $suffix = '# '.$comment;
 
         foreach (explode("\n", $status) as $line) {
             $matches = [];
 
             if (
-                str_ends_with(rtrim($line), $comment)
+                str_ends_with(rtrim($line), $suffix)
                 && preg_match('/^\s*\[\s*(\d+)\]/', $line, $matches) === 1
             ) {
                 $numbers[] = $matches[1];
@@ -242,11 +257,101 @@ final readonly class MetricsPublicationSshExecutor
         return $numbers;
     }
 
+    /** @return list<string> */
+    private function ownedRuleNumbers(string $status): array
+    {
+        return [
+            ...$this->ruleNumbers($status, MetricsFootprint::PublicationFirewallComment),
+            ...$this->ruleNumbers($status, MetricsFootprint::PublicationFirewallDenyComment),
+        ];
+    }
+
+    private function singleRuleNumber(string $status, string $comment): int
+    {
+        $numbers = $this->ruleNumbers($status, $comment);
+
+        if (count($numbers) !== 1) {
+            $this->ownershipDrift();
+        }
+
+        return (int) $numbers[0];
+    }
+
+    /** @param list<string> $comments */
+    private function deleteComments(Node $node, string $status, array $comments): void
+    {
+        $numbers = [];
+
+        foreach ($comments as $comment) {
+            array_push($numbers, ...$this->ruleNumbers($status, $comment));
+        }
+
+        rsort($numbers, SORT_NUMERIC);
+
+        foreach ($numbers as $number) {
+            $this->delete($node, $number);
+        }
+    }
+
+    private function deleteComment(Node $node, string $status, string $comment): void
+    {
+        $number = $this->singleRuleNumber($status, $comment);
+        $this->delete($node, (string) $number);
+    }
+
+    private function delete(Node $node, string $number): void
+    {
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'ufw', '--force', 'delete', $number]),
+            'metrics.publication_firewall_remove_failed',
+            'The Metrics Grafana firewall rule could not be removed.',
+        );
+    }
+
+    private function insert(Node $node, UfwManagedRule $rule, int $position): void
+    {
+        $arguments = $rule->arguments;
+        array_splice($arguments, 2, 0, ['insert', (string) $position]);
+
+        $this->run(
+            $node,
+            new RemoteCommand($arguments),
+            'metrics.publication_firewall_apply_failed',
+            'The Metrics Grafana firewall rule could not be applied.',
+        );
+    }
+
+    private function ordered(string $status): bool
+    {
+        $allow = $this->singleRuleNumber($status, MetricsFootprint::PublicationFirewallComment);
+        $deny = $this->singleRuleNumber($status, MetricsFootprint::PublicationFirewallDenyComment);
+
+        return $allow < $deny && $this->denyPrecedesTrust($status);
+    }
+
+    private function denyPrecedesTrust(string $status): bool
+    {
+        $deny = $this->singleRuleNumber($status, MetricsFootprint::PublicationFirewallDenyComment);
+        $trust = $this->ruleNumbers($status, self::WireGuardTrustComment);
+
+        return $trust === [] || $deny < (int) min($trust);
+    }
+
     private function ownershipDrift(): never
     {
         throw new ResourceOperationException(
             'metrics.publication_firewall_ownership_drift',
             'Metrics Grafana firewall ownership cannot be proved.',
+            409,
+        );
+    }
+
+    private function orderingDrift(): never
+    {
+        throw new ResourceOperationException(
+            'metrics.publication_firewall_ordering_drift',
+            'Metrics Grafana firewall ordering cannot be proved.',
             409,
         );
     }

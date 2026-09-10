@@ -14,7 +14,7 @@ use App\E2E\Value\VerificationReport;
 function capturedProofValue(): CapturedProof
 {
     $candidate = str_repeat('a', 40);
-    $construction = topologyConstructionFixture('ORB-230', 'b');
+    $construction = topologyConstructionFixture('AUX-230', 'b');
     $generation = new TopologySnapshotGeneration(
         'fixture-generation',
         str_repeat('c', 40),
@@ -43,7 +43,7 @@ function capturedProofValue(): CapturedProof
         str_repeat('2', 40),
         [],
         [],
-        '.loop/proof/ORB-230.json',
+        '.loop/proof/AUX-230.json',
         [],
         $construction,
         null,
@@ -59,7 +59,7 @@ function capturedProofValue(): CapturedProof
     $plan = str_repeat('3', 64);
     $proof = [
         'status' => 'proved',
-        'issue' => 'ORB-230',
+        'issue' => 'AUX-230',
         'attempt_id' => str_repeat('b', 32),
         'candidate_sha' => $candidate,
         'plan_sha256' => $plan,
@@ -68,7 +68,7 @@ function capturedProofValue(): CapturedProof
     ];
 
     return new CapturedProof(
-        'ORB-230',
+        'AUX-230',
         attemptId('b'),
         $candidate,
         $plan,

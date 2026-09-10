@@ -349,10 +349,10 @@ describe('IssueState', function () {
     it('persists typed capture, monotonic review, evaluation, and closeout state by exact attempt', function (): void {
         $worktree = temporaryPath('orbit-issue-review-state-', 4);
         mkdir($worktree, 0700);
-        $state = IssueState::forWorktree('ORB-230', $worktree);
+        $state = IssueState::forWorktree('AUX-230', $worktree);
         $attempt = new AttemptId(str_repeat('a', 32));
         $candidate = str_repeat('d', 40);
-        $topology = issueStateTopology('ORB-230', $attempt, AttemptPurpose::Proof);
+        $topology = issueStateTopology('AUX-230', $attempt, AttemptPurpose::Proof);
         $topology = new FeatureTopology(
             $topology->construction,
             $topology->purpose,
@@ -366,7 +366,7 @@ describe('IssueState', function () {
             str_repeat('b', 40),
             [],
             [],
-            '.loop/proof/ORB-230.json',
+            '.loop/proof/AUX-230.json',
             [],
             $topology->construction,
             null,
@@ -381,7 +381,7 @@ describe('IssueState', function () {
         );
         $proof = [
             'status' => 'proved',
-            'issue' => 'ORB-230',
+            'issue' => 'AUX-230',
             'attempt_id' => $attempt->value,
             'candidate_sha' => $candidate,
             'plan_sha256' => str_repeat('c', 64),
@@ -390,7 +390,7 @@ describe('IssueState', function () {
         ];
         $state->writeProof($proof);
         $capture = new CapturedProof(
-            'ORB-230',
+            'AUX-230',
             $attempt,
             $candidate,
             str_repeat('c', 64),
@@ -410,14 +410,14 @@ describe('IssueState', function () {
             null,
             '2026-09-10T10:01:00Z',
         );
-        $record = ProofReviewRecord::empty('ORB-230', $candidate, $attempt, '2026-09-10T10:01:00Z')
+        $record = ProofReviewRecord::empty('AUX-230', $candidate, $attempt, '2026-09-10T10:01:00Z')
             ->withAction($pending, '2026-09-10T10:01:00Z');
         $state->writeReviewRecord($record);
         $evaluation = ProofReviewEvaluation::forRecord($record, '2026-09-10T10:02:00Z');
         $state->writeReviewEvaluation($evaluation);
         $failedCloseout = new ProofCloseoutRecord(
             'refresh-failed',
-            'ORB-230',
+            'AUX-230',
             $attempt,
             $candidate,
             str_repeat('e', 40),

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Metrics\ExporterPreferenceRepository;
+use App\Domain\Metrics\ExporterSelectionReason;
 use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsExporterProjectionItem;
+use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
@@ -18,6 +20,7 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
     public function __construct(
         private ExporterSelector $selector,
         private ExporterPreferenceRepository $preferences,
+        private ManagedNodeEligibility $eligibility = new ManagedNodeEligibility,
     ) {}
 
     public function for(Node $metricsNode): array
@@ -29,7 +32,11 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
             ->where('status', LifecycleStatus::Active->value)
             ->orderBy('id')
             ->get() as $node) {
-            $items[] = $this->item($metricsNode, $node);
+            $item = $this->item($metricsNode, $node);
+
+            if ($item instanceof MetricsExporterProjectionItem) {
+                $items[] = $item;
+            }
         }
 
         return $items;
@@ -54,7 +61,7 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
         return $this->item($metricsNode, $projectedNode);
     }
 
-    private function item(Node $metricsNode, Node $node): MetricsExporterProjectionItem
+    private function item(Node $metricsNode, Node $node): ?MetricsExporterProjectionItem
     {
         $roles = array_values(
             $node
@@ -68,13 +75,15 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
                 ->all(),
         );
 
-        return new MetricsExporterProjectionItem(
-            $node,
-            $this->selector->select(
-                $roles,
-                $this->preferences->get($node->id),
-                $node->is($metricsNode),
-            ),
+        $selection = $this->selector->select(
+            $roles,
+            $this->eligibility->allows($node),
+            $this->preferences->get($node->id),
+            $node->is($metricsNode),
         );
+
+        return $selection->reason === ExporterSelectionReason::Ineligible
+            ? null
+            : new MetricsExporterProjectionItem($node, $selection);
     }
 }

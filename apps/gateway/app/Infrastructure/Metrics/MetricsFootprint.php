@@ -64,5 +64,7 @@ final readonly class MetricsFootprint
 
     public const string PublicationFirewallComment = 'orbit:metrics-grafana-upstream';
 
+    public const string PublicationFirewallDenyComment = 'orbit:metrics-grafana-isolation';
+
     public const string WireGuardInterface = 'orbit';
 }

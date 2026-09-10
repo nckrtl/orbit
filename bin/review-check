@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run every project's quality checks and affected tests on one clean candidate."""
+"""Run the Builder's quality checks and affected tests on one clean candidate."""
 import json
 import os
 from pathlib import Path
@@ -20,12 +20,12 @@ def main():
     root = Path(__file__).resolve().parent.parent
     head = git(root, 'rev-parse', 'HEAD')
     if git(root, 'status', '--porcelain'):
-        raise RuntimeError('Review checks require a clean candidate. Commit changes first.')
+        raise RuntimeError('Candidate checks require a clean candidate. Commit changes first.')
     common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
     reports = common / 'orbit-checks' / head
     reports.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
-    report = {'schema': 1, 'candidate': head, 'tree': git(root, 'rev-parse', 'HEAD^{tree}'),
+    report = {'schema': 1, 'role': 'builder', 'candidate': head, 'tree': git(root, 'rev-parse', 'HEAD^{tree}'),
               'worktree': str(root), 'started_at': time.time(), 'checks': [], 'passed': False}
     subprocess.run([str(root / 'bin/tia-cache'), 'seed', '--repository', str(root)], check=False)
     for project in PROJECTS:
@@ -45,7 +45,7 @@ def main():
     report['finished_at'] = time.time()
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')
-    print(f'Review gate {"PASSED" if report["passed"] else "FAILED"} at {head}; receipt: {path}', flush=True)
+    print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {head}; receipt: {path}', flush=True)
     if not report['unchanged']:
         print('Candidate changed during checks; approval is not valid.', file=sys.stderr)
     return 0 if report['passed'] else 1

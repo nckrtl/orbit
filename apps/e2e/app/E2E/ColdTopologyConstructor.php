@@ -14,6 +14,7 @@ use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyTarget;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
+use Closure;
 use RuntimeException;
 use Throwable;
 
@@ -31,13 +32,20 @@ final readonly class ColdTopologyConstructor
         private StatePaths $hostPaths,
     ) {}
 
-    public function construct(ColdTopologyPlan $plan): SourceState
-    {
+    /**
+     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observePhase
+     * @param  (Closure(ColdTopologyCleanupResult, float, float): void)|null  $observeCleanup
+     */
+    public function construct(
+        ColdTopologyPlan $plan,
+        ?Closure $observePhase = null,
+        ?Closure $observeCleanup = null,
+    ): SourceState {
         if ($plan->snapshotReplacement) {
             throw new RuntimeException('Snapshot replacement construction requires its recorded-input result.');
         }
 
-        return $this->constructWithSlot($plan)['source'];
+        return $this->constructWithSlot($plan, $observePhase, $observeCleanup)['source'];
     }
 
     public function constructReplacement(ColdTopologyPlan $plan): TopologyConstructionInputs
@@ -45,7 +53,7 @@ final readonly class ColdTopologyConstructor
         if (! $plan->snapshotReplacement) {
             throw new RuntimeException('Cold topology construction has no snapshot replacement declaration.');
         }
-        $result = $this->constructWithSlot($plan);
+        $result = $this->constructWithSlot($plan, null, null);
         $imageAlias = array_key_first($plan->imageFingerprints);
         if (! is_string($imageAlias)) {
             throw new RuntimeException('The snapshot replacement base-image identity is absent.');
@@ -59,45 +67,61 @@ final readonly class ColdTopologyConstructor
         );
     }
 
-    /** @return array{source:SourceState,slot:int} */
-    private function constructWithSlot(ColdTopologyPlan $plan): array
-    {
-        $this->preflight($plan);
+    /**
+     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observePhase
+     * @param  (Closure(ColdTopologyCleanupResult, float, float): void)|null  $observeCleanup
+     * @return array{source:SourceState,slot:int}
+     */
+    private function constructWithSlot(
+        ColdTopologyPlan $plan,
+        ?Closure $observePhase,
+        ?Closure $observeCleanup,
+    ): array {
+        $this->phase('preflight', fn () => $this->preflight($plan), $observePhase);
 
         try {
-            $slot = $this->createResources($plan);
+            $slot = $this->phase('create-resources', fn (): int => $this->createResources($plan), $observePhase);
             $instances = array_map($plan->target->instance(...), $plan->target->recipe->nodeKeys());
-            $this->host->startAll($instances);
-            $this->host->prepareClonedHostStates($instances);
+            $this->phase('start-instances', fn () => $this->host->startAll($instances), $observePhase);
+            $this->phase('prepare-host-state', fn () => $this->host->prepareClonedHostStates($instances), $observePhase);
 
-            if ($plan->isDisposable()) {
-                $candidate = $this->synchronizer->syncCommit(
-                    $plan->target,
-                    $plan->sourceWorktree,
-                    $plan->sourceSha,
-                );
-                $source = new SourceState(
-                    $candidate->candidateSha,
-                    $candidate->candidateSha,
-                    operationId: $candidate->operationId,
-                );
-            } else {
-                $source = $this->synchronizer->sync($plan->target, $plan->sourceWorktree);
-            }
+            $source = $this->phase('synchronize-source', function () use ($plan): SourceState {
+                if ($plan->isDisposable()) {
+                    $candidate = $this->synchronizer->syncCommit(
+                        $plan->target,
+                        $plan->sourceWorktree,
+                        $plan->sourceSha,
+                    );
+
+                    return new SourceState(
+                        $candidate->candidateSha,
+                        $candidate->candidateSha,
+                        operationId: $candidate->operationId,
+                    );
+                }
+
+                return $this->synchronizer->sync($plan->target, $plan->sourceWorktree);
+            }, $observePhase);
             if ($source->hostSha !== $plan->sourceSha || $source->guestSha !== $plan->sourceSha || $source->dirty) {
                 throw new RuntimeException('Cold topology source is not the requested clean commit.');
             }
 
-            $this->converger->converge(
-                $plan->target,
-                $source,
-                $plan->laravel,
-                nativeSamplesOnly: $plan->snapshotReplacement,
+            $this->phase(
+                'converge',
+                fn () => $this->converger->converge(
+                    $plan->target,
+                    $source,
+                    $plan->laravel,
+                    nativeSamplesOnly: $plan->snapshotReplacement,
+                ),
+                $observePhase,
             );
 
             return ['source' => $source, 'slot' => $slot];
         } catch (Throwable $constructionFailure) {
+            $cleanupStarted = microtime(true);
             $cleanup = $this->cleanup($plan->target, $plan->operation);
+            $observeCleanup?->__invoke($cleanup, $cleanupStarted, microtime(true));
             if (! $cleanup->successful()) {
                 throw new ColdTopologyCleanupException($cleanup, $constructionFailure);
             }
@@ -150,7 +174,10 @@ final readonly class ColdTopologyConstructor
 
             return new ColdTopologyCleanupResult($removed, $absent, []);
         } catch (Throwable $cleanupFailure) {
-            return new ColdTopologyCleanupResult($removed, $absent, [$cleanupFailure->getMessage()]);
+            $expected = [...$instanceNames, $target->network()];
+            $remaining = array_values(array_diff($expected, $removed, $absent));
+
+            return new ColdTopologyCleanupResult($removed, $absent, [$cleanupFailure->getMessage()], $remaining);
         }
     }
 
@@ -215,6 +242,29 @@ final readonly class ColdTopologyConstructor
         }
         if (($metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value) {
             throw new RuntimeException("Cold topology resource {$resource} belongs to another operation.");
+        }
+    }
+
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $action
+     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observer
+     * @return T
+     */
+    private function phase(string $name, Closure $action, ?Closure $observer): mixed
+    {
+        $started = microtime(true);
+
+        try {
+            $result = $action();
+            $observer?->__invoke($name, $started, microtime(true), true, null);
+
+            return $result;
+        } catch (Throwable $exception) {
+            $observer?->__invoke($name, $started, microtime(true), false, $exception->getMessage());
+
+            throw $exception;
         }
     }
 }

@@ -11,10 +11,15 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeDoctorIssueCode;
+use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 
 final readonly class NodeDoctorProbe implements DoctorFamilyProbe
 {
+    public function __construct(
+        private ManagedNodeEligibility $eligibility = new ManagedNodeEligibility,
+    ) {}
+
     public function family(): DoctorFamily
     {
         return DoctorFamily::Node;
@@ -36,6 +41,9 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 expected: 'active',
                 observed: $node->status->value,
             );
+        }
+        if (! $this->eligibility->isManagedForObservation($node)) {
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
         }
         if ($context->inspectionFailed) {
             $issues[] = new DoctorIssueData(

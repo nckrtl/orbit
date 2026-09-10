@@ -2,6 +2,27 @@
 
 declare(strict_types=1);
 
+use App\E2E\ColdTopologyConstructor;
+use App\E2E\Git\GitRepository;
+use App\E2E\ScenarioCatalog;
+use App\E2E\ScenarioPestProcess;
+use App\E2E\ScenarioRecovery;
+use App\E2E\ScenarioSuiteRunner;
+use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\ScenarioRunStore;
+use App\E2E\State\SecretRedactor;
+use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
+use App\E2E\Value\ColdTopologyCleanupResult;
+use App\E2E\Value\ScenarioAction;
+use App\E2E\Value\ScenarioDefinition;
+use App\E2E\Value\ScenarioId;
+use App\E2E\Value\ScenarioProcessResult;
+use App\E2E\Value\ScenarioResult;
+use App\E2E\Value\ScenarioRunId;
+use App\E2E\Value\ScenarioStatus;
+use App\E2E\Value\TopologyEndState;
+use App\E2E\Value\TopologyRecipe;
 use Symfony\Component\Process\Process;
 
 $wrapper = dirname(__DIR__, 5).'/bin/e2e-scenarios';
@@ -28,7 +49,7 @@ function scenarioWrapperFixture(): array
         #!/usr/bin/env bash
         set -euo pipefail
         printf 'candidate=%s\nrepository=%s\nprimary-root=%s\narguments=%s\n' \
-          "$ORBIT_SCENARIO_CANDIDATE_SHA" \
+          "${ORBIT_SCENARIO_CANDIDATE_SHA:-none}" \
           "$ORBIT_SCENARIO_REPOSITORY" \
           "$ORBIT_SCENARIO_PRIMARY_ROOT" \
           "$*"
@@ -49,18 +70,20 @@ function scenarioWrapperFixture(): array
     ];
 }
 
-it('prints cold scenario usage and exits 64 for unsupported arguments', function (array $arguments) use ($wrapper) {
+it('prints scenario usage and exits 64 for unsupported arguments', function (array $arguments) use ($wrapper) {
     $result = new Process([$wrapper, ...$arguments]);
     $result->run();
 
     expect($result->getExitCode())->toBe(64);
     expect($result->getErrorOutput())
-        ->toContain('usage: bin/e2e-scenarios cold [CANDIDATE_SHA]')
+        ->toContain('usage: bin/e2e-scenarios cold [CANDIDATE_SHA] [--scenario=ID ...]')
+        ->toContain('bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID')
         ->toContain('not part of feature development');
 })->with([
     'missing track' => [[]],
     'unknown track' => [['snapshot']],
-    'too many arguments' => [['cold', str_repeat('a', 40), 'extra']],
+    'invalid filter form' => [['cold', '--scenario']],
+    'unsafe filter' => [['cold', '--scenario=../cold']],
 ]);
 
 it('runs the cold flow with the current HEAD by default or as an explicit assertion', function (bool $explicit) use (
@@ -78,7 +101,7 @@ it('runs the cold flow with the current HEAD by default or as an explicit assert
         ->toContain("candidate={$fixture['head']}")
         ->toContain('repository='.dirname(__DIR__, 5))
         ->toContain("primary-root={$fixture['primary_root']}")
-        ->toContain('arguments=--working-dir='.dirname(__DIR__, 5).'/apps/e2e test:scenario-cold');
+        ->toContain('arguments=--working-dir='.dirname(__DIR__, 5).'/apps/e2e scenario:cold --');
 })->with([
     'resolved current HEAD' => [false],
     'explicit current HEAD' => [true],
@@ -101,12 +124,260 @@ it('rejects an explicit candidate that differs from the current HEAD', function 
     expect($result->getErrorOutput())->toContain('candidate must equal this checkout HEAD');
 });
 
-it('registers only the faithful cold flow outside the default test suites', function () use ($wrapper) {
+it('passes repeatable scenario filters in their selected order', function () use ($wrapper) {
+    $fixture = scenarioWrapperFixture();
+    $result = new Process([
+        $wrapper,
+        'cold',
+        $fixture['head'],
+        '--scenario=cold-construction-cleanup',
+        '--scenario=cold-four-node',
+    ], env: $fixture['environment']);
+
+    expect($result->run())->toBe(0, $result->getErrorOutput());
+    expect($result->getOutput())
+        ->toContain('scenario:cold -- --scenario=cold-construction-cleanup --scenario=cold-four-node');
+});
+
+it('rejects a repeated scenario before invoking Composer', function () use ($wrapper) {
+    $fixture = scenarioWrapperFixture();
+    $result = new Process([
+        $wrapper,
+        'cold',
+        '--scenario=cold-four-node',
+        '--scenario=cold-four-node',
+    ], env: $fixture['environment']);
+    $result->run();
+
+    expect($result->getExitCode())->toBe(64);
+    expect($result->getErrorOutput())->toContain('selected more than once');
+    expect($result->getOutput())->toBe('');
+});
+
+it('passes exact retained identities to the cleanup command without resolving a candidate', function () use ($wrapper) {
+    $fixture = scenarioWrapperFixture();
+    $run = str_repeat('a', 32);
+    $attempt = str_repeat('b', 32);
+    $result = new Process([
+        $wrapper,
+        'cleanup',
+        $run,
+        'cold-four-node',
+        $attempt,
+    ], env: $fixture['environment']);
+
+    expect($result->run())->toBe(0, $result->getErrorOutput());
+    expect($result->getOutput())
+        ->toContain('arguments=--working-dir='.dirname(__DIR__, 5)."/apps/e2e scenario:cleanup -- {$run} cold-four-node {$attempt}");
+});
+
+it('registers the operator-invoked cold suite outside ordinary delivery paths', function () use ($wrapper) {
     $source = (string) file_get_contents($wrapper);
 
     expect(is_executable($wrapper))->toBeTrue();
     expect($source)
-        ->toContain('test:scenario-cold')
+        ->toContain('scenario:cold')
+        ->toContain('scenario:cleanup')
         ->toContain('ORBIT_SCENARIO_CANDIDATE_SHA')
         ->not->toContain('e2e-live', 'TOPOLOGY_SNAPSHOT_NAMESPACE', 'pcov');
+});
+
+/** @return list<ScenarioDefinition> */
+function wrapperScenarioDefinitions(): array
+{
+    $recipe = TopologyRecipe::coldAcceptance();
+    $input = ['apps/e2e/resources/guest/prepare-node.sh' => str_repeat('a', 64)];
+
+    return [
+        new ScenarioDefinition(
+            new ScenarioId('first-flow'),
+            'cold',
+            $recipe,
+            [new ScenarioAction('setup', 'construct', 60)],
+            $input,
+            TopologyEndState::complete($recipe),
+            false,
+            'first flow',
+        ),
+        new ScenarioDefinition(
+            new ScenarioId('second-flow'),
+            'cold',
+            $recipe,
+            [new ScenarioAction('assertion', 'verify', 60)],
+            $input,
+            TopologyEndState::complete($recipe),
+            false,
+            'second flow',
+        ),
+    ];
+}
+
+it('continues after a failed flow and writes the complete aggregate last', function (): void {
+    $root = dirname(__DIR__, 5);
+    $repository = new GitRepository($root);
+    $candidate = $repository->commit();
+    $paths = new StatePaths(temporaryPath('scenario-suite-', 5));
+    $runs = new ScenarioRunStore(new AtomicJsonStore($paths));
+    $definitions = wrapperScenarioDefinitions();
+    $catalog = new ScenarioCatalog($repository, fn (): array => $definitions);
+    $executed = [];
+    $process = new ScenarioPestProcess(base_path(), function (
+        ScenarioDefinition $definition,
+        string $processCandidate,
+        ScenarioRunId $run,
+        AttemptId $attempt,
+    ) use (&$executed, $runs): ScenarioProcessResult {
+        $executed[] = $definition->id->value;
+        $status = $definition->id->value === 'first-flow' ? ScenarioStatus::Failed : ScenarioStatus::Passed;
+        $result = new ScenarioResult(
+            $processCandidate,
+            $run,
+            $definition->id,
+            $attempt,
+            'cold',
+            $status,
+            $status,
+            $definition->normalized(),
+            $definition->fingerprint(),
+            $definition->recipe->fingerprint(),
+            [['name' => 'flow', 'outcome' => $status->value]],
+            ['flow' => ['duration_ms' => 1]],
+            null,
+            [],
+            [
+                'removed' => [],
+                'absent' => [],
+                'refused' => [],
+                'remaining' => [],
+                'recovery_command' => "bin/e2e-scenarios cleanup {$run->value} {$definition->id->value} {$attempt->value}",
+            ],
+            '2026-09-10T12:00:00.000000+00:00',
+            '2026-09-10T12:00:01.000000+00:00',
+        );
+        $runs->writeResult($result);
+
+        return new ScenarioProcessResult($status === ScenarioStatus::Passed ? 0 : 1, "{$definition->id->value}\n");
+    });
+    $constructor = (new ReflectionClass(ColdTopologyConstructor::class))->newInstanceWithoutConstructor();
+    $recovery = new ScenarioRecovery(
+        $runs,
+        $constructor,
+        fn (): ColdTopologyCleanupResult => new ColdTopologyCleanupResult([], [], []),
+    );
+    $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
+
+    $aggregate = $runner->run($candidate, $root, $root);
+
+    expect($executed)->toBe(['first-flow', 'second-flow']);
+    expect($aggregate->successful())->toBeFalse();
+    expect(array_column($aggregate->toArray()['results'], 'scenario_id'))->toBe(['first-flow', 'second-flow']);
+    expect($paths->path($runs->aggregatePath($aggregate->run)))->toBeFile();
+});
+
+it('recovers exact cleanup and records infrastructure-error when Pest writes no result', function (): void {
+    $root = dirname(__DIR__, 5);
+    $repository = new GitRepository($root);
+    $candidate = $repository->commit();
+    $paths = new StatePaths(temporaryPath('scenario-report-failure-', 5));
+    $runs = new ScenarioRunStore(new AtomicJsonStore($paths));
+    $definition = wrapperScenarioDefinitions()[0];
+    $catalog = new ScenarioCatalog($repository, fn (): array => [$definition]);
+    $process = new ScenarioPestProcess(
+        base_path(),
+        fn (): ScenarioProcessResult => new ScenarioProcessResult(70, 'injected reporting failure'),
+    );
+    $constructor = (new ReflectionClass(ColdTopologyConstructor::class))->newInstanceWithoutConstructor();
+    $recoveries = [];
+    $recovery = new ScenarioRecovery(
+        $runs,
+        $constructor,
+        function (ScenarioRunId $run, ScenarioId $scenario, AttemptId $attempt) use (&$recoveries): ColdTopologyCleanupResult {
+            $recoveries[] = [$run->value, $scenario->value, $attempt->value];
+
+            return new ColdTopologyCleanupResult([], ['network'], [], [], "bin/e2e-scenarios cleanup {$run->value} {$scenario->value} {$attempt->value}");
+        },
+    );
+    $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
+
+    $aggregate = $runner->run($candidate, $root, $root);
+
+    expect($recoveries)->toHaveCount(1);
+    expect($aggregate->results[0]->status)->toBe(ScenarioStatus::InfrastructureError);
+    expect($aggregate->results[0]->diagnostics)->toBe(['injected reporting failure']);
+    expect($paths->path($runs->aggregatePath($aggregate->run)))->toBeFile();
+});
+
+it('recovers a signal-killed real process, continues, and writes the complete aggregate', function (): void {
+    $root = dirname(__DIR__, 5);
+    $repository = new GitRepository($root);
+    $candidate = $repository->commit();
+    $paths = new StatePaths(temporaryPath('scenario-interruption-', 5));
+    $runs = new ScenarioRunStore(new AtomicJsonStore($paths));
+    $definitions = wrapperScenarioDefinitions();
+    $catalog = new ScenarioCatalog($repository, fn (): array => $definitions);
+    $processRoot = temporaryPath('scenario-signal-process-', 5);
+    $primary = temporaryPath('scenario-signal-primary-', 5);
+    mkdir("{$processRoot}/vendor/bin", 0o700, true);
+    mkdir($primary, 0o700, true);
+    file_put_contents("{$processRoot}/vendor/bin/pest", <<<'PHP'
+        <?php
+
+        declare(strict_types=1);
+
+        $scenario = getenv('ORBIT_SCENARIO_ID');
+        $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
+        if (! is_string($scenario) || ! is_string($primary)) {
+            exit(64);
+        }
+        file_put_contents("{$primary}/invocations.log", "{$scenario}\n", FILE_APPEND | LOCK_EX);
+        echo "started {$scenario}\n";
+        flush();
+        if ($scenario === 'first-flow') {
+            posix_kill(getmypid(), SIGKILL);
+        }
+        fwrite(STDERR, "second flow returned without a result\n");
+        exit(70);
+        PHP);
+    $process = new ScenarioPestProcess($processRoot);
+    $constructor = (new ReflectionClass(ColdTopologyConstructor::class))->newInstanceWithoutConstructor();
+    $recoveries = [];
+    $recovery = new ScenarioRecovery(
+        $runs,
+        $constructor,
+        function (ScenarioRunId $run, ScenarioId $scenario, AttemptId $attempt) use (&$recoveries): ColdTopologyCleanupResult {
+            $recoveries[] = [$run->value, $scenario->value, $attempt->value];
+
+            return new ColdTopologyCleanupResult(
+                ["removed-{$scenario->value}"],
+                [],
+                [],
+                [],
+                "bin/e2e-scenarios cleanup {$run->value} {$scenario->value} {$attempt->value}",
+            );
+        },
+    );
+    $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
+
+    $aggregate = $runner->run($candidate, $root, $primary);
+    $first = $aggregate->results[0];
+
+    expect(file("{$primary}/invocations.log", FILE_IGNORE_NEW_LINES))->toBe(['first-flow', 'second-flow']);
+    expect($recoveries)->toHaveCount(2);
+    expect($recoveries[0])->toBe([$first->run->value, $first->scenario->value, $first->attempt->value]);
+    expect($first->status)->toBe(ScenarioStatus::InfrastructureError);
+    expect($first->diagnostics)->toBe(["started first-flow\nScenario process was terminated by signal 9."]);
+    expect($first->cleanup)
+        ->toMatchArray([
+            'removed' => ['removed-first-flow'],
+            'absent' => [],
+            'refused' => [],
+            'remaining' => [],
+        ]);
+    expect($first->cleanup['recovery_command'] ?? null)
+        ->toBe("bin/e2e-scenarios cleanup {$first->run->value} {$first->scenario->value} {$first->attempt->value}");
+    expect(array_column($aggregate->toArray()['results'], 'scenario_id'))->toBe(['first-flow', 'second-flow']);
+    $aggregatePath = $paths->path($runs->aggregatePath($aggregate->run));
+    expect($aggregatePath)->toBeFile();
+    $persisted = json_decode((string) file_get_contents($aggregatePath), true, flags: JSON_THROW_ON_ERROR);
+    expect(array_column($persisted['results'] ?? [], 'scenario_id'))->toBe(['first-flow', 'second-flow']);
 });
