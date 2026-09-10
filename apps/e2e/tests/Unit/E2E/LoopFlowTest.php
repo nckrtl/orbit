@@ -20,7 +20,7 @@ function loopFlowFixture(): array
     }
     file_put_contents($root.'/.gitignore', "/.loop/\n/.worktrees/\n");
     file_put_contents($root.'/shared.txt', "base\n");
-    foreach (['loop-flow', 'worktree-create'] as $script) {
+    foreach (['loop-flow', 'worktree-create', 'worktree-remove'] as $script) {
         copy(dirname(__DIR__, 5).'/bin/'.$script, $root.'/bin/'.$script);
         chmod($root.'/bin/'.$script, 0755);
     }
@@ -131,3 +131,52 @@ it('rejects malformed selections in the selector and harness', function (string 
     expect($run->path($root)->run([$script, 'status'])->successful())->toBeFalse();
     expect(fn () => DeliveryFlow::forWorktree($root))->toThrow(InvalidArgumentException::class);
 })->with(['{', '{"schema":1,"flow":"off"}', '{"schema":2,"flow":"proof"}', '[]']);
+
+it('closes out a merged worktree when the repository has a long worktree listing', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $remote = temporaryPath('orbit-flow-cleanup-remote-', 6);
+    expect($run->run(['git', 'init', '--bare', $remote])->successful())->toBeTrue();
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $remote]);
+    $run->path($root)->run(['git', 'push', '-u', 'origin', 'main']);
+    $worktree = $root.'/.worktrees/tst-44-cleanup';
+    expect(
+        $run->path($root)->run(['git', 'worktree', 'add', '-b', 'tst-44-cleanup', $worktree])->successful(),
+    )->toBeTrue();
+    $wrapper = temporaryPath('orbit-flow-git-wrapper-', 6);
+    mkdir($wrapper);
+    $git = trim($run->run(['which', 'git'])->output());
+    file_put_contents(
+        $wrapper.'/git',
+        "#!/usr/bin/env python3\n"
+        .'import subprocess,sys'
+        ."\n"
+        .'args=sys.argv[1:]'
+        ."\n"
+        .'real='
+        .json_encode($git, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
+        ."\n"
+        .'result=subprocess.run([real,*args],stdout=subprocess.PIPE)'
+        ."\n"
+        .'sys.stdout.buffer.write(result.stdout)'
+        ."\n"
+        .'if args == ["worktree","list","--porcelain"]:'
+        ."\n"
+        .'    sys.stdout.write("".join(f"worktree /tmp/listing-{i}\\nHEAD {i:040x}\\nbranch refs/heads/listing-{i}\\n\\n" for i in range(4000)))'
+        ."\n"
+        .'sys.exit(result.returncode)'
+        ."\n",
+    );
+    chmod($wrapper.'/git', 0755);
+
+    $result = $run->path($root)->env(['PATH' => $wrapper.':'.getenv('PATH')])->run([
+        $root.'/bin/worktree-remove',
+        'TST-44',
+        'cleanup',
+    ]);
+
+    expect($result->successful())->toBeTrue($result->errorOutput());
+    expect(is_dir($worktree))->toBeFalse();
+    expect(
+        $run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-44-cleanup'])->successful(),
+    )->toBeFalse();
+});
