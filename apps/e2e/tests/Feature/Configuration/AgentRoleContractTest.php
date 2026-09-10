@@ -102,7 +102,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('Collect every known blocking finding')
         ->toContain('smallest safe recommended')
         ->toContain('Never approve a')
-        ->toContain('every boundary is inside a component the issue is labeled with')
+        ->toContain('Every boundary is inside a component the issue is labeled with')
         ->toContain('the diff under `docs/`')
         ->toContain('pass `composer docs-lint`')
         ->toContain('rather than against code that does not exist yet')
@@ -116,7 +116,7 @@ it('keeps planning, plan review, and development independently invokable', funct
     expect($developer)
         ->toContain('may be invoked directly')
         ->toContain('other than exactly `Todo` or `In Progress`')
-        ->toContain('One issue per worktree')
+        ->toContain('Work in the assigned issue worktree')
         ->toContain('Discovery and proof use separate topologies')
         ->toContain('lists every `Acceptance` item in the issue\'s order')
         ->toContain('When no plan exists, run `auditing-documentation`')
@@ -272,12 +272,13 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
         ->toContain('release <ISSUE> --proof --capture')
         ->toContain('The reviewer runs root `composer check` across all projects with TIA');
     expect($reviewer)
-        ->toContain('verify its SHA against the handoff')
-        ->toContain('only parent to be the candidate')
-        ->toContain('diff to add only `.loop/` paths')
-        ->toContain('candidate must carry no `.loop/` entries');
+        ->toContain('bin/loop-artifacts fetch <ISSUE> --candidate=<head> --expected-artifact=<artifact-sha>')
+        ->toContain('Do not repeat those checks manually')
+        ->toContain('Validate again when either SHA changes')
+        ->toContain('Investigate any validation failure before continuing');
     expect($merger)
         ->toContain('one independent `Approved.` review bound to the exact head and published artifact SHA')
+        ->toContain('--candidate=<approved-head> --expected-artifact=<artifact-sha>')
         ->toContain('Verify the external merge')
         ->toContain('exact second parent')
         ->toContain('conflict-free Git merge tree')
@@ -303,8 +304,8 @@ it('keeps issue creation current, dependency-aware, atomic, and proof feasible',
         ->not->toContain('Status: Backlog')->toContain('never restates a Decision bullet from an ADR')->toContain(
             'Delete the section before `Todo`',
         )->toContain('proof venue the current machinery supports')->toContain(
-            'planning will materialize in `.loop/proof/<ISSUE>.json`',
-        )->toContain('do not need to exist before `Todo`')->toContain(
+            'only explicit proof selection requires planning to materialize Incus actions in `.loop/proof/<ISSUE>.json`',
+        )->toContain('their absence never keeps an otherwise complete issue in `Backlog`')->toContain(
             'unfinished prerequisite never keeps an otherwise complete issue in `Backlog`',
         )->toContain('encode the prerequisite with `blocked by`')->toContain(
             'Planning owns the issue-local plan and proof files',
@@ -509,5 +510,5 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     expect($topologies)
         ->toContain('ADR 0005')
         ->toContain('ADR 0006')
-        ->toContain('fresh proof, immutable proved attempts');
+        ->toContain('fresh-proof requirements apply only to explicit proof delivery');
 });

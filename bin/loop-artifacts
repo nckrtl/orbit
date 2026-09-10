@@ -11,11 +11,57 @@ import tempfile
 
 
 def git(*args, data=None, env=None):
-    result = subprocess.run(['git', *args], input=data, stdout=subprocess.PIPE,
+    result = subprocess.run(['git', '--no-replace-objects', *args], input=data, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=env, check=False)
     if result.returncode:
-        raise RuntimeError(result.stderr.decode().strip())
+        raise RuntimeError(f'Git {args[0]} failed: {result.stderr.decode().strip()}')
     return result.stdout
+
+
+def tree_entries(commit, *args):
+    records = git('ls-tree', '-z', *args, commit).split(b'\0')
+    return [record.split(b'\t', 1) for record in records if record]
+
+
+def validate_artifact(candidate, artifact, expected=None):
+    """Validate immutable objects; do not interpret or execute artifact contents."""
+    def invalid(message):
+        raise RuntimeError(f'Artifact validation failed: {message}')
+
+    if expected is not None and artifact != expected:
+        invalid(f'expected {expected}, fetched {artifact}; reconcile the handoff and published ref.')
+    for name, commit in [('candidate', candidate), ('artifact', artifact)]:
+        if git('cat-file', '-t', commit).strip() != b'commit':
+            invalid(f'{name} {commit} must name a commit object.')
+    headers = git('cat-file', 'commit', artifact).split(b'\n\n', 1)[0].splitlines()
+    parents = [line.removeprefix(b'parent ') for line in headers if line.startswith(b'parent ')]
+    if parents != [candidate.encode()]:
+        invalid(f'artifact {artifact} must have candidate {candidate} as its sole parent.')
+
+    candidate_entries = tree_entries(candidate)
+    if any(path == b'.loop' for _, path in candidate_entries):
+        invalid(f'candidate {candidate} contains .loop; remove tracked artifacts from the candidate.')
+    artifact_entries = tree_entries(artifact)
+    product_entries = [entry for entry in artifact_entries if entry[1] != b'.loop']
+    # Equal top-level entries preserve every product subtree, including empty
+    # trees and legitimate product symlinks, without walking the product tree.
+    if product_entries != candidate_entries:
+        invalid(f'artifact {artifact} changes paths outside .loop/; republish from the candidate.')
+    workspace = [header for header, path in artifact_entries if path == b'.loop']
+    if len(workspace) != 1 or not workspace[0].startswith(b'040000 tree '):
+        invalid('artifact must add a .loop directory containing regular files.')
+    workspace_tree = workspace[0].split()[2].decode()
+    entries = tree_entries(workspace_tree, '-r', '-t')
+    files = 0
+    for header, path in entries:
+        mode, kind, _ = header.split()
+        if mode == b'040000' and kind == b'tree':
+            continue
+        if mode not in (b'100644', b'100755') or kind != b'blob':
+            invalid(f'artifact path {os.fsdecode(b".loop/" + path)!r} must be a regular file (mode 100644 or 100755).')
+        files += 1
+    if files == 0:
+        invalid('artifact must add at least one regular file under .loop/.')
 
 
 def main():
@@ -23,6 +69,7 @@ def main():
     parser.add_argument('action', choices=['save', 'publish', 'fetch'])
     parser.add_argument('issue')
     parser.add_argument('--candidate', help='Exact candidate SHA for fetch (default HEAD)')
+    parser.add_argument('--expected-artifact', help='Expected artifact commit SHA for fetch')
     args = parser.parse_args()
     if not re.fullmatch(r'[A-Z]+-[0-9]+', args.issue):
         parser.error('issue must be an uppercase issue identifier')
@@ -31,11 +78,18 @@ def main():
     candidate = args.candidate or git('rev-parse', 'HEAD').decode().strip()
     if not re.fullmatch(r'[0-9a-f]{40}', candidate):
         parser.error('candidate must be a full SHA')
+    if args.expected_artifact is not None:
+        if args.action != 'fetch':
+            parser.error('--expected-artifact is only valid with fetch')
+        if not re.fullmatch(r'[0-9a-f]{40}', args.expected_artifact):
+            parser.error('expected artifact must be a full SHA')
     ref = f'refs/tags/loop/{args.issue.lower()}/{candidate}'
     if args.action == 'fetch':
         git('fetch', 'origin', f'{ref}:{ref}')
+        artifact = git('rev-parse', ref).decode().strip()
+        validate_artifact(candidate, artifact, args.expected_artifact)
         print(json.dumps({'candidate': candidate, 'ref': ref,
-                          'artifacts': git('rev-parse', ref).decode().strip()}))
+                          'artifacts': artifact}))
         return
     if args.candidate:
         parser.error('--candidate is only valid with fetch')
@@ -62,9 +116,12 @@ def main():
         else:
             artifact = git('commit-tree', tree, '-p', candidate,
                            data=f'loop: {args.issue} artifacts for {candidate}\n'.encode()).decode().strip()
+        if args.action == 'publish':
+            validate_artifact(candidate, artifact)
+        if artifact != previous:
             git('update-ref', ref, artifact, previous)
         if args.action == 'publish':
-            git('push', 'origin', f'{ref}:{ref}')
+            git('push', 'origin', f'{artifact}:{ref}')
         print(json.dumps({'candidate': candidate, 'ref': ref, 'artifacts': artifact}))
 
 

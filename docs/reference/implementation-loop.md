@@ -186,14 +186,22 @@ The local `.loop/` directory is ignored. It holds the flow selection, plan, plan
 | Command | Result |
 | --- | --- |
 | `bin/loop-artifacts save ISSUE` | Saves the local workspace at `refs/orbit/loop/<issue-lowercase>/draft` for planning and plan review |
-| `bin/loop-artifacts publish ISSUE` | Creates and pushes `refs/tags/loop/<issue-lowercase>/<candidate-sha>`; prints the candidate, ref, and artifact SHA |
-| `bin/loop-artifacts fetch ISSUE --candidate=SHA` | Fetches that candidate's artifact ref and prints its binding |
+| `bin/loop-artifacts publish ISSUE` | Creates or reuses the artifact, validates it, then pushes `refs/tags/loop/<issue-lowercase>/<candidate-sha>` and prints the binding |
+| `bin/loop-artifacts fetch ISSUE --candidate=SHA --expected-artifact=SHA` | Fetches the artifact ref, validates its structure and expected commit, then prints the binding |
 | `git show <artifact-sha>:.loop/plan.md` | Reads the exact plan from the submitted snapshot |
 | `git diff <candidate-sha> <artifact-sha> -- .loop/` | Shows the plan and every fixture for independent review |
 
-Each published artifact commit has the candidate as its only parent. Its tree adds only `.loop/` paths. Repeating publication with identical contents succeeds. Different artifacts for an already published candidate require a new candidate commit. A symlink or special file causes publication to fail. Proof reads the committed artifact snapshot and refuses a working plan that differs from it.
+Publication and retrieval use the same validator. Each artifact commit has the candidate as its sole parent and adds at least one regular file under `.loop/`. The candidate contains no `.loop` entry, and every product entry stays unchanged. Artifact files may use regular or executable mode; symlinks and gitlinks inside `.loop/` fail validation. Existing product symlinks remain valid. The validator reads immutable Git objects without interpreting or executing their contents.
 
-The developer includes the artifact ref and SHA in the pull request body. The reviewer fetches that ref, verifies its SHA and candidate binding, and reads the plan and every fixture. Approval binds both SHAs. The orchestrator merges that exact candidate after approval and the local review gate. Main integration creates a new candidate and requires artifact publication, local review checks, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
+Repeating publication with identical valid contents succeeds. Different artifacts for an already published candidate require a new candidate commit. Validation failure returns a nonzero exit and a specific error without a success binding; publication does not push an invalid artifact. Git fetch errors remain distinct from validation failures. A failed fetch validation can leave the downloaded ref and objects locally; their presence is not successful validation. Proof reads the committed artifact snapshot and refuses a working plan that differs from it.
+
+The optional `--expected-artifact` argument accepts a full artifact commit SHA and applies only to `fetch`. Review and closeout require it to match the handoff. Callers that omit it still receive structural validation, but no comparison with a submitted artifact SHA. Successful output retains the `candidate`, `ref`, and `artifacts` fields. Draft plan review continues to use `save`.
+
+Run the command from the assigned issue worktree. When that worktree has an older helper, invoke `bin/loop-artifacts` by its absolute path in the current primary main checkout while keeping the issue worktree as the working directory. The helper validates objects in the caller's repository. No main integration or worktree recreation is needed to use it.
+
+The developer includes the artifact ref and SHA in the pull request body. The reviewer fetches and validates the submitted binding with the command, then reads the plan and every fixture. Successful validation establishes the parent, file-boundary, file-type, and expected-SHA checks; agents do not repeat them manually. Validate again when either SHA changes and investigate failures before continuing. Artifact validation establishes no plan quality, acceptance, selected-flow evidence, quality-gate result, or approval.
+
+Approval binds both SHAs. The orchestrator merges that exact candidate after approval and the local review gate. Main integration creates a new candidate and requires artifact publication, local review checks, and approval under the selected flow. Discovery-only delivery does not integrate main solely because it advanced.
 
 ## Existing worktrees
 
