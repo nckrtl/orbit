@@ -1,0 +1,709 @@
+{
+  "schema": 1,
+  "issue": "ORB-232",
+  "phase": "implementing",
+  "dispatch": {
+    "id": "7829feebd59e4d53b88b532f25997b05",
+    "phase": "implementing",
+    "agent": "orb-232-builder",
+    "instruction": "This existing implementation is now script-owned. Preserve all completed work, the approved plan, helpers, and current corrections. Finish this phase or report its real blocker, then record your own complete handoff receipt. Do not restart planning or rerun a successful check just for adoption.",
+    "inputs": {
+      "adoption": {
+        "observed_at": 1789062572.1022966,
+        "head": "212088fb1afa5418e29d8342ea70da3b05f2d432",
+        "approved_plan": "624168009313c690ca76a3e1279e0b14db51b6d4",
+        "plan_rounds": 1,
+        "agents": [
+          {
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-builder",
+            "pane_id": "w1T:p1",
+            "revision": 32,
+            "state_change_seq": 2158,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b21f0139665b1",
+            "terminal_title": "\u283c Plan ORB-232 delivery | orb-232",
+            "terminal_title_stripped": "Plan ORB-232 delivery | orb-232",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "claude",
+            "agent_session": {
+              "agent": "claude",
+              "kind": "id",
+              "source": "herdr:claude",
+              "value": "062b7699-5411-4dd8-aecf-5e6263192066"
+            },
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-pr-review-4",
+            "pane_id": "w1T:p4",
+            "revision": 3,
+            "state_change_seq": 2154,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b24024b1b3eba",
+            "terminal_title": "\u2733 ORB-232 formal PR review",
+            "terminal_title_stripped": "ORB-232 formal PR review",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "codex",
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-resolution",
+            "pane_id": "w1T:p5",
+            "revision": 57,
+            "state_change_seq": 2157,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b242307fb3ebb",
+            "terminal_title": "Resolve ORB-232 review stop | orb-232",
+            "terminal_title_stripped": "Resolve ORB-232 review stop | orb-232",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "claude",
+            "agent_session": {
+              "agent": "claude",
+              "kind": "id",
+              "source": "herdr:claude",
+              "value": "1b6ea222-7a48-4deb-9e74-77826102e0d6"
+            },
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-pr-review-3",
+            "pane_id": "w1T:p3",
+            "revision": 11,
+            "state_change_seq": 2146,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b22f2bb156cb7",
+            "terminal_title": "\u2733 ORB-232 discovery candidate review",
+            "terminal_title_stripped": "ORB-232 discovery candidate review",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "codex",
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-plan-review",
+            "pane_id": "w1T:p2",
+            "revision": 31,
+            "state_change_seq": 2091,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b22319b5ec0b3",
+            "terminal_title": "Review ORB-232 saved plan | orb-232",
+            "terminal_title_stripped": "Review ORB-232 saved plan | orb-232",
+            "workspace_id": "w1T"
+          }
+        ],
+        "reviews": [
+          {
+            "id": 5169961442,
+            "node_id": "PRR_kwDOUFw4mM8AAAABNCdZ4g",
+            "user": {
+              "login": "tom-nckrtl[bot]",
+              "id": 324047477,
+              "node_id": "BOT_kgDOE1CSdQ",
+              "avatar_url": "https://avatars.githubusercontent.com/in/4805004?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D",
+              "html_url": "https://github.com/apps/tom-nckrtl",
+              "followers_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/followers",
+              "following_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/following{/other_user}",
+              "gists_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/subscriptions",
+              "organizations_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/orgs",
+              "repos_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/repos",
+              "events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/received_events",
+              "type": "Bot",
+              "user_view_type": "public",
+              "site_admin": false
+            },
+            "body": "## Verdict: Changes requested (not approved)\n\nThe candidate treats the Gateway Node itself as ineligible. As a result, it drops the Gateway's default exporter and hides the Gateway's Doctor node checks. The confirmation came from the live discovery topology, not only from tests.\n\n**Binding**\n- Issue: ORB-232\n- Flow: `discovery`. The artifact, local worktree, and handoff all agree. Incus is required.\n- Candidate: `867304beb969545ce59a2a1c95994789922503c1`. Remote `orb-232` still pointed here when I finished.\n- Artifact ref: `refs/tags/loop/orb-232/867304beb969545ce59a2a1c95994789922503c1`, SHA `bad482f3e96a0fe5275f16b59dd08a1f257bd613`.\n  - Its only parent is the candidate, and it adds only `.loop/` paths. The candidate has no `.loop/` entries.\n  - `.loop/plan.md` is identical to the approved plan artifact `624168009313c690ca76a3e1279e0b14db51b6d4`.\n- `origin/main` was at `2f72567f` for reference only; discovery has no freshness gate.\n\n## Findings\n\n**F1 (blocking): the bootstrapped Gateway Node fails `ManagedNodeEligibility`.**\n\nCites acceptance items 1, 4 and 6, the first ADR 0057 decision bullet, the ADR 0003 defaults that ADR 0057 retains, and the ADR 0004 node observation.\n\n- **Cause:** `ManagedNodeEligibility::allows()` requires a non-empty `nodes.ssh_host_fingerprint`. The only code that writes that column is `NativeNodeConverger`, which provisions non-Gateway nodes. `BootstrapGatewayAction` never sets it. `NativeGatewaySelfAccessConverger` pins the Gateway's host key only in `known_hosts`, so Doctor and Metrics could reach the Gateway over SSH on `main`.\n- **Live evidence (read-only, discovery attempt `73f66ea0`, guest at the candidate SHA):**\n  - `node:list` shows Node 1 `gateway` as active, Linux, WireGuard `10.44.0.1`, roles `gateway`/`vpn`, `ssh_host_fingerprint: null`.\n  - `metrics:status` lists only `app-dev` and `app-prod`; the Gateway is absent.\n  - Prometheus scrapes only `10.44.0.2`.\n  - The Gateway VM still runs an exporter that the `main`-built snapshot had converged: `prometheus-node-exporter` is active, with the Orbit `orbit.conf` drop-in, a listener on `10.44.0.1:9100`, and the UFW rule `orbit:metrics-node-exporter`. That exporter is now orphaned, and Metrics removal will no longer clean it up.\n- **Scratch check** (script in my scratchpad, run against the candidate code), using a Node shaped as bootstrap creates it:\n  - Eligibility returns `false`.\n  - The `[gateway, vpn]` role default resolves to `ineligible`, where `main` gives `role_default`.\n  - Metrics co-located on the Gateway resolves to `ineligible`. This breaks the rule that the Metrics node's exporter is always selected, and ADR 0003 allows that co-location.\n  - `NodeDoctorProbe` returns 0 issues when the Gateway is unreachable, and 0 when its WireGuard address is missing. On `main` each case gives one issue. So a Gateway SSH failure is no longer reported as a managed-Node observation failure.\n  - `metrics:exporter:enable` on the Gateway would return 409 `metrics.exporter_node_ineligible`.\n- **Why the tests pass:** they mask the problem. The projection test encodes the Gateway-role fixtures `unmanaged-gateway` and `unmanaged-metrics-gateway` (null fingerprint) as excluded. Every \"managed\" fixture gets a synthetic `SHA256:managed`. `MetricsRoutesTest`'s own Gateway fixture has no fingerprint, which matches production.\n- **Required:** the eligibility decision must classify the active, bootstrapped Gateway Node as managed. Its role default, a co-located Metrics node's mandatory exporter, and its Doctor node checks must work as they do on `main`. Tests must model the Gateway as bootstrap actually creates it.\n- **Planning note:** the approved plan rules out a migration. If the fix needs to backfill or persist the Gateway fingerprint, that is a plan or contract decision for you to route. It is not something the reviewer can settle.\n\n**F2 (should fix in the same pass; would not block on its own): lost redaction coverage.** Cites ADR 0004 \"Return bounded deterministic reports\".\n\n`NodeDoctorProbeTest` renamed and rewrote \"redacts unsupported managed platform and architecture values\" into an ineligible-record test. The code path for an eligible Linux Node with an unsupported stored architecture still exists and emits `supported`/`unsupported`. It no longer has a test that the sentinel is redacted. Keep the new test and restore coverage for that branch.\n\n## Local review gate\n\n- Root `composer check` at the clean candidate exited 0.\n- Receipt: `/home/nckrtl/orbit/.git/orbit-checks/867304beb969545ce59a2a1c95994789922503c1/review-_d3l2xy8/result.json`, with `passed: true`, `unchanged: true`, candidate equal to the reviewed head, tree `906f486f`.\n- In all five projects, `validate --strict`, `composer check`, and `test:affected` each exited 0:\n\n| Project | TIA result |\n| --- | --- |\n| apps/cli | no affected tests |\n| apps/docs | no affected tests |\n| apps/gateway | 19 affected files, 271 passed / 1328 assertions |\n| apps/e2e | no affected tests |\n| packages/php-sdk | no affected tests |\n\n- I also ran the 14-file focused acceptance set with explicit paths: 146 passed, 550 assertions.\n- `composer docs-lint` exited 0 with 0 issues. `docs-build` left `docs/generated/context.json` unchanged.\n- The worktree stayed clean throughout.\n\n## Acceptance assessment\n\n| # | Assessment |\n| --- | --- |\n| 1 | **Not met.** Inactive, unsupported and unmanaged records are excluded correctly, but the real Gateway, an eligible active managed Node, loses its role default (F1). |\n| 2 | Met. 409 `metrics.exporter_node_ineligible`; preference unchanged; `reconcile` never called; stored enabled intent cannot restore the projection. |\n| 3 | Met for the fixture. The runtime spy shows no snapshot, converge, remove or restore call for the ineligible node while eligible nodes converge. The same rule orphans the real Gateway exporter (F1). |\n| 4 | **Not met.** Correct for true non-managed fixtures, but Gateway unreachability and WireGuard drift are suppressed (F1). Verify-only behavior is preserved. |\n| 5 | Met by discovery observation. The development record shows a roleless `app-prod` enabled, scraped `up` with host metrics, then disabled with its drop-in and rule removed; Doctor healthy; `verify` passed. Discovery development only; isolated acceptance proof not run. |\n| 6 | **Not met.** The Gateway role default and the Metrics-node default when co-located on the Gateway regress (F1). Other defaults, explicit disable and retry semantics pass. |\n| 7 | Met as written. The docs describe the contract without promising clients or new platforms. Recheck the wording if the F1 fix changes what \"pinned SSH host identity\" means. |\n| 8 | Met. Gateway `composer check` passed inside the root gate. |\n\n## Scope, labels, ADRs and documentation\n\n- The diff touches only `apps/gateway` and `docs/`, which matches the `apps/gateway` and `docs` labels.\n- No harness, `.loop/` or ADR changes. ADR 0057 is accepted on `origin/main`.\n- The `incus` label is correct for acceptance item 5.\n- Documentation changes match the plan: `metrics.md` (the contract), `architecture.md` and `tech-stack.md` (drift fixes), and a rebuilt `context.json`.\n- The only deviation is the approved mapping of the Incus proof venue to a discovery observation.\n\n## Limitations\n\n- I did not read the published PR body, because the skill forbids `gh`. I used the artifact's `.loop/development.md` as the handoff. Please confirm the published body matches it.\n- My read-only CLI calls on discovery (`node:list`, `metrics:status`, `doctor --node=1`) may each have written one normal request-audit Activity row. I changed no topology state and did not release the topology.\n- No proof, equivalence, candidate or snapshot operations were run, because the flow is discovery.\n\nNot published to GitHub, no Linear changes, and the phase is not advanced. The payload is yours to publish.",
+            "state": "CHANGES_REQUESTED",
+            "html_url": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5169961442",
+            "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/252",
+            "author_association": "NONE",
+            "_links": {
+              "html": {
+                "href": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5169961442"
+              },
+              "pull_request": {
+                "href": "https://api.github.com/repos/nckrtl/orbit/pulls/252"
+              }
+            },
+            "submitted_at": "2026-09-10T16:53:02Z",
+            "commit_id": "867304beb969545ce59a2a1c95994789922503c1"
+          },
+          {
+            "id": 5170185607,
+            "node_id": "PRR_kwDOUFw4mM8AAAABNCrFhw",
+            "user": {
+              "login": "tom-nckrtl[bot]",
+              "id": 324047477,
+              "node_id": "BOT_kgDOE1CSdQ",
+              "avatar_url": "https://avatars.githubusercontent.com/in/4805004?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D",
+              "html_url": "https://github.com/apps/tom-nckrtl",
+              "followers_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/followers",
+              "following_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/following{/other_user}",
+              "gists_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/subscriptions",
+              "organizations_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/orgs",
+              "repos_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/repos",
+              "events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/received_events",
+              "type": "Bot",
+              "user_view_type": "public",
+              "site_admin": false
+            },
+            "body": "## Verdict: Changes requested (not approved)\n\nThe candidate incorrectly treats the bootstrapped Gateway Node as ineligible. This regresses its role-default exporter and suppresses its managed-node Doctor findings. The live discovery observation confirms the regression.\n\n**Binding**\n- Issue: ORB-232\n- Flow: `discovery`; Incus required\n- Candidate reviewed: `a9d33d7348ccea74650a78ebb419e41908a4ac62`\n- Artifact SHA: `268b44d6a086b5397658c6c7b322aab90be61821`\n- Approved plan artifact: `624168009313c690ca76a3e1279e0b14db51b6d4`\n\n## Findings\n\n**F1 (blocking): bootstrapped Gateway fails managed-node eligibility.**\n\n`ManagedNodeEligibility::allows()` requires a non-empty `nodes.ssh_host_fingerprint`, but `BootstrapGatewayAction` does not persist one. `NativeGatewaySelfAccessConverger` pins the host key only in `known_hosts`. A live read-only discovery check at the candidate showed Gateway Node 1 active, Linux, WireGuard `10.44.0.1`, roles `gateway`/`vpn`, and `ssh_host_fingerprint: null`; `metrics:status` omitted it and Prometheus did not scrape it, although the exporter remained active on the guest. This leaves an orphaned exporter and prevents removal reconciliation.\n\nThe tests mask this: null-fingerprint Gateway fixtures are labelled unmanaged, while managed fixtures use synthetic fingerprints. The required correction must classify an active, bootstrapped Gateway as managed, preserving its role default, Metrics/Gateway co-location default, and Doctor node checks. If persisting or backfilling the Gateway fingerprint changes the approved plan or issue contract, route that contract decision before implementation; do not add an unapproved migration or exception.\n\n**F2 (should fix in the same pass): restore redaction coverage.**\n\n`NodeDoctorProbeTest` replaced the test for an eligible Linux Node with an unsupported stored architecture. Keep the new ineligible-record test, but restore coverage proving the eligible unsupported architecture emits the bounded `expected=supported` / `observed=unsupported` issue while omitting the stored sentinel.\n\n## Acceptance impact\n\nAcceptance items 1, 4, and 6 are not met because of F1. Item 3 passes for the synthetic fixture but the same rule can orphan the real Gateway exporter. Item 5 is met as a discovery observation, not isolated proof. Item 7 documentation and item 8 quality checks pass, subject to wording review if the fingerprint fix changes the contract. The correction must return a new candidate and artifact binding, updated acceptance evidence, and a fresh independent review; this review cannot approve the current head.\n\n## Local review gate\n\nThe independent root `composer check` passed on the reviewed candidate with `passed: true`, `unchanged: true`; all five projects' strict validation, project checks, and affected tests passed. The gate does not offset the substantive findings above.",
+            "state": "CHANGES_REQUESTED",
+            "html_url": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5170185607",
+            "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/252",
+            "author_association": "NONE",
+            "_links": {
+              "html": {
+                "href": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5170185607"
+              },
+              "pull_request": {
+                "href": "https://api.github.com/repos/nckrtl/orbit/pulls/252"
+              }
+            },
+            "submitted_at": "2026-09-10T17:16:55Z",
+            "commit_id": "a9d33d7348ccea74650a78ebb419e41908a4ac62"
+          }
+        ],
+        "handoff": "# Unapproved proposal\n\n- **Issue and current state**  \n  ORB-232, `In Progress`. PR 252 is open at `a9d33d7348ccea74650a78ebb419e41908a4ac62` with `CHANGES_REQUESTED`. The worktree is clean and matches `origin/orb-232`. The retained discovery attempt is `73f66ea055d0af3be396a7de530efe63`.\n\n- **Intended outcome**  \n  Metrics manages exporters only on active, supported Nodes that have a Gateway-owned SSH management contract. Roleless managed Nodes can opt in. Operator-client or otherwise unmanaged records cannot acquire management through an exporter preference. Existing role defaults, Metrics-node selection, and managed-Node Doctor behavior remain unchanged.\n\n- **Exact blocker or underspecification**  \n  The candidate equates the management contract with a non-null `nodes.ssh_host_fingerprint`. That is incomplete for Gateways bootstrapped before this change. Their successful active Gateway role records that bootstrap completed Gateway self-access and pinned the host key in `known_hosts`, but the older bootstrap did not copy the fingerprint into the Node row. The fresh-bootstrap correction therefore does not cover upgrades.  \n  Separately, the lifecycle test replaced the eligible, non-empty invalid WireGuard-address case. The live `metrics.exporter_address_invalid` fail-closed and bounded-output path no longer has coverage. The Doctor unsupported-architecture redaction test was restored at the current head and is not still open.\n\n- **Ordinary dependencies**  \n  None. Linear has no parent, child, blocking, or related relations. `origin/main` is still `2f72567f706b71058cc9a3061b2447365802c1f0`; its delta is unrelated. Discovery has no main-freshness restart gate.\n\n- **Recommended resolution**  \n  Keep the approved no-migration boundary. Define managed-node eligibility from stored management intent:\n\n  - Require an active Linux Node and a non-empty managed WireGuard address.\n  - Treat either of these as evidence of Gateway-owned SSH management:\n    - a non-empty stored SSH host fingerprint; or\n    - an active or provisioning managed role.\n  - Continue using the fingerprint path for eligible roleless managed Nodes.\n  - Keep roleless records with no fingerprint ineligible for every preference.\n  - Keep the fresh-bootstrap persistence already implemented.\n  - Do not backfill data, require an operator to rerun bootstrap, or add a Gateway-name exception.\n\n  This matches ADR 0012\u2019s distinction: operator clients have no managed role and no Gateway SSH convergence. It also preserves ADR 0003 defaults and ADR 0004\u2019s rule that observation failure produces a managed-Node finding instead of changing eligibility. Tests that describe a role-bearing Node with no fingerprint as \u201cunmanaged\u201d must be replaced with valid roleless unmanaged fixtures.\n\n  Restore the invalid-address case with an otherwise eligible Node whose address is non-empty but invalid, such as a unique sentinel. Assert `metrics.exporter_address_invalid`, HTTP 409 where applicable, and that bounded output does not expose the raw sentinel.\n\n- **Main trade-off**  \n  A managed role becomes evidence of management responsibility even if connection evidence later becomes inconsistent. Such a Node stays eligible and produces a bounded convergence or Doctor observation failure instead of silently disappearing. That is the behavior required by ADRs 0003, 0004, and 0057.\n\n- **Required ADR**  \n  None. This resolves how existing stored state proves the management contract already established by accepted ADRs. It adds no platform, enrollment, ownership, migration, or public API boundary.\n\n- **Human decisions still needed**  \n  None at the product or ADR level. Tom must still decide whether to adopt this unapproved proposal and dispatch the next role.\n\n- **Proposed issue and status changes**  \n  None. Keep ORB-232 `In Progress` and PR 252 in its requested-changes state. Do not change the issue contract, approved plan, labels, relations, flow, or topology. If adopted, Tom can dispatch a Builder correction from the current worktree and head.\n\n- **Verification and restart condition**  \n  The correction should produce a new candidate and candidate-bound artifact while retaining approved plan artifact `624168009313c690ca76a3e1279e0b14db51b6d4`. Verify:\n\n  - A bootstrap-shaped legacy Gateway with active `gateway`/`vpn` roles and null stored fingerprint remains eligible, receives `role_default`, remains mandatory when it is the Metrics Node, and retains Node and Metrics Doctor expectations.\n  - A roleless Node with a fingerprint remains eligible; a roleless Node without one remains ineligible for absent, enabled, and disabled preferences.\n  - Inactive and unsupported records remain excluded.\n  - Fresh and repeated bootstrap still persist the observed fingerprint.\n  - An eligible Node with a non-empty invalid address fails with the bounded `metrics.exporter_address_invalid` result without exposing the address.\n  - Existing redaction, refusal-before-mutation, zero-runtime-work, retry, rollback, and removal tests pass.\n  - Gateway focused tests and `cd apps/gateway && composer check` pass. Documentation build/context comparison and `composer docs-lint` remain clean.\n  - On retained discovery attempt `73f66ea055d0af3be396a7de530efe63`, sync the new candidate without rerunning bootstrap or rewriting the Gateway row. Confirm the still-null-fingerprint Gateway returns to Metrics status and Prometheus scraping, Doctor checks it as managed, the approved roleless lifecycle observation still passes, and topology verification succeeds.\n\n  Formal PR review can restart only after the new head is pushed, its artifact is published and bound to that exact head, the PR handoff is updated, and the retained discovery and focused evidence are recorded. The independent reviewer must then run a fresh exact-head root `composer check`. Plan review and newer-main integration do not restart.\n\n- **Evidence checked**  \n  Live Linear contract, state history, labels, attachments, comments, and relations; PR 252 metadata and both published requested-change reviews; clean worktree and remote refs; discovery flow and retained topology status; candidate artifact `268b44d6a086b5397658c6c7b322aab90be61821` and its exact plan match; `.loop/plan.md` and `.loop/development.md`; review-3 and review-4 handoffs; current implementation and tests; current maintained Metrics guidance; ADRs 0003, 0004, 0012, and 0057; and the current `origin/main` delta.\n",
+        "startup_gate": "Not rerun or claimed during adoption."
+      }
+    },
+    "created_at": 1789062573.0142183,
+    "codex_fallback": false,
+    "structural_retry": false,
+    "gate_since": 1789062573.0142186
+  },
+  "agents": {
+    "orb-232-builder": {
+      "agent": "codex",
+      "agent_status": "working",
+      "cwd": "/fast/worktrees/orbit/orb-232",
+      "focused": false,
+      "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+      "interactive_ready": true,
+      "name": "orb-232-builder",
+      "pane_id": "w1T:p1",
+      "revision": 32,
+      "state_change_seq": 2158,
+      "tab_id": "w1T:t1",
+      "terminal_id": "term_65b21f0139665b1",
+      "terminal_title": "\u2834 Plan ORB-232 delivery | orb-232",
+      "terminal_title_stripped": "Plan ORB-232 delivery | orb-232",
+      "workspace_id": "w1T"
+    },
+    "orb-232-pr-review-4": {
+      "agent": "claude",
+      "agent_session": {
+        "agent": "claude",
+        "kind": "id",
+        "source": "herdr:claude",
+        "value": "062b7699-5411-4dd8-aecf-5e6263192066"
+      },
+      "agent_status": "done",
+      "cwd": "/fast/worktrees/orbit/orb-232",
+      "focused": false,
+      "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+      "interactive_ready": true,
+      "name": "orb-232-pr-review-4",
+      "pane_id": "w1T:p4",
+      "revision": 3,
+      "state_change_seq": 2154,
+      "tab_id": "w1T:t1",
+      "terminal_id": "term_65b24024b1b3eba",
+      "terminal_title": "\u2733 ORB-232 formal PR review",
+      "terminal_title_stripped": "ORB-232 formal PR review",
+      "workspace_id": "w1T"
+    },
+    "orb-232-resolution": {
+      "agent": "codex",
+      "agent_status": "done",
+      "cwd": "/fast/worktrees/orbit/orb-232",
+      "focused": false,
+      "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+      "interactive_ready": true,
+      "name": "orb-232-resolution",
+      "pane_id": "w1T:p5",
+      "revision": 57,
+      "state_change_seq": 2157,
+      "tab_id": "w1T:t1",
+      "terminal_id": "term_65b242307fb3ebb",
+      "terminal_title": "Resolve ORB-232 review stop | orb-232",
+      "terminal_title_stripped": "Resolve ORB-232 review stop | orb-232",
+      "workspace_id": "w1T"
+    },
+    "orb-232-pr-review-3": {
+      "agent": "claude",
+      "agent_session": {
+        "agent": "claude",
+        "kind": "id",
+        "source": "herdr:claude",
+        "value": "1b6ea222-7a48-4deb-9e74-77826102e0d6"
+      },
+      "agent_status": "done",
+      "cwd": "/fast/worktrees/orbit/orb-232",
+      "focused": false,
+      "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+      "interactive_ready": true,
+      "name": "orb-232-pr-review-3",
+      "pane_id": "w1T:p3",
+      "revision": 11,
+      "state_change_seq": 2146,
+      "tab_id": "w1T:t1",
+      "terminal_id": "term_65b22f2bb156cb7",
+      "terminal_title": "\u2733 ORB-232 discovery candidate review",
+      "terminal_title_stripped": "ORB-232 discovery candidate review",
+      "workspace_id": "w1T"
+    },
+    "orb-232-plan-review": {
+      "agent": "codex",
+      "agent_status": "done",
+      "cwd": "/fast/worktrees/orbit/orb-232",
+      "focused": false,
+      "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+      "interactive_ready": true,
+      "name": "orb-232-plan-review",
+      "pane_id": "w1T:p2",
+      "revision": 31,
+      "state_change_seq": 2091,
+      "tab_id": "w1T:t1",
+      "terminal_id": "term_65b22319b5ec0b3",
+      "terminal_title": "Review ORB-232 saved plan | orb-232",
+      "terminal_title_stripped": "Review ORB-232 saved plan | orb-232",
+      "workspace_id": "w1T"
+    }
+  },
+  "history": [
+    {
+      "adoption": {
+        "observed_at": 1789062572.1022966,
+        "head": "212088fb1afa5418e29d8342ea70da3b05f2d432",
+        "approved_plan": "624168009313c690ca76a3e1279e0b14db51b6d4",
+        "plan_rounds": 1,
+        "agents": [
+          {
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-builder",
+            "pane_id": "w1T:p1",
+            "revision": 32,
+            "state_change_seq": 2158,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b21f0139665b1",
+            "terminal_title": "\u283c Plan ORB-232 delivery | orb-232",
+            "terminal_title_stripped": "Plan ORB-232 delivery | orb-232",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "claude",
+            "agent_session": {
+              "agent": "claude",
+              "kind": "id",
+              "source": "herdr:claude",
+              "value": "062b7699-5411-4dd8-aecf-5e6263192066"
+            },
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-pr-review-4",
+            "pane_id": "w1T:p4",
+            "revision": 3,
+            "state_change_seq": 2154,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b24024b1b3eba",
+            "terminal_title": "\u2733 ORB-232 formal PR review",
+            "terminal_title_stripped": "ORB-232 formal PR review",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "codex",
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-resolution",
+            "pane_id": "w1T:p5",
+            "revision": 57,
+            "state_change_seq": 2157,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b242307fb3ebb",
+            "terminal_title": "Resolve ORB-232 review stop | orb-232",
+            "terminal_title_stripped": "Resolve ORB-232 review stop | orb-232",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "claude",
+            "agent_session": {
+              "agent": "claude",
+              "kind": "id",
+              "source": "herdr:claude",
+              "value": "1b6ea222-7a48-4deb-9e74-77826102e0d6"
+            },
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-pr-review-3",
+            "pane_id": "w1T:p3",
+            "revision": 11,
+            "state_change_seq": 2146,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b22f2bb156cb7",
+            "terminal_title": "\u2733 ORB-232 discovery candidate review",
+            "terminal_title_stripped": "ORB-232 discovery candidate review",
+            "workspace_id": "w1T"
+          },
+          {
+            "agent": "codex",
+            "agent_status": "done",
+            "cwd": "/fast/worktrees/orbit/orb-232",
+            "focused": false,
+            "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+            "interactive_ready": true,
+            "name": "orb-232-plan-review",
+            "pane_id": "w1T:p2",
+            "revision": 31,
+            "state_change_seq": 2091,
+            "tab_id": "w1T:t1",
+            "terminal_id": "term_65b22319b5ec0b3",
+            "terminal_title": "Review ORB-232 saved plan | orb-232",
+            "terminal_title_stripped": "Review ORB-232 saved plan | orb-232",
+            "workspace_id": "w1T"
+          }
+        ],
+        "reviews": [
+          {
+            "id": 5169961442,
+            "node_id": "PRR_kwDOUFw4mM8AAAABNCdZ4g",
+            "user": {
+              "login": "tom-nckrtl[bot]",
+              "id": 324047477,
+              "node_id": "BOT_kgDOE1CSdQ",
+              "avatar_url": "https://avatars.githubusercontent.com/in/4805004?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D",
+              "html_url": "https://github.com/apps/tom-nckrtl",
+              "followers_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/followers",
+              "following_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/following{/other_user}",
+              "gists_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/subscriptions",
+              "organizations_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/orgs",
+              "repos_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/repos",
+              "events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/received_events",
+              "type": "Bot",
+              "user_view_type": "public",
+              "site_admin": false
+            },
+            "body": "## Verdict: Changes requested (not approved)\n\nThe candidate treats the Gateway Node itself as ineligible. As a result, it drops the Gateway's default exporter and hides the Gateway's Doctor node checks. The confirmation came from the live discovery topology, not only from tests.\n\n**Binding**\n- Issue: ORB-232\n- Flow: `discovery`. The artifact, local worktree, and handoff all agree. Incus is required.\n- Candidate: `867304beb969545ce59a2a1c95994789922503c1`. Remote `orb-232` still pointed here when I finished.\n- Artifact ref: `refs/tags/loop/orb-232/867304beb969545ce59a2a1c95994789922503c1`, SHA `bad482f3e96a0fe5275f16b59dd08a1f257bd613`.\n  - Its only parent is the candidate, and it adds only `.loop/` paths. The candidate has no `.loop/` entries.\n  - `.loop/plan.md` is identical to the approved plan artifact `624168009313c690ca76a3e1279e0b14db51b6d4`.\n- `origin/main` was at `2f72567f` for reference only; discovery has no freshness gate.\n\n## Findings\n\n**F1 (blocking): the bootstrapped Gateway Node fails `ManagedNodeEligibility`.**\n\nCites acceptance items 1, 4 and 6, the first ADR 0057 decision bullet, the ADR 0003 defaults that ADR 0057 retains, and the ADR 0004 node observation.\n\n- **Cause:** `ManagedNodeEligibility::allows()` requires a non-empty `nodes.ssh_host_fingerprint`. The only code that writes that column is `NativeNodeConverger`, which provisions non-Gateway nodes. `BootstrapGatewayAction` never sets it. `NativeGatewaySelfAccessConverger` pins the Gateway's host key only in `known_hosts`, so Doctor and Metrics could reach the Gateway over SSH on `main`.\n- **Live evidence (read-only, discovery attempt `73f66ea0`, guest at the candidate SHA):**\n  - `node:list` shows Node 1 `gateway` as active, Linux, WireGuard `10.44.0.1`, roles `gateway`/`vpn`, `ssh_host_fingerprint: null`.\n  - `metrics:status` lists only `app-dev` and `app-prod`; the Gateway is absent.\n  - Prometheus scrapes only `10.44.0.2`.\n  - The Gateway VM still runs an exporter that the `main`-built snapshot had converged: `prometheus-node-exporter` is active, with the Orbit `orbit.conf` drop-in, a listener on `10.44.0.1:9100`, and the UFW rule `orbit:metrics-node-exporter`. That exporter is now orphaned, and Metrics removal will no longer clean it up.\n- **Scratch check** (script in my scratchpad, run against the candidate code), using a Node shaped as bootstrap creates it:\n  - Eligibility returns `false`.\n  - The `[gateway, vpn]` role default resolves to `ineligible`, where `main` gives `role_default`.\n  - Metrics co-located on the Gateway resolves to `ineligible`. This breaks the rule that the Metrics node's exporter is always selected, and ADR 0003 allows that co-location.\n  - `NodeDoctorProbe` returns 0 issues when the Gateway is unreachable, and 0 when its WireGuard address is missing. On `main` each case gives one issue. So a Gateway SSH failure is no longer reported as a managed-Node observation failure.\n  - `metrics:exporter:enable` on the Gateway would return 409 `metrics.exporter_node_ineligible`.\n- **Why the tests pass:** they mask the problem. The projection test encodes the Gateway-role fixtures `unmanaged-gateway` and `unmanaged-metrics-gateway` (null fingerprint) as excluded. Every \"managed\" fixture gets a synthetic `SHA256:managed`. `MetricsRoutesTest`'s own Gateway fixture has no fingerprint, which matches production.\n- **Required:** the eligibility decision must classify the active, bootstrapped Gateway Node as managed. Its role default, a co-located Metrics node's mandatory exporter, and its Doctor node checks must work as they do on `main`. Tests must model the Gateway as bootstrap actually creates it.\n- **Planning note:** the approved plan rules out a migration. If the fix needs to backfill or persist the Gateway fingerprint, that is a plan or contract decision for you to route. It is not something the reviewer can settle.\n\n**F2 (should fix in the same pass; would not block on its own): lost redaction coverage.** Cites ADR 0004 \"Return bounded deterministic reports\".\n\n`NodeDoctorProbeTest` renamed and rewrote \"redacts unsupported managed platform and architecture values\" into an ineligible-record test. The code path for an eligible Linux Node with an unsupported stored architecture still exists and emits `supported`/`unsupported`. It no longer has a test that the sentinel is redacted. Keep the new test and restore coverage for that branch.\n\n## Local review gate\n\n- Root `composer check` at the clean candidate exited 0.\n- Receipt: `/home/nckrtl/orbit/.git/orbit-checks/867304beb969545ce59a2a1c95994789922503c1/review-_d3l2xy8/result.json`, with `passed: true`, `unchanged: true`, candidate equal to the reviewed head, tree `906f486f`.\n- In all five projects, `validate --strict`, `composer check`, and `test:affected` each exited 0:\n\n| Project | TIA result |\n| --- | --- |\n| apps/cli | no affected tests |\n| apps/docs | no affected tests |\n| apps/gateway | 19 affected files, 271 passed / 1328 assertions |\n| apps/e2e | no affected tests |\n| packages/php-sdk | no affected tests |\n\n- I also ran the 14-file focused acceptance set with explicit paths: 146 passed, 550 assertions.\n- `composer docs-lint` exited 0 with 0 issues. `docs-build` left `docs/generated/context.json` unchanged.\n- The worktree stayed clean throughout.\n\n## Acceptance assessment\n\n| # | Assessment |\n| --- | --- |\n| 1 | **Not met.** Inactive, unsupported and unmanaged records are excluded correctly, but the real Gateway, an eligible active managed Node, loses its role default (F1). |\n| 2 | Met. 409 `metrics.exporter_node_ineligible`; preference unchanged; `reconcile` never called; stored enabled intent cannot restore the projection. |\n| 3 | Met for the fixture. The runtime spy shows no snapshot, converge, remove or restore call for the ineligible node while eligible nodes converge. The same rule orphans the real Gateway exporter (F1). |\n| 4 | **Not met.** Correct for true non-managed fixtures, but Gateway unreachability and WireGuard drift are suppressed (F1). Verify-only behavior is preserved. |\n| 5 | Met by discovery observation. The development record shows a roleless `app-prod` enabled, scraped `up` with host metrics, then disabled with its drop-in and rule removed; Doctor healthy; `verify` passed. Discovery development only; isolated acceptance proof not run. |\n| 6 | **Not met.** The Gateway role default and the Metrics-node default when co-located on the Gateway regress (F1). Other defaults, explicit disable and retry semantics pass. |\n| 7 | Met as written. The docs describe the contract without promising clients or new platforms. Recheck the wording if the F1 fix changes what \"pinned SSH host identity\" means. |\n| 8 | Met. Gateway `composer check` passed inside the root gate. |\n\n## Scope, labels, ADRs and documentation\n\n- The diff touches only `apps/gateway` and `docs/`, which matches the `apps/gateway` and `docs` labels.\n- No harness, `.loop/` or ADR changes. ADR 0057 is accepted on `origin/main`.\n- The `incus` label is correct for acceptance item 5.\n- Documentation changes match the plan: `metrics.md` (the contract), `architecture.md` and `tech-stack.md` (drift fixes), and a rebuilt `context.json`.\n- The only deviation is the approved mapping of the Incus proof venue to a discovery observation.\n\n## Limitations\n\n- I did not read the published PR body, because the skill forbids `gh`. I used the artifact's `.loop/development.md` as the handoff. Please confirm the published body matches it.\n- My read-only CLI calls on discovery (`node:list`, `metrics:status`, `doctor --node=1`) may each have written one normal request-audit Activity row. I changed no topology state and did not release the topology.\n- No proof, equivalence, candidate or snapshot operations were run, because the flow is discovery.\n\nNot published to GitHub, no Linear changes, and the phase is not advanced. The payload is yours to publish.",
+            "state": "CHANGES_REQUESTED",
+            "html_url": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5169961442",
+            "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/252",
+            "author_association": "NONE",
+            "_links": {
+              "html": {
+                "href": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5169961442"
+              },
+              "pull_request": {
+                "href": "https://api.github.com/repos/nckrtl/orbit/pulls/252"
+              }
+            },
+            "submitted_at": "2026-09-10T16:53:02Z",
+            "commit_id": "867304beb969545ce59a2a1c95994789922503c1"
+          },
+          {
+            "id": 5170185607,
+            "node_id": "PRR_kwDOUFw4mM8AAAABNCrFhw",
+            "user": {
+              "login": "tom-nckrtl[bot]",
+              "id": 324047477,
+              "node_id": "BOT_kgDOE1CSdQ",
+              "avatar_url": "https://avatars.githubusercontent.com/in/4805004?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D",
+              "html_url": "https://github.com/apps/tom-nckrtl",
+              "followers_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/followers",
+              "following_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/following{/other_user}",
+              "gists_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/subscriptions",
+              "organizations_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/orgs",
+              "repos_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/repos",
+              "events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/received_events",
+              "type": "Bot",
+              "user_view_type": "public",
+              "site_admin": false
+            },
+            "body": "## Verdict: Changes requested (not approved)\n\nThe candidate incorrectly treats the bootstrapped Gateway Node as ineligible. This regresses its role-default exporter and suppresses its managed-node Doctor findings. The live discovery observation confirms the regression.\n\n**Binding**\n- Issue: ORB-232\n- Flow: `discovery`; Incus required\n- Candidate reviewed: `a9d33d7348ccea74650a78ebb419e41908a4ac62`\n- Artifact SHA: `268b44d6a086b5397658c6c7b322aab90be61821`\n- Approved plan artifact: `624168009313c690ca76a3e1279e0b14db51b6d4`\n\n## Findings\n\n**F1 (blocking): bootstrapped Gateway fails managed-node eligibility.**\n\n`ManagedNodeEligibility::allows()` requires a non-empty `nodes.ssh_host_fingerprint`, but `BootstrapGatewayAction` does not persist one. `NativeGatewaySelfAccessConverger` pins the host key only in `known_hosts`. A live read-only discovery check at the candidate showed Gateway Node 1 active, Linux, WireGuard `10.44.0.1`, roles `gateway`/`vpn`, and `ssh_host_fingerprint: null`; `metrics:status` omitted it and Prometheus did not scrape it, although the exporter remained active on the guest. This leaves an orphaned exporter and prevents removal reconciliation.\n\nThe tests mask this: null-fingerprint Gateway fixtures are labelled unmanaged, while managed fixtures use synthetic fingerprints. The required correction must classify an active, bootstrapped Gateway as managed, preserving its role default, Metrics/Gateway co-location default, and Doctor node checks. If persisting or backfilling the Gateway fingerprint changes the approved plan or issue contract, route that contract decision before implementation; do not add an unapproved migration or exception.\n\n**F2 (should fix in the same pass): restore redaction coverage.**\n\n`NodeDoctorProbeTest` replaced the test for an eligible Linux Node with an unsupported stored architecture. Keep the new ineligible-record test, but restore coverage proving the eligible unsupported architecture emits the bounded `expected=supported` / `observed=unsupported` issue while omitting the stored sentinel.\n\n## Acceptance impact\n\nAcceptance items 1, 4, and 6 are not met because of F1. Item 3 passes for the synthetic fixture but the same rule can orphan the real Gateway exporter. Item 5 is met as a discovery observation, not isolated proof. Item 7 documentation and item 8 quality checks pass, subject to wording review if the fingerprint fix changes the contract. The correction must return a new candidate and artifact binding, updated acceptance evidence, and a fresh independent review; this review cannot approve the current head.\n\n## Local review gate\n\nThe independent root `composer check` passed on the reviewed candidate with `passed: true`, `unchanged: true`; all five projects' strict validation, project checks, and affected tests passed. The gate does not offset the substantive findings above.",
+            "state": "CHANGES_REQUESTED",
+            "html_url": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5170185607",
+            "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/252",
+            "author_association": "NONE",
+            "_links": {
+              "html": {
+                "href": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5170185607"
+              },
+              "pull_request": {
+                "href": "https://api.github.com/repos/nckrtl/orbit/pulls/252"
+              }
+            },
+            "submitted_at": "2026-09-10T17:16:55Z",
+            "commit_id": "a9d33d7348ccea74650a78ebb419e41908a4ac62"
+          }
+        ],
+        "handoff": "# Unapproved proposal\n\n- **Issue and current state**  \n  ORB-232, `In Progress`. PR 252 is open at `a9d33d7348ccea74650a78ebb419e41908a4ac62` with `CHANGES_REQUESTED`. The worktree is clean and matches `origin/orb-232`. The retained discovery attempt is `73f66ea055d0af3be396a7de530efe63`.\n\n- **Intended outcome**  \n  Metrics manages exporters only on active, supported Nodes that have a Gateway-owned SSH management contract. Roleless managed Nodes can opt in. Operator-client or otherwise unmanaged records cannot acquire management through an exporter preference. Existing role defaults, Metrics-node selection, and managed-Node Doctor behavior remain unchanged.\n\n- **Exact blocker or underspecification**  \n  The candidate equates the management contract with a non-null `nodes.ssh_host_fingerprint`. That is incomplete for Gateways bootstrapped before this change. Their successful active Gateway role records that bootstrap completed Gateway self-access and pinned the host key in `known_hosts`, but the older bootstrap did not copy the fingerprint into the Node row. The fresh-bootstrap correction therefore does not cover upgrades.  \n  Separately, the lifecycle test replaced the eligible, non-empty invalid WireGuard-address case. The live `metrics.exporter_address_invalid` fail-closed and bounded-output path no longer has coverage. The Doctor unsupported-architecture redaction test was restored at the current head and is not still open.\n\n- **Ordinary dependencies**  \n  None. Linear has no parent, child, blocking, or related relations. `origin/main` is still `2f72567f706b71058cc9a3061b2447365802c1f0`; its delta is unrelated. Discovery has no main-freshness restart gate.\n\n- **Recommended resolution**  \n  Keep the approved no-migration boundary. Define managed-node eligibility from stored management intent:\n\n  - Require an active Linux Node and a non-empty managed WireGuard address.\n  - Treat either of these as evidence of Gateway-owned SSH management:\n    - a non-empty stored SSH host fingerprint; or\n    - an active or provisioning managed role.\n  - Continue using the fingerprint path for eligible roleless managed Nodes.\n  - Keep roleless records with no fingerprint ineligible for every preference.\n  - Keep the fresh-bootstrap persistence already implemented.\n  - Do not backfill data, require an operator to rerun bootstrap, or add a Gateway-name exception.\n\n  This matches ADR 0012\u2019s distinction: operator clients have no managed role and no Gateway SSH convergence. It also preserves ADR 0003 defaults and ADR 0004\u2019s rule that observation failure produces a managed-Node finding instead of changing eligibility. Tests that describe a role-bearing Node with no fingerprint as \u201cunmanaged\u201d must be replaced with valid roleless unmanaged fixtures.\n\n  Restore the invalid-address case with an otherwise eligible Node whose address is non-empty but invalid, such as a unique sentinel. Assert `metrics.exporter_address_invalid`, HTTP 409 where applicable, and that bounded output does not expose the raw sentinel.\n\n- **Main trade-off**  \n  A managed role becomes evidence of management responsibility even if connection evidence later becomes inconsistent. Such a Node stays eligible and produces a bounded convergence or Doctor observation failure instead of silently disappearing. That is the behavior required by ADRs 0003, 0004, and 0057.\n\n- **Required ADR**  \n  None. This resolves how existing stored state proves the management contract already established by accepted ADRs. It adds no platform, enrollment, ownership, migration, or public API boundary.\n\n- **Human decisions still needed**  \n  None at the product or ADR level. Tom must still decide whether to adopt this unapproved proposal and dispatch the next role.\n\n- **Proposed issue and status changes**  \n  None. Keep ORB-232 `In Progress` and PR 252 in its requested-changes state. Do not change the issue contract, approved plan, labels, relations, flow, or topology. If adopted, Tom can dispatch a Builder correction from the current worktree and head.\n\n- **Verification and restart condition**  \n  The correction should produce a new candidate and candidate-bound artifact while retaining approved plan artifact `624168009313c690ca76a3e1279e0b14db51b6d4`. Verify:\n\n  - A bootstrap-shaped legacy Gateway with active `gateway`/`vpn` roles and null stored fingerprint remains eligible, receives `role_default`, remains mandatory when it is the Metrics Node, and retains Node and Metrics Doctor expectations.\n  - A roleless Node with a fingerprint remains eligible; a roleless Node without one remains ineligible for absent, enabled, and disabled preferences.\n  - Inactive and unsupported records remain excluded.\n  - Fresh and repeated bootstrap still persist the observed fingerprint.\n  - An eligible Node with a non-empty invalid address fails with the bounded `metrics.exporter_address_invalid` result without exposing the address.\n  - Existing redaction, refusal-before-mutation, zero-runtime-work, retry, rollback, and removal tests pass.\n  - Gateway focused tests and `cd apps/gateway && composer check` pass. Documentation build/context comparison and `composer docs-lint` remain clean.\n  - On retained discovery attempt `73f66ea055d0af3be396a7de530efe63`, sync the new candidate without rerunning bootstrap or rewriting the Gateway row. Confirm the still-null-fingerprint Gateway returns to Metrics status and Prometheus scraping, Doctor checks it as managed, the approved roleless lifecycle observation still passes, and topology verification succeeds.\n\n  Formal PR review can restart only after the new head is pushed, its artifact is published and bound to that exact head, the PR handoff is updated, and the retained discovery and focused evidence are recorded. The independent reviewer must then run a fresh exact-head root `composer check`. Plan review and newer-main integration do not restart.\n\n- **Evidence checked**  \n  Live Linear contract, state history, labels, attachments, comments, and relations; PR 252 metadata and both published requested-change reviews; clean worktree and remote refs; discovery flow and retained topology status; candidate artifact `268b44d6a086b5397658c6c7b322aab90be61821` and its exact plan match; `.loop/plan.md` and `.loop/development.md`; review-3 and review-4 handoffs; current implementation and tests; current maintained Metrics guidance; ADRs 0003, 0004, 0012, and 0057; and the current `origin/main` delta.\n",
+        "startup_gate": "Not rerun or claimed during adoption."
+      }
+    }
+  ],
+  "plan_rounds": 1,
+  "pr_rounds": 2,
+  "worktree": "/fast/worktrees/orbit/orb-232",
+  "workspace": "w1T",
+  "issue_uuid": "ec584fe9-1be5-49b3-92e5-f36fcd68efbc",
+  "herdr_session": "orbit",
+  "role_agents": {
+    "planning": "orb-232-builder",
+    "implementing": "orb-232-builder",
+    "plan_review": "orb-232-plan-review"
+  },
+  "pr": {
+    "number": 252,
+    "url": "https://github.com/nckrtl/orbit/pull/252"
+  },
+  "issue_contract": "3e990d4d681170dcc25c9c47098d4875d8bc8e5306bbb539c7614ecf56bb8468",
+  "adoption": {
+    "observed_at": 1789062572.1022966,
+    "head": "212088fb1afa5418e29d8342ea70da3b05f2d432",
+    "approved_plan": "624168009313c690ca76a3e1279e0b14db51b6d4",
+    "plan_rounds": 1,
+    "agents": [
+      {
+        "agent": "codex",
+        "agent_status": "working",
+        "cwd": "/fast/worktrees/orbit/orb-232",
+        "focused": false,
+        "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+        "interactive_ready": true,
+        "name": "orb-232-builder",
+        "pane_id": "w1T:p1",
+        "revision": 32,
+        "state_change_seq": 2158,
+        "tab_id": "w1T:t1",
+        "terminal_id": "term_65b21f0139665b1",
+        "terminal_title": "\u283c Plan ORB-232 delivery | orb-232",
+        "terminal_title_stripped": "Plan ORB-232 delivery | orb-232",
+        "workspace_id": "w1T"
+      },
+      {
+        "agent": "claude",
+        "agent_session": {
+          "agent": "claude",
+          "kind": "id",
+          "source": "herdr:claude",
+          "value": "062b7699-5411-4dd8-aecf-5e6263192066"
+        },
+        "agent_status": "done",
+        "cwd": "/fast/worktrees/orbit/orb-232",
+        "focused": false,
+        "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+        "interactive_ready": true,
+        "name": "orb-232-pr-review-4",
+        "pane_id": "w1T:p4",
+        "revision": 3,
+        "state_change_seq": 2154,
+        "tab_id": "w1T:t1",
+        "terminal_id": "term_65b24024b1b3eba",
+        "terminal_title": "\u2733 ORB-232 formal PR review",
+        "terminal_title_stripped": "ORB-232 formal PR review",
+        "workspace_id": "w1T"
+      },
+      {
+        "agent": "codex",
+        "agent_status": "done",
+        "cwd": "/fast/worktrees/orbit/orb-232",
+        "focused": false,
+        "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+        "interactive_ready": true,
+        "name": "orb-232-resolution",
+        "pane_id": "w1T:p5",
+        "revision": 57,
+        "state_change_seq": 2157,
+        "tab_id": "w1T:t1",
+        "terminal_id": "term_65b242307fb3ebb",
+        "terminal_title": "Resolve ORB-232 review stop | orb-232",
+        "terminal_title_stripped": "Resolve ORB-232 review stop | orb-232",
+        "workspace_id": "w1T"
+      },
+      {
+        "agent": "claude",
+        "agent_session": {
+          "agent": "claude",
+          "kind": "id",
+          "source": "herdr:claude",
+          "value": "1b6ea222-7a48-4deb-9e74-77826102e0d6"
+        },
+        "agent_status": "done",
+        "cwd": "/fast/worktrees/orbit/orb-232",
+        "focused": false,
+        "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+        "interactive_ready": true,
+        "name": "orb-232-pr-review-3",
+        "pane_id": "w1T:p3",
+        "revision": 11,
+        "state_change_seq": 2146,
+        "tab_id": "w1T:t1",
+        "terminal_id": "term_65b22f2bb156cb7",
+        "terminal_title": "\u2733 ORB-232 discovery candidate review",
+        "terminal_title_stripped": "ORB-232 discovery candidate review",
+        "workspace_id": "w1T"
+      },
+      {
+        "agent": "codex",
+        "agent_status": "done",
+        "cwd": "/fast/worktrees/orbit/orb-232",
+        "focused": false,
+        "foreground_cwd": "/fast/worktrees/orbit/orb-232",
+        "interactive_ready": true,
+        "name": "orb-232-plan-review",
+        "pane_id": "w1T:p2",
+        "revision": 31,
+        "state_change_seq": 2091,
+        "tab_id": "w1T:t1",
+        "terminal_id": "term_65b22319b5ec0b3",
+        "terminal_title": "Review ORB-232 saved plan | orb-232",
+        "terminal_title_stripped": "Review ORB-232 saved plan | orb-232",
+        "workspace_id": "w1T"
+      }
+    ],
+    "reviews": [
+      {
+        "id": 5169961442,
+        "node_id": "PRR_kwDOUFw4mM8AAAABNCdZ4g",
+        "user": {
+          "login": "tom-nckrtl[bot]",
+          "id": 324047477,
+          "node_id": "BOT_kgDOE1CSdQ",
+          "avatar_url": "https://avatars.githubusercontent.com/in/4805004?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D",
+          "html_url": "https://github.com/apps/tom-nckrtl",
+          "followers_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/followers",
+          "following_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/following{/other_user}",
+          "gists_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/subscriptions",
+          "organizations_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/orgs",
+          "repos_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/repos",
+          "events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/received_events",
+          "type": "Bot",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "body": "## Verdict: Changes requested (not approved)\n\nThe candidate treats the Gateway Node itself as ineligible. As a result, it drops the Gateway's default exporter and hides the Gateway's Doctor node checks. The confirmation came from the live discovery topology, not only from tests.\n\n**Binding**\n- Issue: ORB-232\n- Flow: `discovery`. The artifact, local worktree, and handoff all agree. Incus is required.\n- Candidate: `867304beb969545ce59a2a1c95994789922503c1`. Remote `orb-232` still pointed here when I finished.\n- Artifact ref: `refs/tags/loop/orb-232/867304beb969545ce59a2a1c95994789922503c1`, SHA `bad482f3e96a0fe5275f16b59dd08a1f257bd613`.\n  - Its only parent is the candidate, and it adds only `.loop/` paths. The candidate has no `.loop/` entries.\n  - `.loop/plan.md` is identical to the approved plan artifact `624168009313c690ca76a3e1279e0b14db51b6d4`.\n- `origin/main` was at `2f72567f` for reference only; discovery has no freshness gate.\n\n## Findings\n\n**F1 (blocking): the bootstrapped Gateway Node fails `ManagedNodeEligibility`.**\n\nCites acceptance items 1, 4 and 6, the first ADR 0057 decision bullet, the ADR 0003 defaults that ADR 0057 retains, and the ADR 0004 node observation.\n\n- **Cause:** `ManagedNodeEligibility::allows()` requires a non-empty `nodes.ssh_host_fingerprint`. The only code that writes that column is `NativeNodeConverger`, which provisions non-Gateway nodes. `BootstrapGatewayAction` never sets it. `NativeGatewaySelfAccessConverger` pins the Gateway's host key only in `known_hosts`, so Doctor and Metrics could reach the Gateway over SSH on `main`.\n- **Live evidence (read-only, discovery attempt `73f66ea0`, guest at the candidate SHA):**\n  - `node:list` shows Node 1 `gateway` as active, Linux, WireGuard `10.44.0.1`, roles `gateway`/`vpn`, `ssh_host_fingerprint: null`.\n  - `metrics:status` lists only `app-dev` and `app-prod`; the Gateway is absent.\n  - Prometheus scrapes only `10.44.0.2`.\n  - The Gateway VM still runs an exporter that the `main`-built snapshot had converged: `prometheus-node-exporter` is active, with the Orbit `orbit.conf` drop-in, a listener on `10.44.0.1:9100`, and the UFW rule `orbit:metrics-node-exporter`. That exporter is now orphaned, and Metrics removal will no longer clean it up.\n- **Scratch check** (script in my scratchpad, run against the candidate code), using a Node shaped as bootstrap creates it:\n  - Eligibility returns `false`.\n  - The `[gateway, vpn]` role default resolves to `ineligible`, where `main` gives `role_default`.\n  - Metrics co-located on the Gateway resolves to `ineligible`. This breaks the rule that the Metrics node's exporter is always selected, and ADR 0003 allows that co-location.\n  - `NodeDoctorProbe` returns 0 issues when the Gateway is unreachable, and 0 when its WireGuard address is missing. On `main` each case gives one issue. So a Gateway SSH failure is no longer reported as a managed-Node observation failure.\n  - `metrics:exporter:enable` on the Gateway would return 409 `metrics.exporter_node_ineligible`.\n- **Why the tests pass:** they mask the problem. The projection test encodes the Gateway-role fixtures `unmanaged-gateway` and `unmanaged-metrics-gateway` (null fingerprint) as excluded. Every \"managed\" fixture gets a synthetic `SHA256:managed`. `MetricsRoutesTest`'s own Gateway fixture has no fingerprint, which matches production.\n- **Required:** the eligibility decision must classify the active, bootstrapped Gateway Node as managed. Its role default, a co-located Metrics node's mandatory exporter, and its Doctor node checks must work as they do on `main`. Tests must model the Gateway as bootstrap actually creates it.\n- **Planning note:** the approved plan rules out a migration. If the fix needs to backfill or persist the Gateway fingerprint, that is a plan or contract decision for you to route. It is not something the reviewer can settle.\n\n**F2 (should fix in the same pass; would not block on its own): lost redaction coverage.** Cites ADR 0004 \"Return bounded deterministic reports\".\n\n`NodeDoctorProbeTest` renamed and rewrote \"redacts unsupported managed platform and architecture values\" into an ineligible-record test. The code path for an eligible Linux Node with an unsupported stored architecture still exists and emits `supported`/`unsupported`. It no longer has a test that the sentinel is redacted. Keep the new test and restore coverage for that branch.\n\n## Local review gate\n\n- Root `composer check` at the clean candidate exited 0.\n- Receipt: `/home/nckrtl/orbit/.git/orbit-checks/867304beb969545ce59a2a1c95994789922503c1/review-_d3l2xy8/result.json`, with `passed: true`, `unchanged: true`, candidate equal to the reviewed head, tree `906f486f`.\n- In all five projects, `validate --strict`, `composer check`, and `test:affected` each exited 0:\n\n| Project | TIA result |\n| --- | --- |\n| apps/cli | no affected tests |\n| apps/docs | no affected tests |\n| apps/gateway | 19 affected files, 271 passed / 1328 assertions |\n| apps/e2e | no affected tests |\n| packages/php-sdk | no affected tests |\n\n- I also ran the 14-file focused acceptance set with explicit paths: 146 passed, 550 assertions.\n- `composer docs-lint` exited 0 with 0 issues. `docs-build` left `docs/generated/context.json` unchanged.\n- The worktree stayed clean throughout.\n\n## Acceptance assessment\n\n| # | Assessment |\n| --- | --- |\n| 1 | **Not met.** Inactive, unsupported and unmanaged records are excluded correctly, but the real Gateway, an eligible active managed Node, loses its role default (F1). |\n| 2 | Met. 409 `metrics.exporter_node_ineligible`; preference unchanged; `reconcile` never called; stored enabled intent cannot restore the projection. |\n| 3 | Met for the fixture. The runtime spy shows no snapshot, converge, remove or restore call for the ineligible node while eligible nodes converge. The same rule orphans the real Gateway exporter (F1). |\n| 4 | **Not met.** Correct for true non-managed fixtures, but Gateway unreachability and WireGuard drift are suppressed (F1). Verify-only behavior is preserved. |\n| 5 | Met by discovery observation. The development record shows a roleless `app-prod` enabled, scraped `up` with host metrics, then disabled with its drop-in and rule removed; Doctor healthy; `verify` passed. Discovery development only; isolated acceptance proof not run. |\n| 6 | **Not met.** The Gateway role default and the Metrics-node default when co-located on the Gateway regress (F1). Other defaults, explicit disable and retry semantics pass. |\n| 7 | Met as written. The docs describe the contract without promising clients or new platforms. Recheck the wording if the F1 fix changes what \"pinned SSH host identity\" means. |\n| 8 | Met. Gateway `composer check` passed inside the root gate. |\n\n## Scope, labels, ADRs and documentation\n\n- The diff touches only `apps/gateway` and `docs/`, which matches the `apps/gateway` and `docs` labels.\n- No harness, `.loop/` or ADR changes. ADR 0057 is accepted on `origin/main`.\n- The `incus` label is correct for acceptance item 5.\n- Documentation changes match the plan: `metrics.md` (the contract), `architecture.md` and `tech-stack.md` (drift fixes), and a rebuilt `context.json`.\n- The only deviation is the approved mapping of the Incus proof venue to a discovery observation.\n\n## Limitations\n\n- I did not read the published PR body, because the skill forbids `gh`. I used the artifact's `.loop/development.md` as the handoff. Please confirm the published body matches it.\n- My read-only CLI calls on discovery (`node:list`, `metrics:status`, `doctor --node=1`) may each have written one normal request-audit Activity row. I changed no topology state and did not release the topology.\n- No proof, equivalence, candidate or snapshot operations were run, because the flow is discovery.\n\nNot published to GitHub, no Linear changes, and the phase is not advanced. The payload is yours to publish.",
+        "state": "CHANGES_REQUESTED",
+        "html_url": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5169961442",
+        "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/252",
+        "author_association": "NONE",
+        "_links": {
+          "html": {
+            "href": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5169961442"
+          },
+          "pull_request": {
+            "href": "https://api.github.com/repos/nckrtl/orbit/pulls/252"
+          }
+        },
+        "submitted_at": "2026-09-10T16:53:02Z",
+        "commit_id": "867304beb969545ce59a2a1c95994789922503c1"
+      },
+      {
+        "id": 5170185607,
+        "node_id": "PRR_kwDOUFw4mM8AAAABNCrFhw",
+        "user": {
+          "login": "tom-nckrtl[bot]",
+          "id": 324047477,
+          "node_id": "BOT_kgDOE1CSdQ",
+          "avatar_url": "https://avatars.githubusercontent.com/in/4805004?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D",
+          "html_url": "https://github.com/apps/tom-nckrtl",
+          "followers_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/followers",
+          "following_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/following{/other_user}",
+          "gists_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/subscriptions",
+          "organizations_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/orgs",
+          "repos_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/repos",
+          "events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/tom-nckrtl%5Bbot%5D/received_events",
+          "type": "Bot",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "body": "## Verdict: Changes requested (not approved)\n\nThe candidate incorrectly treats the bootstrapped Gateway Node as ineligible. This regresses its role-default exporter and suppresses its managed-node Doctor findings. The live discovery observation confirms the regression.\n\n**Binding**\n- Issue: ORB-232\n- Flow: `discovery`; Incus required\n- Candidate reviewed: `a9d33d7348ccea74650a78ebb419e41908a4ac62`\n- Artifact SHA: `268b44d6a086b5397658c6c7b322aab90be61821`\n- Approved plan artifact: `624168009313c690ca76a3e1279e0b14db51b6d4`\n\n## Findings\n\n**F1 (blocking): bootstrapped Gateway fails managed-node eligibility.**\n\n`ManagedNodeEligibility::allows()` requires a non-empty `nodes.ssh_host_fingerprint`, but `BootstrapGatewayAction` does not persist one. `NativeGatewaySelfAccessConverger` pins the host key only in `known_hosts`. A live read-only discovery check at the candidate showed Gateway Node 1 active, Linux, WireGuard `10.44.0.1`, roles `gateway`/`vpn`, and `ssh_host_fingerprint: null`; `metrics:status` omitted it and Prometheus did not scrape it, although the exporter remained active on the guest. This leaves an orphaned exporter and prevents removal reconciliation.\n\nThe tests mask this: null-fingerprint Gateway fixtures are labelled unmanaged, while managed fixtures use synthetic fingerprints. The required correction must classify an active, bootstrapped Gateway as managed, preserving its role default, Metrics/Gateway co-location default, and Doctor node checks. If persisting or backfilling the Gateway fingerprint changes the approved plan or issue contract, route that contract decision before implementation; do not add an unapproved migration or exception.\n\n**F2 (should fix in the same pass): restore redaction coverage.**\n\n`NodeDoctorProbeTest` replaced the test for an eligible Linux Node with an unsupported stored architecture. Keep the new ineligible-record test, but restore coverage proving the eligible unsupported architecture emits the bounded `expected=supported` / `observed=unsupported` issue while omitting the stored sentinel.\n\n## Acceptance impact\n\nAcceptance items 1, 4, and 6 are not met because of F1. Item 3 passes for the synthetic fixture but the same rule can orphan the real Gateway exporter. Item 5 is met as a discovery observation, not isolated proof. Item 7 documentation and item 8 quality checks pass, subject to wording review if the fingerprint fix changes the contract. The correction must return a new candidate and artifact binding, updated acceptance evidence, and a fresh independent review; this review cannot approve the current head.\n\n## Local review gate\n\nThe independent root `composer check` passed on the reviewed candidate with `passed: true`, `unchanged: true`; all five projects' strict validation, project checks, and affected tests passed. The gate does not offset the substantive findings above.",
+        "state": "CHANGES_REQUESTED",
+        "html_url": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5170185607",
+        "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/252",
+        "author_association": "NONE",
+        "_links": {
+          "html": {
+            "href": "https://github.com/nckrtl/orbit/pull/252#pullrequestreview-5170185607"
+          },
+          "pull_request": {
+            "href": "https://api.github.com/repos/nckrtl/orbit/pulls/252"
+          }
+        },
+        "submitted_at": "2026-09-10T17:16:55Z",
+        "commit_id": "a9d33d7348ccea74650a78ebb419e41908a4ac62"
+      }
+    ],
+    "handoff": "# Unapproved proposal\n\n- **Issue and current state**  \n  ORB-232, `In Progress`. PR 252 is open at `a9d33d7348ccea74650a78ebb419e41908a4ac62` with `CHANGES_REQUESTED`. The worktree is clean and matches `origin/orb-232`. The retained discovery attempt is `73f66ea055d0af3be396a7de530efe63`.\n\n- **Intended outcome**  \n  Metrics manages exporters only on active, supported Nodes that have a Gateway-owned SSH management contract. Roleless managed Nodes can opt in. Operator-client or otherwise unmanaged records cannot acquire management through an exporter preference. Existing role defaults, Metrics-node selection, and managed-Node Doctor behavior remain unchanged.\n\n- **Exact blocker or underspecification**  \n  The candidate equates the management contract with a non-null `nodes.ssh_host_fingerprint`. That is incomplete for Gateways bootstrapped before this change. Their successful active Gateway role records that bootstrap completed Gateway self-access and pinned the host key in `known_hosts`, but the older bootstrap did not copy the fingerprint into the Node row. The fresh-bootstrap correction therefore does not cover upgrades.  \n  Separately, the lifecycle test replaced the eligible, non-empty invalid WireGuard-address case. The live `metrics.exporter_address_invalid` fail-closed and bounded-output path no longer has coverage. The Doctor unsupported-architecture redaction test was restored at the current head and is not still open.\n\n- **Ordinary dependencies**  \n  None. Linear has no parent, child, blocking, or related relations. `origin/main` is still `2f72567f706b71058cc9a3061b2447365802c1f0`; its delta is unrelated. Discovery has no main-freshness restart gate.\n\n- **Recommended resolution**  \n  Keep the approved no-migration boundary. Define managed-node eligibility from stored management intent:\n\n  - Require an active Linux Node and a non-empty managed WireGuard address.\n  - Treat either of these as evidence of Gateway-owned SSH management:\n    - a non-empty stored SSH host fingerprint; or\n    - an active or provisioning managed role.\n  - Continue using the fingerprint path for eligible roleless managed Nodes.\n  - Keep roleless records with no fingerprint ineligible for every preference.\n  - Keep the fresh-bootstrap persistence already implemented.\n  - Do not backfill data, require an operator to rerun bootstrap, or add a Gateway-name exception.\n\n  This matches ADR 0012\u2019s distinction: operator clients have no managed role and no Gateway SSH convergence. It also preserves ADR 0003 defaults and ADR 0004\u2019s rule that observation failure produces a managed-Node finding instead of changing eligibility. Tests that describe a role-bearing Node with no fingerprint as \u201cunmanaged\u201d must be replaced with valid roleless unmanaged fixtures.\n\n  Restore the invalid-address case with an otherwise eligible Node whose address is non-empty but invalid, such as a unique sentinel. Assert `metrics.exporter_address_invalid`, HTTP 409 where applicable, and that bounded output does not expose the raw sentinel.\n\n- **Main trade-off**  \n  A managed role becomes evidence of management responsibility even if connection evidence later becomes inconsistent. Such a Node stays eligible and produces a bounded convergence or Doctor observation failure instead of silently disappearing. That is the behavior required by ADRs 0003, 0004, and 0057.\n\n- **Required ADR**  \n  None. This resolves how existing stored state proves the management contract already established by accepted ADRs. It adds no platform, enrollment, ownership, migration, or public API boundary.\n\n- **Human decisions still needed**  \n  None at the product or ADR level. Tom must still decide whether to adopt this unapproved proposal and dispatch the next role.\n\n- **Proposed issue and status changes**  \n  None. Keep ORB-232 `In Progress` and PR 252 in its requested-changes state. Do not change the issue contract, approved plan, labels, relations, flow, or topology. If adopted, Tom can dispatch a Builder correction from the current worktree and head.\n\n- **Verification and restart condition**  \n  The correction should produce a new candidate and candidate-bound artifact while retaining approved plan artifact `624168009313c690ca76a3e1279e0b14db51b6d4`. Verify:\n\n  - A bootstrap-shaped legacy Gateway with active `gateway`/`vpn` roles and null stored fingerprint remains eligible, receives `role_default`, remains mandatory when it is the Metrics Node, and retains Node and Metrics Doctor expectations.\n  - A roleless Node with a fingerprint remains eligible; a roleless Node without one remains ineligible for absent, enabled, and disabled preferences.\n  - Inactive and unsupported records remain excluded.\n  - Fresh and repeated bootstrap still persist the observed fingerprint.\n  - An eligible Node with a non-empty invalid address fails with the bounded `metrics.exporter_address_invalid` result without exposing the address.\n  - Existing redaction, refusal-before-mutation, zero-runtime-work, retry, rollback, and removal tests pass.\n  - Gateway focused tests and `cd apps/gateway && composer check` pass. Documentation build/context comparison and `composer docs-lint` remain clean.\n  - On retained discovery attempt `73f66ea055d0af3be396a7de530efe63`, sync the new candidate without rerunning bootstrap or rewriting the Gateway row. Confirm the still-null-fingerprint Gateway returns to Metrics status and Prometheus scraping, Doctor checks it as managed, the approved roleless lifecycle observation still passes, and topology verification succeeds.\n\n  Formal PR review can restart only after the new head is pushed, its artifact is published and bound to that exact head, the PR handoff is updated, and the retained discovery and focused evidence are recorded. The independent reviewer must then run a fresh exact-head root `composer check`. Plan review and newer-main integration do not restart.\n\n- **Evidence checked**  \n  Live Linear contract, state history, labels, attachments, comments, and relations; PR 252 metadata and both published requested-change reviews; clean worktree and remote refs; discovery flow and retained topology status; candidate artifact `268b44d6a086b5397658c6c7b322aab90be61821` and its exact plan match; `.loop/plan.md` and `.loop/development.md`; review-3 and review-4 handoffs; current implementation and tests; current maintained Metrics guidance; ADRs 0003, 0004, 0012, and 0057; and the current `origin/main` delta.\n",
+    "startup_gate": "Not rerun or claimed during adoption."
+  },
+  "updated_at": 1789062573.0508337,
+  "status": "agent_starting",
+  "wait": {
+    "agent": "orb-232-builder",
+    "agent_status": "working"
+  }
+}
