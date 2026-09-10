@@ -36,6 +36,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'cluster:update',
         'dns:resolve',
         'doctor',
+        'env:import',
+        'env:sync',
+        'env:update',
         'firewall:allow',
         'firewall:deny',
         'firewall:list',
@@ -97,7 +100,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(71);
+    expect($orbitCommands)->toHaveCount(74);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -127,6 +130,21 @@ it('offers JSON output for every Orbit product command', function (): void {
     ))->toBeTrue();
 });
 
+it('describes the environment lifecycle in command help', function (): void {
+    $commands = app(Kernel::class)->all();
+
+    expect($commands['env:import']->getDescription())
+        ->toBe('Import the workload environment file into stored AppInstance configuration.');
+    expect($commands['env:import']->getDefinition()->getOption('replace')->getDescription())
+        ->toBe('Replace stored-key conflicts while retaining other stored keys');
+    expect($commands['env:update']->getDescription())
+        ->toBe('Update one stored AppInstance environment value without changing the workload file.');
+    expect($commands['env:update']->getDefinition()->getOption('value')->getDescription())
+        ->toContain('quote empty, multiline, or placeholder values for the shell');
+    expect($commands['env:sync']->getDescription())
+        ->toBe('Synchronize stored AppInstance configuration to the workload environment file.');
+});
+
 /** @mago-expect lint:halstead The explicit matrix protects the approved minimal command vocabulary. */
 it('keeps the exact approved arguments options and defaults', function (): void {
     $expected = [
@@ -153,6 +171,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'dns:resolve' => [['tld', 'target'], ['reset' => false, 'json' => false]],
         'doctor' => [[], ['node' => null, 'family' => [], 'json' => false]],
+        'env:import' => [[], ['instance' => null, 'replace' => false, 'json' => false]],
+        'env:sync' => [[], ['instance' => null, 'json' => false]],
+        'env:update' => [[], ['instance' => null, 'key' => null, 'value' => null, 'json' => false]],
         'firewall:allow' => [
             ['name'],
             ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'json' => false],
@@ -406,6 +427,12 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'message' => 'Development TLD must be one lowercase DNS label without a leading dot.',
         ],
         'doctor' => [[], ...$profileMissing],
+        'env:import' => [['--instance' => 'app.com'], ...$profileMissing],
+        'env:sync' => [['--instance' => 'app.com'], ...$profileMissing],
+        'env:update' => [
+            ['--instance' => 'app.com', '--key' => 'PRIVATE_VALUE', '--value' => 'validation-secret'],
+            ...$profileMissing,
+        ],
         'firewall:allow' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:deny' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:list' => [['--node' => '1'], ...$profileMissing],
