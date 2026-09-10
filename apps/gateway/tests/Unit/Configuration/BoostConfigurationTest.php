@@ -317,8 +317,13 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'never port the retired Agent',
         );
     expect($testRules)
-        ->toContain('Pest 5 TDD', 'full parallel Pest suite without TIA', 'Rector', 'Mago', 'git diff --check')
-        ->not->toContain('Test Impact Analysis', 'with TIA', 'test:full');
+        ->toContain(
+            'Pest 5 TDD',
+            'focused tests and project quality checks',
+            'root `composer check`',
+            'git diff --check',
+        )
+        ->not->toContain('test:full');
 });
 
 it('records the Vite+ package management boundary in scoped guidance', function (): void {
@@ -436,14 +441,14 @@ it('preserves project and installed testing guidance', function (): void {
             'Require exact Orbit ownership before mutation.',
             'Linux privilege escalation',
             'legacy project is optional research',
-            'CI runs the full parallel suites without TIA',
+            'Reviewers run root `composer check` across all projects with TIA',
             'Mago format/lint/analyse',
         )
-        ->not->toContain('with TIA', 'test:full');
+        ->not->toContain('test:full');
 
     expect($readProjectFile('.ai/rules/boost/tests.md'))
-        ->toContain('green CI full suites without TIA')
-        ->not->toContain('with TIA', 'test:full');
+        ->toContain('independent reviewer who runs root `composer check` across all projects with TIA')
+        ->not->toContain('test:full');
 });
 
 it('keeps two-factor authentication mandatory when the preferred integration is unavailable', function (): void {

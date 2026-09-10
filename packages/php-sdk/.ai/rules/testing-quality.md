@@ -1,7 +1,7 @@
 # Testing and quality
 
 Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
-focused tests for red, green, and refactor. Run focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA.
+focused tests for red, green, and refactor. Run focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA and two parallel test workers per project.
 
 - Run `composer guidance:check` first. It must fail when the rule index, an
   indexed file, or material path coverage is missing. The failure must give the
