@@ -1,6 +1,6 @@
 # Topology snapshot
 
-This page is for the operator who maintains Orbit's one persistent topology snapshot. Every proof topology and discovery topology starts from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, and how to recover when the manifest and the host disagree. The disposable topologies that clone it and any issue-local extension are on the [Incus topology registry](incus-topologies.md).
+This page is for the operator who maintains Orbit's one persistent topology snapshot. Every proof topology, discovery topology, and snapshot-lane scenario starts from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, and how to recover when the manifest and the host disagree. The disposable topologies that clone it and any declared extension are on the [Incus topology registry](incus-topologies.md).
 
 ## Identity
 
