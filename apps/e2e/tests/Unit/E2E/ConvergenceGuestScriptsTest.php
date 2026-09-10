@@ -758,6 +758,11 @@ describe('Gateway host prerequisite convergence', function () {
         file_put_contents("{$root}/production/releases/one/artisan", "<?php\n");
         file_put_contents("{$root}/production/.env", "APP_KEY=base64:test\n");
         symlink("{$root}/production/releases/one", "{$root}/production/current");
+        $owner = new Process(['stat', '-c', '%U', '--', "{$root}/production"]);
+        expect($owner->run())->toBe(0);
+        $productionUser = trim($owner->getOutput());
+        expect($productionUser)->toMatch('/\A[a-z_][a-z0-9_-]{0,31}\z/D');
+        $differentUser = $productionUser === 'nobody' ? 'root' : 'nobody';
         file_put_contents("{$root}/bin/systemctl", <<<'BASH'
             #!/usr/bin/env bash
             if [[ "$*" == 'is-active orbit-nckrtl-php8.5-fpm.service' ]]; then printf 'active\n'; exit 0; fi
@@ -769,7 +774,7 @@ describe('Gateway host prerequisite convergence', function () {
         $placement = [
             'layout' => 'release',
             'instance_id' => 5,
-            'user' => 'nckrtl',
+            'user' => $productionUser,
             'home' => "{$root}/production",
             'checkout_path' => "{$root}/production/current",
             'effective_root' => "{$root}/production/current/public",
@@ -800,7 +805,7 @@ describe('Gateway host prerequisite convergence', function () {
             foreach ([
                 'service' => ['service' => 'wrong.service'],
                 'socket' => ['socket' => "{$root}/production/missing.sock"],
-                'owner' => ['user' => 'nobody'],
+                'owner' => ['user' => $differentUser],
                 'current target' => ['current_target' => "{$root}/production/releases/two"],
             ] as $change) {
                 expect(
