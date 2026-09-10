@@ -6,6 +6,7 @@ namespace App\Actions\Processes;
 
 use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -13,7 +14,9 @@ use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AppInstance;
 use App\Models\Process;
+use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 final readonly class AddProcessAction
@@ -21,40 +24,63 @@ final readonly class AddProcessAction
     public function __construct(
         private ProcessTargetResolver $targets,
         private ProcessRuntimeManager $runtime,
+        private ProcessAdmissionLock $admissions,
     ) {}
 
     /** @return array{process: Process, created: bool} */
     public function execute(#[SensitiveParameter] AddProcessData $data): array
     {
-        $target = $this->targets->resolve($data->targetType, $data->targetId);
-        $attributes = $this->attributes($data, $target);
-        $process = Process::query()->firstOrNew([
-            'owner_type' => $data->targetType->modelClass(),
-            'owner_id' => $data->targetId,
-            'name' => $data->name,
-        ]);
-        $created = ! $process->exists;
-        $desiredState = $process->desired_state;
+        $this->targets->resolve($data->targetType, $data->targetId);
 
-        if ($created) {
-            $desiredState = $data->start ? DesiredProcessState::Running : DesiredProcessState::Stopped;
-        }
+        return $this->admissions->run(
+            [$data->targetId],
+            fn (): array => $this->executeOwned($data),
+        );
+    }
 
-        if ($process->exists && ! $this->matches($process, $attributes)) {
-            throw new ResourceOperationException(
-                errorCode: 'process.name_taken',
-                message: "Process [{$data->name}] already exists with different configuration.",
-                status: 409,
-            );
-        }
+    /** @return array{process: Process, created: bool} */
+    private function executeOwned(#[SensitiveParameter] AddProcessData $data): array
+    {
+        /** @var array{process: Process, created: bool} $admission */
+        $admission = DB::transaction(function () use ($data): array {
+            $instance = AppInstance::query()
+                ->with('node')
+                ->lockForUpdate()
+                ->findOrFail($data->targetId);
+            $target = $this->targets->forAdmission($instance);
+            $attributes = $this->attributes($data, $target);
+            $process = Process::query()->firstOrNew([
+                'owner_type' => $data->targetType->modelClass(),
+                'owner_id' => $data->targetId,
+                'name' => $data->name,
+            ]);
+            $created = ! $process->exists;
+            $desiredState = $process->desired_state;
 
-        $process->fill([
-            ...$attributes,
-            'desired_state' => $desiredState,
-            'status' => LifecycleStatus::Provisioning,
-            'failed_step' => null,
-            'error_code' => null,
-        ])->save();
+            if ($created) {
+                $desiredState = $data->start ? DesiredProcessState::Running : DesiredProcessState::Stopped;
+            }
+
+            if ($process->exists && ! $this->matches($process, $attributes)) {
+                throw new ResourceOperationException(
+                    errorCode: 'process.name_taken',
+                    message: "Process [{$data->name}] already exists with different configuration.",
+                    status: 409,
+                );
+            }
+
+            $process->fill([
+                ...$attributes,
+                'desired_state' => $desiredState,
+                'status' => LifecycleStatus::Provisioning,
+                'failed_step' => null,
+                'error_code' => null,
+            ])->save();
+
+            return ['process' => $process, 'created' => $created];
+        });
+
+        $process = $admission['process'];
 
         try {
             $this->runtime->converge($process);
@@ -74,18 +100,19 @@ final readonly class AddProcessAction
             'error_code' => null,
         ]);
 
-        return ['process' => $process->refresh(), 'created' => $created];
+        return ['process' => $process->refresh(), 'created' => $admission['created']];
     }
 
     /** @return array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string} */
     private function attributes(#[SensitiveParameter] AddProcessData $data, ProcessTarget $target): array
     {
         $workingDirectory =
-            $data->workingDirectory ?? ($data->runtime === ProcessRuntime::Systemd ? $target->checkoutPath : '/app');
+            $data->workingDirectory
+            ?? ($data->runtime === ProcessRuntime::Systemd ? $target->defaultWorkingDirectory : '/app');
         $runtimeConfig = $data->runtime === ProcessRuntime::Systemd
             ? [
                 'command' => $data->command,
-                'environment_file' => "{$target->checkoutPath}/.env",
+                'environment_file' => $target->environmentFile,
             ]
             : [
                 'image' => $data->image,

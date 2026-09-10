@@ -8,7 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Str;
@@ -41,17 +41,15 @@ beforeEach(function (): void {
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = Instance::query()->create([
+    $this->instance = AppInstance::query()->create([
         'app_id' => $orbitApp->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/docs',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'hostname' => 'docs.app-dev.orbit',
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
     ]);
 });
 
@@ -74,13 +72,14 @@ it('adds and lists a systemd process through the minimal API contract', function
         ->assertJsonPath('data.runtime', 'systemd')
         ->assertJsonPath('data.desired_state', 'running')
         ->assertJsonPath('data.runtime_status', 'running')
+        ->assertJsonMissingPath('data.node_id')
         ->assertJsonStructure(['meta' => ['request_id']]);
     $process = Process::query()->sole();
 
     $this->assertDatabaseHas('activity_log', [
         'command' => 'process:add',
-        'subject_type' => Process::class,
-        'subject_id' => $process->id,
+        'subject_type' => AppInstance::class,
+        'subject_id' => $this->instance->id,
         'target_node_id' => $this->node->id,
         'caller_node_id' => $this->node->id,
         'status' => 'succeeded',
@@ -92,6 +91,29 @@ it('adds and lists a systemd process through the minimal API contract', function
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.name', 'queue')
         ->assertJsonPath('data.0.runtime_status', 'running');
+});
+
+it('rejects Workspace process targets before runtime or record mutation', function (): void {
+    $this
+        ->postJson('/api/v1/processes', [
+            'target_type' => 'workspace',
+            'target_id' => 1,
+            'name' => 'queue',
+            'runtime' => 'systemd',
+            'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    $this
+        ->getJson('/api/v1/processes?target_type=workspace&target_id=1')
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect($this->runtime->convergedProcessIds)
+        ->toBeEmpty()
+        ->and(Process::query()->count())
+        ->toBe(0);
 });
 
 it('redacts Docker environment values from process responses without changing persisted configuration', function (): void {
@@ -517,9 +539,9 @@ it('records a failed runtime action against its process and target node', functi
     $activity = Activity::query()->where('command', 'process:start')->sole();
 
     expect($activity->subject_type)
-        ->toBe(Process::class)
+        ->toBe(AppInstance::class)
         ->and($activity->subject_id)
-        ->toBe($process->id)
+        ->toBe($this->instance->id)
         ->and($activity->target_node_id)
         ->toBe($this->node->id)
         ->and($activity->status)
@@ -595,10 +617,10 @@ it('keeps persisted Docker environment values out of lifecycle exception traces'
     $this->fail('Expected process start to fail.');
 });
 
-function processes_api_record(Instance $instance): Process
+function processes_api_record(AppInstance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => Instance::class,
+        'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',

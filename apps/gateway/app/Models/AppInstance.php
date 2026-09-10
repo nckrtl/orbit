@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -63,6 +64,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, RouteTarget> $routeTargets
  * @property-read Collection<int, Route> $routes
  * @property-read Collection<int, AppInstanceEnvironmentValue> $environmentValues
+ * @property-read Collection<int, Process> $processes
  * @property-read AppInstanceRemovalMember|null $removalMember
  */
 final class AppInstance extends Model
@@ -155,6 +157,12 @@ final class AppInstance extends Model
     public function environmentValues(): HasMany
     {
         return $this->hasMany(AppInstanceEnvironmentValue::class);
+    }
+
+    /** @return MorphMany<Process, $this> */
+    public function processes(): MorphMany
+    {
+        return $this->morphMany(Process::class, 'owner');
     }
 
     /** @return HasOne<AppInstanceRemovalMember, $this> */

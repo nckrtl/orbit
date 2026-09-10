@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\AppInstances\RemoveAppInstanceAction;
+use App\Actions\Processes\CascadeAppInstanceProcessesAction;
+use App\Actions\Processes\RemoveProcessAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
@@ -18,6 +20,9 @@ use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
+use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -30,6 +35,7 @@ use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -39,6 +45,8 @@ beforeEach(function (): void {
     $this->orb181Projector = new Orb181CoordinatorProjector;
     $this->orb181Lock = new Orb181CoordinatorLock;
     $this->orb212EnvironmentLock = new Orb212CoordinatorEnvironmentLock;
+    $this->orb131ProcessLock = new Orb131CoordinatorProcessAdmissionLock;
+    $this->orb131ProcessRuntime = new Orb131CoordinatorProcessRuntimeManager;
     $this->orb183Content = new Orb183CoordinatorContentRetention;
     $this->orb181Coordinator = new RemoveAppInstanceAction(
         $this->orb181Inspector,
@@ -46,6 +54,11 @@ beforeEach(function (): void {
         $this->orb181Projector,
         new ManagedCheckoutOverlap,
         $this->orb212EnvironmentLock,
+        $this->orb131ProcessLock,
+        new CascadeAppInstanceProcessesAction(new RemoveProcessAction(
+            $this->orb131ProcessRuntime,
+            new ProcessTargetResolver,
+        )),
         $this->orb181Lock,
         $this->orb183Content,
         app(RouteStateResolver::class),
@@ -54,6 +67,17 @@ beforeEach(function (): void {
 
 it('accepts exactly one independent checkout and completes every durable step', function (bool $force): void {
     $instance = orb181_coordinator_instance();
+    $process = Process::query()->create([
+        'owner_type' => AppInstance::class,
+        'owner_id' => $instance->id,
+        'name' => 'queue',
+        'runtime' => 'systemd',
+        'working_directory' => $instance->checkout_path,
+        'runtime_config' => ['command' => ['/bin/true']],
+        'restart_policy' => 'always',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Failed,
+    ]);
     $removal = $this->orb181Coordinator->execute($instance, $force);
     $member = $removal->members->sole();
 
@@ -116,7 +140,9 @@ it('accepts exactly one independent checkout and completes every durable step', 
         ])->and($this->orb181Projector->calls)->toBe([
             "route:{$instance->id}",
             "runtime:{$instance->id}",
-        ])->and($this->orb181Lock->acceptedWhileHeld)->toBeTrue();
+        ])->and($this->orb131ProcessLock->owners)->toBe([[$instance->id]])->and(
+            $this->orb131ProcessRuntime->removed,
+        )->toBe([$process->id])->and($this->orb181Lock->acceptedWhileHeld)->toBeTrue();
 })->with([false, true]);
 
 it('records historical and observed source commits independently', function (
@@ -1017,5 +1043,49 @@ final class Orb212CoordinatorEnvironmentLock implements AppInstanceEnvironmentOp
         $this->owners[] = $owners;
 
         return $operation();
+    }
+}
+
+final class Orb131CoordinatorProcessAdmissionLock implements ProcessAdmissionLock
+{
+    /** @var list<list<int>> */
+    public array $owners = [];
+
+    public function run(array $appInstanceIds, Closure $operation): mixed
+    {
+        $owners = array_values(array_unique(array_map(intval(...), $appInstanceIds)));
+        sort($owners, SORT_NUMERIC);
+        $this->owners[] = $owners;
+
+        return $operation();
+    }
+}
+
+final class Orb131CoordinatorProcessRuntimeManager implements ProcessRuntimeManager
+{
+    /** @var list<int> */
+    public array $removed = [];
+
+    public function converge(Process $process): void {}
+
+    public function start(Process $process): void {}
+
+    public function stop(Process $process): void {}
+
+    public function restart(Process $process): void {}
+
+    public function remove(Process $process): void
+    {
+        $this->removed[] = $process->id;
+    }
+
+    public function status(Process $process): string
+    {
+        return 'stopped';
+    }
+
+    public function logs(Process $process, int $lines): string
+    {
+        return '';
     }
 }

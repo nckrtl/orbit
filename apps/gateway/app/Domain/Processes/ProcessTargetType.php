@@ -4,28 +4,22 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Models\Instance;
-use App\Models\Workspace;
+use App\Models\AppInstance;
 
 enum ProcessTargetType: string
 {
-    case Instance = 'instance';
-    case Workspace = 'workspace';
+    case AppInstance = 'instance';
 
-    /** @return class-string<Instance|Workspace> */
+    /** @return class-string<AppInstance> */
     public function modelClass(): string
     {
-        return match ($this) {
-            self::Instance => Instance::class,
-            self::Workspace => Workspace::class,
-        };
+        return AppInstance::class;
     }
 
     public static function fromModelClass(string $modelClass): self
     {
         return match ($modelClass) {
-            Instance::class => self::Instance,
-            Workspace::class => self::Workspace,
+            AppInstance::class => self::AppInstance,
             default => throw new \InvalidArgumentException('Unsupported process target model.'),
         };
     }

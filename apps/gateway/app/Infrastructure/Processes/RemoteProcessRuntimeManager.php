@@ -11,6 +11,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -50,35 +51,39 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function converge(#[SensitiveParameter] Process $process): void
     {
-        $this->withRuntimeLock($process, function () use ($process): void {
-            $target = $this->targets->forProcess($process);
-
+        $target = $this->targets->forProcess($process);
+        $this->withRuntimeLock($process, function () use ($process, $target): void {
             match ($process->runtime) {
                 ProcessRuntime::Systemd => $this->convergeAndActivateSystemd($process, $target),
                 ProcessRuntime::Docker => $this->convergeDocker($process, $target),
             };
-        });
+        }, $target);
     }
 
     public function start(#[SensitiveParameter] Process $process): void
     {
-        $this->withRuntimeLock($process, function () use ($process): void {
-            $this->startUnlocked($process);
-        });
+        $target = $this->targets->forStart($process);
+        $this->assertReleaseAvailable($process, $target, 'start', 'process.start_failed');
+        $this->withRuntimeLock($process, function () use ($process, $target): void {
+            $this->startUnlocked($process, $target);
+        }, $target);
     }
 
     public function stop(#[SensitiveParameter] Process $process): void
     {
-        $this->withRuntimeLock($process, function () use ($process): void {
-            $this->stopUnlocked($process);
-        });
+        $target = $this->targets->forProcess($process);
+        $this->withRuntimeLock($process, function () use ($process, $target): void {
+            $this->stopUnlocked($process, $target);
+        }, $target);
     }
 
     public function restart(#[SensitiveParameter] Process $process): void
     {
-        $this->withRuntimeLock($process, function () use ($process): void {
-            $this->restartUnlocked($process);
-        });
+        $target = $this->targets->forStart($process);
+        $this->assertReleaseAvailable($process, $target, 'restart', 'process.restart_failed');
+        $this->withRuntimeLock($process, function () use ($process, $target): void {
+            $this->restartUnlocked($process, $target);
+        }, $target);
     }
 
     public function remove(#[SensitiveParameter] Process $process): void
@@ -93,9 +98,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         );
     }
 
-    private function startUnlocked(#[SensitiveParameter] Process $process): void
+    private function startUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
     {
-        $this->requireOwnedRuntime($process, 'start', 'process.start_failed');
+        $this->requireOwnedRuntime($process, 'start', 'process.start_failed', $target);
 
         $arguments = match ($process->runtime) {
             ProcessRuntime::Systemd => [
@@ -114,12 +119,12 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             ],
         };
 
-        $this->executeSuccessfully($process, $arguments, 'start', 'process.start_failed');
+        $this->executeSuccessfully($process, $arguments, 'start', 'process.start_failed', target: $target);
     }
 
-    private function stopUnlocked(#[SensitiveParameter] Process $process): void
+    private function stopUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
     {
-        $this->requireOwnedRuntime($process, 'stop', 'process.stop_failed');
+        $this->requireOwnedRuntime($process, 'stop', 'process.stop_failed', $target);
 
         $arguments = match ($process->runtime) {
             ProcessRuntime::Systemd => [
@@ -138,12 +143,12 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             ],
         };
 
-        $this->executeSuccessfully($process, $arguments, 'stop', 'process.stop_failed');
+        $this->executeSuccessfully($process, $arguments, 'stop', 'process.stop_failed', target: $target);
     }
 
-    private function restartUnlocked(#[SensitiveParameter] Process $process): void
+    private function restartUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
     {
-        $this->requireOwnedRuntime($process, 'restart', 'process.restart_failed');
+        $this->requireOwnedRuntime($process, 'restart', 'process.restart_failed', $target);
 
         if ($process->runtime === ProcessRuntime::Docker) {
             $this->executeSuccessfully(
@@ -151,6 +156,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                 ['sudo', 'docker', 'container', 'restart', $this->docker->containerName($process)],
                 'restart',
                 'process.restart_failed',
+                target: $target,
             );
 
             return;
@@ -161,12 +167,14 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             ['sudo', 'systemctl', 'enable', $this->systemd->unitName($process)],
             'restart-enable',
             'process.restart_failed',
+            target: $target,
         );
         $this->executeSuccessfully(
             $process,
             ['sudo', 'systemctl', 'restart', $this->systemd->unitName($process)],
             'restart',
             'process.restart_failed',
+            target: $target,
         );
     }
 
@@ -330,7 +338,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function dockerSpecHash(#[SensitiveParameter] Process $process): string
     {
-        return $this->docker->specHash($process, $this->targets->forProcess($process));
+        return $this->docker->specHash($process, $this->targets->forInspection($process));
     }
 
     private function withRuntimeLock(
@@ -339,7 +347,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         Closure $operation,
         ?ProcessTarget $target = null,
     ): void {
-        $target ??= $this->targets->forProcess($process);
+        $target ??= $this->targets->forInspection($process);
         $lock = Cache::lock("orbit:process-runtime:{$target->node->id}:{$process->id}", 3_600);
 
         if (! $lock->get()) {
@@ -1168,8 +1176,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         Process $process,
         string $step,
         string $errorCode,
+        ?ProcessTarget $target = null,
     ): void {
-        if ($this->runtimeExistsAndIsOwned($process, $step, $errorCode)) {
+        if ($this->runtimeExistsAndIsOwned($process, $step, $errorCode, $target)) {
             return;
         }
 
@@ -1178,6 +1187,38 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             errorCode: 'process.runtime_not_found',
             message: "Process [{$process->name}] has no native runtime artifact.",
         );
+    }
+
+    private function assertReleaseAvailable(
+        #[SensitiveParameter]
+        Process $process,
+        ProcessTarget $target,
+        string $step,
+        string $errorCode,
+    ): void {
+        if (! $target->productionReleaseLayout) {
+            return;
+        }
+
+        $result = $this->execute(
+            $process,
+            ['sudo', 'test', '-d', $target->defaultWorkingDirectory],
+            target: $target,
+        );
+
+        if ($result->succeeded()) {
+            return;
+        }
+
+        if ($this->isSystemdPathAbsent($result)) {
+            throw new ResourceOperationException(
+                errorCode: 'process.release_unavailable',
+                message: "Process [{$process->name}] has no selected production release.",
+                status: 409,
+            );
+        }
+
+        $this->fail($process, $step, $errorCode, $result);
     }
 
     private function runtimeExistsAndIsOwned(
@@ -1344,7 +1385,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         ?ProcessTarget $target = null,
     ): CommandResult {
         try {
-            $target ??= $this->targets->forProcess($process);
+            $target ??= $this->targets->forInspection($process);
 
             if (! is_string($target->node->wireguard_ip) || $target->node->wireguard_ip === '') {
                 throw new ProcessOperationException(

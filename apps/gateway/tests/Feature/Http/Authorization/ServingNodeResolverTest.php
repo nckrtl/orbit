@@ -7,12 +7,14 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Http\Authorization\ActiveGatewayMissing;
 use App\Http\Authorization\ServingNode;
 use App\Http\Authorization\ServingNodeResolver;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -160,7 +162,7 @@ it('resolves the Tool-owning node from a bound Tool and raw node input', functio
 it('resolves process-owning nodes from bound and raw instance targets', function (): void {
     $app = resolver_app('process-owner');
     $node = resolver_node('process-node');
-    $instance = resolver_instance($app, $node, name: 'process-instance');
+    $instance = resolver_app_instance($app, $node, name: 'process-instance');
     $process = resolver_process($instance);
 
     expect(resolver_node_ids(resolver()->resolve(
@@ -175,24 +177,18 @@ it('resolves process-owning nodes from bound and raw instance targets', function
         ->toBe([$node->id]);
 });
 
-it('resolves process-owning nodes from bound and raw workspace targets', function (): void {
+it('rejects a bound legacy Workspace Process owner', function (): void {
     $app = resolver_app('workspace-process-owner');
     $node = resolver_node('workspace-process-node');
     $instance = resolver_instance($app, $node, name: 'workspace-process-instance');
     $workspace = resolver_workspace($instance, name: 'workspace-process');
     $process = resolver_process($workspace);
 
-    expect(resolver_node_ids(resolver()->resolve(
+    resolver()->resolve(
         resolver_request(['process' => $process]),
         ServingNode::ProcessOwning,
-    )))
-        ->toBe([$node->id])
-        ->and(resolver_node_ids(resolver()->resolve(resolver_request(input: [
-            'target_type' => 'workspace',
-            'target_id' => $workspace->id,
-        ]), ServingNode::ProcessOwning)))
-        ->toBe([$node->id]);
-});
+    );
+})->throws(ResourceOperationException::class, 'not a supported AppInstance');
 
 it('returns no concrete nodes for a collection', function (): void {
     expect(resolver()->resolve(resolver_request(), ServingNode::Collection))->toBeEmpty();
@@ -212,6 +208,7 @@ it('leaves malformed or absent raw identifiers to validation', function (string 
     'malformed workspace instance' => ['WorkspaceOwning', ['instance_id' => 0]],
     'missing process target' => ['ProcessOwning', []],
     'malformed process target type' => ['ProcessOwning', ['target_type' => 'node', 'target_id' => 1]],
+    'legacy process Workspace target' => ['ProcessOwning', ['target_type' => 'workspace', 'target_id' => 1]],
     'missing tool node' => ['ToolOwning', []],
     'malformed tool node' => ['ToolOwning', ['node_id' => 'not-a-number']],
 ]);
@@ -226,7 +223,6 @@ it('throws for syntactically valid missing raw identifiers', function (string $s
     'instance node' => ['InstanceOwning', ['node_id' => 999_999]],
     'workspace instance' => ['WorkspaceOwning', ['instance_id' => 999_999]],
     'process instance' => ['ProcessOwning', ['target_type' => 'instance', 'target_id' => 999_999]],
-    'process workspace' => ['ProcessOwning', ['target_type' => 'workspace', 'target_id' => 999_999]],
     'tool node' => ['ToolOwning', ['node_id' => 999_999]],
 ])->throws(ModelNotFoundException::class);
 
@@ -289,6 +285,20 @@ function resolver_instance(OrbitApp $app, Node $node, string $name): Instance
     ]);
 }
 
+function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
+{
+    return AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => $name,
+        'environment' => 'development',
+        'checkout_path' => '/srv/'.$name,
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+}
+
 function resolver_workspace(Instance $instance, string $name): Workspace
 {
     return Workspace::query()->create([
@@ -301,7 +311,7 @@ function resolver_workspace(Instance $instance, string $name): Workspace
     ]);
 }
 
-function resolver_process(Instance|Workspace $owner): Process
+function resolver_process(AppInstance|Instance|Workspace $owner): Process
 {
     return $owner
         ->processes()

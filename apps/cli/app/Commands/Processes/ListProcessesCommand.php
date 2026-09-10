@@ -13,20 +13,19 @@ final class ListProcessesCommand extends ProcessCommand
 {
     #[\Override]
     protected $signature = 'process:list
-        {--instance= : Numeric instance ID}
-        {--workspace= : Numeric workspace ID}
+        {--instance= : Positive AppInstance ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List processes for one instance or workspace.';
+    protected $description = 'List processes for one AppInstance.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $target = $this->target();
+        $appInstanceId = $this->appInstanceId();
 
-        if ($target === null) {
+        if ($appInstanceId === null) {
             return self::FAILURE;
         }
 
@@ -38,7 +37,7 @@ final class ListProcessesCommand extends ProcessCommand
 
         $response = $this->send(
             $connector,
-            new ListProcessesRequest($target['type'], $target['id']),
+            new ListProcessesRequest($appInstanceId),
             ProcessesResponse::class,
         );
 

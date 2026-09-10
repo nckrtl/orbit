@@ -16,10 +16,8 @@ use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Process;
-use App\Models\Workspace;
-use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 {
@@ -35,29 +33,13 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $processes = Process::query()
-            ->where(static function (Builder $query) use ($context): void {
-                $query
-                    ->where(static function (Builder $query) use ($context): void {
-                        $query
-                            ->where('owner_type', Instance::class)
-                            ->whereIn('owner_id', Instance::query()
-                                ->select('id')
-                                ->where('node_id', $context->node->id));
-                    })
-                    ->orWhere(static function (Builder $query) use ($context): void {
-                        $query
-                            ->where('owner_type', Workspace::class)
-                            ->whereIn(
-                                'owner_id',
-                                Workspace::query()
-                                    ->whereHas('instance', static fn (Builder $query): Builder => $query->where(
-                                        'node_id',
-                                        $context->node->id,
-                                    ))
-                                    ->select('id'),
-                            );
-                    });
-            })
+            ->where('owner_type', AppInstance::class)
+            ->whereIn(
+                'owner_id',
+                AppInstance::query()
+                    ->select('id')
+                    ->where('node_id', $context->node->id),
+            )
             ->orderBy('id')
             ->get();
 

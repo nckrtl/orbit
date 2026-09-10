@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\AppInstances;
 
+use App\Actions\Processes\CascadeAppInstanceProcessesAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
@@ -22,6 +23,7 @@ use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -45,6 +47,8 @@ final readonly class RemoveAppInstanceAction
         private AppInstanceRemovalProjector $routes,
         private ManagedCheckoutOverlap $checkoutOverlap,
         private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private ProcessAdmissionLock $processAdmissions,
+        private CascadeAppInstanceProcessesAction $processes,
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceContentRetention $productionContent,
         private RouteStateResolver $routeState,
@@ -183,96 +187,99 @@ final readonly class RemoveAppInstanceAction
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
 
         /** @var AppInstanceRemoval $operation */
-        $operation = DB::transaction(function () use (
-            $snapshot,
-            $force,
-            $members,
-            $inventories,
-            $digest,
-        ): AppInstanceRemoval {
-            $lockedMembers = AppInstance::query()
-                ->whereKey($members->pluck('id'))
-                ->lockForUpdate()
-                ->orderBy('id')
-                ->get()
-                ->keyBy('id');
-            $routeIds = $members->map(static fn (AppInstance $member): int => $member->routes->sole()->id);
-            $lockedRoutes = Route::query()
-                ->with('targets')
-                ->whereKey($routeIds)
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
+        $operation = $this->processAdmissions->run(
+            $members->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
+            fn (): AppInstanceRemoval => DB::transaction(function () use (
+                $snapshot,
+                $force,
+                $members,
+                $inventories,
+                $digest,
+            ): AppInstanceRemoval {
+                $lockedMembers = AppInstance::query()
+                    ->whereKey($members->pluck('id'))
+                    ->lockForUpdate()
+                    ->orderBy('id')
+                    ->get()
+                    ->keyBy('id');
+                $routeIds = $members->map(static fn (AppInstance $member): int => $member->routes->sole()->id);
+                $lockedRoutes = Route::query()
+                    ->with('targets')
+                    ->whereKey($routeIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
 
-            if ($lockedMembers->count() !== $members->count() || $lockedRoutes->count() !== $members->count()) {
-                $this->conflict($snapshot);
-            }
-
-            foreach ($members as $member) {
-                $lockedMember = $lockedMembers->get($member->id);
-                $route = $member->routes->sole();
-                $lockedRoute = $lockedRoutes->get($route->id);
-
-                if (
-                    ! $lockedMember instanceof AppInstance
-                    || ! $lockedRoute instanceof Route
-                    || $lockedMember->status !== AppInstanceState::Active
-                    || $lockedMember->migration_required
-                    || $lockedMember->app_id !== $member->app_id
-                    || $lockedMember->node_id !== $member->node_id
-                    || $lockedMember->checkout_path !== $member->checkout_path
-                    || $lockedMember->source_layout !== $member->source_layout
-                    || $lockedRoute->status !== RouteStatus::Active
-                    || $lockedRoute->targets->count() !== 1
-                    || $lockedRoute->targets->sole()->app_instance_id !== $lockedMember->id
-                ) {
+                if ($lockedMembers->count() !== $members->count() || $lockedRoutes->count() !== $members->count()) {
                     $this->conflict($snapshot);
                 }
-            }
 
-            $operation = AppInstanceRemoval::query()->create([
-                'id' => (string) Str::uuid(),
-                'requested_app_instance_id' => $snapshot->id,
-                'requested_name' => $snapshot->name,
-                'force' => $force,
-                'inventory_digest' => $digest,
-                'total' => $members->count(),
-                'status' => AppInstanceRemovalStatus::Removing,
-                'current_step' => AppInstanceRemovalStep::SourcePreparation,
-            ]);
+                foreach ($members as $member) {
+                    $lockedMember = $lockedMembers->get($member->id);
+                    $route = $member->routes->sole();
+                    $lockedRoute = $lockedRoutes->get($route->id);
 
-            foreach ($members as $position => $member) {
-                $inventory = $inventories[$member->id];
-                $operation
-                    ->members()
-                    ->create([
-                        'position' => $position,
-                        'app_instance_id' => $member->id,
-                        'app_id' => $member->app_id,
-                        'node_id' => $member->node_id,
-                        'route_id' => $member->routes->sole()->id,
-                        'name' => $member->name,
-                        'environment' => $member->environment,
-                        'source_layout' => $inventory->layout,
-                        'repository_identity' => $inventory->repositoryIdentity,
-                        'checkout_path' => $inventory->checkoutPath,
-                        'root' => $member->effectiveRoot(),
-                        'branch' => $inventory->branch,
-                        'starting_commit' => $member->starting_commit,
-                        'source_commit' => $inventory->startingCommit,
-                        'common_repository_path' => $inventory->commonRepositoryPath,
-                        'source_identity' => $inventory->sourceIdentity,
-                        'linked_worktree_paths' => $inventory->linkedWorktreePaths,
-                        'source_digest' => $inventory->digest,
-                    ]);
-            }
+                    if (
+                        ! $lockedMember instanceof AppInstance
+                        || ! $lockedRoute instanceof Route
+                        || $lockedMember->status !== AppInstanceState::Active
+                        || $lockedMember->migration_required
+                        || $lockedMember->app_id !== $member->app_id
+                        || $lockedMember->node_id !== $member->node_id
+                        || $lockedMember->checkout_path !== $member->checkout_path
+                        || $lockedMember->source_layout !== $member->source_layout
+                        || $lockedRoute->status !== RouteStatus::Active
+                        || $lockedRoute->targets->count() !== 1
+                        || $lockedRoute->targets->sole()->app_instance_id !== $lockedMember->id
+                    ) {
+                        $this->conflict($snapshot);
+                    }
+                }
 
-            AppInstance::query()
-                ->whereKey($members->pluck('id'))
-                ->update(['status' => AppInstanceState::Removing->value]);
+                $operation = AppInstanceRemoval::query()->create([
+                    'id' => (string) Str::uuid(),
+                    'requested_app_instance_id' => $snapshot->id,
+                    'requested_name' => $snapshot->name,
+                    'force' => $force,
+                    'inventory_digest' => $digest,
+                    'total' => $members->count(),
+                    'status' => AppInstanceRemovalStatus::Removing,
+                    'current_step' => AppInstanceRemovalStep::SourcePreparation,
+                ]);
 
-            return $operation->load('members');
-        });
+                foreach ($members as $position => $member) {
+                    $inventory = $inventories[$member->id];
+                    $operation
+                        ->members()
+                        ->create([
+                            'position' => $position,
+                            'app_instance_id' => $member->id,
+                            'app_id' => $member->app_id,
+                            'node_id' => $member->node_id,
+                            'route_id' => $member->routes->sole()->id,
+                            'name' => $member->name,
+                            'environment' => $member->environment,
+                            'source_layout' => $inventory->layout,
+                            'repository_identity' => $inventory->repositoryIdentity,
+                            'checkout_path' => $inventory->checkoutPath,
+                            'root' => $member->effectiveRoot(),
+                            'branch' => $inventory->branch,
+                            'starting_commit' => $member->starting_commit,
+                            'source_commit' => $inventory->startingCommit,
+                            'common_repository_path' => $inventory->commonRepositoryPath,
+                            'source_identity' => $inventory->sourceIdentity,
+                            'linked_worktree_paths' => $inventory->linkedWorktreePaths,
+                            'source_digest' => $inventory->digest,
+                        ]);
+                }
+
+                AppInstance::query()
+                    ->whereKey($members->pluck('id'))
+                    ->update(['status' => AppInstanceState::Removing->value]);
+
+                return $operation->load('members');
+            }),
+        );
 
         return $operation;
     }
@@ -285,7 +292,7 @@ final readonly class RemoveAppInstanceAction
         $inventory = $this->productionContent->inventory($snapshot);
 
         /** @var AppInstanceRemoval $operation */
-        $operation = DB::transaction(function () use ($snapshot, $route, $inventory, $force): AppInstanceRemoval {
+        $operation = $this->processAdmissions->run([$snapshot->id], fn (): AppInstanceRemoval => DB::transaction(function () use ($snapshot, $route, $inventory, $force): AppInstanceRemoval {
             $locked = AppInstance::query()->lockForUpdate()->findOrFail($snapshot->id);
             $lockedRoute = Route::query()
                 ->with($this->productionRouteRelations())
@@ -333,7 +340,7 @@ final readonly class RemoveAppInstanceAction
             $locked->update(['status' => AppInstanceState::Removing]);
 
             return $operation->load('members');
-        });
+        }));
 
         return $operation;
     }
@@ -746,6 +753,7 @@ final readonly class RemoveAppInstanceAction
 
     private function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
+        $this->processes->execute($member->app_instance_id);
         $this->routes->cleanupRuntime($member);
         $member->update(['runtime_cleaned_at' => now()]);
     }
