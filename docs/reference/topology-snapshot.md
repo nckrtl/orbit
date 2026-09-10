@@ -1,6 +1,6 @@
 # Topology snapshot
 
-This page is for the operator who maintains Orbit's one persistent topology snapshot. Every proof topology and discovery topology starts from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, and how to recover when the manifest and the host disagree. The disposable topologies that clone it and any issue-local extension are on the [Incus topology registry](incus-topologies.md).
+This page is for the operator who maintains Orbit's one persistent topology snapshot. Ordinary proof and discovery topologies start from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, how an issue installs a declared cold replacement, and how to recover when the manifest and the host disagree. The disposable topologies and any issue-local extension are on the [Incus topology registry](incus-topologies.md).
 
 ## Identity
 
@@ -29,12 +29,23 @@ Every command accepts `--json`, and `--main-sha=SHA` must be the full SHA of the
 | `rebuild --main-sha=SHA` | Forgets stale manifests and builds from the base image when every exact resource is absent |
 | `recover-legacy --main-sha=SHA` | Proves ownership of present resources, retains evidence, and builds again |
 
+## Declared replacement
+
+An issue proof plan can declare `"snapshot_replacement": true` before proof construction. The harness then constructs the exact registered Gateway, app-dev, and app-prod recipe from the recorded generic base and exact candidate instead of copying this page's promoted generation. The attempt uses normal issue proof, input-manifest, capture, interactive review, and cleanup records. A cold scenario, ordinary refresh, `rebuild`, or `recover-legacy` has no declaration and cannot become replacement proof after construction. [ADR 0037](../decisions/0037-promote-fresh-three-node-topology-snapshots.md) governs this exception, and [ADR 0036](../decisions/0036-support-only-appinstances.md) requires its sample state to use AppInstances and App-owned Routes.
+
+The current promoted generation remains stopped and unchanged until proof, review, accepted merge, clean replacement construction, and verification succeed. Closeout never installs the retained proof machines because interactive review can change them. It reconstructs the replacement from accepted merged source and the recorded generic-base inputs, requires the exact three-Node inventory and native sample state, and only then starts installation.
+
+The installation journal binds the issue, accepted merge, old generation, replacement attempt, exact VM and network identities, and every completed swap or cleanup step. The harness prepares and snapshots the complete stopped replacement beside the old generation before deleting or renaming a promoted VM. A failure before swap removes only recorded replacement resources. A failure during swap restores the old generation when it can; otherwise the journal names the explicit recovery state and the command makes no success claim.
+
+After all three replacements and the promoted manifest agree, acquisition sees one stopped shared generation. Cleanup verifies and removes only the journaled replacement and replaced-snapshot resources. Captured proof and interactive review records remain immutable. A cleanup interruption reports that installation succeeded and resumes against the same exact identities.
+
 ## Promote
 
-Feature closeout uses `refresh` from merged main while captured successful proof resources remain retained, under [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md). The explicit `promote` command remains available only for an unchanged retained live topology that has not received interactive reviewer access, and it verifies its plan selected from `.loop/proof/`. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
+Feature closeout uses `refresh` from merged main while captured successful proof resources remain retained, under [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md). The explicit `promote` command remains available only for an ordinary unchanged retained live topology that has not received interactive reviewer access, and it verifies its plan selected from `.loop/proof/`. A plan with `snapshot_replacement: true` fails before Incus access because only verified closeout can install its clean reconstructed replacement. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
 
 | Refusal | Condition |
 | --- | --- |
+| Declared replacement | The plan sets `snapshot_replacement: true`; only clean closeout reconstruction can install it |
 | Evidence | No `proved` attempt, or the plan fingerprint, zero-exit action list, or manifest does not match the recorded proof |
 | Mutation | The plan declares an extension, declares `mutates: true`, or its `ends_with` leaves a Node out; each condition sets `mutates` |
 | Review state | The retained proof topology has any interactive reviewer action, so its live state is not promotion input |
@@ -52,7 +63,7 @@ The failure reports that the new snapshot generation is already installed, the c
 
 ## Refresh
 
-`refresh` is the maintenance path when no proved topology exists and the closeout path for a retained successful proof after interactive review. A plan that normalizes to `mutates: true` also uses refresh under [ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md). An extended plan always takes this closeout path. Merge closeout never substitutes a refresh for missing or invalid proof or review evidence.
+`refresh` is the maintenance path when no proved topology exists and the ordinary closeout path for a retained successful proof after interactive review. A plan that normalizes to `mutates: true` also uses refresh under [ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md). An extended plan always takes this closeout path. A declared cold replacement uses the separate installation path above. Merge closeout never substitutes either path for missing or invalid proof or review evidence.
 
 It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation.
 
@@ -78,11 +89,11 @@ Verification accepts two exact production layouts during this compatibility peri
 
 The compatibility period ends when the supported sample contract always includes candidate cloning, explicit deployment, release placement, environment synchronization, and a dedicated production PHP service. The later sample convergence change removes direct production creation, flat placement, and shared production PHP verification together.
 
-`--allow-cold` permits construction only when no promoted generation, `corrupt.json`, topology snapshot network, or topology snapshot VM exists. It never replaces a promoted generation.
+`--allow-cold` permits initial construction only when no promoted generation, `corrupt.json`, topology snapshot network, or topology snapshot VM exists. It never replaces a promoted generation and never grants issue-proof authority.
 
 ## Rebuild
 
-A manifest that names snapshots or VMs the host does not hold is stale, not corrupt. `status` reports `state: stale` with the `recovery` command, and `refresh` and `restore` refuse before they mutate anything. `rebuild --main-sha=SHA` holds the refresh lock and refuses while any of the three instances, their `-next` copies, or the network exists. The refusal lists each present name and directs the operator to `recover-legacy`. When all are absent it deletes every manifest and `corrupt.json`, runs a cold build at `SHA`, and reports `instances_deleted`, `networks_deleted`, and the refresh result.
+A manifest that names snapshots or VMs the host does not hold is stale, not corrupt. `status` reports `state: stale` with the `recovery` command, and `refresh` and `restore` refuse before they mutate anything. `rebuild --main-sha=SHA` is a disaster-recovery path. It holds the refresh lock and refuses while any of the three instances, their `-next` copies, or the network exists. The refusal lists each present name and directs the operator to `recover-legacy`. When all are absent it deletes every manifest and `corrupt.json`, runs a cold build at `SHA`, and reports `instances_deleted`, `networks_deleted`, and the refresh result. That build restores shared infrastructure; it is not issue acceptance and cannot become declared replacement proof.
 
 ## Retire legacy resources
 

@@ -17,13 +17,16 @@ use App\E2E\TopologySnapshotAvailability;
 use App\E2E\TopologySnapshotBuilder;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologySnapshotRefresher;
+use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\TopologyVerifier;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RefreshResult;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologySnapshotReplacementInstallation;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
@@ -41,6 +44,7 @@ function topologySnapshotRefresherForPowerTests(
     ?string $repositoryRoot = null,
     ?OperationId $operation = null,
     int $refreshLockTimeoutSeconds = 3600,
+    ?TopologySnapshotReplacementStore $replacements = null,
 ): TopologySnapshotRefresher {
     $root = $repositoryRoot ?? dirname(__DIR__, 4);
     $operation ??= new OperationId(str_repeat('a', 32));
@@ -84,6 +88,50 @@ function topologySnapshotRefresherForPowerTests(
         TopologySnapshotIdentity::primary(),
         new TopologySnapshotAvailability($host, TopologySnapshotIdentity::primary()),
         $refreshLockTimeoutSeconds,
+        $replacements,
+    );
+}
+
+function refresherReplacementInstallation(): TopologySnapshotReplacementInstallation
+{
+    $old = topologySnapshotRestoreGeneration();
+    $new = new TopologySnapshotGeneration(
+        'replacement-generation',
+        str_repeat('6', 40),
+        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod'],
+        str_repeat('7', 64),
+        $old->baseImageFingerprint,
+        $old->laravel,
+        str_repeat('8', 64),
+        2,
+        $old->coldEpoch,
+        $old->baseImageAlias,
+        TopologyProfile::NAME,
+        TopologyProfile::ROLES,
+        TopologyProfile::CHECKOUT_ROLES,
+        $old->id,
+    );
+
+    return new TopologySnapshotReplacementInstallation(
+        'AUX-231',
+        new AttemptId(str_repeat('a', 32)),
+        new AttemptId(str_repeat('b', 32)),
+        new OperationId(str_repeat('c', 32)),
+        str_repeat('d', 40),
+        str_repeat('e', 40),
+        str_repeat('f', 40),
+        $new->mainSha,
+        str_repeat('a', 64),
+        str_repeat('b', 64),
+        $old,
+        $new,
+        $new->baseImageAlias,
+        $new->baseImageFingerprint,
+        'oe-replacement',
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
     );
 }
 
@@ -99,6 +147,26 @@ it('waits for the generation mutation lock for the shared pin window', function 
     $reflection = new ReflectionClass(TopologySnapshotRefresher::class);
 
     expect($reflection->getConstant('GENERATION_MUTATION_LOCK_TIMEOUT_SECONDS'))->toBe(3600);
+});
+
+it('refuses refresh while a replacement journal is active before any Incus command', function () {
+    $paths = new StatePaths(temporaryPath('refresh-replacement-', 4));
+    $replacements = new TopologySnapshotReplacementStore(new AtomicJsonStore($paths));
+    $replacements->start(refresherReplacementInstallation(), '2026-09-10T10:00:00Z');
+    $container = new Container;
+    $container->instance(ProcessFactory::class, new ProcessFactory);
+    Facade::clearResolvedInstances();
+    Facade::setFacadeApplication($container);
+    Process::fake();
+
+    expect(fn () => topologySnapshotRefresherForPowerTests(
+        new IncusHost,
+        paths: $paths,
+        replacements: $replacements,
+    )->request(str_repeat('b', 40)))
+        ->toThrow(RuntimeException::class, 'replacement recovery is active');
+
+    Process::assertNothingRan();
 });
 
 function topologySnapshotRestoreGeneration(): TopologySnapshotGeneration

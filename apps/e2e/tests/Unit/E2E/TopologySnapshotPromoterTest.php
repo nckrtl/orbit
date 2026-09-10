@@ -16,6 +16,7 @@ use App\E2E\TopologyReleaser;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologySnapshotPromoter;
 use App\E2E\TopologySnapshotPromotionStore;
+use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
@@ -39,6 +40,7 @@ use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologySnapshotReplacementInstallation;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Container\Container;
@@ -191,6 +193,7 @@ function promoterFor(
     string $root,
     StatePaths $paths,
     TopologySnapshotManifestStore $manifests,
+    ?TopologySnapshotReplacementStore $replacements = null,
 ): TopologySnapshotPromoter {
     $host = new IncusHost(pool: 'default');
     $operation = new OperationId(str_repeat('c', 32));
@@ -214,6 +217,50 @@ function promoterFor(
         $operation,
         TopologySnapshotIdentity::primary(),
         new TopologySnapshotPromotionStore(new AtomicJsonStore($paths)),
+        $replacements,
+    );
+}
+
+function promoterReplacementInstallation(
+    TopologySnapshotGeneration $old,
+): TopologySnapshotReplacementInstallation {
+    $new = new TopologySnapshotGeneration(
+        'replacement-generation',
+        str_repeat('6', 40),
+        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod'],
+        str_repeat('7', 64),
+        $old->baseImageFingerprint,
+        $old->laravel,
+        str_repeat('8', 64),
+        2,
+        $old->coldEpoch,
+        $old->baseImageAlias,
+        TopologyProfile::NAME,
+        TopologyProfile::ROLES,
+        TopologyProfile::CHECKOUT_ROLES,
+        $old->id,
+    );
+
+    return new TopologySnapshotReplacementInstallation(
+        'AUX-231',
+        new AttemptId(str_repeat('a', 32)),
+        new AttemptId(str_repeat('b', 32)),
+        new OperationId(str_repeat('c', 32)),
+        str_repeat('d', 40),
+        str_repeat('e', 40),
+        str_repeat('f', 40),
+        $new->mainSha,
+        str_repeat('a', 64),
+        str_repeat('b', 64),
+        $old,
+        $new,
+        $new->baseImageAlias,
+        $new->baseImageFingerprint,
+        'oe-replacement',
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
     );
 }
 
@@ -655,6 +702,37 @@ function fakePromotionHost(
 }
 
 describe('TopologySnapshotPromoter', function (): void {
+    it('refuses a declared replacement before any Incus command', function (): void {
+        $fixture = promotableFixture();
+        $plan = ProofPlan::fromArray($fixture['plan']->toArray() + ['snapshot_replacement' => true]);
+        Process::fake();
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $plan))
+            ->toThrow(RuntimeException::class, 'cannot be promoted directly');
+
+        Process::assertNothingRan();
+    });
+
+    it('refuses direct promotion while a replacement journal is active before any Incus command', function (): void {
+        $fixture = promotableFixture();
+        $promoted = $fixture['manifests']->promoted();
+        assert($promoted !== null);
+        $replacements = new TopologySnapshotReplacementStore(new AtomicJsonStore($fixture['paths']));
+        $replacements->start(promoterReplacementInstallation($promoted), '2026-09-10T10:00:00Z');
+        Process::fake();
+
+        expect(fn () => promoterFor(
+            $fixture['root'],
+            $fixture['paths'],
+            $fixture['manifests'],
+            $replacements,
+        )->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'replacement transaction is active');
+
+        Process::assertNothingRan();
+    });
+
     it('refuses a durable review action recorded after the initial promotion check', function (): void {
         $fixture = promotableFixture();
         $events = [];

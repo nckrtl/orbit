@@ -67,11 +67,21 @@ final readonly class TopologySnapshotPromoter
         private OperationId $operation,
         private TopologySnapshotIdentity $identity,
         private TopologySnapshotPromotionStore $promotions,
+        private ?TopologySnapshotReplacementStore $replacements = null,
     ) {}
 
     /** @return array{state:string,promotion_path:string,issue:string,attempt_id:string,generation_id:string,main_sha:string,proved_sha:string,accepted_sha:string,merged_sha:string,runtime_fingerprint:string,manifest_sha256:string,equivalence_sha256:?string,previous_generation_id:?string,cleanup_attempts:list<array{purpose:string,attempt_id:string,state:string}>,released:list<string>,networks_reaped:list<string>} */
     public function promote(TopologyRequest $request, ProofPlan $plan): array
     {
+        $this->assertDirectPromotionAllowed($plan);
+        $activeReplacement = $this->replacements?->active();
+        if ($activeReplacement !== null) {
+            throw new RuntimeException(
+                'A topology snapshot replacement transaction is active; retry the exact '
+                .'`bin/e2e-topology closeout '.$activeReplacement->installation->issue.'` command.',
+            );
+        }
+
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $topology = $this->provedTopology($state, $plan);
         $this->assertNotReviewed($state, $topology->attempt);
@@ -194,6 +204,16 @@ final readonly class TopologySnapshotPromoter
             'released' => $cleanup['released'],
             'networks_reaped' => $cleanup['networks_reaped'],
         ];
+    }
+
+    public function assertDirectPromotionAllowed(ProofPlan $plan): void
+    {
+        if ($plan->snapshotReplacement) {
+            throw new RuntimeException(
+                'A declared topology snapshot replacement cannot be promoted directly; '
+                .'verified closeout must install a clean reconstruction.',
+            );
+        }
     }
 
     private function assertNotReviewed(IssueState $state, AttemptId $attempt): void

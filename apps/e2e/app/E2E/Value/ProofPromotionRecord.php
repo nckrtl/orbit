@@ -45,7 +45,7 @@ final readonly class ProofPromotionRecord
         ) {
             throw new InvalidArgumentException('The proof promotion equivalence fingerprint is invalid.');
         }
-        if (! in_array($promotionPath, ['retained-proof', 'candidate-convergence'], true)) {
+        if (! in_array($promotionPath, ['retained-proof', 'candidate-convergence', 'clean-reconstruction'], true)) {
             throw new InvalidArgumentException('The proof promotion path is invalid.');
         }
         if (preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $recordedAt) !== 1) {

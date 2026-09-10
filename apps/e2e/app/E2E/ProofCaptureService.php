@@ -33,6 +33,11 @@ final readonly class ProofCaptureService
         }
 
         try {
+            if ($state->leaseSnapshotReplacement(AttemptPurpose::Proof) !== $plan->snapshotReplacement) {
+                throw new RuntimeException(
+                    'Proof capture requires the pre-construction snapshot replacement declaration.',
+                );
+            }
             $evidence = ProofEvidence::capture($state, $plan);
             $attempt = $state->attemptId(AttemptPurpose::Proof);
             $path = 'proof-evidence/'.$request->issue.'/'.$attempt->value.'.json';

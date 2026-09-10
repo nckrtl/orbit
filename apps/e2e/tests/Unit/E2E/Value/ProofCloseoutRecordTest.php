@@ -36,6 +36,20 @@ it('permits retry from failed refresh through successful refresh and completion'
         ->toBe($complete->toArray());
 });
 
+it('keeps replacement retry states separate from ordinary refresh', function (): void {
+    $failed = closeoutRecord('replacement-failed', null, 'Cleanup pending.', '2026-09-10T10:00:00Z');
+    $installed = closeoutRecord('replacement-succeeded', 'generation-2', null, '2026-09-10T10:01:00Z');
+    $complete = closeoutRecord('complete', 'generation-2', null, '2026-09-10T10:02:00Z');
+    $refreshed = closeoutRecord('refresh-succeeded', 'generation-2', null, '2026-09-10T10:01:00Z');
+
+    expect($installed->canReplace($failed))
+        ->toBeTrue()
+        ->and($complete->canReplace($installed))
+        ->toBeTrue()
+        ->and($refreshed->canReplace($failed))
+        ->toBeFalse();
+});
+
 it('rejects successful refresh without a generation', function (): void {
     expect(fn () => closeoutRecord('refresh-succeeded', null, null, '2026-09-10T10:00:00Z'))
         ->toThrow(InvalidArgumentException::class, 'requires its generation');

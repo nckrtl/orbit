@@ -20,6 +20,8 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologySnapshotRebuilder;
 use App\E2E\TopologySnapshotRefresher;
+use App\E2E\TopologySnapshotReplacementInstaller;
+use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
@@ -71,7 +73,12 @@ describe('topology snapshot commands', function () {
     });
 
     it('resolves the production refresher with separate refresh and generation locks', function () {
-        expect(app(TopologySnapshotRefresher::class))->toBeInstanceOf(TopologySnapshotRefresher::class);
+        expect(app(TopologySnapshotRefresher::class))
+            ->toBeInstanceOf(TopologySnapshotRefresher::class)
+            ->and(app(TopologySnapshotReplacementStore::class))
+            ->toBeInstanceOf(TopologySnapshotReplacementStore::class)
+            ->and(app(TopologySnapshotReplacementInstaller::class))
+            ->toBeInstanceOf(TopologySnapshotReplacementInstaller::class);
     });
 
     it('registers one thin command for each wrapper action', function () {
@@ -170,6 +177,33 @@ describe('topology snapshot commands', function () {
                 '--json' => true,
             ])
             ->expectsOutputToContain('cannot become the shared topology snapshot')
+            ->assertFailed();
+
+        Process::assertNothingRan();
+    });
+
+    it('refuses direct promotion of a declared replacement before touching Incus', function (): void {
+        $worktree = temporaryPath('orbit-topology-snapshot-replacement-', 8);
+        mkdir($worktree.'/.loop/proof', 0700, true);
+        file_put_contents($worktree.'/.loop/proof/TST-123.json', json_encode([
+            'setup' => [],
+            'acceptance' => [[
+                'id' => 'replacement-ready',
+                'node' => 'app-dev',
+                'argv' => ['true'],
+                'timeout_seconds' => 60,
+            ]],
+            'snapshot_replacement' => true,
+        ], JSON_THROW_ON_ERROR));
+        Process::fake();
+
+        $this
+            ->artisan('topology-snapshot:promote', [
+                'issue' => 'TST-123',
+                '--worktree' => $worktree,
+                '--json' => true,
+            ])
+            ->expectsOutputToContain('cannot be promoted directly')
             ->assertFailed();
 
         Process::assertNothingRan();

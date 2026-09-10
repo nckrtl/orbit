@@ -16,18 +16,21 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofCloseoutRecord;
 use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
+use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofReviewEvaluation;
 use App\E2E\Value\RefreshResult;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotReplacementResult;
 use Closure;
 use RuntimeException;
 
-/** Refresh merged main before releasing the exact retained successful proof. */
+/** Install merged main before releasing the exact retained successful proof. */
 final readonly class ProofCloseoutService
 {
     /**
      * @param  Closure(string): RefreshResult  $refresh
      * @param  Closure(TopologyRequest, CapturedProof): array<string, mixed>  $release
+     * @param  (Closure(TopologyRequest, CapturedProof, string, string, string, string): TopologySnapshotReplacementResult)|null  $replace
      */
     public function __construct(
         private GitRepository $primary,
@@ -36,6 +39,7 @@ final readonly class ProofCloseoutService
         private SecretRedactor $redactor,
         private Closure $refresh,
         private Closure $release,
+        private ?Closure $replace = null,
     ) {}
 
     public function closeout(
@@ -56,7 +60,11 @@ final readonly class ProofCloseoutService
             $feature = new GitRepository($request->worktree);
             $this->assertGitBinding($request, $feature, $candidateSha, $artifactSha, $mergeSha, $mainSha);
             $capture = $this->capture($request, $state);
+            $replacement = ProofInputManifest::fromArray($capture->manifest)->construction->snapshotReplacement;
+            $succeededState = $replacement ? 'replacement-succeeded' : 'refresh-succeeded';
+            $failedState = $replacement ? 'replacement-failed' : 'refresh-failed';
             $existing = $this->closeoutRecord($state, $capture);
+            $this->assertStrategy($existing, $replacement);
             $this->assertAcceptedCandidate($state, $capture->candidateSha, $candidateSha);
             $this->assertReviewReady($state, $capture->attempt);
             $active = $state->hasAttempt(AttemptPurpose::Proof);
@@ -76,35 +84,37 @@ final readonly class ProofCloseoutService
                 ) {
                     throw new RuntimeException('The retained proof topology does not match its immutable capture.');
                 }
-            } elseif ($existing?->state !== 'refresh-succeeded') {
-                throw new RuntimeException('Closeout requires the exact retained proof topology before refresh.');
+            } elseif ($existing?->state !== $succeededState) {
+                throw new RuntimeException('Closeout requires the exact retained proof topology before snapshot installation.');
             }
 
             $generationId = $existing?->generationId;
-            if ($existing?->state !== 'refresh-succeeded') {
-                $refresh = ($this->refresh)($mainSha);
-                if (! $refresh->successful()) {
+            if ($existing?->state !== $succeededState) {
+                $snapshot = $replacement
+                    ? $this->replace($request, $capture, $candidateSha, $artifactSha, $mergeSha, $mainSha)
+                    : ($this->refresh)($mainSha);
+                if (! $snapshot->successful()) {
                     $failed = new ProofCloseoutRecord(
-                        'refresh-failed',
+                        $failedState,
                         $request->issue,
                         $capture->attempt,
                         $candidateSha,
                         $artifactSha,
                         $mergeSha,
                         $mainSha,
-                        $refresh->generationId,
-                        $this->redactor->redact($refresh->error ?? 'Topology snapshot refresh failed.'),
+                        $snapshot->generationId,
+                        $this->redactor->redact($snapshot->error ?? 'Topology snapshot installation failed.'),
                         gmdate('Y-m-d\TH:i:s\Z'),
                     );
                     $this->writeRecord($state, $failed);
 
                     return $failed;
                 }
-                $generationId = $refresh->generationId ?? throw new RuntimeException(
-                    'A successful topology snapshot refresh has no generation identity.',
+                $generationId = $snapshot->generationId ?? throw new RuntimeException(
+                    'A successful topology snapshot installation has no generation identity.',
                 );
                 $refreshed = new ProofCloseoutRecord(
-                    'refresh-succeeded',
+                    $succeededState,
                     $request->issue,
                     $capture->attempt,
                     $candidateSha,
@@ -119,7 +129,7 @@ final readonly class ProofCloseoutService
             }
 
             ($this->release)($request, $capture);
-            $completedMainSha = $existing?->state === 'refresh-succeeded'
+            $completedMainSha = $existing?->state === $succeededState
                 ? $existing->mainSha
                 : $mainSha;
             $complete = new ProofCloseoutRecord(
@@ -139,6 +149,32 @@ final readonly class ProofCloseoutService
             return $complete;
         } finally {
             $lock->release();
+        }
+    }
+
+    private function replace(
+        TopologyRequest $request,
+        CapturedProof $capture,
+        string $candidateSha,
+        string $artifactSha,
+        string $mergeSha,
+        string $mainSha,
+    ): TopologySnapshotReplacementResult {
+        if ($this->replace === null) {
+            throw new RuntimeException('Declared snapshot replacement installation is not configured.');
+        }
+
+        return ($this->replace)($request, $capture, $candidateSha, $artifactSha, $mergeSha, $mainSha);
+    }
+
+    private function assertStrategy(?ProofCloseoutRecord $record, bool $replacement): void
+    {
+        if ($record === null || $record->state === 'complete') {
+            return;
+        }
+        $recordedReplacement = str_starts_with($record->state, 'replacement-');
+        if ($recordedReplacement !== $replacement) {
+            throw new RuntimeException('The closeout snapshot strategy differs from its retained record.');
         }
     }
 

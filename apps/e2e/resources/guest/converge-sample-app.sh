@@ -55,12 +55,16 @@ case ${1-} in
     ;;
   create-resources)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
-    [[ $# -eq 4 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$4" =~ ^[0-9a-f]{40}$ ]]
+    [[ ( $# -eq 4 || ( $# -eq 5 && "$5" == native ) ) && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$4" =~ ^[0-9a-f]{40}$ ]]
     nodes=$("$orbit" node:list --json)
     dev_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$2" <<<"$nodes")
     prod_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$3" <<<"$nodes")
     initial_instances=$("$orbit" instance:list --json)
     instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; $items=$v->{$key}; if(!is_array($items)) exit(65); $targets=[]; foreach($items as $item) { if(!is_object($item)) exit(65); $name=$item->name ?? null; if(in_array($name, ["e2e-dev", "e2e-prod"], true)) { if(isset($targets[$name])) exit(65); $targets[$name]=true; } } echo $key;' <<<"$initial_instances")
+    if [[ "${5-}" == native && "$instance_shape" != app_instances ]]; then
+      printf 'create-resources: declared replacement requires native AppInstance support\n' >&2
+      exit 65
+    fi
     if [[ "$instance_shape" == app_instances ]]; then
       # Select one complete mutation contract after the read-only shape
       # preflight and before changing cluster, App, or sample state.
@@ -231,14 +235,16 @@ case ${1-} in
     ;;
   inspect-state)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
-    [[ $# -eq 1 ]] || exit 64
+    [[ $# -eq 1 || ( $# -eq 2 && "$2" == native ) ]] || exit 64
     if [[ ! -e "$sample_state" ]]; then
+      [[ "${2-}" != native ]] || exit 65
       printf '{"shape":"instances"}\n'
       exit 0
     fi
     [[ -f "$sample_state" ]] || exit 65
     sample_shape=$(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $shape=$v["shape"] ?? null; if(!in_array($shape, ["instances", "app_instances"], true)) exit(65); echo $shape;' "$sample_state")
     if [[ "$sample_shape" == instances ]]; then
+      [[ "${2-}" != native ]] || exit 65
       printf '{"shape":"instances"}\n'
       exit 0
     fi

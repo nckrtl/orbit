@@ -23,6 +23,7 @@ use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotReplacementResult;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Container\Container;
@@ -90,8 +91,12 @@ function closeoutGitFixture(): array
     ];
 }
 
-function closeoutState(string $worktree, string $candidate, StatePaths $hostPaths): IssueState
-{
+function closeoutState(
+    string $worktree,
+    string $candidate,
+    StatePaths $hostPaths,
+    bool $snapshotReplacement = false,
+): IssueState {
     $issue = 'AUX-230';
     $attempt = attemptId('b');
     $target = TopologyTarget::feature($issue, $attempt);
@@ -110,7 +115,14 @@ function closeoutState(string $worktree, string $candidate, StatePaths $hostPath
         ['gateway', 'app-dev', 'app-prod'],
         ['gateway', 'app-dev'],
     );
-    $construction = TopologyConstructionInputs::forGeneration($target, $generation->id, 2);
+    $construction = $snapshotReplacement
+        ? TopologyConstructionInputs::forSnapshotReplacement(
+            $target,
+            2,
+            $generation->baseImageAlias,
+            $generation->baseImageFingerprint,
+        )
+        : TopologyConstructionInputs::forGeneration($target, $generation->id, 2);
     $topology = new FeatureTopology(
         $construction,
         AttemptPurpose::Proof,
@@ -158,7 +170,12 @@ function closeoutState(string $worktree, string $candidate, StatePaths $hostPath
         '2026-09-10T10:00:00Z',
     );
     $state = IssueState::forWorktree($issue, $worktree);
-    $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('4', 32)));
+    $state->writeAttempt(
+        $attempt,
+        AttemptPurpose::Proof,
+        new OperationId(str_repeat('4', 32)),
+        snapshotReplacement: $snapshotReplacement,
+    );
     $state->writeTopology($topology);
     $state->writeProof($proof);
     $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
@@ -194,6 +211,7 @@ function closeoutService(
     StatePaths $hostPaths,
     Closure $refresh,
     Closure $release,
+    ?Closure $replace = null,
 ): ProofCloseoutService {
     return new ProofCloseoutService(
         new GitRepository($git['primary']),
@@ -202,8 +220,115 @@ function closeoutService(
         new SecretRedactor(['closeout-secret']),
         $refresh,
         $release,
+        $replace,
     );
 }
+
+it('installs a declared replacement before exact retained-proof cleanup', function (): void {
+    $git = closeoutGitFixture();
+    $paths = new StatePaths(temporaryPath('orbit-closeout-host-', 4));
+    $state = closeoutState($git['worktree'], $git['candidate'], $paths, snapshotReplacement: true);
+    $order = [];
+    $service = closeoutService(
+        $git,
+        $paths,
+        static fn (): RefreshResult => throw new RuntimeException('ordinary refresh must not run'),
+        static function (TopologyRequest $request, CapturedProof $capture) use (&$order, $state): array {
+            $order[] = 'release:'.$capture->attempt->value;
+            $state->forgetAttempt(AttemptPurpose::Proof);
+
+            return ['state' => 'released'];
+        },
+        static function (
+            TopologyRequest $request,
+            CapturedProof $capture,
+            string $candidate,
+            string $artifact,
+            string $merge,
+            string $main,
+        ) use (&$order, $git): TopologySnapshotReplacementResult {
+            expect([$request->issue, $capture->attempt->value, $candidate, $artifact, $merge, $main])
+                ->toBe([
+                    'AUX-230',
+                    str_repeat('b', 32),
+                    $git['candidate'],
+                    $git['artifact'],
+                    $git['merge'],
+                    $git['main'],
+                ]);
+            $order[] = 'replace:'.$main;
+
+            return new TopologySnapshotReplacementResult(
+                'installed',
+                str_repeat('6', 32),
+                'replacement-generation',
+                'complete',
+            );
+        },
+    );
+
+    $result = $service->closeout(
+        new TopologyRequest('AUX-230', $git['worktree']),
+        $git['candidate'],
+        $git['artifact'],
+        $git['merge'],
+        $git['main'],
+    );
+
+    expect($result->state)
+        ->toBe('complete')
+        ->and($result->generationId)
+        ->toBe('replacement-generation')
+        ->and($order)
+        ->toBe([
+            'replace:'.$git['main'],
+            'release:'.str_repeat('b', 32),
+        ])
+        ->and($state->hasAttempt(AttemptPurpose::Proof))
+        ->toBeFalse();
+});
+
+it('retains declared replacement proof and exact main binding after installation failure', function (): void {
+    $git = closeoutGitFixture();
+    $paths = new StatePaths(temporaryPath('orbit-closeout-host-', 4));
+    $state = closeoutState($git['worktree'], $git['candidate'], $paths, snapshotReplacement: true);
+    $released = false;
+    $service = closeoutService(
+        $git,
+        $paths,
+        static fn (): RefreshResult => throw new RuntimeException('ordinary refresh must not run'),
+        static function () use (&$released): array {
+            $released = true;
+
+            return [];
+        },
+        static fn (): TopologySnapshotReplacementResult => new TopologySnapshotReplacementResult(
+            'recovery-required',
+            str_repeat('6', 32),
+            'replacement-generation',
+            'recovery_required',
+            'replacement failed',
+            'bin/e2e-topology closeout AUX-230',
+        ),
+    );
+
+    $result = $service->closeout(
+        new TopologyRequest('AUX-230', $git['worktree']),
+        $git['candidate'],
+        $git['artifact'],
+        $git['merge'],
+        $git['main'],
+    );
+
+    expect($result->state)
+        ->toBe('replacement-failed')
+        ->and($result->error)
+        ->toBe('replacement failed')
+        ->and($released)
+        ->toBeFalse()
+        ->and($state->hasAttempt(AttemptPurpose::Proof))
+        ->toBeTrue();
+});
 
 it('retains the proof and records a redacted failed refresh for retry', function (): void {
     $git = closeoutGitFixture();

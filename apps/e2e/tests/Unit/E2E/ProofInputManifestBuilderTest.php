@@ -6,7 +6,9 @@ use App\E2E\Git\GitRepository;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\StaticProofInputPolicy;
 use App\E2E\Value\ObservedPhpInputs;
+use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\TopologyConstructionInputs;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
@@ -81,6 +83,22 @@ function proofManifestBuilder(): ProofInputManifestBuilder
 }
 
 describe('ProofInputManifestBuilder', function (): void {
+    it('rejects a construction whose cold replacement declaration differs from the proof plan', function (): void {
+        $fixture = proofManifestRepository();
+        $plan = ProofPlan::fromArray([...$fixture['plan']->toArray(), 'snapshot_replacement' => true]);
+
+        expect(fn () => proofManifestBuilder()->build(
+            new GitRepository($fixture['root']),
+            $fixture['proved'],
+            $fixture['main'],
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
+            $plan,
+            topologyConstructionFixture(),
+        ))
+            ->toThrow(InvalidArgumentException::class, 'construction inputs do not match the proof plan');
+    });
+
     it('replaces broad ordinary PHP source with feature and complete observed inputs', function (): void {
         $fixture = proofManifestRepository();
         $plan = ProofPlan::fromArray([
@@ -160,6 +178,33 @@ describe('ProofInputManifestBuilder', function (): void {
             ->toBe('proof-contract')
             ->and($manifest->toArray()['fingerprint'])
             ->toBe($manifest->fingerprint());
+    });
+
+    it('retains legacy construction bytes when validating a stored manifest fingerprint', function (): void {
+        $fixture = proofManifestRepository();
+        $manifest = proofManifestBuilder()->build(
+            new GitRepository($fixture['root']),
+            $fixture['proved'],
+            $fixture['main'],
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
+            $fixture['plan'],
+            topologyConstructionFixture(),
+        );
+        $value = $manifest->toArray();
+        $value['construction']['schema'] = TopologyConstructionInputs::LEGACY_SCHEMA;
+        unset($value['construction']['snapshot_replacement'], $value['fingerprint']);
+        $value['fingerprint'] = hash('sha256', json_encode(
+            $value,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ));
+
+        $stored = ProofInputManifest::fromArray($value);
+
+        expect($stored->construction->schema)
+            ->toBe(TopologyConstructionInputs::LEGACY_SCHEMA)
+            ->and($stored->toArray())
+            ->toBe($value);
     });
 
     it('rejects literal checkout reads outside runtime and declared inputs', function (): void {

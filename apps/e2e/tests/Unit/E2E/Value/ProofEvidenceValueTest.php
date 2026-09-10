@@ -268,4 +268,21 @@ describe('proof reuse evidence', function (): void {
             'equivalence_sha256' => str_repeat('f', 64),
         ]);
     });
+
+    it('records clean reconstruction as replacement promotion lineage', function (): void {
+        $record = new ProofPromotionRecord(
+            'AUX-231',
+            'generation-1',
+            str_repeat('a', 40),
+            str_repeat('b', 40),
+            str_repeat('c', 40),
+            str_repeat('d', 64),
+            str_repeat('e', 64),
+            null,
+            '2026-09-10T12:00:00Z',
+            'clean-reconstruction',
+        );
+
+        expect($record->toArray()['promotion_path'])->toBe('clean-reconstruction');
+    });
 });

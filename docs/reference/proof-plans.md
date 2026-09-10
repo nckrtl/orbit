@@ -17,10 +17,13 @@ A plan is one JSON object at `.loop/proof/<ISSUE>.json` in the worktree. A `--pl
 | `ends_with` | `{"nodes": [...]}` | The physical Nodes that remain registered when verification runs; a Node left out is proved absent | Every Node in the selected topology |
 | `inputs` | list of paths | Files or directories that actions read outside the runtime policy and the fixtures | None |
 | `observed_inputs` | boolean | Collect file-level PHP observations with PCOV during setup and acceptance | `false` |
+| `snapshot_replacement` | boolean | Constructs a declared cold replacement from the generic base instead of cloning the promoted generation | `false` |
 
 `ends_with.nodes` must name `gateway` and must not repeat a physical Node key. A declaration that leaves a Node out sets `mutates`; a declaration that names every Node counts as no declaration. An extended plan must keep `app-prod-2`; the harness refuses a declaration that removes only the extra Node. Declaring an extension also sets `mutates`, even when the input says `"mutates": false`.
 
-The harness skips only the probes that run on a declared-absent Node. The fleet probes expect exactly the declared set, so `role.assignments` fails when a declared-absent Node is registered. The normalized plan has a SHA-256 fingerprint, recorded as `plan_sha256`; a plan without `extension` keeps its existing normalized form and fingerprint.
+A snapshot replacement uses exactly the registered `gateway`, `app-dev`, and `app-prod` Nodes. The harness refuses `snapshot_replacement: true` with an extension or a declared-absent Node. The declaration must exist before `prove` creates the attempt; a completed ordinary proof, cold scenario, or disaster-recovery build cannot gain replacement authority later.
+
+The harness skips only the probes that run on a declared-absent Node. The fleet probes expect exactly the declared set, so `role.assignments` fails when a declared-absent Node is registered. The normalized plan has a SHA-256 fingerprint, recorded as `plan_sha256`; optional declarations appear in that normalized form only when enabled.
 
 ### Actions
 
@@ -47,7 +50,7 @@ The harness empties the guest directory before staging. Every physical Node prin
 
 | Phase | What the harness does |
 | --- | --- |
-| `construct` | Clones the three standard Nodes from the promoted generation and, for an extended plan, constructs `app-prod-2` from the recorded generic base image |
+| `construct` | Clones the standard Nodes, constructs a declared replacement from the generic base, or adds an extended `app-prod-2` from that base |
 | `sync.candidate` | Transfers exactly the candidate commit from Git to the checkout roles |
 | `identity` | Proves each guest checkout holds the candidate SHA and tree |
 | `fixtures` | Stages the fixtures |
@@ -79,7 +82,7 @@ With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matc
 | `failed_action` | The action that ended the proof, with `stdout_tail` and `stderr_tail` of the final 4096 bytes |
 | `error` | `proof phase <phase> failed: <message>` |
 
-A proved result also writes the manifest, whose content [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. Its topology input records the normalized extension, promoted source generation, ordered physical Node inventory and identities, and the extra Node's image alias and fingerprint. Equivalence is stale when the current extension or construction input differs. The harness pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` while captured evidence or the retained topology refers to it and never overwrites immutable evidence.
+A proved result also writes the manifest, whose content [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. Its topology input records the normalized construction declaration, promoted source generation or generic base, ordered physical Node inventory and identities, and every image alias and fingerprint used for cold construction. Equivalence is stale when the current declaration or construction input differs. The harness pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` while captured evidence or the retained topology refers to it and never overwrites immutable evidence.
 
 ## Equivalence outcomes
 
@@ -103,4 +106,6 @@ Interactive actions run as the ordinary `orbit` guest user and may change applic
 
 Review evaluation refuses approval when a required action fails or its record is incomplete. It reports an exploratory failure separately. A code or configuration fix requires a new candidate and fresh proof; equivalence or a live edit cannot establish that fix. The operator may release an obsolete proof attempt before replacement or explicit abandonment, but the primary archive, captured evidence, and review findings remain.
 
-After the verified merge, `bin/e2e-topology closeout` refreshes the shared snapshot from current main containing that merge. It records the proved attempt, artifact SHA, accepted head, merge commit, and resulting generation. It never promotes reviewer-modified live state. Only successful refresh permits the command to release the complete retained proof topology. A failed refresh retains the topology, captured evidence, and review record for retry. Failed proof remains available for diagnosis and uses its existing explicit release path.
+After the verified merge, `bin/e2e-topology closeout` refreshes the shared snapshot from current main containing that merge. For a declared snapshot replacement, it instead constructs and verifies a clean three-Node replacement from the accepted merged source and the recorded generic-base inputs, then installs that generation transactionally. It never installs reviewer-modified live state.
+
+Only successful refresh or replacement installation permits the command to release the complete retained proof topology. A failed refresh, construction, verification, or installation retains the prior usable generation or its explicit recovery record, plus the proof topology, captured evidence, and review record for retry. Failed proof remains available for diagnosis and uses its existing explicit release path.

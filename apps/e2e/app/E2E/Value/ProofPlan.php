@@ -38,6 +38,9 @@ final readonly class ProofPlan
     /** Optional: add exactly one temporary app-prod Node to discovery and proof. */
     private const string EXTENSION = 'extension';
 
+    /** Optional: construct proof from the generic base instead of the promoted generation. */
+    private const string SNAPSHOT_REPLACEMENT = 'snapshot_replacement';
+
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
@@ -53,6 +56,7 @@ final readonly class ProofPlan
         public array $inputs,
         public bool $observedInputs,
         public ?TopologyExtension $extension,
+        public bool $snapshotReplacement,
     ) {}
 
     public static function fromFile(string $path): self
@@ -105,6 +109,17 @@ final readonly class ProofPlan
             unset($plan[self::EXTENSION]);
         }
         $recipe = $extension?->recipe() ?? TopologyRecipe::registered();
+        $snapshotReplacement = false;
+        if (array_key_exists(self::SNAPSHOT_REPLACEMENT, $plan)) {
+            if (! is_bool($plan[self::SNAPSHOT_REPLACEMENT])) {
+                throw new InvalidArgumentException('The proof plan key snapshot_replacement must be a boolean.');
+            }
+            $snapshotReplacement = $plan[self::SNAPSHOT_REPLACEMENT];
+            unset($plan[self::SNAPSHOT_REPLACEMENT]);
+        }
+        if ($snapshotReplacement && $extension !== null) {
+            throw new InvalidArgumentException('A snapshot replacement cannot declare a topology extension.');
+        }
         $mutates = false;
         if (array_key_exists(self::MUTATES, $plan)) {
             if (! is_bool($plan[self::MUTATES])) {
@@ -122,6 +137,9 @@ final readonly class ProofPlan
             throw new InvalidArgumentException(
                 'An extended proof must keep app-prod-2; it cannot remove the extra Node to manufacture evidence.',
             );
+        }
+        if ($snapshotReplacement && $endsWith->declaresAbsence()) {
+            throw new InvalidArgumentException('A snapshot replacement must keep the complete registered topology.');
         }
         $inputs = [];
         if (array_key_exists(self::INPUTS, $plan)) {
@@ -145,7 +163,7 @@ final readonly class ProofPlan
         if ($keys !== $expected) {
             throw new InvalidArgumentException(
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional extension, mutates, ends_with, inputs, and observed_inputs.',
+                .'plus optional extension, mutates, ends_with, inputs, observed_inputs, and snapshot_replacement.',
             );
         }
         $sections = [];
@@ -165,7 +183,16 @@ final readonly class ProofPlan
         $setup = self::actions('setup', $sections['setup'], $ids, $recipe);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids, $recipe);
 
-        return new self($setup, $acceptance, $mutates, $endsWith, $inputs, $observedInputs, $extension);
+        return new self(
+            $setup,
+            $acceptance,
+            $mutates,
+            $endsWith,
+            $inputs,
+            $observedInputs,
+            $extension,
+            $snapshotReplacement,
+        );
     }
 
     /**
@@ -275,6 +302,9 @@ final readonly class ProofPlan
         }
         if ($this->observedInputs) {
             $plan['observed_inputs'] = true;
+        }
+        if ($this->snapshotReplacement) {
+            $plan[self::SNAPSHOT_REPLACEMENT] = true;
         }
 
         return $plan;

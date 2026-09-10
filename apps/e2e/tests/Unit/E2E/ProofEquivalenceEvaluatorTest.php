@@ -486,17 +486,17 @@ describe('ProofEquivalenceEvaluator', function (): void {
 
     it('is indeterminate when the current normalized plan differs from the proved plan', function (): void {
         $fixture = proofEquivalenceFixture();
-        $plan = ProofPlan::fromArray([
-            'setup' => [],
-            'acceptance' => [[
-                'id' => 'different-check',
-                'node' => 'app-dev',
-                'argv' => ['true'],
-                'timeout_seconds' => 30,
-            ]],
-        ]);
+        $plan = ProofPlan::fromArray([...$fixture['plan']->toArray(), 'snapshot_replacement' => true]);
 
-        expect(evaluateProof($fixture, $plan)->result)->toBe(ProofEquivalenceResult::Indeterminate);
+        $report = evaluateProof($fixture, $plan);
+
+        expect($report->result)
+            ->toBe(ProofEquivalenceResult::Indeterminate)
+            ->and($report->errors)
+            ->toContain(
+                'The current normalized proof plan differs from the proved plan.',
+                'The proof construction differs from the current snapshot replacement declaration.',
+            );
     });
 });
 

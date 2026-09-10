@@ -115,3 +115,30 @@ it('derives disposable persistence from the absence of a fixed slot', function (
 
     expect(cold_topology_plan($target)->isDisposable())->toBeTrue();
 });
+
+it('limits replacement authority to the disposable registered three-Node recipe', function (): void {
+    $operation = new OperationId(str_repeat('d', 32));
+    $target = TopologyTarget::feature('AUX-106', attemptId(), TopologyRecipe::registered());
+    $arguments = [
+        $target,
+        '/tmp/orbit',
+        str_repeat('a', 40),
+        [TopologyRecipe::BASE_IMAGE => str_repeat('b', 64)],
+        new LaravelRelease('v13.0.0', str_repeat('c', 40)),
+        $operation,
+        ['user.orbit.e2e.operation' => $operation->value],
+    ];
+
+    $replacement = new ColdTopologyPlan(...$arguments, snapshotReplacement: true);
+
+    expect($replacement->snapshotReplacement)
+        ->toBeTrue()
+        ->and(fn () => new ColdTopologyPlan(...$arguments, fixedSlot: 2, snapshotReplacement: true))
+        ->toThrow(InvalidArgumentException::class, 'disposable registered three-Node recipe')
+        ->and(fn () => new ColdTopologyPlan(
+            TopologyTarget::disposableCold('AUX-106', attemptId(), TopologyRecipe::coldAcceptance()),
+            ...array_slice($arguments, 1),
+            snapshotReplacement: true,
+        ))
+        ->toThrow(InvalidArgumentException::class, 'disposable registered three-Node recipe');
+});

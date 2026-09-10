@@ -183,6 +183,58 @@ it('round-trips the exact extended mixed-source construction inventory', functio
         ->toBe($topology->toArray());
 });
 
+it('round-trips a cold replacement with exact generic-base inputs for every registered Node', function (): void {
+    $generation = mountedTopologyFixture(false)->generation;
+    $target = TopologyTarget::feature(
+        'TST-321',
+        attemptId(),
+        TopologyRecipe::registered($generation->baseImageAlias),
+    );
+    $construction = TopologyConstructionInputs::forSnapshotReplacement(
+        $target,
+        7,
+        $generation->baseImageAlias,
+        $generation->baseImageFingerprint,
+    );
+    $topology = new FeatureTopology(
+        $construction,
+        AttemptPurpose::Proof,
+        $generation,
+        new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
+        new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
+    );
+
+    expect($construction->snapshotReplacement)
+        ->toBeTrue()
+        ->and($construction->sourceGeneration)
+        ->toBe(TopologyConstructionInputs::GENERIC_BASE)
+        ->and(array_column($construction->nodes, 'source'))
+        ->toBe(['image', 'image', 'image'])
+        ->and($construction->imageAlias)
+        ->toBe($generation->baseImageAlias)
+        ->and($construction->imageFingerprint)
+        ->toBe($generation->baseImageFingerprint)
+        ->and(FeatureTopology::fromArray($topology->toArray())->toArray())
+        ->toBe($topology->toArray());
+});
+
+it('reads legacy snapshot construction inputs without replacement authority', function (): void {
+    $value = mountedTopologyFixture(false)->construction->toArray();
+    $value['schema'] = TopologyConstructionInputs::LEGACY_SCHEMA;
+    unset($value['snapshot_replacement']);
+
+    $construction = TopologyConstructionInputs::fromArray($value);
+
+    expect($construction->snapshotReplacement)
+        ->toBeFalse()
+        ->and($construction->sourceGeneration)
+        ->toBe('g1')
+        ->and(array_column($construction->nodes, 'source'))
+        ->toBe(['snapshot', 'snapshot', 'snapshot'])
+        ->and($construction->toArray())
+        ->toBe($value);
+});
+
 describe('mount paths', function () {
     it('accepts only absolute separator-free paths', function (string $path, bool $safe) {
         expect(MountPath::isSafe($path))->toBe($safe);

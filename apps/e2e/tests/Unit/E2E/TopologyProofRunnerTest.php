@@ -963,3 +963,185 @@ it('constructs and retains an independently addressed extended proof beside disc
         ->and(count($events))
         ->toBe($eventCount);
 });
+
+it('persists and proves a declared replacement from exact generic-base inputs', function (): void {
+    $root = preparedTopologyRepository();
+    $processes = new ProcessFactory;
+    $main = trim($processes->run(['git', '-C', $root, 'rev-parse', 'main'])->output());
+    expect($processes->run(['git', '-C', $root, 'update-ref', 'refs/remotes/origin/main', $main])->successful())
+        ->toBeTrue();
+    $paths = new StatePaths(temporaryPath('orbit-replacement-proof-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'replacement-proof');
+    mkdir($worktree.'/.loop/proof', 0o700, true);
+    $planValue = [
+        'setup' => [],
+        'acceptance' => [[
+            'id' => 'replacement-ready',
+            'node' => 'gateway',
+            'argv' => ['true'],
+            'timeout_seconds' => 30,
+        ]],
+        'inputs' => ['feature-source-replacement-proof.txt'],
+        'snapshot_replacement' => true,
+    ];
+    file_put_contents(
+        $worktree.'/.loop/proof/TST-123.json',
+        json_encode($planValue, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
+    );
+    file_put_contents($worktree.'/.loop/flow.json', "{\"schema\":1,\"flow\":\"proof\"}\n");
+    expect($processes->run([
+        'git', '-C', $worktree, 'add', '.loop/flow.json', '.loop/proof/TST-123.json',
+    ])->successful())
+        ->toBeTrue()
+        ->and($processes->run(['git', '-C', $worktree, 'commit', '-q', '-m', 'Declare replacement proof'])->successful())
+        ->toBeTrue();
+
+    $attempt = attemptId('b');
+    $target = TopologyTarget::feature('TST-123', $attempt);
+    $events = [];
+    $candidate = trim($processes->run(['git', '-C', $worktree, 'rev-parse', 'HEAD'])->output());
+    $tree = trim($processes->run(['git', '-C', $worktree, 'rev-parse', 'HEAD^{tree}'])->output());
+    $runtimePackages = array_fill_keys([
+        'php8.5-cli',
+        'php8.5-fpm',
+        'php8.5-common',
+        'php8.5-curl',
+        'php8.5-mbstring',
+        'php8.5-sqlite3',
+        'php8.5-xml',
+    ], '8.5.10-sury');
+    $runtime = json_encode([
+        'php_version' => '8.5.10',
+        'fpm_version' => '8.5.10',
+        'pcov_version' => null,
+        'package_versions' => $runtimePackages,
+    ], JSON_THROW_ON_ERROR);
+    $nativeSample = json_encode([
+        'shape' => 'app_instances',
+        'app_id' => 1,
+        'node_id' => 2,
+        'name' => 'e2e-dev',
+        'checkout_path' => '/srv/orbit/apps/e2e-dev',
+        'effective_root' => 'public',
+    ], JSON_THROW_ON_ERROR);
+    $leaseAtNetworkCreation = null;
+    fakePinnedWorktreeProcesses(
+        $target,
+        $events,
+        observe: static function (array $command) use ($worktree, &$leaseAtNetworkCreation): void {
+            if (($command[3] ?? null) !== 'network' || ($command[4] ?? null) !== 'create') {
+                return;
+            }
+            $leaseAtNetworkCreation = json_decode(
+                (string) file_get_contents($worktree.'/.e2e/'.IssueState::PROOF_ATTEMPT),
+                true,
+                8,
+                JSON_THROW_ON_ERROR,
+            );
+        },
+        guestOverride: static function (array $guest) use ($candidate, $tree, $runtime, $nativeSample) {
+            if ($guest === ['/usr/local/bin/observe-php.sh', 'runtime-info', 'runtime']) {
+                return Process::result($runtime);
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
+                return Process::result($candidate."\n");
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{tree}']) {
+                return Process::result($tree."\n");
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'status', '--porcelain=v1', '--untracked-files=all']) {
+                return Process::result();
+            }
+            if (
+                $guest === ['/usr/local/bin/converge-sample-app.sh', 'inspect-state', 'native']
+                || ($guest[0] ?? null) === '/usr/local/bin/converge-sample-app.sh'
+                && ($guest[1] ?? null) === 'create-resources'
+                && ($guest[5] ?? null) === 'native'
+            ) {
+                return Process::result($nativeSample);
+            }
+
+            return null;
+        },
+        operationId: str_repeat('f', 32),
+    );
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+    $runner = new TopologyProofRunner(
+        $host,
+        new IncusNetworkLifecycle($host),
+        new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host),
+        new WorktreeSynchronizer($host, $root, $operation),
+        new TopologyConverger($host),
+        new TopologyVerifier($host, 1, 0),
+        new ProofFixtureStager($host, $operation),
+        new HostCapacity($host, 24),
+        $paths,
+        $operation,
+        TopologySnapshotIdentity::primary(),
+        new ProofInputManifestBuilder(new StaticProofInputPolicy),
+        new ObservedPhpInputCollector($host),
+        $root,
+        static fn (): AttemptId => $attempt,
+    );
+    $plan = ProofPlan::fromArray($planValue);
+
+    $result = $runner->prove(
+        new TopologyRequest('TST-123', $worktree),
+        $plan,
+        '.loop/proof/TST-123.json',
+    );
+
+    $state = IssueState::forWorktree('TST-123', $worktree);
+    $topology = $state->requireTopology(AttemptPurpose::Proof);
+    $manifest = $state->proofInputManifest((string) $result->manifestSha256);
+    $commands = implode("\n", array_map(
+        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
+        $events,
+    ));
+    expect($result->status)
+        ->toBe(ProofStatus::Proved)
+        ->and($leaseAtNetworkCreation['snapshot_replacement'] ?? null)
+        ->toBeTrue()
+        ->and($leaseAtNetworkCreation['attempt_id'] ?? null)
+        ->toBe($attempt->value)
+        ->and($topology->construction->snapshotReplacement)
+        ->toBeTrue()
+        ->and($topology->construction->sourceGeneration)
+        ->toBe(TopologyConstructionInputs::GENERIC_BASE)
+        ->and($topology->construction->imageAlias)
+        ->toBe(TopologyRecipe::BASE_IMAGE)
+        ->and($topology->construction->imageFingerprint)
+        ->toBe(str_repeat('b', 64))
+        ->and(array_column($topology->construction->nodes, 'source'))
+        ->toBe(['image', 'image', 'image'])
+        ->and($manifest['construction'] ?? null)
+        ->toBe($topology->construction->toArray())
+        ->and($commands)
+        ->toContain('converge-sample-app.sh create-resources app-dev app-prod')
+        ->toContain('inspect-state native')
+        ->not->toContain('copy local:orbit-e2e-topology-snapshot-');
+
+    $capture = (new ProofCaptureService($paths, new OperationId(str_repeat('1', 32))))
+        ->capture(new TopologyRequest('TST-123', $worktree), $plan);
+
+    expect($capture->topology->construction->snapshotReplacement)
+        ->toBeTrue()
+        ->and($capture->manifest['construction']['snapshot_replacement'] ?? null)
+        ->toBeTrue()
+        ->and(fn () => (new ProofCaptureService($paths, new OperationId(str_repeat('2', 32))))->capture(
+            new TopologyRequest('TST-123', $worktree),
+            ProofPlan::fromArray([
+                'setup' => [],
+                'acceptance' => [[
+                    'id' => 'replacement-ready',
+                    'node' => 'gateway',
+                    'argv' => ['true'],
+                    'timeout_seconds' => 30,
+                ]],
+                'inputs' => ['feature-source-replacement-proof.txt'],
+            ]),
+        ))
+        ->toThrow(RuntimeException::class, 'pre-construction snapshot replacement declaration');
+});

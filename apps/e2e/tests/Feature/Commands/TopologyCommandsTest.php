@@ -27,6 +27,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
@@ -43,10 +44,12 @@ use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyExtension;
+use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologySnapshotReplacementInstallation;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use App\E2E\WorktreeLocator;
@@ -362,6 +365,90 @@ describe('topology commands', function () {
             ->toBe($capture->fingerprint())
             ->and($output['retained_topology'])
             ->toBeNull();
+    });
+
+    it('reports active clean replacement recovery with retained evidence', function (): void {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $state = IssueState::forWorktree('TST-12', $worktree);
+        $topology = commandTopologyFixture('TST-12', attemptId());
+        $capture = commandCapturedProofFixture($topology);
+        $state->writeProof($capture->proof);
+        $state->captureProof($capture);
+        $paths = new StatePaths(temporaryPath('orbit-command-replacement-host-', 6));
+        $store = new TopologySnapshotReplacementStore(new AtomicJsonStore($paths));
+        $old = $topology->generation;
+        $mainSha = str_repeat('7', 40);
+        $new = new TopologySnapshotGeneration(
+            'replacement-generation',
+            $mainSha,
+            array_fill_keys(TopologyProfile::ROLES, 'main-replacement-generation'),
+            str_repeat('8', 64),
+            $old->baseImageFingerprint,
+            $old->laravel,
+            str_repeat('9', 64),
+            2,
+            'ubuntu-26.04-amd64-v1',
+            $old->baseImageAlias,
+            TopologyProfile::NAME,
+            TopologyProfile::ROLES,
+            TopologyProfile::CHECKOUT_ROLES,
+            $old->id,
+            TopologyProfile::ASSIGNMENTS,
+        );
+        $replacementAttempt = new AttemptId(str_repeat('c', 32));
+        $temporary = TopologyTarget::disposableCold(
+            'TST-12',
+            $replacementAttempt,
+            TopologyRecipe::registered(),
+        );
+        $canonical = TopologyTarget::topologySnapshot(TopologySnapshotIdentity::primary());
+        $temporaryInstances = [];
+        $canonicalInstances = [];
+        $nextInstances = [];
+        $oldInstances = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $temporaryInstances[$role] = $temporary->instance($role);
+            $canonicalInstances[$role] = $canonical->instance($role);
+            $nextInstances[$role] = $canonical->instance($role).'-next';
+            $oldInstances[$role] = $canonical->instance($role).'-old';
+        }
+        $recovery = $store->start(new TopologySnapshotReplacementInstallation(
+            'TST-12',
+            $capture->attempt,
+            $replacementAttempt,
+            new OperationId(str_repeat('d', 32)),
+            str_repeat('d', 40),
+            str_repeat('e', 40),
+            str_repeat('f', 40),
+            $mainSha,
+            $capture->fingerprint(),
+            $capture->manifestSha256,
+            $old,
+            $new,
+            $old->baseImageAlias,
+            $old->baseImageFingerprint,
+            $temporary->network(),
+            $temporaryInstances,
+            $canonicalInstances,
+            $nextInstances,
+            $oldInstances,
+        ), '2026-09-10T10:05:00Z');
+        app()->instance(TopologySnapshotReplacementStore::class, $store);
+
+        $this->withoutMockingConsoleOutput()->artisan('topology:status', [
+            'issue' => 'TST-12',
+            '--json' => true,
+        ]);
+        $output = json_decode(Artisan::output(), true, 16, JSON_THROW_ON_ERROR);
+
+        expect($output['state'])
+            ->toBe('captured')
+            ->and($output['snapshot_replacement']['installation']['issue'])
+            ->toBe('TST-12')
+            ->and($output['snapshot_replacement']['phase'])
+            ->toBe($recovery->phase)
+            ->and($output['snapshot_replacement']['installation']['new_generation']['id'])
+            ->toBe('replacement-generation');
     });
 
     it('reports retained capture, review evaluation, and closeout state separately', function (): void {

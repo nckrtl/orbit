@@ -377,6 +377,37 @@ describe('TopologyVerifier', function () {
 });
 
 describe('TopologyVerifier typed application state', function () {
+    it('rejects legacy sample state for a declared replacement before topology probes', function (): void {
+        setUpTopologyVerifierProcessFacade();
+        $sampleArguments = null;
+        Process::fake(function (PendingProcess $process) use (&$sampleArguments): ProcessResult {
+            $inventory = topologyVerifierInventory($process);
+            if ($inventory instanceof ProcessResult) {
+                return $inventory;
+            }
+
+            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
+            $request = $payload['requests'][0];
+            $sampleArguments = $request['argv'];
+
+            return Process::result(json_encode([[
+                'label' => 'sample-app-state',
+                'stdout' => '{"shape":"instances"}',
+                'stderr' => '',
+                'exit_code' => 0,
+            ]], JSON_THROW_ON_ERROR));
+        });
+
+        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
+            TopologyTarget::topologySnapshot(),
+            VerificationMode::Proof,
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
+            nativeSamplesOnly: true,
+        ))->toThrow(RuntimeException::class, 'requires native AppInstance samples')
+            ->and($sampleArguments)
+            ->toBe(['/usr/local/bin/converge-sample-app.sh', 'inspect-state', 'native']);
+    });
+
     it('selects typed source probes and omits legacy Workspace and app-prod site probes', function (): void {
         setUpTopologyVerifierProcessFacade();
         $sha = str_repeat('a', 40);
