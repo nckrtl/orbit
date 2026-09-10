@@ -195,23 +195,26 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(71)
+            ->toBe(75)
             ->and($requestClasses)
-            ->toHaveCount(69)
+            ->toHaveCount(72)
             ->toContain(Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest::class)
             ->toContain(Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest::class)
             ->toContain(Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest::class)
+            ->toContain(Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest::class)
+            ->toContain(Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest::class)
+            ->toContain(Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest::class)
             ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class)
             ->toContain(Orbit\Sdk\Requests\Clusters\ListClustersRequest::class)
             ->toContain(Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest::class);
     });
 
-    it('documents the 69-operation SDK surface, Routes, AppInstances, Clusters, Doctor, and node access', function (): void {
+    it('documents the 72-operation SDK surface including AppInstance environment transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 69 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 72 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -219,7 +222,9 @@ describe('repository guidance bootstrap', function (): void {
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
-            ->toContain('- AppInstance: list, show, create, register, and remove through the concise Instance routes.')
+            ->toContain(
+                '- AppInstance: list, show, create, register, remove, environment import, environment update, and environment synchronization through the concise Instance routes.',
+            )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution,',
@@ -231,6 +236,21 @@ describe('repository guidance bootstrap', function (): void {
         expect($normalizedPublicContract)
             ->toContain(
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
+            )
+            ->toContain(
+                'Keep AppInstance environment transport limited to an ID-or-hostname selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
+            );
+
+        expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
+            ->toContain(
+                'Treat every submitted or remote environment value as sensitive, regardless of its key or whether its text resembles a credential.',
+            );
+
+        expect(repository_guidance_normalized_contents('README.md'))
+            ->toContain(
+                'The SDK exposes exactly 72 public Gateway operations.',
+                'The SDK exposes typed import, update, and synchronization requests for AppInstance environment configuration.',
+                'Environment values remain outside normal SDK diagnostics and errors.',
             );
 
         preg_match(
