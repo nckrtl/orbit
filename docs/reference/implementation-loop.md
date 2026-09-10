@@ -64,7 +64,35 @@ Use these commands from the affected project directory.
 | `composer check` | Runs project quality checks without the full test suite |
 | `composer test` | Runs the full project suite with TIA disabled |
 
-TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and full CI remain required. A TIA skip or zero selected tests is not new acceptance evidence. Baselines stay separate between projects. Linked worktrees keep their own baseline, so a new worktree may need an initial recording run. Discovery and proof flow selection do not change test-runner setup.
+TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and full CI remain required. A TIA skip or zero selected tests is not new acceptance evidence.
+
+Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Discovery and proof flow selection do not change test-runner setup.
+
+## Main test baselines
+
+[ADR 0052](../decisions/0052-seed-worktrees-from-successful-main-test-baselines.md) governs baseline ownership. Each repository stores one successful publication per Composer project in its Git common directory under `orbit-tia/v1/published`. Linked worktrees share these publications and keep their writable Pest caches separate. Other repositories and separate clones need their own initial refresh.
+
+Worktree creation calls bootstrap, which installs the patched Pest runner and copies a compatible main dependency graph into each absent private cache. Bootstrap preserves an existing cache and reports a cache miss without running tests. Manually created worktrees get the same setup through `bin/bootstrap`.
+
+The repository commands manage this lifecycle.
+
+| Command | Result |
+| --- | --- |
+| `bin/tia-cache seed` | Copies compatible published graphs into absent caches in the current worktree |
+| `bin/tia-cache refresh --background` | Queues a serialized refresh and returns its process ID and log path immediately |
+| `bin/tia-cache refresh` | Refreshes in the foreground; exits nonzero if any project fails |
+| `bin/tia-cache status` | Prints each publication's tested main commit, graph anchor, compatibility, checksum, and publication time, plus the refresh log path |
+| `bin/worktree-remove ISSUE slug` | Verifies the feature merged, queues background refresh, then releases resources and removes the worktree |
+
+Each cache command accepts `--repository=PATH` and repeatable `--project=apps/docs` options. The default covers all five Composer projects. Seed reports missing or incompatible graphs and leaves those projects cold; a cache miss does not fail setup.
+
+Refresh fetches current main and advances an owned clean maintenance checkout under `orbit-tia/v1/checkout`. Its separate Git directory gives Pest an isolated cache while preserving the repository's remote URL. The command leaves the user's primary checkout and feature checkouts untouched. Closeout still advances a clean primary main when possible. A dirty maintenance checkout causes refresh to fail and retain its files for inspection.
+
+Maintenance installs dependencies and runs `composer test:affected` one project at a time, with two test workers and PCOV or Xdebug coverage enabled. Each successful project publishes independently. Refreshes hold one repository lock; a queued refresh fetches the newest main after acquiring it. Background jobs keep their runner and log in the Git common directory so worktree removal cannot interrupt them. When closeout does not use `bin/worktree-remove`, the orchestrator queues refresh explicitly after verifying the merge.
+
+Publication replaces one complete snapshot atomically after testing succeeds on clean main. The snapshot contains only the portable dependency graph and its metadata. Seed checks the project, Pest patch and test configuration, Pest fingerprint including dependencies and PHP minor version, checksum, and commit ancestry. It does not copy affected-test lists, worker partials, coverage reports, or download state. A no-affected-tests run can publish a newer tested main commit while retaining an older graph anchor; both commits are recorded.
+
+New worktrees may use the previous successful compatible publication while a refresh runs. Failed refreshes retain that publication and report the failure in `refresh.log`; retry with the refresh command after resolving the failure. Baseline maintenance does not delay merge, resource cleanup, or the next feature. TIA remains optional local feedback; a warm cache or zero selected tests does not establish acceptance evidence.
 
 ## Artifact references
 

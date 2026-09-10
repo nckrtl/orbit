@@ -8,6 +8,7 @@ usage() {
 }
 
 [[ $# -eq 2 ]] || usage
+script_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 linear_id="$1"
 slug="$2"
@@ -34,6 +35,9 @@ if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; the
         printf 'Branch is not merged into origin/main: %s\n' "$branch" >&2
         exit 1
     fi
+
+    # Queue before removing the caller; cache maintenance must never hold cleanup.
+    "$script_root/bin/tia-cache" refresh --background --repository="$primary_root" || printf 'TIA refresh could not be queued; retry bin/tia-cache refresh --background.\n' >&2
 
     # Both issue topologies die with the worktree: release proof, then discovery.
     if [[ -f "$worktree/.e2e/proof-attempt.json" ]]; then

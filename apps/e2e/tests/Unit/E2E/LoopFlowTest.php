@@ -26,6 +26,11 @@ function loopFlowFixture(): array
     }
     file_put_contents($root.'/bin/bootstrap', "#!/bin/sh\nexit 0\n");
     chmod($root.'/bin/bootstrap', 0755);
+    file_put_contents(
+        $root.'/bin/tia-cache',
+        "#!/bin/sh\nprintf '%s\\n' \"\$*\" > \"\$(git rev-parse --git-common-dir)/tia-queued\"\nexit 1\n",
+    );
+    chmod($root.'/bin/tia-cache', 0755);
     expect($run->path($root)->run(['git', 'add', '.'])->successful())->toBeTrue();
     expect($run->path($root)->run(['git', 'commit', '-m', 'base'])->successful())->toBeTrue();
 
@@ -181,8 +186,26 @@ it('closes out a merged worktree when the repository has a long worktree listing
     ]);
 
     expect($result->successful())->toBeTrue($result->errorOutput());
+    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --background --repository='.$root);
     expect(is_dir($worktree))->toBeFalse();
     expect(
         $run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-44-cleanup'])->successful(),
     )->toBeFalse();
+});
+
+it('does not queue cache refresh or remove an unmerged feature', function (): void {
+    ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $root]);
+    $run->path($root)->run(['git', 'fetch', 'origin']);
+    $worktree = $root.'/.worktrees/tst-45-unmerged';
+    $run->path($root)->run(['git', 'worktree', 'add', '-b', 'tst-45-unmerged', $worktree]);
+    file_put_contents($worktree.'/feature.txt', 'unmerged feature');
+    $run->path($worktree)->run(['git', 'add', '.']);
+    $run->path($worktree)->run(['git', 'commit', '-m', 'feature']);
+
+    $result = $run->path($root)->run([$root.'/bin/worktree-remove', 'TST-45', 'unmerged']);
+
+    expect($result->successful())->toBeFalse();
+    expect(is_dir($worktree))->toBeTrue();
+    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });
