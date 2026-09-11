@@ -1,6 +1,6 @@
 # Production release layout
 
-This page tells an operator how a production AppInstance separates replaceable code from persistent environment configuration and optional SQLite data, including how to convert an existing flat production home. [ADR 0046](../decisions/0046-own-production-release-deployment-in-orbit.md) owns the production release and serving-layout boundary.
+This page tells an operator how a production AppInstance separates replaceable code from persistent environment configuration and optional SQLite data, deploys its configured branch, selects retained code during rollback, and converts an existing flat production home. [ADR 0046](../decisions/0046-own-production-release-deployment-in-orbit.md) owns the production release and serving-layout boundary.
 
 ## Read the production home
 
@@ -40,6 +40,41 @@ The complete request and response use these fields.
 The array preserves the order of steps within each phase. The sum of configured timeouts, including defaulted values, cannot exceed 3,600 seconds.
 
 The Gateway rejects malformed JSON, duplicate or unknown members, duplicate step names, wrong types, and values outside these limits before it changes either field. Both endpoints use the AppInstance's current Node-access authorization and refuse a non-production AppInstance. Authorized reads return commands, but the Gateway keeps command text out of Activity records, validation errors, and generic diagnostics.
+
+## Deploy the configured branch
+
+An explicit deployment captures the AppInstance's current branch and step configuration for the complete invocation. The Gateway creates a fresh release, fetches the latest configured remote branch into it, and keeps that checkout even if the remote branch advances while the deployment runs. A deployment accepts no commit selector. A failed fetch leaves the selected release unchanged.
+
+The Gateway synchronizes stored environment values before it runs an application command. It then runs every `before_activation` step in configured order from the fresh release as the AppInstance's Unix user through a fixed non-interactive shell. Orbit transports the command as protected script content and does not add inferred setup, migration, cache, health, maintenance, dependency, or asset commands. An empty step list runs no application commands. Provisioning and cloning never start a deployment.
+
+After every pre-activation step succeeds, the Gateway atomically replaces `current` with a link to the fresh release. A PHP AppInstance then refreshes its dedicated runtime cache and waits for confirmed completion before the Gateway runs the `after_activation` steps in order. A non-PHP AppInstance skips the cache operation.
+
+Each request that overlaps activation resolves to a complete old or new release. The `current` replacement and PHP cache refresh do not cause a missing-root or unavailable-service response for a compatible application. An application command can still change application availability, and Orbit retains that command's effect.
+
+## Read output and failures
+
+Each application command emits its standard output and standard error as events while the deployment invocation runs. Orbit keeps these events only for the invocation. It creates no deployment-run row, output history, or earlier step-configuration snapshot.
+
+Each step uses its configured timeout. Timeout or cancellation terminates the process group owned by that step and stops later steps. Orbit never resumes or automatically replays an interrupted command. The complete operation deadline is the accepted sum of step timeouts plus no more than 900 seconds for release, environment, activation, and runtime work.
+
+The deployment result identifies the failed boundary and the release selected when the invocation ends. Its code-selection outcome depends on when failure occurs.
+
+| Failed boundary | Selected code |
+| --- | --- |
+| Release fetch, environment synchronization, or a pre-activation step | The prior `current` target remains selected, or no release remains selected when this is the first deployment. |
+| PHP cache refresh or a post-activation step | The fresh release remains selected. |
+
+Orbit does not claim that persistent environment, database, or application effects were undone after either failure. The operating agent owns compatibility and application recovery.
+
+## Roll back retained code
+
+An explicit code rollback accepts one retained release name beneath this AppInstance's `releases/` directory. The Gateway verifies the release's source ownership and effective web-root containment before it atomically selects that release through `current`. A PHP AppInstance then receives the same verified dedicated cache refresh as deployment; a non-PHP AppInstance skips it.
+
+Code rollback does not fetch Git, synchronize environment values, run deployment steps, change database files, or infer an application recovery command. The operating agent selects the retained release and owns any data or application recovery needed after the switch.
+
+## Exclude competing mutations
+
+Deployment and code rollback share one operation owner with deployment-layout conversion, AppInstance removal, environment import, stored environment updates, environment synchronization, and Route hostname changes for the same production AppInstance. A competing request waits within the bounded operation deadline or receives a busy refusal before it can mutate that instance. An interrupted deployment releases the owner only after it has stopped its active application command.
 
 ## Convert an existing production home
 
