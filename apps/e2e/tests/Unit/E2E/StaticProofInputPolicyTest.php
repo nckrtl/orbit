@@ -29,6 +29,8 @@ describe('StaticProofInputPolicy', function (): void {
         'formatter configuration' => ['apps/gateway/pint.json', 'non-runtime'],
         'analysis configuration' => ['apps/cli/phpstan.neon', 'non-runtime'],
         'distributed analysis configuration' => ['packages/php-sdk/phpstan.neon.dist', 'non-runtime'],
+        'guidance test configuration' => ['apps/e2e/phpunit.guidance.xml', 'non-runtime'],
+        'scenario test configuration' => ['apps/e2e/phpunit.scenario-cold.xml', 'non-runtime'],
         'unknown analysis input' => ['apps/cli/phpstan.custom', 'indeterminate'],
         'documentation tooling' => ['apps/docs/app/Rules/Rule.php', 'non-runtime'],
         'agent instructions' => ['apps/e2e/.agents/skills/example/SKILL.md', 'non-runtime'],
