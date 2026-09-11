@@ -11,6 +11,10 @@ use Throwable;
 
 final readonly class NativeProcessRunner implements ProcessRunner
 {
+    private const int TerminateSignal = 15;
+
+    private const int KillSignal = 9;
+
     private const int MaxEventBytes = 16_384;
 
     /** @var Closure(list<string>): SymfonyProcess */
@@ -153,13 +157,13 @@ final readonly class NativeProcessRunner implements ProcessRunner
         $pid = $process->getPid();
 
         if (is_int($pid) && $pid > 1 && function_exists('posix_kill')) {
-            @posix_kill(-$pid, SIGTERM);
+            @posix_kill(-$pid, self::TerminateSignal);
             usleep(100_000);
-            @posix_kill(-$pid, SIGKILL);
+            @posix_kill(-$pid, self::KillSignal);
         }
 
         if ($process->isRunning()) {
-            $process->stop(0, SIGKILL);
+            $process->stop(0, self::KillSignal);
         }
     }
 

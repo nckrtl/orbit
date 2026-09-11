@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
+use App\Domain\AppInstances\Deployment\DeploymentProgressPhase;
 use App\Domain\AppInstances\Deployment\DeploymentRelease;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentResult;
@@ -72,6 +73,7 @@ final readonly class RollbackAppInstanceAction
         $selected = null;
 
         try {
+            $request->emitPhase(DeploymentProgressPhase::Rollback);
             $this->assertNotCancelled($request);
             $selected = $this->deployment->selected($appInstance);
             $release = $this->deployment->retained($appInstance, $releaseName);

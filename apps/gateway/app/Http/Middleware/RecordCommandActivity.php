@@ -6,6 +6,8 @@ namespace App\Http\Middleware;
 
 use App\Data\AppInstances\AppInstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\Deployment\DeploymentRelease;
+use App\Domain\AppInstances\Deployment\DeploymentResult;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Firewall\FirewallOperationException;
@@ -36,6 +38,7 @@ use Illuminate\Validation\ValidationException;
 use JsonException;
 use stdClass;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 use UnexpectedValueException;
@@ -55,10 +58,18 @@ final readonly class RecordCommandActivity
         $this->deadline->start(Config::float('orbit.command_timeout', 900.0));
 
         try {
-            return $this->record($request, $next);
-        } finally {
+            $response = $this->record($request, $next);
+        } catch (Throwable $exception) {
+            $this->deadline->clear();
+
+            throw $exception;
+        }
+
+        if (! $response instanceof StreamedResponse) {
             $this->deadline->clear();
         }
+
+        return $response;
     }
 
     private function record(Request $request, Closure $next): Response
@@ -69,6 +80,11 @@ final readonly class RecordCommandActivity
         try {
             /** @var Response $response */
             $response = $next($request);
+
+            if ($response instanceof StreamedResponse) {
+                return $this->deferStreamCompletion($activity, $request, $response, $startedAt);
+            }
+
             $this->complete($activity, $request, $response, $startedAt);
 
             return $response;
@@ -77,6 +93,30 @@ final readonly class RecordCommandActivity
 
             throw $exception;
         }
+    }
+
+    private function deferStreamCompletion(
+        Activity $activity,
+        Request $request,
+        StreamedResponse $response,
+        float $startedAt,
+    ): StreamedResponse {
+        $callback = $response->getCallback();
+
+        $response->setCallback(function () use ($activity, $request, $response, $startedAt, $callback): void {
+            try {
+                $callback();
+                $this->complete($activity, $request, $response, $startedAt);
+            } catch (Throwable $exception) {
+                $this->fail($activity, $request, $exception, $startedAt);
+
+                throw $exception;
+            } finally {
+                $this->deadline->clear();
+            }
+        });
+
+        return $response;
     }
 
     private function start(Request $request): Activity
@@ -124,6 +164,23 @@ final readonly class RecordCommandActivity
             'duration_ms' => $this->duration($startedAt),
             'error_code' => $errorCode,
         ];
+
+        $deployment = $request->attributes->get('orbit.deployment_result');
+
+        if ($deployment instanceof DeploymentResult) {
+            $updates['status'] = $deployment->succeeded ? 'succeeded' : 'failed';
+            $updates['error_code'] = $deployment->failure?->errorCode;
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'deployment' => $this->inputSanitizer->sanitizeProperties([
+                    'status' => $deployment->succeeded ? 'succeeded' : 'failed',
+                    'selected_release' => $deployment->selectedRelease?->name,
+                    'failed_step' => $deployment->failure?->boundary->value,
+                    'error_code' => $deployment->failure?->errorCode,
+                ]),
+            ];
+            $commandResult = null;
+        }
 
         $toolActivity = $request->attributes->get('orbit.tool_activity');
 
@@ -358,6 +415,14 @@ final readonly class RecordCommandActivity
             return [];
         }
 
+        if ($command === 'instance:deployment:store') {
+            return [];
+        }
+
+        if ($command === 'instance:rollback:store') {
+            return $this->appInstanceRollbackInput($request);
+        }
+
         if (
             is_string($command)
             && (
@@ -392,6 +457,24 @@ final readonly class RecordCommandActivity
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array{release: string}|array{} */
+    private function appInstanceRollbackInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['release']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        $release = $input['release'] ?? null;
+
+        if (! is_string($release) || ! DeploymentRelease::isValidName($release)) {
+            return [];
+        }
+
+        return ['release' => $release];
     }
 
     /** @return array{name: string, environments: list<string>}|array{} */

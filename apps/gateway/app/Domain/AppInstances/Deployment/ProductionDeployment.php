@@ -23,4 +23,6 @@ interface ProductionDeployment
     public function selected(AppInstance $appInstance): ?DeploymentRelease;
 
     public function retained(AppInstance $appInstance, string $name): DeploymentRelease;
+
+    public function releases(AppInstance $appInstance): DeploymentReleaseState;
 }
