@@ -1,0 +1,102 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "The agent can configure deployment steps and operate production releases from Orbit commands with live output and a reliable exit status.\n\n## Scope\n\n* In: deployment configuration, deploy, rollback, and release-list commands through the PHP SDK.\n* Out: local SSH or shell execution, application command inference, automatic retry, and deployment history.\n\n## Acceptance\n\n- [ ] `instance:deployment-config INSTANCE` shows configuration and `instance:deployment-config INSTANCE --file=PATH` submits a complete JSON configuration; `instance:deploy INSTANCE`, `instance:rollback INSTANCE --release=NAME`, and `instance:releases INSTANCE` use the corresponding typed SDK operations. Proof: `apps/cli/tests/Feature/Instances/DeploymentCommandsTest.php`.\n- [ ] Human deploy output renders phases and incremental stdout/stderr safely; `--json` emits the documented NDJSON events with no prompts or extra prose, and all commands preserve request IDs and shared safe errors. Proof: `apps/cli/tests/Feature/Instances/DeploymentCommandsTest.php`.\n- [ ] Only a succeeded terminal result exits zero; failure or stream truncation exits nonzero and identifies the last known selected release when available, while Ctrl-C closes the stream and never submits another deployment. Proof: `apps/cli/tests/Feature/Instances/DeploymentCommandsTest.php`.\n- [ ] A real operator-side command shows the first step\u2019s output before its delayed completion, deploys updated branch code, and explicitly rolls back to a listed retained release without modifying persistent SQLite content. Proof: Incus action `deployment-cli-lifecycle`.\n- [ ] Maintained documentation describes deployment commands, JSON stream output, configuration files, exit codes, and interruption, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/cli && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+  "id": "3d04b8e0-3a6e-4281-9f79-a54c3cce0af2",
+  "identifier": "ORB-222",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-221",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/cli"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Expose production deployment configuration and streamed execution in the CLI",
+  "updatedAt": "2026-09-11T21:15:03.707Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-222/expose-production-deployment-configuration-and-streamed-execution-in"
+}
