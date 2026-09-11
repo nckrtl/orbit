@@ -1,0 +1,62 @@
+{
+  "assignee": {
+    "id": "691cb14c-60d5-415a-a5c7-a7c19fe83424",
+    "name": "Nick Retel"
+  },
+  "attachments": {
+    "nodes": []
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf",
+    "name": "Tom"
+  },
+  "description": "Main's CLI TIA passes with every public command introduced by ORB-222 and ORB-224 registered and visible.\n\n## Scope\n\n* In: the CLI command-surface regression expectation after concurrent command additions\n* Out: command names, visibility, behavior, and every non-CLI project\n\n## Acceptance\n\n- [ ] The CLI registers exactly the 83 intended `App\\\\Commands\\\\` commands, and none is hidden. Proof: `apps/cli/tests/Feature/CommandSurfaceTest.php` through affected TIA.",
+  "id": "adc4f51e-8971-447a-841a-061ce6b0622c",
+  "identifier": "ORB-241",
+  "labels": {
+    "nodes": [
+      {
+        "name": "maintenance:monorepo"
+      },
+      {
+        "name": "apps/cli"
+      },
+      {
+        "name": "Bug"
+      }
+    ]
+  },
+  "relations": {
+    "blockedBy": [],
+    "blocks": [],
+    "duplicateOf": null,
+    "relatedTo": [
+      {
+        "identifier": "ORB-222",
+        "title": "Expose production deployment configuration and streamed execution in the CLI"
+      },
+      {
+        "identifier": "ORB-224",
+        "title": "Expose App runtime definitions through the SDK and CLI"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "name": "Orbit"
+  },
+  "title": "Restore CLI command-surface correctness on main",
+  "updatedAt": "2026-09-11T23:21:37.416Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-241/restore-cli-command-surface-correctness-on-main"
+}
