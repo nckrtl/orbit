@@ -2272,7 +2272,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/php-sdk",
-                "reference": "90a8b9cf9d2b22a01d65a0809b677a40e5b37a75"
+                "reference": "4087591f1414eae262d15b6492167dda4e2e5969"
             },
             "require": {
                 "php": "^8.5",
@@ -2321,7 +2321,7 @@
                     "vendor/bin/pint --test"
                 ],
                 "guidance:check": [
-                    "vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php"
+                    "vendor/bin/pest --tia --compact"
                 ],
                 "lint": [
                     "@format:check"
@@ -2330,7 +2330,7 @@
                     "vendor/bin/rector process --dry-run --no-progress-bar"
                 ],
                 "test": [
-                    "vendor/bin/pest --parallel --no-tia --compact"
+                    "vendor/bin/pest --parallel --tia --compact"
                 ]
             },
             "license": [

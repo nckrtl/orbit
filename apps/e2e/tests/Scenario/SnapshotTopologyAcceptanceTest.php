@@ -55,7 +55,7 @@ it('snapshot-scenario-lifecycle prepares the exact candidate before bounded exer
     expect($attempt['construction_inputs']['source_generation'] ?? null)->toBe($before);
     expect($result->cleanup['remaining'] ?? null)->toBe([]);
     expect(stableSnapshotScenarioPromotion($paths, $manifests, $host, $operation))->toBe($before);
-});
+})->skip(fn (): bool => getenv('ORBIT_SCENARIO_ID') !== 'snapshot-lifecycle');
 
 it('snapshot-scenario-isolation starts without a prior attempt filesystem mutation', function (): void {
     $paths = $this->app->make(StatePaths::class);
@@ -71,7 +71,7 @@ it('snapshot-scenario-isolation starts without a prior attempt filesystem mutati
         ->toBe('fresh clone did not contain the prior attempt marker');
     expect($result->cleanup['remaining'] ?? null)->toBe([]);
     expect(stableSnapshotScenarioPromotion($paths, $manifests, $host, $operation))->toBe($before);
-});
+})->skip(fn (): bool => getenv('ORBIT_SCENARIO_ID') !== 'snapshot-isolation');
 
 it('snapshot-scenario-extension records and removes the declared physical Node', function (): void {
     $paths = $this->app->make(StatePaths::class);
@@ -99,4 +99,4 @@ it('snapshot-scenario-extension records and removes the declared physical Node',
     expect($result->cleanup['removed'] ?? null)->toContain($target->instance('app-prod-2'));
     expect($result->cleanup['remaining'] ?? null)->toBe([]);
     expect(stableSnapshotScenarioPromotion($paths, $manifests, $host, $operation))->toBe($before);
-});
+})->skip(fn (): bool => getenv('ORBIT_SCENARIO_ID') !== 'snapshot-extension');

@@ -48,10 +48,10 @@
         "issue:lint": "@php artisan orbit:issue-lint",
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",
-        "guidance:check": "vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php",
+        "guidance:check": "vendor/bin/pest --tia --compact",
         "lint": "@format:check",
         "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
-        "test": "vendor/bin/pest --parallel --no-tia --compact",
+        "test": "vendor/bin/pest --parallel --tia --compact",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

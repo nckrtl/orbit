@@ -12,7 +12,7 @@ use App\E2E\Value\ScenarioRunId;
 use App\E2E\Value\TopologyEndState;
 use App\E2E\Value\TopologyRecipe;
 
-it('routes each scenario lane to its dedicated Pest acceptance file', function (string $lane, string $acceptanceFile): void {
+it('routes each scenario lane through a dedicated full TIA configuration', function (string $lane, string $configuration): void {
     $project = temporaryPath('scenario-pest-process-', 5);
     $primary = temporaryPath('scenario-pest-primary-', 5);
     mkdir("{$project}/vendor/bin", 0o700, true);
@@ -29,6 +29,7 @@ it('routes each scenario lane to its dedicated Pest acceptance file', function (
         file_put_contents("{$primary}/arguments.json", json_encode([
             'arguments' => $argv,
             'operation_id' => getenv('ORBIT_E2E_OPERATION_ID'),
+            'tia_directory' => getenv('ORBIT_SCENARIO_TIA_DIRECTORY'),
         ], JSON_THROW_ON_ERROR));
         PHP);
     $recipe = TopologyRecipe::registered();
@@ -66,10 +67,17 @@ it('routes each scenario lane to its dedicated Pest acceptance file', function (
         true,
         flags: JSON_THROW_ON_ERROR,
     );
-    expect($invocation['arguments'])
-        ->toContain($acceptanceFile, "--filter={$lane}-scenario-filter");
+    expect($invocation['arguments'])->toBe([
+        'vendor/bin/pest',
+        "--configuration={$configuration}",
+        '--tia',
+        '--fresh',
+        '--compact',
+    ]);
     expect($invocation['operation_id'])->toBe(str_repeat('d', 32));
+    expect($invocation['tia_directory'])
+        ->toBe($primary.'/.e2e/scenarios/runs/'.str_repeat('b', 32)."/{$lane}-flow/".str_repeat('c', 32).'/tia');
 })->with([
-    'cold lane' => ['cold', 'tests/Scenario/ColdTopologyAcceptanceTest.php'],
-    'snapshot lane' => ['snapshot', 'tests/Scenario/SnapshotTopologyAcceptanceTest.php'],
+    'cold lane' => ['cold', 'phpunit.scenario-cold.xml'],
+    'snapshot lane' => ['snapshot', 'phpunit.scenario-snapshot.xml'],
 ]);

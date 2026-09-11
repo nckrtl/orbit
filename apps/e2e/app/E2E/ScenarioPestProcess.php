@@ -59,18 +59,18 @@ final readonly class ScenarioPestProcess
             );
         }
 
-        $acceptanceFile = match ($definition->lane) {
-            'cold' => 'tests/Scenario/ColdTopologyAcceptanceTest.php',
-            'snapshot' => 'tests/Scenario/SnapshotTopologyAcceptanceTest.php',
+        $configuration = match ($definition->lane) {
+            'cold' => 'phpunit.scenario-cold.xml',
+            'snapshot' => 'phpunit.scenario-snapshot.xml',
             default => throw new \InvalidArgumentException('The scenario lane is invalid.'),
         };
         $process = new Process([
             PHP_BINARY,
             'vendor/bin/pest',
-            '--no-tia',
+            "--configuration={$configuration}",
+            '--tia',
+            '--fresh',
             '--compact',
-            $acceptanceFile,
-            '--filter='.$definition->pestFilter,
         ], $this->projectRoot, [
             'ORBIT_SCENARIO_CANDIDATE_SHA' => $candidate,
             'ORBIT_SCENARIO_REPOSITORY' => $repository,
@@ -80,6 +80,8 @@ final readonly class ScenarioPestProcess
             'ORBIT_SCENARIO_ATTEMPT_ID' => $attempt->value,
             'ORBIT_SCENARIO_OPERATION_ID' => $operation->value,
             'ORBIT_E2E_OPERATION_ID' => $operation->value,
+            'ORBIT_SCENARIO_TIA_DIRECTORY' => rtrim($primary, '/')
+                ."/.e2e/scenarios/runs/{$run->value}/{$definition->id->value}/{$attempt->value}/tia",
         ]);
         $process->setTimeout(null);
         $process->start(static function (): void {});

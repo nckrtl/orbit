@@ -18,7 +18,7 @@ paths:
 
 ## Running Tests
 
-- Run the narrowest set of tests that covers the change. Pass a file path or `--filter=testName` to `php artisan test --compact`.
+- Run Pest through `composer test` or `composer test:affected`; TIA selects the affected tests.
 - Rerun a test after each change to it.
-- Run `vendor/bin/pest` to call the test runner directly. It accepts the same file path and `--filter=testName` arguments.
-- After the feature tests pass, ask the user to run the complete suite with `php artisan test --compact`.
+- Do not pass a test path, filter, group, or suite. Pest disables TIA for partial runs even when `--tia` is present.
+- After the feature tests pass, run `composer test` for parallel TIA verification.

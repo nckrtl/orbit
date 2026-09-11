@@ -58,8 +58,8 @@ vendor/bin/rector process --dry-run
 git diff --check -- packages/php-sdk
 ```
 
-Use Pest 5 with `describe()` and `it()`. Run focused tests during development
-and require green CI full parallel no-TIA suites before handoff. Run focused gateway
-API and CLI tests when a contract changes. Coordinate those changes in the same
-feature branch. Run Pint format checks and PHPStan analysis and Rector before
-handoff.
+Use Pest 5 with `describe()` and `it()`. Run `composer test:affected` with two
+parallel workers during development and require the green Builder TIA gate
+before handoff. Run the Gateway and CLI TIA commands when a contract changes.
+Coordinate those changes in the same feature branch. Run Pint format checks and
+PHPStan analysis and Rector before handoff.

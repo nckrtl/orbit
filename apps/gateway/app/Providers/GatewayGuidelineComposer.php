@@ -75,12 +75,14 @@ final class GatewayGuidelineComposer extends GuidelineComposer
                     [
                         '- For APIs, default to using Eloquent API Resources and API versioning unless existing API routes do not, then you should follow existing application convention.',
                         '- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `php artisan make:model --help` to check the available options.',
+                        '- Run the narrowest set of tests that covers the change. Pass a file path or `--filter=testName` to `php artisan test --compact`.',
                         '- After the feature tests pass, ask the user to run the complete suite with `php artisan test --compact`.',
                     ],
                     [
                         '- Keep the versioned Gateway API consistent with its existing typed Spatie Data response objects. Do not introduce Eloquent Resources beside the established contract without an explicit API migration.',
                         '- Keep models focused on persisted control-plane state. Add a factory or seeder only when an executing test or explicit bootstrap workflow needs it.',
-                        '- After focused tests pass, run `composer test` (the full parallel suite without TIA) before handoff.',
+                        '- Run Pest through `composer test` or `composer test:affected`; TIA selects the affected tests. Do not pass a path, filter, group, or suite because Pest disables TIA for partial runs.',
+                        '- After focused TIA tests pass, run `composer test` (the parallel TIA suite) before handoff.',
                     ],
                     $block['body'],
                 );

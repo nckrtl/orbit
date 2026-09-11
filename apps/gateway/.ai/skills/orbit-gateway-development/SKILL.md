@@ -43,5 +43,5 @@ business logic and performs explicit infrastructure actions over SSH.
 composer check
 ```
 
-Run focused Pest tests during TDD. Run changed-project checks with Rector and Pint format checks and Larastan analysis, and `git diff --check -- apps/gateway` from the
+Run `composer test:affected` during TDD. Run changed-project checks with Rector and Pint format checks and Larastan analysis, and `git diff --check -- apps/gateway` from the
 monorepo root before handoff. Reviewers run root `composer check` across all projects with TIA.

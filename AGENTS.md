@@ -90,11 +90,11 @@ orchestrator assigns the formal reviewers and coordinates phase transitions.
 
 ## Verification
 
-- Developers run focused Pest tests and the changed project's checks, then the
+- Developers run affected Pest tests through TIA and the changed project's checks, then the
   Builder runs root `composer check` across all five projects with TIA on the
   clean candidate. Independent reviewers validate that exact receipt, as ADR
   0059 requires.
-- Use `bin/test` only for an explicit full local run or failure diagnosis.
+- Use `bin/test` only for an explicit repository-wide TIA run or failure diagnosis.
 - Run the nearest project's `composer check` for changed PHP code.
 - Run `composer docs-lint` when maintained documentation changes.
 - GitHub CI is disabled and is not a merge gate. Retain the Builder's exact-head local check receipt.

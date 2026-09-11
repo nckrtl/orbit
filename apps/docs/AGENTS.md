@@ -13,7 +13,7 @@ documentation corpus under the repository-root `docs/` directory.
 - Make generation an explicit write operation and keep linting, context lookup,
   tests, and CI read-only.
 - Add semantic rules only for current Orbit invariants and cover valid and
-  invalid cases with focused tests.
+  invalid cases through `composer test:affected`.
 
 ## Verification
 

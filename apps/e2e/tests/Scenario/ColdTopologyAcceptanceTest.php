@@ -63,7 +63,7 @@ it('cold-scenario-suite constructs and releases the four-Node topology', functio
         $before,
         stableScenarioPromotion($paths, $manifests, $host, $operation),
     );
-});
+})->skip(fn (): bool => getenv('ORBIT_SCENARIO_ID') !== 'cold-four-node');
 
 it('cold-scenario-suite-cleanup releases exact resources after construction failure', function (): void {
     $paths = $this->app->make(StatePaths::class);
@@ -97,4 +97,4 @@ it('cold-scenario-suite-cleanup releases exact resources after construction fail
         $before,
         stableScenarioPromotion($paths, $manifests, $host, $operation),
     );
-});
+})->skip(fn (): bool => getenv('ORBIT_SCENARIO_ID') !== 'cold-construction-cleanup');

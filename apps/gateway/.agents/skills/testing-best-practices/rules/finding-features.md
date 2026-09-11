@@ -20,7 +20,7 @@ Search for a feature in this table before you write the code by hand.
 | Split the suite across CI jobs | sharding, `--update-shards` |
 | Run only the tests that a change affects | Test Impact Analysis, `--tia` |
 | Assert that a value has a known format | validation expectations |
-| Run one test while you debug | filtering, `--bail`, `--dirty` |
+| Run tests affected by a change while you debug | Test Impact Analysis, `--tia` |
 
 ## Built-in Laravel Assertion Methods
 

@@ -215,8 +215,9 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'php artisan make:test --pest',
             'Read the `testing-best-practices` skill',
             'Do not delete tests or test files without approval.',
-            '--filter=testName',
         );
+    expect($readProjectFile('.ai/rules/boost/tests.md'))
+        ->not->toContain('--filter=testName', 'php artisan test');
 
     $appRules = $readProjectFile('.ai/rules/app.md');
     $bootstrapRules = $readProjectFile('.ai/rules/bootstrap.md');
@@ -319,7 +320,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
     expect($testRules)
         ->toContain(
             'Pest 5 TDD',
-            'focused tests and project quality checks',
+            'TIA tests and project quality checks',
             'root `composer check`',
             'git diff --check',
         )
@@ -383,7 +384,7 @@ it('preserves project and installed testing guidance', function (): void {
         ->toBe($readProjectFile('.agents/skills/orbit-gateway-development/SKILL.md'));
     expect($readProjectFile('.ai/skills/pest-testing/SKILL.md'))
         ->toBe($readProjectFile('.agents/skills/pest-testing/SKILL.md'))
-        ->toContain('Pest 5', 'Test Impact Analysis', '--no-tia')
+        ->toContain('Pest 5', 'Test Impact Analysis', '--tia')
         ->not->toContain('browser testing', 'Livewire', 'Inertia');
     expect($readProjectFile('.ai/skills/spatie-security/SKILL.md'))
         ->toBe($readProjectFile('.agents/skills/spatie-security/SKILL.md'));
@@ -406,7 +407,7 @@ it('preserves project and installed testing guidance', function (): void {
 
     expect($composer['scripts']['guidance:check'] ?? null)
         ->toBe(
-            'vendor/bin/pest --no-tia --compact tests/Unit/Configuration/BoostConfigurationTest.php tests/Feature/Configuration/BoostGuidanceTest.php',
+            'vendor/bin/pest --tia --compact',
         )
         ->and($composer['scripts']['guidance:update'] ?? null)
         ->toBe([
@@ -417,7 +418,7 @@ it('preserves project and installed testing guidance', function (): void {
         ->and($composer['scripts']['check'][0] ?? null)
         ->toBe('@guidance:check')
         ->and($composer['scripts']['test'] ?? null)
-        ->toBe('vendor/bin/pest --parallel --no-tia --compact')
+        ->toBe('vendor/bin/pest --parallel --tia --compact')
         ->and($composer['scripts']['test:full'] ?? null)
         ->toBeNull()
         ->and($composer['scripts']['post-autoload-dump'] ?? null)

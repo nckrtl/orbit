@@ -37,6 +37,19 @@ pest()
     ->locally()
     ->filtered();
 
+$scenarioTiaDirectory = getenv('ORBIT_SCENARIO_TIA_DIRECTORY');
+$scenarioPrimary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
+
+if (is_string($scenarioTiaDirectory) && is_string($scenarioPrimary)) {
+    $scenarioTiaRoot = rtrim($scenarioPrimary, '/').'/.e2e/scenarios/runs/';
+
+    if (! str_starts_with($scenarioTiaDirectory, $scenarioTiaRoot)) {
+        throw new RuntimeException('The scenario TIA directory is invalid.');
+    }
+
+    pest()->tia()->directory($scenarioTiaDirectory);
+}
+
 /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string} */
 function verificationProbeFixture(bool $passed = true, string $probe = 'fixture'): array
 {

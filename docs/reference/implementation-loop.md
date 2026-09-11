@@ -66,7 +66,7 @@ The discovery flow follows this order.
 6. Commit and gate the candidate, publish and push its artifacts, then obtain independent code review.
 7. Merge the approved candidate, then release any discovery resources and remove the worktree.
 
-The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, focused tests, and the Builder candidate gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
+The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, affected tests selected by TIA, and the Builder candidate gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
 
 Discovery uses the existing isolated topology machinery and mounts the changing worktree. Acquisition validates the saved snapshot against its recorded generation and checks cold-base compatibility, ownership, capacity, and readiness. It does not require that snapshot to match current main. An incompatible cold base or absent snapshot still needs an explicit infrastructure repair. Optional extended discovery reuses the existing extension declaration format described in [Incus topologies](incus-topologies.md); its actions do not run as acceptance proof.
 
@@ -90,9 +90,9 @@ A failed refresh or replacement keeps the complete retained proof topology, capt
 
 ## Local checks
 
-Run focused Pest tests for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs guidance, Rector, Pint formatting and syntax checks, and static analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. After committing the clean candidate, the Builder runs root `composer check` before implementation handoff. This candidate gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` remain available for an explicit full local run or failure diagnosis.
+Run `composer test:affected` for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs TIA guidance tests, Rector, Pint formatting and syntax checks, and static analysis; it does not run a full test suite. Run `composer docs-lint` when documentation changes. After committing the clean candidate, the Builder runs root `composer check` before implementation handoff. This candidate gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` also use TIA.
 
-Apply this check policy when an issue or retained plan still names generic full no-TIA CI suites. The planner maps that wording to focused development checks and the Builder's candidate gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. An intentional issue-specific full run needs a current explicit instruction or a concrete diagnostic reason; copied generic CI wording does not supply either. A focused test command with an explicit path and `--no-tia` remains valid: it runs the named acceptance tests, not every project suite.
+Apply this check policy when an issue or retained plan names a generic full suite. The planner maps that wording to TIA development checks and the Builder's candidate gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. Every Pest invocation enables TIA without a path, filter, group, or suite; Pest disables TIA for those partial selections even when `--tia` is present.
 
 Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
 
@@ -124,12 +124,11 @@ Use these commands from the affected project directory.
 
 | Command | Result |
 | --- | --- |
-| `vendor/bin/pest --compact tests/Unit/ExampleTest.php` | Runs the selected file directly; an explicit path or filter bypasses TIA |
 | `composer test:affected` | Runs TIA with two parallel workers; selects affected tests when a valid baseline exists |
 | `composer check` | Runs project quality checks without the full test suite |
-| `composer test` | Runs the full project suite with TIA disabled |
+| `composer test` | Runs the project suite through TIA in parallel |
 
-TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project when this broader local feedback is useful; focused acceptance tests and the Builder candidate gate remain required. A TIA skip or zero selected tests is not new acceptance evidence.
+TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project for development feedback; acceptance evidence and the Builder candidate gate remain required. A TIA skip or zero selected tests is not new acceptance evidence.
 
 Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Discovery and proof flow selection do not change test-runner setup.
 
@@ -139,7 +138,7 @@ The Builder runs root `composer check` in the clean issue worktree at the commit
 
 The gate writes command logs and `result.json` under the Git common directory at `orbit-checks/<candidate>/review-*/`. The receipt records `role: builder`, the exact candidate and tree, each command, exit code, duration, and log path. It reports success only when every check passes and the candidate remains clean and unchanged. The Builder includes the path in its implementation handoff. The orchestrator validates it before review dispatch, and the reviewer validates the same receipt while assessing the candidate. The reviewer does not repeat the full gate solely to approve. A later candidate needs a new gate and approval.
 
-GitHub's workflow is available only for manual diagnostics and remains disabled in the repository settings. It does not run automatically on pushes or pull requests. Focused acceptance tests remain required; TIA selection alone does not establish acceptance. Missing or incompatible caches can cause the candidate gate to record a full project suite. Root `bin/test` remains available for an explicit full run without TIA.
+GitHub's workflow is available only for manual diagnostics and remains disabled in the repository settings. It does not run automatically on pushes or pull requests. Acceptance evidence remains required; TIA selection alone does not establish acceptance. Missing or incompatible caches can cause the candidate gate or root `bin/test` to record a full project suite, but Pest always remains in TIA mode.
 
 ## Review handoff
 
