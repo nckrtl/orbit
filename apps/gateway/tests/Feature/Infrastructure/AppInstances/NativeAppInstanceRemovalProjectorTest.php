@@ -429,6 +429,8 @@ final class Orb214RemovalPhpRuntimeManager implements ProductionPhpRuntimeManage
 
     public function converge(AppInstance $appInstance): void {}
 
+    public function refreshCache(AppInstance $appInstance): void {}
+
     public function remove(AppInstance $appInstance): void
     {
         $this->removed[] = $appInstance->id;
