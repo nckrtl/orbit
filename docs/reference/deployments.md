@@ -41,6 +41,34 @@ The array preserves the order of steps within each phase. The sum of configured 
 
 The Gateway rejects malformed JSON, duplicate or unknown members, duplicate step names, wrong types, and values outside these limits before it changes either field. Both endpoints use the AppInstance's current Node-access authorization and refuse a non-production AppInstance. Authorized reads return commands, but the Gateway keeps command text out of Activity records, validation errors, and generic diagnostics.
 
+## Use the deployment API
+
+An authorized client starts a deployment or code rollback synchronously and can inspect the retained releases before or after an interrupted request.
+
+| Request | Input and response |
+| --- | --- |
+| `POST /api/v1/instances/{instance}/deploy` | Accepts only an empty JSON object and returns deployment events as `application/x-ndjson`. |
+| `POST /api/v1/instances/{instance}/rollback` | Accepts only `release`, the retained release name to select, and returns rollback events as `application/x-ndjson`. |
+| `GET /api/v1/instances/{instance}/releases` | Returns the present retained release names as `releases` and the nullable current selection as `selected_release`. It returns no deployment history. |
+
+Request validation and Node-access authorization finish before a deployment stream opens. A refusal uses the ordinary JSON error envelope. After admission, each newline-delimited JSON (NDJSON) line is one event with a maximum encoded size of 32 KiB. Every event contains `type`, a monotonically increasing `sequence`, and the request's `request_id`.
+
+| Event type | Fields |
+| --- | --- |
+| `phase` | `phase` identifies `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` is present only for a named `before_activation` or `after_activation` step. Other phase events omit it. |
+| `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes so arbitrary application output remains valid NDJSON. |
+| `result` | `status` is `succeeded` or `failed`. `failed_step`, `error_code`, and `selected_release` are nullable. This event is the final line. |
+
+A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
+
+Before each phase event, the Gateway uses a bounded 250 millisecond probe that flushes one JSON-safe whitespace byte every 10 milliseconds. The whitespace and event form one valid NDJSON line, and every byte counts toward the 32 KiB line limit.
+
+The Gateway detects a client disconnect when it writes an output event or performs a phase probe. A silent active command can therefore continue until it produces output, exits, or times out and the Gateway attempts the next stream write. The bounded probe gives HTTP/1.1 and HTTP/2 disconnects time to propagate through Caddy and PHP FastCGI Process Manager (PHP-FPM), but one write does not guarantee immediate detection of every downstream close.
+
+Once the disconnect is detected, cancellation stops the next protected boundary from starting, and the Gateway waits for bounded process cleanup. It sends no success result, replays no event, and does not roll code back automatically. The client can use the releases request to inspect the current selection before deciding whether to retry or request a rollback.
+
+Deployment and rollback require access to the AppInstance's Node. Their Activity records contain only the request and target identifiers and the terminal status, selected release, failed step, and error code. They never contain application output or configured command text. Generic errors follow the same redaction boundary.
+
 ## Deploy the configured branch
 
 An explicit deployment captures the AppInstance's current branch and step configuration for the complete invocation. The Gateway creates a fresh release, fetches the latest configured remote branch into it, and keeps that checkout even if the remote branch advances while the deployment runs. A deployment accepts no commit selector. A failed fetch leaves the selected release unchanged.
