@@ -150,7 +150,8 @@ function schedulerAcceptanceUnrelatedTopology(): array
     }
     $topology = readSchedulerAcceptanceJson($path);
     $instances = $topology['instances'] ?? null;
-    if (! is_array($instances) || $instances === [] || ! array_all($instances, 'is_string')) {
+    if (! is_array($instances) || $instances === []
+        || ! array_all($instances, static fn (mixed $instance): bool => is_string($instance))) {
         throw new RuntimeException('The acquired discovery topology inventory is invalid.');
     }
 
