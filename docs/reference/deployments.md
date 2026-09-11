@@ -67,6 +67,47 @@ Request validation and Node-access authorization finish before a deployment stre
 | `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes so arbitrary application output remains valid NDJSON. |
 | `result` | `status` is `succeeded` or `failed`. `failed_step`, `error_code`, and `selected_release` are nullable. This event is the final line. |
 
+## Use deployment commands
+
+The CLI sends each deployment operation through the typed PHP SDK. It does not run an application command, Secure Shell (SSH) command, or deployment step on the operator's machine.
+
+| Command | Result |
+| --- | --- |
+| `orbit instance:deployment-config INSTANCE` | Shows the complete configured branch and ordered steps. Add `--json` to return the same configuration and its `request_id` as one JSON object. |
+| `orbit instance:deployment-config INSTANCE --file=PATH` | Reads one complete JSON configuration from `PATH` and replaces the stored branch and steps. Add `--json` to return the stored configuration and its `request_id` as one JSON object. |
+| `orbit instance:deploy INSTANCE` | Starts an explicit deployment and renders phase, output, and result events as they arrive. |
+| `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. |
+| `orbit instance:releases INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
+
+The deployment configuration file uses the same `branch` and `steps` fields as the deployment API. It is a complete replacement, not a partial update.
+
+```json
+{
+    "branch": "main",
+    "steps": [
+        {
+            "name": "migrate",
+            "phase": "before_activation",
+            "command": "php artisan migrate --force",
+            "timeout_seconds": 300
+        }
+    ]
+}
+```
+
+Human deploy and rollback output names each phase and named step. It labels standard output and standard error separately and escapes control bytes so application output cannot become terminal control input. Output appears while the step is still running. The final output includes the request ID and the selected release when the Gateway reports one.
+
+Add `--json` to deploy or rollback to write newline-delimited JSON (NDJSON) without prompts, progress decoration, or other prose. The CLI writes each validated event as one compact line using the event fields in the table above. An `output` line keeps `data_base64`, so arbitrary application bytes remain valid JSON. A refusal before the stream opens or an invalid stream uses the shared safe JSON error envelope as one line and preserves the request ID when available.
+
+The command exit status identifies whether the streamed operation completed successfully.
+
+| Stream outcome | Exit status |
+| --- | --- |
+| The final event is a succeeded result. | Zero. |
+| The final event is a failed result. | Nonzero. The command identifies the failed boundary and the selected release when the result includes one. |
+| The stream is malformed, truncated, or ends without a result. | Nonzero. The command never infers success from earlier events. |
+| The operator presses Ctrl-C. | Nonzero. The CLI closes the active SDK stream and does not submit another deployment or rollback request. |
+
 A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
 
 Before each phase event, the Gateway uses a bounded 250 millisecond probe that flushes one JSON-safe whitespace byte every 10 milliseconds. The whitespace and event form one valid NDJSON line, and every byte counts toward the 32 KiB line limit.
