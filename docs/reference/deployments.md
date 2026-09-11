@@ -39,6 +39,8 @@ The Gateway completes every preflight check before it moves a file, publishes a 
 | Serving | The recorded Route, Caddy projection, PHP socket, and source path still identify this AppInstance. |
 | SQLite | The selected file is safe, no owned application Process is active, no process has the file open, and no SQLite sidecar remains beside the source or destination. |
 
+Every entry below the production home must belong to the production user and group. The document root must contain no symbolic link. For example, a Laravel operator must remove or relocate `public/storage` before conversion. A selected SQLite source must be outside the document root; move it outside the served tree and update the application configuration before conversion.
+
 Conversion moves the existing checkout into one retained release and selects that same content through `current`. It does not fetch, reset, clean, or check out Git. It preserves tracked and ignored files, executable modes, and repository state. It keeps `.env` at the production-home path and links the retained release to it. When SQLite is selected, it moves those exact database bytes to `database.sqlite`; it does not change the schema or rewrite a stored environment value.
 
 For PHP, conversion carries supported local pool tuning into the dedicated runtime's `local.conf`, validates the complete effective identity, and switches only this AppInstance's Caddy upstream to its dedicated socket. It does not restart, reload, or reset another production user's shared or dedicated PHP service.

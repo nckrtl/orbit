@@ -358,12 +358,9 @@ it('refuses unsafe Caddy source access prerequisites without changing the flat s
 
         unlink("{$documentRoot}/storage");
         file_put_contents("{$home}/foreign-group.txt", 'unchanged ownership fixture');
-
-        if (! chgrp("{$home}/foreign-group.txt", 'www-data')) {
-            throw new RuntimeException('Unable to create the foreign-group fixture.');
-        }
-
-        $ownershipResult = orb217_run_program($arguments);
+        $foreignGroupArguments = $arguments;
+        $foreignGroupArguments[6] = (string) (posix_getegid() + 1);
+        $ownershipResult = orb217_run_program($foreignGroupArguments);
 
         expect($ownershipResult->exitCode)
             ->toBe(42)
@@ -371,6 +368,73 @@ it('refuses unsafe Caddy source access prerequisites without changing the flat s
             ->toContain('production source has unexpected ownership')
             ->and(file_get_contents("{$home}/foreign-group.txt"))
             ->toBe('unchanged ownership fixture');
+    } finally {
+        $files->deleteDirectory($root);
+    }
+});
+
+it('refuses a SQLite source below the document root without changing the flat source', function (): void {
+    $root = sys_get_temp_dir().'/orbit-layout-served-sqlite-'.bin2hex(random_bytes(8));
+    $home = "{$root}/home";
+    $documentRoot = "{$home}/public";
+    $database = "{$documentRoot}/app.sqlite";
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($documentRoot);
+    file_put_contents("{$documentRoot}/index.php", 'unchanged serving response');
+    file_put_contents("{$home}/.env", "KEY=value\n");
+    file_put_contents($database, "SQLite format 3\x00unchanged database bytes");
+    $metadata = stat($home);
+
+    if (! is_array($metadata)) {
+        throw new RuntimeException('Unable to inspect the served SQLite fixture.');
+    }
+
+    $sourceHash = hash_file('sha256', "{$documentRoot}/index.php");
+    $databaseHash = hash_file('sha256', $database);
+    $environmentHash = hash_file('sha256', "{$home}/.env");
+
+    if (! is_string($sourceHash) || ! is_string($databaseHash) || ! is_string($environmentHash)) {
+        throw new RuntimeException('Unable to hash the served SQLite fixture.');
+    }
+
+    $program = orb217_converter_program('SourceAccessFunctions').<<<'PYTHON'
+
+        import os, stat, sys
+
+        home, document_root, sqlite_source, uid, gid, device = sys.argv[1:]
+
+        def refuse(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(42)
+
+        document_root_path = inspect_source_access(home, document_root, int(uid), int(gid), int(device), refuse)
+        inspect_sqlite_source_location(sqlite_source, document_root_path, refuse)
+        PYTHON;
+
+    try {
+        $result = orb217_run_program([
+            'python3', '-c', $program, $home, 'public', $database,
+            (string) posix_geteuid(),
+            (string) posix_getegid(),
+            (string) $metadata['dev'],
+        ]);
+
+        expect($result->exitCode)
+            ->toBe(42)
+            ->and($result->stderr)
+            ->toContain('SQLite source is inside the document root')
+            ->and(hash_file('sha256', "{$documentRoot}/index.php"))
+            ->toBe($sourceHash)
+            ->and(hash_file('sha256', $database))
+            ->toBe($databaseHash)
+            ->and(hash_file('sha256', "{$home}/.env"))
+            ->toBe($environmentHash)
+            ->and(file_exists("{$home}/releases"))
+            ->toBeFalse()
+            ->and(file_exists("{$home}/current"))
+            ->toBeFalse()
+            ->and(file_exists("{$home}/database.sqlite"))
+            ->toBeFalse();
     } finally {
         $files->deleteDirectory($root);
     }

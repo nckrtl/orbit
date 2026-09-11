@@ -51,6 +51,11 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                             refuse("document root contains a symbolic link")
             except OSError:
                 refuse("production source metadata cannot be inspected")
+            return document_root_path
+
+        def inspect_sqlite_source_location(sqlite_path, document_root_path, refuse):
+            if sqlite_path == document_root_path or sqlite_path.startswith(document_root_path + os.sep):
+                refuse("SQLite source is inside the document root")
         PYTHON;
 
     private const string PreflightProgram = self::SourceAccessFunctions.<<<'PYTHON'
@@ -99,7 +104,7 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
             refuse("production home has an unsafe type")
         if metadata.st_uid != account.pw_uid or metadata.st_gid != account.pw_gid:
             refuse("production home has unexpected ownership")
-        inspect_source_access(home, document_root, account.pw_uid, account.pw_gid, metadata.st_dev, refuse)
+        document_root_path = inspect_source_access(home, document_root, account.pw_uid, account.pw_gid, metadata.st_dev, refuse)
         requested_candidate = None
         if requested_sqlite:
             requested_candidate = requested_sqlite if os.path.isabs(requested_sqlite) else os.path.join(home, requested_sqlite)
@@ -160,6 +165,7 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                 refuse("SQLite source is outside the production home")
             if os.path.realpath(candidate) != candidate:
                 refuse("SQLite source has an unsafe canonical path")
+            inspect_sqlite_source_location(candidate, document_root_path, refuse)
             relative = os.path.relpath(candidate, home)
             if relative == ".env" or relative.startswith(".git/") or relative == ".git":
                 refuse("SQLite source conflicts with managed source")
