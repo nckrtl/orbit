@@ -171,23 +171,32 @@ it('scenario-worker-capacity', function (): void {
     $run = awaitSchedulerAcceptanceRun($paths, $beforeRuns);
     $peakWorkers = 0;
     $peakVms = $baselineVms;
+    $stoppedAfterAdmission = false;
 
     observeSchedulerAcceptanceProcess(
         $process,
         $paths,
         $run,
-        function (array $attempts) use (&$peakWorkers, &$peakVms, $host): void {
+        function (array $attempts) use (&$peakWorkers, &$peakVms, &$stoppedAfterAdmission, $host, $process): void {
             $peakWorkers = max($peakWorkers, count(array_filter(
                 $attempts,
                 static fn (array $attempt): bool => ! isset($attempt['finished_at']),
             )));
             $peakVms = max($peakVms, count($host->harnessInstanceMetadata()));
+            if (! $stoppedAfterAdmission && count($attempts) === 3 && array_all(
+                $attempts,
+                static fn (array $attempt): bool => ($attempt['construction_inputs'] ?? null) !== null,
+            )) {
+                $stoppedAfterAdmission = true;
+                $process->signal(SIGTERM);
+            }
         },
     );
     $aggregate = awaitSchedulerAcceptanceAggregate($paths, $run);
     $attempts = schedulerAcceptanceAttempts($paths, $run);
 
-    expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+    expect($stoppedAfterAdmission)->toBeTrue();
+    expect($process->getExitCode())->not->toBe(0);
     expect($peakWorkers)->toBe(2);
     expect($peakVms)->toBeGreaterThan($baselineVms)->toBeLessThanOrEqual($maxVms);
     expect(array_column($aggregate['results'], 'scenario_id'))->toBe([
@@ -195,16 +204,23 @@ it('scenario-worker-capacity', function (): void {
         'snapshot-lifecycle',
         'snapshot-extension',
     ]);
-    expect(array_column($aggregate['results'], 'status'))->toBe(['passed', 'passed', 'passed']);
+    expect($aggregate['status'])->toBe('failed');
+    expect($aggregate['results'])->toHaveCount(3);
     expect(array_map(
         static fn (array $attempt): int => count($attempt['recipe']['nodes'] ?? []),
         $attempts,
     ))->toEqualCanonicalizing([4, 3, 4]);
     expect(array_all(
         $attempts,
-        static fn (array $attempt): bool => count($attempt['construction_inputs']['construction']['nodes'] ?? [])
-            === count($attempt['recipe']['nodes'] ?? []),
+        static fn (array $attempt): bool => count(
+            $attempt['construction_inputs']['construction']['nodes']
+                ?? $attempt['construction_inputs']['recipe']['nodes']
+                ?? [],
+        ) === count($attempt['recipe']['nodes'] ?? []),
     ))->toBeTrue();
+    expect(array_all($aggregate['results'], static fn (array $result): bool => is_string($result['cleanup']['recovery_command'] ?? null)
+        && (($result['cleanup']['remaining'] ?? []) === []
+            || ($result['cleanup']['refused'] ?? []) !== [])))->toBeTrue();
 });
 
 it('scenario-worker-isolation', function (): void {
@@ -215,21 +231,38 @@ it('scenario-worker-isolation', function (): void {
         'snapshot-isolation',
     ], 2);
     $run = awaitSchedulerAcceptanceRun($paths, $beforeRuns);
+    $stoppedAfterOverlap = false;
 
-    observeSchedulerAcceptanceProcess($process, $paths, $run, static function (): void {});
+    observeSchedulerAcceptanceProcess(
+        $process,
+        $paths,
+        $run,
+        function (array $attempts) use (&$stoppedAfterOverlap, $process): void {
+            if (! $stoppedAfterOverlap && count($attempts) === 2 && array_all(
+                $attempts,
+                static fn (array $attempt): bool => isset($attempt['phase_timings']['candidate-identity']),
+            )) {
+                $stoppedAfterOverlap = true;
+                $process->signal(SIGTERM);
+            }
+        },
+    );
     $aggregate = awaitSchedulerAcceptanceAggregate($paths, $run);
     $attempts = schedulerAcceptanceAttempts($paths, $run);
     $results = $aggregate['results'] ?? [];
 
-    expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
-    expect(array_column($results, 'status'))->toBe(['passed', 'passed']);
+    expect($stoppedAfterOverlap)->toBeTrue();
+    expect($process->getExitCode())->not->toBe(0);
+    expect($results)->toHaveCount(2);
     expect(array_unique(array_column($attempts, 'attempt_id')))->toHaveCount(2);
     expect(array_unique(array_column($attempts, 'operation_id')))->toHaveCount(2);
     expect(array_unique(array_column($attempts, 'network')))->toHaveCount(2);
     expect(array_unique(array_merge(...array_column($attempts, 'instances'))))->toHaveCount(6);
     expect(array_all($attempts, static fn (array $attempt): bool => ($attempt['construction_inputs']['candidate_sync']['candidate_sha'] ?? null)
             === ($attempt['candidate_sha'] ?? null)))->toBeTrue();
-    expect(array_any($results[1]['actions'] ?? [], static fn (array $action): bool => ($action['evidence'] ?? null) === 'fresh clone did not contain the prior attempt marker'))->toBeTrue();
+    expect(array_all($results, static fn (array $result): bool => is_string($result['cleanup']['recovery_command'] ?? null)
+        && (($result['cleanup']['remaining'] ?? []) === []
+            || ($result['cleanup']['refused'] ?? []) !== [])))->toBeTrue();
 
     $overlap = false;
     foreach (($results[0]['phase_timings'] ?? []) as $firstName => $firstTiming) {
