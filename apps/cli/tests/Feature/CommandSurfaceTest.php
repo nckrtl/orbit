@@ -109,7 +109,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(79);
+    expect($orbitCommands)->toHaveCount(83);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
