@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\Processes\CascadeAppInstanceProcessesAction;
 use App\Actions\Processes\RemoveProcessAction;
+use App\Actions\Schedules\AddScheduleAction;
+use App\Data\Schedules\AddScheduleData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
@@ -27,6 +29,11 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\ScheduleRuntimeManager;
+use App\Domain\Schedules\ScheduleSpecificationValidator;
+use App\Domain\Schedules\ScheduleTargetResolver;
+use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
@@ -37,7 +44,10 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
+use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
+use Tests\Support\Schedules\FakeScheduleRuntimeManager;
 
 beforeEach(function (): void {
     $this->orb181Inspector = new Orb181CoordinatorInspector;
@@ -144,6 +154,114 @@ it('accepts exactly one independent checkout and completes every durable step', 
             $this->orb131ProcessRuntime->removed,
         )->toBe([$process->id])->and($this->orb181Lock->acceptedWhileHeld)->toBeTrue();
 })->with([false, true]);
+
+it('cascades owned Schedules before successful AppInstance row deletion', function (): void {
+    $runtime = new FakeScheduleRuntimeManager;
+    app()->instance(ScheduleRuntimeManager::class, $runtime);
+    $instance = orb181_coordinator_instance();
+    $schedule = Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $instance->id,
+        'host_node_id' => $instance->node_id,
+        'name' => 'daily',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $removal = $this->orb181Coordinator->execute($instance, false);
+
+    expect($removal->status->value)->toBe('completed')
+        ->and(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse()
+        ->and($runtime->removed)->toBe([['id' => $schedule->id, 'cascade' => true]]);
+});
+
+it('blocks new Schedules for every member after forced removal accepts its fixed set', function (): void {
+    [$checkout, $first, $second] = orb182_coordinator_graph();
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb181Inspector->linkedPaths = $paths;
+    $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
+    $this->orb181Finalizer->failPrepareFor = $first->id;
+
+    expect(fn () => $this->orb181Coordinator->execute($checkout, true))
+        ->toThrow(AppInstanceRemovalException::class);
+
+    $runtime = new FakeScheduleRuntimeManager;
+    $addSchedule = new AddScheduleAction(
+        new ScheduleSpecificationValidator,
+        new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
+        $runtime,
+        $this->orb131ProcessLock,
+    );
+
+    foreach ([$checkout, $first, $second] as $member) {
+        expect($member->refresh()->status)->toBe(AppInstanceState::Removing)
+            ->and(fn () => $addSchedule->execute(orb72_coordinator_schedule_data($member)))
+            ->toThrow(fn (ResourceOperationException $exception): bool => str_starts_with($exception->errorCode, 'schedule.'));
+    }
+
+    expect(Schedule::query()->count())->toBe(0)
+        ->and($runtime->installed)->toBeEmpty();
+});
+
+it('cascades every forced-set Schedule and preserves another AppInstance Schedule on the same Node', function (): void {
+    $runtime = new FakeScheduleRuntimeManager;
+    app()->instance(ScheduleRuntimeManager::class, $runtime);
+    [$checkout, $first, $second] = orb182_coordinator_graph();
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb181Inspector->linkedPaths = $paths;
+    $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
+    $owned = collect([$checkout, $first, $second])->map(
+        static fn (AppInstance $member): Schedule => orb72_coordinator_schedule($member, "daily-{$member->id}"),
+    );
+    $otherApp = OrbitApp::query()->create([
+        'name' => 'Other',
+        'slug' => 'other',
+        'repository_url' => 'https://example.test/other.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $otherInstance = AppInstance::query()->create([
+        'app_id' => $otherApp->id,
+        'node_id' => $checkout->node_id,
+        'name' => 'other',
+        'environment' => 'development',
+        'source_layout' => AppInstanceSourceLayout::Checkout->value,
+        'checkout_path' => '/srv/orbit/apps/other/dev',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('b', 40),
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
+    ]);
+    $otherSchedule = orb72_coordinator_schedule($otherInstance, 'other-daily');
+    $nodeSchedule = Schedule::query()->create([
+        'target_type' => Node::class,
+        'target_id' => $checkout->node_id,
+        'host_node_id' => $checkout->node_id,
+        'name' => 'node-daily',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $removal = $this->orb181Coordinator->execute($checkout, true);
+
+    expect($removal->status->value)->toBe('completed')
+        ->and(Schedule::query()->whereKey($owned->pluck('id'))->count())->toBe(0)
+        ->and($otherSchedule->fresh())->not->toBeNull()
+        ->and($nodeSchedule->fresh())->not->toBeNull()
+        ->and($runtime->removed)->toHaveCount(3);
+
+    foreach ($owned as $schedule) {
+        expect($runtime->removed)->toContain(['id' => $schedule->id, 'cascade' => true]);
+    }
+});
 
 it('records historical and observed source commits independently', function (
     bool $force,
@@ -695,6 +813,34 @@ function orb181_coordinator_instance(
     $instance->update(['status' => AppInstanceState::Active]);
 
     return $instance->load(['app', 'node', 'routes.targets']);
+}
+
+function orb72_coordinator_schedule_data(AppInstance $instance): AddScheduleData
+{
+    return new AddScheduleData(
+        ScheduleTargetType::AppInstance,
+        $instance->id,
+        'new-daily',
+        'daily',
+        'true',
+        3600,
+        false,
+    );
+}
+
+function orb72_coordinator_schedule(AppInstance $instance, string $name): Schedule
+{
+    return Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $instance->id,
+        'host_node_id' => $instance->node_id,
+        'name' => $name,
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
 }
 
 /** @return array{AppInstance, AppInstance, AppInstance} */

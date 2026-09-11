@@ -112,6 +112,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'route:target:clear' => ServingNode::RouteOwning,
         'route:target:set' => ServingNode::RouteOwning,
         'route:update' => ServingNode::RouteOwning,
+        'schedule:complete' => ServingNode::ScheduleHost,
         'tool:install' => ServingNode::ToolOwning,
         'tool:list' => ServingNode::ToolOwning,
         'tool:manager:list' => ServingNode::ToolOwning,

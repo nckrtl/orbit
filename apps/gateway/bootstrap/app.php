@@ -12,6 +12,8 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Schedules\ScheduleErrorCode;
+use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Middleware\EnsureRequestId;
@@ -217,6 +219,38 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step],
                         ],
                     ], 502)
+                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+            });
+            $exceptions->render(function (ScheduleOperationException $exception, Request $request): JsonResponse {
+                $request->attributes->set('orbit.error_code', $exception->errorCode);
+                $requestId = $request->attributes->get('orbit.request_id');
+
+                if (! is_string($requestId) || $requestId === '') {
+                    $requestId = $request->header('X-Orbit-Request-Id', '');
+                }
+
+                $status = match ($exception->error) {
+                    ScheduleErrorCode::ArtifactConflict,
+                    ScheduleErrorCode::RetryConflict,
+                    ScheduleErrorCode::StateInvalid,
+                    ScheduleErrorCode::TargetUnavailable,
+                    ScheduleErrorCode::TargetInUse => 409,
+                    ScheduleErrorCode::CalendarInvalid,
+                    ScheduleErrorCode::NameInvalid,
+                    ScheduleErrorCode::TargetInvalid,
+                    ScheduleErrorCode::CommandInvalid,
+                    ScheduleErrorCode::TimeoutInvalid => 422,
+                    default => 502,
+                };
+
+                return response()
+                    ->json([
+                        'error' => [
+                            'code' => $exception->errorCode,
+                            'message' => $exception->getMessage(),
+                            'details' => ['step' => $exception->step],
+                        ],
+                    ], $status)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (FirewallOperationException $exception, Request $request): JsonResponse {

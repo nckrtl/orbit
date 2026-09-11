@@ -16,6 +16,8 @@ final class DoctorIssueCodeCatalog
                 ?? InstanceDoctorIssueCode::InspectionFailed,
             DoctorFamily::Workspace => WorkspaceDoctorIssueCode::tryFrom($code)
                 ?? WorkspaceDoctorIssueCode::InspectionFailed,
+            DoctorFamily::Schedule => ScheduleDoctorIssueCode::tryFrom($code)
+                ?? ScheduleDoctorIssueCode::InspectionFailed,
             DoctorFamily::Tool => ToolDoctorIssueCode::tryFrom($code) ?? ToolDoctorIssueCode::InspectionFailed,
             DoctorFamily::Process => ProcessDoctorIssueCode::tryFrom($code) ?? ProcessDoctorIssueCode::InspectionFailed,
             DoctorFamily::Firewall => FirewallDoctorIssueCode::tryFrom($code)

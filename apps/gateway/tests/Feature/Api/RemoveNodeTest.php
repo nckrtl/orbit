@@ -15,6 +15,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
@@ -29,6 +30,7 @@ use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Schedule;
 
 beforeEach(function (): void {
     $this->dns = new RemoveNodeFakeDnsManager;
@@ -136,6 +138,29 @@ it('retires Metrics exporter state before removing network projections', functio
         ->assertOk();
 
     expect($this->peers->removed)->toBe([$target->id]);
+});
+
+it('refuses Node removal before mutation while a Schedule uses the Node', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'scheduled', wireguardIp: '10.44.0.3');
+    Schedule::query()->create([
+        'target_type' => Node::class,
+        'target_id' => $target->id,
+        'host_node_id' => $target->id,
+        'name' => 'daily',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller, offline: true, force: true))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_in_use');
+
+    expect($target->refresh()->status)->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)->toBeEmpty()
+        ->and($this->dns->convergences)->toBe(0);
 });
 
 it('restores active Metrics selection when exporter retirement fails', function (): void {

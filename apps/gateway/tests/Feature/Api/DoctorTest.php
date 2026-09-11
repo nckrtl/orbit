@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\ScheduleInspectionData;
+use App\Domain\Doctor\ScheduleStateInspector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Models\Node;
+use App\Models\Schedule;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
@@ -37,11 +40,11 @@ describe('Doctor API', function (): void {
             ->and(array_column($payload['data']['nodes'], 'node_id'))
             ->toBe([$selected->id])
             ->and(array_column($payload['data']['nodes'][0]['families'], 'family'))
-            ->toBe(['node', 'role', 'app', 'instance', 'workspace', 'tool', 'process', 'firewall'])
+            ->toBe(['node', 'role', 'app', 'instance', 'workspace', 'schedule', 'tool', 'process', 'firewall'])
             ->and($payload['data']['summary'])
             ->toBe([
                 'nodes' => 1,
-                'families' => 8,
+                'families' => 9,
                 'checks' => 1,
                 'drift' => 0,
                 'unverifiable' => 0,
@@ -304,8 +307,22 @@ function bind_doctor_api_inspector(NodeInspectionData $inspection): DoctorApiNod
 {
     $inspector = new DoctorApiNodeStateInspector($inspection);
     app()->instance(NodeStateInspector::class, $inspector);
+    app()->instance(ScheduleStateInspector::class, new DoctorApiScheduleStateInspector);
 
     return $inspector;
+}
+
+final class DoctorApiScheduleStateInspector implements ScheduleStateInspector
+{
+    public function inspect(Schedule $schedule): ScheduleInspectionData
+    {
+        return new ScheduleInspectionData(true, true, true, true, true, true, true);
+    }
+
+    public function orphanIds(Node $node, array $knownIds): array
+    {
+        return [];
+    }
 }
 
 function doctor_api_raw(
