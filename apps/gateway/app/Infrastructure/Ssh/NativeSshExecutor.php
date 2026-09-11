@@ -39,10 +39,12 @@ final readonly class NativeSshExecutor implements SshExecutor
                 "{$connection->user}@{$connection->host}",
                 $command->shellCommand(),
             ],
-            timeout: $connection->commandTimeout,
+            timeout: $command->timeout ?? $connection->commandTimeout,
             input: $command->input,
             protectedInput: $command->protectedInput,
             maxOutputBytes: $command->maxOutputBytes,
+            output: $command->output,
+            cancelled: $command->cancelled,
         ));
     }
 }
