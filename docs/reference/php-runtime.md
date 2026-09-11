@@ -82,7 +82,13 @@ opcache.validate_timestamps = 0
 
 ## Production cache boundary
 
-Runtime provisioning establishes the dedicated master and its isolated OPcache instance. Production deployment and verified cache refresh are separate operations. A generic reload of the distribution `php<version>-fpm` service does not target a dedicated production runtime, and Orbit does not use it as a fallback. Laravel's `php artisan optimize` caches remain application deployment work.
+Runtime provisioning establishes the dedicated master and its isolated OPcache instance. Production deployment and verified cache refresh are separate operations.
+
+The Gateway derives the production user's service, pool, socket, and OPcache from the AppInstance's recorded runtime identity. It verifies that the owning service is active and owns the expected socket before it requests a reset through that socket. The reset runs inside the owning FastCGI Process Manager (FPM) runtime. Running `opcache_reset()` from the PHP command line cannot establish this result.
+
+The Gateway reports success only after a later FastCGI observation shows that the reset completed. A reset request that returns successfully is not completion evidence by itself. The operation has a bounded deadline and reports an unavailable socket, a wrong service association, a rejected reset, and a reset still pending at the deadline as distinct failures.
+
+Cache refresh never tries another AppInstance's socket and never reloads a service as a fallback. A generic reload of the distribution `php<version>-fpm` service does not target a dedicated production runtime. Laravel's `php artisan optimize` caches remain application deployment work.
 
 ## Process management
 
