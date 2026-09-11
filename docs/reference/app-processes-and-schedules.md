@@ -1,6 +1,33 @@
-# AppInstance processes and Schedules
+# App process and Schedule definitions and copies
 
-This page tells an operator how Orbit installs and manages systemd services and Docker containers owned by one AppInstance, and how Process copies relate to AppInstance Schedules. [ADR 0036](../decisions/0036-support-only-appinstances.md) owns the AppInstance-only Process target boundary, [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns child cleanup, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns independent AppInstance copies.
+This page tells an operator how an App declares reusable process and Schedule definitions and how Orbit manages independent Process and Schedule copies for one AppInstance. [ADR 0036](../decisions/0036-support-only-appinstances.md) owns the AppInstance-only Process target boundary, [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns child cleanup, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns App definitions and independent AppInstance copies.
+
+## Define reusable runtime intent
+
+An App owns separate process and Schedule definition collections. A definition has a universally unique identifier (UUID), a name that is unique within its App and definition kind, a nonempty applicability list, and one complete runtime specification. The applicability list contains each selected environment at most once.
+
+The Gateway exposes the two collections through these API resources.
+
+| Definition kind | Collection | Item operations |
+| --- | --- | --- |
+| Process | `GET` and `POST` on `/api/v1/apps/{app}/process-definitions` | `GET`, full `PUT` replacement, and `DELETE` on `/api/v1/apps/{app}/process-definitions/{definition}` |
+| Schedule | `GET` and `POST` on `/api/v1/apps/{app}/schedule-definitions` | `GET`, full `PUT` replacement, and `DELETE` on `/api/v1/apps/{app}/schedule-definitions/{definition}` |
+
+Both kinds accept the common definition fields below.
+
+| Field | Requirement |
+| --- | --- |
+| `name` | A bounded lowercase name that is unique within the App and definition kind. |
+| `environments` | A nonempty array of unique `development` or `production` values. |
+| `spec` | The complete specification for the selected definition kind. |
+
+A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity. Orbit derives those values when it creates an AppInstance copy.
+
+A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. It uses the Schedule command, calendar, and timeout limits. It does not select a target, host Node, execution identity, or timer state.
+
+The API rejects unknown or duplicate members at every definition object and specification boundary. It also rejects a definition UUID that belongs to another App. Collection responses omit command content; an authorized item response returns the complete definition.
+
+Creating, replacing, or deleting a definition changes only App-owned configuration. It makes no remote call and does not change a Process, Schedule, selected release, desired runtime state, or existing AppInstance copy. Removing an AppInstance retains the App's definitions, while removing an otherwise removable App deletes its definitions.
 
 ## Select the owner
 
@@ -53,6 +80,6 @@ Doctor reads each recorded Process on the selected Node and compares its desired
 
 AppInstance removal runs source preflight before it changes any Process. Once removal accepts its fixed AppInstance set, no new Process can attach to a member. The removal then stops and removes every owned running, stopped, failed, or removing Process and its persistent exact-owned artifacts before it reports success. A cleanup failure keeps the AppInstance and unfinished Process cleanup resumable. The [AppInstance removal reference](appinstance-removal.md) describes the order and retry boundary.
 
-The AppInstance Process copy is independent. Changing or removing it does not change an App-owned definition, and changing an App definition does not reconcile an existing copy or its runtime state.
+The AppInstance Process copy is independent. Changing or removing it does not change an App-owned definition, and creating, replacing, or deleting an App definition does not reconcile an existing copy or its runtime state.
 
 An AppInstance Schedule is also an independent copy with its own identity, systemd artifacts, desired timer state, and removal lifecycle. The [Schedules reference](schedules.md) describes target context, stopped installation, explicit timer activation, manual execution, latest-run reporting, and cleanup. Process commands do not operate on Schedules.

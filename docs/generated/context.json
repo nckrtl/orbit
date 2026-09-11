@@ -15,6 +15,7 @@
                 "Cluster",
                 "Gateway",
                 "Node",
+                "Schedule",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1340,7 +1341,7 @@
         },
         {
             "path": "docs/reference/app-processes-and-schedules.md",
-            "title": "AppInstance processes and Schedules",
+            "title": "App process and Schedule definitions and copies",
             "kind": "reference",
             "components": [],
             "concepts": [
