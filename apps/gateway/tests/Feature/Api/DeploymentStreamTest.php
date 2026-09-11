@@ -174,16 +174,20 @@ it('stops before activation when the next phase write detects a disconnect after
     $response = $this
         ->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
         ->call('POST', $this->url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}');
+    $completeLines = explode("\n", $response->streamedContent());
+    array_pop($completeLines);
     $events = array_map(
         static fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
-        array_values(array_filter(explode("\n", $response->streamedContent()))),
+        array_values(array_filter($completeLines)),
     );
     $activity = Activity::query()->sole()->refresh();
 
-    expect(array_column($events, 'phase'))
-        ->toContain('activation')
-        ->and(array_column($events, 'type'))
+    expect(array_column($events, 'type'))
         ->not->toContain('result')
+        ->and(array_column($events, 'phase'))
+        ->not->toContain('activation')
+        ->and($this->fixture->connection->phaseProbeWrites)
+        ->toBe(5)
         ->and($this->fixture->deployment->activations)
         ->toBe(0)
         ->and($this->fixture->deployment->invocations)
@@ -192,6 +196,8 @@ it('stops before activation when the next phase write detects a disconnect after
         ->toBe('failed')
         ->and($activity->error_code)
         ->toBe('deployment.cancelled')
+        ->and($activity->properties?->get('deployment')['failed_step'])
+        ->toBe('activation')
         ->and($activity->properties?->get('deployment')['selected_release'])
         ->toBe('initial');
 });

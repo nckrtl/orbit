@@ -15,7 +15,11 @@ final class DeploymentNdjsonStream
 
     private const int MaximumOutputBytes = 16 * 1024;
 
-    private const int PhaseProbeDelayMicroseconds = 10_000;
+    private const int PhaseProbeWindowMicroseconds = 250_000;
+
+    private const int PhaseProbeIntervalMicroseconds = 10_000;
+
+    private const int PhaseProbeWrites = self::PhaseProbeWindowMicroseconds / self::PhaseProbeIntervalMicroseconds;
 
     private int $sequence = 0;
 
@@ -66,19 +70,25 @@ final class DeploymentNdjsonStream
             'request_id' => $this->requestId,
             ...$fields,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $probeBytes = $probeDisconnect ? self::PhaseProbeWrites : 0;
         $line = $json."\n";
 
-        if (strlen($line) > self::MaximumLineBytes) {
+        if ($probeBytes + strlen($line) > self::MaximumLineBytes) {
             throw new RuntimeException('Deployment event exceeded the stream line limit.');
         }
 
         if ($probeDisconnect) {
-            // Let Caddy report a downstream close before the final fragment returns to PHP.
-            $this->connection->send(substr($json, 0, 1));
-            usleep(self::PhaseProbeDelayMicroseconds);
-            $this->connection->send(substr($json, 1));
-            usleep(self::PhaseProbeDelayMicroseconds);
-            $this->connection->send("\n");
+            for ($write = 0; $write < self::PhaseProbeWrites; $write++) {
+                $this->connection->send(' ');
+
+                if ($this->connection->disconnected()) {
+                    return;
+                }
+
+                usleep(self::PhaseProbeIntervalMicroseconds);
+            }
+
+            $this->connection->send($line);
 
             return;
         }

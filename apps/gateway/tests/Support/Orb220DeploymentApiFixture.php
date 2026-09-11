@@ -198,13 +198,13 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
 final class Orb220StreamConnection implements DeploymentStreamConnection
 {
-    private bool $phaseProbeStarted = false;
-
     public bool $disconnected = false;
 
     public bool $disconnectOnOutput = false;
 
     public bool $disconnectOnNextPhase = false;
+
+    public int $phaseProbeWrites = 0;
 
     /** @var list<string> */
     public array $lines = [];
@@ -223,15 +223,15 @@ final class Orb220StreamConnection implements DeploymentStreamConnection
             $this->disconnected = true;
         }
 
-        if ($this->disconnectOnNextPhase && $this->phaseProbeStarted) {
+        if ($this->disconnectOnNextPhase) {
+            $this->phaseProbeWrites++;
+
+            if ($this->phaseProbeWrites < 5) {
+                return;
+            }
+
             $this->disconnectOnNextPhase = false;
             $this->disconnected = true;
-
-            return;
-        }
-
-        if ($this->disconnectOnNextPhase && str_contains($line, '"type":"phase"')) {
-            $this->phaseProbeStarted = true;
         }
     }
 }

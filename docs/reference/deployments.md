@@ -61,7 +61,11 @@ Request validation and Node-access authorization finish before a deployment stre
 
 A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
 
-The Gateway detects a client disconnect when it writes an output or phase event. A silent active command can therefore continue until it produces output, exits, or times out and the Gateway attempts the next stream write. Once the disconnect is detected, cancellation stops the next protected boundary from starting, and the Gateway waits for bounded process cleanup. It sends no success result, replays no event, and does not roll code back automatically. The client can use the releases request to inspect the current selection before deciding whether to retry or request a rollback.
+Before each phase event, the Gateway uses a bounded 250 millisecond probe that flushes one JSON-safe whitespace byte every 10 milliseconds. The whitespace and event form one valid NDJSON line, and every byte counts toward the 32 KiB line limit.
+
+The Gateway detects a client disconnect when it writes an output event or performs a phase probe. A silent active command can therefore continue until it produces output, exits, or times out and the Gateway attempts the next stream write. The bounded probe gives HTTP/1.1 and HTTP/2 disconnects time to propagate through Caddy and PHP FastCGI Process Manager (PHP-FPM), but one write does not guarantee immediate detection of every downstream close.
+
+Once the disconnect is detected, cancellation stops the next protected boundary from starting, and the Gateway waits for bounded process cleanup. It sends no success result, replays no event, and does not roll code back automatically. The client can use the releases request to inspect the current selection before deciding whether to retry or request a rollback.
 
 Deployment and rollback require access to the AppInstance's Node. Their Activity records contain only the request and target identifiers and the terminal status, selected release, failed step, and error code. They never contain application output or configured command text. Generic errors follow the same redaction boundary.
 
