@@ -37,7 +37,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
 
     public function install(#[SensitiveParameter] Schedule $schedule): void
     {
-        $target = $this->targets->forSchedule($schedule);
+        $target = $this->targets->forInstallation($schedule);
 
         if (! $target->isProduction() || $schedule->desired_timer_state === DesiredTimerState::Enabled) {
             $this->assertRunnable($schedule, $target);
