@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
-use GuzzleHttp\Psr7\PumpStream;
-use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -14,11 +12,9 @@ use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentConfigRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateAppInstanceDeploymentConfigRequest;
-use Psr\Http\Message\ResponseFactoryInterface;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\StreamFactoryInterface;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -404,34 +400,70 @@ describe('deployment streams', function (): void {
             ->toHaveCount(1);
     });
 
-    it('closes an interrupted stream and never submits another deployment', function (): void {
-        if (! defined('SIGINT') || ! function_exists('posix_kill')) {
+    it('leaves SIGINT at its default for stream and non-stream commands', function (): void {
+        $commands = Artisan::all();
+
+        expect($commands['instance:deploy']->getSubscribedSignals())->toBe([])
+            ->and($commands['instance:rollback']->getSubscribedSignals())->toBe([])
+            ->and($commands['instance:deployment-config']->getSubscribedSignals())->toBe([])
+            ->and($commands['instance:releases']->getSubscribedSignals())->toBe([]);
+    });
+
+    it('terminates promptly and disconnects before headers or during a blocked stream read', function (string $mode): void {
+        if (! defined('SIGINT') || ! function_exists('posix_kill') || ! function_exists('openssl_csr_new')) {
             $this->markTestSkipped('POSIX signals are unavailable.');
         }
 
-        $response = new DeploymentCliInterruptingResponse;
-        $mock = MockClient::global([
-            DeployAppInstanceRequest::class => $response,
-        ]);
+        $fixture = deployment_cli_signal_fixture($this->orbitHome, $mode);
+        $output = '';
+        $command = new Process(
+            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:deploy', '17', '--json', '--no-interaction'],
+            env: ['ORBIT_HOME' => $fixture['home']],
+            timeout: 10,
+        );
 
-        $exitCode = Artisan::call('instance:deploy', [
-            'instance' => '17',
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
+        try {
+            $command->start(static function (string $type, string $data) use (&$output): void {
+                $output .= $data;
+            });
+            deployment_cli_wait_until(
+                static fn (): bool => is_file($fixture[$mode === 'headers-late' ? 'request' : 'stream']),
+            );
 
-        expect($exitCode)->toBe(1)
-            ->and(trim(Artisan::output()))
-            ->toBe(deployment_cli_error(
-                'deployment.interrupted',
-                'Deployment interrupted.',
-                deployment_cli_request_id(),
-            ))
-            ->and($response->stream?->eof())
-            ->toBeTrue()
-            ->and($mock->getRecordedResponses())
-            ->toHaveCount(1);
-    });
+            if ($mode === 'body-blocked') {
+                usleep(100_000);
+            }
+
+            if (! $command->isRunning()) {
+                throw new RuntimeException(
+                    "Deployment command exited before SIGINT: {$output}\n"
+                    .'Request: '.file_get_contents($fixture['request'])."\n"
+                    .'Server stdout: '.$fixture['server']->getOutput()."\n"
+                    .'Server stderr: '.$fixture['server']->getErrorOutput(),
+                );
+            }
+            $startedAt = microtime(true);
+            $command->signal(SIGINT);
+            $exitCode = $command->wait();
+            $elapsed = microtime(true) - $startedAt;
+            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+            $serverExitCode = $fixture['server']->wait();
+
+            expect($exitCode)->not->toBe(0)
+                ->and($command->getTermSignal())->toBe(SIGINT)
+                ->and($elapsed)->toBeLessThan(2.0)
+                ->and($serverExitCode)->toBe(0)
+                ->and($output)->not->toContain('"type":"result"', 'succeeded');
+        } finally {
+            if ($command->isRunning()) {
+                $command->stop(0.1, 9);
+            }
+
+            if ($fixture['server']->isRunning()) {
+                $fixture['server']->stop(0.1, 9);
+            }
+        }
+    })->with(['before response headers' => 'headers-late', 'during blocked body read' => 'body-blocked']);
 });
 
 function deployment_cli_config_response(string $branch = 'main', ?array $steps = null): MockResponse
@@ -554,31 +586,212 @@ function deployment_cli_request_id(): string
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a847';
 }
 
-final class DeploymentCliInterruptingResponse extends MockResponse
+/**
+ * @return array{
+ *     home: string,
+ *     request: string,
+ *     stream: string,
+ *     disconnected: string,
+ *     server: Process,
+ * }
+ */
+function deployment_cli_signal_fixture(string $root, string $mode): array
 {
-    public ?PumpStream $stream = null;
+    $directory = "{$root}/signal-{$mode}";
+    mkdir($directory, 0o700, recursive: true);
+    [$certificate, $privateKey] = deployment_cli_signal_certificate($directory);
+    $ready = "{$directory}/ready";
+    $request = "{$directory}/request";
+    $stream = "{$directory}/stream";
+    $disconnected = "{$directory}/disconnected";
+    $server = new Process([
+        PHP_BINARY,
+        '-r',
+        <<<'PHP'
+            $context = stream_context_create(['ssl' => [
+                'local_cert' => $argv[1],
+                'local_pk' => $argv[2],
+                'verify_peer' => false,
+            ]]);
+            $server = stream_socket_server(
+                'tls://127.0.0.1:0',
+                $errorNumber,
+                $errorMessage,
+                STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
+                $context,
+            );
 
-    public function __construct()
-    {
-        parent::__construct('');
-    }
-
-    public function createPsrResponse(
-        ResponseFactoryInterface $responseFactory,
-        StreamFactoryInterface $streamFactory,
-    ): ResponseInterface {
-        $sent = false;
-        $this->stream = new PumpStream(static function () use (&$sent): ?string {
-            if ($sent) {
-                return null;
+            if ($server === false) {
+                fwrite(STDERR, $errorMessage);
+                exit($errorNumber ?: 1);
             }
 
-            $sent = true;
-            posix_kill(getmypid(), SIGINT);
+            $address = stream_socket_get_name($server, false);
 
-            return 'ignored';
-        });
+            if (! is_string($address)) {
+                exit(2);
+            }
 
-        return new PsrResponse(200, deployment_cli_stream_headers(), $this->stream);
+            file_put_contents($argv[3], $address);
+            $connection = stream_socket_accept($server, 5);
+
+            if ($connection === false) {
+                exit(3);
+            }
+
+            $request = '';
+
+            while (! str_contains($request, "\r\n\r\n")) {
+                $chunk = fread($connection, 8192);
+
+                if (! is_string($chunk) || $chunk === '') {
+                    exit(4);
+                }
+
+                $request .= $chunk;
+            }
+
+            file_put_contents($argv[4], $request);
+
+            if ($argv[7] === 'body-blocked') {
+                preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
+                $requestId = $matches[1] ?? '';
+                $headers = "HTTP/1.1 200 OK\r\n"
+                    ."Content-Type: application/x-ndjson\r\n"
+                    ."X-Orbit-Request-Id: {$requestId}\r\n"
+                    ."Transfer-Encoding: chunked\r\n"
+                    ."Connection: close\r\n\r\n";
+                fwrite($connection, $headers);
+                $events = [
+                    [
+                        'type' => 'phase',
+                        'sequence' => 1,
+                        'request_id' => $requestId,
+                        'phase' => 'before_activation',
+                        'step_name' => 'slow',
+                    ],
+                    [
+                        'type' => 'output',
+                        'sequence' => 2,
+                        'request_id' => $requestId,
+                        'stream' => 'stdout',
+                        'data_base64' => base64_encode("FIRST\n"),
+                    ],
+                ];
+
+                foreach ($events as $event) {
+                    $line = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+                    fwrite($connection, dechex(strlen($line))."\r\n{$line}\r\n");
+                    fflush($connection);
+                }
+
+                file_put_contents($argv[5], 'sent');
+            }
+
+            stream_set_blocking($connection, false);
+            $deadline = microtime(true) + 5;
+
+            while (microtime(true) < $deadline) {
+                $read = [$connection];
+                $write = null;
+                $except = null;
+
+                if (stream_select($read, $write, $except, 0, 100_000) === 1) {
+                    $data = fread($connection, 8192);
+
+                    if ($data === '' && feof($connection)) {
+                        file_put_contents($argv[6], 'closed');
+                        fclose($connection);
+                        fclose($server);
+                        exit(0);
+                    }
+                }
+            }
+
+            exit(5);
+            PHP,
+        $certificate,
+        $privateKey,
+        $ready,
+        $request,
+        $stream,
+        $disconnected,
+        $mode,
+    ], timeout: 8);
+    $server->start();
+    deployment_cli_wait_until(static fn (): bool => is_file($ready));
+    $address = file_get_contents($ready);
+
+    if (! is_string($address) || $address === '') {
+        throw new RuntimeException('Could not resolve the deployment signal fixture address.');
+    }
+
+    $home = "{$directory}/home";
+    mkdir($home, 0o700);
+    new GatewayConfigRepository("{$home}/config.json")->add(new GatewayProfile(
+        name: 'signal',
+        url: "https://{$address}",
+        caPath: $certificate,
+    ));
+
+    return compact('home', 'request', 'stream', 'disconnected', 'server');
+}
+
+/** @return array{string, string} */
+function deployment_cli_signal_certificate(string $directory): array
+{
+    $configuration = "{$directory}/openssl.cnf";
+    file_put_contents($configuration, <<<'OPENSSL'
+        [req]
+        distinguished_name = subject
+        x509_extensions = v3_ca
+        prompt = no
+
+        [subject]
+        CN = 127.0.0.1
+
+        [v3_ca]
+        subjectAltName = IP:127.0.0.1
+        basicConstraints = critical, CA:TRUE
+        keyUsage = critical, keyCertSign, digitalSignature
+        OPENSSL);
+    $key = openssl_pkey_new([
+        'config' => $configuration,
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+    $certificate = openssl_csr_sign(
+        openssl_csr_new(
+            ['commonName' => '127.0.0.1'],
+            $key,
+            ['config' => $configuration],
+        ),
+        null,
+        $key,
+        1,
+        ['config' => $configuration, 'x509_extensions' => 'v3_ca'],
+    );
+    openssl_x509_export($certificate, $certificatePem);
+    openssl_pkey_export($key, $privateKeyPem, null, ['config' => $configuration]);
+    $certificatePath = "{$directory}/ca.pem";
+    $privateKeyPath = "{$directory}/key.pem";
+    file_put_contents($certificatePath, $certificatePem);
+    file_put_contents($privateKeyPath, $privateKeyPem);
+    chmod($certificatePath, 0o600);
+    chmod($privateKeyPath, 0o600);
+
+    return [$certificatePath, $privateKeyPath];
+}
+
+function deployment_cli_wait_until(Closure $condition, float $timeoutSeconds = 5): void
+{
+    $deadline = microtime(true) + $timeoutSeconds;
+
+    while (! $condition()) {
+        if (microtime(true) >= $deadline) {
+            throw new RuntimeException('Timed out waiting for the deployment signal fixture.');
+        }
+
+        usleep(10_000);
     }
 }

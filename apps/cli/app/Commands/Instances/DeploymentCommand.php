@@ -16,16 +16,10 @@ use Throwable;
 
 abstract class DeploymentCommand extends GatewayCommand
 {
-    private ?DeploymentStream $activeStream = null;
-
-    private bool $interrupted = false;
-
     private ?string $requestId = null;
 
     protected function renderDeploymentStream(DeploymentStream $stream): int
     {
-        $this->activeStream = $stream;
-        $this->interrupted = false;
         $this->requestId = null;
 
         try {
@@ -52,19 +46,18 @@ abstract class DeploymentCommand extends GatewayCommand
             }
         } catch (GatewayApiException $exception) {
             return $this->renderStreamFailure(
-                $this->interrupted ? 'deployment.interrupted' : ($exception->errorCode() ?? 'deployment.stream_invalid'),
-                $this->interrupted ? 'Deployment interrupted.' : $exception->getMessage(),
+                $exception->errorCode() ?? 'deployment.stream_invalid',
+                $exception->getMessage(),
                 $exception->requestId() ?? $this->requestId,
             );
         } catch (Throwable) {
             return $this->renderStreamFailure(
-                $this->interrupted ? 'deployment.interrupted' : 'deployment.stream_failed',
-                $this->interrupted ? 'Deployment interrupted.' : 'Deployment stream failed.',
+                'deployment.stream_failed',
+                'Deployment stream failed.',
                 $this->requestId,
             );
         } finally {
             $stream->close();
-            $this->activeStream = null;
         }
 
         return $this->renderStreamFailure(
@@ -80,24 +73,6 @@ abstract class DeploymentCommand extends GatewayCommand
             $value,
             JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES,
         );
-    }
-
-    /** @return list<int> */
-    #[\Override]
-    public function getSubscribedSignals(): array
-    {
-        return defined('SIGINT') ? [SIGINT] : [];
-    }
-
-    #[\Override]
-    public function handleSignal(int $signal, int|false $previousExitCode = 0): int|false
-    {
-        if (defined('SIGINT') && $signal === SIGINT) {
-            $this->interrupted = true;
-            $this->activeStream?->close();
-        }
-
-        return false;
     }
 
     private function renderPhase(DeploymentPhaseEvent $event): void

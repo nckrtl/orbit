@@ -106,7 +106,7 @@ The command exit status identifies whether the streamed operation completed succ
 | The final event is a succeeded result. | Zero. |
 | The final event is a failed result. | Nonzero. The command identifies the failed boundary and the selected release when the result includes one. |
 | The stream is malformed, truncated, or ends without a result. | Nonzero. The command never infers success from earlier events. |
-| The operator presses Ctrl-C. | Nonzero. The CLI closes the active SDK stream and does not submit another deployment or rollback request. |
+| The operator presses Ctrl-C. | Nonzero. The operating system terminates the CLI and closes its HTTP connection immediately. The CLI does not submit another deployment or rollback request. |
 
 A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
 
