@@ -52,6 +52,7 @@ describe('repository guidance bootstrap', function (): void {
                 '`.ai/rules/**/*.md`',
                 '`composer.json`',
                 '`composer.lock`',
+                '`phpunit.guidance.xml`',
                 '`phpunit.xml.dist`',
                 '`pint.json`',
                 '`phpstan.neon`',
@@ -83,7 +84,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($dependencies)
             ->not->toHaveKeys(['laravel/framework', 'laravel/boost']);
         expect($composer['scripts']['guidance:check'] ?? null)
-            ->toBe('vendor/bin/pest --tia --compact');
+            ->toBe('vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact');
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 

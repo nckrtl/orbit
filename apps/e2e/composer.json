@@ -55,7 +55,7 @@
         ],
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",
-        "guidance:check": "vendor/bin/pest --tia --compact",
+        "guidance:check": "vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact",
         "guidance:update": [
             "@guidance:check",
             "@php artisan boost:update --no-discover --no-interaction",

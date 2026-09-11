@@ -16,7 +16,7 @@ it('keeps documentation tooling guidance beside the project', function (): void 
         ->toContain('console-only')
         ->toContain('composer check');
     expect($composer['scripts']['guidance:check'] ?? null)
-        ->toBe('vendor/bin/pest --tia --compact')
+        ->toBe('vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact')
         ->and($composer['scripts']['test'] ?? null)
         ->toBe('vendor/bin/pest --parallel --tia --compact');
 });

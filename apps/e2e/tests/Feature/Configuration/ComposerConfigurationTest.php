@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Symfony\Component\Process\Process;
+
 describe('Composer configuration', function (): void {
     it('enables TIA for every repository-owned Pest command', function (): void {
         foreach ([
@@ -44,6 +46,25 @@ describe('Composer configuration', function (): void {
                 expect($contents)->not->toContain('tests/');
             }
         }
+
+        foreach ([
+            'apps/cli/phpunit.guidance.xml' => ['tests/Feature/BoostGuidanceTest.php'],
+            'apps/docs/phpunit.guidance.xml' => ['tests/Unit/RepositoryGuidanceTest.php'],
+            'apps/gateway/phpunit.guidance.xml' => [
+                'tests/Feature/Configuration/BoostGuidanceTest.php',
+                'tests/Unit/Configuration/BoostConfigurationTest.php',
+            ],
+            'apps/e2e/phpunit.guidance.xml' => [
+                'tests/Feature/Configuration/BoostConfigurationTest.php',
+                'tests/Feature/Configuration/BoostGuidanceTest.php',
+                'tests/Feature/Configuration/ComposerConfigurationTest.php',
+            ],
+            'packages/php-sdk/phpunit.guidance.xml' => ['tests/Unit/RepositoryGuidanceTest.php'],
+        ] as $configuration => $contracts) {
+            expect(file_get_contents(base_path('../../'.$configuration)))
+                ->toBeString()
+                ->toContain(...$contracts);
+        }
     });
 
     it('requires analysis level 6 or higher in every Composer project', function (string $project): void {
@@ -80,7 +101,7 @@ describe('Composer configuration', function (): void {
             ->and($composer['scripts']['test:fresh'])
             ->toBe('vendor/bin/pest --parallel --tia --fresh --compact')
             ->and($composer['scripts']['guidance:check'])
-            ->toBe('vendor/bin/pest --tia --compact');
+            ->toBe('vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact');
         expect($composer['scripts'])->not->toHaveKey('test:scenario-cold');
         expect($composer['scripts']['scenario:cold'])
             ->toBe([
@@ -126,5 +147,48 @@ describe('Composer configuration', function (): void {
         foreach (['pint.json', 'phpstan.neon'] as $file) {
             expect(file_get_contents(base_path($file)))->not->toMatch('/database|routes/i');
         }
+    });
+
+    it('executes a fresh TIA guidance contract when a guidance input is corrupt', function (): void {
+        $source = base_path('../../apps/docs');
+        $project = temporaryPath('orbit-guidance-check-', 6);
+
+        mkdir($project.'/app', 0o700, true);
+        mkdir($project.'/tests/Unit', 0o700, true);
+        symlink($source.'/vendor', $project.'/vendor');
+
+        foreach ([
+            'composer.json',
+            'phpunit.guidance.xml',
+            'tests/Pest.php',
+            'tests/Unit/RepositoryGuidanceTest.php',
+        ] as $path) {
+            $destination = $project.'/'.$path;
+            $directory = dirname($destination);
+
+            if (! is_dir($directory)) {
+                mkdir($directory, 0o700, true);
+            }
+
+            copy($source.'/'.$path, $destination);
+        }
+
+        $guidance = (string) file_get_contents($source.'/AGENTS.md');
+        expect($guidance)->toContain('repository-root `docs/`');
+        file_put_contents(
+            $project.'/AGENTS.md',
+            str_replace('repository-root `docs/`', 'corrupt guidance contract', $guidance),
+        );
+
+        $process = new Process(['composer', 'guidance:check'], $project);
+        $process->setTimeout(30);
+        $process->run();
+        $output = $process->getOutput().$process->getErrorOutput();
+
+        expect($process->getExitCode())
+            ->not->toBe(0)
+            ->and($output)
+            ->toContain('TIA mode', 'Failed asserting')
+            ->not->toContain('TIA does not apply to partial runs');
     });
 });

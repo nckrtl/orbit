@@ -40,4 +40,4 @@ repositories.
 | `src/Testing/**/*.php` | PHP and Spatie; Saloon transport; Redaction and security; Testing and quality |
 | `tests/**/*.php` | PHP and Spatie; Saloon transport; Redaction and security; Public contract; Testing and quality |
 | `README.md`, `AGENTS.md`, `.agents/**/*.md`, `.ai/rules/**/*.md` | Public contract; Testing and quality |
-| `composer.json`, `composer.lock`, `phpunit.xml.dist`, `pint.json`, `phpstan.neon`, `rector.php`, `.gitignore` | PHP and Spatie; Testing and quality |
+| `composer.json`, `composer.lock`, `phpunit.guidance.xml`, `phpunit.xml.dist`, `pint.json`, `phpstan.neon`, `rector.php`, `.gitignore` | PHP and Spatie; Testing and quality |

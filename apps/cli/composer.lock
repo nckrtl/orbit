@@ -2272,7 +2272,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/php-sdk",
-                "reference": "4087591f1414eae262d15b6492167dda4e2e5969"
+                "reference": "3fb09824d74ac5d0d23f8d867c554dbcfe4232ae"
             },
             "require": {
                 "php": "^8.5",
@@ -2321,7 +2321,7 @@
                     "vendor/bin/pint --test"
                 ],
                 "guidance:check": [
-                    "vendor/bin/pest --tia --compact"
+                    "vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact"
                 ],
                 "lint": [
                     "@format:check"
