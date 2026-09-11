@@ -14,6 +14,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
+use App\Models\Schedule;
 use App\Models\Tool;
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -32,6 +33,7 @@ final readonly class ServingNodeResolver
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
+            ServingNode::ScheduleHost => $this->scheduleHost($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
             ServingNode::ClusterOwning => $this->clusterOwning($request),
             ServingNode::RouteOwning => $this->routeOwning($request),
@@ -238,6 +240,24 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($owner->node_id)];
+    }
+
+    /** @return list<Node> */
+    private function scheduleHost(Request $request): array
+    {
+        $id = $request->route('schedule');
+
+        if (! is_string($id) || $id === '') {
+            return [];
+        }
+
+        $schedule = Schedule::query()->find($id);
+
+        if (! $schedule instanceof Schedule) {
+            return [];
+        }
+
+        return [Node::query()->findOrFail($schedule->host_node_id)];
     }
 
     /** @return list<Node> */

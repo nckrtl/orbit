@@ -46,6 +46,7 @@ Route::prefix('v1')->group(function (): void {
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
     ])->post('schedules/{schedule}/complete', [ScheduleCompletionsController::class, 'store'])
         ->whereUuid('schedule')
         ->withoutMiddleware(RecordCommandActivity::class)

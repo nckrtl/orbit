@@ -6,6 +6,7 @@ use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
@@ -18,6 +19,7 @@ use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Schedule;
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -175,6 +177,32 @@ it('resolves process-owning nodes from bound and raw instance targets', function
             'target_id' => $instance->id,
         ]), ServingNode::ProcessOwning)))
         ->toBe([$node->id]);
+});
+
+it('resolves the recorded Schedule host and leaves deleted callbacks unresolved', function (): void {
+    $node = resolver_node('schedule-host');
+    $schedule = Schedule::query()->create([
+        'target_type' => Node::class,
+        'target_id' => $node->id,
+        'host_node_id' => $node->id,
+        'name' => 'daily',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['schedule' => $schedule->id]),
+        ServingNode::ScheduleHost,
+    )))
+        ->toBe([$node->id])
+        ->and(resolver()->resolve(
+            resolver_request(['schedule' => '123e4567-e89b-42d3-a456-426614174000']),
+            ServingNode::ScheduleHost,
+        ))
+        ->toBeEmpty();
 });
 
 it('rejects a bound legacy Workspace Process owner', function (): void {

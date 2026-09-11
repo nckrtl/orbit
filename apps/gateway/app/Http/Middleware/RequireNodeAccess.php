@@ -68,6 +68,14 @@ final readonly class RequireNodeAccess
             return $next($request);
         }
 
+        if (
+            $scope === ServingNode::ScheduleHost
+            && count($servingNodes) === 1
+            && $this->sameNode($consumer, $servingNodes[0])
+        ) {
+            return $next($request);
+        }
+
         foreach ($servingNodes as $servingNode) {
             if ($this->authorizer->allows($consumer, $servingNode)) {
                 return $next($request);
@@ -77,6 +85,11 @@ final readonly class RequireNodeAccess
         $request->attributes->set('orbit.error_code', 'node_access.required');
 
         return $this->required($consumer, $servingNodes[0]);
+    }
+
+    private function sameNode(Node $consumer, Node $serving): bool
+    {
+        return $consumer->getKey() === $serving->getKey();
     }
 
     private function scope(Request $request): ?ServingNode
