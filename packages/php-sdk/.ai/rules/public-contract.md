@@ -1,13 +1,13 @@
 # Public contract
 
-The SDK models exactly 73 concrete public Gateway API operations:
+The SDK models exactly 78 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
 - Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, and remove.
-- AppInstance: list, show, create, register, remove, deployment-layout preparation, environment import, environment update, and environment synchronization through the concise Instance routes.
+- AppInstance: list, show, create, register, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Workspace: list, show, create, remove, and update PHP.
 - Process: list, add, start, stop, restart, logs, and remove.
@@ -16,7 +16,7 @@ The SDK models exactly 73 concrete public Gateway API operations:
 - Doctor: run the complete typed Gateway report.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
-The two abstract request bases are implementation details, not extra Gateway
+The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
 
 - Use numeric resource IDs in routes where the Gateway contract does. Keep a
@@ -32,6 +32,16 @@ operations. Keep the public API typed and small.
   AppInstance ID and an optional explicit SQLite source path. Preserve omission
   separately from every supplied string. The Gateway owns eligibility,
   placement, conversion, and recovery policy.
+- Keep AppInstance deployment transport limited to configuration read and
+  replacement, explicit deploy and rollback streams, and retained-release
+  inspection. Preserve optional step-timeout omission, require an explicit empty
+  deployment body, and send only the selected release for rollback. Decode
+  bounded correlated events incrementally, close a cancelled response, and
+  never retry or replay a deployment stream. The Gateway owns deployment
+  validation, execution, cancellation, and recovery policy.
+- Treat configured deployment commands and decoded application output as
+  sensitive transport values. Keep them out of generic debug and serialization
+  representations while preserving their intended request or event value.
 - Keep AppInstance environment transport limited to an ID-or-hostname selector,
   optional import replacement, one key and string value for update, an empty
   synchronization body, and the bounded value-free operation result. The
@@ -45,8 +55,8 @@ operations. Keep the public API typed and small.
   granular permissions, presets, wildcards, permission editing, or legacy
   grant/revoke compatibility.
 - Do not restore the retired Agent, generic executor, direct SSH execution,
-  Docker Swarm, Compose, image-building, stream, database,
-  proxy, schedule, or deploy surfaces.
+  Docker Swarm, Compose, image-building, generic stream, database,
+  proxy, or schedule surfaces.
 - Coordinate contract changes with Gateway and CLI owners. Do not implement
   Gateway policy or CLI presentation in this repository.
 - Preserve manager, package, nullable constraint, outcomes, structured errors,

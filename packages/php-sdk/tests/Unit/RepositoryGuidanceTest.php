@@ -1,12 +1,18 @@
 <?php
 
 declare(strict_types=1);
+use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
+use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentConfigRequest;
+use Orbit\Sdk\Requests\Deployments\UpdateAppInstanceDeploymentConfigRequest;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
@@ -198,9 +204,14 @@ describe('repository guidance bootstrap', function (): void {
                 continue;
             }
 
-            $requestFileCount++;
             $class = 'Orbit\\Sdk\\Requests\\'.str_replace(['/', '.php'], ['\\', ''], $relative);
             $reflection = new ReflectionClass($class);
+
+            if (! $reflection->isSubclassOf(GatewayRequest::class)) {
+                continue;
+            }
+
+            $requestFileCount++;
 
             if (! $reflection->isAbstract()) {
                 $requestClasses[] = $class;
@@ -208,9 +219,9 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(76)
+            ->toBe(82)
             ->and($requestClasses)
-            ->toHaveCount(73)
+            ->toHaveCount(78)
             ->toContain(AppInstanceDeploymentLayoutRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
@@ -218,17 +229,22 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ImportAppInstanceEnvironmentRequest::class)
             ->toContain(UpdateAppInstanceEnvironmentRequest::class)
             ->toContain(SynchronizeAppInstanceEnvironmentRequest::class)
+            ->toContain(ShowAppInstanceDeploymentConfigRequest::class)
+            ->toContain(UpdateAppInstanceDeploymentConfigRequest::class)
+            ->toContain(DeployAppInstanceRequest::class)
+            ->toContain(RollbackAppInstanceRequest::class)
+            ->toContain(ListAppInstanceReleasesRequest::class)
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
             ->toContain(ClearClusterRouterRequest::class);
     });
 
-    it('documents the 73-operation SDK surface including AppInstance conversion and environment transport', function (): void {
+    it('documents the 78-operation SDK surface including typed deployment transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 73 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 78 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -237,12 +253,13 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain(
-                '- AppInstance: list, show, create, register, remove, deployment-layout preparation, environment import, environment update, and environment synchronization through the concise Instance routes.',
+                '- AppInstance: list, show, create, register, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution,',
-            )->toContain('Docker Swarm, Compose, image-building, stream, database,')
+            )->toContain('Docker Swarm, Compose, image-building, generic stream, database,')
+            ->not->toContain('or deploy surfaces')
             ->not->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution, Docker Swarm, role add/remove, Compose',
             );
@@ -256,6 +273,9 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 'Keep AppInstance environment transport limited to an ID-or-hostname selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
+            )
+            ->toContain(
+                'Keep AppInstance deployment transport limited to configuration read and replacement, explicit deploy and rollback streams, and retained-release inspection.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -265,8 +285,10 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 73 public Gateway operations.',
+                'The SDK exposes exactly 78 public Gateway operations.',
                 'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
+                'The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations.',
+                'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',
                 'The SDK exposes typed import, update, and synchronization requests for AppInstance environment configuration.',
                 'Environment values remain outside normal SDK diagnostics and errors.',
             );
