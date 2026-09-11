@@ -55,7 +55,7 @@ Request validation and Node-access authorization finish before a deployment stre
 
 | Event type | Fields |
 | --- | --- |
-| `phase` | `phase` identifies `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` contains the configured step name for a deployment step and is null for an operation phase. |
+| `phase` | `phase` identifies `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` is present only for a named `before_activation` or `after_activation` step. Other phase events omit it. |
 | `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes so arbitrary application output remains valid NDJSON. |
 | `result` | `status` is `succeeded` or `failed`. `failed_step`, `error_code`, and `selected_release` are nullable. This event is the final line. |
 
