@@ -1,0 +1,141 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      },
+      {
+        "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md"
+      },
+      {
+        "title": "ADR 0034: Select AppInstance PHP from Composer constraints",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0034-select-appinstance-php-from-composer-constraints.md"
+      },
+      {
+        "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "Orbit prepares and activates production releases using the instance\u2019s configured branch and application steps, and reports whether a failure occurred before or after the code switch.\n\n## Scope\n\n* In: synchronous Gateway deployment and code-rollback actions, per-invocation output events, remote execution bounds, and operation exclusion.\n* Out: HTTP streaming transport, automatic retries, deployment history, application recovery, data rollback, inferred commands, and automatic release deletion.\n\n## Acceptance\n\n- [ ] Each explicit deploy fetches the latest configured branch into a fresh release and keeps that checkout for the whole invocation, including when the remote branch advances; no commit selector is accepted and a failed fetch leaves the selected release unchanged. Proof: Incus action `deployment-branch-source`.\n- [ ] A deploy captures the current step configuration in memory, synchronizes stored environment values, then executes the configured pre-activation commands in order from the new release as the instance Unix user through a fixed non-interactive shell; commands are streamed as protected script content rather than interpolated infrastructure arguments. Proof: Incus action `deployment-step-context`.\n- [ ] An empty list runs no application commands; neither cloning nor provisioning triggers deploy, and a command such as `php artisan migrate --force` runs only when explicitly configured. Proof: `apps/gateway/tests/Feature/Domain/DeployAppInstanceTest.php`.\n- [ ] After all pre-activation commands succeed, one atomic `current` replacement selects the release, PHP cache refresh completes for its owning service, and post-activation commands run in order; non-PHP targets skip PHP refresh. Proof: Incus action `deployment-activation-order`.\n- [ ] A pre-switch failure leaves `current` unchanged, while cache or post-switch failure leaves the new release selected; results identify the failed boundary and selected release without claiming that persistent environment or database effects were undone. Proof: Incus action `deployment-failure-boundaries`.\n- [ ] Each application command emits stdout and stderr while running, observes its timeout, and terminates its owned process group on timeout or cancellation; further steps stop, and the operation deadline is the accepted step budget plus at most 900 seconds for infrastructure work. Proof: Incus action `deployment-output-timeout`.\n- [ ] Concurrent deploy, rollback, layout adoption, removal, environment mutation/sync, and Route hostname changes cannot mutate the same production instance during this operation; a busy refusal occurs before those competing mutations, and interrupted commands are never resumed or automatically replayed. Proof: `apps/gateway/tests/Feature/Domain/DeploymentOperationExclusionTest.php` and Incus action `deployment-contention`.\n- [ ] Explicit rollback selects a supplied retained release name beneath this instance\u2019s `releases/`, verifies its owned source and web-root containment, switches atomically, and refreshes PHP cache; it neither fetches Git nor syncs environment nor runs deployment steps or changes database files. Proof: Incus action `deployment-code-rollback`.\n- [ ] First deployment from a prepared release-layout fixture uses the same action with no old `current`; show can report the selected retained release directly from placement, and no deployment-run table, historical output store, or historical step snapshot is created. Proof: `apps/gateway/tests/Feature/Domain/DeployAppInstanceTest.php`.\n- [ ] Maintained documentation describes deployment order, output limits, interruption, persistent side effects, and explicit code rollback, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.\n- [ ] Continuous requests against a compatible PHP fixture during activation receive complete old or new release responses, with no missing-root or unavailable-service response caused by the pointer switch or PHP refresh; agent commands that alter application availability retain their own effects. Proof: Incus action `deployment-serving-continuity`.",
+  "id": "41a16839-f82a-4e8d-a184-bedb21d72ae0",
+  "identifier": "ORB-219",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-216",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-218",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-212",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-215",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Deploy branch releases and roll back retained code",
+  "updatedAt": "2026-09-11T07:31:00.487Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-219/deploy-branch-releases-and-roll-back-retained-code"
+}
