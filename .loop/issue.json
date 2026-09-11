@@ -1,0 +1,119 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "ADR 0019",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0019-run-disposable-incus-scenario-lanes.md"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An operator runs selected cold and snapshot flows concurrently with a bounded worker count and receives every result, including failures and refused cleanup.\n\n## Scope\n\n* In: worker selection, scheduling, atomic capacity admission, per-worker state isolation, interruption handling, and aggregate completion.\n* Out: new lanes or product scenarios, nightly scheduling, pull-request selection, and feature delivery gates.\n\n## Acceptance\n\n- [ ] Invalid worker counts are refused before mutation, and the running set never exceeds the requested worker count or the host VM budget when cold, snapshot, and variable-size recipes overlap with other live topologies. Proof: `apps/e2e/tests/Unit/E2E/ScenarioSchedulerTest.php` and Incus harness acceptance `scenario-worker-capacity`.\n- [ ] Concurrent scenarios share no mutable checkout, state root, network, guest, or database; creation admission is atomic, while guest preparation and exercise can overlap. Proof: Incus harness acceptance `scenario-worker-isolation`.\n- [ ] A product failure or cleanup refusal in one worker does not cancel unrelated runnable flows; the aggregate includes every selected flow and both primary and cleanup outcomes before returning its final exit code. Proof: `apps/e2e/tests/Unit/E2E/ScenarioSchedulerTest.php`.\n- [ ] On interruption, active workers attempt cleanup of their recorded resources and retain actionable recovery state; unstarted flows are reported explicitly, and an unrelated topology survives. Proof: Incus harness acceptance `scenario-worker-interruption`.\n- [ ] Maintained guidance states worker and capacity behavior, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Harness checks pass. Proof: `cd apps/e2e && composer check`.",
+  "id": "bb62d69e-e226-454d-b502-cc988dfe381f",
+  "identifier": "ORB-236",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-234",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-235",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/e2e"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Run independent scenarios within a bounded worker budget",
+  "updatedAt": "2026-09-11T05:42:26.743Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-236/run-independent-scenarios-within-a-bounded-worker-budget"
+}
