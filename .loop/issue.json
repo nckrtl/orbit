@@ -1,0 +1,102 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "Orbit can confirm that a production PHP instance has refreshed its cached PHP code without reloading its service or disturbing another application.\n\n## Scope\n\n* In: a Gateway runtime operation for isolated OPcache refresh, completion verification, and bounded failure reporting.\n* Out: a public generic remote-command API, service tuning, application cache commands, and release activation.\n\n## Acceptance\n\n- [ ] After warming stale code in two dedicated PHP runtimes, refreshing one causes subsequent requests to use its updated code and leaves the other runtime\u2019s warmed entries and master PID intact. Proof: Incus action `production-opcache-isolation`.\n- [ ] A refresh uses the AppInstance\u2019s verified FPM identity, waits for observable reset completion with a bounded deadline, and does not claim success from a CLI cache reset or a successful FastCGI client exit alone. Proof: `apps/gateway/tests/Feature/Infrastructure/AppInstances/ProductionPhpCacheTest.php` and Incus action `production-opcache-completion`.\n- [ ] An unavailable socket, wrong service association, failed reset, or reset still pending at the deadline returns a distinct bounded failure and never resets another socket or reloads a service as fallback. Proof: Incus action `production-opcache-failure`.\n- [ ] Maintained documentation describes cache refresh verification and its failure boundaries, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+  "id": "217704a4-23ee-4d2c-811e-4c9288e50111",
+  "identifier": "ORB-215",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-214",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Refresh and verify the owning production PHP cache",
+  "updatedAt": "2026-09-11T05:42:26.313Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-215/refresh-and-verify-the-owning-production-php-cache"
+}
