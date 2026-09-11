@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\ScheduleErrorCode;
+use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRunStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Schedule;
+use Illuminate\Support\Facades\Route;
 
 it('accepts one private completion from the recorded active peer without Activity', function (): void {
     $host = schedule_completion_node('host', '10.44.0.3');
@@ -36,6 +39,21 @@ it('rejects a completion from another active Node and rejects unknown input', fu
         ->assertUnprocessable();
 
     expect($schedule->refresh()->last_run_at)->toBeNull();
+});
+
+it('returns 409 for an unavailable Schedule target', function (): void {
+    Route::get('schedule-target-unavailable-test', static function (): never {
+        throw new ScheduleOperationException(
+            'resolve-release',
+            ScheduleErrorCode::TargetUnavailable,
+            'The Schedule target is unavailable.',
+        );
+    });
+
+    $this->getJson('/schedule-target-unavailable-test')
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'schedule.target_unavailable')
+        ->assertJsonPath('error.details.step', 'resolve-release');
 });
 
 function schedule_completion_node(string $name, string $ip): Node

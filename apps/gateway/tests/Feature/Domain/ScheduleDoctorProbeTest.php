@@ -47,7 +47,7 @@ beforeEach(function (): void {
         'target_id' => $instance->id,
         'host_node_id' => $this->node->id,
         'name' => 'daily',
-        'calendar' => 'daily',
+        'calendar' => 'sensitive-calendar-marker',
         'command' => 'secret-command --token=private',
         'timeout_seconds' => 3600,
         'desired_timer_state' => DesiredTimerState::Disabled,
@@ -88,7 +88,7 @@ it('reports only stable bounded codes and redacted values', function (): void {
         ->not->toContain('secret-command')
         ->not->toContain('/srv/apps/docs')
         ->not->toContain('private')
-        ->not->toContain('daily</');
+        ->not->toContain('sensitive-calendar-marker');
 });
 
 it('collapses unreachable host inspection to one family issue', function (): void {

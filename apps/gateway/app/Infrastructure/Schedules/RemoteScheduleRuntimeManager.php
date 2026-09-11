@@ -232,6 +232,8 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
             timer_path="/etc/systemd/system/orbit-schedule-\${id}.timer"
             timer="orbit-schedule-\${id}.timer"
             work="\$(mktemp -d /tmp/orbit-schedule.XXXXXX)"
+            cleanup() { rm -rf -- "\$work"; }
+            trap cleanup EXIT
             exec 9>"/run/lock/orbit-schedule-\${id}.lock"
             flock --wait 30 9
             existed_script=0; existed_service=0; existed_timer=0
@@ -251,6 +253,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
             active="\$(systemctl is-active "\$timer" 2>/dev/null || true)"
             rollback() {
               set +e
+              systemctl disable --now "\$timer" >/dev/null 2>&1 || true
               rm -f -- "/etc/orbit/schedule-candidates/\${id}.sh" "/etc/orbit/schedule-candidates/orbit-schedule-\${id}.service" "/etc/orbit/schedule-candidates/orbit-schedule-\${id}.timer"
               if [ "\$existed_script" -eq 1 ]; then cp -a -- "\$work/script" "\$script_path"; else rm -f -- "\$script_path"; fi
               if [ "\$existed_service" -eq 1 ]; then cp -a -- "\$work/service" "\$service_path"; else rm -f -- "\$service_path"; fi

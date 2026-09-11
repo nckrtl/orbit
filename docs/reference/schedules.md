@@ -65,7 +65,7 @@ The callback updates no other Schedule field. The Node does not retry a failed c
 
 ## Recover installation and activation
 
-The Gateway validates target state, ownership, calendar, rendered units, and all candidate artifacts before it changes the active projection. It locks the Schedule transaction and host artifact set while it converges them.
+The Gateway validates target state, ownership, and calendar before it changes the active projection. It stages the candidate artifacts, stops the timer, places the protected script, verifies the staged units, and then publishes and activates the units. It locks the Schedule transaction and host artifact set throughout convergence, and a failure restores the prior artifacts and timer state.
 
 An unexpected file, unit, owner, mode, or identity at an owned name returns `schedule.artifact_conflict`. Orbit does not adopt, overwrite, or delete the conflicting object.
 

@@ -23,6 +23,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
@@ -31,6 +32,7 @@ use App\Models\AppInstanceDeploymentLayout;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
+use App\Models\Schedule;
 
 beforeEach(function (): void {
     $this->instance = orb217_domain_instance();
@@ -149,6 +151,29 @@ it('holds Process admission and refuses an active owned Process before SQLite pr
         ->toBe([])
         ->and(AppInstanceDeploymentLayout::query()->count())
         ->toBe(0);
+});
+
+it('holds Process admission and refuses layout conversion while a Schedule uses its stable path', function (): void {
+    Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->instance->node_id,
+        'name' => 'daily',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(fn () => app(AdoptProductionLayoutAction::class)->execute(
+        $this->instance,
+        new PrepareAppInstanceDeploymentLayoutData(null),
+    ))->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_in_use');
+
+    expect($this->processLock->runs)->toBe(1)
+        ->and($this->converter->calls)->toBe([])
+        ->and(AppInstanceDeploymentLayout::query()->count())->toBe(0);
 });
 
 it('rechecks owned Processes and open-file quiescence before a retried SQLite placement', function (): void {

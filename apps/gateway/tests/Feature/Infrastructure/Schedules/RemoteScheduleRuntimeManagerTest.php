@@ -79,6 +79,9 @@ it('installs through one locked protected-input transaction with fixed safe argv
 
     $program = stream_get_contents($command->protectedInput?->stream());
     expect($program)->toContain('flock --wait 30')
+        ->toContain('cleanup() { rm -rf -- "$work"; }')
+        ->toContain('trap cleanup EXIT')
+        ->toContain("rollback() {\n  set +e\n  systemctl disable --now \"\$timer\"")
         ->toContain('systemd-analyze calendar')
         ->toContain('systemd-analyze verify')
         ->not->toContain($this->schedule->command);
