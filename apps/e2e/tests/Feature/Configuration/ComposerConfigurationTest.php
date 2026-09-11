@@ -188,7 +188,7 @@ describe('Composer configuration', function (): void {
         expect($process->getExitCode())
             ->not->toBe(0)
             ->and($output)
-            ->toContain('Failed asserting')
+            ->toContain('repository-root `docs/`')
             ->not->toContain('TIA does not apply to partial runs');
     });
 });
