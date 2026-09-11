@@ -1,0 +1,57 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Repair E2E TIA regressions on main",
+        "url": "https://github.com/nckrtl/orbit/pull/287"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf",
+    "name": "Tom"
+  },
+  "description": "Restore the Orbit main branch after ORB-238 exposed two E2E TIA contract regressions at `f9ae1b841412661df409a64b2e9db37da9db230c`.\n\n## Scope\n\n* In: classify the new PHPUnit guidance and scenario configuration files as non-runtime static-proof inputs.\n* In: keep the corrupt-guidance regression proving that the configured fresh TIA command runs and fails, without depending on an optional Pest console heading.\n* Out: Gateway product behavior, Doctor families, proof topology behavior, schema changes, and documentation changes.\n\n## Acceptance\n\n- [ ] `phpunit.guidance.xml`, `phpunit.scenario-cold.xml`, and `phpunit.scenario-snapshot.xml` are explicitly classified as non-runtime proof inputs, and every tracked repository path has a determinate classification.\n- [ ] The corrupt-guidance regression proves the configured command contains `--tia --fresh`, fails on the corrupted contract, and never emits the partial-run warning; it does not require Pest to render a TIA heading in captured subprocess output.\n- [ ] `cd apps/e2e && composer test` passes and confirms TIA mode.\n- [ ] The E2E project checks and the exact-candidate root Builder gate pass with TIA-only Pest commands.\n- [ ] Documentation remains unchanged because this only restores existing test and proof-input contracts.\n\n## Verification\n\nRun only TIA-enabled Pest commands. Do not pass Pest paths, filters, groups, suites, or `--no-tia`.",
+  "id": "9c655eef-c5d6-47f0-a086-60673ea833a9",
+  "identifier": "ORB-239",
+  "labels": {
+    "nodes": [
+      {
+        "name": "maintenance:monorepo"
+      },
+      {
+        "name": "apps/e2e"
+      }
+    ]
+  },
+  "relations": {
+    "blockedBy": [],
+    "blocks": [],
+    "duplicateOf": null,
+    "relatedTo": [
+      {
+        "identifier": "ORB-217",
+        "title": "Prepare existing production instances for Orbit deployments"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "name": "Orbit"
+  },
+  "title": "Repair E2E TIA regressions on main",
+  "updatedAt": "2026-09-11T19:14:54.079Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-239/repair-e2e-tia-regressions-on-main"
+}
