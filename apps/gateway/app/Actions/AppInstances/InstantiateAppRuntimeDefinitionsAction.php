@@ -219,7 +219,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
             environment: $environment,
             ports: $ports,
             volumes: $volumes,
-            restartPolicy: $specification['restart_policy'] ?? 'unless-stopped',
+            restartPolicy: $specification['restart_policy'] ?? 'never',
             start: false,
         );
     }

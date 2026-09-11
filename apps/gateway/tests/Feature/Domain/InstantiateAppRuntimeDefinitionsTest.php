@@ -197,6 +197,9 @@ it('retries only unfinished captured copies after definitions and completed oper
     $process = Process::query()->where('owner_id', $this->target->id)->sole();
     $schedule = Schedule::query()->where('target_id', $this->target->id)->sole();
     $capturedAt = $this->target->refresh()->runtime_definitions_captured_at;
+
+    expect($process->restart_policy)->toBe('never');
+
     $process->update([
         'runtime_config' => [
             'command' => ['/usr/bin/php', 'artisan', 'queue:listen'],
