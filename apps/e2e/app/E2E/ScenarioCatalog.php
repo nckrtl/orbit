@@ -49,13 +49,17 @@ final readonly class ScenarioCatalog
      * @param  list<string>  $selected
      * @return list<ScenarioDefinition>
      */
-    public function select(string $candidate, array $selected, string $lane = 'cold'): array
+    public function select(string $candidate, array $selected, ?string $lane = 'cold'): array
     {
-        if (! in_array($lane, ['cold', 'snapshot'], true)) {
+        if ($lane !== null && ! in_array($lane, ['cold', 'snapshot'], true)) {
             throw new InvalidArgumentException("Scenario lane [{$lane}] is invalid.");
         }
         $definitions = $this->definitions($candidate);
         if ($selected === []) {
+            if ($lane === null) {
+                return $definitions;
+            }
+
             return array_values(array_filter(
                 $definitions,
                 static fn (ScenarioDefinition $definition): bool => $definition->lane === $lane,
@@ -79,7 +83,7 @@ final readonly class ScenarioCatalog
         $resolved = [];
         foreach (array_keys($requested) as $id) {
             $definition = $byId[$id] ?? throw new InvalidArgumentException("Scenario ID [{$id}] is unknown.");
-            if ($definition->lane !== $lane) {
+            if ($lane !== null && $definition->lane !== $lane) {
                 throw new InvalidArgumentException("Scenario ID [{$id}] does not belong to the [{$lane}] lane.");
             }
             $resolved[] = $definition;

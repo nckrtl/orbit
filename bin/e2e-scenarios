@@ -7,6 +7,7 @@ usage() {
     cat >&2 <<'USAGE'
 usage: bin/e2e-scenarios cold [CANDIDATE_SHA] [--scenario=ID ...]
        bin/e2e-scenarios snapshot [CANDIDATE_SHA] [--scenario=ID ...]
+       bin/e2e-scenarios run [CANDIDATE_SHA] --workers=COUNT [--scenario=ID ...]
        bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID
 
 Runs explicitly requested cold or snapshot Incus scenarios, or retries one
@@ -36,7 +37,7 @@ if [[ "$command" == cleanup ]]; then
     exec composer --working-dir="$root/apps/e2e" scenario:cleanup -- "$1" "$2" "$3"
 fi
 
-if [[ "$command" != cold && "$command" != snapshot ]]; then
+if [[ "$command" != cold && "$command" != snapshot && "$command" != run ]]; then
     usage
 fi
 
@@ -49,7 +50,17 @@ candidate=${candidate:-$(git -C "$root" rev-parse --verify HEAD^{commit})}
 
 scenario_arguments=()
 declare -A selected_scenarios=()
+worker_count=
 while [[ $# -gt 0 ]]; do
+    if [[ "$command" == run && "$1" == --workers=* ]]; then
+        if [[ -n "$worker_count" || ! "${1#--workers=}" =~ ^[1-9][0-9]*$ ]]; then
+            usage
+        fi
+        worker_count=${1#--workers=}
+        scenario_arguments+=("$1")
+        shift
+        continue
+    fi
     if [[ "$1" != --scenario=* || ! "${1#--scenario=}" =~ ^[a-z][a-z0-9-]{0,62}$ ]]; then
         usage
     fi
@@ -62,6 +73,10 @@ while [[ $# -gt 0 ]]; do
     scenario_arguments+=("$1")
     shift
 done
+
+if [[ "$command" == run && -z "$worker_count" ]]; then
+    usage
+fi
 
 if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
     printf 'e2e-scenarios: candidate SHA must be 40 lowercase hexadecimal characters\n' >&2

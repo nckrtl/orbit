@@ -78,6 +78,28 @@ it('preserves explicit selection order within one lane', function (): void {
     ))->toBe(['snapshot-second', 'snapshot-first']);
 });
 
+it('selects the complete catalog or explicit scenarios across both lanes', function (): void {
+    $repository = new GitRepository(dirname(__DIR__, 5));
+    $candidate = $repository->commit();
+    $definitions = [
+        catalogScenarioDefinition('cold-flow', 'cold'),
+        catalogScenarioDefinition('snapshot-flow', 'snapshot'),
+    ];
+    $catalog = new ScenarioCatalog($repository, fn (): array => $definitions);
+
+    $all = $catalog->select($candidate, [], null);
+    $selected = $catalog->select($candidate, ['snapshot-flow', 'cold-flow'], null);
+
+    expect(array_map(
+        static fn (ScenarioDefinition $definition): string => $definition->id->value,
+        $all,
+    ))->toBe(['cold-flow', 'snapshot-flow']);
+    expect(array_map(
+        static fn (ScenarioDefinition $definition): string => $definition->id->value,
+        $selected,
+    ))->toBe(['snapshot-flow', 'cold-flow']);
+});
+
 it('rejects invalid lanes and scenarios selected from another lane', function (): void {
     $repository = new GitRepository(dirname(__DIR__, 5));
     $candidate = $repository->commit();
