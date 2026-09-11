@@ -37,7 +37,7 @@ The Gateway completes every preflight check before it moves a file, publishes a 
 | Destinations | `releases/`, `current`, `.env`, the optional `database.sqlite`, and conversion-owned temporary paths have no unsafe type, ownership, link, or content conflict. |
 | PHP runtime | Existing local pool tuning can be represented in the dedicated runtime's `local.conf`, and the effective dedicated identity remains the recorded user, home, version, pool, service, socket, and document root. |
 | Serving | The recorded Route, Caddy projection, PHP socket, and source path still identify this AppInstance. |
-| SQLite | The selected file is a safe SQLite database, no owned application Process is active, and no process has the file open. |
+| SQLite | The selected file is safe, no owned application Process is active, no process has the file open, and no SQLite sidecar remains beside the source or destination. |
 
 Conversion moves the existing checkout into one retained release and selects that same content through `current`. It does not fetch, reset, clean, or check out Git. It preserves tracked and ignored files, executable modes, and repository state. It keeps `.env` at the production-home path and links the retained release to it. When SQLite is selected, it moves those exact database bytes to `database.sqlite`; it does not change the schema or rewrite a stored environment value.
 
@@ -47,7 +47,7 @@ The Gateway records each conversion boundary before it continues. A retry resume
 
 An unsupported tuning directive, unsafe destination, changed retained file, or changed serving association stops conversion with a bounded conflict. A refusal before the first recorded effect leaves the old workload unchanged. Repeating a completed request only validates and returns the completed layout; it does not replace the retained release or discard later local edits.
 
-The operating agent must quiesce all application access before relocating SQLite. Orbit refuses active owned Processes or an observed open database, but it does not infer maintenance mode, process shutdown, queue handling, schema migration, or another application command.
+The operating agent must quiesce all application access and checkpoint or close SQLite before relocation so no `-wal`, `-shm`, or `-journal` sidecar remains. Orbit refuses active owned Processes, an observed open database, or one of those source or destination sidecars, but it does not infer maintenance mode, process shutdown, queue handling, schema migration, or another application command.
 
 ## Resolve the serving path
 

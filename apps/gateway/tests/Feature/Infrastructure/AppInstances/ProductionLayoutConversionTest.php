@@ -9,6 +9,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\RemoteProductionLayoutConverter;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -16,11 +18,19 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Filesystem\Filesystem;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('inventories without mutation and emits idempotent authenticated conversion effects', function (): void {
     [$instance, $route] = orb217_remote_conversion_fixture();
-    $tuning = "[orbit-orbit-app-217]\npm = ondemand\npm.max_children = 7\n";
+    $tuning = <<<'FPM'
+        [orbit-orbit-app-217]
+        pm = ondemand
+        pm.max_children = 7
+        env[APP_FLAG] = enabled
+        php_admin_value[memory_limit] = 1G
+        FPM;
+    $tuning .= "\n";
     $payload = [
         'source_path' => '/home/orbit-app-217',
         'release_path' => '/home/orbit-app-217/releases/initial',
@@ -69,7 +79,8 @@ it('inventories without mutation and emits idempotent authenticated conversion e
     $move = $ssh->commands[1]->input ?? '';
     $quiescence = implode(' ', $ssh->commands[2]->arguments);
     $persistent = implode(' ', $ssh->commands[3]->arguments);
-    $runtime = implode(' ', $ssh->commands[4]->arguments);
+    $runtimeCommand = $ssh->commands[4];
+    $runtime = implode(' ', $runtimeCommand->arguments);
     $serving = $ssh->commands[5]->input ?? '';
     $validation = $ssh->commands[6]->input ?? '';
 
@@ -87,6 +98,10 @@ it('inventories without mutation and emits idempotent authenticated conversion e
             'SQLite source has an open file handle',
             'os.path.realpath(candidate) != candidate',
             'shared PHP tuning contains an unsupported directive',
+            'production source has unexpected ownership',
+            'document root contains a symbolic link',
+            'SQLite source has an uncheckpointed sidecar',
+            'php_admin_value[opcache.validate_timestamps]',
             'source_marker',
             'dedicated_runtime',
         )
@@ -100,7 +115,7 @@ it('inventories without mutation and emits idempotent authenticated conversion e
         )
         ->not->toContain('git fetch', 'git reset', 'git clean', 'git checkout')
         ->and($quiescence)
-        ->toContain('os.O_NOFOLLOW', 'expected_identity', 'os.listdir("/proc")')
+        ->toContain('os.O_NOFOLLOW', 'expected_identity', 'os.listdir("/proc")', 'sqlite_sidecar_exists')
         ->and($persistent)
         ->toContain(
             'os.rename(".env", ".env"',
@@ -108,9 +123,15 @@ it('inventories without mutation and emits idempotent authenticated conversion e
             'os.O_NOFOLLOW',
             'environment_source is None and environment_destination is not None',
             'not source_exists and database_exists',
+            'sqlite_sidecar_exists(selected_path)',
         )
         ->and($runtime)
-        ->toContain("orbit-app-instance-{$instance->id}", 'orbit-orbit-app-217')
+        ->toContain(
+            "orbit-app-instance-{$instance->id}",
+            'orbit-orbit-app-217',
+            'key.startswith("env[")',
+            'key.startswith("php_admin_value[")',
+        )
         ->and($serving)
         ->toContain('php_fastcgi unix/$socket {', 'root * $home/$document_root')
         ->and($validation)
@@ -122,6 +143,237 @@ it('inventories without mutation and emits idempotent authenticated conversion e
             'database.sqlite',
             'expected_marker',
         );
+
+    $pool = tempnam(sys_get_temp_dir(), 'orb217-pool-');
+
+    if (! is_string($pool)) {
+        throw new RuntimeException('Unable to create the PHP pool fixture.');
+    }
+
+    try {
+        file_put_contents($pool, <<<FPM
+            [orbit-app-instance-{$instance->id}]
+            user = orbit-app-217
+            group = orbit-app-217
+            listen = /run/php/orbit-app-instance-{$instance->id}.sock
+            chdir = /home/orbit-app-217
+            clear_env = yes
+            env[HOME] = /home/orbit-app-217
+            env[USER] = orbit-app-217
+            env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
+            php_admin_value[opcache.validate_timestamps] = 0
+            pm = ondemand
+            pm.max_children = 7
+            env[APP_FLAG] = enabled
+            php_admin_value[memory_limit] = 1G
+
+            FPM);
+        $runtimeResult = orb217_run_program([
+            'python3',
+            '-c',
+            $runtimeCommand->arguments[3],
+            $pool,
+            ...array_slice($runtimeCommand->arguments, 5),
+        ]);
+
+        expect($runtimeResult->succeeded())
+            ->toBeTrue($runtimeResult->stderr)
+            ->and($runtimeResult->stdout)
+            ->toBe($tuning)
+            ->not->toContain(
+                'env[HOME]',
+                'env[USER]',
+                'env[PATH]',
+                'php_admin_value[opcache.validate_timestamps]',
+            );
+    } finally {
+        @unlink($pool);
+    }
+});
+
+it('refuses SQLite sidecars during quiescence and before persistent mutation', function (): void {
+    $root = sys_get_temp_dir().'/orbit-layout-sidecars-'.bin2hex(random_bytes(8));
+    $home = "{$root}/home";
+    $release = "{$home}/releases/initial";
+    $database = "{$release}/storage/app.sqlite";
+    $files = new Filesystem;
+    $files->ensureDirectoryExists(dirname($database));
+    file_put_contents("{$release}/.env", "KEY=value\n");
+    file_put_contents($database, 'sqlite');
+    $metadata = stat($database);
+    $account = posix_getpwuid(posix_geteuid());
+
+    if (! is_array($metadata) || ! is_array($account)) {
+        throw new RuntimeException('Unable to inspect the SQLite sidecar fixture.');
+    }
+
+    $identity = "{$metadata['dev']}:{$metadata['ino']}";
+    $hash = hash_file('sha256', $database);
+
+    if (! is_string($hash)) {
+        throw new RuntimeException('Unable to hash the SQLite sidecar fixture.');
+    }
+    $quiescence = orb217_converter_program('SqliteQuiescenceProgram');
+    $persistent = orb217_converter_program('PersistentStateProgram');
+
+    try {
+        foreach (['-wal', '-shm', '-journal'] as $suffix) {
+            file_put_contents($database.$suffix, 'sidecar');
+            $result = orb217_run_program([
+                'python3', '-c', $quiescence,
+                $home, $release, 'storage/app.sqlite', $identity, $hash, $account['name'],
+            ]);
+
+            expect($result->exitCode)->toBe(42);
+            unlink($database.$suffix);
+        }
+
+        file_put_contents("{$home}/database.sqlite-wal", 'stale destination');
+        $destinationResult = orb217_run_program([
+            'python3', '-c', $quiescence,
+            $home, $release, 'storage/app.sqlite', $identity, $hash, $account['name'],
+        ]);
+
+        expect($destinationResult->exitCode)->toBe(42);
+        unlink("{$home}/database.sqlite-wal");
+
+        file_put_contents($database.'-journal', 'hot journal');
+        $placementResult = orb217_run_program([
+            'python3', '-c', $persistent,
+            $home,
+            $release,
+            hash('sha256', "KEY=value\n"),
+            'storage/app.sqlite',
+            $hash,
+            $identity,
+            $account['name'],
+        ]);
+
+        expect($placementResult->exitCode)
+            ->toBe(42)
+            ->and(file_exists($database))
+            ->toBeTrue()
+            ->and(file_exists("{$release}/.env"))
+            ->toBeTrue()
+            ->and(file_exists("{$home}/database.sqlite"))
+            ->toBeFalse()
+            ->and(file_exists("{$home}/.env"))
+            ->toBeFalse();
+
+        unlink($database.'-journal');
+        file_put_contents("{$home}/database.sqlite-shm", 'stale destination');
+        $destinationPlacementResult = orb217_run_program([
+            'python3', '-c', $persistent,
+            $home,
+            $release,
+            hash('sha256', "KEY=value\n"),
+            'storage/app.sqlite',
+            $hash,
+            $identity,
+            $account['name'],
+        ]);
+
+        expect($destinationPlacementResult->exitCode)
+            ->toBe(42)
+            ->and(file_exists($database))
+            ->toBeTrue()
+            ->and(file_exists("{$release}/.env"))
+            ->toBeTrue();
+
+        unlink("{$home}/database.sqlite-shm");
+        $successfulPlacement = orb217_run_program([
+            'python3', '-c', $persistent,
+            $home,
+            $release,
+            hash('sha256', "KEY=value\n"),
+            'storage/app.sqlite',
+            $hash,
+            $identity,
+            $account['name'],
+        ]);
+
+        expect($successfulPlacement->succeeded())
+            ->toBeTrue($successfulPlacement->stderr)
+            ->and(file_exists("{$home}/database.sqlite"))
+            ->toBeTrue()
+            ->and(is_link($database))
+            ->toBeTrue()
+            ->and(realpath($database))
+            ->toBe("{$home}/database.sqlite")
+            ->and(file_exists("{$home}/.env"))
+            ->toBeTrue()
+            ->and(is_link("{$release}/.env"))
+            ->toBeTrue();
+    } finally {
+        $files->deleteDirectory($root);
+    }
+});
+
+it('refuses unsafe Caddy source access prerequisites without changing the flat source', function (): void {
+    $root = sys_get_temp_dir().'/orbit-layout-caddy-access-'.bin2hex(random_bytes(8));
+    $home = "{$root}/home";
+    $documentRoot = "{$home}/public";
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($documentRoot);
+    file_put_contents("{$documentRoot}/index.php", 'unchanged');
+    $metadata = stat($home);
+
+    if (! is_array($metadata)) {
+        throw new RuntimeException('Unable to inspect the Caddy source fixture.');
+    }
+
+    $program = orb217_converter_program('SourceAccessFunctions').<<<'PYTHON'
+
+        import os, stat, sys
+
+        home, document_root, uid, gid, device = sys.argv[1:]
+
+        def refuse(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(42)
+
+        inspect_source_access(home, document_root, int(uid), int(gid), int(device), refuse)
+        PYTHON;
+    $arguments = [
+        'python3', '-c', $program, $home, 'public',
+        (string) posix_geteuid(),
+        (string) posix_getegid(),
+        (string) $metadata['dev'],
+    ];
+
+    try {
+        expect(orb217_run_program($arguments)->succeeded())->toBeTrue();
+
+        symlink('../storage', "{$documentRoot}/storage");
+        $symlinkResult = orb217_run_program($arguments);
+
+        expect($symlinkResult->exitCode)
+            ->toBe(42)
+            ->and($symlinkResult->stderr)
+            ->toContain('document root contains a symbolic link')
+            ->and(file_get_contents("{$documentRoot}/index.php"))
+            ->toBe('unchanged')
+            ->and(readlink("{$documentRoot}/storage"))
+            ->toBe('../storage');
+
+        unlink("{$documentRoot}/storage");
+        file_put_contents("{$home}/foreign-group.txt", 'unchanged ownership fixture');
+
+        if (! chgrp("{$home}/foreign-group.txt", 'www-data')) {
+            throw new RuntimeException('Unable to create the foreign-group fixture.');
+        }
+
+        $ownershipResult = orb217_run_program($arguments);
+
+        expect($ownershipResult->exitCode)
+            ->toBe(42)
+            ->and($ownershipResult->stderr)
+            ->toContain('production source has unexpected ownership')
+            ->and(file_get_contents("{$home}/foreign-group.txt"))
+            ->toBe('unchanged ownership fixture');
+    } finally {
+        $files->deleteDirectory($root);
+    }
 });
 
 it('maps expected preflight refusal to a bounded conflict and preserves transport failures', function (): void {
@@ -217,4 +469,27 @@ function orb217_app_prod_executor(AppDevFakeSshExecutor $ssh): AppProdSshExecuto
             public function put(string $host, int $port, HostKey $key): void {}
         },
     );
+}
+
+function orb217_converter_program(string $name): string
+{
+    $constant = new ReflectionClass(RemoteProductionLayoutConverter::class)->getReflectionConstant($name);
+
+    if ($constant === false) {
+        throw new RuntimeException("Converter program {$name} is unavailable.");
+    }
+
+    $program = $constant->getValue();
+
+    if (! is_string($program)) {
+        throw new RuntimeException("Converter program {$name} is invalid.");
+    }
+
+    return $program;
+}
+
+/** @param non-empty-list<string> $arguments */
+function orb217_run_program(array $arguments): CommandResult
+{
+    return new NativeProcessRunner(maxOutputBytes: 16_384)->run(new ProcessInvocation($arguments));
 }

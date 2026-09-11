@@ -17,7 +17,44 @@ use JsonException;
 
 final readonly class RemoteProductionLayoutConverter implements ProductionLayoutConverter
 {
-    private const string PreflightProgram = <<<'PYTHON'
+    private const string SourceAccessFunctions = <<<'PYTHON'
+        def inspect_source_access(home, document_root, expected_uid, expected_gid, home_device, refuse):
+            if not document_root or os.path.isabs(document_root):
+                refuse("document root is invalid")
+            document_root_path = os.path.abspath(os.path.normpath(os.path.join(home, document_root)))
+            if document_root_path != home and not document_root_path.startswith(home + os.sep):
+                refuse("document root is outside the production home")
+            if os.path.realpath(document_root_path) != document_root_path:
+                refuse("document root has an unsafe canonical path")
+            try:
+                ancestor = document_root_path
+                while True:
+                    ancestor_metadata = os.lstat(ancestor)
+                    if not stat.S_ISDIR(ancestor_metadata.st_mode) or stat.S_ISLNK(ancestor_metadata.st_mode):
+                        refuse("document root has an unsafe ancestor")
+                    if ancestor == home:
+                        break
+                    ancestor = os.path.dirname(ancestor)
+                for current, directories, files in os.walk(home, topdown=True, followlinks=False):
+                    retained_directories = []
+                    for name in directories + files:
+                        entry = os.path.join(current, name)
+                        entry_metadata = os.lstat(entry)
+                        if entry_metadata.st_uid != expected_uid or entry_metadata.st_gid != expected_gid:
+                            refuse("production source has unexpected ownership")
+                        if name in directories and not stat.S_ISLNK(entry_metadata.st_mode) and entry_metadata.st_dev == home_device:
+                            retained_directories.append(name)
+                    directories[:] = retained_directories
+                for current, directories, files in os.walk(document_root_path, topdown=True, followlinks=False):
+                    for name in directories + files:
+                        if stat.S_ISLNK(os.lstat(os.path.join(current, name)).st_mode):
+                            refuse("document root contains a symbolic link")
+            except OSError:
+                refuse("production source metadata cannot be inspected")
+        PYTHON;
+
+    private const string PreflightProgram = self::SourceAccessFunctions.<<<'PYTHON'
+
         import base64, hashlib, json, os, pwd, re, stat, subprocess, sys
 
         home, user, instance, version, expected_env_hash, requested_sqlite, route_id, route_node_id, hostname, route_status, route_targets_hash, document_root = sys.argv[1:]
@@ -43,6 +80,9 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                     value.update(chunk)
             return value.hexdigest()
 
+        def sqlite_sidecar_exists(path):
+            return any(os.path.lexists(path + suffix) for suffix in ("-wal", "-shm", "-journal"))
+
         try:
             account = pwd.getpwnam(user)
         except KeyError:
@@ -59,6 +99,7 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
             refuse("production home has an unsafe type")
         if metadata.st_uid != account.pw_uid or metadata.st_gid != account.pw_gid:
             refuse("production home has unexpected ownership")
+        inspect_source_access(home, document_root, account.pw_uid, account.pw_gid, metadata.st_dev, refuse)
         requested_candidate = None
         if requested_sqlite:
             requested_candidate = requested_sqlite if os.path.isabs(requested_sqlite) else os.path.join(home, requested_sqlite)
@@ -71,6 +112,9 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
             dedicated_runtime,
             dedicated_unit,
             dedicated_socket,
+            f"{database}-wal",
+            f"{database}-shm",
+            f"{database}-journal",
         ]
         if requested_candidate != database:
             conflicts.append(database)
@@ -127,6 +171,8 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                 refuse("SQLite source has an unsafe type")
             if sqlite_metadata.st_uid != account.pw_uid or sqlite_metadata.st_gid != account.pw_gid:
                 refuse("SQLite source has unexpected ownership")
+            if sqlite_sidecar_exists(candidate):
+                refuse("SQLite source has an uncheckpointed sidecar")
             with open(candidate, "rb", buffering=0) as sqlite_file:
                 if sqlite_file.read(16) != b"SQLite format 3\x00":
                     refuse("SQLite source has an invalid header")
@@ -164,6 +210,12 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
         pool_name = f"orbit-app-instance-{instance_id}"
         supported = {"pm", "pm.max_children", "pm.process_idle_timeout", "pm.max_requests", "catch_workers_output"}
         managed = {"user", "group", "listen", "listen.owner", "listen.group", "listen.mode", "chdir", "clear_env"}
+        generated = {
+            "env[home]": home,
+            "env[user]": user,
+            "env[path]": "/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin",
+            "php_admin_value[opcache.validate_timestamps]": "0",
+        }
         tuning_lines = [f"[orbit-{user}]"]
         in_pool = False
         found_pool = False
@@ -180,10 +232,17 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                         continue
                     if "=" not in line:
                         refuse("shared PHP tuning is malformed")
-                    key = line.split("=", 1)[0].strip().lower()
+                    key, value = (part.strip() for part in line.split("=", 1))
+                    key = key.lower()
                     if key in supported:
                         tuning_lines.append(line)
-                    elif key in managed or key.startswith("env[") or key.startswith("php_admin_value["):
+                    elif key in generated and value == generated[key]:
+                        continue
+                    elif key in ("env[home]", "env[user]"):
+                        refuse("shared PHP tuning changes the production identity")
+                    elif key.startswith("env[") or key.startswith("php_admin_value["):
+                        tuning_lines.append(line)
+                    elif key in managed:
                         continue
                     else:
                         refuse("shared PHP tuning contains an unsupported directive")
@@ -239,6 +298,9 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
         def refuse():
             raise SystemExit(42)
 
+        def sqlite_sidecar_exists(path):
+            return any(os.path.lexists(path + suffix) for suffix in ("-wal", "-shm", "-journal"))
+
         def parent_descriptor(root, relative_path):
             parts = relative_path.split("/")
             if not parts or any(part in ("", ".", "..") for part in parts):
@@ -273,6 +335,9 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
         selected = f"{release}/{relative}"
         selected_exists = os.path.lexists(selected)
         database_exists = os.path.lexists(database)
+
+        if sqlite_sidecar_exists(selected) or sqlite_sidecar_exists(database):
+            refuse()
 
         if selected_exists and os.path.islink(selected):
             if not database_exists or os.path.realpath(selected) != database:
@@ -321,6 +386,8 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                 refuse()
             if not inspected:
                 refuse()
+            if sqlite_sidecar_exists(selected) or sqlite_sidecar_exists(database):
+                refuse()
         finally:
             os.close(descriptor)
         PYTHON;
@@ -367,6 +434,9 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
             os.symlink(target, leaf, dir_fd=parent)
             os.chown(leaf, account.pw_uid, account.pw_gid, dir_fd=parent, follow_symlinks=False)
 
+        def sqlite_sidecar_exists(path):
+            return any(os.path.lexists(path + suffix) for suffix in ("-wal", "-shm", "-journal"))
+
         if os.path.realpath(home) != home or os.path.realpath(release) != release:
             refuse()
         account = pwd.getpwnam(user)
@@ -374,6 +444,12 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
         release_descriptor = os.open(release, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
 
         try:
+            if sqlite_relative:
+                selected_path = f"{release}/{sqlite_relative}"
+                database_path = f"{home}/database.sqlite"
+                if sqlite_sidecar_exists(selected_path) or sqlite_sidecar_exists(database_path):
+                    refuse()
+
             environment_source = os.lstat(".env", dir_fd=release_descriptor) if os.path.lexists(f"{release}/.env") else None
             environment_destination = os.lstat(".env", dir_fd=home_descriptor) if os.path.lexists(f"{home}/.env") else None
             if environment_source is not None and stat.S_ISLNK(environment_source.st_mode):
@@ -429,6 +505,8 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                             if f"{metadata.st_dev}:{metadata.st_ino}" != sqlite_identity:
                                 refuse()
                             if digest_descriptor(descriptor) != sqlite_hash:
+                                refuse()
+                            if sqlite_sidecar_exists(selected_path) or sqlite_sidecar_exists(database_path):
                                 refuse()
                             os.rename(source_leaf, "database.sqlite", src_dir_fd=source_parent, dst_dir_fd=home_descriptor)
                             os.fchown(descriptor, account.pw_uid, account.pw_gid)
@@ -739,8 +817,15 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                         'sudo', 'python3', '-c',
                         <<<'PYTHON'
                         import hashlib, re, sys
-                        path, old_pool, new_pool, expected = sys.argv[1:]
+                        path, old_pool, new_pool, expected, home, user = sys.argv[1:]
                         supported = {"pm", "pm.max_children", "pm.process_idle_timeout", "pm.max_requests", "catch_workers_output"}
+                        managed = {"user", "group", "listen", "listen.owner", "listen.group", "listen.mode", "chdir", "clear_env"}
+                        generated = {
+                            "env[home]": home,
+                            "env[user]": user,
+                            "env[path]": "/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin",
+                            "php_admin_value[opcache.validate_timestamps]": "0",
+                        }
                         lines = [f"[{new_pool}]"]
                         active = False
                         found = False
@@ -753,9 +838,20 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                                     found = found or active
                                     continue
                                 if active and line and not line.startswith((";", "#")) and "=" in line:
-                                    key = line.split("=", 1)[0].strip().lower()
+                                    key, value = (part.strip() for part in line.split("=", 1))
+                                    key = key.lower()
                                     if key in supported:
                                         lines.append(line)
+                                    elif key in generated and value == generated[key]:
+                                        continue
+                                    elif key in ("env[home]", "env[user]"):
+                                        raise SystemExit(42)
+                                    elif key.startswith("env[") or key.startswith("php_admin_value["):
+                                        lines.append(line)
+                                    elif key in managed:
+                                        continue
+                                    else:
+                                        raise SystemExit(42)
                         if not found:
                             raise SystemExit(42)
                         tuning = "\n".join(lines) + "\n"
@@ -767,6 +863,8 @@ final readonly class RemoteProductionLayoutConverter implements ProductionLayout
                         "orbit-app-instance-{$appInstance->id}",
                         "orbit-{$this->user($appInstance)}",
                         $inventory->localTuningHash,
+                        $this->home($appInstance),
+                        $this->user($appInstance),
                     ],
                     maxOutputBytes: 16_384,
                 ),
