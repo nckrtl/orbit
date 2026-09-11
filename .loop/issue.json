@@ -1,0 +1,153 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0060: Record the latest Schedule run status",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0060-record-latest-schedule-run-status.md"
+      },
+      {
+        "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+      },
+      {
+        "title": "ADR 0047: Create production AppInstances from candidates",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+      },
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      },
+      {
+        "title": "ADR 0038: Cascade AppInstance removal through processes and schedules",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md"
+      },
+      {
+        "title": "ADR 0004: Define the verify-only Doctor boundary",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0004-verify-only-doctor-boundary.md"
+      },
+      {
+        "title": "ADR 0013: Manage schedules with native systemd timers",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0013-native-systemd-schedule-management.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "The Gateway persists a Schedule for one Node or AppInstance and manages its native systemd execution on the host Node, as defined by [ADR 0013](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0013-native-systemd-schedule-management.md>). It records only the latest run time and `success` or `error` status under [ADR 0060](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0060-record-latest-schedule-run-status.md>). AppInstance-owned Schedule cleanup follows [ADR 0038](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md>). Schedule drift is reported by the verify-only `schedule` Doctor family defined by [ADR 0004](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0004-verify-only-doctor-boundary.md>).\n\n## Scope\n\n* In: Schedule persistence, target identity, lifecycle state, latest run time, and latest `success` or `error` status in the Gateway\n* In: exact validation limits and stable operation errors for names, calendars, commands, timeouts, targets, retries, lifecycle operations, creation, logs, and removal\n* In: target-derived Node, runtime user, home, working directory, runtime shell and per-run environment\n* In: protected script, oneshot service, persistent timer, locking, creation, manual run, bounded journald reads, rollback, latest-run reporting, standalone removal, AppInstance cascade removal, and Node and placement-removal guards\n* In: the `schedule` Doctor model disposition, family token, inspector, probe, stable issue codes, filters, and ordered-family integration\n* Out: Workspace or Orbit-wide targets, a central scheduler, queue, worker, run-history store, replay, backfill, or automatic movement and failover\n* Out: editing, renaming, disabling, or changing a Schedule specification in place; explicit activation of an AppInstance timer is included\n* Out: the public API, PHP SDK, and CLI surfaces owned by [ORB-73](<https://linear.app/nckrtl/issue/ORB-73/expose-the-schedule-api>), [ORB-3](<https://linear.app/nckrtl/issue/ORB-3/add-schedule-and-doctor-transport-to-the-php-sdk>), and [ORB-71](<https://linear.app/nckrtl/issue/ORB-71/add-schedule-and-doctor-commands-to-the-cli>)\n* Out: placing the public Orbit CLI on workload Nodes, production deployment, and E2E harness changes\n\n## Acceptance\n\n- [ ] A Schedule has UUID identity, exactly one Node or AppInstance target, a name unique within that target, one host Node, one timeout, and lifecycle state `provisioning`, `active`, `failed`, or `removing`; an identical retry resumes the same Schedule and a different specification with the same target and name returns `schedule.retry_conflict`. Proof: `apps/gateway/tests/Feature/Domain/ScheduleLifecycleTest.php`.\n- [ ] A name contains 1\u201363 lowercase ASCII letters or numbers with hyphens only between them; a calendar is one printable ASCII line of at most 255 bytes; a command is one non-empty UTF-8 line of at most 4,096 bytes and rejects NUL, CR, and LF; and timeout is an integer from 1 through 86,400 seconds with a default of 3,600. Proof: `apps/gateway/tests/Feature/Domain/ScheduleValidationTest.php`.\n- [ ] A Node target resolves its managed `orbit` user and home, and an AppInstance target resolves its host Node plus its app-dev or app-prod runtime user, home, and working directory from authoritative placement; caller-supplied Node, user, home, directory, or shell input is rejected, and an unavailable target or unusable derived account fails before remote mutation. Proof: `apps/gateway/tests/Feature/Domain/ScheduleTargetResolverTest.php`.\n- [ ] Node and development targets retain their derived non-interactive login-shell context; production commands run through fixed `/bin/bash` without enabling login on the dedicated account, with the recorded home and `current` working directory, and each execution resolves the then-selected release. A code-only release switch does not require rewriting the Schedule or restarting an active command. Proof: Incus action `schedule-execution-context`.\n- [ ] Creating one Schedule writes exactly one root-owned protected script, one oneshot service, and one persistent timer to the host Node, each named only from the Schedule UUID, with the derived user and working directory and stored timeout. Proof: Incus action `schedule-install-artifacts`.\n- [ ] The caller command appears only inside the protected script and never in an SSH, `sudo`, `systemctl`, `journalctl`, or `systemd-analyze` argument, while the service and timer contain no command text. Proof: `apps/gateway/tests/Unit/Domain/Schedules/ScheduleRendererTest.php`.\n- [ ] The target Node's `systemd-analyze calendar` decides calendar validity, the persistent timer prevents overlapping service executions, and a manual run starts the same service non-blockingly. Proof: Incus action `schedule-run`.\n- [ ] Logs read only the exact Schedule service through fixed `journalctl` arguments, default to 100 lines, accept 1\u20131,000 lines, enforce a 1 MiB response limit and 10-second deadline, and return the newest complete journal lines with `truncated: true` when the byte limit is exceeded. Proof: Incus action `schedule-logs`.\n- [ ] After a command finishes, its host Node makes one callback attempt; an authenticated callback updates only `last_run_at` to the Gateway receipt time and `last_run_status` to `success` or `error`, while a callback from another Node is unauthorized. A failed callback leaves the prior metadata, command result, and subsequent Schedule execution unchanged; Orbit does not retry callbacks or store run history. Proof: `apps/gateway/tests/Feature/Domain/ScheduleLifecycleTest.php`.\n- [ ] A failed add restores the exact prior owned artifacts and timer state; a first-add failure removes only artifacts created by that attempt; and an unexpected file, unit, owner, mode, or identity at an owned name returns `schedule.artifact_conflict` without adoption, overwrite, or deletion. Proof: Incus action `schedule-add-rollback`.\n- [ ] Standalone Schedule removal enters `removing`, disables and stops only the timer, and inspects the systemd service directly without depending on a completion callback; it allows an active service to finish, then removes the exact owned timer, service, script, and intent. A failed removal stays `removing`, and an identical retry resumes cleanup. Proof: Incus action `schedule-removal`.\n- [ ] Removing a Node target or host Node, or changing a Schedule target's Node, user, home, or stable working-directory path, is refused with `schedule.target_in_use` while the Schedule exists; deleting an AppInstance instead invokes its owned Schedule cascade. Proof: `apps/gateway/tests/Feature/Domain/ScheduleLifecycleTest.php`.\n- [ ] AppInstance removal disables owned Schedule timers and deletes the exact owned timer, service, script, and Schedule intent without waiting for active scheduled commands; a running command may continue or fail, and successful AppInstance removal leaves none of those persistent artifacts or records. Proof: Incus action `schedule-appinstance-cascade`.\n- [ ] A source-preflight refusal leaves schedules unchanged; accepted removal prevents new Schedule attachment and applies the cascade to every AppInstance in a forced linked-worktree deletion set, while Node-owned schedules and other AppInstances' schedules on the same Node remain unchanged. Proof: `apps/gateway/tests/Feature/Domain/ScheduleLifecycleTest.php` and Incus action `schedule-cascade-isolation`.\n- [ ] Failed cascade cleanup keeps the unfinished AppInstance removal and Schedule cleanup resumable, never reports successful AppInstance removal, and retries only the recorded unfinished owned work; no unrecognized artifact is removed. Proof: Incus action `schedule-cascade-retry`.\n- [ ] A callback after cascade deletion cannot recreate Schedule intent, restore artifacts, or delay AppInstance removal, and a callback racing with removal cannot bypass the removal state. Proof: `apps/gateway/tests/Feature/Domain/ScheduleLifecycleTest.php`.\n- [ ] Gateway Schedule operations use only these stable domain errors: `schedule.name_invalid`, `schedule.target_invalid`, `schedule.target_unavailable`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid`, `schedule.retry_conflict`, `schedule.state_invalid`, `schedule.target_in_use`, `schedule.artifact_conflict`, `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.logs_failed`, `schedule.remove_failed`, and `schedule.node_unreachable`. Proof: `apps/gateway/tests/Unit/Domain/Schedules/ScheduleErrorCodeTest.php`.\n- [ ] `schedule` is an explicit checked model in its ordered Doctor family, and model coverage, enum, dispatch, and filters use family tokens without relying on a numeric family count. Proof: `apps/gateway/tests/Unit/Architecture/DoctorModelCoverageTest.php`.\n- [ ] Doctor reports only `schedule.artifact_missing`, `schedule.artifact_permissions_mismatch`, `schedule.specification_mismatch`, `schedule.timer_state_mismatch`, `schedule.calendar_mismatch`, `schedule.execution_context_mismatch`, `schedule.completion_callback_mismatch`, `schedule.placement_mismatch`, `schedule.orphan_artifact`, `schedule.node_unreachable`, and `schedule.inspection_failed`, and real inspection changes nothing on the Node. Proof: Incus action `schedule-doctor-drift`.\n- [ ] Doctor issues, Activity, errors, and generic diagnostics expose no command, calendar, log, path, user, unit content, credential, raw output, exit code, signal, or exception text; Doctor values remain bounded booleans, enums, identifiers, fingerprints, and fixed sentinels. Proof: `apps/gateway/tests/Feature/Domain/ScheduleDoctorProbeTest.php`.\n- [ ] Maintained documentation states the exact Schedule limits, target execution context and explicit timer activation, lifecycle, latest-run reporting, errors, systemd projection, rollback, standalone and cascading removal, Doctor codes, and security boundaries, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Gateway checks pass. Proof: `cd apps/gateway && composer check`.\n- [ ] The Builder's exact candidate passes the root `composer check` with TIA before independent review. Proof: the retained root quality-check receipt plus focused affected Pest tests.\n- [ ] An AppInstance Schedule created with `start=false` has lifecycle `active` and desired timer state `disabled`, with the timer disabled and stopped; creation is valid before a first release exists, while manual run or activation without `current` returns `schedule.target_unavailable`. Proof: Incus action `schedule-stopped-install`.\n- [ ] Explicit activation of an AppInstance Schedule enables and starts its timer, verifies the enabled active state before success, and is idempotent; failure restores its prior desired and actual timer state or reports rollback failure without a success claim. Proof: Incus action `schedule-activation-retry`.\n- [ ] Creating a Node Schedule enables and starts its timer and rejects `start=false`; manual run never changes either target kind\u2019s desired timer state, and Doctor reports a disabled stopped AppInstance timer as healthy when that state was requested. Proof: `apps/gateway/tests/Feature/Domain/ScheduleDoctorProbeTest.php` and Incus action `schedule-timer-intent`.\n- [ ] Removing and adding an instance Schedule is the explicit way to change its specification; a repeated matching add preserves the timer\u2019s desired state. Proof: `apps/gateway/tests/Feature/Domain/ScheduleLifecycleTest.php`.",
+  "id": "91575622-076f-42b6-af06-9965893e460a",
+  "identifier": "ORB-72",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-216",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-197",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-131",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "related"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-115",
+          "state": {
+            "type": "unstarted"
+          }
+        },
+        "type": "related"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Implement AppInstance-aware Gateway Schedule runtime",
+  "updatedAt": "2026-09-11T10:51:39.323Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-72/implement-appinstance-aware-gateway-schedule-runtime"
+}
