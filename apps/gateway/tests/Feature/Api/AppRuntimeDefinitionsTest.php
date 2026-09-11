@@ -9,6 +9,8 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProcessDefinition;
 use App\Models\ScheduleDefinition;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -144,6 +146,94 @@ it('scopes names to one App and definition kind', function (): void {
         ->and(ScheduleDefinition::query()->where('name', 'worker')->count())
         ->toBe(1);
 });
+
+it('keeps definition commands out of conflict logs', function (string $kind, string $operation): void {
+    $endpoint = "/api/v1/apps/{$this->orbitApp->id}/{$kind}-definitions";
+    $payload = $kind === 'process'
+        ? runtime_definition_process_payload('taken')
+        : runtime_definition_schedule_payload('taken');
+    $sentinel = "{$kind}-{$operation}-conflict-command-sentinel";
+
+    $this->postJson($endpoint, $payload)->assertCreated();
+
+    if ($operation === 'replace') {
+        $target = $kind === 'process'
+            ? runtime_definition_process_payload('replacement')
+            : runtime_definition_schedule_payload('replacement');
+        $definitionId = $this->postJson($endpoint, $target)->assertCreated()->json('data.id');
+        $endpoint .= "/{$definitionId}";
+    }
+
+    $payload = $kind === 'process'
+        ? runtime_definition_process_payload('taken', "/usr/bin/{$sentinel}")
+        : runtime_definition_schedule_payload('taken', $sentinel);
+    $logged = [];
+
+    Event::listen(MessageLogged::class, static function (MessageLogged $event) use (&$logged): void {
+        $logged[] = $event->message;
+        $exception = $event->context['exception'] ?? null;
+
+        while ($exception instanceof Throwable) {
+            $logged[] = $exception->getMessage();
+            $exception = $exception->getPrevious();
+        }
+    });
+
+    $response = $operation === 'create'
+        ? $this->postJson($endpoint, $payload)
+        : $this->putJson($endpoint, $payload);
+
+    $response
+        ->assertConflict()
+        ->assertJsonPath('error.code', "{$kind}_definition.name_taken");
+
+    expect($logged)
+        ->not->toBeEmpty()
+        ->and(implode("\n", $logged))
+        ->not->toContain($sentinel);
+})->with([
+    'process create' => ['process', 'create'],
+    'process replace' => ['process', 'replace'],
+    'Schedule create' => ['schedule', 'create'],
+    'Schedule replace' => ['schedule', 'replace'],
+]);
+
+it('applies Process specification limits to non-JSON content types', function (array $specification): void {
+    $body = json_encode([
+        'name' => 'worker',
+        'environments' => ['development'],
+        'spec' => $specification,
+    ], JSON_THROW_ON_ERROR);
+
+    $this
+        ->call(
+            'POST',
+            "/api/v1/apps/{$this->orbitApp->id}/process-definitions",
+            server: ['CONTENT_TYPE' => 'text/plain'],
+            content: $body,
+        )
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect(ProcessDefinition::query()->count())->toBe(0);
+})->with([
+    'relative systemd executable' => [[
+        'runtime' => 'systemd',
+        'command' => ['php'],
+    ]],
+    'invalid Docker environment name' => [[
+        'runtime' => 'docker',
+        'command' => ['php'],
+        'image' => 'php:8.5',
+        'environment' => ['INVALID-NAME' => 'value'],
+    ]],
+    'out-of-range Docker port' => [[
+        'runtime' => 'docker',
+        'command' => ['php'],
+        'image' => 'php:8.5',
+        'ports' => ['0:80'],
+    ]],
+]);
 
 it('uses the placed App operation boundary and rejects cross-App UUIDs', function (): void {
     $created = $this->postJson(

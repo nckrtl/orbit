@@ -89,9 +89,11 @@ final class ProcessDefinitionRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $this->validateSystemdExecutable($validator);
-            $this->validateEnvironmentNames($validator);
-            $this->validatePorts($validator);
+            $data = $validator->getData();
+
+            $this->validateSystemdExecutable($validator, $data);
+            $this->validateEnvironmentNames($validator, $data);
+            $this->validatePorts($validator, $data);
         }];
     }
 
@@ -107,13 +109,14 @@ final class ProcessDefinitionRequest extends FormRequest
         );
     }
 
-    private function validateSystemdExecutable(Validator $validator): void
+    /** @param array<string, mixed> $data */
+    private function validateSystemdExecutable(Validator $validator, array $data): void
     {
-        if ($this->input('spec.runtime') !== ProcessRuntime::Systemd->value) {
+        if (data_get($data, 'spec.runtime') !== ProcessRuntime::Systemd->value) {
             return;
         }
 
-        $executable = $this->input('spec.command.0');
+        $executable = data_get($data, 'spec.command.0');
 
         if (is_string($executable) && str_starts_with($executable, '/')) {
             return;
@@ -122,9 +125,10 @@ final class ProcessDefinitionRequest extends FormRequest
         $validator->errors()->add('spec.command.0', 'The systemd executable must be an absolute path.');
     }
 
-    private function validateEnvironmentNames(Validator $validator): void
+    /** @param array<string, mixed> $data */
+    private function validateEnvironmentNames(Validator $validator, array $data): void
     {
-        $environment = $this->input('spec.environment');
+        $environment = data_get($data, 'spec.environment');
 
         if (! is_array($environment)) {
             return;
@@ -141,9 +145,10 @@ final class ProcessDefinitionRequest extends FormRequest
         }
     }
 
-    private function validatePorts(Validator $validator): void
+    /** @param array<string, mixed> $data */
+    private function validatePorts(Validator $validator, array $data): void
     {
-        $ports = $this->input('spec.ports');
+        $ports = data_get($data, 'spec.ports');
 
         if (! is_array($ports)) {
             return;

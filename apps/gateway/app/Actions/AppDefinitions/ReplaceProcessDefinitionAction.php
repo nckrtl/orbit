@@ -7,7 +7,7 @@ namespace App\Actions\AppDefinitions;
 use App\Data\AppDefinitions\AppDefinitionInputData;
 use App\Domain\AppDefinitions\AppDefinitionConflict;
 use App\Models\ProcessDefinition;
-use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use SensitiveParameter;
 
 final readonly class ReplaceProcessDefinitionAction
@@ -22,8 +22,8 @@ final readonly class ReplaceProcessDefinitionAction
                 'environments' => $data->environments,
                 'spec' => $data->spec,
             ]);
-        } catch (QueryException $exception) {
-            AppDefinitionConflict::nameTaken('process', $exception);
+        } catch (UniqueConstraintViolationException) {
+            AppDefinitionConflict::nameTaken('process');
         }
 
         return $definition->refresh();

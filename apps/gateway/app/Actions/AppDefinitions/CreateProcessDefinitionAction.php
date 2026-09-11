@@ -8,7 +8,7 @@ use App\Data\AppDefinitions\AppDefinitionInputData;
 use App\Domain\AppDefinitions\AppDefinitionConflict;
 use App\Models\App as OrbitApp;
 use App\Models\ProcessDefinition;
-use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use SensitiveParameter;
 
 final readonly class CreateProcessDefinitionAction
@@ -21,8 +21,8 @@ final readonly class CreateProcessDefinitionAction
                 'environments' => $data->environments,
                 'spec' => $data->spec,
             ]);
-        } catch (QueryException $exception) {
-            AppDefinitionConflict::nameTaken('process', $exception);
+        } catch (UniqueConstraintViolationException) {
+            AppDefinitionConflict::nameTaken('process');
         }
     }
 }

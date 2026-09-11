@@ -7,7 +7,7 @@ namespace App\Actions\AppDefinitions;
 use App\Data\AppDefinitions\AppDefinitionInputData;
 use App\Domain\AppDefinitions\AppDefinitionConflict;
 use App\Models\ScheduleDefinition;
-use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use SensitiveParameter;
 
 final readonly class ReplaceScheduleDefinitionAction
@@ -22,8 +22,8 @@ final readonly class ReplaceScheduleDefinitionAction
                 'environments' => $data->environments,
                 'spec' => $data->spec,
             ]);
-        } catch (QueryException $exception) {
-            AppDefinitionConflict::nameTaken('schedule', $exception);
+        } catch (UniqueConstraintViolationException) {
+            AppDefinitionConflict::nameTaken('schedule');
         }
 
         return $definition->refresh();

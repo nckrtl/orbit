@@ -51,10 +51,11 @@ final class ScheduleDefinitionRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $name = $this->input('name');
-            $command = $this->input('spec.command');
-            $calendar = $this->input('spec.calendar');
-            $timeout = $this->input('spec.timeout_seconds');
+            $data = $validator->getData();
+            $name = data_get($data, 'name');
+            $command = data_get($data, 'spec.command');
+            $calendar = data_get($data, 'spec.calendar');
+            $timeout = data_get($data, 'spec.timeout_seconds');
 
             if (! is_string($name) || ! is_string($command) || ! is_string($calendar) || ! is_int($timeout)) {
                 return;
