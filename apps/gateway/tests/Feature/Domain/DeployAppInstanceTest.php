@@ -22,7 +22,6 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Node;
-use Closure;
 use Illuminate\Support\Facades\DB;
 
 it('captures one configuration and preserves the complete deployment order', function (): void {

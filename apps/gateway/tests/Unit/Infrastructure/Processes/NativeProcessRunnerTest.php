@@ -8,7 +8,6 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
-use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 
 it('captures bounded command output and exit state', function (): void {
