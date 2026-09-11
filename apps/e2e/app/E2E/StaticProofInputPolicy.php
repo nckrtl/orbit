@@ -11,7 +11,7 @@ use App\E2E\Value\ProofInputClassification;
  */
 final readonly class StaticProofInputPolicy
 {
-    public const int VERSION = 3;
+    public const int VERSION = 4;
 
     /** Ordinary PHP source eligible for replacement by complete PCOV observations. */
     private const array OBSERVABLE_PHP_DIRECTORIES = [
@@ -171,7 +171,7 @@ final readonly class StaticProofInputPolicy
 
         return
             preg_match(
-                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|mago\.toml|pint\.json|phpstan\.neon(?:\.dist)?|phpunit\.xml(?:\.dist)?|rector\.php)\z~D',
+                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|mago\.toml|pint\.json|phpstan\.neon(?:\.dist)?|phpunit(?:\.[^/]+)?\.xml(?:\.dist)?|rector\.php)\z~D',
                 $path,
             ) === 1
             || $path === 'apps/e2e/.env.example';
