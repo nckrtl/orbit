@@ -51,6 +51,14 @@ An authorized client starts a deployment or code rollback synchronously and can 
 | `POST /api/v1/instances/{instance}/rollback` | Accepts only `release`, the retained release name to select, and returns rollback events as `application/x-ndjson`. |
 | `GET /api/v1/instances/{instance}/releases` | Returns the present retained release names as `releases` and the nullable current selection as `selected_release`. It returns no deployment history. |
 
+## Use the PHP SDK
+
+The PHP software development kit (SDK) exposes typed operations to read and replace deployment configuration, deploy, roll back, and list retained releases on these same routes. Configuration and retained-release operations keep the ordinary JSON request, envelope, error, and response transport. A configuration replacement omits `timeout_seconds` when the caller does not supply it, a deployment sends an empty JSON object, a rollback sends only `release`, and both reads remain bodyless.
+
+Deploy and rollback return a closeable stream of typed phase, output, and result events. The SDK reads newline-delimited JSON (NDJSON) as the caller advances the stream and handles lines split across arbitrary HTTP chunks. Before it yields an event, it validates the event fields, encoded and decoded limits, continuous sequence, matching request identity, and base64 output encoding. It reports success only when one successful result is the final event, and it rejects malformed or truncated streams without reporting success.
+
+The caller closes the stream when it stops before the terminal result. Closing the stream also closes the HTTP response so the Gateway can observe cancellation. The SDK does not retry the HTTP request or replay stream events. Deploy and rollback keep the connector's TLS verification and redirect policy and use bounded transport timeouts that cover the Gateway's accepted operation deadline.
+
 Request validation and Node-access authorization finish before a deployment stream opens. A refusal uses the ordinary JSON error envelope. After admission, each newline-delimited JSON (NDJSON) line is one event with a maximum encoded size of 32 KiB. Every event contains `type`, a monotonically increasing `sequence`, and the request's `request_id`.
 
 | Event type | Fields |

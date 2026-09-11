@@ -40,4 +40,4 @@ Orbit uses these tools to keep its code and documentation consistent:
 - Librarian checks documentation.
 - Incus creates temporary Linux machines for end-to-end testing.
 
-Project scripts run affected tests through TIA and local quality checks. An independent reviewer runs the root `composer check` gate across every project with test impact analysis before approval. GitHub continuous integration is disabled.
+Project scripts run affected tests through TIA and local quality checks. The [implementation loop](reference/implementation-loop.md#candidate-quality-gate) explains the repository-wide local gate and review workflow. GitHub continuous integration is disabled.

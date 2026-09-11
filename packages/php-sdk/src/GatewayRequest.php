@@ -187,13 +187,15 @@ abstract class GatewayRequest extends Request
      */
     private function decodeBody(#[SensitiveParameter] Response $response): ?array
     {
-        if ($response->body() === '') {
+        $body = $response->body();
+
+        if ($body === '') {
             return null;
         }
 
         try {
             $decoded = json_decode(
-                json: $response->body(),
+                json: $body,
                 associative: true,
                 depth: 512,
                 flags: JSON_THROW_ON_ERROR,
