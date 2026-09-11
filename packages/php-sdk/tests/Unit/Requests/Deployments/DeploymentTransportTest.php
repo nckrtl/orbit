@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use GuzzleHttp\Promise\FulfilledPromise;
+use GuzzleHttp\Psr7\NoSeekStream;
+use GuzzleHttp\Psr7\Response as PsrResponse;
+use GuzzleHttp\Psr7\Utils;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
@@ -118,6 +122,52 @@ describe('deployment transport', function (): void {
         }
 
         $mock->assertSentCount(1, DeployAppInstanceRequest::class);
+    });
+
+    it('preserves structured errors from a non-seekable streaming response', function (): void {
+        foreach ([
+            new DeployAppInstanceRequest(17),
+            new RollbackAppInstanceRequest(17, 'release-a'),
+        ] as $request) {
+            $sendCount = 0;
+            $connector = new GatewayConnector(
+                'https://gateway.test',
+                requestIdResolver: static fn (): string => deployment_transport_request_id(),
+            );
+            $connector->sender()->getHandlerStack()->setHandler(
+                static function () use (&$sendCount): FulfilledPromise {
+                    $sendCount++;
+                    $body = Utils::streamFor(json_encode([
+                        'error' => [
+                            'code' => 'deployment.busy',
+                            'message' => 'The deployment operation is busy.',
+                            'details' => ['state' => 'busy'],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+
+                    return new FulfilledPromise(new PsrResponse(
+                        409,
+                        [
+                            'Content-Type' => 'application/json',
+                            'X-Orbit-Request-Id' => deployment_transport_request_id(),
+                        ],
+                        new NoSeekStream($body),
+                    ));
+                },
+            );
+
+            try {
+                $connector->send($request);
+                $this->fail('Expected a structured Gateway error.');
+            } catch (GatewayApiException $exception) {
+                expect($exception->errorCode())->toBe('deployment.busy')
+                    ->and($exception->getMessage())->toBe('The deployment operation is busy.')
+                    ->and($exception->details())->toBe(['state' => 'busy'])
+                    ->and($exception->requestId())->toBe(deployment_transport_request_id());
+            }
+
+            expect($sendCount)->toBe(1);
+        }
     });
 
     it('rejects an invalid stream response boundary and closes it', function (array $headers): void {

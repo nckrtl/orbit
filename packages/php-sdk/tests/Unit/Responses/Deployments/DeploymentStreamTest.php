@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\StreamHandler;
 use GuzzleHttp\Psr7\FnStream;
 use GuzzleHttp\Psr7\Utils;
 use Orbit\Sdk\GatewayApiException;
@@ -11,6 +13,68 @@ use Orbit\Sdk\Responses\Deployments\DeploymentResultEvent;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
 
 describe(DeploymentStream::class, function (): void {
+    it('yields each line over a real Guzzle chunked streaming transport', function (): void {
+        $server = stream_socket_server('tcp://127.0.0.1:0', $errorNumber, $errorMessage);
+
+        if ($server === false) {
+            throw new RuntimeException($errorMessage, $errorNumber);
+        }
+
+        $address = stream_socket_get_name($server, remote: false);
+
+        if (! is_string($address)) {
+            fclose($server);
+
+            throw new RuntimeException('Could not resolve the test server address.');
+        }
+
+        $processId = pcntl_fork();
+
+        if ($processId === -1) {
+            fclose($server);
+
+            throw new RuntimeException('Could not start the test server.');
+        }
+
+        if ($processId === 0) {
+            deployment_serve_chunked_stream($server);
+        }
+
+        fclose($server);
+        $stream = null;
+
+        try {
+            $response = (new Client(['handler' => new StreamHandler]))->request(
+                'POST',
+                "http://{$address}/api/v1/instances/17/deploy",
+                ['stream' => true, 'timeout' => 5],
+            );
+            $stream = new DeploymentStream(
+                $response->getBody(),
+                static fn () => $response->getBody()->close(),
+                $response->getHeaderLine('X-Orbit-Request-Id'),
+            );
+            $iterator = $stream->getIterator();
+            $startedAt = microtime(true);
+
+            $iterator->rewind();
+
+            expect($iterator->current())->toBeInstanceOf(DeploymentPhaseEvent::class)
+                ->and(microtime(true) - $startedAt)->toBeLessThan(0.75);
+
+            $iterator->next();
+            expect($iterator->current())->toBeInstanceOf(DeploymentResultEvent::class);
+
+            $iterator->next();
+            expect($iterator->valid())->toBeFalse();
+        } finally {
+            $stream?->close();
+            pcntl_waitpid($processId, $status);
+        }
+
+        expect(pcntl_wexitstatus($status))->toBe(0);
+    });
+
     it('yields typed events incrementally across arbitrary chunks', function (): void {
         $requestId = deployment_stream_request_id();
         $output = "binary\0\xffoutput";
@@ -284,4 +348,50 @@ function deployment_chunked_stream(string $body, array $chunkSizes, bool &$close
 function deployment_stream_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a846';
+}
+
+/** @param resource $server */
+function deployment_serve_chunked_stream($server): never
+{
+    $connection = stream_socket_accept($server, 5);
+
+    if ($connection === false) {
+        exit(1);
+    }
+
+    while (($line = fgets($connection)) !== false && trim($line) !== '') {
+    }
+
+    fwrite($connection, implode("\r\n", [
+        'HTTP/1.1 200 OK',
+        'Content-Type: application/x-ndjson',
+        'X-Orbit-Request-Id: '.deployment_stream_request_id(),
+        'Transfer-Encoding: chunked',
+        '',
+        '',
+    ]));
+
+    $send = static function (string $data) use ($connection): void {
+        fwrite($connection, dechex(strlen($data))."\r\n{$data}\r\n");
+        fflush($connection);
+    };
+
+    for ($probe = 0; $probe < 25; $probe++) {
+        $send(' ');
+        usleep(10_000);
+    }
+
+    $send(deployment_stream_line([
+        'type' => 'phase',
+        'sequence' => 1,
+        'request_id' => deployment_stream_request_id(),
+        'phase' => 'source_preparation',
+    ]));
+    usleep(1_100_000);
+    $send(deployment_stream_line(deployment_stream_result(2)));
+    fwrite($connection, "0\r\n\r\n");
+    fclose($connection);
+    fclose($server);
+
+    exit(0);
 }

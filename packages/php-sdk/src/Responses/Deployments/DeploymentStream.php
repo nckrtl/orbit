@@ -80,7 +80,7 @@ final class DeploymentStream implements IteratorAggregate
                     throw $this->invalid();
                 }
 
-                $chunk = $this->body->read(8 * 1024);
+                $chunk = $this->readIncrementalChunk(strlen($buffer));
 
                 if ($chunk === '') {
                     throw $this->invalid();
@@ -284,6 +284,27 @@ final class DeploymentStream implements IteratorAggregate
                 throw $this->invalid();
             }
         }
+    }
+
+    private function readIncrementalChunk(int $bufferBytes): string
+    {
+        // PHP's HTTP dechunk filter can wait for the requested length. Block for
+        // one byte, then drain only bytes that the stream reports as buffered.
+        $chunk = $this->body->read(1);
+
+        if ($chunk === '') {
+            return '';
+        }
+
+        $availableBytes = $this->body->getMetadata('unread_bytes');
+
+        if (! is_int($availableBytes) || $availableBytes < 1) {
+            return $chunk;
+        }
+
+        $remainingBytes = self::MAXIMUM_LINE_BYTES - $bufferBytes - 1;
+
+        return $chunk.$this->body->read(min($availableBytes, $remainingBytes));
     }
 
     /** @phpstan-impure */
