@@ -266,11 +266,11 @@ it('scenario-worker-isolation', function (): void {
             || ($result['cleanup']['refused'] ?? []) !== [])))->toBeTrue();
 
     $overlap = false;
-    foreach (($results[0]['phase_timings'] ?? []) as $firstName => $firstTiming) {
+    foreach (($attempts[0]['phase_timings'] ?? []) as $firstName => $firstTiming) {
         if (in_array($firstName, ['resolve-generation', 'construct', 'cleanup'], true) || ! is_array($firstTiming)) {
             continue;
         }
-        foreach (($results[1]['phase_timings'] ?? []) as $secondName => $secondTiming) {
+        foreach (($attempts[1]['phase_timings'] ?? []) as $secondName => $secondTiming) {
             if (in_array($secondName, ['resolve-generation', 'construct', 'cleanup'], true) || ! is_array($secondTiming)) {
                 continue;
             }
