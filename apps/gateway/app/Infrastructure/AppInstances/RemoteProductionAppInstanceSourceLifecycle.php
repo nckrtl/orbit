@@ -371,7 +371,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     test -z "$unexpected_user"
                     unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
                     test -z "$unexpected_group"
-                    sudo setfacl -P -R -m u:caddy:--- "$home"
+                    sudo setfacl -n -P -R -m u:caddy:--- "$home"
                     sudo find -P "$home" -type d -exec setfacl -m d:u:caddy:--- -- {} +
                     sudo setfacl -m u:caddy:--x /home "$home"
                     if [ "$document_root_exists" = 1 ]; then

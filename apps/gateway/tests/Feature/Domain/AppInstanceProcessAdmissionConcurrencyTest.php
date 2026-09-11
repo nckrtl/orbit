@@ -156,6 +156,32 @@ it('finishes an admitted Process before removal acceptance includes it in cleanu
     $this->assertDatabaseMissing('processes', ['id' => $result['process']->id]);
 });
 
+it('keeps add start and restart admission behind SQLite placement after a clean conversion snapshot', function (): void {
+    $instance = orb131_process_admission_instance();
+    $lock = new Orb131QueuedProcessAdmissionLock;
+    $events = [];
+
+    $lock->run([$instance->id], function () use ($instance, $lock, &$events): void {
+        $events[] = 'conversion:process-snapshot-clean';
+
+        foreach (['add', 'start', 'restart'] as $operation) {
+            $lock->run([$instance->id], function () use ($operation, &$events): void {
+                $events[] = "process:{$operation}";
+            });
+        }
+
+        $events[] = 'conversion:sqlite-placed';
+    });
+
+    expect($events)->toBe([
+        'conversion:process-snapshot-clean',
+        'conversion:sqlite-placed',
+        'process:add',
+        'process:start',
+        'process:restart',
+    ]);
+});
+
 function orb131_process_admission_instance(): AppInstance
 {
     $app = OrbitApp::query()->create([
