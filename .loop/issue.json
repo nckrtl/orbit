@@ -1,0 +1,103 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0032: Preserve explicit AppInstance branch selection",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0032-preserve-explicit-appinstance-branch-selection.md"
+      },
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "The agent can inspect and replace the branch and ordered deployment steps for one production AppInstance without starting a deployment.\n\n## Scope\n\n* In: current AppInstance deployment configuration, strict Gateway requests, authorized responses, and configuration documentation.\n* Out: deployment execution, App-level deployment templates, historical step snapshots, SDK, and CLI.\n\n## Acceptance\n\n- [ ] `GET /instances/{instance}/deployment-config` returns `branch` and ordered `steps`; `PUT` atomically replaces that complete configuration for an authorized production AppInstance, and rejects malformed, duplicate, unknown, or incorrectly typed input before saving. Proof: `apps/gateway/tests/Feature/Api/AppInstanceDeploymentConfigTest.php`.\n- [ ] Each step has `name`, `phase` (`before_activation` or `after_activation`), `command`, and `timeout_seconds`; names are unique per instance and use the existing 1\u201363 character lowercase name rule, commands are nonempty UTF-8 of at most 16 KiB without NUL, and timeout is 1\u2013900 seconds with default 300. Proof: `apps/gateway/tests/Feature/Domain/DeploymentConfigTest.php`.\n- [ ] At most 32 steps and at most 3,600 total configured timeout seconds are accepted; the array determines order within each phase, and an empty step list is valid. Proof: `apps/gateway/tests/Feature/Domain/DeploymentConfigTest.php`.\n- [ ] Branch input uses the existing Git branch validator; changing it preserves other AppInstances, never fetches code or changes `current`, and subsequent App default changes do not replace explicit deployment branch intent. Proof: `apps/gateway/tests/Feature/Domain/DeploymentConfigTest.php`.\n- [ ] An existing instance with no stored steps reads as an empty list and retains its configured branch; reads and writes use current Node-access authorization and keep commands out of Activity, validation errors, and generic diagnostics. Proof: `apps/gateway/tests/Feature/Api/AppInstanceDeploymentConfigTest.php`.\n- [ ] Maintained documentation describes deployment configuration fields, limits, ordering, and explicit application-command ownership, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+  "id": "9e9ce630-1bac-4d20-b943-3abbfbabe06a",
+  "identifier": "ORB-218",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-197",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Configure each production instance\u2019s branch and deployment steps",
+  "updatedAt": "2026-09-10T21:25:01.166Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-218/configure-each-production-instances-branch-and-deployment-steps"
+}
