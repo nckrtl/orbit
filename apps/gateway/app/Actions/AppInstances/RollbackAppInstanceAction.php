@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
+use App\Domain\AppInstances\Deployment\DeploymentRelease;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentResult;
 use App\Domain\AppInstances\Deployment\ProductionDeployment;
@@ -87,6 +88,10 @@ final readonly class RollbackAppInstanceAction
 
             return DeploymentResult::succeeded($release);
         } catch (Throwable $exception) {
+            if ($boundary === DeploymentFailureBoundary::Activation) {
+                $selected = $this->selectionAfterActivationFailure($appInstance, $selected);
+            }
+
             return DeploymentResult::failed(
                 $release,
                 $selected,
@@ -94,6 +99,27 @@ final readonly class RollbackAppInstanceAction
                 $this->errorCode($exception),
             );
         }
+    }
+
+    private function selectionAfterActivationFailure(
+        AppInstance $appInstance,
+        ?DeploymentRelease $lastKnownSelection,
+    ): ?DeploymentRelease {
+        try {
+            $selected = $this->deployment->selected($appInstance);
+        } catch (Throwable) {
+            return $lastKnownSelection;
+        }
+
+        if ($selected !== null) {
+            try {
+                $appInstance->update(['checkout_path' => $selected->path]);
+            } catch (Throwable) {
+                return $selected;
+            }
+        }
+
+        return $selected;
     }
 
     private function assertNotCancelled(DeploymentRequest $request): void

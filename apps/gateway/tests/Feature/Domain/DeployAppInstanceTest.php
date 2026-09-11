@@ -139,6 +139,99 @@ it('keeps the new selection and persistent effects when deployment fails after a
         ->not->toContain('step:later:must-not-run');
 });
 
+it('reports the observed selection when deployment activation switches before failing', function (): void {
+    $instance = orb219_deployment_instance([]);
+    $trace = new Orb219DeploymentTrace(
+        failAt: 'activate:fresh',
+        switchBeforeActivationFailure: true,
+    );
+    [$deploy] = orb219_actions($trace);
+
+    $result = $deploy->execute($instance);
+
+    expect($result->succeeded)
+        ->toBeFalse()
+        ->and($result->failure?->boundary)
+        ->toBe(DeploymentFailureBoundary::Activation)
+        ->and($result->failure?->errorCode)
+        ->toBe('deployment.step_failed')
+        ->and($result->selectedRelease?->name)
+        ->toBe('fresh')
+        ->and($instance->refresh()->checkout_path)
+        ->toBe('/home/orbit-app-1/releases/fresh')
+        ->and($trace->entries)
+        ->toBe([
+            'lock:1',
+            'selected:initial',
+            'prepare:main',
+            'environment',
+            'activate:fresh',
+            'selected:fresh',
+        ]);
+});
+
+it('reports the observed selection when rollback activation switches before failing', function (): void {
+    $instance = orb219_deployment_instance([]);
+    $trace = new Orb219DeploymentTrace(
+        failAt: 'activate:retained',
+        switchBeforeActivationFailure: true,
+    );
+    [, $rollback] = orb219_actions($trace);
+
+    $result = $rollback->execute($instance, 'retained');
+
+    expect($result->succeeded)
+        ->toBeFalse()
+        ->and($result->failure?->boundary)
+        ->toBe(DeploymentFailureBoundary::Activation)
+        ->and($result->failure?->errorCode)
+        ->toBe('deployment.step_failed')
+        ->and($result->selectedRelease?->name)
+        ->toBe('retained')
+        ->and($instance->refresh()->checkout_path)
+        ->toBe('/home/orbit-app-1/releases/retained')
+        ->and($trace->entries)
+        ->toBe([
+            'lock:1',
+            'selected:initial',
+            'retained:retained',
+            'activate:retained',
+            'selected:retained',
+        ]);
+});
+
+it('preserves the activation failure and last known selection when reinspection fails', function (): void {
+    $instance = orb219_deployment_instance([]);
+    $trace = new Orb219DeploymentTrace(
+        failAt: 'activate:fresh',
+        switchBeforeActivationFailure: true,
+        failActivationReinspection: true,
+    );
+    [$deploy] = orb219_actions($trace);
+
+    $result = $deploy->execute($instance);
+
+    expect($result->succeeded)
+        ->toBeFalse()
+        ->and($result->failure?->boundary)
+        ->toBe(DeploymentFailureBoundary::Activation)
+        ->and($result->failure?->errorCode)
+        ->toBe('deployment.step_failed')
+        ->and($result->selectedRelease?->name)
+        ->toBe('initial')
+        ->and($instance->refresh()->checkout_path)
+        ->toBe('/home/orbit-app-1/releases/initial')
+        ->and($trace->entries)
+        ->toBe([
+            'lock:1',
+            'selected:initial',
+            'prepare:main',
+            'environment',
+            'activate:fresh',
+            'selected:failed',
+        ]);
+});
+
 it('reports each infrastructure failure boundary with its observed selection', function (
     string $failure,
     DeploymentFailureBoundary $boundary,
@@ -318,10 +411,16 @@ final class Orb219DeploymentTrace
 
     public bool $cancelled = false;
 
+    public ?string $remoteSelection = null;
+
+    public bool $activationFailed = false;
+
     public function __construct(
         public ?string $failAt = null,
         public ?string $cancelAfterStep = null,
         public bool $firstDeployment = false,
+        public bool $switchBeforeActivationFailure = false,
+        public bool $failActivationReinspection = false,
     ) {}
 }
 
@@ -388,14 +487,33 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
 
     public function activate(AppInstance $appInstance, DeploymentRelease $release): DeploymentRelease
     {
-        $this->record("activate:{$release->name}");
+        $entry = "activate:{$release->name}";
+        $this->trace->entries[] = $entry;
+
+        if ($this->trace->failAt === $entry) {
+            $this->trace->activationFailed = true;
+
+            if ($this->trace->switchBeforeActivationFailure) {
+                $this->trace->remoteSelection = $release->name;
+            }
+
+            throw new ResourceOperationException('deployment.step_failed', 'Injected deployment failure.', 409);
+        }
 
         return $release;
     }
 
     public function selected(AppInstance $appInstance): ?DeploymentRelease
     {
-        $name = $this->trace->firstDeployment ? 'none' : basename($appInstance->checkout_path);
+        if ($this->trace->activationFailed && $this->trace->failActivationReinspection) {
+            $this->trace->entries[] = 'selected:failed';
+
+            throw new ResourceOperationException('deployment.selection_inspection_failed', 'Injected selection inspection failure.', 409);
+        }
+
+        $name = $this->trace->firstDeployment
+            ? 'none'
+            : ($this->trace->remoteSelection ?? basename($appInstance->checkout_path));
         $this->record("selected:{$name}");
 
         return $this->trace->firstDeployment ? null : $this->release($name);

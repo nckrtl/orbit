@@ -103,12 +103,24 @@ it('runs protected application input from the release with streaming controls', 
         ->not->toContain('private-command')
         ->and(stream_get_contents($command->protectedInput->stream()))
         ->toContain(
-            'setsid bash -eu -c \'umask 077; printf "%s\n" "$$" > "$3"; chmod 0644 -- "$3"; cd -- "$1"; exec bash -eu "$2"\'',
-            'process_group=$(cat -- "$group_file")',
-            'while [ ! -e "$completion_file" ] && kill -0 "$owner"',
-            'touch -- "$completion_file"',
-            'kill -TERM -- "-$process_group"',
+            'owner=$PPID',
+            'sudo -u "$user" -H setsid --wait bash -eu -c \'umask 077; cd -- "$1"; exec bash -eu "$2"\'',
+            'supervisor=$!',
+            'candidate=$(pgrep -P "$supervisor"',
+            '[ "$1" = "$supervisor" ] && [ "$2" = "$candidate" ] && [ "$3" = "$expected_uid" ]',
+            'process_group=$(discover_process_group)',
+            'while kill -0 "$owner" 2>/dev/null && kill -0 "$supervisor" 2>/dev/null',
+            'sudo -u "$user" -H kill -TERM -- "-$process_group"',
+            'sudo -u "$user" -H kill -KILL -- "-$process_group"',
+            'sudo -u "$user" -H kill -TERM -- "-$watched_group"',
+            'sudo -u "$user" -H kill -KILL -- "-$watched_group"',
             base64_encode('printf "private-command"'),
+        )
+        ->not->toContain(
+            'group_file',
+            'completion_file',
+            'sudo kill -TERM',
+            'sudo kill -KILL',
         )
         ->and(array_map(
             static fn (DeploymentEvent $event): array => [$event->step, $event->stream, $event->value],

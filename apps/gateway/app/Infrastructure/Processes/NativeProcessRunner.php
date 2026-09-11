@@ -65,7 +65,7 @@ final readonly class NativeProcessRunner implements ProcessRunner
                     $consume(ProcessOutputStream::Stderr, $process->getIncrementalErrorOutput());
                     $this->emitPendingOutput($pendingOutput, $invocation->output);
 
-                    if (($invocation->cancelled) !== null && ($invocation->cancelled)()) {
+                    if ($running && ($invocation->cancelled) !== null && ($invocation->cancelled)()) {
                         throw new ProcessCancelledException;
                     }
 

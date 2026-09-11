@@ -150,27 +150,41 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                 sudo -u "$user" -H test ! -L "$release"
                 test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release"
                 command_file=$(sudo -u "$user" -H mktemp "$home/.orbit-deploy.XXXXXXXX")
-                group_directory=$(mktemp -d /tmp/.orbit-deployment-group.XXXXXXXX)
-                sudo chgrp "$user" -- "$group_directory"
-                chmod 0730 -- "$group_directory"
-                group_file="$group_directory/pid"
-                completion_file="$group_directory/complete"
                 supervisor=
                 process_group=
                 watchdog=
+                expected_uid=$(id -u "$user")
+                discover_process_group() {
+                    for attempt in $(seq 1 100); do
+                        candidate=$(pgrep -P "$supervisor" 2>/dev/null || true)
+                        case "$candidate" in ''|*[!0-9]*) ;; *)
+                            identity=$(ps -o ppid=,pgid=,uid= -p "$candidate" 2>/dev/null || true)
+                            set -- $identity
+                            if [ "$#" -eq 3 ] && [ "$1" = "$supervisor" ] && [ "$2" = "$candidate" ] && [ "$3" = "$expected_uid" ]; then
+                                printf '%s' "$candidate"
+                                return 0
+                            fi
+                        esac
+                        if ! kill -0 "$supervisor" 2>/dev/null; then return 1; fi
+                        sleep 0.01
+                    done
+                    return 1
+                }
+                terminate_step() {
+                    if [ -z "$process_group" ]; then return; fi
+                    sudo -u "$user" -H kill -TERM -- "-$process_group" 2>/dev/null || true
+                    sleep 0.1
+                    sudo -u "$user" -H kill -KILL -- "-$process_group" 2>/dev/null || true
+                }
                 cleanup() {
                     status=$?
-                    touch -- "$completion_file" 2>/dev/null || true
-                    if [ -n "$process_group" ]; then
-                        sudo kill -TERM -- "-$process_group" 2>/dev/null || true
-                        sleep 0.1
-                        sudo kill -KILL -- "-$process_group" 2>/dev/null || true
+                    terminate_step
+                    if [ -n "$supervisor" ]; then
+                        wait "$supervisor" 2>/dev/null || true
                     fi
                     if [ -n "$watchdog" ]; then
                         wait "$watchdog" 2>/dev/null || true
                     fi
-                    rm -f -- "$group_file" "$completion_file"
-                    rmdir -- "$group_directory" 2>/dev/null || true
                     sudo -u "$user" -H rm -f -- "$command_file"
                     exit "$status"
                 }
@@ -178,28 +192,21 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                 printf '%s' '__COMMAND__' | base64 --decode | sudo -u "$user" -H tee "$command_file" >/dev/null
                 sudo -u "$user" -H chmod 0600 -- "$command_file"
                 owner=$PPID
-                sudo -u "$user" -H setsid bash -eu -c 'umask 077; printf "%s\n" "$$" > "$3"; chmod 0644 -- "$3"; cd -- "$1"; exec bash -eu "$2"' bash "$release" "$command_file" "$group_file" &
+                sudo -u "$user" -H setsid --wait bash -eu -c 'umask 077; cd -- "$1"; exec bash -eu "$2"' bash "$release" "$command_file" &
                 supervisor=$!
-                for attempt in $(seq 1 100); do
-                    if [ -s "$group_file" ]; then break; fi
-                    if ! kill -0 "$supervisor" 2>/dev/null; then break; fi
-                    sleep 0.01
-                done
-                test -s "$group_file"
-                process_group=$(cat -- "$group_file")
-                case "$process_group" in ''|*[!0-9]*) exit 1 ;; esac
-                test "$process_group" -gt 1
                 (
-                    while [ ! -e "$completion_file" ] && kill -0 "$owner" 2>/dev/null; do sleep 0.1; done
-                    if [ -e "$completion_file" ]; then exit 0; fi
-                    sudo kill -TERM -- "-$process_group" 2>/dev/null || true
+                    watched_group=$(discover_process_group) || exit 0
+                    while kill -0 "$owner" 2>/dev/null && kill -0 "$supervisor" 2>/dev/null; do sleep 0.1; done
+                    if kill -0 "$owner" 2>/dev/null; then exit 0; fi
+                    sudo -u "$user" -H kill -TERM -- "-$watched_group" 2>/dev/null || true
                     sleep 0.1
-                    sudo kill -KILL -- "-$process_group" 2>/dev/null || true
+                    sudo -u "$user" -H kill -KILL -- "-$watched_group" 2>/dev/null || true
                 ) &
                 watchdog=$!
+                process_group=$(discover_process_group) || true
                 if wait "$supervisor"; then status=0; else status=$?; fi
+                supervisor=
                 process_group=
-                touch -- "$completion_file"
                 wait "$watchdog" 2>/dev/null || true
                 watchdog=
                 exit "$status"

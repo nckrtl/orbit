@@ -111,6 +111,10 @@ final readonly class DeployAppInstanceAction
         } catch (Throwable $exception) {
             $this->appendFailedCommand($commands, $exception);
 
+            if ($boundary === DeploymentFailureBoundary::Activation) {
+                $selected = $this->selectionAfterActivationFailure($appInstance, $selected);
+            }
+
             return DeploymentResult::failed(
                 $release,
                 $selected,
@@ -119,6 +123,27 @@ final readonly class DeployAppInstanceAction
                 $commands,
             );
         }
+    }
+
+    private function selectionAfterActivationFailure(
+        AppInstance $appInstance,
+        ?DeploymentRelease $lastKnownSelection,
+    ): ?DeploymentRelease {
+        try {
+            $selected = $this->deployment->selected($appInstance);
+        } catch (Throwable) {
+            return $lastKnownSelection;
+        }
+
+        if ($selected !== null) {
+            try {
+                $appInstance->update(['checkout_path' => $selected->path]);
+            } catch (Throwable) {
+                return $selected;
+            }
+        }
+
+        return $selected;
     }
 
     /**

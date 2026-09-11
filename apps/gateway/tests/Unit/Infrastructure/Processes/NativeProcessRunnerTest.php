@@ -187,6 +187,35 @@ it('terminates its complete process group when cancellation is requested', funct
     expect(is_int($childPid) && @posix_kill($childPid, 0))->toBeFalse();
 });
 
+it('retains a completed command result when final output requests cancellation', function (): void {
+    $cancel = false;
+    $runner = new NativeProcessRunner;
+
+    $result = $runner->run(new ProcessInvocation(
+        arguments: [
+            PHP_BINARY,
+            '-r',
+            'usleep(50000); fwrite(STDOUT, "completed");',
+        ],
+        timeout: 5.0,
+        output: static function (ProcessOutput $output) use (&$cancel): void {
+            if ($output->stream === ProcessOutputStream::Stdout) {
+                $cancel = true;
+            }
+        },
+        cancelled: static function () use (&$cancel): bool {
+            return $cancel;
+        },
+    ));
+
+    expect($cancel)
+        ->toBeTrue()
+        ->and($result->succeeded())
+        ->toBeTrue()
+        ->and($result->stdout)
+        ->toBe('completed');
+});
+
 it('terminates its complete process group when the timeout expires', function (): void {
     $childPid = null;
     $runner = new NativeProcessRunner;
