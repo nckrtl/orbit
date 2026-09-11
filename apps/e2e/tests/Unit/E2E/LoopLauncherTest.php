@@ -25,11 +25,11 @@ it('starts the configured controller when called outside the repository', functi
         expect($run->path($root)->run(['git', ...$arguments])->successful())->toBeTrue();
     }
 
-    $result = $run->path($caller)->run([$root.'/bin/loop', 'ORB-999', 'status']);
+    $result = $run->path($caller)->run([$root.'/bin/loop', 'TEST-999', 'status']);
 
     expect($result->successful())->toBeTrue($result->errorOutput())
         ->and(json_decode($result->output(), true, 512, JSON_THROW_ON_ERROR))->toBe([
-            'argv' => [$driver, '--repository', $root, 'ORB-999', 'status'],
+            'argv' => [$driver, '--repository', $root, 'TEST-999', 'status'],
             'cwd' => $caller,
         ]);
 });
