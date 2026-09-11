@@ -15,6 +15,9 @@ use UnexpectedValueException;
 
 final class ProcessDefinitionRequest extends FormRequest
 {
+    /** @var array<string, mixed> */
+    private array $inspectedData = [];
+
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
@@ -79,7 +82,9 @@ final class ProcessDefinitionRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(AppDefinitionJsonInspector::class)->inspectProcess($this->getContent());
+            $this->inspectedData = app(AppDefinitionJsonInspector::class)->inspectProcess($this->getContent());
+
+            return $this->inspectedData;
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -89,11 +94,9 @@ final class ProcessDefinitionRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $data = $validator->getData();
-
-            $this->validateSystemdExecutable($validator, $data);
-            $this->validateEnvironmentNames($validator, $data);
-            $this->validatePorts($validator, $data);
+            $this->validateSystemdExecutable($validator, $this->inspectedData);
+            $this->validateEnvironmentNames($validator, $this->inspectedData);
+            $this->validatePorts($validator, $this->inspectedData);
         }];
     }
 

@@ -235,6 +235,41 @@ it('applies Process specification limits to non-JSON content types', function (a
     ]],
 ]);
 
+it('rejects literal dots and asterisks in Docker environment names', function (
+    string $contentType,
+    string $environmentName,
+): void {
+    $body = json_encode([
+        'name' => 'worker',
+        'environments' => ['development'],
+        'spec' => [
+            'runtime' => 'docker',
+            'command' => ['php'],
+            'image' => 'php:8.5',
+            'environment' => [$environmentName => 'value'],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    $this
+        ->call(
+            'POST',
+            "/api/v1/apps/{$this->orbitApp->id}/process-definitions",
+            server: ['CONTENT_TYPE' => $contentType],
+            content: $body,
+        )
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect(ProcessDefinition::query()->count())->toBe(0);
+})->with([
+    'JSON name containing a dot' => ['application/json', 'A.B'],
+    'JSON name containing an asterisk' => ['application/json', 'A*B'],
+    'JSON name starting with a dot' => ['application/json', '.A'],
+    'plain-text name containing a dot' => ['text/plain', 'A.B'],
+    'plain-text name containing an asterisk' => ['text/plain', 'A*B'],
+    'plain-text name starting with a dot' => ['text/plain', '.A'],
+]);
+
 it('uses the placed App operation boundary and rejects cross-App UUIDs', function (): void {
     $created = $this->postJson(
         "/api/v1/apps/{$this->orbitApp->id}/process-definitions",
