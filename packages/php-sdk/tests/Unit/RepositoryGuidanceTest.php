@@ -52,6 +52,7 @@ describe('repository guidance bootstrap', function (): void {
                 '`.ai/rules/**/*.md`',
                 '`composer.json`',
                 '`composer.lock`',
+                '`phpunit.guidance.xml`',
                 '`phpunit.xml.dist`',
                 '`pint.json`',
                 '`phpstan.neon`',
@@ -71,7 +72,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('do not silently skip it');
     });
 
-    it('runs the no-TIA guidance gate first without Laravel or Boost', function (): void {
+    it('runs the TIA guidance gate first without Laravel or Boost', function (): void {
         /** @var array{require: array<string, string>, require-dev: array<string, string>, scripts: array<string, string|list<string>>} $composer */
         $composer = json_decode(
             repository_guidance_contents('composer.json'),
@@ -83,11 +84,11 @@ describe('repository guidance bootstrap', function (): void {
         expect($dependencies)
             ->not->toHaveKeys(['laravel/framework', 'laravel/boost']);
         expect($composer['scripts']['guidance:check'] ?? null)
-            ->toBe('vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php');
+            ->toBe('vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact');
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 
-    it('keeps full suites explicit and delegates candidate suites to CI', function (): void {
+    it('keeps every repository test command on TIA', function (): void {
         /** @var array{scripts: array<string, string|list<string>>} $composer */
         $composer = json_decode(
             repository_guidance_contents('composer.json'),
@@ -98,18 +99,18 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'])->not->toContain('@test');
 
         expect($composer['scripts']['test'] ?? null)
-            ->toBe('vendor/bin/pest --parallel --no-tia --compact')
+            ->toBe('vendor/bin/pest --parallel --tia --compact')
             ->and($composer['scripts'])
             ->not->toHaveKey('test:full');
 
         expect(repository_guidance_contents('README.md'))
-            ->toContain('composer test       # full Pest suite (parallel, no TIA)')
+            ->toContain('composer test       # Pest suite with TIA (parallel)')
             ->not->toContain('composer test:full')
             ->not->toContain('local TIA');
 
         expect(repository_guidance_contents('AGENTS.md'))
             ->toContain(
-                'Use focused Pest tests locally. Reviewers run root `composer check` across all projects with TIA.',
+                'Use `composer test:affected` for Pest development checks. Reviewers run root `composer check` across all projects with TIA.',
             );
 
         foreach ([

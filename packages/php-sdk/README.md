@@ -52,7 +52,7 @@ order, issues, and summary aggregates without applying Doctor policy.
 ## Quality
 
 ```bash
-composer test       # full Pest suite (parallel, no TIA)
+composer test       # Pest suite with TIA (parallel)
 composer format     # Laravel Pint formatter
 composer check      # guidance, Rector, and Pint and PHPStan checks
 ```

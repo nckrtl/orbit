@@ -92,7 +92,7 @@ and version decisions.
 ## Quality
 
 ```bash
-composer test       # full Pest 5 suite in parallel, without TIA
+composer test       # Pest 5 suite with TIA in parallel
 composer format     # Laravel Pint formatter
-composer check      # parallel no-TIA tests and all Pint and Larastan checks
+composer check      # guidance, Rector, Pint, and Larastan checks
 ```

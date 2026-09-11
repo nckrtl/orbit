@@ -21,8 +21,8 @@ bin/bootstrap
 
 The equivalent Composer command is `composer bootstrap`.
 
-Run focused Pest tests and the changed project's `composer check` locally. CI
-runs all full suites. For an explicit full local run:
+Run affected Pest tests through TIA and the changed project's `composer check`
+locally. For a repository-wide TIA run:
 
 ```bash
 bin/test

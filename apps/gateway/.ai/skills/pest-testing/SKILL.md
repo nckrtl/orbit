@@ -18,11 +18,11 @@ This repository uses Pest 5 and PHPUnit 13. Use `describe()` and `it()` with cle
 
 ## Commands
 
-Run the narrowest useful test while developing:
+Run Pest through the project's TIA commands:
 
 ```bash
-vendor/bin/pest --compact tests/Feature/Path/To/Test.php
-vendor/bin/pest --compact --filter='test name'
+composer test
+composer test:affected
 ```
 
-`composer test` runs the full Pest suite in parallel without Test Impact Analysis (`--parallel --no-tia`). Run the repository Rector and Pint and Larastan gates before handoff.
+Do not pass a test path, filter, group, or suite. Pest disables TIA for partial runs even when `--tia` is present. `composer test` runs Pest in parallel with Test Impact Analysis. Run the repository Rector and Pint and Larastan gates before handoff.

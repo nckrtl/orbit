@@ -41,7 +41,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'
-          coverage: none
+          coverage: pcov
           tools: composer:v2
           ini-values: zend.exception_ignore_args=0
 
@@ -75,8 +75,8 @@ jobs:
         if: matrix.directory == 'apps/docs'
         run: composer docs:lint
 
-      - name: Run full tests in parallel
-        run: vendor/bin/pest --parallel --processes=2 --no-tia --compact
+      - name: Run impacted tests in parallel
+        run: vendor/bin/pest --parallel --processes=2 --tia --compact
 
       - name: Check Rector
         run: vendor/bin/rector process --dry-run
