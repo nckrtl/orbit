@@ -10,7 +10,7 @@ use Symfony\Component\Process\Process;
 /** @param list<string> $scenarios */
 function startSchedulerAcceptanceProcess(array $scenarios, int $workers): Process
 {
-    $repository = dirname(__DIR__, 3);
+    $repository = dirname(__DIR__, 4);
     $candidate = (new GitRepository($repository))->commit();
     $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
     if (! is_string($primary) || ! str_starts_with($primary, '/')) {
@@ -143,7 +143,7 @@ function schedulerAcceptanceIntervalsOverlap(array $first, array $second): bool
 /** @return array{contents:string,instances:list<string>} */
 function schedulerAcceptanceUnrelatedTopology(): array
 {
-    $path = dirname(__DIR__, 3).'/.e2e/topology.json';
+    $path = dirname(__DIR__, 4).'/.e2e/topology.json';
     $contents = file_get_contents($path);
     if (! is_string($contents)) {
         throw new RuntimeException('This observation requires an acquired discovery topology.');
@@ -333,7 +333,7 @@ it('scenario-worker-interruption', function (): void {
     expect(array_all(array_slice($results, 0, 2), static fn (array $result): bool => is_string($result['cleanup']['recovery_command'] ?? null)
         && (($result['cleanup']['remaining'] ?? []) === []
             || ($result['cleanup']['refused'] ?? []) !== [])))->toBeTrue();
-    expect(file_get_contents(dirname(__DIR__, 3).'/.e2e/topology.json'))->toBe($unrelated['contents']);
+    expect(file_get_contents(dirname(__DIR__, 4).'/.e2e/topology.json'))->toBe($unrelated['contents']);
     expect(array_all(
         $unrelated['instances'],
         static fn (string $instance): bool => $host->instance($instance) !== null,
