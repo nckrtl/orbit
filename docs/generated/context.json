@@ -81,6 +81,7 @@
                 "Repository identity",
                 "Route",
                 "Router",
+                "Schedule",
                 "Tool",
                 "Tool Manager",
                 "Workspace"
@@ -223,6 +224,7 @@
                 "Node",
                 "Route",
                 "Router",
+                "Schedule",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -295,6 +297,7 @@
                 "Ingress",
                 "Node",
                 "Proof topology",
+                "Schedule",
                 "Tool",
                 "Workspace"
             ],
@@ -816,6 +819,7 @@
                 "Gateway",
                 "Legacy Instance",
                 "Node",
+                "Schedule",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -1015,7 +1019,8 @@
                 "Gateway",
                 "Ingress",
                 "Node",
-                "Route"
+                "Route",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0028",
@@ -1040,7 +1045,8 @@
                 "App",
                 "AppInstance",
                 "Doctor",
-                "Gateway"
+                "Gateway",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0013",
@@ -1255,7 +1261,8 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node"
+                "Node",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0013",
@@ -1333,7 +1340,7 @@
         },
         {
             "path": "docs/reference/app-processes-and-schedules.md",
-            "title": "AppInstance processes",
+            "title": "AppInstance processes and Schedules",
             "kind": "reference",
             "components": [],
             "concepts": [
@@ -1343,6 +1350,7 @@
                 "Gateway",
                 "Node",
                 "Route",
+                "Schedule",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -1379,7 +1387,8 @@
                 "Node",
                 "Repository identity",
                 "Route",
-                "Router"
+                "Router",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0027",
@@ -1608,6 +1617,27 @@
                 "0030",
                 "0033",
                 "0041"
+            ]
+        },
+        {
+            "path": "docs/reference/schedules.md",
+            "title": "Schedules",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Schedule",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0013",
+                "0038",
+                "0048",
+                "0060"
             ]
         },
         {

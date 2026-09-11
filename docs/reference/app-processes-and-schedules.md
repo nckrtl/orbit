@@ -1,6 +1,6 @@
-# AppInstance processes
+# AppInstance processes and Schedules
 
-This page tells an operator how Orbit installs and manages systemd services and Docker containers owned by one AppInstance. [ADR 0036](../decisions/0036-support-only-appinstances.md) owns the AppInstance-only target boundary, [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns removal cleanup, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns independent AppInstance copies.
+This page tells an operator how Orbit installs and manages systemd services and Docker containers owned by one AppInstance, and how Process copies relate to AppInstance Schedules. [ADR 0036](../decisions/0036-support-only-appinstances.md) owns the AppInstance-only Process target boundary, [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns child cleanup, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns independent AppInstance copies.
 
 ## Select the owner
 
@@ -53,4 +53,6 @@ Doctor reads each recorded Process on the selected Node and compares its desired
 
 AppInstance removal runs source preflight before it changes any Process. Once removal accepts its fixed AppInstance set, no new Process can attach to a member. The removal then stops and removes every owned running, stopped, failed, or removing Process and its persistent exact-owned artifacts before it reports success. A cleanup failure keeps the AppInstance and unfinished Process cleanup resumable. The [AppInstance removal reference](appinstance-removal.md) describes the order and retry boundary.
 
-The AppInstance Process copy is independent. Changing or removing it does not change an App-owned definition, and changing an App definition does not reconcile an existing copy or its runtime state. Orbit exposes no AppInstance Schedule operation in this Process command surface.
+The AppInstance Process copy is independent. Changing or removing it does not change an App-owned definition, and changing an App definition does not reconcile an existing copy or its runtime state.
+
+An AppInstance Schedule is also an independent copy with its own identity, systemd artifacts, desired timer state, and removal lifecycle. The [Schedules reference](schedules.md) describes target context, stopped installation, explicit timer activation, manual execution, latest-run reporting, and cleanup. Process commands do not operate on Schedules.

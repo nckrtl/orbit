@@ -1,0 +1,128 @@
+# Schedules
+
+This page tells an operator how the Gateway stores a Schedule, projects it to native systemd execution, reports its latest result, and removes its owned state. [ADR 0013](../decisions/0013-native-systemd-schedule-management.md) owns native timer execution, [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns AppInstance cleanup, [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns stopped AppInstance installation and explicit activation, and [ADR 0060](../decisions/0060-record-latest-schedule-run-status.md) owns latest-run reporting.
+
+## Store one target-owned Schedule
+
+The Gateway stores one Schedule for exactly one Node or AppInstance target. The Schedule UUID is its public identity and the only value used to name its host artifacts.
+
+| Value | Contract |
+| --- | --- |
+| `id` | An immutable UUID. |
+| `target` | Exactly one Node or AppInstance. |
+| `name` | Unique within the target. It contains 1 through 63 lowercase ASCII letters or numbers, with hyphens only between them. |
+| `calendar` | One printable ASCII line of at most 255 bytes, accepted only when the target Node's `systemd-analyze calendar` accepts it. |
+| `command` | One non-empty UTF-8 line of at most 4,096 bytes. NUL, carriage return, and line feed are invalid. |
+| `timeout` | An integer from 1 through 86,400 seconds. The default is 3,600 seconds. |
+| `status` | `provisioning`, `active`, `failed`, or `removing`. |
+| `desired_timer_state` | `enabled` or `disabled`. |
+| `last_run_at` | The nullable time when the Gateway last accepted a completion report. |
+| `last_run_status` | Nullable `success` or `error`. |
+
+An identical add retries or returns the same Schedule without changing its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict`. Orbit changes a specification only when the operator removes the Schedule and adds its replacement.
+
+## Derive the execution context
+
+The Gateway derives the host Node, runtime user, home, working directory, and shell from authoritative target placement. It rejects caller-supplied values for those fields and refuses an unavailable target or unusable derived account before remote mutation.
+
+| Target | Execution context |
+| --- | --- |
+| Node | The Node's managed `orbit` user, home, and non-interactive login-shell context. |
+| Development AppInstance | The host Node, managed application-development runtime user and home, recorded checkout working directory, and derived non-interactive login-shell context. |
+| Production AppInstance | The host Node, dedicated production user and home, fixed `/bin/bash` without login, and the production home's `current` working directory. |
+
+Each production execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active. A production AppInstance without `current` can accept a Schedule whose timer starts disabled, but a manual run or activation returns `schedule.target_unavailable` until a release is selected.
+
+Removing a target Node or host Node, or changing a target's Node, user, home, or stable working-directory path, returns `schedule.target_in_use` while the Schedule exists. AppInstance removal uses the owned cascade instead of this guard.
+
+## Project protected systemd artifacts
+
+The Gateway projects exactly three artifacts that root owns. Their names depend only on the Schedule UUID.
+
+| Artifact | Behavior |
+| --- | --- |
+| Protected script | Contains the caller command, runs as the derived user, and is not writable or readable by unrelated unprivileged users. |
+| Oneshot service | Uses the derived user and working directory, stored timeout, and fixed protected-script path. It contains no caller command text. |
+| Persistent timer | Uses the accepted calendar and triggers the oneshot service without overlapping an active execution. It contains no caller command text. |
+
+The caller command appears only in the protected script. It never appears in an SSH, `sudo`, `systemctl`, `journalctl`, `systemd-analyze`, or other infrastructure argument.
+
+A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An AppInstance Schedule can install enabled or disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the AppInstance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
+
+A manual run starts the same oneshot service without waiting for completion and never changes the desired timer state. The persistent timer lets systemd run one missed occurrence after Node downtime.
+
+## Read bounded logs
+
+The Gateway reads only the exact Schedule service with fixed `journalctl` arguments. A request defaults to 100 lines and accepts 1 through 1,000 lines, a maximum response size of 1 MiB, and a 10-second deadline.
+
+The response keeps the newest complete lines. It sets `truncated` to `true` when the byte limit removes older or incomplete output. Orbit does not persist journal output.
+
+## Record the latest run
+
+After the command finishes, the host Node makes one authenticated completion callback. The Gateway accepts it only from the Schedule's recorded host Node and replaces `last_run_at` with its receipt time and `last_run_status` with `success` or `error`.
+
+The callback updates no other Schedule field. The Node does not retry a failed callback, and a failure leaves the prior latest-run metadata, command result, and later executions unchanged. Orbit stores no run identity, ordering value, projection generation, retry state, or run history.
+
+## Recover installation and activation
+
+The Gateway validates target state, ownership, calendar, rendered units, and all candidate artifacts before it changes the active projection. It locks the Schedule transaction and host artifact set while it converges them.
+
+An unexpected file, unit, owner, mode, or identity at an owned name returns `schedule.artifact_conflict`. Orbit does not adopt, overwrite, or delete the conflicting object.
+
+A failed update restores the exact prior owned artifacts and timer state. A failed first installation removes only artifacts created by that attempt. If restoration fails, the Schedule stays non-active and returns `schedule.rollback_failed` for safe retry.
+
+## Remove owned state
+
+Standalone removal marks the Schedule `removing`, disables and stops only its timer, and inspects the service directly. It lets an active command finish before it removes the exact timer, service, script, and Schedule record. A failure leaves the Schedule `removing`, and an identical retry resumes cleanup without depending on a completion callback.
+
+AppInstance removal first completes source preflight and prevents new Schedule attachment to every accepted member. It then disables each owned timer and removes every owned Schedule record and persistent artifact without waiting for an active command. A late or racing callback cannot recreate Schedule intent, restore artifacts, bypass `removing`, or delay AppInstance removal.
+
+A failed cascade keeps the AppInstance removal and unfinished Schedule cleanup resumable. Retry processes only recorded unfinished owned work. Node-owned Schedules, other AppInstances' Schedules, and unrecognized artifacts on the same Node remain unchanged.
+
+## Handle stable operation errors
+
+Gateway Schedule operations return only these stable domain error codes.
+
+| Error code | Meaning |
+| --- | --- |
+| `schedule.name_invalid` | The name is outside the accepted form or size. |
+| `schedule.target_invalid` | The target type or identity is invalid. |
+| `schedule.target_unavailable` | The derived target context cannot run the requested operation. |
+| `schedule.calendar_invalid` | The calendar input or host systemd validation failed. |
+| `schedule.command_invalid` | The command is empty, malformed, multiline, or too large. |
+| `schedule.timeout_invalid` | The timeout is outside the accepted integer range. |
+| `schedule.retry_conflict` | A target and name already identify a different specification. |
+| `schedule.state_invalid` | The lifecycle state does not permit the operation. |
+| `schedule.target_in_use` | A placement or identity change would invalidate an existing Schedule. |
+| `schedule.artifact_conflict` | A named host artifact is not the exact object owned by the Schedule. |
+| `schedule.install_failed` | Installation did not complete. |
+| `schedule.rollback_failed` | Recovery could not restore the exact prior state. |
+| `schedule.run_failed` | The manual service start failed. |
+| `schedule.activation_failed` | Explicit timer activation did not complete. |
+| `schedule.logs_failed` | The bounded journal read failed. |
+| `schedule.remove_failed` | Standalone or cascading cleanup did not complete. |
+| `schedule.node_unreachable` | The required host Node could not be reached. |
+
+## Inspect Schedule drift
+
+Doctor checks Schedule as the explicit `schedule` family in its canonical order. It compares stored intent with bounded read-only host observations and never installs, reloads, enables, starts, stops, completes, repairs, adopts, or removes Schedule state.
+
+| Doctor issue code | Difference |
+| --- | --- |
+| `schedule.artifact_missing` | A required owned artifact is absent. |
+| `schedule.artifact_permissions_mismatch` | An artifact owner or mode differs. |
+| `schedule.specification_mismatch` | A service, timer, or script fingerprint differs. |
+| `schedule.timer_state_mismatch` | Enabled, disabled, active, or stopped state differs from intent. |
+| `schedule.calendar_mismatch` | The timer calendar differs. |
+| `schedule.execution_context_mismatch` | The runtime user, shell, home, or working context differs. |
+| `schedule.completion_callback_mismatch` | The protected completion callback projection differs. |
+| `schedule.placement_mismatch` | Installed Node placement differs from target placement. |
+| `schedule.orphan_artifact` | A UUID-named artifact in the owned namespace has no Schedule record. |
+| `schedule.node_unreachable` | The host Node cannot be inspected. |
+| `schedule.inspection_failed` | Inspection is malformed or fails. |
+
+Doctor issues, Activity, errors, and generic diagnostics contain no command, calendar, journal line, path, user, unit content, credential, raw output, exit code, signal, or exception text. Doctor values use only bounded booleans, enums, identifiers, fingerprints, and fixed sentinels.
+
+## Limits
+
+Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Public API, PHP software development kit, and CLI operations are described by their own reference pages when those surfaces are available.
