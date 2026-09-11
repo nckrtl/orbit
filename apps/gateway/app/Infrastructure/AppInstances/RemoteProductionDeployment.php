@@ -418,29 +418,39 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     fi
                     printf 'SELECTED\t%s\n' "$selected"
 
-                    while IFS= read -r -d '' name; do
-                        printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-                        release="$releases/$name"
-                        sudo -u "$user" -H test -d "$release/.git"
-                        sudo -u "$user" -H test ! -L "$release"
-                        test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release"
-                        actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0)
+                    inspect_release() {
+                        local name=$1
+                        local release="$releases/$name"
+                        local actual_repository expected_repository release_environment selected_root
+                        local unexpected_symlink unexpected_user unexpected_group commit
+
+                        printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || return 1
+                        sudo -u "$user" -H test -d "$release/.git" || return 1
+                        sudo -u "$user" -H test ! -L "$release" || return 1
+                        test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release" || return 1
+                        actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0) || return 1
                         expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
-                        test "$actual_repository" = "$expected_repository"
+                        test "$actual_repository" = "$expected_repository" || return 1
                         release_environment="$release/.env"
-                        sudo -u "$user" -H test -L "$release_environment"
-                        test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
-                        selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
-                        case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
-                        sudo -u "$user" -H test -d "$selected_root"
-                        unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-                        test -z "$unexpected_symlink"
-                        unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
-                        test -z "$unexpected_user"
-                        unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
-                        test -z "$unexpected_group"
-                        commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
+                        sudo -u "$user" -H test -L "$release_environment" || return 1
+                        test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment" || return 1
+                        selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root") || return 1
+                        case "$selected_root" in "$release"|"$release"/*) ;; *) return 1 ;; esac
+                        sudo -u "$user" -H test -d "$selected_root" || return 1
+                        unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit) || return 1
+                        test -z "$unexpected_symlink" || return 1
+                        unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit) || return 1
+                        test -z "$unexpected_user" || return 1
+                        unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit) || return 1
+                        test -z "$unexpected_group" || return 1
+                        commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD) || return 1
                         printf 'RELEASE\t%s\t%s\n' "$name" "$commit"
+                    }
+
+                    while IFS= read -r -d '' name; do
+                        if receipt=$(inspect_release "$name"); then
+                            printf '%s\n' "$receipt"
+                        fi
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
                     BASH,
                 maxOutputBytes: 65536,

@@ -97,6 +97,7 @@ final readonly class Orb220DeploymentApiFixture
         ]);
         $deployment = new Orb220ProductionDeployment;
         $connection = new Orb220StreamConnection;
+        $deployment->connection = $connection;
 
         app()->instance(ProductionDeployment::class, $deployment);
         app()->instance(DeploymentStreamConnection::class, $connection);
@@ -113,6 +114,12 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     public int $invocations = 0;
 
     public bool $failPreparation = false;
+
+    public bool $disconnectAfterSilentStep = false;
+
+    public int $activations = 0;
+
+    public ?Orb220StreamConnection $connection = null;
 
     public ?string $requestedRelease = null;
 
@@ -133,10 +140,18 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         DeploymentStep $step,
         DeploymentRequest $request,
     ): CommandResult {
+        if ($this->disconnectAfterSilentStep) {
+            if ($this->connection !== null) {
+                $this->connection->disconnectOnNextPhase = true;
+            }
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+
         $request->emit(new DeploymentEvent(
             $step->name,
             $step->name === 'prepare' ? DeploymentOutputStream::Stdout : DeploymentOutputStream::Stderr,
-            $step->name === 'prepare' ? str_repeat('A', 16 * 1024) : "output-secret\0bytes",
+            $step->name === 'prepare' ? str_repeat("\xff", 16 * 1024) : "output-secret\0bytes",
         ));
 
         if ($request->cancellation->requested()) {
@@ -148,6 +163,8 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public function activate(AppInstance $appInstance, DeploymentRelease $release): DeploymentRelease
     {
+        $this->activations++;
+
         return $release;
     }
 
@@ -181,9 +198,13 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
 final class Orb220StreamConnection implements DeploymentStreamConnection
 {
+    private bool $phaseProbeStarted = false;
+
     public bool $disconnected = false;
 
     public bool $disconnectOnOutput = false;
+
+    public bool $disconnectOnNextPhase = false;
 
     /** @var list<string> */
     public array $lines = [];
@@ -200,6 +221,17 @@ final class Orb220StreamConnection implements DeploymentStreamConnection
 
         if ($this->disconnectOnOutput && str_contains($line, '"type":"output"')) {
             $this->disconnected = true;
+        }
+
+        if ($this->disconnectOnNextPhase && $this->phaseProbeStarted) {
+            $this->disconnectOnNextPhase = false;
+            $this->disconnected = true;
+
+            return;
+        }
+
+        if ($this->disconnectOnNextPhase && str_contains($line, '"type":"phase"')) {
+            $this->phaseProbeStarted = true;
         }
     }
 }

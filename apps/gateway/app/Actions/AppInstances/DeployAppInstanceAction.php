@@ -86,26 +86,26 @@ final readonly class DeployAppInstanceAction
         $commands = [];
 
         try {
-            $this->assertNotCancelled($request);
             $request->emitPhase(DeploymentProgressPhase::SourcePreparation);
+            $this->assertNotCancelled($request);
             $selected = $this->deployment->selected($appInstance);
             $release = $this->deployment->prepare($appInstance, $config->branch);
             $boundary = DeploymentFailureBoundary::Environment;
-            $this->assertNotCancelled($request);
             $request->emitPhase(DeploymentProgressPhase::EnvironmentSync);
+            $this->assertNotCancelled($request);
             $this->environment->execute($appInstance);
             $boundary = DeploymentFailureBoundary::BeforeActivation;
             $this->executeSteps($appInstance, $release, $config, DeploymentPhase::BeforeActivation, $request, $commands);
             $boundary = DeploymentFailureBoundary::Activation;
-            $this->assertNotCancelled($request);
             $request->emitPhase(DeploymentProgressPhase::Activation);
+            $this->assertNotCancelled($request);
             $selected = $this->deployment->activate($appInstance, $release);
             $appInstance->update(['checkout_path' => $selected->path]);
 
             if (is_string($appInstance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
-                $this->assertNotCancelled($request);
                 $request->emitPhase(DeploymentProgressPhase::PhpRefresh);
+                $this->assertNotCancelled($request);
                 $this->runtime->refreshCache($appInstance);
             }
 
@@ -167,13 +167,13 @@ final readonly class DeployAppInstanceAction
                 continue;
             }
 
-            $this->assertNotCancelled($request);
             $request->emitPhase(
                 $phase === DeploymentPhase::BeforeActivation
                     ? DeploymentProgressPhase::BeforeActivation
                     : DeploymentProgressPhase::AfterActivation,
                 $step->name,
             );
+            $this->assertNotCancelled($request);
             $commands[] = new DeploymentCommandResult(
                 $step->name,
                 $this->deployment->executeStep($appInstance, $release, $step, $request),

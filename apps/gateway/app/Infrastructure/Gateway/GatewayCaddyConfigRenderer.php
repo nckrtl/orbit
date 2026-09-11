@@ -18,7 +18,7 @@ final readonly class GatewayCaddyConfigRenderer
                     dial_timeout 10s
                     read_timeout 4500s
                     write_timeout 4500s
-                    flush_interval -1
+                    flush_interval 1ms
                 }
                 file_server
             }

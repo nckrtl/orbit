@@ -90,8 +90,8 @@ it('streams the closed phase output and terminal event schema with bounded lines
     $outputs = array_values(array_filter($events, static fn (array $event): bool => $event['type'] === 'output'));
     expect(array_column($outputs, 'stream'))
         ->toBe(['stdout', 'stderr'])
-        ->and(strlen(base64_decode($outputs[0]['data_base64'], strict: true)))
-        ->toBe(16 * 1024)
+        ->and(base64_decode($outputs[0]['data_base64'], strict: true))
+        ->toBe(str_repeat("\xff", 16 * 1024))
         ->and(base64_decode($outputs[1]['data_base64'], strict: true))
         ->toBe("output-secret\0bytes")
         ->and(max(array_map('strlen', $rawLines)))
@@ -167,6 +167,33 @@ it('signals cancellation and suppresses a terminal result after disconnect witho
         ->toBe('failed')
         ->and(Activity::query()->sole()->error_code)
         ->toBe('deployment.cancelled');
+});
+
+it('stops before activation when the next phase write detects a disconnect after a silent step', function (): void {
+    $this->fixture->deployment->disconnectAfterSilentStep = true;
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+        ->call('POST', $this->url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}');
+    $events = array_map(
+        static fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+        array_values(array_filter(explode("\n", $response->streamedContent()))),
+    );
+    $activity = Activity::query()->sole()->refresh();
+
+    expect(array_column($events, 'phase'))
+        ->toContain('activation')
+        ->and(array_column($events, 'type'))
+        ->not->toContain('result')
+        ->and($this->fixture->deployment->activations)
+        ->toBe(0)
+        ->and($this->fixture->deployment->invocations)
+        ->toBe(1)
+        ->and($activity->status)
+        ->toBe('failed')
+        ->and($activity->error_code)
+        ->toBe('deployment.cancelled')
+        ->and($activity->properties?->get('deployment')['selected_release'])
+        ->toBe('initial');
 });
 
 it('streams rollback with its release input and rollback phase', function (): void {

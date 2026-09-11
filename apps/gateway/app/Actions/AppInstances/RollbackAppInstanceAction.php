@@ -73,8 +73,8 @@ final readonly class RollbackAppInstanceAction
         $selected = null;
 
         try {
-            $this->assertNotCancelled($request);
             $request->emitPhase(DeploymentProgressPhase::Rollback);
+            $this->assertNotCancelled($request);
             $selected = $this->deployment->selected($appInstance);
             $release = $this->deployment->retained($appInstance, $releaseName);
             $boundary = DeploymentFailureBoundary::Activation;

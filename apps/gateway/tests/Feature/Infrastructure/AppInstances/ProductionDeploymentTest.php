@@ -21,6 +21,8 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('prepares a fresh branch-pinned release without changing current', function (): void {
@@ -247,6 +249,89 @@ it('reports a nullable current selection while retaining present releases', func
         ->toBeNull()
         ->and($ssh->commands)
         ->toHaveCount(1);
+});
+
+it('skips partial directories while executing the retained release listing', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "SELECTED\tvalid\nRELEASE\tvalid\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+    $deployment->releases($instance);
+
+    $filesystem = new Filesystem;
+    $sandbox = sys_get_temp_dir().'/orbit-release-list-'.bin2hex(random_bytes(6));
+    $home = $sandbox.'/home';
+    $release = $home.'/releases/valid';
+    $partial = $home.'/releases/partial';
+    $repository = 'https://example.test/deployment.git';
+    $user = 'orbit-fixture';
+
+    try {
+        $filesystem->ensureDirectoryExists($release.'/public');
+        $filesystem->ensureDirectoryExists($partial.'/.git');
+        $filesystem->ensureDirectoryExists($home.'/state');
+        $filesystem->ensureDirectoryExists($sandbox.'/bin');
+        file_put_contents($home.'/.env', "APP_ENV=production\n");
+        file_put_contents($release.'/public/index.php', "<?php\n");
+        symlink('../../.env', $release.'/.env');
+        symlink('releases/valid', $home.'/current');
+        file_put_contents(
+            $home.'/state/release-layout',
+            $repository."\0".$user."\0".$home."\0initial\0",
+        );
+        chmod($home.'/state/release-layout', 0600);
+        file_put_contents(
+            $sandbox.'/bin/sudo',
+            <<<'BASH'
+                #!/usr/bin/env bash
+                if [ "${1:-}" = -u ]; then shift 2; fi
+                if [ "${1:-}" = -H ]; then shift; fi
+                exec "$@"
+                BASH,
+        );
+        chmod($sandbox.'/bin/sudo', 0755);
+
+        foreach ([
+            ['git', 'init', '--quiet', $release],
+            ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
+            ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
+            ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
+            ['git', '-C', $release, 'add', 'public/index.php'],
+            ['git', '-C', $release, 'commit', '--quiet', '-m', 'fixture'],
+        ] as $arguments) {
+            new Process($arguments)->mustRun();
+        }
+        $commit = trim((new Process(['git', '-C', $release, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+
+        $script = str_replace(
+            [
+                'state_directory="/var/lib/orbit/app-instance-sources/$instance"',
+                'test "$home" = "/home/$user"',
+                'root:root:600',
+                '! -user "$user"',
+                '! -group "$user"',
+            ],
+            [
+                'state_directory="$home/state"',
+                'test -d "$home"',
+                '"$(id -un):$(id -gn):600"',
+                '! -uid "$(id -u)"',
+                '! -gid "$(id -g)"',
+            ],
+            $ssh->commands[0]->input ?? '',
+        );
+        $process = new Process(
+            ['bash', '-seu', '--', $repository, $user, $home, 'fixture-instance', 'public'],
+            env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')],
+        );
+        $process->setInput($script);
+        $process->mustRun();
+
+        expect($process->getOutput())
+            ->toBe("SELECTED\tvalid\nRELEASE\tvalid\t{$commit}\n")
+            ->not->toContain('partial');
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
+    }
 });
 
 it('rejects traversal before asking the remote host to inspect a release', function (): void {

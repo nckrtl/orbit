@@ -107,7 +107,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'dial_timeout 10s',
                 'read_timeout 4500s',
                 'write_timeout 4500s',
-                'flush_interval -1',
+                'flush_interval 1ms',
             )
             ->and(fileperms($orbitHome.'/generated/gateway/php-fpm-pool.conf') & 0o777)
             ->toBe(0o644)
