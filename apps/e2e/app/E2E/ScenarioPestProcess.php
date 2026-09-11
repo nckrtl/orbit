@@ -10,7 +10,6 @@ use App\E2E\Value\ScenarioDefinition;
 use App\E2E\Value\ScenarioProcessResult;
 use App\E2E\Value\ScenarioRunId;
 use Closure;
-use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
 final readonly class ScenarioPestProcess
@@ -29,10 +28,35 @@ final readonly class ScenarioPestProcess
         string $repository,
         string $primary,
     ): ScenarioProcessResult {
+        $worker = $this->start($definition, $candidate, $run, $attempt, $operation, $repository, $primary);
+        while (($result = $worker->poll()) === null) {
+            usleep(10_000);
+        }
+
+        return $result;
+    }
+
+    public function start(
+        ScenarioDefinition $definition,
+        string $candidate,
+        ScenarioRunId $run,
+        AttemptId $attempt,
+        OperationId $operation,
+        string $repository,
+        string $primary,
+    ): ScenarioWorkerProcess {
         if ($this->runner !== null) {
             $result = ($this->runner)($definition, $candidate, $run, $attempt, $operation, $repository, $primary);
 
-            return $result instanceof ScenarioProcessResult ? $result : new ScenarioProcessResult(70, 'Invalid process fake.');
+            if ($result instanceof ScenarioWorkerProcess) {
+                return $result;
+            }
+
+            return ScenarioWorkerProcess::completed(
+                $result instanceof ScenarioProcessResult
+                    ? $result
+                    : new ScenarioProcessResult(70, 'Invalid process fake.'),
+            );
         }
 
         $acceptanceFile = match ($definition->lane) {
@@ -58,22 +82,8 @@ final readonly class ScenarioPestProcess
             'ORBIT_E2E_OPERATION_ID' => $operation->value,
         ]);
         $process->setTimeout(null);
+        $process->start(static function (): void {});
 
-        try {
-            $process->run();
-        } catch (ProcessSignaledException $exception) {
-            $output = $process->getOutput().$process->getErrorOutput();
-            $separator = $output === '' || str_ends_with($output, "\n") ? '' : "\n";
-
-            return new ScenarioProcessResult(
-                128 + $exception->getSignal(),
-                $output.$separator."Scenario process was terminated by signal {$exception->getSignal()}.\n",
-            );
-        }
-
-        return new ScenarioProcessResult(
-            $process->getExitCode() ?? 70,
-            $process->getOutput().$process->getErrorOutput(),
-        );
+        return ScenarioWorkerProcess::fromSymfonyProcess($process);
     }
 }

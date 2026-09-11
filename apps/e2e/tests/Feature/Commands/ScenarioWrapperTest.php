@@ -78,6 +78,7 @@ it('prints scenario usage and exits 64 for unsupported arguments', function (arr
     expect($result->getErrorOutput())
         ->toContain('usage: bin/e2e-scenarios cold [CANDIDATE_SHA] [--scenario=ID ...]')
         ->toContain('bin/e2e-scenarios snapshot [CANDIDATE_SHA] [--scenario=ID ...]')
+        ->toContain('bin/e2e-scenarios run [CANDIDATE_SHA] --workers=COUNT [--scenario=ID ...]')
         ->toContain('bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID')
         ->toContain('not part of feature development');
 })->with([
@@ -85,6 +86,12 @@ it('prints scenario usage and exits 64 for unsupported arguments', function (arr
     'unknown track' => [['live']],
     'invalid filter form' => [['cold', '--scenario']],
     'unsafe filter' => [['cold', '--scenario=../cold']],
+    'run without workers' => [['run']],
+    'zero workers' => [['run', '--workers=0']],
+    'negative workers' => [['run', '--workers=-1']],
+    'malformed workers' => [['run', '--workers=two']],
+    'duplicate workers' => [['run', '--workers=2', '--workers=3']],
+    'workers on lane command' => [['cold', '--workers=2']],
 ]);
 
 it('runs the cold flow with the current HEAD by default or as an explicit assertion', function (bool $explicit) use (
@@ -122,6 +129,24 @@ it('runs the snapshot flow with the current HEAD and its own Composer command', 
         ->toContain('repository='.dirname(__DIR__, 5))
         ->toContain("primary-root={$fixture['primary_root']}")
         ->toContain('arguments=--working-dir='.dirname(__DIR__, 5).'/apps/e2e scenario:snapshot -- --scenario=snapshot-lifecycle');
+});
+
+it('runs selected cold and snapshot flows with the requested worker count', function () use ($wrapper) {
+    $fixture = scenarioWrapperFixture();
+    $result = new Process([
+        $wrapper,
+        'run',
+        '--workers=2',
+        '--scenario=snapshot-lifecycle',
+        '--scenario=cold-four-node',
+    ], env: $fixture['environment']);
+
+    expect($result->run())->toBe(0, $result->getErrorOutput());
+    expect($result->getOutput())
+        ->toContain("candidate={$fixture['head']}")
+        ->toContain('repository='.dirname(__DIR__, 5))
+        ->toContain("primary-root={$fixture['primary_root']}")
+        ->toContain('arguments=--working-dir='.dirname(__DIR__, 5).'/apps/e2e scenario:run -- --workers=2 --scenario=snapshot-lifecycle --scenario=cold-four-node');
 });
 
 it('rejects a candidate that is not a full lowercase commit SHA', function () use ($wrapper) {
@@ -194,7 +219,7 @@ it('registers the operator-invoked scenario suites outside ordinary delivery pat
     expect(is_executable($wrapper))->toBeTrue();
     expect($source)
         ->toContain('"scenario:$command"')
-        ->toContain('"$command" != cold && "$command" != snapshot')
+        ->toContain('"$command" != cold && "$command" != snapshot && "$command" != run')
         ->toContain('scenario:cleanup')
         ->toContain('ORBIT_SCENARIO_CANDIDATE_SHA')
         ->not->toContain('e2e-live', 'TOPOLOGY_SNAPSHOT_NAMESPACE', 'pcov');
