@@ -20,7 +20,7 @@ Choose a page based on what you want to learn:
 - [Product areas](domains/README.md) groups feature documentation as it grows.
 - [Decisions](decisions/README.md) keeps the history behind important design
   choices.
-- Application reference pages describe [Apps](reference/apps.md), [AppInstance cloning](reference/appinstance-cloning.md), [AppInstance environment variables](reference/environment-variables.md), [AppInstance processes and Schedules](reference/app-processes-and-schedules.md), and [AppInstance removal](reference/appinstance-removal.md).
+- Application reference pages describe [Apps](reference/apps.md), [AppInstance cloning](reference/appinstance-cloning.md), [AppInstance environment variables](reference/environment-variables.md), [App process and Schedule definitions and copies](reference/app-processes-and-schedules.md), and [AppInstance removal](reference/appinstance-removal.md).
 - Runtime reference pages describe the [production release layout](reference/deployments.md), [PHP runtime defaults](reference/php-runtime.md), [Routes](reference/routes.md), and [Schedules](reference/schedules.md).
 - Infrastructure reference pages describe [Gateway trust](reference/gateway-trust.md), the [Metrics role](reference/metrics.md), [Node retarget](reference/node-retarget.md), [Tools](reference/tools.md), and [WireGuard endpoints](reference/wireguard-endpoints.md).
 - Development reference pages describe the [Incus topology registry](reference/incus-topologies.md), [Proof plans](reference/proof-plans.md), and the [Topology snapshot](reference/topology-snapshot.md).

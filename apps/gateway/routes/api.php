@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\AppInstanceReleasesController;
 use App\Http\Controllers\Api\AppInstanceRollbacksController;
 use App\Http\Controllers\Api\AppInstancesController;
+use App\Http\Controllers\Api\AppRuntimeDefinitionsController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DoctorRunsController;
@@ -137,6 +138,36 @@ Route::prefix('v1')->group(function (): void {
         Route::get('apps/{app}', [AppsController::class, 'show'])->name('app:show');
         Route::post('apps', [AppsController::class, 'store'])->name('app:new');
         Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:remove');
+        Route::prefix('apps/{app}/process-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
+                ->name('process-definition:list');
+            Route::post('/', [AppRuntimeDefinitionsController::class, 'processStore'])
+                ->name('process-definition:new');
+            Route::get('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processShow'])
+                ->whereUuid('processDefinition')
+                ->name('process-definition:show');
+            Route::put('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processUpdate'])
+                ->whereUuid('processDefinition')
+                ->name('process-definition:update');
+            Route::delete('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processDestroy'])
+                ->whereUuid('processDefinition')
+                ->name('process-definition:remove');
+        });
+        Route::prefix('apps/{app}/schedule-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [AppRuntimeDefinitionsController::class, 'scheduleIndex'])
+                ->name('schedule-definition:list');
+            Route::post('/', [AppRuntimeDefinitionsController::class, 'scheduleStore'])
+                ->name('schedule-definition:new');
+            Route::get('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleShow'])
+                ->whereUuid('scheduleDefinition')
+                ->name('schedule-definition:show');
+            Route::put('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleUpdate'])
+                ->whereUuid('scheduleDefinition')
+                ->name('schedule-definition:update');
+            Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
+                ->whereUuid('scheduleDefinition')
+                ->name('schedule-definition:remove');
+        });
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
         Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:new');
