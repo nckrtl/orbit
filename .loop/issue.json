@@ -1,0 +1,111 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "Execution order",
+        "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+      },
+      {
+        "title": "Source: ADR conformance audit",
+        "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+      },
+      {
+        "title": "ADR 0053: Local review checks",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0053-use-local-review-checks-for-feature-landing.md"
+      },
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "PHP clients can configure deployment steps, stream one deploy or rollback, and inspect retained code through typed requests and responses.\n\n## Scope\n\n* In: deployment configuration, deploy, rollback, and retained-release requests; incremental stream decoding and explicit stream closure.\n* Out: remote execution, deployment policy, automatic retries, Gateway changes, and CLI presentation.\n\n## Acceptance\n\n- [ ] Typed requests cover GET/PUT deployment configuration, POST deploy/rollback, and GET retained releases with the exact Gateway paths and omitted-value behavior. Proof: `packages/php-sdk/tests/Unit/Requests/Deployments/DeploymentRequestsTest.php`.\n- [ ] The stream API yields typed events incrementally from arbitrarily split NDJSON chunks, validates event fields, limits, sequence, request identity, output encoding, and terminal-result ordering, and rejects malformed or truncated streams without reporting success. Proof: `packages/php-sdk/tests/Unit/Responses/Deployments/DeploymentStreamTest.php`.\n- [ ] Deploy and rollback use bounded transport timeouts that cover the Gateway budget, keep TLS verification, close the HTTP response when the consumer cancels, and perform no automatic HTTP retries or stream replay. Proof: `packages/php-sdk/tests/Unit/Requests/Deployments/DeploymentTransportTest.php`.\n- [ ] The operation inventory and guidance include the new typed operations without changing ordinary JSON transports; configuration commands and application output stay out of generic debug representations. Proof: `packages/php-sdk/tests/Unit/RepositoryGuidanceTest.php` and `packages/php-sdk/tests/Unit/Responses/Deployments/DeploymentStreamTest.php`.\n- [ ] Maintained documentation describes typed deployment operations and streamed-result handling, and generated context is current. Proof: `composer docs-lint`.\n- [ ] The SDK public-contract guide permits the shipped typed deployment configuration, retained-release, and streaming operations instead of prohibiting deploy surfaces; it preserves any shipped Schedule operations. Proof: `packages/php-sdk/tests/Unit/RepositoryGuidanceTest.php`.\n- [ ] Focused acceptance tests pass, and an independent reviewer retains the exact-candidate local quality receipt across all five projects. Proof: the focused suites named above and root `composer check` with test impact analysis.",
+  "id": "fe819734-32fb-40df-821c-5b274e32da26",
+  "identifier": "ORB-221",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-220",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "packages/php-sdk"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Add typed deployment configuration and streaming transport to the PHP SDK",
+  "updatedAt": "2026-09-11T19:55:51.785Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-221/add-typed-deployment-configuration-and-streaming-transport-to-the-php"
+}
