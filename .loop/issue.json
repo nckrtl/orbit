@@ -1,0 +1,116 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0013: Manage schedules with native systemd timers",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0013-native-systemd-schedule-management.md"
+      },
+      {
+        "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+      },
+      {
+        "title": "ADR 0038: Cascade AppInstance removal through processes and schedules",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "The agent can declare the processes and schedules intended for development or production on an App without changing any existing instance\u2019s runtime.\n\n## Scope\n\n* In: App-owned process and schedule definition storage, validation, Gateway CRUD, and App-definition documentation.\n* Out: runtime installation, live inheritance, copying candidate overrides, instance specification edits, deployment steps, SDK, and CLI.\n\n## Acceptance\n\n- [ ] `/apps/{app}/process-definitions` and `/apps/{app}/schedule-definitions` expose GET list, POST create, GET item, PUT replacement, and DELETE item using definition UUIDs; each name is unique within its App and definition kind. Proof: `apps/gateway/tests/Feature/Api/AppRuntimeDefinitionsTest.php`.\n- [ ] Each definition has a nonempty `environments` array containing unique `development` or `production` values; process `spec` uses the accepted process runtime fields without target, start state, or host execution identity, and schedule `spec` contains command, calendar, and timeout under the Schedule validation limits. Proof: `apps/gateway/tests/Feature/Domain/AppRuntimeDefinitionTest.php`.\n- [ ] Creating, replacing, or deleting a definition makes no remote call and changes no Process, Schedule, selected release, or desired runtime state; removing an AppInstance preserves definitions and unrelated instance copies. Proof: `apps/gateway/tests/Feature/Domain/AppRuntimeDefinitionTest.php`.\n- [ ] The API uses the existing App-operation authorization boundary, rejects unknown or duplicate JSON members and cross-App definition IDs, and keeps command content out of lists, Activity, generic errors, and Doctor diagnostics. Proof: `apps/gateway/tests/Feature/Api/AppRuntimeDefinitionsTest.php`.\n- [ ] Deleting an otherwise removable App deletes its own definitions; Doctor\u2019s model coverage classifies definition records as configuration without remote runtime artifacts. Proof: `apps/gateway/tests/Feature/Domain/AppRuntimeDefinitionTest.php` and `apps/gateway/tests/Unit/Architecture/DoctorModelCoverageTest.php`.\n- [ ] Maintained documentation describes definition fields, applicability, ownership, and independent instance copies, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+  "id": "6a38ea32-5750-4db4-8b62-7d2fa7049795",
+  "identifier": "ORB-223",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-131",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-72",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Manage reusable App process and schedule definitions",
+  "updatedAt": "2026-09-11T19:51:49.685Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-223/manage-reusable-app-process-and-schedule-definitions"
+}
