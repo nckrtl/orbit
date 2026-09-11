@@ -21,7 +21,7 @@ Both kinds accept the common definition fields below.
 | `environments` | A nonempty array of unique `development` or `production` values. |
 | `spec` | The complete specification for the selected definition kind. |
 
-A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity. Orbit derives those values when it creates an AppInstance copy.
+A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity.
 
 A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. It uses the Schedule command, calendar, and timeout limits. It does not select a target, host Node, execution identity, or timer state.
 
