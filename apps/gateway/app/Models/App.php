@@ -61,6 +61,18 @@ final class App extends Model
         return $this->hasMany(Route::class);
     }
 
+    /** @return HasMany<ProcessDefinition, $this> */
+    public function processDefinitions(): HasMany
+    {
+        return $this->hasMany(ProcessDefinition::class);
+    }
+
+    /** @return HasMany<ScheduleDefinition, $this> */
+    public function scheduleDefinitions(): HasMany
+    {
+        return $this->hasMany(ScheduleDefinition::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

@@ -358,6 +358,16 @@ final readonly class RecordCommandActivity
             return [];
         }
 
+        if (
+            is_string($command)
+            && (
+                str_starts_with($command, 'process-definition:')
+                || str_starts_with($command, 'schedule-definition:')
+            )
+        ) {
+            return $this->appDefinitionInput($request, $command);
+        }
+
         if ($command === 'node:role:remove') {
             return $this->inputSanitizer->sanitizeProperties(
                 $this->removeNodeRoleInputParser->safeActivityInput(
@@ -382,6 +392,38 @@ final readonly class RecordCommandActivity
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array{name: string, environments: list<string>}|array{} */
+    private function appDefinitionInput(Request $request, string $command): array
+    {
+        if (! str_ends_with($command, ':new') && ! str_ends_with($command, ':update')) {
+            return [];
+        }
+
+        $name = $request->input('name');
+        $environments = $request->input('environments');
+
+        if (
+            ! is_string($name)
+            || strlen($name) > 63
+            || preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $name) !== 1
+            || ! is_array($environments)
+            || ! array_is_list($environments)
+            || $environments === []
+            || count($environments) > 2
+            || count($environments) !== count(array_unique($environments, SORT_REGULAR))
+        ) {
+            return [];
+        }
+
+        foreach ($environments as $environment) {
+            if (! is_string($environment) || ! in_array($environment, ['development', 'production'], strict: true)) {
+                return [];
+            }
+        }
+
+        return ['name' => $name, 'environments' => $environments];
     }
 
     /** @return array{sqlite_selected: bool}|array{} */
