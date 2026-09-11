@@ -69,6 +69,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'firewall:deny' => ServingNode::Target,
         'firewall:list' => ServingNode::Target,
         'firewall:remove' => ServingNode::Target,
+        'instance:deployment-config:show' => ServingNode::InstanceOwning,
+        'instance:deployment-config:update' => ServingNode::InstanceOwning,
         'instance:deployment-layout:prepare' => ServingNode::InstanceOwning,
         'instance:environment:import' => ServingNode::EnvironmentInstanceOwning,
         'instance:environment:sync' => ServingNode::EnvironmentInstanceOwning,

@@ -17,6 +17,30 @@ Each prepared release contains a `.env` symbolic link that resolves to the produ
 
 Orbit keeps `database.sqlite` at the production-home path. The operating agent must configure the application to use that path. Orbit provides no database-path environment placeholder and does not infer or rewrite a stored literal database value. The [AppInstance cloning reference](appinstance-cloning.md) describes optional SQLite seeding into this path.
 
+## Configure deployments
+
+The Gateway stores one complete deployment configuration for each production AppInstance. Reading or replacing this configuration does not start a deployment.
+
+| Request | Result |
+| --- | --- |
+| `GET /api/v1/instances/{instance}/deployment-config` | Returns the configured `branch` and ordered `steps`. An existing production AppInstance with no stored steps returns an empty array and keeps its recorded branch. |
+| `PUT /api/v1/instances/{instance}/deployment-config` | Atomically replaces the complete `branch` and `steps` configuration. The request does not fetch source, run a command, or change `current`. |
+
+The complete request and response use these fields.
+
+| Field | Type | Contract |
+| --- | --- | --- |
+| `branch` | string | Required Git branch name accepted by Orbit's branch validator. A later App default change does not replace this instance-owned value. |
+| `steps` | array | Required ordered list with at most 32 entries. An empty list is valid. |
+| `steps[].name` | string | Required unique name of 1 through 63 lowercase letters, digits, or hyphens. A name starts and ends with a letter or digit. |
+| `steps[].phase` | string | Required `before_activation` or `after_activation`. |
+| `steps[].command` | string | Required nonempty UTF-8 command of at most 16 KiB with no NUL byte. The operating agent owns this command. |
+| `steps[].timeout_seconds` | integer | Optional timeout from 1 through 900 seconds. The default is 300 seconds. |
+
+The array preserves the order of steps within each phase. The sum of configured timeouts, including defaulted values, cannot exceed 3,600 seconds.
+
+The Gateway rejects malformed JSON, duplicate or unknown members, duplicate step names, wrong types, and values outside these limits before it changes either field. Both endpoints use the AppInstance's current Node-access authorization and refuse a non-production AppInstance. Authorized reads return commands, but the Gateway keeps command text out of Activity records, validation errors, and generic diagnostics.
+
 ## Convert an existing production home
 
 Use explicit conversion for an existing production AppInstance that still serves code directly from its production home:

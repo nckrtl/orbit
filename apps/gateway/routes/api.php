@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\AppInstanceDeploymentConfigsController;
 use App\Http\Controllers\Api\AppInstanceDeploymentLayoutsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentSynchronizationsController;
@@ -130,6 +131,14 @@ Route::prefix('v1')->group(function (): void {
         Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:remove');
+        Route::get(
+            'instances/{instance}/deployment-config',
+            [AppInstanceDeploymentConfigsController::class, 'show'],
+        )->name('instance:deployment-config:show');
+        Route::put(
+            'instances/{instance}/deployment-config',
+            [AppInstanceDeploymentConfigsController::class, 'update'],
+        )->name('instance:deployment-config:update');
         Route::post(
             'instances/{instance}/deployment-layout',
             [AppInstanceDeploymentLayoutsController::class, 'store'],

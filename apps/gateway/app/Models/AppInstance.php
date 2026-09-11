@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Models\Casts\DeploymentStepsCast;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $production_php_socket
  * @property string|null $root
  * @property string|null $branch
+ * @property string|null $deployment_branch
+ * @property list<array<string, mixed>> $deployment_steps
  * @property string|null $branch_override
  * @property bool $migration_required
  * @property string|null $registration_original_path
@@ -70,6 +73,10 @@ use Illuminate\Support\Carbon;
  */
 final class AppInstance extends Model
 {
+    /** @var list<string> */
+    #[\Override]
+    protected $hidden = ['deployment_steps'];
+
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
@@ -98,6 +105,8 @@ final class AppInstance extends Model
         'production_php_socket',
         'root',
         'branch',
+        'deployment_branch',
+        'deployment_steps',
         'branch_override',
         'migration_required',
         'registration_original_path',
@@ -215,6 +224,7 @@ final class AppInstance extends Model
             'registration_migration_recovery' => 'array',
             'registration_completed_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
+            'deployment_steps' => DeploymentStepsCast::class,
             'status' => AppInstanceState::class,
         ];
     }
