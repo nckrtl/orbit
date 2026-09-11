@@ -185,7 +185,8 @@ it('scenario-worker-capacity', function (): void {
             $peakVms = max($peakVms, count($host->harnessInstanceMetadata()));
             if (! $stoppedAfterAdmission && count($attempts) === 3 && array_all(
                 $attempts,
-                static fn (array $attempt): bool => ($attempt['construction_inputs'] ?? null) !== null,
+                static fn (array $attempt): bool => isset($attempt['construction_inputs']['recipe'])
+                    || ($attempt['construction_inputs']['construction'] ?? null) !== null,
             )) {
                 $stoppedAfterAdmission = true;
                 $process->signal(SIGTERM);
