@@ -160,10 +160,11 @@ function schedulerAcceptanceUnrelatedTopology(): array
 it('scenario-worker-capacity', function (): void {
     $paths = $this->app->make(StatePaths::class);
     $host = $this->app->make(IncusHost::class);
+    $maxVms = (int) config('e2e.incus.max_vms');
     $beforeRuns = schedulerAcceptanceRunIds($paths);
     $baselineVms = count($host->harnessInstanceMetadata());
     $process = startSchedulerAcceptanceProcess([
-        'cold-four-node',
+        'cold-construction-cleanup',
         'snapshot-lifecycle',
         'snapshot-extension',
     ], 2);
@@ -188,9 +189,9 @@ it('scenario-worker-capacity', function (): void {
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
     expect($peakWorkers)->toBe(2);
-    expect($peakVms)->toBeGreaterThan($baselineVms)->toBeLessThanOrEqual(24);
+    expect($peakVms)->toBeGreaterThan($baselineVms)->toBeLessThanOrEqual($maxVms);
     expect(array_column($aggregate['results'], 'scenario_id'))->toBe([
-        'cold-four-node',
+        'cold-construction-cleanup',
         'snapshot-lifecycle',
         'snapshot-extension',
     ]);
