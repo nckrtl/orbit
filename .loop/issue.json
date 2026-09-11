@@ -1,0 +1,106 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ORB-220: Stream deployment results through the Gateway API",
+        "url": "https://github.com/nckrtl/orbit/pull/284"
+      },
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An authorized client receives deployment progress and application output as it happens and can distinguish a completed operation from an interrupted stream.\n\n## Scope\n\n* In: synchronous deploy and rollback HTTP endpoints, bounded NDJSON event transport, runtime-state inspection, authorization, and sanitized Activity.\n* Out: asynchronous jobs, reconnect or replay, persisted logs, deployment history, SDK, and CLI.\n\n## Acceptance\n\n- [ ] `POST /instances/{instance}/deploy` accepts an empty JSON object and `POST /instances/{instance}/rollback` accepts only `release`; invalid requests and access refusals use the ordinary JSON error envelope before opening a stream. Proof: `apps/gateway/tests/Feature/Api/AppInstanceDeploymentsTest.php`.\n- [ ] Successful admission returns `application/x-ndjson`; every event has `type`, monotonically increasing `sequence`, and `request_id`. Event types are `phase` with `phase` and optional `step_name`, `output` with `stream` (`stdout` or `stderr`) and `data_base64`, and terminal `result` with `status`, nullable `failed_step`, nullable `error_code`, and nullable `selected_release`. Proof: `apps/gateway/tests/Feature/Api/DeploymentStreamTest.php`.\n- [ ] Output chunks contain at most 16 KiB decoded bytes and event lines at most 32 KiB; phase values identify source preparation, environment sync, pre-activation steps, activation, PHP refresh, post-activation steps, or rollback, and output reaches the caller before the command exits. Proof: Incus action `deployment-http-stream`.\n- [ ] Exactly one terminal result ends a connected invocation; execution failure after stream admission produces a failed result instead of an incompatible second HTTP envelope, while a disconnected stream makes no success claim and has no automatic replay. Proof: `apps/gateway/tests/Feature/Api/DeploymentStreamTest.php`.\n- [ ] Transport disconnect signals cancellation to the active invocation and bounded process cleanup, without an automatic code rollback; `GET /instances/{instance}/releases` returns only present retained release names and the current selection for explicit inspection after interruption, with no deployment history. Proof: Incus action `deployment-http-disconnect`.\n- [ ] Only a caller with access to the target Node receives application output; Activity and generic errors contain only bounded identifiers and outcomes, and Gateway/proxy buffering and request limits permit the action\u2019s bounded execution budget. Proof: `apps/gateway/tests/Feature/Api/AppInstanceDeploymentsTest.php` and Incus action `deployment-http-stream`.\n- [ ] Maintained documentation describes HTTP stream fields, limits, terminal results, disconnects, and current-release inspection, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: focused Gateway acceptance tests, `cd apps/gateway && composer check`, and the Builder's repository-wide `composer check` with TIA on the exact clean candidate.",
+  "id": "bb3e2020-a83f-4f47-9595-72df2e9a19f3",
+  "identifier": "ORB-220",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-219",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Stream deployment results through the Gateway API",
+  "updatedAt": "2026-09-11T18:43:09.196Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-220/stream-deployment-results-through-the-gateway-api"
+}
