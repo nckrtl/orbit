@@ -69,7 +69,7 @@ The Gateway validates target state, ownership, calendar, rendered units, and all
 
 An unexpected file, unit, owner, mode, or identity at an owned name returns `schedule.artifact_conflict`. Orbit does not adopt, overwrite, or delete the conflicting object.
 
-A failed update restores the exact prior owned artifacts and timer state. A failed first installation removes only artifacts created by that attempt. If restoration fails, the Schedule stays non-active and returns `schedule.rollback_failed` for safe retry.
+When a matching add fails while converging an existing Schedule, the Gateway restores the exact prior owned artifacts and timer state. A failed first installation removes only artifacts created by that attempt. If restoration fails, the Schedule stays non-active and returns `schedule.rollback_failed` for safe retry.
 
 ## Remove owned state
 
@@ -125,4 +125,4 @@ Doctor issues, Activity, errors, and generic diagnostics contain no command, cal
 
 ## Limits
 
-Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Public API, PHP software development kit, and CLI operations are described by their own reference pages when those surfaces are available.
+Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Orbit exposes no operator-facing public API, PHP software development kit, or CLI Schedule operation.
