@@ -22,9 +22,31 @@ final readonly class ScenarioDefinition
         public bool $observesPhp,
         public string $pestFilter,
         public bool $expectsConstructionFailure = false,
+        public ?TopologyExtension $extension = null,
     ) {
-        if ($lane !== 'cold') {
-            throw new InvalidArgumentException('Only cold scenario definitions are supported.');
+        if (! in_array($lane, ['cold', 'snapshot'], true)) {
+            throw new InvalidArgumentException('The scenario lane is invalid.');
+        }
+        if ($lane === 'cold' && $extension !== null) {
+            throw new InvalidArgumentException('A cold scenario cannot declare a snapshot extension.');
+        }
+        if (
+            $lane === 'snapshot'
+            && $recipe->toArray() !== ($extension?->recipe() ?? TopologyRecipe::registered())->toArray()
+        ) {
+            throw new InvalidArgumentException('The snapshot scenario recipe does not match its extension declaration.');
+        }
+        if (
+            $lane === 'snapshot'
+            && ! array_all(
+                ['setup', 'exercise', 'assertion'],
+                fn (string $phase): bool => array_any(
+                    $actions,
+                    static fn (ScenarioAction $action): bool => $action->phase === $phase,
+                ),
+            )
+        ) {
+            throw new InvalidArgumentException('A snapshot scenario must declare setup, exercise, and assertion actions.');
         }
         if ($actions === []) {
             throw new InvalidArgumentException('The scenario action list is invalid.');
@@ -51,7 +73,7 @@ final readonly class ScenarioDefinition
         $inputs = $this->declaredInputs;
         ksort($inputs, SORT_STRING);
 
-        return [
+        $normalized = [
             'id' => $this->id->value,
             'lane' => $this->lane,
             'recipe' => $this->recipe->toArray(),
@@ -62,6 +84,11 @@ final readonly class ScenarioDefinition
             'pest_filter' => $this->pestFilter,
             'expects_construction_failure' => $this->expectsConstructionFailure,
         ];
+        if ($this->lane === 'snapshot') {
+            $normalized['extension'] = $this->extension?->value;
+        }
+
+        return $normalized;
     }
 
     public function fingerprint(): string

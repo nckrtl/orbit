@@ -26,6 +26,7 @@ use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessActionsFakeRuntimeManager;
@@ -531,13 +532,13 @@ it('runs idempotent lifecycle actions and returns bounded logs', function (): vo
     $this->runtime->status = 'running';
     $this->runtime->logs = "one\ntwo\n";
 
-    $started = new StartProcessAction($this->runtime)->execute($process);
+    $started = new StartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($process);
     $startedState = $started->desired_state->value;
-    $stopped = new StopProcessAction($this->runtime)->execute($process);
+    $stopped = new StopProcessAction($this->runtime)->execute($started);
     $stoppedState = $stopped->desired_state->value;
-    $restarted = new RestartProcessAction($this->runtime)->execute($process);
+    $restarted = new RestartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($stopped);
     $restartedState = $restarted->desired_state->value;
-    $logs = new ShowProcessLogsAction($this->runtime, new CommandActivityInputSanitizer)->execute($process, 25);
+    $logs = new ShowProcessLogsAction($this->runtime, new CommandActivityInputSanitizer)->execute($restarted, 25);
 
     expect($this->runtime->started)
         ->toBe([$process->id])
@@ -555,6 +556,73 @@ it('runs idempotent lifecycle actions and returns bounded logs', function (): vo
         ->toBe('running')
         ->and($logs)
         ->toBe("one\ntwo\n");
+});
+
+it('locks and re-resolves AppInstance Processes before start and restart', function (): void {
+    $startedProcess = process_actions_record($this->instance);
+    $restartedProcess = $startedProcess->replicate();
+    $restartedProcess->name = 'scheduler';
+    $restartedProcess->save();
+    $startLock = new ProcessActionsFakeAdmissionLock(function () use ($startedProcess): void {
+        Process::query()->whereKey($startedProcess->id)->update(['name' => 'fresh-queue']);
+    });
+    $restartLock = new ProcessActionsFakeAdmissionLock(function () use ($restartedProcess): void {
+        Process::query()->whereKey($restartedProcess->id)->update(['name' => 'fresh-scheduler']);
+    });
+
+    new StartProcessAction($this->runtime, $startLock)->execute($startedProcess);
+    new RestartProcessAction($this->runtime, $restartLock)->execute($restartedProcess);
+
+    expect($startLock->runs)
+        ->toBe([[$this->instance->id]])
+        ->and($restartLock->runs)
+        ->toBe([[$this->instance->id]])
+        ->and($this->runtime->startedNames)
+        ->toBe(['fresh-queue'])
+        ->and($this->runtime->restartedNames)
+        ->toBe(['fresh-scheduler']);
+});
+
+it('refuses an AppInstance Process whose ownership changes before admitted execution', function (string $action): void {
+    $process = process_actions_record($this->instance);
+    $lock = new ProcessActionsFakeAdmissionLock(function () use ($process): void {
+        Process::query()->whereKey($process->id)->update([
+            'owner_type' => Node::class,
+            'owner_id' => $this->node->id,
+        ]);
+    });
+
+    expect(fn () => new $action($this->runtime, $lock)->execute($process))
+        ->toThrow(ModelNotFoundException::class);
+
+    expect($lock->runs)
+        ->toBe([[$this->instance->id]])
+        ->and($this->runtime->started)
+        ->toBeEmpty()
+        ->and($this->runtime->restarted)
+        ->toBeEmpty();
+})->with([
+    'start' => StartProcessAction::class,
+    'restart' => RestartProcessAction::class,
+]);
+
+it('preserves lifecycle behavior for Processes not owned by an AppInstance', function (): void {
+    $process = process_actions_record($this->instance);
+    $process->update([
+        'owner_type' => Node::class,
+        'owner_id' => $this->node->id,
+    ]);
+    $lock = new ProcessActionsFakeAdmissionLock(fn (): null => null);
+
+    new StartProcessAction($this->runtime, $lock)->execute($process);
+    new RestartProcessAction($this->runtime, $lock)->execute($process);
+
+    expect($lock->runs)
+        ->toBeEmpty()
+        ->and($this->runtime->started)
+        ->toBe([$process->id])
+        ->and($this->runtime->restarted)
+        ->toBe([$process->id]);
 });
 
 it('lists runtime status and removes only the selected process', function (): void {
@@ -587,7 +655,7 @@ it('records stable lifecycle failure state without losing the process definition
         message: 'Start failed.',
     );
 
-    expect(fn () => new StartProcessAction($this->runtime)->execute($process))
+    expect(fn () => new StartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($process))
         ->toThrow(ProcessOperationException::class, 'Start failed.');
 
     expect($process->refresh())
@@ -639,11 +707,17 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
     /** @var list<int> */
     public array $started = [];
 
+    /** @var list<string> */
+    public array $startedNames = [];
+
     /** @var list<int> */
     public array $stopped = [];
 
     /** @var list<int> */
     public array $restarted = [];
+
+    /** @var list<string> */
+    public array $restartedNames = [];
 
     /** @var list<int> */
     public array $removed = [];
@@ -700,6 +774,7 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
         }
 
         $this->started[] = $process->id;
+        $this->startedNames[] = $process->name;
     }
 
     public function stop(Process $process): void
@@ -710,6 +785,7 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
     public function restart(Process $process): void
     {
         $this->restarted[] = $process->id;
+        $this->restartedNames[] = $process->name;
     }
 
     public function remove(Process $process): void
@@ -731,5 +807,23 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
         $this->logLines[] = $lines;
 
         return $this->logs;
+    }
+}
+
+final class ProcessActionsFakeAdmissionLock implements ProcessAdmissionLock
+{
+    /** @var list<list<int>> */
+    public array $runs = [];
+
+    public function __construct(
+        private readonly Closure $beforeOperation,
+    ) {}
+
+    public function run(array $appInstanceIds, Closure $operation): mixed
+    {
+        $this->runs[] = $appInstanceIds;
+        ($this->beforeOperation)();
+
+        return $operation();
     }
 }

@@ -9,6 +9,7 @@ use App\E2E\Value\ScenarioAction;
 use App\E2E\Value\ScenarioDefinition;
 use App\E2E\Value\ScenarioId;
 use App\E2E\Value\TopologyEndState;
+use App\E2E\Value\TopologyExtension;
 use App\E2E\Value\TopologyRecipe;
 use Closure;
 use InvalidArgumentException;
@@ -48,11 +49,17 @@ final readonly class ScenarioCatalog
      * @param  list<string>  $selected
      * @return list<ScenarioDefinition>
      */
-    public function select(string $candidate, array $selected): array
+    public function select(string $candidate, array $selected, string $lane = 'cold'): array
     {
+        if (! in_array($lane, ['cold', 'snapshot'], true)) {
+            throw new InvalidArgumentException("Scenario lane [{$lane}] is invalid.");
+        }
         $definitions = $this->definitions($candidate);
         if ($selected === []) {
-            return $definitions;
+            return array_values(array_filter(
+                $definitions,
+                static fn (ScenarioDefinition $definition): bool => $definition->lane === $lane,
+            ));
         }
 
         $requested = [];
@@ -71,7 +78,11 @@ final readonly class ScenarioCatalog
 
         $resolved = [];
         foreach (array_keys($requested) as $id) {
-            $resolved[] = $byId[$id] ?? throw new InvalidArgumentException("Scenario ID [{$id}] is unknown.");
+            $definition = $byId[$id] ?? throw new InvalidArgumentException("Scenario ID [{$id}] is unknown.");
+            if ($definition->lane !== $lane) {
+                throw new InvalidArgumentException("Scenario ID [{$id}] does not belong to the [{$lane}] lane.");
+            }
+            $resolved[] = $definition;
         }
 
         return $resolved;
@@ -80,47 +91,102 @@ final readonly class ScenarioCatalog
     /** @return list<ScenarioDefinition> */
     private function committedDefinitions(string $candidate): array
     {
-        $patterns = [
+        $coldPatterns = [
             'apps/e2e/app/E2E/ColdTopologyConstructor.php',
             'apps/e2e/app/E2E/TopologyConverger.php',
             'apps/e2e/app/E2E/TopologyVerifier.php',
             'apps/e2e/resources/host/*.py',
             'apps/e2e/resources/guest/*.sh',
         ];
-        $inputs = [];
-        foreach ($this->repository->blobs($candidate, $patterns) as $path => $contents) {
-            $inputs[$path] = hash('sha256', $contents);
+        $coldInputs = [];
+        foreach ($this->repository->blobs($candidate, $coldPatterns) as $path => $contents) {
+            $coldInputs[$path] = hash('sha256', $contents);
         }
-        ksort($inputs, SORT_STRING);
-        $recipe = TopologyRecipe::coldAcceptance();
-        $expected = TopologyEndState::fromArray([
+        ksort($coldInputs, SORT_STRING);
+        $coldRecipe = TopologyRecipe::coldAcceptance();
+        $coldExpected = TopologyEndState::fromArray([
             'nodes' => ['gateway', 'operator', 'app-prod'],
-        ], $recipe);
+        ], $coldRecipe);
+
+        $snapshotPatterns = [
+            'apps/e2e/resources/host/*.py',
+            'apps/e2e/resources/guest/*.sh',
+        ];
+        $snapshotInputs = [];
+        foreach ($this->repository->blobs($candidate, $snapshotPatterns) as $path => $contents) {
+            $snapshotInputs[$path] = hash('sha256', $contents);
+        }
+        ksort($snapshotInputs, SORT_STRING);
+        $snapshotRecipe = TopologyRecipe::registered();
+        $extendedSnapshotRecipe = TopologyRecipe::extendedAppProd();
 
         return [
             new ScenarioDefinition(
                 new ScenarioId('cold-four-node'),
                 'cold',
-                $recipe,
+                $coldRecipe,
                 [
                     new ScenarioAction('setup', 'construct', 3600),
                     new ScenarioAction('assertion', 'verify', 900),
                 ],
-                $inputs,
-                $expected,
+                $coldInputs,
+                $coldExpected,
                 false,
                 'cold-scenario-suite constructs and releases the four-Node topology',
             ),
             new ScenarioDefinition(
                 new ScenarioId('cold-construction-cleanup'),
                 'cold',
-                $recipe,
+                $coldRecipe,
                 [new ScenarioAction('exercise', 'injected-source-failure', 900)],
-                $inputs,
-                $expected,
+                $coldInputs,
+                $coldExpected,
                 false,
                 'cold-scenario-suite-cleanup releases exact resources after construction failure',
                 true,
+            ),
+            new ScenarioDefinition(
+                new ScenarioId('snapshot-lifecycle'),
+                'snapshot',
+                $snapshotRecipe,
+                [
+                    new ScenarioAction('setup', 'prepare', 3600),
+                    new ScenarioAction('exercise', 'lifecycle', 900),
+                    new ScenarioAction('assertion', 'verify', 900),
+                ],
+                $snapshotInputs,
+                TopologyEndState::complete($snapshotRecipe),
+                false,
+                'snapshot-scenario-lifecycle',
+            ),
+            new ScenarioDefinition(
+                new ScenarioId('snapshot-isolation'),
+                'snapshot',
+                $snapshotRecipe,
+                [
+                    new ScenarioAction('setup', 'prepare', 3600),
+                    new ScenarioAction('exercise', 'isolation', 900),
+                    new ScenarioAction('assertion', 'verify', 900),
+                ],
+                $snapshotInputs,
+                TopologyEndState::complete($snapshotRecipe),
+                false,
+                'snapshot-scenario-isolation',
+            ),
+            new ScenarioDefinition(
+                new ScenarioId('snapshot-extension'),
+                'snapshot',
+                $extendedSnapshotRecipe,
+                [
+                    new ScenarioAction('setup', 'prepare', 3600),
+                    new ScenarioAction('exercise', 'extension', 900),
+                    new ScenarioAction('assertion', 'verify', 900),
+                ],
+                $snapshotInputs,
+                TopologyEndState::complete($extendedSnapshotRecipe),
+                false,
+                'snapshot-scenario-extension',
+                extension: TopologyExtension::AppProd,
             ),
         ];
     }

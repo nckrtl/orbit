@@ -20,6 +20,7 @@ use App\E2E\LegacyRetirementHost;
 use App\E2E\ObservedPhpInputCollector;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\PromotedTopologySnapshotResolver;
 use App\E2E\ProofCaptureService;
 use App\E2E\ProofCloseoutService;
 use App\E2E\ProofEquivalenceEvaluator;
@@ -27,6 +28,7 @@ use App\E2E\ProofFixtureStager;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\ProofReviewService;
 use App\E2E\ScenarioPestProcess;
+use App\E2E\SnapshotScenarioRunner;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
@@ -75,6 +77,7 @@ final class AppServiceProvider extends ServiceProvider
             ScenarioPestProcess::class,
             fn (): ScenarioPestProcess => new ScenarioPestProcess(dirname(__DIR__, 2)),
         );
+        $this->app->singleton(SnapshotScenarioRunner::class);
         // Host-wide state (topology snapshot generation, locks) lives in the primary checkout's `.e2e/`.
         $this->app->singleton(
             StatePaths::class,
@@ -173,6 +176,7 @@ final class AppServiceProvider extends ServiceProvider
         ));
         $this->app->singleton(DiscoveryGuestPreparer::class);
         $this->app->singleton(IssueTopologyConstructor::class);
+        $this->app->singleton(PromotedTopologySnapshotResolver::class);
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
@@ -188,7 +192,7 @@ final class AppServiceProvider extends ServiceProvider
             repositoryRoot: $repositoryRoot,
             converger: $app->make(TopologyConverger::class),
             constructor: $app->make(IssueTopologyConstructor::class),
-            availability: $app->make(TopologySnapshotAvailability::class),
+            snapshotResolver: $app->make(PromotedTopologySnapshotResolver::class),
         ));
         $this->app->singleton(
             TopologyProofRunner::class,

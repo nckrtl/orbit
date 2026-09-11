@@ -40,6 +40,11 @@ describe('Composer configuration', function (): void {
                 'Composer\\Config::disableProcessTimeout',
                 '@php artisan scenario:cold',
             ]);
+        expect($composer['scripts']['scenario:snapshot'])
+            ->toBe([
+                'Composer\\Config::disableProcessTimeout',
+                '@php artisan scenario:snapshot',
+            ]);
         expect($composer['scripts']['scenario:cleanup'])->toBe('@php artisan scenario:cleanup');
         expect(file_get_contents(base_path('phpunit.xml')))->not->toContain('<directory>tests/Scenario</directory>');
         expect(file_get_contents(base_path('../../bin/test')))->not->toContain('incus-live');

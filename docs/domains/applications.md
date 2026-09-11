@@ -105,6 +105,8 @@ A standalone Node cannot accept a private production AppInstance while it still 
 
 An identical retry resumes only incomplete Orbit-owned preparation, including its recorded production PHP service association. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, local PHP-FPM tuning, or other operator content.
 
+An existing active production AppInstance can remain on its recorded flat source and shared PHP runtime. The operator explicitly converts that placement with `orbit instance:prepare-deployment`; the [production release-layout reference](../reference/deployments.md#convert-an-existing-production-home) describes its preflight, retained content, optional SQLite move, dedicated runtime, and retry boundary. Conversion does not require a candidate and does not run an application deployment.
+
 Orbit owns later release preparation, activation, and explicit code rollback. The operating agent configures application steps and owns compatibility and recovery decisions. The [PHP runtime reference](../reference/php-runtime.md#production-cache-boundary) defines the separate cache boundary.
 
 ## Complete a required source migration

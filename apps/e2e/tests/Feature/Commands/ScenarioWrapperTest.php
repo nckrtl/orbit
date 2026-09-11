@@ -77,11 +77,12 @@ it('prints scenario usage and exits 64 for unsupported arguments', function (arr
     expect($result->getExitCode())->toBe(64);
     expect($result->getErrorOutput())
         ->toContain('usage: bin/e2e-scenarios cold [CANDIDATE_SHA] [--scenario=ID ...]')
+        ->toContain('bin/e2e-scenarios snapshot [CANDIDATE_SHA] [--scenario=ID ...]')
         ->toContain('bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID')
         ->toContain('not part of feature development');
 })->with([
     'missing track' => [[]],
-    'unknown track' => [['snapshot']],
+    'unknown track' => [['live']],
     'invalid filter form' => [['cold', '--scenario']],
     'unsafe filter' => [['cold', '--scenario=../cold']],
 ]);
@@ -106,6 +107,22 @@ it('runs the cold flow with the current HEAD by default or as an explicit assert
     'resolved current HEAD' => [false],
     'explicit current HEAD' => [true],
 ]);
+
+it('runs the snapshot flow with the current HEAD and its own Composer command', function () use ($wrapper) {
+    $fixture = scenarioWrapperFixture();
+    $result = new Process([
+        $wrapper,
+        'snapshot',
+        '--scenario=snapshot-lifecycle',
+    ], env: $fixture['environment']);
+
+    expect($result->run())->toBe(0, $result->getErrorOutput());
+    expect($result->getOutput())
+        ->toContain("candidate={$fixture['head']}")
+        ->toContain('repository='.dirname(__DIR__, 5))
+        ->toContain("primary-root={$fixture['primary_root']}")
+        ->toContain('arguments=--working-dir='.dirname(__DIR__, 5).'/apps/e2e scenario:snapshot -- --scenario=snapshot-lifecycle');
+});
 
 it('rejects a candidate that is not a full lowercase commit SHA', function () use ($wrapper) {
     $result = new Process([$wrapper, 'cold', 'main']);
@@ -171,12 +188,13 @@ it('passes exact retained identities to the cleanup command without resolving a 
         ->toContain('arguments=--working-dir='.dirname(__DIR__, 5)."/apps/e2e scenario:cleanup -- {$run} cold-four-node {$attempt}");
 });
 
-it('registers the operator-invoked cold suite outside ordinary delivery paths', function () use ($wrapper) {
+it('registers the operator-invoked scenario suites outside ordinary delivery paths', function () use ($wrapper) {
     $source = (string) file_get_contents($wrapper);
 
     expect(is_executable($wrapper))->toBeTrue();
     expect($source)
-        ->toContain('scenario:cold')
+        ->toContain('"scenario:$command"')
+        ->toContain('"$command" != cold && "$command" != snapshot')
         ->toContain('scenario:cleanup')
         ->toContain('ORBIT_SCENARIO_CANDIDATE_SHA')
         ->not->toContain('e2e-live', 'TOPOLOGY_SNAPSHOT_NAMESPACE', 'pcov');
@@ -186,6 +204,7 @@ it('registers the operator-invoked cold suite outside ordinary delivery paths', 
 function wrapperScenarioDefinitions(): array
 {
     $recipe = TopologyRecipe::coldAcceptance();
+    $snapshotRecipe = TopologyRecipe::registered();
     $input = ['apps/e2e/resources/guest/prepare-node.sh' => str_repeat('a', 64)];
 
     return [
@@ -208,6 +227,20 @@ function wrapperScenarioDefinitions(): array
             TopologyEndState::complete($recipe),
             false,
             'second flow',
+        ),
+        new ScenarioDefinition(
+            new ScenarioId('snapshot-flow'),
+            'snapshot',
+            $snapshotRecipe,
+            [
+                new ScenarioAction('setup', 'prepare', 60),
+                new ScenarioAction('exercise', 'lifecycle', 60),
+                new ScenarioAction('assertion', 'verify', 60),
+            ],
+            $input,
+            TopologyEndState::complete($snapshotRecipe),
+            false,
+            'snapshot flow',
         ),
     ];
 }
@@ -266,7 +299,7 @@ it('continues after a failed flow and writes the complete aggregate last', funct
     );
     $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
 
-    $aggregate = $runner->run($candidate, $root, $root);
+    $aggregate = $runner->run($candidate, $root, $root, 'cold');
 
     expect($executed)->toBe(['first-flow', 'second-flow']);
     expect($aggregate->successful())->toBeFalse();
@@ -299,7 +332,7 @@ it('recovers exact cleanup and records infrastructure-error when Pest writes no 
     );
     $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
 
-    $aggregate = $runner->run($candidate, $root, $root);
+    $aggregate = $runner->run($candidate, $root, $root, 'cold');
 
     expect($recoveries)->toHaveCount(1);
     expect($aggregate->results[0]->status)->toBe(ScenarioStatus::InfrastructureError);
@@ -358,7 +391,7 @@ it('recovers a signal-killed real process, continues, and writes the complete ag
     );
     $runner = new ScenarioSuiteRunner($catalog, $runs, $process, $recovery, new SecretRedactor);
 
-    $aggregate = $runner->run($candidate, $root, $primary);
+    $aggregate = $runner->run($candidate, $root, $primary, 'cold');
     $first = $aggregate->results[0];
 
     expect(file("{$primary}/invocations.log", FILE_IGNORE_NEW_LINES))->toBe(['first-flow', 'second-flow']);

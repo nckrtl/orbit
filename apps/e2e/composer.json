@@ -68,6 +68,10 @@
             "Composer\\Config::disableProcessTimeout",
             "@php artisan scenario:cold"
         ],
+        "scenario:snapshot": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan scenario:snapshot"
+        ],
         "scenario:cleanup": "@php artisan scenario:cleanup",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

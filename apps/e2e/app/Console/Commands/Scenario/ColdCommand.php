@@ -31,6 +31,7 @@ final class ColdCommand extends Command
                 $candidate,
                 $repository,
                 $primary,
+                'cold',
                 $selected,
                 fn (string $output) => $this->output->write($output),
             );

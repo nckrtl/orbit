@@ -342,6 +342,10 @@ final readonly class RecordCommandActivity
             return $this->appInstanceRegistrationInput($request);
         }
 
+        if ($command === 'instance:deployment-layout:prepare') {
+            return $this->appInstanceDeploymentLayoutInput($request);
+        }
+
         if ($command === 'instance:environment:import') {
             return $this->appInstanceEnvironmentImportInput($request);
         }
@@ -378,6 +382,18 @@ final readonly class RecordCommandActivity
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array{sqlite_selected: bool}|array{} */
+    private function appInstanceDeploymentLayoutInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['sqlite_source_path']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        return ['sqlite_selected' => array_key_exists('sqlite_source_path', $input)];
     }
 
     /** @return array<array-key, mixed> */

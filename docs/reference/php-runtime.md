@@ -39,7 +39,9 @@ The generated configuration establishes runtime identity and includes the separa
 
 An interrupted publication resumes from the recorded production identity. A failed candidate activation restores the exact generated files and service state captured before publication. It never replaces the local tuning file during recovery.
 
-Existing production placements without a dedicated service association remain on their recorded shared runtime. New dedicated runtime preparation, retry, and removal do not rewrite or adopt those placements. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
+Existing production placements without a dedicated service association remain on their recorded shared runtime until an operator explicitly converts the placement. Conversion copies supported local pool tuning into the dedicated runtime's `local.conf`, verifies the complete effective identity, and changes only that AppInstance's Caddy upstream. It does not reload, restart, or reset another production user's shared or dedicated service. The [production release-layout reference](deployments.md#convert-an-existing-production-home) describes the complete conversion and refusal boundary.
+
+New dedicated runtime preparation, retry, removal, and explicit conversion do not rewrite or adopt an unrelated placement. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
 
 ## Shared runtime module
 

@@ -27,8 +27,6 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
             || $appInstance->checkout_path === ''
             || ! is_string($root)
             || $root === ''
-            || ! is_string($appInstance->branch)
-            || $appInstance->branch === ''
             || ! is_string($appInstance->starting_commit)
             || $appInstance->starting_commit === ''
         ) {
@@ -115,7 +113,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
         int $nodeId,
         string $checkoutPath,
         string $root,
-        string $branch,
+        ?string $branch,
         string $startingCommit,
         string $sourceIdentity,
     ): string {
