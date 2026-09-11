@@ -23,6 +23,7 @@ use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -49,6 +50,7 @@ final readonly class AdoptProductionLayoutAction
         private ProductionRouteProjector $projection,
         private ProductionReleaseLayout $releaseLayout,
         private DevelopmentProjectionOperationLock $projectionOwner,
+        private ?ScheduleTargetUseGuard $scheduleTargets = null,
     ) {}
 
     public function execute(
@@ -57,12 +59,10 @@ final readonly class AdoptProductionLayoutAction
     ): AppInstance {
         return $this->operations->run(
             [$appInstance->id],
-            fn (): AppInstance => $data->sqliteSourcePath === null
-                ? $this->resume($appInstance->id, $data)
-                : $this->processAdmission->run(
-                    [$appInstance->id],
-                    fn (): AppInstance => $this->resume($appInstance->id, $data),
-                ),
+            fn (): AppInstance => $this->processAdmission->run(
+                [$appInstance->id],
+                fn (): AppInstance => $this->resume($appInstance->id, $data),
+            ),
         );
     }
 
@@ -149,6 +149,7 @@ final readonly class AdoptProductionLayoutAction
         PrepareAppInstanceDeploymentLayoutData $data,
     ): AppInstanceDeploymentLayout {
         $appInstance = $this->activeProductionInstance($appInstanceId);
+        ($this->scheduleTargets ?? app(ScheduleTargetUseGuard::class))->assertAppInstanceStable($appInstance);
 
         if ($appInstance->usesProductionReleaseLayout()) {
             throw $this->conflict('deployment_layout.not_convertible', 'The AppInstance already uses a release layout.');

@@ -68,6 +68,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Route> $routes
  * @property-read Collection<int, AppInstanceEnvironmentValue> $environmentValues
  * @property-read Collection<int, Process> $processes
+ * @property-read Collection<int, Schedule> $schedules
  * @property-read AppInstanceRemovalMember|null $removalMember
  * @property-read AppInstanceDeploymentLayout|null $deploymentLayout
  */
@@ -173,6 +174,12 @@ final class AppInstance extends Model
     public function processes(): MorphMany
     {
         return $this->morphMany(Process::class, 'owner');
+    }
+
+    /** @return MorphMany<Schedule, $this> */
+    public function schedules(): MorphMany
+    {
+        return $this->morphMany(Schedule::class, 'target');
     }
 
     /** @return HasOne<AppInstanceRemovalMember, $this> */

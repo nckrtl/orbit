@@ -16,6 +16,7 @@ use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\RoleDoctorIssueCode;
+use App\Domain\Doctor\ScheduleDoctorIssueCode;
 use App\Domain\Doctor\ToolDoctorIssueCode;
 use App\Domain\Doctor\WorkspaceDoctorIssueCode;
 use Tests\TestCase;
@@ -59,7 +60,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
     $report = DoctorReportData::fromNodes([$node]);
 
     expect(array_map(static fn (DoctorFamily $family): string => $family->value, DoctorFamily::cases()))
-        ->toEqual(['node', 'role', 'app', 'instance', 'workspace', 'tool', 'process', 'firewall'])
+        ->toEqual(['node', 'role', 'app', 'instance', 'workspace', 'schedule', 'tool', 'process', 'firewall'])
         ->and($family->status->value)
         ->toBe('unverifiable')
         ->and($family->family)
@@ -177,6 +178,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         DoctorFamily::App->value => AppDoctorIssueCode::cases(),
         DoctorFamily::Instance->value => InstanceDoctorIssueCode::cases(),
         DoctorFamily::Workspace->value => WorkspaceDoctorIssueCode::cases(),
+        DoctorFamily::Schedule->value => ScheduleDoctorIssueCode::cases(),
         DoctorFamily::Tool->value => ToolDoctorIssueCode::cases(),
         DoctorFamily::Process->value => ProcessDoctorIssueCode::cases(),
         DoctorFamily::Firewall->value => FirewallDoctorIssueCode::cases(),
@@ -234,6 +236,19 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'workspace.dns_projection_mismatch',
             'workspace.inspection_failed',
             'workspace.node_unreachable',
+        ],
+        'schedule' => [
+            'schedule.artifact_missing',
+            'schedule.artifact_permissions_mismatch',
+            'schedule.specification_mismatch',
+            'schedule.timer_state_mismatch',
+            'schedule.calendar_mismatch',
+            'schedule.execution_context_mismatch',
+            'schedule.completion_callback_mismatch',
+            'schedule.placement_mismatch',
+            'schedule.orphan_artifact',
+            'schedule.node_unreachable',
+            'schedule.inspection_failed',
         ],
         'tool' => ['tool.not_installed', 'tool.version_mismatch', 'tool.inspection_failed', 'tool.node_unreachable'],
         'process' => [

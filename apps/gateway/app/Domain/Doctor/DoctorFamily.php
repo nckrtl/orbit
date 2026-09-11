@@ -11,6 +11,7 @@ enum DoctorFamily: string
     case App = 'app';
     case Instance = 'instance';
     case Workspace = 'workspace';
+    case Schedule = 'schedule';
     case Tool = 'tool';
     case Process = 'process';
     case Firewall = 'firewall';

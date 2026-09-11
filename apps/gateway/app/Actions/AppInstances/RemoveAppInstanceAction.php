@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\AppInstances;
 
 use App\Actions\Processes\CascadeAppInstanceProcessesAction;
+use App\Actions\Schedules\CascadeAppInstanceSchedulesAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
@@ -52,6 +53,7 @@ final readonly class RemoveAppInstanceAction
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceContentRetention $productionContent,
         private RouteStateResolver $routeState,
+        private ?CascadeAppInstanceSchedulesAction $schedules = null,
     ) {}
 
     public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
@@ -753,6 +755,7 @@ final readonly class RemoveAppInstanceAction
 
     private function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
+        ($this->schedules ?? app(CascadeAppInstanceSchedulesAction::class))->execute($member->app_instance_id);
         $this->processes->execute($member->app_instance_id);
         $this->routes->cleanupRuntime($member);
         $member->update(['runtime_cleaned_at' => now()]);

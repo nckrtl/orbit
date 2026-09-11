@@ -27,6 +27,8 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
@@ -37,7 +39,9 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
+use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\Schedules\FakeScheduleRuntimeManager;
 
 beforeEach(function (): void {
     $this->orb181Inspector = new Orb181CoordinatorInspector;
@@ -144,6 +148,29 @@ it('accepts exactly one independent checkout and completes every durable step', 
             $this->orb131ProcessRuntime->removed,
         )->toBe([$process->id])->and($this->orb181Lock->acceptedWhileHeld)->toBeTrue();
 })->with([false, true]);
+
+it('cascades owned Schedules before successful AppInstance row deletion', function (): void {
+    $runtime = new FakeScheduleRuntimeManager;
+    app()->instance(ScheduleRuntimeManager::class, $runtime);
+    $instance = orb181_coordinator_instance();
+    $schedule = Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $instance->id,
+        'host_node_id' => $instance->node_id,
+        'name' => 'daily',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $removal = $this->orb181Coordinator->execute($instance, false);
+
+    expect($removal->status->value)->toBe('completed')
+        ->and(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse()
+        ->and($runtime->removed)->toBe([['id' => $schedule->id, 'cascade' => true]]);
+});
 
 it('records historical and observed source commits independently', function (
     bool $force,

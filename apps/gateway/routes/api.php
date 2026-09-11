@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
+use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\WorkspacesController;
@@ -42,6 +43,13 @@ Route::prefix('v1')->group(function (): void {
     ])->get('metrics/grafana/authorize', [GrafanaAccessAuthorizationController::class, 'show'])
         ->withoutMiddleware(RecordCommandActivity::class)
         ->name('metrics:grafana:authorize');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+    ])->post('schedules/{schedule}/complete', [ScheduleCompletionsController::class, 'store'])
+        ->whereUuid('schedule')
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('schedule:complete');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,

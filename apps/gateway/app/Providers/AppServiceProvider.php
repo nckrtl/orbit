@@ -59,6 +59,7 @@ use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Doctor\ScheduleStateInspector;
 use App\Domain\Doctor\WorkspaceStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
@@ -89,6 +90,8 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
+use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -141,6 +144,7 @@ use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
+use App\Infrastructure\Doctor\NativeScheduleStateInspector;
 use App\Infrastructure\Doctor\NativeWorkspaceStateInspector;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
@@ -184,6 +188,8 @@ use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
+use App\Infrastructure\Schedules\SshScheduleRuntimeAccountResolver;
 use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use App\Infrastructure\Ssh\GatewaySshKeys;
 use App\Infrastructure\Ssh\HostKeyScanner;
@@ -281,11 +287,14 @@ final class AppServiceProvider extends ServiceProvider
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
+        ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
         RoleStateInspector::class => NativeRoleStateInspector::class,
+        ScheduleStateInspector::class => NativeScheduleStateInspector::class,
         ToolInspector::class => NativeToolInspector::class,
         ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
         ToolOperationLock::class => NativeToolOperationLock::class,

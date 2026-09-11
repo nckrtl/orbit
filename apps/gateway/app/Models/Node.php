@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
  * @property int $id
@@ -35,6 +36,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Collection<int, Node> $accessibleNodes
  * @property-read Collection<int, Node> $accessingNodes
  * @property-read Cluster|null $cluster
+ * @property-read Collection<int, Schedule> $schedules
+ * @property-read Collection<int, Schedule> $hostedSchedules
  */
 final class Node extends Model
 {
@@ -91,6 +94,18 @@ final class Node extends Model
     public function appInstances(): HasMany
     {
         return $this->hasMany(AppInstance::class);
+    }
+
+    /** @return MorphMany<Schedule, $this> */
+    public function schedules(): MorphMany
+    {
+        return $this->morphMany(Schedule::class, 'target');
+    }
+
+    /** @return HasMany<Schedule, $this> */
+    public function hostedSchedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class, 'host_node_id');
     }
 
     /** @return HasMany<Route, $this> */
