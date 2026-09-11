@@ -1246,6 +1246,23 @@
             ]
         },
         {
+            "path": "docs/decisions/0060-record-latest-schedule-run-status.md",
+            "title": "ADR 0060: Record the latest Schedule run status",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0013",
+                "0060"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
