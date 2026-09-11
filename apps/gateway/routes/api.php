@@ -5,9 +5,12 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppInstanceDeploymentConfigsController;
 use App\Http\Controllers\Api\AppInstanceDeploymentLayoutsController;
+use App\Http\Controllers\Api\AppInstanceDeploymentsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentSynchronizationsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
+use App\Http\Controllers\Api\AppInstanceReleasesController;
+use App\Http\Controllers\Api\AppInstanceRollbacksController;
 use App\Http\Controllers\Api\AppInstancesController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
@@ -143,6 +146,18 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/deployment-layout',
             [AppInstanceDeploymentLayoutsController::class, 'store'],
         )->name('instance:deployment-layout:prepare');
+        Route::post(
+            'instances/{instance}/deploy',
+            [AppInstanceDeploymentsController::class, 'store'],
+        )->name('instance:deployment:store');
+        Route::post(
+            'instances/{instance}/rollback',
+            [AppInstanceRollbacksController::class, 'store'],
+        )->name('instance:rollback:store');
+        Route::get(
+            'instances/{instance}/releases',
+            [AppInstanceReleasesController::class, 'index'],
+        )->name('instance:release:list');
         Route::post(
             'instances/{instance}/environment/import',
             [AppInstanceEnvironmentImportsController::class, 'store'],

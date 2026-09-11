@@ -97,6 +97,8 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
+use App\Http\Streaming\DeploymentStreamConnection;
+use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
@@ -238,6 +240,7 @@ final class AppServiceProvider extends ServiceProvider
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,
         ProductionDeployment::class => RemoteProductionDeployment::class,
+        DeploymentStreamConnection::class => NativeDeploymentStreamConnection::class,
         ProductionAppInstanceSourceLifecycle::class => RemoteProductionAppInstanceSourceLifecycle::class,
         ProductionLayoutConverter::class => RemoteProductionLayoutConverter::class,
         ProductionPhpRuntimeAdopter::class => RemoteProductionPhpRuntimeManager::class,

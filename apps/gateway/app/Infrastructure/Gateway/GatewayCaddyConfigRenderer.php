@@ -16,8 +16,9 @@ final readonly class GatewayCaddyConfigRenderer
                 encode zstd gzip
                 php_fastcgi unix//run/php/orbit-gateway.sock {
                     dial_timeout 10s
-                    read_timeout 900s
-                    write_timeout 900s
+                    read_timeout 4500s
+                    write_timeout 4500s
+                    flush_interval -1
                 }
                 file_server
             }

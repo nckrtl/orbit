@@ -10,6 +10,7 @@ use App\Domain\AppInstances\Deployment\DeploymentConfig;
 use App\Domain\AppInstances\Deployment\DeploymentDeadline;
 use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
 use App\Domain\AppInstances\Deployment\DeploymentPhase;
+use App\Domain\AppInstances\Deployment\DeploymentProgressPhase;
 use App\Domain\AppInstances\Deployment\DeploymentRelease;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentResult;
@@ -86,21 +87,25 @@ final readonly class DeployAppInstanceAction
 
         try {
             $this->assertNotCancelled($request);
+            $request->emitPhase(DeploymentProgressPhase::SourcePreparation);
             $selected = $this->deployment->selected($appInstance);
             $release = $this->deployment->prepare($appInstance, $config->branch);
             $boundary = DeploymentFailureBoundary::Environment;
             $this->assertNotCancelled($request);
+            $request->emitPhase(DeploymentProgressPhase::EnvironmentSync);
             $this->environment->execute($appInstance);
             $boundary = DeploymentFailureBoundary::BeforeActivation;
             $this->executeSteps($appInstance, $release, $config, DeploymentPhase::BeforeActivation, $request, $commands);
             $boundary = DeploymentFailureBoundary::Activation;
             $this->assertNotCancelled($request);
+            $request->emitPhase(DeploymentProgressPhase::Activation);
             $selected = $this->deployment->activate($appInstance, $release);
             $appInstance->update(['checkout_path' => $selected->path]);
 
             if (is_string($appInstance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
                 $this->assertNotCancelled($request);
+                $request->emitPhase(DeploymentProgressPhase::PhpRefresh);
                 $this->runtime->refreshCache($appInstance);
             }
 
@@ -163,6 +168,12 @@ final readonly class DeployAppInstanceAction
             }
 
             $this->assertNotCancelled($request);
+            $request->emitPhase(
+                $phase === DeploymentPhase::BeforeActivation
+                    ? DeploymentProgressPhase::BeforeActivation
+                    : DeploymentProgressPhase::AfterActivation,
+                $step->name,
+            );
             $commands[] = new DeploymentCommandResult(
                 $step->name,
                 $this->deployment->executeStep($appInstance, $release, $step, $request),

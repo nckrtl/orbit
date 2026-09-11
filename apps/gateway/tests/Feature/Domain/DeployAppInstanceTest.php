@@ -8,6 +8,7 @@ use App\Actions\AppInstances\RollbackAppInstanceAction;
 use App\Domain\AppInstances\Deployment\DeploymentCancellation;
 use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
 use App\Domain\AppInstances\Deployment\DeploymentRelease;
+use App\Domain\AppInstances\Deployment\DeploymentReleaseState;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Deployment\ProductionDeployment;
@@ -528,6 +529,11 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
         $this->record("retained:{$name}");
 
         return $this->release($name);
+    }
+
+    public function releases(AppInstance $appInstance): DeploymentReleaseState
+    {
+        return new DeploymentReleaseState(['initial', 'retained'], 'initial');
     }
 
     private function record(string $entry, ?string $failureKey = null): void

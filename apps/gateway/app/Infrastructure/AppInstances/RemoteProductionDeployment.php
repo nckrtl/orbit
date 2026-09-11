@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Deployment\DeploymentEvent;
 use App\Domain\AppInstances\Deployment\DeploymentOutputStream;
 use App\Domain\AppInstances\Deployment\DeploymentRelease;
+use App\Domain\AppInstances\Deployment\DeploymentReleaseState;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Deployment\ProductionDeployment;
@@ -377,6 +378,80 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         return $this->releaseFromResult($result, $home);
     }
 
+    public function releases(AppInstance $appInstance): DeploymentReleaseState
+    {
+        [$repository, $user, $home, $root] = $this->identity($appInstance);
+        $result = $this->execute(
+            $appInstance,
+            new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $appInstance->id, $root],
+                input: <<<'BASH'
+                    repository=$1
+                    user=$2
+                    home=$3
+                    instance=$4
+                    relative_root=$5
+                    state_directory="/var/lib/orbit/app-instance-sources/$instance"
+                    marker="$state_directory/release-layout"
+                    releases="$home/releases"
+                    environment="$home/.env"
+                    current="$home/current"
+                    test "$home" = "/home/$user"
+                    case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
+                    sudo test -f "$marker"
+                    sudo test ! -L "$marker"
+                    test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
+                    actual_marker=$(sudo base64 --wrap=0 -- "$marker")
+                    expected_marker=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
+                    test "$actual_marker" = "$expected_marker"
+                    sudo -u "$user" -H test -d "$releases"
+                    sudo -u "$user" -H test ! -L "$releases"
+
+                    selected=
+                    if sudo -u "$user" -H test -e "$current" || sudo -u "$user" -H test -L "$current"; then
+                        sudo -u "$user" -H test -L "$current"
+                        selected_path=$(sudo -u "$user" -H realpath -e -- "$current")
+                        case "$selected_path" in "$releases"/*) ;; *) exit 1 ;; esac
+                        selected=${selected_path#"$releases"/}
+                        case "$selected" in */*) exit 1 ;; esac
+                        printf '%s' "$selected" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+                    fi
+                    printf 'SELECTED\t%s\n' "$selected"
+
+                    while IFS= read -r -d '' name; do
+                        printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+                        release="$releases/$name"
+                        sudo -u "$user" -H test -d "$release/.git"
+                        sudo -u "$user" -H test ! -L "$release"
+                        test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release"
+                        actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0)
+                        expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
+                        test "$actual_repository" = "$expected_repository"
+                        release_environment="$release/.env"
+                        sudo -u "$user" -H test -L "$release_environment"
+                        test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
+                        selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
+                        case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
+                        sudo -u "$user" -H test -d "$selected_root"
+                        unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
+                        test -z "$unexpected_symlink"
+                        unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
+                        test -z "$unexpected_user"
+                        unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
+                        test -z "$unexpected_group"
+                        commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
+                        printf 'RELEASE\t%s\t%s\n' "$name" "$commit"
+                    done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
+                    BASH,
+                maxOutputBytes: 65536,
+            ),
+            'deployment-release-list',
+            'deployment.release_inspection_failed',
+        );
+
+        return $this->releaseStateFromResult($result);
+    }
+
     /** @return array{string, string, string, string} */
     private function identity(AppInstance $appInstance): array
     {
@@ -529,13 +604,63 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     private function assertReleaseName(string $name): void
     {
-        if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/', $name) !== 1) {
+        if (! DeploymentRelease::isValidName($name)) {
             throw new ResourceOperationException(
                 'rollback.release_invalid',
                 'The retained release name is invalid.',
                 422,
             );
         }
+    }
+
+    private function releaseStateFromResult(CommandResult $result): DeploymentReleaseState
+    {
+        if ($result->truncated || $result->stderr !== '') {
+            throw $this->invalidReceipt();
+        }
+
+        $lines = explode("\n", rtrim($result->stdout, "\n"));
+        $selection = array_shift($lines);
+
+        if (! str_starts_with($selection, "SELECTED\t")) {
+            throw $this->invalidReceipt();
+        }
+
+        $selected = substr($selection, strlen("SELECTED\t"));
+        $selected = $selected === '' ? null : $selected;
+
+        if ($selected !== null) {
+            $this->assertReleaseName($selected);
+        }
+
+        $releases = [];
+
+        foreach ($lines as $line) {
+            $parts = explode("\t", $line);
+
+            if (
+                count($parts) !== 3
+                || $parts[0] !== 'RELEASE'
+                || preg_match('/\A[0-9a-f]{40,64}\z/', $parts[2]) !== 1
+            ) {
+                throw $this->invalidReceipt();
+            }
+
+            $this->assertReleaseName($parts[1]);
+            $releases[] = $parts[1];
+        }
+
+        if (count($releases) !== count(array_unique($releases))) {
+            throw $this->invalidReceipt();
+        }
+
+        sort($releases);
+
+        if ($selected !== null && ! in_array($selected, $releases, strict: true)) {
+            throw $this->invalidReceipt();
+        }
+
+        return new DeploymentReleaseState($releases, $selected);
     }
 
     private function invalidReceipt(): ResourceOperationException

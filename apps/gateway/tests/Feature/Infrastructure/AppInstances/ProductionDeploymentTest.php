@@ -200,6 +200,55 @@ it('reports no selection when current does not exist', function (): void {
         ->toHaveCount(1);
 });
 
+it('lists only validated retained release names and the current selection', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(
+            0,
+            "SELECTED\tinitial\nRELEASE\tinitial\t".str_repeat('a', 40)."\nRELEASE\tretained\t".str_repeat('b', 40)."\n",
+            '',
+            1,
+            false,
+        ),
+    ]);
+
+    $state = $deployment->releases($instance);
+
+    expect($state->releases)
+        ->toBe(['initial', 'retained'])
+        ->and($state->selectedRelease)
+        ->toBe('initial')
+        ->and($ssh->commands[0]->input)
+        ->toContain(
+            'find -P "$releases" -mindepth 1 -maxdepth 1 -type d',
+            'config --null --get remote.origin.url',
+            'realpath -m -- "$release/$relative_root"',
+            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'find -P "$release" -xdev ! -user "$user"',
+            'realpath -e -- "$release_environment"',
+        );
+});
+
+it('reports a nullable current selection while retaining present releases', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(
+            0,
+            "SELECTED\t\nRELEASE\tinitial\t".str_repeat('a', 40)."\n",
+            '',
+            1,
+            false,
+        ),
+    ]);
+
+    $state = $deployment->releases($instance);
+
+    expect($state->releases)
+        ->toBe(['initial'])
+        ->and($state->selectedRelease)
+        ->toBeNull()
+        ->and($ssh->commands)
+        ->toHaveCount(1);
+});
+
 it('rejects traversal before asking the remote host to inspect a release', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([]);
 
