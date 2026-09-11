@@ -1,0 +1,102 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "The agent can inspect and edit App process and schedule definitions through typed HTTP operations and Orbit commands.\n\n## Scope\n\n* In: PHP SDK requests and responses plus CLI definition commands and their public guidance.\n* Out: remote execution, applying edits to existing instance copies, and automatic worker or timer startup.\n\n## Acceptance\n\n- [ ] Typed clients implement list, create, show, replace, and remove for both App definition kinds with bounded immutable responses and exact Gateway request fields. Proof: `packages/php-sdk/tests/Unit/Requests/Apps/RuntimeDefinitionRequestsTest.php`.\n- [ ] `app:process-definitions APP` and `app:schedule-definitions APP` list definitions; matching singular `app:process-definition` and `app:schedule-definition` commands use `--id=UUID` to show, `--file=PATH` to create, both to replace, or `--id=UUID --remove` to delete, with incompatible combinations refused before HTTP. Proof: `apps/cli/tests/Feature/Apps/RuntimeDefinitionCommandsTest.php`.\n- [ ] Human and JSON output preserve request IDs and safe errors; list output omits commands, file content is submitted without local execution, and operation guidance explains that existing copies require explicit instance-level remove/add changes. Proof: `apps/cli/tests/Feature/Apps/RuntimeDefinitionCommandsTest.php`.\n- [ ] Maintained documentation describes App definition commands and file examples, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd packages/php-sdk && composer check`, `cd apps/cli && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+  "id": "0685b52d-3117-4f65-b9cf-f019734a23f0",
+  "identifier": "ORB-224",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-223",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "packages/php-sdk"
+      },
+      {
+        "name": "apps/cli"
+      },
+      {
+        "name": "Feature"
+      }
+    ]
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Expose App runtime definitions through the SDK and CLI",
+  "updatedAt": "2026-09-11T21:28:21.373Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-224/expose-app-runtime-definitions-through-the-sdk-and-cli"
+}
