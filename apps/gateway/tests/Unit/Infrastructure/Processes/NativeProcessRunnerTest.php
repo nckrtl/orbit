@@ -9,6 +9,7 @@ use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process as SymfonyProcess;
 
 it('captures bounded command output and exit state', function (): void {
     $runner = new NativeProcessRunner(maxOutputBytes: 8);
@@ -188,28 +189,44 @@ it('terminates its complete process group when cancellation is requested', funct
 });
 
 it('retains a completed command result when final output requests cancellation', function (): void {
-    $cancel = false;
-    $runner = new NativeProcessRunner;
+    $process = new NativeProcessRunnerCompletedProcess;
+    $constructedArguments = null;
+    $cancellationChecks = 0;
+    $runner = new NativeProcessRunner(processFactory: static function (array $arguments) use (
+        $process,
+        &$constructedArguments,
+    ): SymfonyProcess {
+        $constructedArguments = $arguments;
+
+        return $process;
+    });
 
     $result = $runner->run(new ProcessInvocation(
-        arguments: [
-            PHP_BINARY,
-            '-r',
-            'usleep(50000); fwrite(STDOUT, "completed");',
-        ],
+        arguments: ['ignored-command'],
         timeout: 5.0,
-        output: static function (ProcessOutput $output) use (&$cancel): void {
-            if ($output->stream === ProcessOutputStream::Stdout) {
-                $cancel = true;
-            }
+        output: static function (ProcessOutput $output) use ($process): void {
+            $process->calls[] = "output:{$output->value}";
         },
-        cancelled: static function () use (&$cancel): bool {
-            return $cancel;
+        cancelled: static function () use (&$cancellationChecks): bool {
+            $cancellationChecks++;
+
+            return true;
         },
     ));
 
-    expect($cancel)
-        ->toBeTrue()
+    expect($constructedArguments)
+        ->toBe(['setsid', '--', 'ignored-command'])
+        ->and($process->calls)
+        ->toBe([
+            'start',
+            'is-running:false',
+            'stdout:completed',
+            'stderr:empty',
+            'output:completed',
+            'exit-code:0',
+        ])
+        ->and($cancellationChecks)
+        ->toBe(0)
         ->and($result->succeeded())
         ->toBeTrue()
         ->and($result->stdout)
@@ -285,3 +302,59 @@ it('terminates its complete process group when the output sink fails', function 
 
     expect(is_int($childPid) && @posix_kill($childPid, 0))->toBeFalse();
 });
+
+final class NativeProcessRunnerCompletedProcess extends SymfonyProcess
+{
+    /** @var list<string> */
+    public array $calls = [];
+
+    private bool $started = false;
+
+    public function __construct()
+    {
+        parent::__construct(['true']);
+    }
+
+    #[Override]
+    public function start(?callable $callback = null, array $env = []): void
+    {
+        $this->started = true;
+        $this->calls[] = 'start';
+    }
+
+    #[Override]
+    public function isRunning(): bool
+    {
+        if (! $this->started) {
+            return false;
+        }
+
+        $this->calls[] = 'is-running:false';
+
+        return false;
+    }
+
+    #[Override]
+    public function getIncrementalOutput(): string
+    {
+        $this->calls[] = 'stdout:completed';
+
+        return 'completed';
+    }
+
+    #[Override]
+    public function getIncrementalErrorOutput(): string
+    {
+        $this->calls[] = 'stderr:empty';
+
+        return '';
+    }
+
+    #[Override]
+    public function getExitCode(): ?int
+    {
+        $this->calls[] = 'exit-code:0';
+
+        return 0;
+    }
+}

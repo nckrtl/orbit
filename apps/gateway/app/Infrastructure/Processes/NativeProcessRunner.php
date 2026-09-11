@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use Closure;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Throwable;
@@ -12,17 +13,25 @@ final readonly class NativeProcessRunner implements ProcessRunner
 {
     private const int MaxEventBytes = 16_384;
 
+    /** @var Closure(list<string>): SymfonyProcess */
+    private Closure $processFactory;
+
+    /** @param (Closure(list<string>): SymfonyProcess)|null $processFactory */
     public function __construct(
         private int $maxOutputBytes = 65_536,
         private ?CommandDeadline $deadline = null,
-    ) {}
+        ?Closure $processFactory = null,
+    ) {
+        $this->processFactory = $processFactory
+            ?? static fn (array $arguments): SymfonyProcess => new SymfonyProcess($arguments);
+    }
 
     public function run(ProcessInvocation $invocation): CommandResult
     {
         $protectedInput = $invocation->protectedInput;
 
         try {
-            $process = new SymfonyProcess(['setsid', '--', ...$invocation->arguments]);
+            $process = ($this->processFactory)(['setsid', '--', ...$invocation->arguments]);
             $timeout = $this->deadline?->cap($invocation->timeout) ?? $invocation->timeout;
             $process->setTimeout($timeout);
             $process->setInput($protectedInput?->stream() ?? $invocation->input);
@@ -124,9 +133,9 @@ final readonly class NativeProcessRunner implements ProcessRunner
 
     /**
      * @param  list<ProcessOutput>  $pendingOutput
-     * @param  (\Closure(ProcessOutput): void)|null  $sink
+     * @param  (Closure(ProcessOutput): void)|null  $sink
      */
-    private function emitPendingOutput(array &$pendingOutput, ?\Closure $sink): void
+    private function emitPendingOutput(array &$pendingOutput, ?Closure $sink): void
     {
         if ($sink === null) {
             return;
