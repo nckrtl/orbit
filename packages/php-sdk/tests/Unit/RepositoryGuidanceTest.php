@@ -219,9 +219,9 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(82)
+            ->toBe(92)
             ->and($requestClasses)
-            ->toHaveCount(78)
+            ->toHaveCount(88)
             ->toContain(AppInstanceDeploymentLayoutRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
@@ -239,12 +239,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ClearClusterRouterRequest::class);
     });
 
-    it('documents the 78-operation SDK surface including typed deployment transport', function (): void {
+    it('documents the 88-operation SDK surface including App runtime definitions', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 78 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 88 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -252,6 +252,9 @@ describe('repository guidance bootstrap', function (): void {
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
+            ->toContain(
+                '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
+            )
             ->toContain(
                 '- AppInstance: list, show, create, register, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
@@ -276,6 +279,9 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 'Keep AppInstance deployment transport limited to configuration read and replacement, explicit deploy and rollback streams, and retained-release inspection.',
+            )
+            ->toContain(
+                "Keep App runtime definition transport limited to a numeric App ID, a definition UUID for item operations, and the caller's exact JSON document for create and full replacement.",
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -285,7 +291,9 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 78 public Gateway operations.',
+                'The SDK exposes exactly 88 public Gateway operations.',
+                'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
+                "Create and replace requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
                 'The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations.',
                 'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',

@@ -23,7 +23,11 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'activity:show',
         'app:list',
         'app:new',
+        'app:process-definition',
+        'app:process-definitions',
         'app:remove',
+        'app:schedule-definition',
+        'app:schedule-definitions',
         'app:show',
         'cluster:list',
         'cluster:new',
@@ -101,7 +105,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(75);
+    expect($orbitCommands)->toHaveCount(79);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -155,7 +159,17 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['slug', 'repository'],
             ['name' => null, 'default-branch' => null, 'root' => 'public', 'json' => false],
         ],
+        'app:process-definition' => [
+            ['app'],
+            ['id' => null, 'file' => null, 'remove' => false, 'json' => false],
+        ],
+        'app:process-definitions' => [['app'], ['json' => false]],
         'app:remove' => [['app'], ['json' => false]],
+        'app:schedule-definition' => [
+            ['app'],
+            ['id' => null, 'file' => null, 'remove' => false, 'json' => false],
+        ],
+        'app:schedule-definitions' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
         'cluster:list' => [[], ['json' => false]],
         'cluster:new' => [['name'], ['tld' => null, 'json' => false]],
@@ -409,7 +423,17 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'activity:show' => [['activity' => '1'], ...$profileMissing],
         'app:list' => [[], ...$profileMissing],
         'app:new' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
+        'app:process-definition' => [[
+            'app' => '1',
+            '--id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
+        ], ...$profileMissing],
+        'app:process-definitions' => [['app' => '1'], ...$profileMissing],
         'app:remove' => [['app' => '1'], ...$profileMissing],
+        'app:schedule-definition' => [[
+            'app' => '1',
+            '--id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
+        ], ...$profileMissing],
+        'app:schedule-definitions' => [['app' => '1'], ...$profileMissing],
         'app:show' => [['app' => '1'], ...$profileMissing],
         'cluster:list' => [[], ...$profileMissing],
         'cluster:new' => [['name' => 'development'], ...$profileMissing],

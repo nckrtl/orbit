@@ -9,10 +9,14 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 78 public Gateway operations. It preserves typed
+The SDK exposes exactly 88 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
+
+## App runtime definitions
+
+The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions. Create and replace requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
 
 For example, typed Tool transport stays small and explicit:
 
