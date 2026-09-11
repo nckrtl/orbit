@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\NativeSshExecutor;
@@ -110,4 +111,37 @@ it('passes protected stdin without adding its bytes to the local SSH invocation'
             $debugOutput,
         )
         ->not->toContain($sensitiveValue)->toContain('[PROTECTED]');
+});
+
+it('passes invocation-local output and cancellation controls to the process runner', function (): void {
+    $output = static function (ProcessOutput $output): void {};
+    $cancelled = static fn (): bool => false;
+    $runner = new class implements ProcessRunner
+    {
+        public ?ProcessInvocation $invocation = null;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->invocation = $invocation;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $connection = new SshConnection(
+        host: '10.44.0.3',
+        user: 'orbit',
+        port: 22,
+        identityFile: '/home/orbit/.orbit/ssh/id_ed25519',
+        knownHostsFile: '/home/orbit/.orbit/ssh/known_hosts',
+    );
+
+    new NativeSshExecutor($runner)->execute(
+        $connection,
+        new RemoteCommand(['true'], output: $output, cancelled: $cancelled),
+    );
+
+    expect($runner->invocation?->output)
+        ->toBe($output)
+        ->and($runner->invocation?->cancelled)
+        ->toBe($cancelled);
 });

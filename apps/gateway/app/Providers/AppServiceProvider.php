@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Actions\AppInstances\SynchronizeAppInstanceEnvironmentAction;
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
@@ -20,6 +21,7 @@ use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
+use App\Domain\AppInstances\Deployment\ProductionDeployment;
 use App\Domain\AppInstances\DeploymentLayout\ProductionLayoutConverter;
 use App\Domain\AppInstances\DeploymentLayout\ProductionPhpRuntimeAdopter;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -28,6 +30,7 @@ use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentSynchronizer;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
@@ -120,6 +123,7 @@ use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
+use App\Infrastructure\AppInstances\RemoteProductionDeployment;
 use App\Infrastructure\AppInstances\RemoteProductionLayoutConverter;
 use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
@@ -233,12 +237,14 @@ final class AppServiceProvider extends ServiceProvider
         DevelopmentAppInstanceProvisioner::class => NativeDevelopmentAppInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,
+        ProductionDeployment::class => RemoteProductionDeployment::class,
         ProductionAppInstanceSourceLifecycle::class => RemoteProductionAppInstanceSourceLifecycle::class,
         ProductionLayoutConverter::class => RemoteProductionLayoutConverter::class,
         ProductionPhpRuntimeAdopter::class => RemoteProductionPhpRuntimeManager::class,
         ProductionReleaseLayout::class => RemoteProductionAppInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
+        AppInstanceEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         RouteHostnameProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,

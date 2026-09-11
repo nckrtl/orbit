@@ -9,12 +9,13 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRenderer;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentSynchronizer;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 
-final readonly class SynchronizeAppInstanceEnvironmentAction
+final readonly class SynchronizeAppInstanceEnvironmentAction implements AppInstanceEnvironmentSynchronizer
 {
     public function __construct(
         private AppInstanceEnvironmentOperationLock $operations,
