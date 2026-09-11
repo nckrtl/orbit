@@ -29,6 +29,55 @@ The API rejects unknown or duplicate members at every definition object and spec
 
 Creating, replacing, or deleting a definition changes only App-owned configuration. It makes no remote call and does not change a Process, Schedule, selected release, desired runtime state, or existing AppInstance copy. Removing an AppInstance retains the App's definitions, while removing an otherwise removable App deletes its definitions.
 
+## Manage definitions from the CLI
+
+The CLI lists each definition collection and uses one singular command per kind for create, show, replace, and remove operations. `APP` is a positive numeric App ID, and `UUID` is the definition ID returned by the Gateway.
+
+| Command | Result |
+| --- | --- |
+| `orbit app:process-definitions APP` | List the App's process definitions. |
+| `orbit app:schedule-definitions APP` | List the App's Schedule definitions. |
+| `orbit app:process-definition APP --id=UUID` | Show one process definition. |
+| `orbit app:schedule-definition APP --id=UUID` | Show one Schedule definition. |
+| `orbit app:process-definition APP --file=PATH` | Create one process definition from a JSON file. |
+| `orbit app:schedule-definition APP --file=PATH` | Create one Schedule definition from a JSON file. |
+| `orbit app:process-definition APP --id=UUID --file=PATH` | Replace one process definition with the complete JSON file. |
+| `orbit app:schedule-definition APP --id=UUID --file=PATH` | Replace one Schedule definition with the complete JSON file. |
+| `orbit app:process-definition APP --id=UUID --remove` | Remove one process definition. |
+| `orbit app:schedule-definition APP --id=UUID --remove` | Remove one Schedule definition. |
+
+The singular commands refuse an empty operation, `--remove` without `--id`, `--remove` with `--file`, and every other option combination outside the table before they send an HTTP request. Every command also accepts `--json`. Human and JSON results include the Gateway request ID, and safe errors include that ID when the Gateway supplies it.
+
+The CLI reads the selected file and sends its content as the Gateway request body. It does not execute a definition command or apply the definition to a machine. A process definition file can contain this complete systemd specification:
+
+```json
+{
+    "name": "queue",
+    "environments": ["development", "production"],
+    "spec": {
+        "runtime": "systemd",
+        "command": ["/usr/bin/php", "artisan", "queue:work"],
+        "restart_policy": "on-failure"
+    }
+}
+```
+
+A Schedule definition file can contain this complete specification:
+
+```json
+{
+    "name": "hourly-report",
+    "environments": ["production"],
+    "spec": {
+        "command": "php artisan report:send",
+        "calendar": "hourly",
+        "timeout_seconds": 3600
+    }
+}
+```
+
+List output omits each definition's command. Show, create, replace, and remove results contain the complete item returned by the Gateway. Changing an App definition affects later copies only. To change an existing copy, the operator explicitly removes and adds the AppInstance-owned Process or Schedule.
+
 ## Select the owner
 
 The `process:add` and `process:list` commands require `--instance=ID`, where the value is a positive AppInstance ID. The public API and PHP software development kit (SDK) send the target token `instance` with that ID. Every other process command accepts a positive Process ID and uses its recorded AppInstance owner.
