@@ -187,6 +187,83 @@ it('inspects the supported worktree source layout', function (): void {
         ->toBe(1);
 });
 
+it('reports every production projection field in stable order without exposing paths', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_production_instance(instance_probe_app(), $node);
+
+    $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
+    {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            return new InstanceInspectionData(
+                true,
+                true,
+                true,
+                true,
+                productionHomeMatches: false,
+                releaseSelectionMatches: false,
+                selectedReleaseRootMatches: false,
+                environmentProjectionMatches: false,
+                phpFpmProjectionMatches: false,
+                caddyProjectionMatches: false,
+            );
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
+        ->toBe([
+            'instance.production_home_mismatch',
+            'instance.release_selection_mismatch',
+            'instance.selected_release_root_mismatch',
+            'instance.environment_projection_mismatch',
+            'instance.php_fpm_projection_mismatch',
+            'instance.caddy_projection_mismatch',
+        ])
+        ->and(json_encode($report, JSON_THROW_ON_ERROR))
+        ->not->toContain($instance->production_home, $instance->production_php_socket);
+});
+
+it('reports missing and shared production PHP associations before native projection drift', function (): void {
+    $node = instance_probe_node();
+    $missing = instance_probe_production_instance(instance_probe_app(), $node);
+    $missing->update(['production_php_socket' => null]);
+    $sharedFirst = instance_probe_production_instance(instance_probe_app(), $node);
+    $sharedSecond = instance_probe_production_instance(instance_probe_app(), $node);
+    $sharedSecond->update([
+        'production_php_service' => $sharedFirst->production_php_service,
+        'production_php_pool' => $sharedFirst->production_php_pool,
+        'production_php_socket' => $sharedFirst->production_php_socket,
+    ]);
+
+    $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
+    {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            return new InstanceInspectionData(
+                true,
+                true,
+                true,
+                true,
+                productionHomeMatches: true,
+                releaseSelectionMatches: true,
+                selectedReleaseRootMatches: true,
+                environmentProjectionMatches: true,
+                phpFpmProjectionMatches: true,
+                caddyProjectionMatches: true,
+            );
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect(collect($report->issues)->map(fn ($issue): array => [$issue->resourceId, $issue->code])->all())
+        ->toBe([
+            [$missing->id, 'instance.php_fpm_association_missing'],
+            [$sharedFirst->id, 'instance.php_fpm_association_shared'],
+            [$sharedSecond->id, 'instance.php_fpm_association_shared'],
+        ])
+        ->and($report->checked)
+        ->toBe(3);
+});
+
 function instance_probe_node(): Node
 {
     static $number = 60;
@@ -233,6 +310,29 @@ function instance_probe_instance(
         'branch' => "development-{$suffix}",
         'starting_commit' => str_repeat((string) $suffix, 40),
         'status' => $status,
+    ]);
+}
+
+function instance_probe_production_instance(App $app, Node $node): AppInstance
+{
+    $user = "orbit-app-{$app->id}";
+
+    return AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => "/home/{$user}/releases/initial",
+        'production_user' => $user,
+        'production_home' => "/home/{$user}",
+        'production_php_service' => "orbit-{$user}-php8.5-fpm.service",
+        'production_php_pool' => "orbit-{$user}",
+        'production_php_socket' => "/run/php/{$user}.sock",
+        'selected_php_version' => '8.5',
+        'root' => 'public',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::Active,
     ]);
 }
 

@@ -13,6 +13,14 @@ enum InstanceDoctorIssueCode: string implements DoctorIssueCode
     case MigrationRequired = 'instance.migration_required';
     case OriginMismatch = 'instance.origin_mismatch';
     case SourceIdentityMismatch = 'instance.source_identity_mismatch';
+    case ProductionHomeMismatch = 'instance.production_home_mismatch';
+    case ReleaseSelectionMismatch = 'instance.release_selection_mismatch';
+    case SelectedReleaseRootMismatch = 'instance.selected_release_root_mismatch';
+    case EnvironmentProjectionMismatch = 'instance.environment_projection_mismatch';
+    case PhpFpmAssociationMissing = 'instance.php_fpm_association_missing';
+    case PhpFpmAssociationShared = 'instance.php_fpm_association_shared';
+    case PhpFpmProjectionMismatch = 'instance.php_fpm_projection_mismatch';
+    case CaddyProjectionMismatch = 'instance.caddy_projection_mismatch';
     case InspectionFailed = 'instance.inspection_failed';
     case NodeUnreachable = 'instance.node_unreachable';
 

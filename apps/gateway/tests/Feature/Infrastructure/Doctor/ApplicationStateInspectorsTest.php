@@ -13,6 +13,9 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
@@ -24,11 +27,13 @@ use App\Infrastructure\AppProd\AppProdSite;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\NativeWorkspaceStateInspector;
+use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -40,6 +45,7 @@ use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Route;
 use App\Models\Workspace;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -222,6 +228,111 @@ it('maps each AppInstance source observation without retaining diagnostics', fun
     'repository not independent' => ["1\n0\n1\n1\n", new InstanceInspectionData(true, false, true, true)],
     'origin mismatch' => ["1\n1\n0\n1\n", new InstanceInspectionData(true, true, false, true)],
     'source identity mismatch' => ["1\n1\n1\n0\n", new InstanceInspectionData(true, true, true, false)],
+]);
+
+it('observes production projections through fixed arguments and protected input', function (): void {
+    $secret = 'doctor-production-secret';
+    $appInstance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        $secret,
+    );
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
+
+    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+    $command = $ssh->commands[0];
+    $protected = $command->protectedInput;
+    if (! $protected instanceof ProtectedInput) {
+        throw new RuntimeException('Expected protected production inspection input.');
+    }
+    $program = stream_get_contents($protected->stream());
+    if (! is_string($program)) {
+        throw new RuntimeException('Expected readable production inspection input.');
+    }
+    application_run(['bash', '-n'], $program);
+    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($appInstance);
+
+    expect($inspection)
+        ->toEqual(new InstanceInspectionData(
+            true,
+            true,
+            true,
+            true,
+            productionHomeMatches: true,
+            releaseSelectionMatches: true,
+            selectedReleaseRootMatches: true,
+            environmentProjectionMatches: true,
+            phpFpmProjectionMatches: true,
+            caddyProjectionMatches: true,
+        ))
+        ->and($command->arguments)
+        ->toBe(['sudo', 'bash', '-s', '--'])
+        ->and($command->input)
+        ->toBeNull()
+        ->and($command->protectedInput)
+        ->toBeInstanceOf(ProtectedInput::class)
+        ->and($command->maxOutputBytes)
+        ->toBe(128)
+        ->and(json_encode($command, JSON_THROW_ON_ERROR))
+        ->not->toContain($secret, $appInstance->production_home)
+        ->and($program)
+        ->toContain(base64_encode("APP_KEY=\"{$secret}\"\n"), 'emit release_selection_matches', 'emit php_fpm_matches')
+        ->not->toContain($secret, 'systemctl restart', 'systemctl reload', 'rm -', 'install ', 'mv ')
+        ->and(json_encode($expectation, JSON_THROW_ON_ERROR))
+        ->not->toContain($secret)
+        ->and($expectation->__debugInfo())
+        ->toBe(['environment' => '[PROTECTED]'])
+        ->and($ssh->connections[0]->commandTimeout)
+        ->toBe(30.0);
+});
+
+it('maps each production projection without retaining protected diagnostics', function (
+    string $remote,
+    string $field,
+): void {
+    $appInstance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'private-production-value',
+    );
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result($remote)]);
+
+    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+
+    expect($inspection->{$field})
+        ->toBeFalse()
+        ->and(json_encode($inspection, JSON_THROW_ON_ERROR))
+        ->not->toContain('private-production-value');
+})->with([
+    'production home' => ["0\n1\n1\n1\n1\n1\n", 'productionHomeMatches'],
+    'release selection' => ["1\n0\n1\n1\n1\n1\n", 'releaseSelectionMatches'],
+    'selected release root' => ["1\n1\n0\n1\n1\n1\n", 'selectedReleaseRootMatches'],
+    'environment' => ["1\n1\n1\n0\n1\n1\n", 'environmentProjectionMatches'],
+    'PHP-FPM' => ["1\n1\n1\n1\n0\n1\n", 'phpFpmProjectionMatches'],
+    'Caddy' => ["1\n1\n1\n1\n1\n0\n", 'caddyProjectionMatches'],
+]);
+
+it('fails production inspection closed for malformed, failed, truncated, and diagnostic output', function (
+    CommandResult $result,
+): void {
+    $appInstance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'private-production-value',
+    );
+
+    $exception = application_capture_exception(
+        fn (): InstanceInspectionData => application_instance_inspector(
+            new AppDevFakeSshExecutor([$result]),
+        )->inspect($appInstance),
+    );
+
+    application_assert_sanitized($exception, 'private-production-value');
+})->with([
+    'failure' => [app_inspector_result('', exitCode: 1, stderr: 'private-production-value')],
+    'malformed' => [app_inspector_result('private-production-value')],
+    'truncated' => [app_inspector_result("1\n1\n1\n1\n1\n1\n", truncated: true)],
+    'stderr' => [app_inspector_result("1\n1\n1\n1\n1\n1\n", stderr: 'private-production-value')],
 ]);
 
 it('reports shared AppInstance Git administration as non-independent', function (): void {
@@ -693,7 +804,46 @@ function application_instance_inspector(
         new CommandDeadline,
         application_inspector_accounts(),
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
+        app(ProductionInstanceInspectionExpectationFactory::class),
     );
+}
+
+function application_production_app_instance(App $app, Node $node, string $secret): AppInstance
+{
+    $app->update(['default_branch' => 'main', 'root' => 'public']);
+    $user = "orbit-app-{$app->id}";
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => "/home/{$user}/releases/initial",
+        'production_user' => $user,
+        'production_home' => "/home/{$user}",
+        'production_php_service' => "orbit-{$user}-php8.5-fpm.service",
+        'production_php_pool' => "orbit-{$user}",
+        'production_php_socket' => "/run/php/{$user}.sock",
+        'root' => 'public',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'hostname' => "{$app->slug}.example.test",
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Public,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => $secret]);
+
+    return $instance;
 }
 
 function application_workspace_inspector(
