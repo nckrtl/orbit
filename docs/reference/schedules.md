@@ -50,6 +50,27 @@ Schedule responses are immutable and preserve bounded request IDs and accepted S
 
 The typed Doctor report accepts the Gateway's complete current family set, including `schedule`, and validates Schedule family and issue data without inferring Schedule policy.
 
+## Manage Schedules from the CLI
+
+An operator uses seven Schedule commands from a machine with an active Gateway profile. Each command sends one typed PHP SDK request to the Gateway and never runs SSH, systemd, `journalctl`, a shell, or Schedule commands on the operator machine.
+
+| Command | Result |
+| --- | --- |
+| `orbit schedule:add --node=NODE` | Add a Schedule for one Node. |
+| `orbit schedule:add --instance=INSTANCE` | Add a Schedule for one AppInstance. Add `--no-start` to install its timer disabled and stopped. |
+| `orbit schedule:list` | List authorized Schedule summaries without command text. |
+| `orbit schedule:show UUID` | Show one authorized Schedule. |
+| `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
+| `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
+| `orbit schedule:remove UUID` | Remove one Schedule through the Gateway. |
+| `orbit schedule:activate UUID` | Enable and start an installed AppInstance timer without replacing the Schedule. |
+
+`schedule:add` requires exactly one positive Node or AppInstance identity. Target-specific options cannot be combined. The CLI can resolve an ambiguous target through one bounded interactive choice, but `--json` and non-interactive calls never prompt and require an explicit identity.
+
+Human output and `--json` output preserve the Gateway request ID. They show `desired_timer_state` separately from lifecycle `status`, and shared safe errors expose no command, log, credential, or remote execution detail.
+
+Run `orbit doctor --family=schedule` to render the Schedule family in the Gateway's canonical family order. The CLI does not expose completion as an operator command. Completion remains the internal Node-authenticated API and typed SDK transport used by the installed Schedule callback.
+
 ## Derive the execution context
 
 The Gateway derives the host Node, runtime user, home, working directory, and shell from authoritative target placement. It rejects caller-supplied values for those fields and refuses an unavailable target or unusable derived account before remote mutation.
@@ -154,4 +175,4 @@ Doctor issues, Activity, errors, and generic diagnostics contain no command, cal
 
 ## Limits
 
-Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Orbit exposes no CLI Schedule operation.
+Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes or expose completion as an operator command.
