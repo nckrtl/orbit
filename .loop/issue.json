@@ -1,0 +1,125 @@
+{
+    "id": "ef503d38-320b-416c-9ae2-ed30eb8a00cf",
+    "identifier": "ORB-73",
+    "title": "Expose the Schedule API",
+    "url": "https://linear.app/nckrtl/issue/ORB-73/expose-the-schedule-api",
+    "description": "The Gateway API exposes list, add, show, run, logs, complete, remove, and activate for Schedules under the existing active-peer and Node-access boundary. The operations are in [ADR 0013](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0013-native-systemd-schedule-management.md>).\n\n## Scope\n\n* In: Schedule requests, data objects, controllers, routes, and bounded response envelopes for the eight operations\n* In: active-peer middleware, Node-access policy, collection filtering, installed-Node completion authorization, and sanitized activity records\n* Out: Schedule editing, numeric lookup, and command text or completion in any activity\n* Out: Doctor repair, mutation, adoption, or persisted reports\n* Out: the PHP SDK and CLI ([ORB-3](https://linear.app/nckrtl/issue/ORB-3/add-schedule-and-doctor-transport-to-the-php-sdk), [ORB-71](https://linear.app/nckrtl/issue/ORB-71/add-schedule-and-doctor-commands-to-the-cli)), production deployment, and harness changes\n\n## Acceptance\n\n- [ ] Exactly eight Schedule routes exist and are keyed by UUID; a well-formed unknown UUID returns `404`, and malformed, duplicate, escaped-duplicate, unknown, or wrongly typed members return `422` before mutation. Proof: `apps/gateway/tests/Feature/Api/SchedulesTest.php`.\n- [ ] Every operation enforces active-peer and Node access, a collection returns only Schedules whose target Node the caller may address, and completion is accepted only from the installed Node. Proof: `apps/gateway/tests/Feature/Api/SchedulesTest.php`.\n- [ ] Completion creates no Activity, and each of the other seven operations creates one sanitized Activity that contains no command, calendar, log, output, path, user, or unit text. Proof: `apps/gateway/tests/Feature/Api/SchedulesTest.php`.\n- [ ] List omits command text, show and logs return bounded values only to an authorized caller, and command and log text never appear in validation errors or exception text. Proof: `apps/gateway/tests/Feature/Api/SchedulesTest.php`.\n- [ ] Maintained documentation states the public Schedule API, authorization, activity, and completion contract, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Gateway checks pass. Proof: `cd apps/gateway && composer check`.\n- [ ] All repository test suites pass. Proof: all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.\n- [ ] `POST /schedules/{uuid}/activate` accepts an empty body, authorizes the owning AppInstance Node, and returns the bounded Schedule response; a Node-owned target returns `schedule.target_invalid`, and repeated activation is idempotent. Proof: `apps/gateway/tests/Feature/Api/SchedulesTest.php`.\n- [ ] Add accepts optional boolean `start` for AppInstance targets, defaulting to true; false is rejected for Node targets. List and show expose `desired_timer_state` as `enabled` or `disabled`, independently of installation lifecycle state; run does not change it. Proof: `apps/gateway/tests/Feature/Api/SchedulesTest.php`.",
+    "updatedAt": "2026-09-12T02:46:23.620Z",
+    "state": {
+        "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+        "name": "Todo",
+        "type": "unstarted"
+    },
+    "assignee": null,
+    "delegate": {
+        "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+    },
+    "team": {
+        "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+        "states": {
+            "nodes": [
+                {
+                    "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+                    "name": "Backlog"
+                },
+                {
+                    "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+                    "name": "Blocked"
+                },
+                {
+                    "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+                    "name": "Canceled"
+                },
+                {
+                    "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+                    "name": "Done"
+                },
+                {
+                    "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+                    "name": "Duplicate"
+                },
+                {
+                    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+                    "name": "In Progress"
+                },
+                {
+                    "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+                    "name": "In Review"
+                },
+                {
+                    "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+                    "name": "Todo"
+                }
+            ]
+        }
+    },
+    "labels": {
+        "nodes": [
+            {
+                "name": "Feature"
+            },
+            {
+                "name": "apps/gateway"
+            },
+            {
+                "name": "controller:commander"
+            },
+            {
+                "name": "docs"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "attachments": {
+        "nodes": [
+            {
+                "title": "ADR 0013: Manage schedules with native systemd timers",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0013-native-systemd-schedule-management.md"
+            },
+            {
+                "title": "ADR 0047: Create production AppInstances from candidates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+            },
+            {
+                "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "children": {
+        "nodes": [],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "inverseRelations": {
+        "nodes": [
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-72",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            },
+            {
+                "type": "related",
+                "issue": {
+                    "identifier": "ORB-115",
+                    "state": {
+                        "type": "unstarted"
+                    }
+                }
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    }
+}
