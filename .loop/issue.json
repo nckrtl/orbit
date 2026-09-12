@@ -1,0 +1,150 @@
+{
+    "id": "8cf14c0b-8de6-4bce-99d1-82beaff6e9d6",
+    "identifier": "ORB-3",
+    "title": "Add Schedule and Doctor transport to the PHP SDK",
+    "url": "https://linear.app/nckrtl/issue/ORB-3/add-schedule-and-doctor-transport-to-the-php-sdk",
+    "description": "The PHP SDK exposes typed requests and immutable responses for the eight Schedule operations and the Schedule-enabled Doctor family set, transporting bounded values without owning Schedule or Doctor policy. The operations are in [ADR 0013](<https://github.com/nckrtl/orbit/blob/main/docs/decisions/0013-native-systemd-schedule-management.md>).\n\n## Scope\n\n* In: typed requests and responses for Schedule list, add, show, run, logs, complete, remove, and activate, with Node and AppInstance target shapes\n* In: bounding and redaction of command, log, identifier, error, nested, and request-ID values on the response boundary\n* In: Doctor family types for the Schedule-enabled family set\n* In: the transport tests, public-operation inventory, guidance, and README\n* Out: target resolution, systemd, shell, Schedule policy, Doctor policy, and ambiguity handling\n* Out: Workspace targets, CLI presentation, raw responses, transport debug data, Gateway, deployment, and harness changes\n\n## Acceptance\n\n- [ ] Each of the eight operations sends the exact method, path, query, and body the Gateway expects and encodes the UUID path segment safely. Proof: `packages/php-sdk/tests/Unit/Requests/Schedules/ScheduleRequestsTest.php`.\n- [ ] Node and AppInstance target shapes serialize distinctly, an omitted option is absent from the request, and an explicit invalid value is sent for Gateway validation. Proof: `packages/php-sdk/tests/Unit/Requests/Schedules/ScheduleRequestsTest.php`.\n- [ ] Log and command values in responses stay bounded, credentials are redacted, and malformed nested data is rejected. Proof: `packages/php-sdk/tests/Unit/Responses/Schedules/ScheduleResponsesTest.php`.\n- [ ] Doctor accepts exactly the family tokens on `origin/main`, including `schedule`, without a hard-coded family count. Proof: `packages/php-sdk/tests/Unit/Responses/Doctor/DoctorReportResponseTest.php`.\n- [ ] The public-operation inventory grows by exactly the eight Schedule operations and its test derives the total from the pre-Schedule count. Proof: `packages/php-sdk/tests/Unit/RepositoryGuidanceTest.php`.\n- [ ] The PHP SDK transport reference and README state the Schedule operations and the Schedule-enabled Doctor contract, and generated context is current. Proof: `composer docs-lint`.\n- [ ] PHP SDK checks pass. Proof: `cd packages/php-sdk && composer check`.\n- [ ] The SDK public-contract guide permits the shipped typed Schedule operations and Schedule Doctor token instead of prohibiting them; its restrictions on unimplemented deployment surfaces are changed only by the deployment transport work. Proof: `packages/php-sdk/tests/Unit/RepositoryGuidanceTest.php`.\n- [ ] Focused acceptance tests pass, and an independent reviewer retains the exact-candidate local quality receipt across all five projects. Proof: the focused suites named above and root `composer check` with test impact analysis.\n- [ ] Typed add requests preserve omitted versus explicit `start` values, activation uses `POST /schedules/{uuid}/activate`, and responses validate `desired_timer_state` independently of lifecycle state without inferring policy. Proof: `packages/php-sdk/tests/Unit/Requests/Schedules/ScheduleRequestsTest.php` and `packages/php-sdk/tests/Unit/Responses/Schedules/ScheduleResponsesTest.php`.",
+    "updatedAt": "2026-09-12T14:22:11.912Z",
+    "state": {
+        "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+        "name": "Todo",
+        "type": "unstarted"
+    },
+    "assignee": null,
+    "delegate": {
+        "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+    },
+    "team": {
+        "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+        "states": {
+            "nodes": [
+                {
+                    "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+                    "name": "Backlog"
+                },
+                {
+                    "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+                    "name": "Blocked"
+                },
+                {
+                    "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+                    "name": "Canceled"
+                },
+                {
+                    "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+                    "name": "Done"
+                },
+                {
+                    "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+                    "name": "Duplicate"
+                },
+                {
+                    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+                    "name": "In Progress"
+                },
+                {
+                    "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+                    "name": "In Review"
+                },
+                {
+                    "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+                    "name": "Todo"
+                }
+            ]
+        }
+    },
+    "labels": {
+        "nodes": [
+            {
+                "name": "Feature"
+            },
+            {
+                "name": "controller:commander"
+            },
+            {
+                "name": "docs"
+            },
+            {
+                "name": "packages/php-sdk"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "attachments": {
+        "nodes": [
+            {
+                "title": "ADR 0004: Define the verify-only Doctor boundary",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0004-verify-only-doctor-boundary.md"
+            },
+            {
+                "title": "ADR 0013: Manage schedules with native systemd timers",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0013-native-systemd-schedule-management.md"
+            },
+            {
+                "title": "ADR 0047: Create production AppInstances from candidates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+            },
+            {
+                "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+            },
+            {
+                "title": "ADR 0053: Local review checks",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0053-use-local-review-checks-for-feature-landing.md"
+            },
+            {
+                "title": "Execution order",
+                "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+            },
+            {
+                "title": "Source: ADR conformance audit",
+                "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "children": {
+        "nodes": [],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "inverseRelations": {
+        "nodes": [
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-73",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            },
+            {
+                "type": "related",
+                "issue": {
+                    "identifier": "ORB-115",
+                    "state": {
+                        "type": "unstarted"
+                    }
+                }
+            },
+            {
+                "type": "related",
+                "issue": {
+                    "identifier": "ORB-72",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    }
+}
