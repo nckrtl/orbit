@@ -1,0 +1,12 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "discovery-extension-only",
+      "node": "app-prod-2",
+      "argv": ["false"],
+      "timeout_seconds": 30
+    }
+  ],
+  "extension": "app-prod"
+}

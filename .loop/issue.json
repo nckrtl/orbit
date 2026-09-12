@@ -1,0 +1,194 @@
+{
+  "assignee": null,
+  "attachments": {
+    "nodes": [
+      {
+        "title": "ADR 0038: Cascade AppInstance removal through processes and schedules",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md"
+      },
+      {
+        "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md"
+      },
+      {
+        "title": "ADR 0032: Preserve explicit AppInstance branch selection",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0032-preserve-explicit-appinstance-branch-selection.md"
+      },
+      {
+        "title": "ADR 0034: Select AppInstance PHP from Composer constraints",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0034-select-appinstance-php-from-composer-constraints.md"
+      },
+      {
+        "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+      },
+      {
+        "title": "ADR 0046: Own production release deployment in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+      },
+      {
+        "title": "ADR 0047: Create production AppInstances from candidates",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+      },
+      {
+        "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+      },
+      {
+        "title": "ADR 0028: Require one Route per active AppInstance",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0028-require-one-route-per-active-appinstance.md"
+      },
+      {
+        "title": "ADR 0030: Complete AppInstance provisioning without application health gates",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md"
+      },
+      {
+        "title": "ADR 0029: Manage Laravel application URLs through Orbit",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0029-manage-laravel-application-urls-through-orbit.md"
+      },
+      {
+        "title": "ADR 0031: Clone initial production source during provisioning",
+        "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0031-clone-initial-production-source-during-provisioning.md"
+      }
+    ]
+  },
+  "children": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "delegate": {
+    "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+  },
+  "description": "An agent creates a production target from an eligible candidate, with its own stored environment, optional SQLite seed, stopped application runtimes, and private preview Route. Deployment remains a separate explicit operation.\n\n## Scope\n\n* In: standalone candidate-clone Gateway API, source eligibility, target preparation, environment duplication, optional SQLite seeding, App-definition copies, and durable clone retry.\n* Out: Cluster Router projection, first deployment, framework commands, database registration, source mutation, and removing the transitional direct-creation API.\n\n## Acceptance\n\n- [ ] `POST /instances/{candidate}/clone` accepts `node_id`, `name`, and `preview_name`, with optional `branch` and `sqlite_source_path`; the candidate selects the App, environment is production, and unknown or duplicate fields, including target App, commit SHA, user, or arbitrary destination paths, are refused before mutation. Proof: `apps/gateway/tests/Feature/Api/CloneAppInstanceTest.php`.\n- [ ] The caller needs directed access to both candidate and destination Nodes; the target must satisfy existing production placement uniqueness and active-role rules, while eligible development and production candidates must have a recorded usable Git checkout or selected release. Proof: `apps/gateway/tests/Feature/Api/CloneAppInstanceTest.php`.\n- [ ] Staged, unstaged, nonignored untracked, or submodule changes refuse cloning; source commits unavailable from the App repository and a missing selected target branch also refuse before target preparation, without requiring a caller-supplied SHA. Proof: Incus action `candidate-clone-eligibility`.\n- [ ] The preview is the normalized `preview_name` followed by the target Node\u2019s own TLD, such as `shop.com.prod.orbit`; missing Node TLD, invalid full hostname, or occupied Route refuses before target reservation. Store the resolved preview with explicit Route provenance so subsequent TLD changes do not silently rename it. Proof: `apps/gateway/tests/Feature/Domain/CloneAppInstanceTest.php`.\n- [ ] Source is reconstructed from the selected App repository branch into owned prepared release content without selecting `current`; the branch is inherited from the candidate unless explicitly supplied, and runtime classification retains the existing source-profile contract. Proof: Incus action `candidate-clone-source`.\n- [ ] Stored environment entries are copied as independent encrypted target values, preserving literal `APP_KEY` and placeholder expressions; target sync resolves `app_instance.hostname` and `app_instance.environment` after reusable preflight, and copies no source `.env` bytes or cached Laravel configuration. Proof: Incus action `candidate-clone-environment`.\n- [ ] Omitting `sqlite_source_path` copies and creates no database; providing it installs exactly one consistent seed, including any queued rows, without cleaning either database or rewriting database-path environment values. Proof: Incus action `candidate-clone-data`.\n- [ ] Target preparation installs only App production definition copies in their stopped state and provisions a dedicated PHP runtime with defaults when required; candidate process overrides, ignored logs, caches, installed dependencies, and local FPM tuning are not transferred. Proof: Incus action `candidate-clone-runtime`.\n- [ ] Completion returns the ordinary active AppInstance and its sole private preview Route with no selected deployment release; it does not require an application response, run a framework command, deploy code, or start application workers or timers. Proof: `apps/gateway/tests/Feature/Domain/CloneAppInstanceTest.php` and Incus action `candidate-clone-prepared`.\n- [ ] The source\u2019s Git state, stored environment, data, queue contents, and runtime desired states remain unchanged by cloning while its existing workers and schedules continue running. Proof: Incus action `candidate-clone-source-preserved`.\n- [ ] The target identity and clone request retain bounded provisioning checkpoints; an interrupted identical request resumes unfinished owned work, a conflicting request refuses, and a completed retry returns the same target without revalidating changing source state or replacing target data, environment edits, copies, runtime state, or final hostname. Proof: Incus action `candidate-clone-retry`.\n- [ ] Maintained documentation describes clone inputs, preview derivation, eligibility, independent target state, and separate first deployment, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.\n- [ ] A successful clone from a production candidate to the temporary `app-prod-2` extension preserves the candidate\u2019s running workload; a file-based non-Laravel candidate with no database also completes without an implicit SQLite file. Proof: Incus actions `production-candidate-clone` and `database-free-candidate-clone`.",
+  "id": "6fa4276d-3573-4af6-bc25-cab6e7a9afdc",
+  "identifier": "ORB-198",
+  "inverseRelations": {
+    "nodes": [
+      {
+        "issue": {
+          "identifier": "ORB-226",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-212",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-225",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-206",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "related"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-201",
+          "state": {
+            "type": "unstarted"
+          }
+        },
+        "type": "related"
+      },
+      {
+        "issue": {
+          "identifier": "ORB-197",
+          "state": {
+            "type": "completed"
+          }
+        },
+        "type": "blocks"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "labels": {
+    "nodes": [
+      {
+        "name": "docs"
+      },
+      {
+        "name": "incus"
+      },
+      {
+        "name": "apps/gateway"
+      },
+      {
+        "name": "Feature"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "state": {
+    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+    "name": "In Progress",
+    "type": "started"
+  },
+  "team": {
+    "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+    "states": {
+      "nodes": [
+        {
+          "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+          "name": "Blocked"
+        },
+        {
+          "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+          "name": "In Review"
+        },
+        {
+          "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+          "name": "In Progress"
+        },
+        {
+          "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+          "name": "Duplicate"
+        },
+        {
+          "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+          "name": "Todo"
+        },
+        {
+          "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+          "name": "Done"
+        },
+        {
+          "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+          "name": "Canceled"
+        },
+        {
+          "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+          "name": "Backlog"
+        }
+      ]
+    }
+  },
+  "title": "Clone a candidate into a prepared production AppInstance",
+  "updatedAt": "2026-09-12T01:25:44.448Z",
+  "url": "https://linear.app/nckrtl/issue/ORB-198/clone-a-candidate-into-a-prepared-production-appinstance"
+}
