@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Activity;
 
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Tools\ToolOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -13,6 +14,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Route;
+use App\Models\Schedule;
 use App\Models\Tool;
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
@@ -152,6 +154,10 @@ final readonly class CommandActivityTargetResolver
             return $this->processOwner($request);
         }
 
+        if (str_starts_with((string) $request->route()?->getName(), 'schedule:')) {
+            return $this->scheduleTarget($request);
+        }
+
         if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny'], strict: true)) {
             return $this->createdFirewallRule($request);
         }
@@ -256,6 +262,40 @@ final readonly class CommandActivityTargetResolver
         }
 
         return AppInstance::query()->find($request->integer('target_id'));
+    }
+
+    private function scheduleTarget(Request $request): Node|AppInstance|null
+    {
+        $schedule = $request->attributes->get('orbit.schedule_activity');
+
+        if (! $schedule instanceof Schedule) {
+            $schedule = $request->route('schedule');
+        }
+
+        if ($schedule instanceof Schedule) {
+            return match ($schedule->target_type) {
+                Node::class => Node::query()->find($schedule->target_id),
+                AppInstance::class => AppInstance::query()->find($schedule->target_id),
+                default => null,
+            };
+        }
+
+        if ($request->route()?->getName() !== 'schedule:add') {
+            return null;
+        }
+
+        $type = $request->input('target_type');
+        $targetId = $request->input('target_id');
+
+        if (! is_string($type) || ! is_int($targetId) || $targetId < 1) {
+            return null;
+        }
+
+        return match (ScheduleTargetType::tryFrom($type)) {
+            ScheduleTargetType::Node => Node::query()->find($targetId),
+            ScheduleTargetType::AppInstance => AppInstance::query()->find($targetId),
+            default => null,
+        };
     }
 
     private function targetNodeId(Model $subject): ?int

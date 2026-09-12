@@ -13,6 +13,7 @@ enum ServingNode
     case EnvironmentInstanceOwning;
     case WorkspaceOwning;
     case ProcessOwning;
+    case ScheduleOwning;
     case ScheduleHost;
     case ToolOwning;
     case ClusterOwning;

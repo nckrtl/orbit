@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
+use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\WorkspacesController;
@@ -235,6 +236,25 @@ Route::prefix('v1')->group(function (): void {
             ->name('workspace:remove');
         Route::patch('workspaces/{workspace}/php', [WorkspacesController::class, 'php'])
             ->name('workspace:php');
+        Route::get('schedules', [SchedulesController::class, 'index'])
+            ->name('schedule:list');
+        Route::post('schedules', [SchedulesController::class, 'store'])
+            ->name('schedule:add');
+        Route::get('schedules/{schedule}/logs', [SchedulesController::class, 'logs'])
+            ->whereUuid('schedule')
+            ->name('schedule:logs');
+        Route::post('schedules/{schedule}/run', [SchedulesController::class, 'run'])
+            ->whereUuid('schedule')
+            ->name('schedule:run');
+        Route::post('schedules/{schedule}/activate', [SchedulesController::class, 'activate'])
+            ->whereUuid('schedule')
+            ->name('schedule:activate');
+        Route::get('schedules/{schedule}', [SchedulesController::class, 'show'])
+            ->whereUuid('schedule')
+            ->name('schedule:show');
+        Route::delete('schedules/{schedule}', [SchedulesController::class, 'destroy'])
+            ->whereUuid('schedule')
+            ->name('schedule:remove');
         Route::get('processes', [ProcessesController::class, 'index'])
             ->name('process:list');
         Route::get('processes/{process}/logs', [ProcessesController::class, 'logs'])
