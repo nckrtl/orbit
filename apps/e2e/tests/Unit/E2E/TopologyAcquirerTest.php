@@ -32,6 +32,7 @@ use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Process;
 
 require_once __DIR__.'/Support/TopologyFixtures.php';
 
@@ -350,12 +351,13 @@ it('constructs an extended discovery without adopting proof resources or sharing
             'copy local:orbit-e2e-topology-snapshot-app-prod/main-app-prod',
             'init local:orbit-base-ubuntu-26.04-runtime',
             $discoveryTarget->instance('app-prod-2'),
-            $discoveryTarget->instance('app-prod').' -- /usr/local/bin/retarget-vpn.sh 10.44.0.10',
+            $discoveryTarget->instance('app-prod').' -- bash -s -- 10.44.0.10 10.44.0.10:51820',
         )
         ->not->toContain(
             $proofTarget->network(),
             $proofTarget->instance('app-prod-2'),
             $discoveryTarget->instance('app-prod-2').' -- /usr/local/bin/retarget-vpn.sh',
+            $discoveryTarget->instance('app-prod-2').' -- bash -s --',
         );
 
     $state = IssueState::forWorktree('TST-123', $worktree);
@@ -366,6 +368,58 @@ it('constructs an extended discovery without adopting proof resources or sharing
         ->and($state->hasAttempt(AttemptPurpose::Proof))
         ->toBeFalse();
 });
+
+it('rolls back only its acquired clones without publishing readiness when Gateway identity fails', function (int $exitCode, string $output): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-identity-acquisition-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'identity-failure');
+    $target = featureTarget('TST-123');
+    $events = [];
+    fakePinnedWorktreeProcesses($target, $events, guestOverride: static function (array $guest) use ($exitCode, $output) {
+        if (in_array('/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', $guest, true)) {
+            return Process::result($output, '', $exitCode);
+        }
+
+        return null;
+    });
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
+    $acquirer = new TopologyAcquirer(
+        $host,
+        new IncusNetworkLifecycle($host),
+        new PreparedStateFingerprint(new GitRepository($root)),
+        $manifests,
+        new WorktreeSynchronizer($host, $root, $operation),
+        new TopologyVerifier($host, 1, 0),
+        new DiscoveryGuestPreparer($host),
+        new HostCapacity($host, 24),
+        $paths,
+        $operation,
+        TopologySnapshotIdentity::primary(),
+        $root,
+        fn () => attemptId(),
+    );
+
+    expect(fn () => $acquirer->acquire(new TopologyRequest('TST-123', $worktree)))
+        ->toThrow(RuntimeException::class, 'Topology acquisition failed: Gateway clone identity preparation');
+
+    $state = IssueState::forWorktree('TST-123', $worktree);
+    expect($state->hasAttempt())->toBeFalse();
+    expect(file_exists($worktree.'/.e2e/topology.json'))->toBeFalse();
+    $deletions = array_values(array_filter($events, static fn (array $command): bool => ($command[3] ?? null) === 'delete'));
+    expect(array_column($deletions, 4))->toEqualCanonicalizing(array_map(
+        static fn (string $role): string => 'local:'.$target->instance($role), TopologyProfile::ROLES,
+    ));
+    $networks = array_values(array_filter($events, static fn (array $command): bool => array_slice($command, 3, 2) === ['network', 'delete']));
+    expect(array_column($networks, 5))->toBe(['local:'.$target->network()]);
+    $commands = implode("\n", array_map(static fn (array $event): string => implode(' ', $event), $events));
+    expect($commands)->not->toContain(' -- bash -s --', '/usr/local/bin/verify-topology.sh', 'converge-gateway.sh');
+})->with([
+    'failed publication' => [65, ''],
+    'malformed publication' => [0, '{"app-dev":"10.44.0.10:51820"}'],
+]);
 
 it('uses the acquired generation for discovery sync after main and promotion change while proof requires freshness', function (): void {
     $root = preparedTopologyRepository();

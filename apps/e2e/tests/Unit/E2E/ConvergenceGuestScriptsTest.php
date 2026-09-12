@@ -6,6 +6,127 @@ use App\E2E\Value\TopologyProfile;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
+/** @return array{root:string,database:string,pdo:PDO} */
+function discovery_gateway_identity_fixture(): array
+{
+    $root = temporaryPath('orbit-discovery-gateway-identity-', 4);
+    mkdir($root, 0o700, true);
+    $database = "{$root}/gateway.sqlite";
+    $pdo = new PDO("sqlite:{$database}", options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE nodes (
+            id INTEGER PRIMARY KEY, name TEXT, status TEXT, public_ssh_host TEXT,
+            public_ssh_port INTEGER, ssh_user TEXT, wireguard_ip TEXT, lan_ip TEXT,
+            wireguard_public_key TEXT, wireguard_endpoint_override TEXT, dns_server_override TEXT,
+            ssh_host_key TEXT, cluster_id INTEGER, created_at TEXT, updated_at TEXT
+        );
+        CREATE TABLE node_roles (
+            id INTEGER PRIMARY KEY, node_id INTEGER, role TEXT, status TEXT,
+            created_at TEXT, updated_at TEXT
+        );
+        CREATE TABLE settings (
+            id INTEGER PRIMARY KEY, scope_type TEXT, scope_id INTEGER, key TEXT,
+            value TEXT, is_secret INTEGER, created_at TEXT, updated_at TEXT
+        );
+        CREATE TABLE apps (id INTEGER PRIMARY KEY, slug TEXT, repository_url TEXT, updated_at TEXT);
+        CREATE TABLE app_instances (id INTEGER PRIMARY KEY, app_id INTEGER, node_id INTEGER, checkout_path TEXT);
+        INSERT INTO nodes VALUES
+            (1, 'gateway', 'active', '10.232.1.10', 2201, 'orbit', '10.44.0.1', '192.168.1.10', 'gateway-public-key', NULL, '10.44.0.1', 'gateway-host-key', NULL, '2026-09-01', '2026-09-02'),
+            (2, 'app-dev', 'active', '10.232.1.11', 2202, 'orbit', '10.44.0.2', '192.168.1.11', 'dev-public-key', NULL, '10.44.0.1', 'dev-host-key', 7, '2026-09-01', '2026-09-03'),
+            (3, 'app-prod', 'active', '10.232.1.12', 2203, 'deploy', '10.44.0.3', NULL, 'prod-public-key', NULL, '192.0.2.53', 'prod-host-key', NULL, '2026-09-01', '2026-09-04');
+        INSERT INTO node_roles VALUES
+            (1, 1, 'gateway', 'active', '2026-09-01', '2026-09-02'),
+            (2, 1, 'vpn', 'active', '2026-09-01', '2026-09-02'),
+            (3, 2, 'app-dev', 'active', '2026-09-01', '2026-09-03'),
+            (4, 3, 'app-prod', 'active', '2026-09-01', '2026-09-04'),
+            (5, 2, 'metrics', 'active', '2026-09-01', '2026-09-03');
+        INSERT INTO settings VALUES
+            (1, 'gateway', 0, 'vpn.endpoint', '10.232.1.10:51821', 0, '2026-09-01', '2026-09-02'),
+            (2, 'gateway', 0, 'vpn.port', '51822', 0, '2026-09-01', '2026-09-02'),
+            (3, 'gateway', 0, 'vpn.dns_server', '192.0.2.53', 0, '2026-09-01', '2026-09-02'),
+            (4, 'gateway', 0, 'vpn.domain', 'orbit.test', 0, '2026-09-01', '2026-09-02'),
+            (5, 'gateway', 0, 'api.token', 'encrypted-fixture-secret', 1, '2026-09-01', '2026-09-02'),
+            (6, 'node', 2, 'vpn.endpoint', 'custom.example.test:53000', 0, '2026-09-01', '2026-09-02'),
+            (7, 'gateway', 0, 'vpn.subnet', '10.44.0.0/24', 0, '2026-09-01', '2026-09-02');
+        INSERT INTO apps VALUES (8, 'laravel', 'https://example.test/laravel.git', '2026-09-04');
+        INSERT INTO app_instances VALUES
+            (9, 8, 2, '/home/orbit/apps/laravel'),
+            (10, 8, 3, '/home/orbit-laravel/releases/one');
+        SQL);
+
+    return ['root' => $root, 'database' => $database, 'pdo' => $pdo];
+}
+
+/** @return array<string,list<array<string,mixed>>> */
+function discovery_gateway_identity_state(PDO $pdo): array
+{
+    $state = [];
+    foreach (['nodes', 'node_roles', 'settings', 'apps', 'app_instances'] as $table) {
+        $state[$table] = $pdo->query("SELECT * FROM {$table} ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    return $state;
+}
+
+/** @param list<string> $addresses */
+function discovery_gateway_identity_process(string $database, array $addresses = ['10.232.7.10', '10.232.7.11', '10.232.7.12']): Process
+{
+    return new Process([
+        PHP_BINARY,
+        dirname(__DIR__, 3).'/resources/guest/retarget-gateway.php',
+        $database,
+        ...$addresses,
+    ]);
+}
+
+/** @return array{root:string,script:string,config:string,commands:string,environment:array<string,string>} */
+function discovery_peer_identity_fixture(?string $configuration = null): array
+{
+    $root = temporaryPath('orbit-discovery-peer-identity-', 4);
+    mkdir("{$root}/bin", 0o700, true);
+    $configuration ??= "# Keep the private DNS policy and keys\n[Interface]\nPrivateKey = fixture-private-key\nAddress = 10.44.0.2/24\nDNS = 192.0.2.53\nMTU = 1380\n\n[Peer]\nPublicKey = FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w=\nEndpoint = 10.232.1.10:51901\nAllowedIPs = 10.44.0.0/24\nPersistentKeepalive = 25\n";
+    $config = "{$root}/orbit.conf";
+    $commands = "{$root}/commands";
+    file_put_contents($config, $configuration);
+    chmod($config, 0o600);
+    file_put_contents($commands, '');
+    file_put_contents("{$root}/bin/systemctl", <<<'BASH'
+        #!/usr/bin/env bash
+        printf 'systemctl %s\n' "$*" >> "$ORBIT_PEER_COMMANDS"
+        [[ "$1" == is-active ]] && exit "${ORBIT_WG_INACTIVE:-0}"
+        exit 0
+        BASH);
+    file_put_contents("{$root}/bin/wg", <<<'BASH'
+        #!/usr/bin/env bash
+        printf 'wg %s\n' "$*" >> "$ORBIT_PEER_COMMANDS"
+        exit "${ORBIT_WG_SET_EXIT:-0}"
+        BASH);
+    file_put_contents("{$root}/bin/ping", <<<'BASH'
+        #!/usr/bin/env bash
+        exit 0
+        BASH);
+    foreach (['systemctl', 'wg', 'ping'] as $command) {
+        chmod("{$root}/bin/{$command}", 0o700);
+    }
+    $script = "{$root}/retarget-vpn.sh";
+    file_put_contents($script, str_replace(
+        '/etc/wireguard/orbit.conf',
+        $config,
+        file_get_contents(dirname(__DIR__, 3).'/resources/guest/retarget-vpn.sh'),
+    ));
+
+    return [
+        'root' => $root,
+        'script' => $script,
+        'config' => $config,
+        'commands' => $commands,
+        'environment' => [
+            'PATH' => "{$root}/bin:".getenv('PATH'),
+            'ORBIT_PEER_COMMANDS' => $commands,
+        ],
+    ];
+}
+
 function gateway_prerequisite_fixture(): string
 {
     $root = temporaryPath('orbit-gateway-prereqs-', 4);
@@ -1099,6 +1220,239 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('retargets cloned Gateway provisioning inputs while preserving every unrelated field', function (): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $expected = discovery_gateway_identity_state($fixture['pdo']);
+            $expected['nodes'][0]['public_ssh_host'] = '10.232.7.10';
+            $expected['nodes'][1]['public_ssh_host'] = '10.232.7.11';
+            $expected['nodes'][2]['public_ssh_host'] = '10.232.7.12';
+            $expected['settings'][0]['value'] = '10.232.7.10:51821';
+            $process = discovery_gateway_identity_process($fixture['database']);
+
+            expect($process->run())->toBe(0);
+            expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+                'app-dev' => '10.232.7.10:51821',
+                'app-prod' => '10.232.7.10:51821',
+            ]);
+            expect($process->getErrorOutput())->toBe('');
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($expected);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('retains null or absent Gateway endpoints and uses the configured or default VPN port', function (string $changes, string $port): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $fixture['pdo']->exec($changes);
+            $expected = discovery_gateway_identity_state($fixture['pdo']);
+            $expected['nodes'][0]['public_ssh_host'] = '10.232.7.10';
+            $expected['nodes'][1]['public_ssh_host'] = '10.232.7.11';
+            $expected['nodes'][2]['public_ssh_host'] = '10.232.7.12';
+            $process = discovery_gateway_identity_process($fixture['database']);
+
+            expect($process->run())->toBe(0);
+            expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+                'app-dev' => "10.232.7.10:{$port}",
+                'app-prod' => "10.232.7.10:{$port}",
+            ]);
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($expected);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'null endpoint and configured port' => ['UPDATE settings SET value = NULL WHERE id = 1', '51822'],
+        'absent endpoint and configured port' => ['DELETE FROM settings WHERE id = 1', '51822'],
+        'null endpoint and null port' => ['UPDATE settings SET value = NULL WHERE id IN (1, 2)', '51820'],
+        'absent endpoint and absent port' => ['DELETE FROM settings WHERE id IN (1, 2)', '51820'],
+        'null endpoint and absent port' => ['UPDATE settings SET value = NULL WHERE id = 1; DELETE FROM settings WHERE id = 2', '51820'],
+        'absent endpoint and null port' => ['DELETE FROM settings WHERE id = 1; UPDATE settings SET value = NULL WHERE id = 2', '51820'],
+    ]);
+
+    it('preserves distinct peer override ports and repeats Gateway identity preparation without drift', function (): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $fixture['pdo']->exec(<<<'SQL'
+                UPDATE nodes SET wireguard_endpoint_override = '10.232.1.10:51901' WHERE id = 2;
+                UPDATE nodes SET wireguard_endpoint_override = '10.232.7.10:51902' WHERE id = 3;
+                SQL);
+            $expected = discovery_gateway_identity_state($fixture['pdo']);
+            $expected['nodes'][0]['public_ssh_host'] = '10.232.7.10';
+            $expected['nodes'][1]['public_ssh_host'] = '10.232.7.11';
+            $expected['nodes'][1]['wireguard_endpoint_override'] = '10.232.7.10:51901';
+            $expected['nodes'][2]['public_ssh_host'] = '10.232.7.12';
+            $expected['settings'][0]['value'] = '10.232.7.10:51821';
+            $process = discovery_gateway_identity_process($fixture['database']);
+
+            expect($process->run())->toBe(0);
+            expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+                'app-dev' => '10.232.7.10:51901',
+                'app-prod' => '10.232.7.10:51902',
+            ]);
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($expected);
+
+            $repeated = discovery_gateway_identity_process($fixture['database']);
+            expect($repeated->run())->toBe(0);
+            expect($repeated->getOutput())->toBe($process->getOutput());
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($expected);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('keeps a peer override ahead of global and fallback endpoints', function (string $globalChanges, string $productionEndpoint): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $fixture['pdo']->exec("UPDATE nodes SET wireguard_endpoint_override = '10.232.1.10:51901' WHERE id = 2");
+            $fixture['pdo']->exec($globalChanges);
+            $process = discovery_gateway_identity_process($fixture['database']);
+
+            expect($process->run())->toBe(0);
+            expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+                'app-dev' => '10.232.7.10:51901',
+                'app-prod' => $productionEndpoint,
+            ]);
+            expect($fixture['pdo']->query('SELECT wireguard_endpoint_override FROM nodes ORDER BY id')->fetchAll(PDO::FETCH_COLUMN))
+                ->toBe([null, '10.232.7.10:51901', null]);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'already-current global endpoint' => ["UPDATE settings SET value = '10.232.7.10:51821' WHERE id = 1", '10.232.7.10:51821'],
+        'null global endpoint' => ['UPDATE settings SET value = NULL WHERE id = 1', '10.232.7.10:51822'],
+        'absent global endpoint' => ['DELETE FROM settings WHERE id = 1', '10.232.7.10:51822'],
+    ]);
+
+    it('rejects invalid or ambiguous Gateway identity without writes or endpoint publication', function (string $changes): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $fixture['pdo']->exec($changes);
+            $before = discovery_gateway_identity_state($fixture['pdo']);
+            $process = discovery_gateway_identity_process($fixture['database']);
+
+            expect($process->run())->toBe(65);
+            expect($process->getOutput())->toBe('');
+            expect($process->getErrorOutput())->not->toContain('encrypted-fixture-secret');
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($before);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'missing Gateway' => "DELETE FROM nodes WHERE name = 'gateway'",
+        'missing app peer' => "DELETE FROM nodes WHERE name = 'app-prod'",
+        'inactive Gateway' => "UPDATE nodes SET status = 'failed' WHERE name = 'gateway'",
+        'inactive app peer' => "UPDATE nodes SET status = 'provisioning' WHERE name = 'app-dev'",
+        'ambiguous standard node' => "INSERT INTO nodes (id, name, status, public_ssh_host) VALUES (4, 'app-dev', 'active', '10.232.1.13')",
+        'missing Gateway role' => "DELETE FROM node_roles WHERE role = 'gateway'",
+        'missing VPN role' => "DELETE FROM node_roles WHERE role = 'vpn'",
+        'inactive development role' => "UPDATE node_roles SET status = 'failed' WHERE role = 'app-dev'",
+        'inactive production role' => "UPDATE node_roles SET status = 'pending' WHERE role = 'app-prod'",
+        'duplicate active VPN role' => "INSERT INTO node_roles (id, node_id, role, status) VALUES (6, 1, 'vpn', 'active')",
+        'missing stored SSH identity' => 'UPDATE nodes SET public_ssh_host = NULL WHERE id = 2',
+        'stored hostname identity' => "UPDATE nodes SET public_ssh_host = 'snapshot.example.test' WHERE id = 1",
+        'invalid stored IPv4 identity' => "UPDATE nodes SET public_ssh_host = '10.232.1.999' WHERE id = 3",
+        'foreign global endpoint' => "UPDATE settings SET value = '192.0.2.10:51821' WHERE id = 1",
+        'hostname global endpoint' => "UPDATE settings SET value = 'custom.example.test:51821' WHERE id = 1",
+        'missing global endpoint port' => "UPDATE settings SET value = '10.232.1.10' WHERE id = 1",
+        'invalid global endpoint port' => "UPDATE settings SET value = '10.232.1.10:65536' WHERE id = 1",
+        'empty global endpoint' => "UPDATE settings SET value = '' WHERE id = 1",
+        'secret global endpoint' => "UPDATE settings SET value = 'encrypted-fixture-secret', is_secret = 1 WHERE id = 1",
+        'secret VPN port' => 'UPDATE settings SET is_secret = 1 WHERE id = 2',
+        'duplicate global endpoint' => "INSERT INTO settings (id, scope_type, scope_id, key, value, is_secret) VALUES (8, 'gateway', 0, 'vpn.endpoint', '10.232.1.10:51999', 0)",
+        'duplicate VPN port' => "INSERT INTO settings (id, scope_type, scope_id, key, value, is_secret) VALUES (8, 'gateway', 0, 'vpn.port', '51999', 0)",
+        'zero VPN port' => "UPDATE settings SET value = '0' WHERE id = 2",
+        'out-of-range VPN port' => "UPDATE settings SET value = '65536' WHERE id = 2",
+        'nonnumeric VPN port' => "UPDATE settings SET value = 'invalid' WHERE id = 2",
+        'foreign peer endpoint' => "UPDATE nodes SET wireguard_endpoint_override = '192.0.2.10:51901' WHERE id = 2",
+        'malformed peer endpoint' => "UPDATE nodes SET wireguard_endpoint_override = '10.232.1.10:not-a-port' WHERE id = 3",
+        'zero peer endpoint port' => "UPDATE nodes SET wireguard_endpoint_override = '10.232.1.10:0' WHERE id = 2",
+        'empty peer endpoint' => "UPDATE nodes SET wireguard_endpoint_override = '' WHERE id = 2",
+    ]);
+
+    it('rolls back Gateway identity writes when a later SQL update fails', function (): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $fixture['pdo']->exec(<<<'SQL'
+                UPDATE nodes SET wireguard_endpoint_override = '10.232.1.10:51901' WHERE id = 2;
+                CREATE TRIGGER reject_discovery_endpoint BEFORE UPDATE OF value ON settings
+                WHEN OLD.key = 'vpn.endpoint'
+                BEGIN SELECT RAISE(ABORT, 'fixture endpoint update rejected'); END;
+                SQL);
+            $before = discovery_gateway_identity_state($fixture['pdo']);
+            $process = discovery_gateway_identity_process($fixture['database']);
+
+            expect($process->run())->toBe(65);
+            expect($process->getOutput())->toBe('');
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($before);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('rejects invalid assigned clone addresses before Gateway identity writes', function (array $addresses): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $before = discovery_gateway_identity_state($fixture['pdo']);
+            $process = discovery_gateway_identity_process($fixture['database'], $addresses);
+
+            expect($process->run())->toBe(65);
+            expect($process->getOutput())->toBe('');
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($before);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'invalid Gateway IPv4' => [['10.232.7.999', '10.232.7.11', '10.232.7.12']],
+        'peer hostname' => [['10.232.7.10', 'app-dev.example.test', '10.232.7.12']],
+        'IPv6 production peer' => [['10.232.7.10', '10.232.7.11', '2001:db8::12']],
+        'duplicate Gateway and peer' => [['10.232.7.10', '10.232.7.10', '10.232.7.12']],
+        'duplicate peers' => [['10.232.7.10', '10.232.7.11', '10.232.7.11']],
+    ]);
+
+    it('rejects malformed Gateway retarget arguments without database changes', function (array $addresses): void {
+        $fixture = discovery_gateway_identity_fixture();
+
+        try {
+            $before = discovery_gateway_identity_state($fixture['pdo']);
+            $process = discovery_gateway_identity_process($fixture['database'], $addresses);
+
+            expect($process->run())->toBe(64);
+            expect($process->getOutput())->toBe('');
+            expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($before);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'no addresses' => [[]],
+        'missing production address' => [['10.232.7.10', '10.232.7.11']],
+        'unexpected fourth address' => [['10.232.7.10', '10.232.7.11', '10.232.7.12', '10.232.7.13']],
+    ]);
+
+    it('does not create a missing cloned Gateway database', function (): void {
+        $root = temporaryPath('orbit-discovery-missing-gateway-', 4);
+        mkdir($root, 0o700, true);
+        $database = "{$root}/missing.sqlite";
+
+        try {
+            $process = discovery_gateway_identity_process($database);
+
+            expect($process->run())->toBe(65);
+            expect($process->getOutput())->toBe('');
+            expect(file_exists($database))->toBeFalse();
+            expect(scandir($root))->toBe(['.', '..']);
+        } finally {
+            new Filesystem()->deleteDirectory($root);
+        }
+    });
+
     it('repairs the node WireGuard endpoint only when the Gateway address changed', function (): void {
         $root = temporaryPath('orbit-retarget-vpn-', 4);
         mkdir("{$root}/bin", 0o700, true);
@@ -1176,6 +1530,159 @@ describe('convergence guest scripts', function () {
             expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.1.10'])->run())->toBe(0);
         } finally {
             new Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('reconciles saved and running discovery peer endpoints while preserving configuration and permissions', function (): void {
+        $fixture = discovery_peer_identity_fixture();
+
+        try {
+            $expected = str_replace('10.232.1.10:51901', '10.232.7.10:51901', file_get_contents($fixture['config']));
+            $process = new Process(
+                ['bash', $fixture['script'], '10.232.7.10', '10.232.7.10:51901'],
+                env: $fixture['environment'],
+            );
+
+            expect($process->run())->toBe(0);
+            expect(file_get_contents($fixture['config']))->toBe($expected);
+            clearstatcache(true, $fixture['config']);
+            expect(fileperms($fixture['config']) & 0o777)->toBe(0o600);
+            expect(file($fixture['commands'], FILE_IGNORE_NEW_LINES))->toBe([
+                'systemctl is-active --quiet wg-quick@orbit',
+                'wg set orbit peer FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w= endpoint 10.232.7.10:51901',
+            ]);
+
+            file_put_contents($fixture['commands'], '');
+            $repeated = new Process(
+                ['bash', $fixture['script'], '10.232.7.10', '10.232.7.10:51901'],
+                env: $fixture['environment'],
+            );
+
+            expect($repeated->run())->toBe(0);
+            expect(file_get_contents($fixture['config']))->toBe($expected);
+            expect(file($fixture['commands'], FILE_IGNORE_NEW_LINES))->toBe([
+                'systemctl is-active --quiet wg-quick@orbit',
+                'wg set orbit peer FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w= endpoint 10.232.7.10:51901',
+            ]);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('restarts an inactive discovery peer with its retargeted saved endpoint', function (): void {
+        $fixture = discovery_peer_identity_fixture();
+
+        try {
+            $expected = str_replace('10.232.1.10:51901', '10.232.7.10:51901', file_get_contents($fixture['config']));
+            $process = new Process(
+                ['bash', $fixture['script'], '10.232.7.10', '10.232.7.10:51901'],
+                env: [...$fixture['environment'], 'ORBIT_WG_INACTIVE' => '3'],
+            );
+
+            expect($process->run())->toBe(0);
+            expect(file_get_contents($fixture['config']))->toBe($expected);
+            expect(file($fixture['commands'], FILE_IGNORE_NEW_LINES))->toBe([
+                'systemctl is-active --quiet wg-quick@orbit',
+                'systemctl restart wg-quick@orbit',
+            ]);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('fails discovery peer repair when the required saved configuration is missing', function (): void {
+        $fixture = discovery_peer_identity_fixture();
+        unlink($fixture['config']);
+
+        try {
+            $process = new Process(
+                ['bash', $fixture['script'], '10.232.7.10', '10.232.7.10:51901'],
+                env: $fixture['environment'],
+            );
+
+            expect($process->run())->toBe(65);
+            expect(file_exists($fixture['config']))->toBeFalse();
+            expect(file_get_contents($fixture['commands']))->toBe('');
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('rejects invalid saved discovery peer configuration before changing files or running services', function (string $search, string $replacement): void {
+        $fixture = discovery_peer_identity_fixture();
+
+        try {
+            $before = str_replace($search, $replacement, file_get_contents($fixture['config']));
+            file_put_contents($fixture['config'], $before);
+            $process = new Process(
+                ['bash', $fixture['script'], '10.232.7.10', '10.232.7.10:51901'],
+                env: $fixture['environment'],
+            );
+
+            expect($process->run())->toBe(65);
+            expect(file_get_contents($fixture['config']))->toBe($before);
+            expect(file_get_contents($fixture['commands']))->toBe('');
+            expect(glob($fixture['config'].'.*'))->toBe([]);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'missing endpoint' => ["Endpoint = 10.232.1.10:51901\n", ''],
+        'duplicate endpoint' => ['Endpoint = 10.232.1.10:51901', "Endpoint = 10.232.1.10:51901\nEndpoint = 10.232.1.10:51901"],
+        'malformed endpoint' => ['10.232.1.10:51901', 'not-an-endpoint'],
+        'invalid saved IPv4 octet' => ['10.232.1.10:51901', '999.232.1.10:51901'],
+        'saved port conflicts with provisioning' => ['10.232.1.10:51901', '10.232.1.10:51820'],
+        'missing public key' => ["PublicKey = FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w=\n", ''],
+        'empty public key' => ['PublicKey = FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w=', 'PublicKey = '],
+        'malformed public key' => ['FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w=', 'invalid-key'],
+        'duplicate public key' => ['PublicKey = FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w=', "PublicKey = FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w=\nPublicKey = FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w="],
+    ]);
+
+    it('rejects invalid expected discovery endpoints before changing files or running services', function (string $expectedEndpoint): void {
+        $fixture = discovery_peer_identity_fixture();
+
+        try {
+            $before = file_get_contents($fixture['config']);
+            $process = new Process(
+                ['bash', $fixture['script'], '10.232.7.10', $expectedEndpoint],
+                env: $fixture['environment'],
+            );
+
+            expect($process->run())->toBe(65);
+            expect(file_get_contents($fixture['config']))->toBe($before);
+            expect(file_get_contents($fixture['commands']))->toBe('');
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'empty endpoint' => '',
+        'hostname endpoint' => 'gateway.example.test:51901',
+        'missing port' => '10.232.7.10',
+        'different Gateway host' => '10.232.8.10:51901',
+        'different provisioning port' => '10.232.7.10:51902',
+        'zero port' => '10.232.7.10:0',
+        'out-of-range port' => '10.232.7.10:65536',
+    ]);
+
+    it('propagates a running peer repair failure even when its saved endpoint is already current', function (): void {
+        $fixture = discovery_peer_identity_fixture();
+
+        try {
+            $before = str_replace('10.232.1.10:51901', '10.232.7.10:51901', file_get_contents($fixture['config']));
+            file_put_contents($fixture['config'], $before);
+            $process = new Process(
+                ['bash', $fixture['script'], '10.232.7.10', '10.232.7.10:51901'],
+                env: [...$fixture['environment'], 'ORBIT_WG_SET_EXIT' => '42'],
+            );
+
+            expect($process->run())->toBe(42);
+            expect(file_get_contents($fixture['config']))->toBe($before);
+            expect(file($fixture['commands'], FILE_IGNORE_NEW_LINES))->toBe([
+                'systemctl is-active --quiet wg-quick@orbit',
+                'wg set orbit peer FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w= endpoint 10.232.7.10:51901',
+            ]);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
