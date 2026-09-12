@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 96 concrete public Gateway API operations:
+The SDK models exactly 97 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -8,7 +8,7 @@ The SDK models exactly 96 concrete public Gateway API operations:
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, and remove.
 - App runtime definition: process and Schedule list, create, show, replace, and remove.
-- AppInstance: list, show, create, register, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
+- AppInstance: list, show, create, register, clone, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Workspace: list, show, create, remove, and update PHP.
 - Process: list, add, start, stop, restart, logs, and remove.
@@ -30,6 +30,11 @@ operations. Keep the public API typed and small.
   root, optional Route hostname, optional creation branch, explicit
   source-profile recovery, and explicit force intent.
   The Gateway owns placement, source, and Route policy.
+- Keep candidate clone transport limited to the numeric candidate AppInstance
+  ID, destination Node ID, target name, preview name, optional branch, and
+  optional SQLite source path. Preserve omission separately from every supplied
+  string. The Gateway owns candidate eligibility, placement, cloning, and Route
+  policy.
 - Keep AppInstance deployment-layout transport limited to the numeric
   AppInstance ID and an optional explicit SQLite source path. Preserve omission
   separately from every supplied string. The Gateway owns eligibility,

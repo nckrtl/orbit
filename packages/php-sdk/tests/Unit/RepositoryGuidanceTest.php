@@ -3,6 +3,7 @@
 declare(strict_types=1);
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
+use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
@@ -139,7 +140,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 88;
+        $preScheduleOperationCount = 89;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             AddScheduleRequest::class,
@@ -243,6 +244,7 @@ describe('repository guidance bootstrap', function (): void {
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
             ->toContain(AppInstanceDeploymentLayoutRequest::class)
+            ->toContain(CloneAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
             ->toContain(RemoveAppInstanceRequest::class)
@@ -266,12 +268,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($scheduleRequests);
     });
 
-    it('documents the 96-operation SDK surface including Schedule transport', function (): void {
+    it('documents the 97-operation SDK surface including candidate cloning and Schedule transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 96 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 97 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -284,7 +286,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
             )
             ->toContain(
-                '- AppInstance: list, show, create, register, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
+                '- AppInstance: list, show, create, register, clone, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
@@ -296,6 +298,9 @@ describe('repository guidance bootstrap', function (): void {
             );
 
         expect($normalizedPublicContract)
+            ->toContain(
+                'Keep candidate clone transport limited to the numeric candidate AppInstance ID, destination Node ID, target name, preview name, optional branch, and optional SQLite source path.',
+            )
             ->toContain(
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
             )
@@ -322,7 +327,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 96 public Gateway operations.',
+                'The SDK exposes exactly 97 public Gateway operations.',
                 'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
                 'Doctor accepts the current Gateway family set, including Schedule.',
