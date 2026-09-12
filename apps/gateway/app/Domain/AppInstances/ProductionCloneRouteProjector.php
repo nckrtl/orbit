@@ -9,7 +9,15 @@ use App\Models\Route;
 
 interface ProductionCloneRouteProjector
 {
-    public function prepareCaddy(AppInstance $appInstance, Route $route): void;
+    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void;
+
+    public function prepareRouterCertificate(AppInstance $appInstance, Route $route): void;
+
+    public function prepareRouteFirewall(AppInstance $appInstance, Route $route): void;
+
+    public function verifyWorkload(AppInstance $appInstance, Route $route): void;
+
+    public function prepareRouterCaddy(AppInstance $appInstance, Route $route): void;
 
     public function prepareDns(Route $route): void;
 }
