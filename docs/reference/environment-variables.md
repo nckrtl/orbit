@@ -117,6 +117,12 @@ A successful response contains only the AppInstance ID, `operation: sync`, wheth
 
 Preflight, decryption, rendering, and confirmed writer failures leave the previous file intact. An unconfirmed writer result returns `env.sync_unconfirmed`; the replacement might have completed, so the response does not claim that the previous file remains. Retry the same request to recheck the current file and either accept the matching protected file or install the complete current result.
 
+## Inspect the projection with Doctor
+
+Doctor renders the current stored configuration against the AppInstance's recorded Route and environment, then compares that intent with the workload `.env`. It reports a bounded instance-family finding when the persistent production file is missing, unsafe, or different. It does not expose a key or value in the report, Activity record, error, or diagnostic output.
+
+This comparison checks only Orbit-owned file projection. It does not inspect a framework configuration cache, restart a process, synchronize a pending stored change, or modify the file. A stale application cache is not environment projection drift.
+
 ## Remote replacement boundary
 
 Synchronization installs the rendered file through a protected internal operation. The reusable writer also remains available to other Gateway operations that already hold the AppInstance ownership and validation boundary.
