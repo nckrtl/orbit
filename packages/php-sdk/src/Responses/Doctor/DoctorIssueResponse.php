@@ -11,17 +11,6 @@ final readonly class DoctorIssueResponse
 {
     private const int MAX_STRING_LENGTH = 255;
 
-    private const array FAMILIES = [
-        'node',
-        'role',
-        'app',
-        'instance',
-        'workspace',
-        'tool',
-        'process',
-        'firewall',
-    ];
-
     private const array KINDS = ['drift', 'unverifiable'];
 
     private function __construct(
@@ -51,7 +40,7 @@ final readonly class DoctorIssueResponse
             || ! is_string($kind)
             || ! in_array($kind, self::KINDS, strict: true)
             || ! is_string($resourceType)
-            || ! in_array($resourceType, self::FAMILIES, strict: true)
+            || DoctorFamily::tryFrom($resourceType) === null
         ) {
             return null;
         }

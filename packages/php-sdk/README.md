@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 88 public Gateway operations. It preserves typed
+The SDK exposes exactly 96 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -17,6 +17,15 @@ remote execution behavior.
 ## App runtime definitions
 
 The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions. Create and replace requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
+
+## Schedules
+
+The SDK exposes typed list, add, show, run, logs, complete, remove, and activate
+requests for Node and AppInstance Schedules. Add requests preserve omitted
+optional values separately from explicit values. Item and collection responses
+are immutable, bounded, and redacted. Completion preserves the Gateway's empty
+response and exposes only its validated response-header request ID. The Gateway
+owns target resolution, validation, execution, and lifecycle policy.
 
 For example, typed Tool transport stays small and explicit:
 
@@ -49,6 +58,7 @@ The SDK exposes `RunDoctorRequest` and bounded typed report responses. It sends
 `POST /api/v1/doctor` as JSON. It omits null filters and preserves explicit
 filter values so the Gateway can validate them. It transports received health,
 order, issues, and summary aggregates without applying Doctor policy.
+Doctor accepts the current Gateway family set, including Schedule.
 
 ## Requirements
 

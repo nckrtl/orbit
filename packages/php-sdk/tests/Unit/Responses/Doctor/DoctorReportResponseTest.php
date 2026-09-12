@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\Responses\Doctor\DoctorFamily;
 use Orbit\Sdk\Responses\Doctor\DoctorFamilyResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorIssueResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorNodeResponse;
@@ -58,8 +59,23 @@ it('preserves the exact report, received order, aggregates, and scalar variants'
 });
 
 it('accepts every family and all statuses', function (): void {
-    $families = ['node', 'role', 'app', 'instance', 'workspace', 'tool', 'process', 'firewall'];
+    $families = array_map(
+        static fn (DoctorFamily $family): string => $family->value,
+        DoctorFamily::cases(),
+    );
     $statuses = ['healthy', 'drift', 'unverifiable'];
+    expect($families)->toBe([
+        'node',
+        'role',
+        'app',
+        'instance',
+        'workspace',
+        'schedule',
+        'tool',
+        'process',
+        'firewall',
+    ]);
+
     $data = doctor_report_data();
     $data['nodes'][0]['families'] = array_map(
         static fn (string $family, int $index): array => doctor_family_data($family, $statuses[$index % 3], $index, []),
@@ -73,7 +89,10 @@ it('accepts every family and all statuses', function (): void {
     expect(array_column($actual, 'family'))
         ->toBe($families)
         ->and(array_column($actual, 'status'))
-        ->toBe(['healthy', 'drift', 'unverifiable', 'healthy', 'drift', 'unverifiable', 'healthy', 'drift']);
+        ->toBe(array_map(
+            static fn (int $index): string => $statuses[$index % count($statuses)],
+            array_keys($families),
+        ));
 });
 
 it('drops malformed nested members without fallback DTOs', function (string $level, mixed $value): void {

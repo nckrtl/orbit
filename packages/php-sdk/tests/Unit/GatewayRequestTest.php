@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
+use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\Response;
 
 describe('gateway error envelope', function (): void {
     it('throws a typed exception with stable error details', function (): void {
@@ -171,6 +174,41 @@ describe('gateway error envelope', function (): void {
             ->not->toContain($credential);
     });
 });
+
+describe('gateway success header request ID', function (): void {
+    it('returns only a valid X-Orbit-Request-Id value', function (?string $header, string $expected): void {
+        $headers = $header === null ? [] : ['X-Orbit-Request-Id' => $header];
+        $mockClient = new MockClient([
+            GatewayHeaderRequestIdTestRequest::class => MockResponse::make('', 204, $headers),
+        ]);
+        $connector = new GatewayConnector('https://10.70.0.1');
+        $connector->withMockClient($mockClient);
+
+        expect($connector->send(new GatewayHeaderRequestIdTestRequest)->dto())->toBe($expected);
+    })->with([
+        'valid' => [
+            '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+            '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ],
+        'missing' => [null, ''],
+        'malformed' => ['token=gateway-header-secret', ''],
+    ]);
+});
+
+final class GatewayHeaderRequestIdTestRequest extends GatewayRequest
+{
+    protected Method $method = Method::GET;
+
+    public function resolveEndpoint(): string
+    {
+        return '/header-request-id';
+    }
+
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): string
+    {
+        return $this->successHeaderRequestId($response);
+    }
+}
 
 function gateway_test_secret(string $label): string
 {
