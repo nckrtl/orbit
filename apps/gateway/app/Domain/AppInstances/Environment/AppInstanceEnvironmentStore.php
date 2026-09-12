@@ -145,6 +145,72 @@ final readonly class AppInstanceEnvironmentStore
         return $snapshot;
     }
 
+    public function copyForClone(
+        AppInstanceEnvironmentContext $source,
+        AppInstanceEnvironmentContext $target,
+    ): void {
+        DB::transaction(function () use ($source, $target): void {
+            $this->assertCurrent($source, requireActiveNode: true);
+            $this->assertCloneCurrent($target, requireActiveNode: true);
+            $targetRows = AppInstanceEnvironmentValue::query()
+                ->where('app_instance_id', $target->appInstanceId)
+                ->lockForUpdate()
+                ->exists();
+
+            if ($targetRows) {
+                return;
+            }
+
+            foreach ($this->storedValues($source->appInstanceId) as $key => $value) {
+                AppInstanceEnvironmentValue::query()->create([
+                    'app_instance_id' => $target->appInstanceId,
+                    'env_key' => $key,
+                    'env_value' => $value,
+                ]);
+            }
+        });
+    }
+
+    public function cloneSynchronizationCapacity(AppInstanceEnvironmentContext $expected): int
+    {
+        /** @var int $requiredCapacity */
+        $requiredCapacity = DB::transaction(function () use ($expected): int {
+            $this->assertCloneCurrent($expected, requireActiveNode: true);
+            $rows = DB::table('app_instance_environment_values')
+                ->where('app_instance_id', $expected->appInstanceId)
+                ->orderBy('env_key')
+                ->get(['env_key', 'env_value']);
+            $encryptedStorageBytes = 0;
+
+            foreach ($rows as $row) {
+                if (! is_string($row->env_key) || ! is_string($row->env_value)) {
+                    $this->configurationUnreadable();
+                }
+
+                $encryptedStorageBytes += strlen($row->env_key) + strlen($row->env_value) + 4;
+            }
+
+            return AppInstanceEnvironmentValidator::MaximumFileBytes + $encryptedStorageBytes;
+        });
+
+        return $requiredCapacity;
+    }
+
+    public function cloneSynchronizationSnapshot(
+        AppInstanceEnvironmentContext $expected,
+    ): AppInstanceEnvironmentSynchronizationSnapshot {
+        /** @var AppInstanceEnvironmentSynchronizationSnapshot $snapshot */
+        $snapshot = DB::transaction(function () use ($expected): AppInstanceEnvironmentSynchronizationSnapshot {
+            $this->assertCloneCurrent($expected, requireActiveNode: true);
+
+            return new AppInstanceEnvironmentSynchronizationSnapshot(
+                $this->storedValues($expected->appInstanceId),
+            );
+        });
+
+        return $snapshot;
+    }
+
     private function assertCurrent(AppInstanceEnvironmentContext $expected, bool $requireActiveNode): void
     {
         $instance = AppInstance::query()->lockForUpdate()->find($expected->appInstanceId);
@@ -155,6 +221,25 @@ final readonly class AppInstanceEnvironmentStore
 
         try {
             $current = $this->contexts->resolve($instance, $requireActiveNode, lockRoute: true);
+        } catch (ResourceOperationException) {
+            $this->conflict();
+        }
+
+        if (! $expected->samePlacement($current)) {
+            $this->conflict();
+        }
+    }
+
+    private function assertCloneCurrent(AppInstanceEnvironmentContext $expected, bool $requireActiveNode): void
+    {
+        $instance = AppInstance::query()->lockForUpdate()->find($expected->appInstanceId);
+
+        if (! $instance instanceof AppInstance) {
+            $this->conflict();
+        }
+
+        try {
+            $current = $this->contexts->resolveForClone($instance, $requireActiveNode, lockRoute: true);
         } catch (ResourceOperationException) {
             $this->conflict();
         }

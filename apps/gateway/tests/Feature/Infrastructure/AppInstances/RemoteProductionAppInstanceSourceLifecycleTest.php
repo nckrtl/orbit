@@ -80,6 +80,7 @@ it('prepares the recorded user and home and resolves only the App default branch
             '/home/orbit-app-1',
             'main',
             '1',
+            '0',
         ])
         ->and($resolution->branch)
         ->toBe('main')
@@ -95,7 +96,7 @@ it('prepares the recorded user and home and resolves only the App default branch
             'sudo -u "$user" -H base64',
         )
         ->and($ssh->commands[4]->arguments)
-        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public'])
+        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public', '0'])
         ->and($ssh->commands[4]->input)
         ->toContain(
             'sudo -u "$user" -H realpath -m -- "$document_root"',
@@ -115,6 +116,7 @@ it('passes an explicit branch without changing production identity', function ()
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, "release\t".str_repeat('b', 40)."\n", '', 1, false),
     ], 'release');
+    $instance->update(['clone_candidate_id' => $instance->id]);
 
     $resolution = $source->resolve($instance);
 
@@ -128,12 +130,16 @@ it('passes an explicit branch without changing production identity', function ()
             '/home/orbit-app-1',
             'release',
             '1',
+            '1',
         ])
         ->and($ssh->commands[0]->input)
         ->toContain(
             'release="$home/releases/initial"',
-            'git -C "$release" checkout',
+            'git -C "$release" checkout --quiet',
+            'git -C "$release" branch --quiet',
             'ln -s ../../.env "$release_environment"',
+            'test "$clone_target" = 1',
+            'git -C "$release" diff --quiet -- .env',
             'realpath -e -- "$release_environment"',
             'test ! -e "$home/current"',
             'test ! -L "$home/current"',
@@ -148,7 +154,10 @@ it('permits an unresolved root and revalidates complete ownership immediately be
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, '', '', 1, false),
     ]);
-    $instance->update(['root' => 'public']);
+    $instance->update([
+        'root' => 'public',
+        'clone_candidate_id' => $instance->id,
+    ]);
 
     $source->prepareCaddyAccess($instance);
 
@@ -158,13 +167,14 @@ it('permits an unresolved root and revalidates complete ownership immediately be
     $firstAclMutation = strpos($command->input, 'sudo setfacl -n -P -R -m u:caddy:--- "$home"');
 
     expect($command->arguments)
-        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public'])
+        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public', '1'])
         ->and($command->input)
         ->toContain(
             'document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")',
             'if sudo -u "$user" -H test -e "$current" || sudo -u "$user" -H test -L "$current"; then',
             'case "$selected" in "$releases"/*)',
-            'if [ "$document_root_exists" = 1 ]; then',
+            'selected=$(sudo -u "$user" -H realpath -e -- "$initial")',
+            'test "$selected" = "$initial"',
             'ancestor_paths+=("$ancestor")',
             'sudo setfacl -n -P -R -m u:caddy:--- "$home"',
             'sudo setfacl -m u:caddy:--x "$ancestor"',
@@ -177,6 +187,28 @@ it('permits an unresolved root and revalidates complete ownership immediately be
         ->toBeLessThan($firstAclMutation)
         ->and($firstAclMutation)
         ->toBeInt();
+});
+
+it('does not require or grant access to an initial document root during direct creation', function (): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, '', '', 1, false),
+    ]);
+    $instance->update(['root' => 'dist']);
+
+    $source->prepareCaddyAccess($instance);
+
+    $command = $ssh->commands[0];
+    $initialSelection = strpos($command->input, 'selected=$(sudo -u "$user" -H realpath -e -- "$initial")');
+    $cloneCondition = strpos($command->input, 'elif [ "$clone_target" = 1 ]; then');
+    $documentRootGrant = strpos($command->input, 'sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"');
+    $grantCondition = strpos($command->input, 'if [ "$document_root_exists" = 1 ]; then');
+
+    expect($command->arguments)
+        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'dist', '0'])
+        ->and($cloneCondition)->toBeInt()->toBeLessThan($initialSelection)
+        ->and($initialSelection)->toBeInt()
+        ->and($grantCondition)->toBeInt()->toBeLessThan($documentRootGrant)
+        ->and($documentRootGrant)->toBeInt();
 });
 
 it('requires a root-owned clone marker before adopting source on retry', function (): void {

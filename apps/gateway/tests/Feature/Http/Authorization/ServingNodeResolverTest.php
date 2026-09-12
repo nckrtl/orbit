@@ -113,6 +113,63 @@ it('resolves instance-owning nodes from a bound instance and create input', func
         ->toBe([$node->id]);
 });
 
+it('resolves both candidate clone Nodes in request order', function (): void {
+    $app = resolver_app('candidate-clone');
+    $candidateNode = resolver_node('candidate-clone-source');
+    $destinationNode = resolver_node('candidate-clone-destination');
+    $candidate = resolver_app_instance($app, $candidateNode, name: 'candidate');
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['candidate' => $candidate], ['node_id' => $destinationNode->id]),
+        ServingNode::CandidateClone,
+    )))->toBe([$candidateNode->id, $destinationNode->id]);
+});
+
+it('deduplicates a candidate clone on one Node', function (): void {
+    $app = resolver_app('same-node-clone');
+    $node = resolver_node('same-node-clone');
+    $candidate = resolver_app_instance($app, $node, name: 'candidate');
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['candidate' => $candidate], ['node_id' => $node->id]),
+        ServingNode::CandidateClone,
+    )))->toBe([$node->id]);
+});
+
+it('keeps the candidate Node in scope when destination input is incomplete', function (): void {
+    $app = resolver_app('incomplete-candidate-clone');
+    $candidateNode = resolver_node('incomplete-candidate-clone-source');
+    $destinationNode = resolver_node('incomplete-candidate-clone-destination');
+    $candidate = resolver_app_instance($app, $candidateNode, name: 'candidate');
+
+    expect(resolver()->resolve(
+        resolver_request(input: ['node_id' => $destinationNode->id]),
+        ServingNode::CandidateClone,
+    ))
+        ->toBeEmpty()
+        ->and(resolver_node_ids(resolver()->resolve(
+            resolver_request(['candidate' => $candidate]),
+            ServingNode::CandidateClone,
+        )))
+        ->toBe([$candidateNode->id])
+        ->and(resolver_node_ids(resolver()->resolve(
+            resolver_request(['candidate' => $candidate], ['node_id' => 'invalid']),
+            ServingNode::CandidateClone,
+        )))
+        ->toBe([$candidateNode->id]);
+});
+
+it('throws for a missing candidate clone destination Node', function (): void {
+    $app = resolver_app('missing-clone-destination');
+    $candidateNode = resolver_node('missing-clone-destination-source');
+    $candidate = resolver_app_instance($app, $candidateNode, name: 'candidate');
+
+    resolver()->resolve(
+        resolver_request(['candidate' => $candidate], ['node_id' => 999_999]),
+        ServingNode::CandidateClone,
+    );
+})->throws(ModelNotFoundException::class);
+
 it('resolves workspace-owning nodes from a bound workspace and create input', function (): void {
     $app = resolver_app('workspace-owner');
     $node = resolver_node('workspace-node');

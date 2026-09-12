@@ -20,6 +20,7 @@ use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppInstances\AppInstanceCloneCandidateInspector;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\Deployment\ProductionDeployment;
 use App\Domain\AppInstances\DeploymentLayout\ProductionLayoutConverter;
@@ -35,6 +36,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\ProductionCloneRouteProjector;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
@@ -121,6 +123,7 @@ use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
 use App\Infrastructure\AppInstances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
+use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
 use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
@@ -225,6 +228,7 @@ final class AppServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         AppInstanceDestinationGuard::class => RemoteAppInstanceDestinationGuard::class,
+        AppInstanceCloneCandidateInspector::class => RemoteAppInstanceCloneCandidateInspector::class,
         AppInstanceEnvironmentReader::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceEnvironmentWriter::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceOperationPreflight::class => RemoteAppInstanceEnvironmentAccess::class,
@@ -253,6 +257,7 @@ final class AppServiceProvider extends ServiceProvider
         ProductionReleaseLayout::class => RemoteProductionAppInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
+        ProductionCloneRouteProjector::class => NativeProductionRouteProjector::class,
         AppInstanceEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         RouteHostnameProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,

@@ -12,6 +12,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Tool;
@@ -36,6 +37,7 @@ beforeEach(function (): void {
         Route::get('collection', [NodeAccessTestController::class, 'collection']);
         Route::get('gateway', [NodeAccessTestController::class, 'gateway']);
         Route::post('instance', [NodeAccessTestController::class, 'instance']);
+        Route::post('clone/{candidate}', [NodeAccessTestController::class, 'clone']);
         Route::get('process', [NodeAccessTestController::class, 'process']);
         Route::get('tool/{tool}', [NodeAccessTestController::class, 'tool']);
         Route::post('tool-raw', [NodeAccessTestController::class, 'toolRaw']);
@@ -44,6 +46,7 @@ beforeEach(function (): void {
 
     NodeAccessMissingScopeController::$executed = false;
     NodeAccessTestController::$gatewayExecuted = false;
+    NodeAccessTestController::$cloneExecuted = false;
 });
 
 it('allows direct access to a Tool-owning node', function (): void {
@@ -201,6 +204,88 @@ it('allows access to any one node that owns a multiply placed app', function ():
     middleware_gateway();
 
     middleware_get($this, $consumer, "/_node-access/app/{$app->id}")->assertOk();
+});
+
+it('requires direct access to both candidate clone Nodes', function (): void {
+    $consumer = middleware_node('clone-consumer');
+    $candidateNode = middleware_node('clone-candidate');
+    $destinationNode = middleware_node('clone-destination');
+    $candidate = middleware_app_instance(
+        middleware_app('clone-both'),
+        $candidateNode,
+        'candidate',
+    );
+    $consumer->accessibleNodes()->attach($candidateNode);
+    middleware_gateway();
+
+    middleware_post(
+        $this,
+        $consumer,
+        "/_node-access/clone/{$candidate->id}",
+        ['node_id' => $destinationNode->id],
+    )
+        ->assertForbidden()
+        ->assertJsonPath('error.details.serving_node.id', $destinationNode->id);
+
+    expect(NodeAccessTestController::$cloneExecuted)->toBeFalse();
+
+    $consumer->accessibleNodes()->attach($destinationNode);
+
+    middleware_post(
+        $this,
+        $consumer,
+        "/_node-access/clone/{$candidate->id}",
+        ['node_id' => $destinationNode->id],
+    )
+        ->assertOk()
+        ->assertJsonPath('candidate_id', $candidate->id)
+        ->assertJsonPath('destination_node_id', $destinationNode->id);
+
+    expect(NodeAccessTestController::$cloneExecuted)->toBeTrue();
+});
+
+it('identifies the inaccessible candidate Node before clone execution', function (): void {
+    $consumer = middleware_node('destination-only-consumer');
+    $candidateNode = middleware_node('inaccessible-candidate');
+    $destinationNode = middleware_node('accessible-destination');
+    $candidate = middleware_app_instance(
+        middleware_app('clone-candidate-denied'),
+        $candidateNode,
+        'candidate',
+    );
+    $consumer->accessibleNodes()->attach($destinationNode);
+    middleware_gateway();
+
+    middleware_post(
+        $this,
+        $consumer,
+        "/_node-access/clone/{$candidate->id}",
+        ['node_id' => $destinationNode->id],
+    )
+        ->assertForbidden()
+        ->assertJsonPath('error.details.serving_node.id', $candidateNode->id);
+
+    expect(NodeAccessTestController::$cloneExecuted)->toBeFalse();
+});
+
+it('allows Gateway fleet authority for both candidate clone Nodes', function (): void {
+    $gateway = middleware_gateway();
+    $candidateNode = middleware_node('gateway-clone-candidate');
+    $destinationNode = middleware_node('gateway-clone-destination');
+    $candidate = middleware_app_instance(
+        middleware_app('gateway-clone'),
+        $candidateNode,
+        'candidate',
+    );
+
+    middleware_post(
+        $this,
+        $gateway,
+        "/_node-access/clone/{$candidate->id}",
+        ['node_id' => $destinationNode->id],
+    )->assertOk();
+
+    expect(NodeAccessTestController::$cloneExecuted)->toBeTrue();
 });
 
 it('returns the exact denial for a concrete serving node', function (): void {
@@ -368,6 +453,19 @@ function middleware_instance(OrbitApp $app, Node $node, string $name): Instance
     ]);
 }
 
+function middleware_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
+{
+    return AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => $name,
+        'checkout_path' => "/srv/{$name}",
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+}
+
 function middleware_tool(string $package, ?Node $toolNode = null, ?Node $managerNode = null): Tool
 {
     $toolNode ??= middleware_node($package.'-node');
@@ -409,6 +507,8 @@ function middleware_post(
 final class NodeAccessTestController
 {
     public static bool $gatewayExecuted = false;
+
+    public static bool $cloneExecuted = false;
 
     /** @return array{ok: true} */
     public function gateway(): array
@@ -453,6 +553,18 @@ final class NodeAccessTestController
         return ['node_id' => (int) $request->validated('node_id')];
     }
 
+    /** @return array{candidate_id: int, destination_node_id: int} */
+    #[RequiresNodeAccess(ServingNode::CandidateClone)]
+    public function clone(NodeAccessCloneRequest $request, AppInstance $candidate): array
+    {
+        self::$cloneExecuted = true;
+
+        return [
+            'candidate_id' => $candidate->id,
+            'destination_node_id' => (int) $request->validated('node_id'),
+        ];
+    }
+
     /** @return array{target_id: int} */
     #[RequiresNodeAccess(ServingNode::ProcessOwning)]
     public function process(NodeAccessProcessRequest $request): array
@@ -487,6 +599,20 @@ final class NodeAccessMissingScopeController
 }
 
 final class NodeAccessInstanceRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /** @return array<string, list<string>> */
+    public function rules(): array
+    {
+        return ['node_id' => ['required', 'integer', 'exists:nodes,id']];
+    }
+}
+
+final class NodeAccessCloneRequest extends FormRequest
 {
     public function authorize(): bool
     {

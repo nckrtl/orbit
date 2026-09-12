@@ -142,6 +142,12 @@ final readonly class CommandActivityTargetResolver
 
     private function subject(Request $request): ?Model
     {
+        $clone = $request->attributes->get('orbit.app_instance_clone');
+
+        if ($clone instanceof AppInstance) {
+            return $clone;
+        }
+
         $registration = $request->attributes->get('orbit.app_instance_registration');
 
         if ($registration instanceof AppInstance) {

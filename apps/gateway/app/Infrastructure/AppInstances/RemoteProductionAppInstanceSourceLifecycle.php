@@ -185,7 +185,9 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
     {
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
-        $branch = $appInstance->branch_override ?? $appInstance->app->default_branch;
+        $branch = $appInstance->branch_override
+            ?? $appInstance->branch
+            ?? $appInstance->app->default_branch;
 
         if (! is_string($branch)) {
             throw $this->failure('production-source-resolve', 'instance.branch_resolution_failed');
@@ -203,6 +205,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     $home,
                     $branch,
                     (string) $appInstance->id,
+                    $appInstance->clone_candidate_id === null ? '0' : '1',
                 ],
                 input: <<<'BASH'
                     repository=$1
@@ -210,6 +213,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     home=$3
                     branch=$4
                     instance=$5
+                    clone_target=$6
                     release="$home/releases/initial"
                     environment="$home/.env"
                     release_environment="$release/.env"
@@ -224,11 +228,19 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     source_ref="refs/remotes/origin/$branch"
                     sudo -u "$user" -H git -C "$release" fetch --prune -- origin
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
-                    sudo -u "$user" -H git -C "$release" checkout -B "$branch" "$source_ref" >/dev/null
-                    sudo -u "$user" -H git -C "$release" branch --set-upstream-to="origin/$branch" "$branch" >/dev/null
-                    if sudo -u "$user" -H test -e "$release_environment" || sudo -u "$user" -H test -L "$release_environment"; then
+                    sudo -u "$user" -H git -C "$release" checkout --quiet -B "$branch" "$source_ref"
+                    sudo -u "$user" -H git -C "$release" branch --quiet --set-upstream-to="origin/$branch" "$branch"
+                    if sudo -u "$user" -H test -L "$release_environment"; then
                         sudo -u "$user" -H test -L "$release_environment"
                         test "$(sudo -u "$user" -H readlink -- "$release_environment")" = ../../.env
+                    elif sudo -u "$user" -H test -e "$release_environment"; then
+                        test "$clone_target" = 1
+                        sudo -u "$user" -H test -f "$release_environment"
+                        sudo -u "$user" -H git -C "$release" ls-files --error-unmatch -- .env >/dev/null
+                        sudo -u "$user" -H git -C "$release" diff --quiet -- .env
+                        sudo -u "$user" -H git -C "$release" diff --cached --quiet -- .env
+                        sudo -u "$user" -H rm -- "$release_environment"
+                        sudo -u "$user" -H ln -s ../../.env "$release_environment"
                     else
                         sudo -u "$user" -H ln -s ../../.env "$release_environment"
                     fi
@@ -325,14 +337,23 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         $this->ssh->execute(
             $appInstance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $home, $user, $root],
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $home,
+                    $user,
+                    $root,
+                    $appInstance->clone_candidate_id === null ? '0' : '1',
+                ],
                 input: <<<'BASH'
                     home=$1
                     user=$2
                     relative_root=$3
+                    clone_target=$4
                     releases="$home/releases"
                     current="$home/current"
-                    document_root="$current/$relative_root"
+                    initial="$releases/initial"
                     test "$home" = "/home/$user"
                     sudo -u "$user" -H test -d "$home"
                     sudo -u "$user" -H test ! -L "$home"
@@ -349,7 +370,13 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                         test "$releases_real" = "$releases"
                         selected=$(sudo -u "$user" -H realpath -e -- "$current")
                         case "$selected" in "$releases"/*) ;; *) exit 1 ;; esac
+                    elif [ "$clone_target" = 1 ]; then
+                        selected=$(sudo -u "$user" -H realpath -e -- "$initial")
+                        test "$selected" = "$initial"
+                    fi
+                    if [ -n "${selected:-}" ]; then
                         sudo -u "$user" -H test -d "$selected"
+                        document_root="$selected/$relative_root"
                         document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")
                         case "$document_root_real" in "$selected"|"$selected"/*) ;; *) exit 1 ;; esac
                         sudo -u "$user" -H test -d "$document_root"

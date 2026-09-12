@@ -82,6 +82,80 @@ final readonly class AppInstanceEnvironmentContextResolver
         );
     }
 
+    public function resolveForClone(
+        AppInstance $instance,
+        bool $requireActiveNode,
+        bool $lockRoute = false,
+    ): AppInstanceEnvironmentContext {
+        $sourceIsLaravel = $instance->source_is_laravel;
+
+        if (
+            ! in_array(
+                $instance->status,
+                [AppInstanceState::Reserved, AppInstanceState::CheckoutPrepared, AppInstanceState::SourceResolved],
+                strict: true,
+            )
+            || $instance->environment !== 'production'
+            || $instance->migration_required
+            || ! is_bool($sourceIsLaravel)
+            || ! is_string($instance->provisioning_step)
+            || ! str_starts_with($instance->provisioning_step, 'clone-')
+            || ! is_int($instance->clone_candidate_id)
+        ) {
+            $this->conflict();
+        }
+
+        $node = Node::query()->findOrFail($instance->node_id);
+
+        if ($requireActiveNode && $node->status !== LifecycleStatus::Active) {
+            $this->conflict();
+        }
+
+        $routeQuery = Route::query()
+            ->whereHas('targets', static fn (Builder $query): Builder => $query
+                ->where('app_instance_id', $instance->id))
+            ->orderBy('id')
+            ->limit(2);
+
+        if ($lockRoute) {
+            $routeQuery->lockForUpdate();
+        }
+
+        $routes = $routeQuery->get();
+
+        if ($routes->count() !== 1) {
+            $this->conflict();
+        }
+
+        $route = $routes->sole();
+
+        if (
+            $route->status !== RouteStatus::Pending
+            || $route->hostname !== $instance->clone_preview_hostname
+            || $route->hostname_change_target !== null
+            || $route->hostname_change_direction !== null
+            || $route->hostname_change_step !== null
+        ) {
+            $this->conflict();
+        }
+
+        [$path, $executionUser] = $this->placement($instance, $node);
+
+        return new AppInstanceEnvironmentContext(
+            appInstanceId: $instance->id,
+            appId: $instance->app_id,
+            nodeId: $instance->node_id,
+            environment: $instance->environment,
+            path: $path,
+            executionUser: $executionUser,
+            laravel: $sourceIsLaravel,
+            routeId: $route->id,
+            routeHostname: $route->hostname,
+            nodeStatus: $node->status->value,
+            node: $node,
+        );
+    }
+
     /** @return array{string, string} */
     private function placement(AppInstance $instance, Node $node): array
     {
