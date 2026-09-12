@@ -50,6 +50,37 @@ final readonly class ScheduleTargetResolver
         return $target;
     }
 
+    public function forInstallation(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
+    {
+        if (! is_string($schedule->source_definition_id)) {
+            return $this->forSchedule($schedule);
+        }
+
+        if ($schedule->target_type !== AppInstance::class) {
+            $this->unavailable();
+        }
+
+        $instance = AppInstance::query()
+            ->with('node')
+            ->findOrFail($schedule->target_id);
+
+        if (
+            $instance->node->status !== LifecycleStatus::Active
+            || $instance->status === AppInstanceState::Removing
+            || $instance->migration_required
+        ) {
+            $this->unavailable();
+        }
+
+        $target = $this->appInstance($instance, requireActive: false);
+
+        if ($target->node->id !== $schedule->host_node_id) {
+            $this->unavailable();
+        }
+
+        return $target;
+    }
+
     public function forInspection(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
     {
         $type = $this->typeForModel($schedule->target_type);

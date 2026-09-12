@@ -35,6 +35,34 @@ final readonly class ProcessTargetResolver
         return $this->forAdmission($this->owner($process));
     }
 
+    public function forInstallation(#[SensitiveParameter] Process $process): ProcessTarget
+    {
+        if (! is_string($process->source_definition_id)) {
+            return $this->forProcess($process);
+        }
+
+        return $this->forPreparation($this->owner($process));
+    }
+
+    public function forPreparation(AppInstance $instance): ProcessTarget
+    {
+        $instance->loadMissing('node');
+        $this->ensureLinux($instance);
+
+        if (
+            $instance->node->status !== LifecycleStatus::Active
+            || $instance->status === AppInstanceState::Removing
+            || $instance->migration_required
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'process.target_inactive',
+                message: "AppInstance [{$instance->name}] or its Node is not available for preparation.",
+            );
+        }
+
+        return $this->context($instance);
+    }
+
     public function forStart(#[SensitiveParameter] Process $process): ProcessTarget
     {
         return $this->forAdmission($this->owner($process));

@@ -57,7 +57,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function converge(#[SensitiveParameter] Process $process): void
     {
-        $target = $this->targets->forProcess($process);
+        $target = $this->targets->forInstallation($process);
 
         if ($process->desired_state === DesiredProcessState::Running) {
             $this->assertReleaseAvailable($process, $target, 'start', 'process.start_failed');

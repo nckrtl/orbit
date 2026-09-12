@@ -17,6 +17,7 @@ use Illuminate\Support\Str;
  * @property string $id
  * @property string $target_type
  * @property int $target_id
+ * @property string|null $source_definition_id
  * @property int $host_node_id
  * @property string $name
  * @property string $calendar
@@ -45,6 +46,7 @@ final class Schedule extends Model
         'id',
         'target_type',
         'target_id',
+        'source_definition_id',
         'host_node_id',
         'name',
         'calendar',

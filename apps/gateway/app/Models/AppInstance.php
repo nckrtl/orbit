@@ -61,6 +61,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $provisioning_step
  * @property string|null $failed_step
  * @property string|null $error_code
+ * @property Carbon|null $runtime_definitions_captured_at
  * @property AppInstanceState $status
  * @property-read App $app
  * @property-read Node $node
@@ -137,6 +138,7 @@ final class AppInstance extends Model
         'provisioning_step',
         'failed_step',
         'error_code',
+        'runtime_definitions_captured_at',
         'status',
     ];
 
@@ -230,6 +232,7 @@ final class AppInstance extends Model
             'registration_source_inode' => 'integer',
             'registration_migration_recovery' => 'array',
             'registration_completed_at' => 'immutable_datetime',
+            'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
             'deployment_steps' => DeploymentStepsCast::class,
             'status' => AppInstanceState::class,

@@ -29,6 +29,14 @@ The API rejects unknown or duplicate members at every definition object and spec
 
 Creating, replacing, or deleting a definition changes only App-owned configuration. It makes no remote call and does not change a Process, Schedule, selected release, desired runtime state, or existing AppInstance copy. Removing an AppInstance retains the App's definitions, while removing an otherwise removable App deletes its definitions.
 
+## Prepare production copies
+
+Production preparation captures the App definitions whose applicability includes `production` before it installs any target runtime. It ignores development-only definitions and candidate-specific Process or Schedule settings. The captured selection belongs to that target and does not change when an App definition is later added, replaced, or removed.
+
+For each captured process definition, Orbit creates a new AppInstance-owned Process with its own ID and target-derived runtime identity. It preserves the supported systemd or Docker specification and installs the Process stopped. For each captured Schedule definition, Orbit creates a new AppInstance-owned Schedule with its own UUID and target-derived host identity. It installs the timer disabled and stopped. A prepared production home does not need a selected release for these stopped installations, and preparation does not execute application code.
+
+Preparation records completed copies and resumes only unfinished installation after an interruption. A retry uses the target's captured selection instead of reading the App definitions again. It does not rewrite a completed copy, undo a later operator edit, or stop a copy that an operator started. A name conflict or a conflict with a runtime artifact stops preparation without adopting the existing record or artifact. Removing the target later cleans the instantiated copies through the [AppInstance removal lifecycle](appinstance-removal.md) and retains the App definitions.
+
 ## Manage definitions from the CLI
 
 The CLI lists each definition collection and uses one singular command per kind for create, show, replace, and remove operations. `APP` is a positive numeric App ID, and `UUID` is the definition ID returned by the Gateway.

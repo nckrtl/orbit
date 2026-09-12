@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property int $id
  * @property string $owner_type
  * @property int $owner_id
+ * @property string|null $source_definition_id
  * @property string $name
  * @property ProcessRuntime $runtime
  * @property string $working_directory
@@ -32,6 +33,7 @@ final class Process extends Model
     protected $fillable = [
         'owner_type',
         'owner_id',
+        'source_definition_id',
         'name',
         'runtime',
         'working_directory',
