@@ -136,7 +136,7 @@ it('deduplicates a candidate clone on one Node', function (): void {
     )))->toBe([$node->id]);
 });
 
-it('leaves an incomplete candidate clone scope to validation', function (): void {
+it('keeps the candidate Node in scope when destination input is incomplete', function (): void {
     $app = resolver_app('incomplete-candidate-clone');
     $candidateNode = resolver_node('incomplete-candidate-clone-source');
     $destinationNode = resolver_node('incomplete-candidate-clone-destination');
@@ -147,16 +147,16 @@ it('leaves an incomplete candidate clone scope to validation', function (): void
         ServingNode::CandidateClone,
     ))
         ->toBeEmpty()
-        ->and(resolver()->resolve(
+        ->and(resolver_node_ids(resolver()->resolve(
             resolver_request(['candidate' => $candidate]),
             ServingNode::CandidateClone,
-        ))
-        ->toBeEmpty()
-        ->and(resolver()->resolve(
+        )))
+        ->toBe([$candidateNode->id])
+        ->and(resolver_node_ids(resolver()->resolve(
             resolver_request(['candidate' => $candidate], ['node_id' => 'invalid']),
             ServingNode::CandidateClone,
-        ))
-        ->toBeEmpty();
+        )))
+        ->toBe([$candidateNode->id]);
 });
 
 it('throws for a missing candidate clone destination Node', function (): void {

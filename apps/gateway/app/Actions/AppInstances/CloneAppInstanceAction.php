@@ -305,7 +305,7 @@ final readonly class CloneAppInstanceAction
         }
 
         $currentSource = $this->candidates->inspect($candidate, (string) $target->branch);
-        $this->assertCandidateUnchanged($target, $expectedSource, $currentSource);
+        $this->assertCandidateUnchanged($expectedSource, $currentSource);
 
         if ($target->provisioning_step === 'clone-reserved') {
             $this->source->prepareUser($target);
@@ -418,7 +418,6 @@ final readonly class CloneAppInstanceAction
     }
 
     private function assertCandidateUnchanged(
-        AppInstance $target,
         CloneCandidateSource $expected,
         CloneCandidateSource $current,
     ): void {
@@ -430,7 +429,6 @@ final readonly class CloneAppInstanceAction
             || $expected->branch !== $current->branch
             || $expected->commit !== $current->commit
             || $expected->node->id !== $current->node->id
-            || $target->clone_candidate_commit !== $current->commit
         ) {
             throw $this->conflict(
                 'instance.clone_candidate_changed',

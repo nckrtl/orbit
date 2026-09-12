@@ -92,10 +92,34 @@ it('returns 422 for malformed duplicate unknown or forbidden clone input before 
     'destination path' => ['{"node_id":1,"name":"target","preview_name":"preview","destination_path":"__SENTINEL__"}'],
     'missing required members' => ['{}'],
     'malformed Node ID' => ['{"node_id":"bad","name":"target","preview_name":"preview"}'],
+    'signed Node ID' => ['{"node_id":"+3","name":"target","preview_name":"preview"}'],
+    'boolean Node ID' => ['{"node_id":true,"name":"target","preview_name":"preview"}'],
     'invalid target name' => ['{"node_id":1,"name":"Not Normalized","preview_name":"preview"}'],
     'invalid preview name' => ['{"node_id":1,"name":"target","preview_name":"../preview"}'],
     'invalid branch' => ['{"node_id":1,"name":"target","preview_name":"preview","branch":"../main"}'],
     'relative SQLite path' => ['{"node_id":1,"name":"target","preview_name":"preview","sqlite_source_path":"database.sqlite"}'],
+]);
+
+it('returns 403 for malformed destination input when the caller lacks candidate Node access', function (
+    mixed $nodeId,
+): void {
+    $caller = clone_api_node('clone-api-unprivileged-caller');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson($this->cloneUrl, [
+            'node_id' => $nodeId,
+            'name' => 'target',
+            'preview_name' => 'preview',
+        ])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required')
+        ->assertJsonPath('error.details.serving_node.id', $this->candidateNode->id);
+
+    expect(AppInstance::query()->count())->toBe(1);
+})->with([
+    'signed integer string' => '+3',
+    'boolean' => true,
 ]);
 
 it('returns 403 before cloning when the caller lacks destination Node access', function (): void {

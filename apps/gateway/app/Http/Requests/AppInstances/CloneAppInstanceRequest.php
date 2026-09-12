@@ -21,7 +21,7 @@ final class CloneAppInstanceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'node_id' => ['required', 'integer', Rule::exists(new Node()->getTable(), 'id')],
+            'node_id' => ['required', 'integer:strict', 'min:1', Rule::exists(new Node()->getTable(), 'id')],
             'name' => [
                 'required',
                 'string',

@@ -266,6 +266,23 @@ it('resumes one owned target and makes the completed identical retry terminal', 
         });
 });
 
+it('resumes an interrupted target after the candidate commit advances', function (): void {
+    $this->cloneProjection->fail = 'dns';
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $this->inspector->commit = str_repeat('c', 40);
+    $this->cloneProjection->fail = null;
+
+    $resumed = $this->action->execute($this->candidate, $this->data);
+
+    expect($resumed['created'])->toBeFalse()
+        ->and($resumed['appInstance']->id)->toBe($target->id)
+        ->and($resumed['appInstance']->status)->toBe(AppInstanceState::Active)
+        ->and($resumed['appInstance']->clone_candidate_commit)->toBe(str_repeat('a', 40));
+});
+
 it('refuses an invalid or occupied destination preview before target reservation', function (string $case): void {
     if ($case === 'missing TLD') {
         $this->targetNode->update(['tld' => null]);
@@ -321,6 +338,8 @@ final class Orb198CandidateInspector implements AppInstanceCloneCandidateInspect
 
     public bool $fail = false;
 
+    public string $commit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
     public function inspect(AppInstance $candidate, string $targetBranch): CloneCandidateSource
     {
         $this->calls++;
@@ -337,7 +356,7 @@ final class Orb198CandidateInspector implements AppInstanceCloneCandidateInspect
             basePath: $candidate->checkout_path,
             executionUser: $candidate->node->user,
             branch: (string) $candidate->branch,
-            commit: str_repeat('a', 40),
+            commit: $this->commit,
             node: $candidate->node,
         );
     }

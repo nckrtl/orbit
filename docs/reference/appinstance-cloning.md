@@ -71,7 +71,7 @@ The first deployment is a separate explicit request. It fetches the target's con
 
 ## Retry the owned operation
 
-The Gateway records the immutable clone request and bounded provisioning checkpoints before each owned effect. An interrupted identical request resumes the unfinished target. A request that changes the candidate, destination, name, preview, branch override, or SQLite selection refuses without adopting or replacing that target.
+The Gateway records the immutable clone request and bounded provisioning checkpoints before each owned effect. An interrupted identical request resumes the unfinished target even if the candidate has moved to a later commit after reservation. The target keeps its selected App repository branch and prepared source state; it does not become a snapshot of the candidate working tree. A request that changes the candidate, destination, name, preview, branch override, or SQLite selection refuses without adopting or replacing that target.
 
 After completion, an identical request returns the same AppInstance and Route. It does not revalidate changing candidate state or replace target source, database, stored environment edits, definition copies, runtime desired state, or final hostname. Temporary SQLite work belongs to the clone operation and is cleaned without removing unrelated files.
 

@@ -142,13 +142,18 @@ final readonly class ServingNodeResolver
     private function candidateClone(Request $request): array
     {
         $candidate = $request->route('candidate');
-        $destinationNodeId = $this->positiveInteger($request->input('node_id'));
 
-        if (! $candidate instanceof AppInstance || $destinationNodeId === null) {
+        if (! $candidate instanceof AppInstance) {
             return [];
         }
 
         $candidateNode = Node::query()->findOrFail($candidate->node_id);
+        $destinationNodeId = $this->positiveInteger($request->input('node_id'));
+
+        if ($destinationNodeId === null) {
+            return [$candidateNode];
+        }
+
         $destinationNode = Node::query()->findOrFail($destinationNodeId);
 
         if ($candidateNode->is($destinationNode)) {
