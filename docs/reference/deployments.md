@@ -197,6 +197,14 @@ The Gateway refuses parent traversal, an escaped symbolic link, a selected targe
 
 Caddy resolves the root symbolic link to the selected release before it passes a script path to PHP FastCGI Process Manager (PHP-FPM). When `current` selects different code, a request resolves its included PHP files from the newly selected release instead of retaining the previous release's path.
 
+## Inspect release placement with Doctor
+
+Doctor checks each production AppInstance against its recorded home and release layout without changing the AppInstance, its files, or its source. It reports bounded findings for a missing or wrongly owned production home, a broken `current` link, a selected release that is missing or resolves outside `releases/`, and an effective web root that escapes the selected release.
+
+A prepared production home with no `current` link is healthy before its first deployment. Once `current` exists, Doctor requires it to select a retained directory beneath the same production home. These rules apply to standalone and Cluster-scoped AppInstances because the workload Node owns the release placement in both routing shapes.
+
+Doctor accepts a retained release when the configured branch has advanced since that release was prepared or when an explicit rollback selected older code. It does not fetch the branch head, interpret deployment history, make an application request, or treat an HTTP error as release drift.
+
 ## Retain production content
 
 AppInstance removal clears the owned `current` serving link and its Caddy, certificate, Route, and runtime projections. It retains `releases/`, `.env`, an existing `database.sqlite`, and `/etc/orbit/php-fpm/<production-user>/local.conf` for operator recovery.

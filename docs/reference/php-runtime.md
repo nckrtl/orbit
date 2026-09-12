@@ -108,6 +108,12 @@ header @vite Cache-Control "public, max-age=31536000, immutable"
 
 Laravel's Vite plugin fingerprints every file under `public/build/assets`, so browsers can keep them for a year. The `file` matcher limits the header to assets that exist on disk. A request for a removed fingerprint falls through to Laravel's front controller without the header, so a 404 is never cached as immutable. Development sites set no caching header. `php_fastcgi`, `encode zstd gzip`, and `file_server` keep Caddy defaults; Orbit renders no `try_files`, and the `php_fastcgi` default tries `{path}`, then `{path}/index.php`, then `index.php`.
 
+## Inspect production runtime with Doctor
+
+Doctor checks that each production PHP AppInstance has one dedicated service, pool, and socket association and that another AppInstance does not share them. It reports bounded instance-family findings for a missing or shared association, the wrong production user or socket, an inactive or invalid effective PHP-FPM identity, and workload Caddy configuration that does not match the AppInstance's current serving path and Route. The workload check applies to standalone and Cluster-scoped Routes; it does not inspect the Router as a second AppInstance runtime.
+
+Doctor validates the generated identity together with the effective local configuration. It accepts an operating agent's `local.conf` changes when they preserve the recorded user, home, pool, service, socket, PHP version, and application path. It does not compare allowed local tuning with Orbit's seeded defaults and does not reload, restart, reset, or rewrite a service or file.
+
 ## Verification
 
 On a Node, an operator checks a dedicated service, socket, generated identity, and local tuning separately:
