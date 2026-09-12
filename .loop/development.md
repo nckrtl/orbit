@@ -1,0 +1,47 @@
+# ORB-73 development record
+
+Issue: ORB-73
+Flow: discovery
+Candidate: 865ba03bc55ef69e573ea1133ccebfd93509674a
+Base: 56a172875ccde244ae4f33e78453c7a1554a0316
+Incus: not required
+
+## Implementation
+
+- Added exactly eight UUID-keyed Schedule routes for list, add, show, run, logs, complete, remove, and activate.
+- Added strict Schedule body and query requests, bounded response data, and authorized collection filtering.
+- Kept operator authorization on the target Node and completion authorization on the installed host Node.
+- Added sanitized Schedule activity projection for the seven operator routes and kept completion outside activity recording.
+- Reused the existing Schedule lifecycle actions and fake runtime. Updated activation to return `schedule.target_invalid` for Node-owned Schedules.
+
+## Acceptance evidence
+
+1. `apps/gateway/tests/Feature/Api/SchedulesTest.php` verifies the exact route inventory, UUID-only lookup, unknown UUID `404`, and strict malformed, duplicate, escaped-duplicate, unknown, and wrongly typed input rejection before mutation.
+2. `apps/gateway/tests/Feature/Api/SchedulesTest.php` verifies active-peer and Node-access enforcement on all eight operations, target-Node collection filtering, and installed-host completion authorization.
+3. `apps/gateway/tests/Feature/Api/SchedulesTest.php` verifies seven sanitized operator Activities and no completion Activity. It checks that command, calendar, logs, output, path, user, and unit sentinels are absent.
+4. `apps/gateway/tests/Feature/Api/SchedulesTest.php` verifies that list omits command, show is authorized, logs are limited to 1–1000 lines, and sensitive input is absent from validation and activity data.
+5. `docs/reference/schedules.md` documents the public API, authorization, activity, completion, and timer-state behavior. `composer docs-lint` passed with zero issues, errors, or warnings.
+6. Gateway `composer check` passed: 12 guidance tests with 267 assertions, Rector with zero changes, Pint, and PHPStan with zero errors.
+7. Gateway `composer test:affected` passed after the final implementation change: 3,310 tests and 18,843 assertions. The exact-candidate Builder root gate passed all 15 validate, quality, and affected-test commands across the five Composer projects.
+8. `apps/gateway/tests/Feature/Api/SchedulesTest.php` verifies empty-body and idempotent AppInstance activation, owning-Node authorization, and `schedule.target_invalid` for a Node target.
+9. `apps/gateway/tests/Feature/Api/SchedulesTest.php` verifies `start` defaults to true, disabled AppInstance installation, disabled Node rejection, exposed desired timer state, and manual run preserving timer intent.
+
+## Checks
+
+- `cd apps/gateway && vendor/bin/pint --dirty --format agent`: passed.
+- `cd apps/gateway && composer test:affected`: passed, 3,310 tests and 18,843 assertions on the final implementation changes.
+- `cd apps/gateway && composer check`: passed.
+- `composer docs-lint`: passed with zero issues, errors, or warnings.
+- `git diff --cached --check`: passed before commit.
+- Builder gate: passed at candidate `865ba03bc55ef69e573ea1133ccebfd93509674a` with `unchanged: true` and receipt `/home/nckrtl/orbit/.git/orbit-checks/865ba03bc55ef69e573ea1133ccebfd93509674a/review-h_rujnov/result.json`.
+
+## Documentation
+
+- `docs/reference/schedules.md`: the planning commit describes the eight operations, strict validation, UUID identity, Node authorization, collection filtering, bounded responses, sanitized Activity behavior, completion exception, activation, and desired timer state.
+- Documentation audit findings: none remain. No implementation-time documentation correction was needed.
+
+## Deviations and limits
+
+- The issue's stale full no-TIA suite wording maps to Gateway TIA, Gateway quality checks, and the Builder root TIA gate under current repository policy, as approved in the plan.
+- Discovery development only; isolated acceptance proof was not run.
+- No helpers were used.
