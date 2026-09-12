@@ -34,6 +34,13 @@ use Illuminate\Support\Carbon;
  * @property list<array<string, mixed>> $deployment_steps
  * @property string|null $branch_override
  * @property bool $migration_required
+ * @property int|null $clone_candidate_id
+ * @property string|null $clone_candidate_commit
+ * @property string|null $clone_requested_branch
+ * @property string|null $clone_preview_name
+ * @property string|null $clone_preview_hostname
+ * @property string|null $clone_sqlite_source_path
+ * @property Carbon|null $clone_completed_at
  * @property string|null $registration_original_path
  * @property string|null $registration_request_id
  * @property bool $registration_primary
@@ -111,6 +118,13 @@ final class AppInstance extends Model
         'deployment_steps',
         'branch_override',
         'migration_required',
+        'clone_candidate_id',
+        'clone_candidate_commit',
+        'clone_requested_branch',
+        'clone_preview_name',
+        'clone_preview_hostname',
+        'clone_sqlite_source_path',
+        'clone_completed_at',
         'registration_original_path',
         'registration_request_id',
         'registration_primary',
@@ -224,6 +238,8 @@ final class AppInstance extends Model
     {
         return [
             'migration_required' => 'boolean',
+            'clone_candidate_id' => 'integer',
+            'clone_completed_at' => 'immutable_datetime',
             'registration_detached' => 'boolean',
             'registration_primary' => 'boolean',
             'registration_include_worktrees' => 'boolean',
