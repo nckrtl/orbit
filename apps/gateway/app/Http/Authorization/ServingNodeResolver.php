@@ -34,6 +34,7 @@ final readonly class ServingNodeResolver
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
+            ServingNode::ScheduleOwning => $this->scheduleOwning($request),
             ServingNode::ScheduleHost => $this->scheduleHost($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
             ServingNode::ClusterOwning => $this->clusterOwning($request),
@@ -271,19 +272,53 @@ final readonly class ServingNodeResolver
     /** @return list<Node> */
     private function scheduleHost(Request $request): array
     {
-        $id = $request->route('schedule');
+        $schedule = $request->route('schedule');
 
-        if (! is_string($id) || $id === '') {
+        if ($schedule instanceof Schedule) {
+            return [Node::query()->findOrFail($schedule->host_node_id)];
+        }
+
+        if (! is_string($schedule) || $schedule === '') {
             return [];
         }
 
-        $schedule = Schedule::query()->find($id);
+        $schedule = Schedule::query()->find($schedule);
 
         if (! $schedule instanceof Schedule) {
             return [];
         }
 
         return [Node::query()->findOrFail($schedule->host_node_id)];
+    }
+
+    /** @return list<Node> */
+    private function scheduleOwning(Request $request): array
+    {
+        $schedule = $request->route('schedule');
+
+        if ($schedule instanceof Schedule) {
+            return match ($schedule->target_type) {
+                Node::class => [Node::query()->findOrFail($schedule->target_id)],
+                AppInstance::class => [Node::query()->findOrFail(
+                    AppInstance::query()->findOrFail($schedule->target_id)->node_id,
+                )],
+                default => [],
+            };
+        }
+
+        $targetId = $this->positiveInteger($request->input('target_id'));
+
+        if ($targetId === null) {
+            return [];
+        }
+
+        return match ($request->input('target_type')) {
+            'node' => [Node::query()->findOrFail($targetId)],
+            'instance' => [Node::query()->findOrFail(
+                AppInstance::query()->findOrFail($targetId)->node_id,
+            )],
+            default => [],
+        };
     }
 
     /** @return list<Node> */

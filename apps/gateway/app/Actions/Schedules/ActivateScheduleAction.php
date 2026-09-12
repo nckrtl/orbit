@@ -19,7 +19,15 @@ final readonly class ActivateScheduleAction
 
     public function execute(#[SensitiveParameter] Schedule $schedule): Schedule
     {
-        if ($schedule->target_type !== AppInstance::class || $schedule->status !== LifecycleStatus::Active) {
+        if ($schedule->target_type !== AppInstance::class) {
+            throw new ResourceOperationException(
+                ScheduleErrorCode::TargetInvalid->value,
+                'Only an AppInstance Schedule can be activated.',
+                422,
+            );
+        }
+
+        if ($schedule->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException(
                 ScheduleErrorCode::StateInvalid->value,
                 'The Schedule cannot be activated in its current state.',

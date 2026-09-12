@@ -19,6 +19,8 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Routes\RouteHostname;
+use App\Domain\Schedules\ScheduleOperationException;
+use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tools\ToolOperationException;
@@ -32,6 +34,7 @@ use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Schedule;
 use Closure;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -210,6 +213,8 @@ final readonly class RecordCommandActivity
             ];
         }
 
+        $updates = $this->withSchedule($activity, $request, $updates);
+
         $activity->update($this->withTarget(
             $activity,
             $request,
@@ -290,6 +295,7 @@ final readonly class RecordCommandActivity
                 $exception instanceof RuntimeConvergenceException => $exception->errorCode,
                 $exception instanceof AppInstanceRemovalException => $exception->errorCode,
                 $exception instanceof ProcessOperationException => $exception->errorCode,
+                $exception instanceof ScheduleOperationException => $exception->errorCode,
                 $exception instanceof FirewallOperationException => $exception->errorCode,
                 $exception instanceof ResourceOperationException => $exception->errorCode,
                 $exception instanceof NodeRoleOperationException => $exception->errorCode,
@@ -326,6 +332,8 @@ final readonly class RecordCommandActivity
             ];
         }
 
+        $updates = $this->withSchedule($activity, $request, $updates);
+
         $activity->update($this->withTarget(
             $activity,
             $request,
@@ -346,6 +354,72 @@ final readonly class RecordCommandActivity
             'version_constraint' => $exception->versionConstraint,
             'error_code' => $exception->errorCode,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $updates
+     * @return array<string, mixed>
+     */
+    private function withSchedule(Activity $activity, Request $request, array $updates): array
+    {
+        $schedule = $this->scheduleForActivity($request);
+
+        if (! $schedule instanceof Schedule) {
+            return $updates;
+        }
+
+        return [
+            ...$updates,
+            'properties' => [
+                ...($activity->properties?->toArray() ?? []),
+                'schedule' => [
+                    'id' => $schedule->id,
+                    'target_type' => $schedule->target_type === AppInstance::class
+                        ? ScheduleTargetType::AppInstance->value
+                        : ScheduleTargetType::Node->value,
+                    'target_id' => $schedule->target_id,
+                ],
+            ],
+        ];
+    }
+
+    private function scheduleForActivity(Request $request): ?Schedule
+    {
+        $schedule = $request->attributes->get('orbit.schedule_activity');
+
+        if ($schedule instanceof Schedule) {
+            return $schedule;
+        }
+
+        $schedule = $request->route('schedule');
+
+        if ($schedule instanceof Schedule) {
+            return $schedule;
+        }
+
+        if ($request->route()?->getName() !== 'schedule:add') {
+            return null;
+        }
+
+        $targetType = $request->input('target_type');
+        $targetId = $request->input('target_id');
+        $name = $request->input('name');
+
+        if (! is_string($targetType) || ! is_int($targetId) || ! is_string($name)) {
+            return null;
+        }
+
+        $type = ScheduleTargetType::tryFrom($targetType);
+
+        if (! $type instanceof ScheduleTargetType) {
+            return null;
+        }
+
+        return Schedule::query()
+            ->where('target_type', $type->modelClass())
+            ->where('target_id', $targetId)
+            ->where('name', $name)
+            ->first();
     }
 
     /**
@@ -439,6 +513,10 @@ final readonly class RecordCommandActivity
             return $this->appDefinitionInput($request, $command);
         }
 
+        if (is_string($command) && str_starts_with($command, 'schedule:')) {
+            return $this->scheduleInput($request, $command);
+        }
+
         if ($command === 'node:role:remove') {
             return $this->inputSanitizer->sanitizeProperties(
                 $this->removeNodeRoleInputParser->safeActivityInput(
@@ -463,6 +541,73 @@ final readonly class RecordCommandActivity
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<string, bool|int|string> */
+    private function scheduleInput(Request $request, string $command): array
+    {
+        if ($command === 'schedule:logs') {
+            $lines = $request->query('lines');
+
+            if (! is_string($lines) || preg_match('/\A[1-9][0-9]{0,3}\z/D', $lines) !== 1) {
+                return [];
+            }
+
+            $count = (int) $lines;
+
+            return $count <= 1000 ? ['lines' => $count] : [];
+        }
+
+        if ($command !== 'schedule:add') {
+            return [];
+        }
+
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), [
+                'target_type',
+                'target_id',
+                'name',
+                'calendar',
+                'command',
+                'timeout_seconds',
+                'start',
+            ]);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        $safe = [];
+        $targetType = $input['target_type'] ?? null;
+        $targetId = $input['target_id'] ?? null;
+        $name = $input['name'] ?? null;
+        $timeout = $input['timeout_seconds'] ?? null;
+        $start = $input['start'] ?? null;
+
+        if (is_string($targetType) && ScheduleTargetType::tryFrom($targetType) instanceof ScheduleTargetType) {
+            $safe['target_type'] = $targetType;
+        }
+
+        if (is_int($targetId) && $targetId > 0) {
+            $safe['target_id'] = $targetId;
+        }
+
+        if (
+            is_string($name)
+            && strlen($name) <= 63
+            && preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D', $name) === 1
+        ) {
+            $safe['name'] = $name;
+        }
+
+        if (is_int($timeout) && $timeout >= 1 && $timeout <= 86_400) {
+            $safe['timeout_seconds'] = $timeout;
+        }
+
+        if (is_bool($start)) {
+            $safe['start'] = $start;
+        }
+
+        return $safe;
     }
 
     /** @return array{release: string}|array{} */
