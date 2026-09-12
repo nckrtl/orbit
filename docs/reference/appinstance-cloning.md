@@ -19,6 +19,31 @@ The request accepts no target App, commit identifier, Unix user, destination pat
 
 The caller needs directed access to both the candidate Node and the destination Node. The candidate selects the App. The destination must be an active Node with the active `app-prod` role, and the App must not already have a production AppInstance there. The destination can be standalone or a member of an active Cluster. A Cluster destination needs its active Router before cloning can reserve the target. Existing active-role, production-placement, and legacy production conflicts still apply.
 
+## Clone from the CLI
+
+Provision the production Node with its own TLD before it receives a clone. The `--tld` value supplies the suffix for private production preview hostnames:
+
+```text
+orbit node:provision production production.example \
+  --role=app-prod \
+  --tld=prod.orbit
+```
+
+Run the clone command with a candidate selector, destination Node selector, target name, and required preview name:
+
+```text
+orbit instance:clone CANDIDATE NODE NAME \
+  --preview-name=shop.com \
+  [--branch=BRANCH] \
+  [--sqlite-source-path=PATH]
+```
+
+Use unambiguous candidate and Node identifiers in noninteractive and `--json` calls. The command sends typed requests through the PHP software development kit (SDK) and does not open a local or remote shell. Its result identifies the target AppInstance ID, configured branch, actual preview hostname, and current selected release. A new target has no selected release.
+
+The candidate supplies committed source evidence, stored environment values, and an optional SQLite snapshot. The candidate's App supplies the production Process and Schedule definitions. Cloning copies no candidate-specific Process or Schedule override and starts no copied runtime.
+
+After cloning, update target environment values that must differ from the candidate and synchronize them. Remove copied queue entries or perform other application-specific cleanup on the target only. Configure deployment steps, then run the separate `instance:deploy` command to create and select the first release. Cloning does not deploy the target.
+
 ## Derive the private preview
 
 The Gateway normalizes `preview_name`, appends the destination Node's own TLD, and validates the complete hostname. For example, `shop.com` on a Node whose TLD is `prod.orbit` produces `shop.com.prod.orbit`.
