@@ -1,0 +1,168 @@
+{
+    "id": "1c773a2e-b5a9-45fa-a917-bddff16ebded",
+    "identifier": "ORB-199",
+    "title": "Route production clones through the Cluster Router",
+    "url": "https://linear.app/nckrtl/issue/ORB-199/route-production-clones-through-the-cluster-router",
+    "description": "A candidate clone placed in an active Cluster receives its private preview Route through the Cluster Router and the target workload\u2019s exact private serving projection.\n\n## Scope\n\n* In: Cluster-scoped clone placement, preview routing, private certificates, firewall, Caddy, and recoverable publication.\n* Out: public Ingress, multi-target routing, deployment commands, Node-TLD generation rules for other Routes, and application health gates.\n\n## Acceptance\n\n- [ ] The clone request works for a candidate on another authorized Node and a destination in an active Cluster, preserving the same target configuration and optional SQLite behavior as standalone cloning; the preview always uses the production Node TLD even when the Cluster has another TLD. Proof: Incus action `cluster-clone-preview`.\n- [ ] The sole Route is Cluster-scoped and private, with separate Orbit-CA identities for Router and workload, private firewall policy, and the owning dedicated PHP socket where required; preparation completes before first deployment without requiring HTTP success. Proof: Incus action `cluster-clone-infrastructure`.\n- [ ] After an explicit deployment of a minimal fixture, a trusted request through the Router and an exact workload override preserve Host and TLS server name and reach the selected release; no public listener or Ingress certificate is created by cloning. Proof: Incus action `cluster-clone-request-path`.\n- [ ] Missing Router, incompatible placement, certificate failure, or an occupied hostname reports a bounded failed boundary; interruption and retry preserve completed clone configuration and data and create no duplicate AppInstance, Route, target, or certificate state. Proof: `apps/gateway/tests/Feature/Domain/CloneAppInstanceTest.php` and Incus action `cluster-clone-retry`.\n- [ ] Maintained documentation describes Cluster clone placement, preview paths, private TLS, and recovery, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+    "updatedAt": "2026-09-12T05:45:58.210Z",
+    "state": {
+        "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+        "name": "Todo",
+        "type": "unstarted"
+    },
+    "assignee": null,
+    "delegate": {
+        "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+    },
+    "team": {
+        "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+        "states": {
+            "nodes": [
+                {
+                    "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+                    "name": "Backlog"
+                },
+                {
+                    "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+                    "name": "Blocked"
+                },
+                {
+                    "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+                    "name": "Canceled"
+                },
+                {
+                    "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+                    "name": "Done"
+                },
+                {
+                    "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+                    "name": "Duplicate"
+                },
+                {
+                    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+                    "name": "In Progress"
+                },
+                {
+                    "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+                    "name": "In Review"
+                },
+                {
+                    "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+                    "name": "Todo"
+                }
+            ]
+        }
+    },
+    "labels": {
+        "nodes": [
+            {
+                "name": "Feature"
+            },
+            {
+                "name": "apps/gateway"
+            },
+            {
+                "name": "controller:commander"
+            },
+            {
+                "name": "docs"
+            },
+            {
+                "name": "incus"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "attachments": {
+        "nodes": [
+            {
+                "title": "ADR 0009: Adopt clustered AppInstance routing",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0009-clustered-app-instance-routing.md"
+            },
+            {
+                "title": "ADR 0011: Define clustered production ingress and app-prod placement",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0011-clustered-production-ingress-and-app-prod-placement.md"
+            },
+            {
+                "title": "ADR 0017: Make Cluster placement optional",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0017-optional-cluster-placement-and-tld-precedence.md"
+            },
+            {
+                "title": "ADR 0023: Separate hostname selection from Cluster routing",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0023-separate-hostname-selection-from-cluster-routing.md"
+            },
+            {
+                "title": "ADR 0028: Require one Route per active AppInstance",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0028-require-one-route-per-active-appinstance.md"
+            },
+            {
+                "title": "ADR 0029: Manage Laravel application URLs through Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0029-manage-laravel-application-urls-through-orbit.md"
+            },
+            {
+                "title": "ADR 0030: Complete AppInstance provisioning without application health gates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md"
+            },
+            {
+                "title": "ADR 0031: Clone initial production source during provisioning",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0031-clone-initial-production-source-during-provisioning.md"
+            },
+            {
+                "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+            },
+            {
+                "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md"
+            },
+            {
+                "title": "ADR 0046: Own production release deployment in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+            },
+            {
+                "title": "ADR 0047: Create production AppInstances from candidates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+            },
+            {
+                "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "children": {
+        "nodes": [],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "inverseRelations": {
+        "nodes": [
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-198",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            },
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-219",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    }
+}
