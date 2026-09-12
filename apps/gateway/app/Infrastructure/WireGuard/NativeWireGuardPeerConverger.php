@@ -143,6 +143,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 'transactionMode' => $transactionMode,
                 'dnsMode' => $dnsMode,
                 'operatorDns' => $rolelessOperator ? $gatewayWireGuardAddress : '',
+                'dnsPolicy' => $vpn->usesDefaultDnsResolver ? 'default' : 'split',
             ],
         );
         $peerResult = $this->ssh->execute($connection, $peerCommand);
@@ -389,7 +390,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     }
 
     /**
-     * @param  array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string}  $dns
+     * @param  array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string, dnsPolicy: string}  $dns
      */
     private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns): RemoteCommand
     {
@@ -398,6 +399,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
             'transactionMode' => $transactionMode,
             'dnsMode' => $dnsMode,
             'operatorDns' => $operatorDns,
+            'dnsPolicy' => $dnsPolicy,
         ] = $dns;
         $cleanup = $transactionMode === 'retain'
             ? 'trap - EXIT'
@@ -428,6 +430,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 $dnsMode,
                 $operatorDns,
                 $transactionMode,
+                $dnsPolicy,
             ],
             input: str_replace(
                 '__FINALIZE__',
@@ -444,6 +447,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     dns_mode=$9
                     operator_dns=${10}
                     transaction_mode=${11}
+                    dns_policy=${12}
                     exec 9>/run/lock/orbit-wireguard-peer.lock
                     flock -w 30 9
                     private_key=$(cat /etc/wireguard/orbit.key)
@@ -471,6 +475,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
 
                     case "$dns_mode:$transaction_mode" in
                         operator:retain|operator:finalize|wireguard:retain|wireguard:finalize|underlay:retain|underlay:finalize) ;;
+                        *) exit 43 ;;
+                    esac
+                    case "$dns_policy" in
+                        default|split) ;;
                         *) exit 43 ;;
                     esac
                     if [ -e "$backup" ] || [ -L "$backup" ] \
@@ -513,9 +521,13 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     printf -v dns_server_escaped '%q' "$dns_server"
                     printf -v operator_dns_escaped '%q' "$operator_dns"
 
-                    dns_domains=("$domain")
-                    if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
-                        dns_domains+=("$app_dev_tld")
+                    if [ "$dns_policy" = default ]; then
+                        dns_domains=(".")
+                    else
+                        dns_domains=("$domain")
+                        if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
+                            dns_domains+=("$app_dev_tld")
+                        fi
                     fi
                     dns_domains_escaped=()
                     for dns_domain in "${dns_domains[@]}"; do
@@ -525,7 +537,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
 
                     dns_hooks=
                     if [ "$dns_mode" = wireguard ]; then
-                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"$'\n'"PreDown = resolvectl revert %i"
+                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"$'\n'"PreDown = resolvectl dns %i ''; resolvectl domain %i ''"
                     fi
                     operator_dns_line=
                     if [ -n "$operator_dns" ]; then

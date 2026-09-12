@@ -49,6 +49,8 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -107,11 +109,94 @@ it('converges the persistent and active app development TLD route over WireGuard
         ->toContain(
             'exec 9>/run/lock/orbit-wireguard-peer.lock',
             'candidate=/etc/wireguard/orbit-candidate.conf',
+            'dns_state_candidate=/etc/wireguard/.orbit.dns-link.candidate',
             'wg-quick strip "$candidate"',
             'mv -fT -- "$candidate" "$live"',
-            'resolvectl domain "$dns_link" "~$domain" "~$tld"',
+            'if [[ " ${dns_domains[*]} " = *\' . \'* ]]; then',
+            'dns_domains=(".")',
+            'resolvectl domain "$dns_link" "${resolvectl_domains[@]}"',
+            'mv -fT -- "$dns_state_candidate" "$dns_state"',
         )
         ->not->toContain('systemctl restart wg-quick@orbit');
+});
+
+it('keeps the default resolver policy during an app development TLD convergence', function (): void {
+    $node = Node::query()->create([
+        'name' => 'app-dev-default-dns',
+        'status' => LifecycleStatus::Provisioning,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => 'new.test',
+        'public_ssh_host' => '192.0.2.10',
+        'wireguard_ip' => '10.44.0.7',
+        'user' => 'orbit',
+    ]);
+    $root = sys_get_temp_dir().'/orbit-app-dev-tld-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists("{$root}/wireguard", 0o700, true);
+    $files->ensureDirectoryExists("{$root}/run", 0o700, true);
+    $files->ensureDirectoryExists("{$root}/bin", 0o700, true);
+    $files->put(
+        "{$root}/wireguard/orbit.conf",
+        "[Interface]\nPostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~orbit \\~old.test\nPreDown = resolvectl dns %i ''; resolvectl domain %i ''\n",
+    );
+    $files->put("{$root}/wireguard/orbit.dns-link", "orbit\n10.44.0.1\n.\n");
+    $files->put("{$root}/bin/chown", "#!/bin/bash\nexit 0\n");
+    $files->put("{$root}/bin/wg-quick", "#!/bin/bash\n[ \"\$1\" != strip ] || /bin/cat -- \"\$2\"\n");
+    $files->put(
+        "{$root}/bin/resolvectl",
+        "#!/bin/bash\nprintf '%s\\n' \"resolvectl \$*\" >> \"{$root}/commands.log\"\n",
+    );
+    foreach (['chown', 'wg-quick', 'resolvectl'] as $shim) {
+        chmod("{$root}/bin/{$shim}", 0o755);
+    }
+    $transport = new class($root) implements SshExecutor
+    {
+        public function __construct(
+            private readonly string $root,
+        ) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $input = str_replace(
+                ['/etc/wireguard', '/run/lock'],
+                ["{$this->root}/wireguard", "{$this->root}/run"],
+                $command->input ?? '',
+            );
+            $process = new Process(
+                ['/bin/bash', '-seu', '--', ...array_slice($command->arguments, 4)],
+                cwd: $this->root,
+                env: ['PATH' => "{$this->root}/bin:/usr/bin:/bin"],
+            );
+            $process->setInput($input);
+            $process->run();
+
+            return new CommandResult(
+                $process->getExitCode() ?? 1,
+                $process->getOutput(),
+                $process->getErrorOutput(),
+                1,
+                false,
+            );
+        }
+    };
+
+    try {
+        new RemoteAppDevTldRouteManager(app_dev_ssh($transport))->converge($node);
+
+        expect(file_get_contents("{$root}/wireguard/orbit.conf"))
+            ->toContain('PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~.')
+            ->not->toContain('\\~orbit', '\\~old.test', '\\~new.test')
+            ->and(file_get_contents("{$root}/wireguard/orbit.dns-link"))
+            ->toBe("orbit\n10.44.0.1\n.\n")
+            ->and(file_get_contents("{$root}/commands.log"))
+            ->toContain(
+                'resolvectl dns orbit 10.44.0.1',
+                'resolvectl domain orbit ~.',
+            );
+    } finally {
+        $files->deleteDirectory($root);
+    }
 });
 
 it('renders isolated pools and private Caddy listeners for every active scope', function (): void {
@@ -3518,7 +3603,7 @@ final class AppDevProjectionOwnerSpy implements DevelopmentProjectionOperationLo
     }
 }
 
-function app_dev_ssh(AppDevFakeSshExecutor $ssh): AppDevSshExecutor
+function app_dev_ssh(SshExecutor $ssh): AppDevSshExecutor
 {
     $keys = new class implements SshKeyProvider
     {
