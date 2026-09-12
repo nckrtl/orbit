@@ -172,7 +172,11 @@ final readonly class AppDevSiteRepository
                 $route->hostname_change_direction === RouteHostnameChangeDirection::Forward
                 && in_array(
                     $route->hostname_change_step,
-                    [RouteHostnameChangeStep::LaravelUrl, RouteHostnameChangeStep::DnsPublished],
+                    [
+                        RouteHostnameChangeStep::LaravelUrl,
+                        RouteHostnameChangeStep::EnvironmentSynchronized,
+                        RouteHostnameChangeStep::DnsPublished,
+                    ],
                     true,
                 )
                 && is_string($route->hostname_change_target)

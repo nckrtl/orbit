@@ -8,6 +8,8 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
+use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteHostnameProjector;
@@ -26,6 +28,7 @@ final readonly class ConvergeRouteAction
     public function __construct(
         private RouteHostnameProjector $projection,
         private DevelopmentAppInstanceConfigurator $configuration,
+        private AppInstanceRouteEnvironmentSynchronizer $routeEnvironment,
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
     ) {}
@@ -127,19 +130,31 @@ final readonly class ConvergeRouteAction
                 RouteHostnameChangeStep::RouterCaddy,
                 fn () => $this->projection->prepareRouterCaddy($appInstance, $route, $candidate),
             );
-            $failureStep = 'laravel-url';
-            $this->forwardStep(
-                $route,
-                RouteHostnameChangeStep::LaravelUrl,
-                function () use ($appInstance, $candidate): void {
-                    if ($appInstance->source_is_laravel) {
-                        $this->configuration->configureLaravelUrl(
-                            $appInstance,
-                            "https://{$candidate->hostname}",
-                        );
-                    }
-                },
-            );
+            if ($appInstance->environment === 'production') {
+                $failureStep = 'environment-synchronization';
+                $this->forwardStep(
+                    $route,
+                    RouteHostnameChangeStep::EnvironmentSynchronized,
+                    fn () => $this->routeEnvironment->synchronizeRouteHostname(
+                        $appInstance,
+                        AppInstanceEnvironmentRouteHostname::Candidate,
+                    ),
+                );
+            } else {
+                $failureStep = 'laravel-url';
+                $this->forwardStep(
+                    $route,
+                    RouteHostnameChangeStep::LaravelUrl,
+                    function () use ($appInstance, $candidate): void {
+                        if ($appInstance->source_is_laravel) {
+                            $this->configuration->configureLaravelUrl(
+                                $appInstance,
+                                "https://{$candidate->hostname}",
+                            );
+                        }
+                    },
+                );
+            }
             $failureStep = 'dns-publication';
             $this->forwardStep(
                 $route,
@@ -177,7 +192,7 @@ final readonly class ConvergeRouteAction
             || $route->provenance !== RouteProvenance::Explicit
             || $route->publication !== RoutePublication::Private
             || $target->status !== AppInstanceState::Active
-            || $target->environment !== 'development'
+            || ! in_array($target->environment, ['development', 'production'], true)
             || $target->source_is_laravel === null
         ) {
             app(RouteReconciliationGuard::class)->refuse();
@@ -294,7 +309,12 @@ final readonly class ConvergeRouteAction
                 $candidate = $this->candidate($route);
                 $this->projection->prepareFirewallPolicy($appInstance, $candidate);
 
-                if ($appInstance->source_is_laravel) {
+                if ($appInstance->environment === 'production') {
+                    $this->routeEnvironment->synchronizeRouteHostname(
+                        $appInstance,
+                        AppInstanceEnvironmentRouteHostname::Candidate,
+                    );
+                } elseif ($appInstance->source_is_laravel) {
                     $this->configuration->configureLaravelUrl(
                         $appInstance,
                         "https://{$candidate->hostname}",
@@ -357,19 +377,31 @@ final readonly class ConvergeRouteAction
                 RouteHostnameChangeStep::RollbackCertificates,
                 fn () => $this->projection->rollbackCertificates($appInstance, $route),
             );
-            $failureStep = 'rollback-laravel-url';
-            $this->rollbackStep(
-                $route,
-                RouteHostnameChangeStep::RollbackLaravelUrl,
-                function () use ($route, $appInstance): void {
-                    if ($appInstance->source_is_laravel) {
-                        $this->configuration->configureLaravelUrl(
-                            $appInstance,
-                            "https://{$route->hostname_change_previous}",
-                        );
-                    }
-                },
-            );
+            if ($appInstance->environment === 'production') {
+                $failureStep = 'rollback-environment';
+                $this->rollbackStep(
+                    $route,
+                    RouteHostnameChangeStep::RollbackEnvironment,
+                    fn () => $this->routeEnvironment->synchronizeRouteHostname(
+                        $appInstance,
+                        AppInstanceEnvironmentRouteHostname::Previous,
+                    ),
+                );
+            } else {
+                $failureStep = 'rollback-laravel-url';
+                $this->rollbackStep(
+                    $route,
+                    RouteHostnameChangeStep::RollbackLaravelUrl,
+                    function () use ($route, $appInstance): void {
+                        if ($appInstance->source_is_laravel) {
+                            $this->configuration->configureLaravelUrl(
+                                $appInstance,
+                                "https://{$route->hostname_change_previous}",
+                            );
+                        }
+                    },
+                );
+            }
             $failureStep = 'rollback';
             $this->checkpoint(
                 $route,
@@ -463,6 +495,7 @@ final readonly class ConvergeRouteAction
             RouteHostnameChangeStep::WorkloadVerified => 5,
             RouteHostnameChangeStep::RouterCaddy => 6,
             RouteHostnameChangeStep::LaravelUrl => 7,
+            RouteHostnameChangeStep::EnvironmentSynchronized => 7,
             RouteHostnameChangeStep::DnsPublished => 8,
             RouteHostnameChangeStep::DatabaseCutover => 9,
             default => -1,
@@ -477,6 +510,7 @@ final readonly class ConvergeRouteAction
             RouteHostnameChangeStep::RollbackCaddy => 2,
             RouteHostnameChangeStep::RollbackCertificates => 3,
             RouteHostnameChangeStep::RollbackLaravelUrl => 4,
+            RouteHostnameChangeStep::RollbackEnvironment => 4,
             RouteHostnameChangeStep::RolledBack => 5,
             default => -1,
         };
