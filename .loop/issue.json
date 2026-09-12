@@ -1,0 +1,161 @@
+{
+    "id": "eee08d8b-a470-468e-b9f7-c2ea579a31a9",
+    "identifier": "ORB-201",
+    "title": "Replace a production preview hostname on its existing Route",
+    "url": "https://linear.app/nckrtl/issue/ORB-201/replace-a-production-preview-hostname-on-its-existing-route",
+    "description": "An agent explicitly replaces a production preview hostname with the intended private hostname while retaining the AppInstance\u2019s sole Route and synchronizing its stored environment values.\n\n## Scope\n\n* In: active single-target private production Route hostname changes, stored environment synchronization, workload and Router reprojection, and bounded recovery.\n* Out: application cache commands, deployment, public exposure changes, additional aliases, target changes, and automatic hostname changes from Node TLD edits.\n\n## Acceptance\n\n- [ ] The existing `PATCH /routes/{route}` hostname operation replaces an explicit preview or another explicit private production hostname on the same Route record; at every completed boundary the AppInstance retains exactly one Route, and invalid or occupied hostnames refuse before mutation. Proof: `apps/gateway/tests/Feature/Api/RoutesTest.php` and Incus action `production-preview-hostname`.\n- [ ] The change preflights and prepares private projections, synchronizes stored environment values against the candidate hostname, and publishes and commits the new Route intent before cleaning old projections; placeholder-based APP_URL changes while unrelated stored values and literal APP_KEY remain intact. Proof: Incus action `production-preview-env-sync`.\n- [ ] No Composer, Artisan, framework bootstrap, config-cache edit, worker restart, or deploy runs as part of hostname change; a cached application URL or HTTP 500 does not prevent an infrastructure-valid transition. Proof: `apps/gateway/tests/Feature/Domain/ConvergeRouteActionTest.php` and Incus action `production-preview-cached-config`.\n- [ ] A failure before publication restores old Route intent, environment-file projection, and owned infrastructure; failure or interruption during commit, cleanup, or restoration remains bounded and resumable without claiming completion, and retry revalidates recorded progress. Proof: Incus action `production-preview-retry`.\n- [ ] A conflicting deployment, clone finalization, removal, or environment write cannot run through the hostname transition; source code, current release, SQLite data, and local PHP tuning remain untouched, and existing development hostname changes still pass. Proof: `apps/gateway/tests/Feature/Domain/RouteMutationReconciliationTest.php`.\n- [ ] Maintained documentation describes explicit preview replacement, environment synchronization, recovery, and separate agent-configured cache commands, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd apps/gateway && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+    "updatedAt": "2026-09-12T11:20:48.100Z",
+    "state": {
+        "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+        "name": "Todo",
+        "type": "unstarted"
+    },
+    "assignee": null,
+    "delegate": {
+        "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+    },
+    "team": {
+        "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+        "states": {
+            "nodes": [
+                {
+                    "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+                    "name": "Backlog"
+                },
+                {
+                    "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+                    "name": "Blocked"
+                },
+                {
+                    "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+                    "name": "Canceled"
+                },
+                {
+                    "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+                    "name": "Done"
+                },
+                {
+                    "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+                    "name": "Duplicate"
+                },
+                {
+                    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+                    "name": "In Progress"
+                },
+                {
+                    "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+                    "name": "In Review"
+                },
+                {
+                    "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+                    "name": "Todo"
+                }
+            ]
+        }
+    },
+    "labels": {
+        "nodes": [
+            {
+                "name": "Feature"
+            },
+            {
+                "name": "apps/gateway"
+            },
+            {
+                "name": "controller:commander"
+            },
+            {
+                "name": "docs"
+            },
+            {
+                "name": "incus"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "attachments": {
+        "nodes": [
+            {
+                "title": "ADR 0009: Adopt clustered AppInstance routing",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0009-clustered-app-instance-routing.md"
+            },
+            {
+                "title": "ADR 0023: Separate hostname selection from Cluster routing",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0023-separate-hostname-selection-from-cluster-routing.md"
+            },
+            {
+                "title": "ADR 0028: Require one Route per active AppInstance",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0028-require-one-route-per-active-appinstance.md"
+            },
+            {
+                "title": "ADR 0029: Manage Laravel application URLs through Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0029-manage-laravel-application-urls-through-orbit.md"
+            },
+            {
+                "title": "ADR 0030: Complete AppInstance provisioning without application health gates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md"
+            },
+            {
+                "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+            },
+            {
+                "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md"
+            },
+            {
+                "title": "ADR 0046: Own production release deployment in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+            },
+            {
+                "title": "ADR 0047: Create production AppInstances from candidates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "children": {
+        "nodes": [],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "inverseRelations": {
+        "nodes": [
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-188",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            },
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-199",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            },
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-212",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    }
+}
