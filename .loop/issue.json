@@ -1,0 +1,135 @@
+{
+    "id": "d65d3d2f-a55d-4d50-b0c8-a1c88d48f6ba",
+    "identifier": "ORB-227",
+    "title": "Clone production instances through the SDK and CLI",
+    "url": "https://linear.app/nckrtl/issue/ORB-227/clone-production-instances-through-the-sdk-and-cli",
+    "description": "An agent prepares production from a candidate with one typed Orbit command and receives the target\u2019s preview hostname and deployment state.\n\n## Scope\n\n* In: typed clone request and response transport, CLI candidate and Node selection, help, and supported Node-TLD guidance.\n* Out: direct remote execution, automatic deployment, application readiness, source queue operations, and retirement of the older creation route.\n\n## Acceptance\n\n- [ ] The SDK sends the exact clone API payload, including omitted optional branch and SQLite path values, and validates the returned AppInstance and sole preview Route without applying placement policy. Proof: `packages/php-sdk/tests/Unit/Requests/AppInstances/CloneAppInstanceRequestTest.php`.\n- [ ] `orbit instance:clone CANDIDATE NODE NAME --preview-name=shop.com [--branch=BRANCH] [--sqlite-source-path=PATH]` uses the SDK, with unambiguous identifiers in noninteractive or JSON mode and no local shell execution. Proof: `apps/cli/tests/Feature/Instances/CloneInstanceCommandTest.php`.\n- [ ] Output identifies the target ID, configured branch, actual preview hostname, and absence of a first release; help describes source-versus-App definition selection, target-only cleanup, `node:provision --tld` for production preview setup, env updates, and separate deployment. Proof: `apps/cli/tests/Feature/Instances/CloneInstanceCommandTest.php`.\n- [ ] A real operator-side clone with and without a SQLite seed returns the same target on repeat and can then be configured and explicitly deployed using the separate deployment commands; source runtime state remains unchanged. Proof: Incus action `candidate-clone-cli`.\n- [ ] Maintained documentation describes candidate clone commands and production Node-TLD setup, and generated context is current. Proof: `composer docs-lint`.\n- [ ] Changed project checks and repository suites pass. Proof: `cd packages/php-sdk && composer check`, `cd apps/cli && composer check`, and all five full no-TIA CI suites on the submitted candidate, plus focused affected Pest tests locally.",
+    "updatedAt": "2026-09-12T13:27:09.197Z",
+    "state": {
+        "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+        "name": "Todo",
+        "type": "unstarted"
+    },
+    "assignee": null,
+    "delegate": {
+        "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+    },
+    "team": {
+        "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+        "states": {
+            "nodes": [
+                {
+                    "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+                    "name": "Backlog"
+                },
+                {
+                    "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+                    "name": "Blocked"
+                },
+                {
+                    "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+                    "name": "Canceled"
+                },
+                {
+                    "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+                    "name": "Done"
+                },
+                {
+                    "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+                    "name": "Duplicate"
+                },
+                {
+                    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+                    "name": "In Progress"
+                },
+                {
+                    "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+                    "name": "In Review"
+                },
+                {
+                    "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+                    "name": "Todo"
+                }
+            ]
+        }
+    },
+    "labels": {
+        "nodes": [
+            {
+                "name": "Feature"
+            },
+            {
+                "name": "apps/cli"
+            },
+            {
+                "name": "controller:commander"
+            },
+            {
+                "name": "docs"
+            },
+            {
+                "name": "incus"
+            },
+            {
+                "name": "packages/php-sdk"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "attachments": {
+        "nodes": [
+            {
+                "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+            },
+            {
+                "title": "ADR 0046: Own production release deployment in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+            },
+            {
+                "title": "ADR 0047: Create production AppInstances from candidates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+            },
+            {
+                "title": "ADR 0048: Copy App process and schedule definitions into AppInstances",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "children": {
+        "nodes": [],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "inverseRelations": {
+        "nodes": [
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-199",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            },
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-222",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    }
+}
