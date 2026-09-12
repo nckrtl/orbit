@@ -1368,11 +1368,18 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "App",
                 "AppInstance",
-                "Gateway"
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Schedule"
             ],
             "governing_adrs": [
-                "0047"
+                "0044",
+                "0047",
+                "0048"
             ]
         },
         {
