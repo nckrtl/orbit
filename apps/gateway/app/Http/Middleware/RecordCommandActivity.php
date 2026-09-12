@@ -18,7 +18,9 @@ use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Routes\RouteHostname;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\Nodes\RemoveNodeRoleInputParser;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -399,6 +401,10 @@ final readonly class RecordCommandActivity
             return $this->appInstanceRegistrationInput($request);
         }
 
+        if ($command === 'instance:clone') {
+            return $this->appInstanceCloneInput($request);
+        }
+
         if ($command === 'instance:deployment-layout:prepare') {
             return $this->appInstanceDeploymentLayoutInput($request);
         }
@@ -557,6 +563,47 @@ final readonly class RecordCommandActivity
         }
 
         unset($input['source_path']);
+
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function appInstanceCloneInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), [
+                'node_id',
+                'name',
+                'preview_name',
+                'branch',
+                'sqlite_source_path',
+            ]);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        $nodeId = $input['node_id'] ?? null;
+        $name = $input['name'] ?? null;
+        $previewName = $input['preview_name'] ?? null;
+        $branch = $input['branch'] ?? null;
+        $sqliteSourcePath = $input['sqlite_source_path'] ?? null;
+
+        if (
+            ! is_int($nodeId)
+            || $nodeId < 1
+            || ! is_string($name)
+            || strlen($name) > 63
+            || preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $name) !== 1
+            || ! is_string($previewName)
+            || ! RouteHostname::isValid($previewName)
+            || (array_key_exists('branch', $input) && (! is_string($branch) || ! GitBranchName::isValid($branch)))
+            || (array_key_exists('sqlite_source_path', $input) && ! is_string($sqliteSourcePath))
+        ) {
+            return [];
+        }
+
+        unset($input['sqlite_source_path']);
+        $input['sqlite_selected'] = $sqliteSourcePath !== null;
 
         return $this->inputSanitizer->sanitizeProperties($input);
     }

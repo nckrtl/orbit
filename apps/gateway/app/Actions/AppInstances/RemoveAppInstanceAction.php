@@ -349,6 +349,17 @@ final readonly class RemoveAppInstanceAction
 
     private function assertSupported(AppInstance $appInstance): void
     {
+        if (AppInstance::query()
+            ->where('clone_candidate_id', $appInstance->id)
+            ->whereNull('clone_completed_at')
+            ->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.clone_in_progress',
+                message: "AppInstance [{$appInstance->name}] is the candidate for an incomplete clone.",
+                status: 409,
+            );
+        }
+
         if ($appInstance->migration_required) {
             throw new ResourceOperationException(
                 errorCode: 'instance.migration_required',

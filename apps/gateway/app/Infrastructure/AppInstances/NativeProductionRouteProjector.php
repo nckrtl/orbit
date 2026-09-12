@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\ProductionCloneRouteProjector;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
@@ -16,7 +17,7 @@ use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Models\AppInstance;
 use App\Models\Route;
 
-final readonly class NativeProductionRouteProjector implements ProductionRouteProjector
+final readonly class NativeProductionRouteProjector implements ProductionCloneRouteProjector, ProductionRouteProjector
 {
     public function __construct(
         private ProductionPhpRuntimeManager $productionPhp,
@@ -53,9 +54,20 @@ final readonly class NativeProductionRouteProjector implements ProductionRoutePr
 
     public function publish(AppInstance $appInstance, Route $route): void
     {
-        $appInstance->loadMissing('node');
         $this->releaseLayout->validateCurrent($appInstance);
+
+        $this->prepareCaddy($appInstance, $route);
+        $this->prepareDns($route);
+    }
+
+    public function prepareCaddy(AppInstance $appInstance, Route $route): void
+    {
+        $appInstance->loadMissing('node');
         $this->caddy->convergeRoute($appInstance->node, $route);
+    }
+
+    public function prepareDns(Route $route): void
+    {
         $this->dns->convergeRoute($route);
     }
 }

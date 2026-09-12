@@ -76,6 +76,18 @@ final readonly class RequireNodeAccess
             return $next($request);
         }
 
+        if ($scope === ServingNode::CandidateClone) {
+            foreach ($servingNodes as $servingNode) {
+                if (! $this->authorizer->allows($consumer, $servingNode)) {
+                    $request->attributes->set('orbit.error_code', 'node_access.required');
+
+                    return $this->required($consumer, $servingNode);
+                }
+            }
+
+            return $next($request);
+        }
+
         foreach ($servingNodes as $servingNode) {
             if ($this->authorizer->allows($consumer, $servingNode)) {
                 return $next($request);

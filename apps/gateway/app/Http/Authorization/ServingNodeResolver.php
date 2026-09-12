@@ -30,6 +30,7 @@ final readonly class ServingNodeResolver
             ServingNode::Target => $this->target($request),
             ServingNode::AppOwning => $this->appOwning($request),
             ServingNode::InstanceOwning => $this->instanceOwning($request),
+            ServingNode::CandidateClone => $this->candidateClone($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
@@ -135,6 +136,26 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($nodeId)];
+    }
+
+    /** @return list<Node> */
+    private function candidateClone(Request $request): array
+    {
+        $candidate = $request->route('candidate');
+        $destinationNodeId = $this->positiveInteger($request->input('node_id'));
+
+        if (! $candidate instanceof AppInstance || $destinationNodeId === null) {
+            return [];
+        }
+
+        $candidateNode = Node::query()->findOrFail($candidate->node_id);
+        $destinationNode = Node::query()->findOrFail($destinationNodeId);
+
+        if ($candidateNode->is($destinationNode)) {
+            return [$candidateNode];
+        }
+
+        return [$candidateNode, $destinationNode];
     }
 
     /** @return list<Node> */

@@ -185,7 +185,9 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
     {
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
-        $branch = $appInstance->branch_override ?? $appInstance->app->default_branch;
+        $branch = $appInstance->branch_override
+            ?? $appInstance->branch
+            ?? $appInstance->app->default_branch;
 
         if (! is_string($branch)) {
             throw $this->failure('production-source-resolve', 'instance.branch_resolution_failed');
@@ -332,13 +334,12 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     relative_root=$3
                     releases="$home/releases"
                     current="$home/current"
-                    document_root="$current/$relative_root"
+                    initial="$releases/initial"
                     test "$home" = "/home/$user"
                     sudo -u "$user" -H test -d "$home"
                     sudo -u "$user" -H test ! -L "$home"
                     home_real=$(sudo -u "$user" -H realpath -e -- "$home")
                     test "$home_real" = "$home"
-                    document_root_exists=0
                     ancestor_paths=()
                     case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
                     if sudo -u "$user" -H test -e "$current" || sudo -u "$user" -H test -L "$current"; then
@@ -349,24 +350,27 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                         test "$releases_real" = "$releases"
                         selected=$(sudo -u "$user" -H realpath -e -- "$current")
                         case "$selected" in "$releases"/*) ;; *) exit 1 ;; esac
-                        sudo -u "$user" -H test -d "$selected"
-                        document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")
-                        case "$document_root_real" in "$selected"|"$selected"/*) ;; *) exit 1 ;; esac
-                        sudo -u "$user" -H test -d "$document_root"
-                        test "$(sudo -u "$user" -H realpath -e -- "$document_root")" = "$document_root_real"
-                        unexpected_symlink=$(sudo find -P "$document_root_real" -type l -print -quit)
-                        test -z "$unexpected_symlink"
-                        ancestor="$document_root_real"
-                        while [ "$ancestor" != "$home" ]; do
-                            ancestor=${ancestor%/*}
-                            if [ "$ancestor" = "$home" ]; then break; fi
-                            case "$ancestor" in "$home"/*) ;; *) exit 1 ;; esac
-                            sudo test -d "$ancestor"
-                            sudo test ! -L "$ancestor"
-                            ancestor_paths+=("$ancestor")
-                        done
-                        document_root_exists=1
+                    else
+                        selected=$(sudo -u "$user" -H realpath -e -- "$initial")
+                        test "$selected" = "$initial"
                     fi
+                    sudo -u "$user" -H test -d "$selected"
+                    document_root="$selected/$relative_root"
+                    document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")
+                    case "$document_root_real" in "$selected"|"$selected"/*) ;; *) exit 1 ;; esac
+                    sudo -u "$user" -H test -d "$document_root"
+                    test "$(sudo -u "$user" -H realpath -e -- "$document_root")" = "$document_root_real"
+                    unexpected_symlink=$(sudo find -P "$document_root_real" -type l -print -quit)
+                    test -z "$unexpected_symlink"
+                    ancestor="$document_root_real"
+                    while [ "$ancestor" != "$home" ]; do
+                        ancestor=${ancestor%/*}
+                        if [ "$ancestor" = "$home" ]; then break; fi
+                        case "$ancestor" in "$home"/*) ;; *) exit 1 ;; esac
+                        sudo test -d "$ancestor"
+                        sudo test ! -L "$ancestor"
+                        ancestor_paths+=("$ancestor")
+                    done
                     unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user"
                     unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
@@ -374,13 +378,11 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     sudo setfacl -n -P -R -m u:caddy:--- "$home"
                     sudo find -P "$home" -type d -exec setfacl -m d:u:caddy:--- -- {} +
                     sudo setfacl -m u:caddy:--x /home "$home"
-                    if [ "$document_root_exists" = 1 ]; then
-                        for ancestor in "${ancestor_paths[@]}"; do
-                            sudo setfacl -m u:caddy:--x "$ancestor"
-                        done
-                        sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"
-                        sudo find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
-                    fi
+                    for ancestor in "${ancestor_paths[@]}"; do
+                        sudo setfacl -m u:caddy:--x "$ancestor"
+                    done
+                    sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"
+                    sudo find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
                     BASH,
             ),
             step: 'production-caddy-access',
