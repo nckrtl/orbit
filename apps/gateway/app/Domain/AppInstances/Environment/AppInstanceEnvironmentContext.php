@@ -20,6 +20,7 @@ final readonly class AppInstanceEnvironmentContext
         public string $routeHostname,
         public string $nodeStatus,
         public Node $node,
+        public ?AppInstanceEnvironmentRouteHostname $routeHostnameSource = null,
     ) {}
 
     public function samePlacement(self $other): bool
@@ -34,6 +35,7 @@ final readonly class AppInstanceEnvironmentContext
             && $this->laravel === $other->laravel
             && $this->routeId === $other->routeId
             && $this->routeHostname === $other->routeHostname
-            && $this->nodeStatus === $other->nodeStatus;
+            && $this->nodeStatus === $other->nodeStatus
+            && $this->routeHostnameSource === $other->routeHostnameSource;
     }
 }

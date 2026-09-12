@@ -117,6 +117,14 @@ A successful response contains only the AppInstance ID, `operation: sync`, wheth
 
 Preflight, decryption, rendering, and confirmed writer failures leave the previous file intact. An unconfirmed writer result returns `env.sync_unconfirmed`; the replacement might have completed, so the response does not claim that the previous file remains. Retry the same request to recheck the current file and either accept the matching protected file or install the complete current result.
 
+## Synchronize during a hostname change
+
+A production Route hostname change uses the same stored-configuration, preflight, rendering, and protected-writer boundaries when the Route is active, explicit, private, and has one target. The change holds the AppInstance operation owner. This internal synchronization resolves `{{app_instance.hostname}}` against the candidate Route hostname even though the public import, update, and synchronization endpoints refuse an AppInstance with a Route transition in progress.
+
+The operation does not change stored values. A placeholder-based `APP_URL` changes in the rendered production `.env`, while unrelated entries and a literal `APP_KEY` remain the stored values. The operation changes no framework cache, service, process, deployment release, source file, SQLite database, or local PHP tuning.
+
+If the Route change fails before the candidate hostname becomes authoritative, recovery renders the same stored snapshot against the previous hostname and restores the protected `.env` before it completes rollback. An interruption during restoration retains the Route checkpoint and reports no completed change. Retry requests revalidate the current Route operation, placement, stored configuration, and file before they continue. After the new hostname becomes authoritative, a cleanup retry revalidates the candidate environment without reverting it.
+
 ## Remote replacement boundary
 
 Synchronization installs the rendered file through a protected internal operation. The reusable writer also remains available to other Gateway operations that already hold the AppInstance ownership and validation boundary.

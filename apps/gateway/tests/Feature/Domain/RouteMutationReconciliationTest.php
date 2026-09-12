@@ -166,25 +166,10 @@ it('retains reconciliation refusals for active Route changes without association
     }
 });
 
-it('retains hostname reconciliation refusals for generated and production Routes before projection', function (): void {
+it('retains hostname reconciliation refusals for generated Routes before projection', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
-
-    $productionNode = reconciliation_node('production-refusal', 'production.test');
-    $productionTarget = reconciliation_instance($this->orbitApp, $productionNode, 'production-refusal');
-    $productionTarget->update([
-        'environment' => 'production',
-        'source_is_laravel' => false,
-        'provisioning_step' => 'active',
-    ]);
-    $production = reconciliation_route(
-        $this->orbitApp,
-        'production.example.test',
-        node: $productionNode,
-    );
-    $production->targets()->create(['app_instance_id' => $productionTarget->id, 'position' => 0]);
-    $production->update(['status' => RouteStatus::Active]);
 
     app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
     app()->instance(
@@ -193,18 +178,16 @@ it('retains hostname reconciliation refusals for generated and production Routes
     );
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
 
-    foreach ([$generated, $production] as $route) {
-        $before = $route->fresh(['targets'])->toArray();
+    $before = $generated->fresh(['targets'])->toArray();
 
-        expect(fn () => app(UpdateRouteAction::class)->execute(
-            $route,
-            new UpdateRouteData(true, "next-{$route->id}.example.test", false, null),
-        ))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('route.reconciliation_required');
-        });
+    expect(fn () => app(UpdateRouteAction::class)->execute(
+        $generated,
+        new UpdateRouteData(true, "next-{$generated->id}.example.test", false, null),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.reconciliation_required');
+    });
 
-        expect($route->fresh(['targets'])->toArray())->toBe($before);
-    }
+    expect($generated->fresh(['targets'])->toArray())->toBe($before);
 });
 
 it('retains Node, Cluster, and Router reconciliation refusals before dependent state changes', function (): void {
