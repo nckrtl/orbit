@@ -1,0 +1,145 @@
+{
+    "attempt_id": "c625005c2cb23fd34a75912ecef4f3bb",
+    "before": {
+        "gateway": {
+            "role": "gateway",
+            "files": {
+                "\/etc\/wireguard\/orbit.conf": "fdeb6df2eda1615898f5351ac102e5d325fc7df6922ec0514bace84d7b4a583d",
+                "\/etc\/resolv.conf": "5dd8be84bb6005c39a17d7ce959e66c7510a31a7780966b3cefde3ea7caff487",
+                "\/home\/orbit\/.orbit\/wireguard\/private.key": "19b4d5fc8a6f73e40d152617e4965d4c6a30f76ca30bafe08a032a6f24636b83",
+                "\/home\/orbit\/.orbit\/wireguard\/public.key": "2bcad0619555c9c92513ed28219ccc280100ec7bcb5858ec7e8492a7f8bfee54",
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519": "4b4ba182b62518f5194d678d9898df29b9f14bd6b998500305ff5bc91fc56b0b",
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519.pub": "914c8bc97a1a610cd73be15df0b24c0130ac499470ece34a553fb8641fdbebcf"
+            },
+            "saved_endpoints": [],
+            "tables": {
+                "active_app_prod_nodes": "559ac4008ad4524496b0093f86ec6b554a0ecc0ab3ba7a16838244782e7bdaab",
+                "activity_log": "7842b96049cbd62d247aaac356c57bacb217206b9f36128828b8cadb7660be85",
+                "app_instance_environment_values": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "app_instance_removal_members": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "app_instance_removals": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "app_instances": "f555b7348b4bdd7022f3e94dd92dfc087b154450871ee5b2597960bb3177c387",
+                "apps": "45f22f3afafab51d3c30aa3fe49b11a2cae4c55f6d6f227e5ce06e7094e04efe",
+                "clusters": "e4b2457f3570ff1267d852db426f8aa4b9a44aa7d84601c41cbec85e263e293e",
+                "firewall_rules": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "instances": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "migrations": "6ca8c06b6b9314bdfe6780603db03fabd005bd60c2d45373b56f39e17b0610b5",
+                "node_access": "3b96c15fd62eecc5d71bccf751356016345263b73a1faa059124126ea674052e",
+                "node_roles": "7237153571b77ea5638b077631a313752850474c6df3f34a16f5d2b453fccf95",
+                "nodes": "13733beeaf842d82c19b1be1c1bede316c1dc983061676aa25fcf85c0222dff1",
+                "processes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "route_targets": "f787d2db98b15d072aeb187712241d5d1cc607936b8403c1ba7eb4baf15ec46c",
+                "routes": "f0a5c4488b0a1c89e2abd097cb6214bf2e73490d498fe274dd5e49bb9a58af8a",
+                "settings": "c2c572a8cc4f98b9851cdcd64f21c4fa3c54c09fce26fa3455b4fd0c75258eb2",
+                "tool_managers": "034020991ce206c4f99c5d4439b628f06c99a58d50b4c78bb546ee4bda53e6cf",
+                "tools": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "workspaces": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            "public_ssh_hosts": {
+                "gateway": "10.232.1.10",
+                "app-dev": "10.232.1.11",
+                "app-prod": "10.232.1.12"
+            },
+            "gateway_endpoint": "10.232.1.10:51820"
+        },
+        "app-dev": {
+            "role": "app-dev",
+            "files": {
+                "\/etc\/wireguard\/orbit.conf": "8f263bdfdb394fffb6872532f1bcc4dc4242aaa4900004ad3122051f91fba229",
+                "\/etc\/resolv.conf": "5dd8be84bb6005c39a17d7ce959e66c7510a31a7780966b3cefde3ea7caff487",
+                "\/home\/orbit\/.orbit\/wireguard\/private.key": null,
+                "\/home\/orbit\/.orbit\/wireguard\/public.key": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519.pub": null
+            },
+            "saved_endpoints": [
+                "10.232.1.10:51820"
+            ]
+        },
+        "app-prod": {
+            "role": "app-prod",
+            "files": {
+                "\/etc\/wireguard\/orbit.conf": "70372a1b6a72f3c13e1227472301d3b247da8771b364c94a6d37c7b930a08dd3",
+                "\/etc\/resolv.conf": "5dd8be84bb6005c39a17d7ce959e66c7510a31a7780966b3cefde3ea7caff487",
+                "\/home\/orbit\/.orbit\/wireguard\/private.key": null,
+                "\/home\/orbit\/.orbit\/wireguard\/public.key": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519.pub": null
+            },
+            "saved_endpoints": [
+                "10.232.1.10:51820"
+            ]
+        }
+    },
+    "after": {
+        "gateway": {
+            "role": "gateway",
+            "files": {
+                "\/etc\/wireguard\/orbit.conf": "fdeb6df2eda1615898f5351ac102e5d325fc7df6922ec0514bace84d7b4a583d",
+                "\/etc\/resolv.conf": "5dd8be84bb6005c39a17d7ce959e66c7510a31a7780966b3cefde3ea7caff487",
+                "\/home\/orbit\/.orbit\/wireguard\/private.key": "19b4d5fc8a6f73e40d152617e4965d4c6a30f76ca30bafe08a032a6f24636b83",
+                "\/home\/orbit\/.orbit\/wireguard\/public.key": "2bcad0619555c9c92513ed28219ccc280100ec7bcb5858ec7e8492a7f8bfee54",
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519": "4b4ba182b62518f5194d678d9898df29b9f14bd6b998500305ff5bc91fc56b0b",
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519.pub": "914c8bc97a1a610cd73be15df0b24c0130ac499470ece34a553fb8641fdbebcf"
+            },
+            "saved_endpoints": [],
+            "tables": {
+                "active_app_prod_nodes": "559ac4008ad4524496b0093f86ec6b554a0ecc0ab3ba7a16838244782e7bdaab",
+                "activity_log": "7842b96049cbd62d247aaac356c57bacb217206b9f36128828b8cadb7660be85",
+                "app_instance_environment_values": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "app_instance_removal_members": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "app_instance_removals": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "app_instances": "f555b7348b4bdd7022f3e94dd92dfc087b154450871ee5b2597960bb3177c387",
+                "apps": "45f22f3afafab51d3c30aa3fe49b11a2cae4c55f6d6f227e5ce06e7094e04efe",
+                "clusters": "e4b2457f3570ff1267d852db426f8aa4b9a44aa7d84601c41cbec85e263e293e",
+                "firewall_rules": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "instances": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "migrations": "6ca8c06b6b9314bdfe6780603db03fabd005bd60c2d45373b56f39e17b0610b5",
+                "node_access": "3b96c15fd62eecc5d71bccf751356016345263b73a1faa059124126ea674052e",
+                "node_roles": "7237153571b77ea5638b077631a313752850474c6df3f34a16f5d2b453fccf95",
+                "nodes": "13733beeaf842d82c19b1be1c1bede316c1dc983061676aa25fcf85c0222dff1",
+                "processes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "route_targets": "f787d2db98b15d072aeb187712241d5d1cc607936b8403c1ba7eb4baf15ec46c",
+                "routes": "f0a5c4488b0a1c89e2abd097cb6214bf2e73490d498fe274dd5e49bb9a58af8a",
+                "settings": "c2c572a8cc4f98b9851cdcd64f21c4fa3c54c09fce26fa3455b4fd0c75258eb2",
+                "tool_managers": "034020991ce206c4f99c5d4439b628f06c99a58d50b4c78bb546ee4bda53e6cf",
+                "tools": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "workspaces": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            "public_ssh_hosts": {
+                "gateway": "10.232.3.10",
+                "app-dev": "10.232.3.11",
+                "app-prod": "10.232.3.12"
+            },
+            "gateway_endpoint": "10.232.3.10:51820"
+        },
+        "app-dev": {
+            "role": "app-dev",
+            "files": {
+                "\/etc\/wireguard\/orbit.conf": "8f263bdfdb394fffb6872532f1bcc4dc4242aaa4900004ad3122051f91fba229",
+                "\/etc\/resolv.conf": "5dd8be84bb6005c39a17d7ce959e66c7510a31a7780966b3cefde3ea7caff487",
+                "\/home\/orbit\/.orbit\/wireguard\/private.key": null,
+                "\/home\/orbit\/.orbit\/wireguard\/public.key": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519.pub": null
+            },
+            "saved_endpoints": [
+                "10.232.3.10:51820"
+            ]
+        },
+        "app-prod": {
+            "role": "app-prod",
+            "files": {
+                "\/etc\/wireguard\/orbit.conf": "70372a1b6a72f3c13e1227472301d3b247da8771b364c94a6d37c7b930a08dd3",
+                "\/etc\/resolv.conf": "5dd8be84bb6005c39a17d7ce959e66c7510a31a7780966b3cefde3ea7caff487",
+                "\/home\/orbit\/.orbit\/wireguard\/private.key": null,
+                "\/home\/orbit\/.orbit\/wireguard\/public.key": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519": null,
+                "\/home\/orbit\/.orbit\/ssh\/id_ed25519.pub": null
+            },
+            "saved_endpoints": [
+                "10.232.3.10:51820"
+            ]
+        }
+    }
+}

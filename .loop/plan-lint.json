@@ -1,0 +1,7 @@
+{
+    "schema": 1,
+    "issue": "ORB-246",
+    "flow": "discovery",
+    "plan_sha256": "10746b071e289b77568fbc4161231228a937b3d24486bf8e4d9ecc4cdcd73523",
+    "validator_sha256": "a5765d0d925b5c3bffa6e253f1d7a39c8c73921e38ec8574e0cda92f626b7572"
+}
