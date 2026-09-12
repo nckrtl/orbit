@@ -30,6 +30,7 @@ use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologySnapshotReplacementInstallation;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
@@ -113,6 +114,31 @@ function topologyAcquirerWithLegacyGeneration(
 ): TopologyAcquirer {
     $host = new IncusHost(pool: 'orbit-e2e');
     $operation = new OperationId(str_repeat('f', 32));
+
+    return new TopologyAcquirer(
+        $host,
+        new IncusNetworkLifecycle($host),
+        new PreparedStateFingerprint(new GitRepository($repositoryRoot)),
+        $manifests,
+        new WorktreeSynchronizer($host, $repositoryRoot, $operation),
+        new TopologyVerifier($host, 1, 0),
+        new DiscoveryGuestPreparer($host),
+        new HostCapacity($host, 24),
+        $paths,
+        $operation,
+        TopologySnapshotIdentity::primary(),
+        $repositoryRoot,
+        fn () => attemptId(),
+    );
+}
+
+function preparedTopologyAcquirer(
+    string $repositoryRoot,
+    StatePaths $paths,
+    IncusHost $host,
+    OperationId $operation,
+): TopologyAcquirer {
+    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
 
     return new TopologyAcquirer(
         $host,
@@ -420,6 +446,225 @@ it('rolls back only its acquired clones without publishing readiness when Gatewa
     'failed publication' => [65, ''],
     'malformed publication' => [0, '{"app-dev":"10.44.0.10:51820"}'],
 ]);
+
+it('prepares the mounted Gateway schema before standard discovery readiness without converging product state', function (): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-schema-acquisition-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'schema-acquisition');
+    $target = featureTarget('TST-123');
+    $events = [];
+    fakePinnedWorktreeProcesses($target, $events);
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+
+    $topology = preparedTopologyAcquirer($root, $paths, $host, $operation)
+        ->acquire(new TopologyRequest('TST-123', $worktree));
+
+    $commands = array_map(
+        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
+        $events,
+    );
+    $sourceMarker = array_find_key($commands, static fn (string $command): bool => str_contains(
+        $command,
+        WorktreeSynchronizer::SOURCE_STATE_MARKER,
+    ));
+    $migration = array_find_key($commands, static fn (string $command): bool => str_contains(
+        $command,
+        $target->instance('gateway').' -- runuser -u orbit -- env -C /home/orbit '
+            .'HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite '
+            .'env -C /home/orbit/orbit/apps/gateway ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway '
+            .'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php artisan migrate --force --no-interaction',
+    ));
+    $verification = array_find_key($commands, static fn (string $command): bool => str_contains(
+        $command,
+        '/usr/local/bin/verify-topology.sh',
+    ));
+
+    expect($topology->source->mounted)
+        ->toBeTrue()
+        ->and($sourceMarker)
+        ->toBeInt()
+        ->and($migration)
+        ->toBeInt()
+        ->toBeGreaterThan($sourceMarker)
+        ->and($verification)
+        ->toBeInt()
+        ->toBeGreaterThan($migration)
+        ->and(implode("\n", $commands))
+        ->not->toContain('/usr/local/bin/converge-gateway.sh', 'orbit:bootstrap', 'converge-sample-app.sh');
+});
+
+it('retains the old successful source after failed sync and accepts a corrected retry at the same HEAD', function (): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-schema-sync-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'schema-sync');
+    $target = featureTarget('TST-123');
+    $events = [];
+    $failMigration = false;
+    $migrationCalls = 0;
+    fakePinnedWorktreeProcesses(
+        $target,
+        $events,
+        guestOverride: static function (array $guest) use (&$failMigration, &$migrationCalls) {
+            if (in_array('artisan', $guest, true) && in_array('migrate', $guest, true)) {
+                $migrationCalls++;
+
+                return $failMigration
+                    ? Process::result('private migration output', 'private migration error', 73)
+                    : Process::result();
+            }
+
+            return null;
+        },
+    );
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+    $acquirer = preparedTopologyAcquirer($root, $paths, $host, $operation);
+    $request = new TopologyRequest('TST-123', $worktree);
+    $ready = $acquirer->acquire($request);
+    expect($ready->source->dirty)->toBeFalse()->and($ready->source->treeHash)->toBeNull();
+    $readyRecord = $ready->toArray();
+    $readyAttempt = $ready->attempt->value;
+    $migrationDirectory = $worktree.'/apps/gateway/database/migrations';
+    if (! is_dir($migrationDirectory)) {
+        mkdir($migrationDirectory, 0700, true);
+    }
+    $migration = $migrationDirectory.'/2099_01_01_000000_schema_failure.php';
+    file_put_contents($migration, "<?php\nthrow new RuntimeException('fixture');\n");
+    $failMigration = true;
+
+    expect(fn () => $acquirer->sync($request))
+        ->toThrow(RuntimeException::class, 'Gateway schema preparation failed with exit code 73.');
+
+    $state = IssueState::forWorktree('TST-123', $worktree);
+    expect($state->attemptId(AttemptPurpose::Discovery)->value)
+        ->toBe($readyAttempt)
+        ->and($state->requireTopology(AttemptPurpose::Discovery)->toArray())
+        ->toBe($readyRecord)
+        ->and(fn () => $acquirer->verify($request))
+        ->toThrow(
+            RuntimeException::class,
+            'The mounted source differs from the last successful readiness record; run topology sync.',
+        );
+
+    file_put_contents($migration, "<?php\n// corrected fixture\n");
+    $failMigration = false;
+    $retried = $acquirer->sync($request);
+    $repeated = $acquirer->sync($request);
+
+    expect($retried->attempt->value)
+        ->toBe($readyAttempt)
+        ->and($retried->source->dirty)
+        ->toBeTrue()
+        ->and($retried->source->overlayPaths)
+        ->toContain('apps/gateway/database/migrations/2099_01_01_000000_schema_failure.php')
+        ->and($repeated->source->toArray())
+        ->toBe($retried->source->toArray())
+        ->and($migrationCalls)
+        ->toBe(4);
+});
+
+it('rolls back its exact attempt without publishing readiness when Gateway migration fails', function (): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-schema-failure-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'schema-failure');
+    $target = featureTarget('TST-123');
+    $events = [];
+    fakePinnedWorktreeProcesses(
+        $target,
+        $events,
+        guestOverride: static fn (array $guest) => in_array('artisan', $guest, true) && in_array('migrate', $guest, true)
+            ? Process::result('private migration output', 'private migration error', 73)
+            : null,
+    );
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+
+    expect(fn () => preparedTopologyAcquirer($root, $paths, $host, $operation)->acquire(
+        new TopologyRequest('TST-123', $worktree),
+    ))
+        ->toThrow(
+            RuntimeException::class,
+            'Topology acquisition failed: Gateway schema preparation failed with exit code 73.',
+        );
+
+    $state = IssueState::forWorktree('TST-123', $worktree);
+    expect($state->hasAttempt())
+        ->toBeFalse()
+        ->and(file_exists($worktree.'/.e2e/topology.json'))
+        ->toBeFalse();
+    $deletions = array_values(array_filter($events, static fn (array $command): bool => ($command[3] ?? null) === 'delete'));
+    expect(array_column($deletions, 4))->toEqualCanonicalizing(array_map(
+        static fn (string $role): string => 'local:'.$target->instance($role),
+        TopologyProfile::ROLES,
+    ));
+});
+
+it('retains the exact lease and resources when migration-failure cleanup ownership drifts', function (): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-schema-refusal-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'schema-refusal');
+    $target = featureTarget('TST-123');
+    $events = [];
+    $migrationFailed = false;
+    $rollbackInventories = 0;
+    fakePinnedWorktreeProcesses(
+        $target,
+        $events,
+        guestOverride: static function (array $guest) use (&$migrationFailed) {
+            if (in_array('artisan', $guest, true) && in_array('migrate', $guest, true)) {
+                $migrationFailed = true;
+
+                return Process::result('', '', 73);
+            }
+
+            return null;
+        },
+        inventoryOverride: static function (array $command, ProcessResult $result) use (
+            &$migrationFailed,
+            &$rollbackInventories,
+            $target,
+        ): ?ProcessResult {
+            if (! $migrationFailed || ($command[3] ?? null) !== 'list' || ($command[4] ?? null) !== 'local:') {
+                return null;
+            }
+            $rollbackInventories++;
+            if ($rollbackInventories < 2) {
+                return null;
+            }
+            $inventory = json_decode($result->output(), true, 512, JSON_THROW_ON_ERROR);
+            foreach ($inventory as &$instance) {
+                if (($instance['name'] ?? null) === $target->instance('gateway')) {
+                    $instance['config']['user.orbit.e2e.operation'] = str_repeat('0', 32);
+                }
+            }
+            unset($instance);
+
+            return Process::result(json_encode($inventory, JSON_THROW_ON_ERROR));
+        },
+    );
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+
+    expect(fn () => preparedTopologyAcquirer($root, $paths, $host, $operation)->acquire(
+        new TopologyRequest('TST-123', $worktree),
+    ))
+        ->toThrow(RuntimeException::class, 'rollback was refused');
+
+    $state = IssueState::forWorktree('TST-123', $worktree);
+    expect($state->hasAttempt(AttemptPurpose::Discovery))
+        ->toBeTrue()
+        ->and($state->attemptId(AttemptPurpose::Discovery)->value)
+        ->toBe($target->requireAttempt()->value)
+        ->and(file_exists($worktree.'/.e2e/topology.json'))
+        ->toBeFalse()
+        ->and(array_filter($events, static fn (array $command): bool => ($command[3] ?? null) === 'delete'))
+        ->toBeEmpty();
+});
 
 it('uses the acquired generation for discovery sync after main and promotion change while proof requires freshness', function (): void {
     $root = preparedTopologyRepository();

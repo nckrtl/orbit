@@ -70,16 +70,12 @@ final readonly class WorktreeSynchronizer
         if (count($target->recipe->nodes) > count(TopologyProfile::ROLES)) {
             $this->syncWorkingTreeGuestScripts($target, $repository);
         }
-        $hostSha = $repository->commit();
-        $overlay = $repository->dirtyOverlay();
-        $paths = $overlay === null ? [] : $overlay->paths;
-        $treeHash = $overlay === null ? $repository->effectiveTreeHash() : $overlay->treeHash;
-        $pointerHash = $this->gitPointerHash($worktree);
+        ['source' => $source, 'effectiveTreeHash' => $treeHash] = $this->mountedSourceState($repository, $worktree);
         $marker = json_encode([
-            'sha' => $hostSha,
+            'sha' => $source->hostSha,
             'tree' => $treeHash,
             'mounted' => true,
-            'git_pointer_sha256' => $pointerHash,
+            'git_pointer_sha256' => $source->pointerHash,
         ], JSON_THROW_ON_ERROR);
 
         $commands = [];
@@ -99,16 +95,62 @@ final readonly class WorktreeSynchronizer
         }
         $this->assertBatchSuccessful($this->incus->execAll($commands), 'Guest source marker write failed.');
 
-        return new SourceState(
-            $hostSha,
-            $hostSha,
-            $overlay !== null,
-            $overlay?->treeHash,
-            $paths,
-            $this->operation->value,
-            true,
-            $pointerHash,
-        );
+        return $source;
+    }
+
+    /** Refuse standalone readiness when the mount differs from the last successful source record. */
+    public function assertWorkingTreeMatches(
+        TopologyTarget $target,
+        string $worktree,
+        SourceState $expected,
+    ): void {
+        $repository = new GitRepository($worktree);
+        $this->validateWorktree($repository, $target);
+        ['source' => $current] = $this->mountedSourceState($repository, $worktree);
+        $matches = $expected->mounted
+            && $current->hostSha === $expected->hostSha
+            && $current->guestSha === $expected->guestSha
+            && $current->dirty === $expected->dirty
+            && $current->treeHash === $expected->treeHash
+            && $current->overlayPaths === $expected->overlayPaths
+            && $current->pointerHash === $expected->pointerHash;
+
+        if (! $matches) {
+            throw new RuntimeException(
+                'The mounted source differs from the last successful readiness record; run topology sync.',
+            );
+        }
+    }
+
+    /** @return array{source:SourceState,effectiveTreeHash:string} */
+    private function mountedSourceState(GitRepository $repository, string $worktree): array
+    {
+        $hostSha = $repository->commit();
+        $overlay = $repository->dirtyOverlay();
+        $dirty = $overlay !== null;
+        $treeHash = null;
+        $paths = [];
+        if ($overlay === null) {
+            $effectiveTreeHash = $repository->effectiveTreeHash();
+        } else {
+            $treeHash = $overlay->treeHash;
+            $paths = $overlay->paths;
+            $effectiveTreeHash = $overlay->treeHash;
+        }
+
+        return [
+            'source' => new SourceState(
+                $hostSha,
+                $hostSha,
+                $dirty,
+                $treeHash,
+                $paths,
+                $this->operation->value,
+                true,
+                $this->gitPointerHash($worktree),
+            ),
+            'effectiveTreeHash' => $effectiveTreeHash,
+        ];
     }
 
     /** Install the mounted worktree's current guest scripts on every physical Node. */

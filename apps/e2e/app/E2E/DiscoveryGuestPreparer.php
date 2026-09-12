@@ -11,6 +11,7 @@ use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use JsonException;
 use RuntimeException;
+use Throwable;
 
 /**
  * Prepare the cloned guests of one discovery attempt for a mounted worktree.
@@ -77,6 +78,39 @@ final readonly class DiscoveryGuestPreparer
             ];
         }
         $this->assertGuestBatch($this->host->execAll($commands), 'The orbit CLI could not be linked onto the PATH on');
+    }
+
+    /** Apply the mounted Gateway's pending migrations without provisioning any product state. */
+    public function prepareGatewaySchema(TopologyTarget $target): void
+    {
+        try {
+            $result = $this->host->exec(
+                $target->instance('gateway'),
+                GuestCommand::asOrbitUser([
+                    'env',
+                    '-C',
+                    MountPath::GUEST_SOURCE.'/apps/gateway',
+                    'ORBIT_GATEWAY_CHECKOUT='.MountPath::GUEST_SOURCE.'/apps/gateway',
+                    'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
+                    'php',
+                    'artisan',
+                    'migrate',
+                    '--force',
+                    '--no-interaction',
+                ], 900),
+            );
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                'Gateway schema preparation could not complete: '.$exception->getMessage(),
+                previous: $exception,
+            );
+        }
+
+        if (! $result->successful()) {
+            throw new RuntimeException(
+                "Gateway schema preparation failed with exit code {$result->exitCode}.",
+            );
+        }
     }
 
     /**

@@ -67,10 +67,10 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 
 | Command | What it does |
 | --- | --- |
-| `acquire ISSUE WORKTREE` | Creates discovery from the saved generation, validates plan topology declarations, and refuses duplicate discovery or a missing vendor tree |
+| `acquire ISSUE WORKTREE` | Creates discovery from the saved generation, applies pending Gateway migrations from mounted source, verifies readiness, and refuses duplicate discovery or a missing vendor tree |
 | `shell ISSUE NODE [--proof --review-action=ID --required]` | Opens a login shell as `orbit` on one physical Node key of discovery, a retained diagnosis, or a captured successful proof; successful-proof use starts a separate interactive review action |
 | `exec ISSUE NODE --argv=JSON [--proof --review-action=ID --required]` | Runs one argument vector as `orbit` on one physical Node key; `--argv-file=PATH` replaces `--argv`; successful-proof use records its result as a required or exploratory review action |
-| `sync ISSUE` | Proves the mount, re-verifies the mounted source identity, and verifies readiness |
+| `sync ISSUE` | Proves the mount, applies pending Gateway migrations from mounted source, and verifies readiness |
 | `verify ISSUE` | Verifies discovery readiness and records the report |
 | `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; a declared snapshot replacement starts from the generic base, and the plan defaults to `.loop/proof/ISSUE.json` |
 | `capture ISSUE [--plan=PATH]` | Captures and archives complete successful proof evidence without releasing the topology, then permits interactive review |
@@ -98,6 +98,16 @@ The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit
 Before reporting readiness, acquisition updates the three cloned Nodes' stored public SSH addresses and retargets stored VPN endpoints that name the snapshot Gateway. It keeps omitted endpoints omitted, preserves endpoint ports, and aligns each peer's saved and running endpoint with the Gateway's provisioning inputs. A later peer configuration therefore selects the acquired Gateway without a manual override. Acquisition uses the current harness preparation code, not a cached copy from the snapshot.
 
 This preparation preserves WireGuard keys and private addresses, DNS settings, SSH ports, roles, workloads, and unrelated configuration. It does not reprovision roles or workloads. Missing, invalid, or conflicting clone identity fails acquisition before readiness; an endpoint that names an unrelated host is a conflict, not permission to replace custom configuration. Acquisition rolls back only that attempt's resources.
+
+### Gateway schema readiness
+
+Acquisition and `sync` run `php artisan migrate --force --no-interaction` from the mounted Gateway checkout before they publish readiness for that source. The harness runs the command as `orbit` with `HOME=/home/orbit`, `ORBIT_HOME=/home/orbit/.orbit`, `ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway`, and `DB_DATABASE=/home/orbit/.orbit/gateway.sqlite`. This step applies only the migrations that mounted source declares. It does not run Gateway bootstrap, install dependencies, configure an application, provision roles or sample workloads, or change the promoted snapshot. Repeating `sync` leaves migrations that Laravel has already recorded unchanged.
+
+A migration error or timeout makes `acquire` or `sync` exit nonzero. Failed acquisition runs exact-attempt cleanup. An ownership refusal keeps the lease and exact recovery target for `release`; do not bypass that refusal. Failed `sync` keeps the same discovery resources and its last successful `topology.json` source binding. Guest source markers describe the current mount input and are not readiness receipts. `status` continues to show the last successful binding, and standalone `verify` refuses when the live worktree differs from that binding.
+
+Inspect the failed command output, `bin/e2e-topology status ISSUE --worktree=WORKTREE --json`, the retained lease, and the guest migration ledger before retrying. A migration can complete some changes before a later migration fails, and the harness does not roll the Gateway database back. After successful acquisition cleanup, correct the mounted source or its environment and rerun `bin/e2e-topology acquire ISSUE WORKTREE --json`. If acquisition cleanup retains a lease, resolve its ownership refusal before another acquisition. For failed `sync`, correct the mounted source or its environment and run `bin/e2e-topology sync ISSUE --worktree=WORKTREE --json`. Confirm a zero exit, inspect `php artisan migrate:status --no-interaction` on the Gateway, and run `bin/e2e-topology verify ISSUE --worktree=WORKTREE --json` before using the new source binding.
+
+Gateway schema readiness means the mounted Gateway has no pending declared migrations and the topology readiness probes pass. It does not prove application health or feature acceptance. A missing application dependency, application key, or application database remains operator-owned setup and does not expand this schema step.
 
 ## Release and network ownership
 

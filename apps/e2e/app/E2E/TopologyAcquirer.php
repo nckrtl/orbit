@@ -96,6 +96,7 @@ final readonly class TopologyAcquirer
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
             $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree);
+            $this->guests->prepareGatewaySchema($topology->target);
             if ($topology->construction->extension !== null) {
                 $this->topologyConverger()->converge($topology->target, $source, $topology->generation->laravel);
             }
@@ -123,6 +124,11 @@ final readonly class TopologyAcquirer
         $lock = $this->issueLock($request->issue);
         try {
             $topology = $state->requireTopology(AttemptPurpose::Discovery);
+            $this->synchronizer->assertWorkingTreeMatches(
+                $topology->target,
+                $request->worktree,
+                $topology->source,
+            );
             $this->networks->reconcile($topology->target->network());
             if ($topology->source->mounted) {
                 $this->guests->assertSourceMounted($topology->target);
@@ -220,6 +226,7 @@ final readonly class TopologyAcquirer
             $this->guests->exposeOrbitCli($target);
             $this->guests->repairCloneIdentity($target);
             $source = $this->synchronizer->syncWorkingTree($target, $request->worktree);
+            $this->guests->prepareGatewaySchema($target);
             if ($proofPlan?->extension !== null) {
                 $this->topologyConverger()->converge($target, $source, $generation->laravel);
             }
