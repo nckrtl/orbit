@@ -276,8 +276,25 @@ it('observes production projections through fixed arguments and protected input'
         ->and(json_encode($command, JSON_THROW_ON_ERROR))
         ->not->toContain($secret, $appInstance->production_home)
         ->and($program)
-        ->toContain(base64_encode("APP_KEY=\"{$secret}\"\n"), 'emit release_selection_matches', 'emit php_fpm_matches')
-        ->not->toContain($secret, 'systemctl restart', 'systemctl reload', 'rm -', 'install ', 'mv ')
+        ->toContain(
+            base64_encode("APP_KEY=\"{$secret}\"\n"),
+            'emit release_selection_matches',
+            'emit php_fpm_matches',
+            'local_tuning_matches || return 1',
+            'chdir|chroot|env\[home\]',
+        )
+        ->not->toContain(
+            $secret,
+            '/usr/sbin/php-fpm',
+            'php-fpm$version',
+            ' -t ',
+            '/var/log/php-fpm.log',
+            'systemctl restart',
+            'systemctl reload',
+            'rm -',
+            'install ',
+            'mv ',
+        )
         ->and(json_encode($expectation, JSON_THROW_ON_ERROR))
         ->not->toContain($secret)
         ->and($expectation->__debugInfo())

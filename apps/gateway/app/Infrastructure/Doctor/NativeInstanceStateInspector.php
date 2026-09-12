@@ -322,7 +322,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                         line=tolower($0)
                         sub(/^[[:space:]]+/, "", line)
                         if (line ~ /^include[[:space:]]*=/) exit 1
-                        if (line ~ /^(pid|user|group|listen|listen[.]owner|listen[.]group|listen[.]mode|chdir|env\[home\]|env\[user\])[[:space:]]*=/) exit 1
+                        if (line ~ /^(pid|user|group|listen|listen[.]owner|listen[.]group|listen[.]mode|chdir|chroot|env\[home\]|env\[user\])[[:space:]]*=/) exit 1
                     }
                 ' "\$local_tuning"
             }
@@ -339,8 +339,6 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 exact_file "\$unit_path" "\$unit" root:root 644 || return 1
                 exact_file "\$marker_path" "\$marker" root:root 644 || return 1
                 local_tuning_matches || return 1
-                PHP_INI_SCAN_DIR="/etc/php/\$version/fpm/conf.d:\$generated_directory" \
-                    "/usr/sbin/php-fpm\$version" -y "\$generated_directory/php-fpm.conf" -t >/dev/null 2>&1 || return 1
                 systemctl is-active --quiet "\$service" 2>/dev/null || return 1
                 test -z "\$(systemctl show --property=User --value "\$service" 2>/dev/null)" || return 1
                 main_pid=\$(systemctl show --property=MainPID --value "\$service" 2>/dev/null) || return 1
