@@ -1,6 +1,6 @@
 # AppInstance cloning
 
-This page tells an operating agent how the Gateway creates a prepared production AppInstance from an eligible development or production candidate. [ADR 0047](../decisions/0047-create-production-appinstances-from-candidates.md) owns candidate cloning, [ADR 0044](../decisions/0044-own-appinstance-environment-configuration-in-orbit.md) owns stored environment configuration, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns runtime-definition copies.
+This page tells an operating agent how the Gateway creates a prepared production AppInstance from an eligible development or production candidate. [ADR 0047](../decisions/0047-create-production-appinstances-from-candidates.md) owns candidate cloning, [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns private Route scope and Router projection, [ADR 0044](../decisions/0044-own-appinstance-environment-configuration-in-orbit.md) owns stored environment configuration, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns runtime-definition copies.
 
 ## Request a clone
 
@@ -17,15 +17,15 @@ An authorized client sends one candidate AppInstance selector and the target ide
 
 The request accepts no target App, commit identifier, Unix user, destination path, or other source or runtime override. The Gateway refuses malformed JSON, duplicate members, unknown members, and invalid values before it changes stored or remote state.
 
-The caller needs directed access to both the candidate Node and the destination Node. The candidate selects the App. The destination must be an active standalone Node with the active `app-prod` role, and the App must not already have a production AppInstance there. Existing active-role, production-placement, and legacy production conflicts still apply.
+The caller needs directed access to both the candidate Node and the destination Node. The candidate selects the App. The destination must be an active Node with the active `app-prod` role, and the App must not already have a production AppInstance there. The destination can be standalone or a member of an active Cluster. A Cluster destination needs its active Router before cloning can reserve the target. Existing active-role, production-placement, and legacy production conflicts still apply.
 
 ## Derive the private preview
 
 The Gateway normalizes `preview_name`, appends the destination Node's own TLD, and validates the complete hostname. For example, `shop.com` on a Node whose TLD is `prod.orbit` produces `shop.com.prod.orbit`.
 
-The destination Node must have its own TLD. Orbit does not fall back to a Cluster TLD for this standalone operation. A missing TLD, invalid full hostname, or hostname already owned by another Route stops cloning before target reservation.
+The destination Node must have its own TLD. Orbit does not replace or supplement that value with the Cluster TLD, including when the destination belongs to a Cluster with a different TLD. A missing Node TLD, missing required Router, invalid full hostname, or hostname already owned by another Route stops cloning before target reservation.
 
-Orbit stores the resolved hostname as an explicit private Route. It does not store the Route as generated from the Node, so a later TLD change does not rename the preview. Replacing the preview with an intended production hostname remains a separate explicit Route operation.
+Orbit stores the resolved hostname as an explicit private Route. A standalone destination gives the Route Node scope. A destination in an active Cluster gives the Route Cluster scope while retaining the hostname derived from the production Node TLD. Orbit does not store the Route as generated from the Node, so a later TLD change does not rename the preview. Replacing the preview with an intended production hostname remains a separate explicit Route operation.
 
 ## Check candidate eligibility
 
@@ -69,9 +69,15 @@ A successful request returns the ordinary active production AppInstance and its 
 
 The first deployment is a separate explicit request. It fetches the target's configured branch, synchronizes its stored environment, runs only configured deployment steps, and selects the new release as described in [Production release layout](deployments.md).
 
+For a standalone destination, private Domain Name System (DNS) resolves the preview directly to the workload Node. For a Cluster destination, private DNS resolves it to the Router. The Router and workload receive separate Orbit certificate authority identities. Router Caddy preserves the preview hostname as both the HTTP `Host` value and Transport Layer Security server name when it forwards to the workload. The workload firewall permits only the required private path, and Caddy uses the target's dedicated PHP socket when the source needs PHP. [Routes](routes.md#initial-private-projection) describes the shared private projection, and [PHP runtimes](php-runtime.md#production-runtime) describes the dedicated production service.
+
+Clone preparation publishes no public listener or Ingress certificate. Orbit can prepare and activate the private Route before a deployment selects application code, so projection checks verify private routing and Transport Layer Security without requiring an HTTP success response.
+
 ## Retry the owned operation
 
-The Gateway records the immutable clone request and bounded provisioning checkpoints before each owned effect. An interrupted identical request resumes the unfinished target even if the candidate has moved to a later commit after reservation. The target keeps its selected App repository branch and prepared source state; it does not become a snapshot of the candidate working tree. A request that changes the candidate, destination, name, preview, branch override, or SQLite selection refuses without adopting or replacing that target.
+The Gateway records the immutable clone request and bounded provisioning checkpoints before each owned effect. An interrupted identical request resumes the unfinished target even if the candidate has moved to a later commit after reservation. The target keeps its selected App repository branch, private Route scope, and prepared source and projection state; it does not become a snapshot of the candidate working tree.
+
+A source, certificate, firewall, Caddy, Router, or private DNS failure records its bounded clone boundary for the retry. A request that changes the candidate, destination, name, preview, branch override, or SQLite selection refuses without adopting or replacing that target.
 
 After completion, an identical request returns the same AppInstance and Route. It does not revalidate changing candidate state or replace target source, database, stored environment edits, definition copies, runtime desired state, or final hostname. Temporary SQLite work belongs to the clone operation and is cleaned without removing unrelated files.
 

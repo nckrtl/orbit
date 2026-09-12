@@ -20,6 +20,7 @@ use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -28,6 +29,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -231,6 +233,71 @@ it('returns the ordinary created AppInstance and records the target without SQLi
         ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))->not->toContain('sqlite_source_path');
 });
 
+it('returns an active Cluster-scoped clone with the production Node TLD', function (): void {
+    $this->destinationNode->update(['tld' => 'prod.orbit']);
+    $this->destinationNode->roles()->create([
+        'role' => RoleName::AppProd,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $cluster = Cluster::query()->create([
+        'name' => 'clone-api-cluster',
+        'tld' => 'cluster.orbit',
+        'state' => ClusterState::Active,
+    ]);
+    $this->destinationNode->update(['cluster_id' => $cluster->id]);
+    $router = clone_api_node('clone-api-router');
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $candidateRoute = Route::query()->create([
+        'app_id' => $this->candidate->app_id,
+        'node_id' => $this->candidateNode->id,
+        'hostname' => 'candidate.clone-api.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $candidateRoute->targets()->create([
+        'app_instance_id' => $this->candidate->id,
+        'position' => 0,
+    ]);
+    $candidateRoute->update(['status' => RouteStatus::Active]);
+    app()->instance(AppInstanceCloneCandidateInspector::class, new Orb198ApiCandidateInspector);
+    app()->instance(AppInstanceEnvironmentOperationLock::class, new Orb198ApiEnvironmentLock);
+    app()->instance(AppDevSourceOperationLock::class, new Orb198ApiSourceLock);
+    app()->instance(ProductionAppInstanceSourceLifecycle::class, new Orb198ApiProductionSource);
+    app()->instance(AppInstanceOperationPreflight::class, new Orb198ApiEnvironmentPreflight);
+    app()->instance(AppInstanceEnvironmentWriter::class, new Orb198ApiEnvironmentWriter);
+    app()->instance(AppInstanceSqliteSeeder::class, new Orb198ApiSqliteSeeder);
+    app()->instance(ProductionRouteProjector::class, new Orb198ApiProductionProjection);
+    app()->instance(ProductionCloneRouteProjector::class, new Orb198ApiCloneProjection);
+    app()->instance(DevelopmentProjectionOperationLock::class, new Orb198ApiProjectionOwner);
+    app()->instance(CloneAppInstanceAction::class, app(CloneAppInstanceAction::class));
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson($this->cloneUrl, [
+            'node_id' => $this->destinationNode->id,
+            'name' => 'target',
+            'preview_name' => 'shop.com',
+        ]);
+
+    $target = AppInstance::query()->where('name', 'target')->sole();
+    $route = $target->routes->sole();
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.id', $target->id)
+        ->assertJsonPath('data.status', 'active');
+
+    expect($route->hostname)->toBe('shop.com.prod.orbit')
+        ->and($route->cluster_id)->toBe($cluster->id)
+        ->and($route->node_id)->toBeNull()
+        ->and($route->targets)->toHaveCount(1);
+});
+
 function clone_api_node(string $name): Node
 {
     return Node::query()->create([
@@ -335,7 +402,15 @@ final class Orb198ApiProductionProjection implements ProductionRouteProjector
 
 final class Orb198ApiCloneProjection implements ProductionCloneRouteProjector
 {
-    public function prepareCaddy(AppInstance $appInstance, Route $route): void {}
+    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void {}
+
+    public function prepareRouterCertificate(AppInstance $appInstance, Route $route): void {}
+
+    public function prepareRouteFirewall(AppInstance $appInstance, Route $route): void {}
+
+    public function verifyWorkload(AppInstance $appInstance, Route $route): void {}
+
+    public function prepareRouterCaddy(AppInstance $appInstance, Route $route): void {}
 
     public function prepareDns(Route $route): void {}
 }

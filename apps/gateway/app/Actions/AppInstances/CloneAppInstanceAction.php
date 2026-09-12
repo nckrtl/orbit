@@ -20,6 +20,7 @@ use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -76,9 +77,9 @@ final readonly class CloneAppInstanceAction
                 [$candidate->id],
                 function () use ($candidate, $data, $node, $branch): array {
                     $source = $this->candidates->inspect($candidate, $branch);
-                    $hostname = $this->preflight($candidate, $node, $data);
+                    [$hostname, $placement] = $this->preflight($candidate, $node, $data);
 
-                    return [$this->reserve($candidate, $node, $data, $source, $hostname), $source];
+                    return [$this->reserve($candidate, $node, $data, $source, $hostname, $placement), $source];
                 },
             );
             $created = true;
@@ -149,11 +150,12 @@ final readonly class CloneAppInstanceAction
         return $branch;
     }
 
-    private function preflight(AppInstance $candidate, Node $node, CloneAppInstanceData $data): string
+    /** @return array{string, RoutePlacement} */
+    private function preflight(AppInstance $candidate, Node $node, CloneAppInstanceData $data): array
     {
         $candidate->refresh()->loadMissing(['app', 'node']);
         $node->refresh();
-        $this->assertPlacement($candidate, $node);
+        $placement = $this->assertPlacement($candidate, $node);
 
         if (! is_string($node->tld) || $node->tld === '') {
             throw $this->conflict('route.tld_required', 'A clone preview requires the destination Node TLD.');
@@ -169,10 +171,10 @@ final readonly class CloneAppInstanceAction
             throw $this->conflict('instance.placement_conflict', 'The target AppInstance name is already owned.');
         }
 
-        return $hostname;
+        return [$hostname, $placement];
     }
 
-    private function assertPlacement(AppInstance $candidate, Node $node): void
+    private function assertPlacement(AppInstance $candidate, Node $node): RoutePlacement
     {
         if ($node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
             throw $this->conflict('instance.node_inactive', 'The selected app-prod Node is not active.');
@@ -182,11 +184,10 @@ final readonly class CloneAppInstanceAction
             throw $this->conflict('instance.node_not_app_prod', 'The selected Node has no active app-prod role.');
         }
 
-        if ($this->routeState->forNode($node)->clusterId !== null) {
-            throw $this->conflict(
-                'instance.cluster_production_unavailable',
-                'Candidate cloning requires a standalone app-prod Node.',
-            );
+        $placement = $this->routeState->forNode($node);
+
+        if ($placement->clusterId !== null) {
+            $this->routeState->assertRouter($placement->clusterId);
         }
 
         if ($this->appProdSites->hasLivePublicFootprint($node)) {
@@ -206,6 +207,8 @@ final readonly class CloneAppInstanceAction
                 'The App already has a production AppInstance on the selected Node.',
             );
         }
+
+        return $placement;
     }
 
     private function reserve(
@@ -214,6 +217,7 @@ final readonly class CloneAppInstanceAction
         CloneAppInstanceData $data,
         CloneCandidateSource $source,
         string $hostname,
+        RoutePlacement $placement,
     ): AppInstance {
         $user = "orbit-app-{$candidate->app_id}";
         $home = "/home/{$user}";
@@ -226,6 +230,7 @@ final readonly class CloneAppInstanceAction
                 $data,
                 $source,
                 $hostname,
+                $placement,
                 $user,
                 $home,
             ): AppInstance {
@@ -259,8 +264,8 @@ final readonly class CloneAppInstanceAction
                 ]);
                 $route = Route::query()->create([
                     'app_id' => $candidate->app_id,
-                    'node_id' => $node->id,
-                    'cluster_id' => null,
+                    'node_id' => $placement->nodeId,
+                    'cluster_id' => $placement->clusterId,
                     'generation_basis_node_id' => null,
                     'hostname' => $hostname,
                     'provenance' => RouteProvenance::Explicit,
@@ -379,9 +384,33 @@ final readonly class CloneAppInstanceAction
             $this->checkpoint($target, 'clone-firewall-prepared');
         }
 
+        if ($target->provisioning_step === 'clone-firewall-prepared') {
+            $this->cloneProjection->prepareWorkloadCaddy($target, $route);
+            $this->checkpoint($target, 'clone-workload-caddy-published');
+        }
+
+        if ($target->provisioning_step === 'clone-workload-caddy-published') {
+            $this->cloneProjection->prepareRouterCertificate($target, $route);
+            $this->checkpoint($target, 'clone-router-certificate-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-router-certificate-prepared') {
+            $this->cloneProjection->prepareRouteFirewall($target, $route);
+            $this->checkpoint($target, 'clone-route-firewall-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-route-firewall-prepared') {
+            $this->cloneProjection->verifyWorkload($target, $route);
+            $this->checkpoint($target, 'clone-workload-verified');
+        }
+
+        if ($target->provisioning_step === 'clone-workload-verified') {
+            $this->cloneProjection->prepareRouterCaddy($target, $route);
+            $this->checkpoint($target, 'clone-router-caddy-published');
+        }
+
         if (in_array($target->provisioning_step, [
-            'clone-firewall-prepared',
-            'clone-caddy-published',
+            'clone-router-caddy-published',
             'clone-dns-published',
         ], strict: true)) {
             $this->completePublication($target->id, $route->id);
@@ -392,6 +421,13 @@ final readonly class CloneAppInstanceAction
 
     private function cloneRoute(AppInstance $target): Route
     {
+        $target->loadMissing('node');
+        $placement = $this->routeState->forNode($target->node);
+
+        if ($placement->clusterId !== null) {
+            $this->routeState->assertRouter($placement->clusterId);
+        }
+
         $routes = Route::query()
             ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $target->id))
             ->orderBy('id')
@@ -408,8 +444,8 @@ final readonly class CloneAppInstanceAction
             $route->hostname !== $target->clone_preview_hostname
             || $route->provenance !== RouteProvenance::Explicit
             || $route->publication !== RoutePublication::Private
-            || $route->node_id !== $target->node_id
-            || $route->cluster_id !== null
+            || $route->node_id !== $placement->nodeId
+            || $route->cluster_id !== $placement->clusterId
         ) {
             throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
         }
@@ -495,30 +531,38 @@ final readonly class CloneAppInstanceAction
         $this->projectionOwner->run(function () use ($targetId, $routeId): void {
             $target = AppInstance::query()->with('node')->findOrFail($targetId);
             $route = Route::query()->with('targets')->findOrFail($routeId);
+            $validatedRoute = $this->cloneRoute($target);
 
-            if ($target->provisioning_step === 'clone-firewall-prepared') {
-                $this->cloneProjection->prepareCaddy($target, $route);
-                $this->checkpoint($target, 'clone-caddy-published');
+            if ($validatedRoute->id !== $route->id) {
+                throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
             }
 
-            if ($target->provisioning_step === 'clone-caddy-published') {
-                $this->cloneProjection->prepareDns($route);
-                $this->checkpoint($target, 'clone-dns-published');
-            }
-
-            if ($target->provisioning_step !== 'clone-dns-published') {
+            if (! in_array($target->provisioning_step, [
+                'clone-router-caddy-published',
+                'clone-dns-published',
+            ], strict: true)) {
                 throw $this->conflict('instance.lifecycle_conflict', 'The clone publication lifecycle changed.');
             }
 
             $this->prepareRuntime($target, $route);
             $this->projection->prepareCertificate($target, $route);
             $this->projection->prepareFirewall($target);
-            $this->cloneProjection->prepareCaddy($target, $route);
+            $this->cloneProjection->prepareWorkloadCaddy($target, $route);
+            $this->cloneProjection->prepareRouterCertificate($target, $route);
+            $this->cloneProjection->prepareRouteFirewall($target, $route);
+            $this->cloneProjection->verifyWorkload($target, $route);
+            $this->cloneProjection->prepareRouterCaddy($target, $route);
             $this->cloneProjection->prepareDns($route);
+            $this->checkpoint($target, 'clone-dns-published');
 
             DB::transaction(function () use ($target, $route): void {
-                $lockedTarget = AppInstance::query()->lockForUpdate()->findOrFail($target->id);
+                $lockedTarget = AppInstance::query()->with('node')->lockForUpdate()->findOrFail($target->id);
                 $lockedRoute = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
+                $placement = $this->routeState->forNode($lockedTarget->node);
+
+                if ($placement->clusterId !== null) {
+                    $this->routeState->assertRouter($placement->clusterId);
+                }
 
                 if (
                     $lockedTarget->provisioning_step !== 'clone-dns-published'
@@ -528,6 +572,8 @@ final readonly class CloneAppInstanceAction
                     || $lockedRoute->targets->count() !== 1
                     || $lockedRoute->targets->sole()->app_instance_id !== $lockedTarget->id
                     || $lockedRoute->hostname !== $lockedTarget->clone_preview_hostname
+                    || $lockedRoute->node_id !== $placement->nodeId
+                    || $lockedRoute->cluster_id !== $placement->clusterId
                 ) {
                     throw $this->conflict('instance.lifecycle_conflict', 'The clone lifecycle changed before activation.');
                 }

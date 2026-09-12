@@ -1372,11 +1372,14 @@
                 "AppInstance",
                 "Cluster",
                 "Gateway",
+                "Ingress",
                 "Node",
                 "Route",
+                "Router",
                 "Schedule"
             ],
             "governing_adrs": [
+                "0023",
                 "0044",
                 "0047",
                 "0048"

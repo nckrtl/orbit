@@ -29,6 +29,7 @@ use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -40,6 +41,7 @@ use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -156,7 +158,20 @@ it('prepares an independent production target and activates its explicit private
     expect($this->source->calls)->toBe(['user', 'source', 'resolve', 'profile', 'caddy-access'])
         ->and($this->projection->calls)
         ->toBe(['runtime', 'certificate', 'firewall', 'runtime', 'certificate', 'firewall'])
-        ->and($this->cloneProjection->calls)->toBe(['caddy', 'dns', 'caddy', 'dns'])
+        ->and($this->cloneProjection->calls)
+        ->toBe([
+            'workload-caddy',
+            'router-certificate',
+            'route-firewall',
+            'workload',
+            'router-caddy',
+            'workload-caddy',
+            'router-certificate',
+            'route-firewall',
+            'workload',
+            'router-caddy',
+            'dns',
+        ])
         ->and($this->sqlite->calls)->toHaveCount(1)
         ->and($this->writer->contents)
         ->toBe("APP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n")
@@ -169,6 +184,89 @@ it('prepares an independent production target and activates its explicit private
         ->and($targetValues->pluck('env_value', 'env_key')->all())->toBe($sourceValues->pluck('env_value', 'env_key')->all())
         ->and($targetValues->pluck('id')->intersect($sourceValues->pluck('id'))->all())->toBeEmpty()
         ->and($this->lock->owners)->toContain([$this->candidate->id], [$this->candidate->id, $target->id]);
+});
+
+it('prepares a Cluster-scoped preview with the production Node TLD', function (): void {
+    $cluster = Cluster::query()->create([
+        'name' => 'clone-cluster',
+        'tld' => 'cluster.orbit',
+        'state' => ClusterState::Active,
+    ]);
+    $this->targetNode->update(['cluster_id' => $cluster->id]);
+    $router = orb198_clone_node('router', '10.44.20.12');
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $result = $this->action->execute($this->candidate, $this->data);
+    $target = $result['appInstance'];
+    $route = $target->routes->sole();
+
+    expect($target->status)->toBe(AppInstanceState::Active)
+        ->and($route->node_id)->toBeNull()
+        ->and($route->cluster_id)->toBe($cluster->id)
+        ->and($route->hostname)->toBe('shop.com.prod.orbit')
+        ->and($route->publication)->toBe(RoutePublication::Private)
+        ->and($route->targets)->toHaveCount(1)
+        ->and($route->targets->sole()->app_instance_id)->toBe($target->id)
+        ->and($this->sqlite->calls)->toHaveCount(1)
+        ->and($this->writer->contents)
+        ->toBe("APP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n");
+});
+
+it('refuses a Cluster-scoped destination without an active Router before reservation', function (): void {
+    $cluster = Cluster::query()->create([
+        'name' => 'clone-cluster-without-router',
+        'tld' => 'cluster.orbit',
+        'state' => ClusterState::Active,
+    ]);
+    $this->targetNode->update(['cluster_id' => $cluster->id]);
+
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.router_required');
+        });
+
+    expect(AppInstance::query()->where('name', 'preview')->exists())->toBeFalse()
+        ->and(Route::query()->where('hostname', 'shop.com.prod.orbit')->exists())->toBeFalse()
+        ->and($this->source->calls)->toBeEmpty()
+        ->and($this->writer->contents)->toBeNull();
+});
+
+it('resumes one Cluster-scoped target without duplicate Route state', function (): void {
+    $cluster = Cluster::query()->create([
+        'name' => 'clone-cluster-retry',
+        'tld' => 'cluster.orbit',
+        'state' => ClusterState::Active,
+    ]);
+    $this->targetNode->update(['cluster_id' => $cluster->id]);
+    $router = orb198_clone_node('retry-router', '10.44.20.12');
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $this->cloneProjection->fail = 'workload';
+
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $targetId = AppInstance::query()->where('name', 'preview')->sole()->id;
+    $this->cloneProjection->fail = null;
+    $result = $this->action->execute($this->candidate, $this->data);
+    $route = $result['appInstance']->routes->sole();
+
+    expect($result['created'])->toBeFalse()
+        ->and($result['appInstance']->id)->toBe($targetId)
+        ->and($route->cluster_id)->toBe($cluster->id)
+        ->and($route->node_id)->toBeNull()
+        ->and(AppInstance::query()->where('name', 'preview')->count())->toBe(1)
+        ->and(Route::query()->where('hostname', 'shop.com.prod.orbit')->count())->toBe(1)
+        ->and($route->targets()->count())->toBe(1);
 });
 
 it('prepares no PHP runtime or SQLite database when neither applies', function (): void {
@@ -218,9 +316,30 @@ it('keeps every failed production projection inactive at its last completed chec
     'dedicated runtime' => ['runtime', 'clone-definitions-instantiated'],
     'certificate' => ['certificate', 'clone-runtime-prepared'],
     'firewall' => ['firewall', 'clone-certificate-prepared'],
-    'Caddy' => ['caddy', 'clone-firewall-prepared'],
-    'private DNS' => ['dns', 'clone-caddy-published'],
+    'workload Caddy' => ['workload-caddy', 'clone-firewall-prepared'],
+    'Router certificate' => ['router-certificate', 'clone-workload-caddy-published'],
+    'Route firewall' => ['route-firewall', 'clone-router-certificate-prepared'],
+    'workload certificate verification' => ['workload', 'clone-route-firewall-prepared'],
+    'Router Caddy' => ['router-caddy', 'clone-workload-verified'],
+    'private DNS' => ['dns', 'clone-router-caddy-published'],
 ]);
+
+it('keeps DNS unpublished when the locked second projection pass fails', function (): void {
+    $this->cloneProjection->failOnOccurrence = ['workload' => 2];
+
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $route = $target->routes()->sole();
+    expect($target->status)->toBe(AppInstanceState::SourceResolved)
+        ->and($target->provisioning_step)->toBe('clone-router-caddy-published')
+        ->and($route->status)->toBe(RouteStatus::Failed)
+        ->and($this->cloneProjection->calls)->not->toContain('dns')
+        ->and(collect($this->cloneProjection->calls)->filter(
+            static fn (string $operation): bool => $operation === 'workload',
+        ))->toHaveCount(2);
+});
 
 it('resumes one owned target and makes the completed identical retry terminal', function (): void {
     $this->cloneProjection->fail = 'dns';
@@ -306,7 +425,7 @@ it('refuses an invalid or occupied destination preview before target reservation
 })->with(['missing TLD', 'occupied hostname']);
 
 it('refuses candidate removal while an incomplete clone retains its source dependency', function (): void {
-    $this->cloneProjection->fail = 'caddy';
+    $this->cloneProjection->fail = 'router-caddy';
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
@@ -506,9 +625,32 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
 
     public ?string $fail = null;
 
-    public function prepareCaddy(AppInstance $appInstance, Route $route): void
+    /** @var array<string, positive-int> */
+    public array $failOnOccurrence = [];
+
+    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void
     {
-        $this->record('caddy');
+        $this->record('workload-caddy');
+    }
+
+    public function prepareRouterCertificate(AppInstance $appInstance, Route $route): void
+    {
+        $this->record('router-certificate');
+    }
+
+    public function prepareRouteFirewall(AppInstance $appInstance, Route $route): void
+    {
+        $this->record('route-firewall');
+    }
+
+    public function verifyWorkload(AppInstance $appInstance, Route $route): void
+    {
+        $this->record('workload');
+    }
+
+    public function prepareRouterCaddy(AppInstance $appInstance, Route $route): void
+    {
+        $this->record('router-caddy');
     }
 
     public function prepareDns(Route $route): void
@@ -519,8 +661,14 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
     private function record(string $operation): void
     {
         $this->calls[] = $operation;
+        $occurrence = collect($this->calls)
+            ->filter(static fn (string $call): bool => $call === $operation)
+            ->count();
 
-        if ($this->fail === $operation) {
+        if (
+            $this->fail === $operation
+            || ($this->failOnOccurrence[$operation] ?? null) === $occurrence
+        ) {
             throw new ResourceOperationException("instance.clone_{$operation}_failed", 'Injected failure.', 409);
         }
     }
