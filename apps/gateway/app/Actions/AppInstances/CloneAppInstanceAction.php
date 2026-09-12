@@ -537,12 +537,10 @@ final readonly class CloneAppInstanceAction
                 throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
             }
 
-            if ($target->provisioning_step === 'clone-router-caddy-published') {
-                $this->cloneProjection->prepareDns($route);
-                $this->checkpoint($target, 'clone-dns-published');
-            }
-
-            if ($target->provisioning_step !== 'clone-dns-published') {
+            if (! in_array($target->provisioning_step, [
+                'clone-router-caddy-published',
+                'clone-dns-published',
+            ], strict: true)) {
                 throw $this->conflict('instance.lifecycle_conflict', 'The clone publication lifecycle changed.');
             }
 
@@ -555,6 +553,7 @@ final readonly class CloneAppInstanceAction
             $this->cloneProjection->verifyWorkload($target, $route);
             $this->cloneProjection->prepareRouterCaddy($target, $route);
             $this->cloneProjection->prepareDns($route);
+            $this->checkpoint($target, 'clone-dns-published');
 
             DB::transaction(function () use ($target, $route): void {
                 $lockedTarget = AppInstance::query()->with('node')->lockForUpdate()->findOrFail($target->id);

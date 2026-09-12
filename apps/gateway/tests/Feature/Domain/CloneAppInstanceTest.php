@@ -165,7 +165,6 @@ it('prepares an independent production target and activates its explicit private
             'route-firewall',
             'workload',
             'router-caddy',
-            'dns',
             'workload-caddy',
             'router-certificate',
             'route-firewall',
@@ -324,6 +323,23 @@ it('keeps every failed production projection inactive at its last completed chec
     'Router Caddy' => ['router-caddy', 'clone-workload-verified'],
     'private DNS' => ['dns', 'clone-router-caddy-published'],
 ]);
+
+it('keeps DNS unpublished when the locked second projection pass fails', function (): void {
+    $this->cloneProjection->failOnOccurrence = ['workload' => 2];
+
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $route = $target->routes()->sole();
+    expect($target->status)->toBe(AppInstanceState::SourceResolved)
+        ->and($target->provisioning_step)->toBe('clone-router-caddy-published')
+        ->and($route->status)->toBe(RouteStatus::Failed)
+        ->and($this->cloneProjection->calls)->not->toContain('dns')
+        ->and(collect($this->cloneProjection->calls)->filter(
+            static fn (string $operation): bool => $operation === 'workload',
+        ))->toHaveCount(2);
+});
 
 it('resumes one owned target and makes the completed identical retry terminal', function (): void {
     $this->cloneProjection->fail = 'dns';
@@ -609,6 +625,9 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
 
     public ?string $fail = null;
 
+    /** @var array<string, positive-int> */
+    public array $failOnOccurrence = [];
+
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void
     {
         $this->record('workload-caddy');
@@ -642,8 +661,14 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
     private function record(string $operation): void
     {
         $this->calls[] = $operation;
+        $occurrence = collect($this->calls)
+            ->filter(static fn (string $call): bool => $call === $operation)
+            ->count();
 
-        if ($this->fail === $operation) {
+        if (
+            $this->fail === $operation
+            || ($this->failOnOccurrence[$operation] ?? null) === $occurrence
+        ) {
             throw new ResourceOperationException("instance.clone_{$operation}_failed", 'Injected failure.', 409);
         }
     }
