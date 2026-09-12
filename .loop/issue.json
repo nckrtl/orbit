@@ -1,0 +1,160 @@
+{
+    "id": "d0178b6c-9564-4c43-81b1-232505f404e2",
+    "identifier": "ORB-200",
+    "title": "Report production release and dedicated runtime drift",
+    "url": "https://linear.app/nckrtl/issue/ORB-200/report-production-release-and-dedicated-runtime-drift",
+    "description": "Doctor reports broken production placement, release selection, environment projection, and dedicated PHP associations without repairing them or interpreting application health.\n\n## Scope\n\n* In: production observations and bounded findings in the existing instance Doctor family for standalone and Cluster placements.\n* Out: repair, deployment history, branch-head freshness checks, application health checks, and process or schedule Doctor families.\n\n## Acceptance\n\n- [ ] Doctor distinguishes a prepared target with no first release from a broken `current` pointer, and reports escaped or missing selected release roots, invalid production home ownership, or missing persistent environment projection without modifying files or source. Proof: Incus action `production-doctor-layout`.\n- [ ] Doctor reports missing or shared production FPM associations, wrong user or socket, invalid effective identity configuration, and workload Caddy drift; valid local tuning differences from Orbit defaults do not cause findings. Proof: Incus action `production-doctor-runtime`.\n- [ ] A selected retained release behind the moving branch head, an explicit code rollback, or HTTP 500 is not itself drift; environment observations compare Orbit-owned projection intent without requiring framework cache changes or exposing values. Proof: `apps/gateway/tests/Feature/Domain/InstanceDoctorProbeTest.php`.\n- [ ] Inspection of valid, failed-conversion, incomplete-deployment, and unreachable production targets produces bounded family findings without service reloads, cache resets, repairs, or mutation. Proof: Incus action `production-doctor-read-only`.\n- [ ] Maintained documentation describes release-aware production findings and local tuning boundaries, and generated context is current. Proof: `composer docs-lint`.\n- [ ] A healthy production home and its valid selected release are accepted without applying the development apps-root containment rule; development checkouts still enforce that rule, and escaped or foreign production paths remain findings. Proof: `apps/gateway/tests/Feature/Domain/InstanceDoctorProbeTest.php` and Incus action `production-doctor-layout`.\n- [ ] Focused acceptance tests pass, and an independent reviewer retains the exact-candidate local quality receipt across all five projects. Proof: the focused suites named above and root `composer check` with test impact analysis.",
+    "updatedAt": "2026-09-12T07:48:53.185Z",
+    "state": {
+        "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+        "name": "Todo",
+        "type": "unstarted"
+    },
+    "assignee": null,
+    "delegate": {
+        "id": "4fa61558-9052-45f7-8a7c-49e0b891d4bf"
+    },
+    "team": {
+        "id": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+        "states": {
+            "nodes": [
+                {
+                    "id": "33e193b4-fc87-4ed4-8b5e-a6dde8dcca17",
+                    "name": "Backlog"
+                },
+                {
+                    "id": "aeb5152d-5732-4355-b48b-7ca01bd26ed4",
+                    "name": "Blocked"
+                },
+                {
+                    "id": "79cd420f-12ca-4209-bf66-cbd8359add0e",
+                    "name": "Canceled"
+                },
+                {
+                    "id": "9fafd94d-f231-46ce-acf8-a8a6b57ee00f",
+                    "name": "Done"
+                },
+                {
+                    "id": "afdaf4e8-3150-4b7b-97a2-5c7e27905a97",
+                    "name": "Duplicate"
+                },
+                {
+                    "id": "c05e1b66-2626-4406-9ac2-60ea52b9c812",
+                    "name": "In Progress"
+                },
+                {
+                    "id": "ccfb1d63-46a5-4e4b-85a6-80d27d11f294",
+                    "name": "In Review"
+                },
+                {
+                    "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+                    "name": "Todo"
+                }
+            ]
+        }
+    },
+    "labels": {
+        "nodes": [
+            {
+                "name": "Feature"
+            },
+            {
+                "name": "apps/gateway"
+            },
+            {
+                "name": "controller:commander"
+            },
+            {
+                "name": "docs"
+            },
+            {
+                "name": "incus"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "attachments": {
+        "nodes": [
+            {
+                "title": "ADR 0004: Define the verify-only Doctor boundary",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0004-verify-only-doctor-boundary.md"
+            },
+            {
+                "title": "ADR 0011: Define clustered production ingress and app-prod placement",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0011-clustered-production-ingress-and-app-prod-placement.md"
+            },
+            {
+                "title": "ADR 0029: Manage Laravel application URLs through Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0029-manage-laravel-application-urls-through-orbit.md"
+            },
+            {
+                "title": "ADR 0031: Clone initial production source during provisioning",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0031-clone-initial-production-source-during-provisioning.md"
+            },
+            {
+                "title": "ADR 0044: Own AppInstance environment configuration in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0044-own-appinstance-environment-configuration-in-orbit.md"
+            },
+            {
+                "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md"
+            },
+            {
+                "title": "ADR 0046: Own production release deployment in Orbit",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0046-own-production-release-deployment-in-orbit.md"
+            },
+            {
+                "title": "ADR 0047: Create production AppInstances from candidates",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0047-create-production-appinstances-from-candidates.md"
+            },
+            {
+                "title": "ADR 0053: Local review checks",
+                "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0053-use-local-review-checks-for-feature-landing.md"
+            },
+            {
+                "title": "Execution order",
+                "url": "https://linear.app/nckrtl/document/adr-reconciliation-execution-order-1b7a19d4b2b1"
+            },
+            {
+                "title": "Source: ADR conformance audit",
+                "url": "codex://threads/01a08ac0-6be7-7290-b185-1baca15d2bb6"
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "children": {
+        "nodes": [],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    },
+    "inverseRelations": {
+        "nodes": [
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-199",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            },
+            {
+                "type": "blocks",
+                "issue": {
+                    "identifier": "ORB-217",
+                    "state": {
+                        "type": "completed"
+                    }
+                }
+            }
+        ],
+        "pageInfo": {
+            "hasNextPage": false
+        }
+    }
+}
