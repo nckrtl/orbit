@@ -205,6 +205,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     $home,
                     $branch,
                     (string) $appInstance->id,
+                    $appInstance->clone_candidate_id === null ? '0' : '1',
                 ],
                 input: <<<'BASH'
                     repository=$1
@@ -212,6 +213,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     home=$3
                     branch=$4
                     instance=$5
+                    clone_target=$6
                     release="$home/releases/initial"
                     environment="$home/.env"
                     release_environment="$release/.env"
@@ -226,11 +228,19 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     source_ref="refs/remotes/origin/$branch"
                     sudo -u "$user" -H git -C "$release" fetch --prune -- origin
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
-                    sudo -u "$user" -H git -C "$release" checkout -B "$branch" "$source_ref" >/dev/null
-                    sudo -u "$user" -H git -C "$release" branch --set-upstream-to="origin/$branch" "$branch" >/dev/null
-                    if sudo -u "$user" -H test -e "$release_environment" || sudo -u "$user" -H test -L "$release_environment"; then
+                    sudo -u "$user" -H git -C "$release" checkout --quiet -B "$branch" "$source_ref"
+                    sudo -u "$user" -H git -C "$release" branch --quiet --set-upstream-to="origin/$branch" "$branch"
+                    if sudo -u "$user" -H test -L "$release_environment"; then
                         sudo -u "$user" -H test -L "$release_environment"
                         test "$(sudo -u "$user" -H readlink -- "$release_environment")" = ../../.env
+                    elif sudo -u "$user" -H test -e "$release_environment"; then
+                        test "$clone_target" = 1
+                        sudo -u "$user" -H test -f "$release_environment"
+                        sudo -u "$user" -H git -C "$release" ls-files --error-unmatch -- .env >/dev/null
+                        sudo -u "$user" -H git -C "$release" diff --quiet -- .env
+                        sudo -u "$user" -H git -C "$release" diff --cached --quiet -- .env
+                        sudo -u "$user" -H rm -- "$release_environment"
+                        sudo -u "$user" -H ln -s ../../.env "$release_environment"
                     else
                         sudo -u "$user" -H ln -s ../../.env "$release_environment"
                     fi

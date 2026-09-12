@@ -80,6 +80,7 @@ it('prepares the recorded user and home and resolves only the App default branch
             '/home/orbit-app-1',
             'main',
             '1',
+            '0',
         ])
         ->and($resolution->branch)
         ->toBe('main')
@@ -115,6 +116,7 @@ it('passes an explicit branch without changing production identity', function ()
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, "release\t".str_repeat('b', 40)."\n", '', 1, false),
     ], 'release');
+    $instance->update(['clone_candidate_id' => $instance->id]);
 
     $resolution = $source->resolve($instance);
 
@@ -128,12 +130,16 @@ it('passes an explicit branch without changing production identity', function ()
             '/home/orbit-app-1',
             'release',
             '1',
+            '1',
         ])
         ->and($ssh->commands[0]->input)
         ->toContain(
             'release="$home/releases/initial"',
-            'git -C "$release" checkout',
+            'git -C "$release" checkout --quiet',
+            'git -C "$release" branch --quiet',
             'ln -s ../../.env "$release_environment"',
+            'test "$clone_target" = 1',
+            'git -C "$release" diff --quiet -- .env',
             'realpath -e -- "$release_environment"',
             'test ! -e "$home/current"',
             'test ! -L "$home/current"',

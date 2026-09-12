@@ -109,10 +109,12 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
                         source_real=$(run_as_runtime realpath -e -- "$source") \
                             || refuse instance.clone_candidate_source_invalid
                         test "$top" = "$source_real" || refuse instance.clone_candidate_source_invalid
-                        actual_branch=$(run_as_runtime git -C "$source" symbolic-ref --quiet --short HEAD 2>/dev/null) \
-                            || refuse instance.clone_candidate_branch_invalid
-                        test "$actual_branch" = "$configured_branch" \
-                            || refuse instance.clone_candidate_branch_invalid
+                        if actual_branch=$(run_as_runtime git -C "$source" symbolic-ref --quiet --short HEAD 2>/dev/null); then
+                            test "$actual_branch" = "$configured_branch" \
+                                || refuse instance.clone_candidate_branch_invalid
+                        elif [ "$environment" = development ]; then
+                            refuse instance.clone_candidate_branch_invalid
+                        fi
                         commit=$(run_as_runtime git -C "$source" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) \
                             || refuse instance.clone_candidate_source_invalid
                         case "$commit" in
@@ -138,7 +140,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
                         run_as_runtime git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --prune \
                             "$repository" '+refs/heads/*:refs/remotes/origin/*' \
                             || refuse instance.clone_candidate_repository_unavailable
-                        run_as_runtime git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" \
+                        run_as_runtime git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null \
                             || refuse instance.clone_candidate_commit_unavailable
                         run_as_runtime git --git-dir="$scratch/repository.git" show-ref --verify --quiet \
                             "refs/remotes/origin/$target_branch" \

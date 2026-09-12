@@ -55,10 +55,11 @@ it('returns bound development source evidence from a valid inspection receipt', 
         ])
         ->and($ssh->commands[0]->input)->toContain(
             'status --porcelain=v1 --untracked-files=all --ignore-submodules=none',
+            'elif [ "$environment" = development ]',
             'submodule status --recursive',
             'submodule foreach --recursive --quiet',
             "'+refs/heads/*:refs/remotes/origin/*'",
-            'cat-file -e "$commit^{commit}"',
+            'cat-file -e "$commit^{commit}" 2>/dev/null',
             'show-ref --verify --quiet',
         );
 });
