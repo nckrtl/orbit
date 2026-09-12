@@ -3,6 +3,7 @@
 declare(strict_types=1);
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
+use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
@@ -219,10 +220,11 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(92)
+            ->toBe(93)
             ->and($requestClasses)
-            ->toHaveCount(88)
+            ->toHaveCount(89)
             ->toContain(AppInstanceDeploymentLayoutRequest::class)
+            ->toContain(CloneAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
             ->toContain(RemoveAppInstanceRequest::class)
@@ -239,12 +241,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ClearClusterRouterRequest::class);
     });
 
-    it('documents the 88-operation SDK surface including App runtime definitions', function (): void {
+    it('documents the 89-operation SDK surface including candidate cloning', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 88 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 89 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -256,7 +258,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
             )
             ->toContain(
-                '- AppInstance: list, show, create, register, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
+                '- AppInstance: list, show, create, register, clone, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
@@ -268,6 +270,9 @@ describe('repository guidance bootstrap', function (): void {
             );
 
         expect($normalizedPublicContract)
+            ->toContain(
+                'Keep candidate clone transport limited to the numeric candidate AppInstance ID, destination Node ID, target name, preview name, optional branch, and optional SQLite source path.',
+            )
             ->toContain(
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
             )
