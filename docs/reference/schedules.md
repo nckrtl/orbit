@@ -21,6 +21,27 @@ The Gateway stores one Schedule for exactly one Node or AppInstance target. The 
 
 An identical add retries or returns the same Schedule without changing its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict`. Orbit changes a specification only when the operator removes the Schedule and adds its replacement.
 
+## Use the Schedule API
+
+An active Gateway peer uses eight endpoints under `/api/v1/schedules`. Every endpoint requires Node access to the Schedule's target Node. The collection contains only Schedules whose target Node the caller may address, and a completion report is accepted only from the Schedule's recorded host Node.
+
+| Operation | Request | Result |
+| --- | --- | --- |
+| List | `GET /api/v1/schedules` | Returns authorized Schedule summaries without command text. |
+| Add | `POST /api/v1/schedules` | Accepts one complete Schedule specification and returns bounded Schedule data. |
+| Show | `GET /api/v1/schedules/{uuid}` | Returns bounded Schedule data, including command text, to an authorized caller. |
+| Run | `POST /api/v1/schedules/{uuid}/run` | Starts the installed service without changing the desired timer state and returns bounded Schedule data. |
+| Logs | `GET /api/v1/schedules/{uuid}/logs` | Returns bounded output for the exact service and reports whether older or incomplete output was removed. |
+| Complete | `POST /api/v1/schedules/{uuid}/complete` | Records the latest result from the installed Node and returns no content. |
+| Remove | `DELETE /api/v1/schedules/{uuid}` | Starts or resumes exact-owned cleanup and returns bounded Schedule data. |
+| Activate | `POST /api/v1/schedules/{uuid}/activate` | Accepts an empty body, enables an AppInstance timer, and returns bounded Schedule data. |
+
+Add accepts `target_type`, `target_id`, `name`, `calendar`, and `command`. It also accepts optional `timeout_seconds` and boolean `start`; the timeout defaults to 3,600 seconds, and `start` defaults to `true`. A Node target rejects `start: false`. An AppInstance target can install with its timer disabled.
+
+List and show expose `desired_timer_state` as `enabled` or `disabled`, independent of the installation lifecycle `status`. A request for an unknown Schedule UUID with valid syntax returns `404`. A malformed JSON object, duplicate or escaped-duplicate member, unsupported member, or wrong member type returns `422` before the Gateway changes Schedule intent or host state.
+
+The Gateway records one sanitized Activity for list, add, show, run, logs, remove, and activate. Each record can identify the operation, Schedule UUID, target, result, and request, but it contains no command, calendar, journal line, output, path, runtime user, or systemd unit text. Completion creates no Activity.
+
 ## Derive the execution context
 
 The Gateway derives the host Node, runtime user, home, working directory, and shell from authoritative target placement. It rejects caller-supplied values for those fields and refuses an unavailable target or unusable derived account before remote mutation.
@@ -125,4 +146,4 @@ Doctor issues, Activity, errors, and generic diagnostics contain no command, cal
 
 ## Limits
 
-Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Orbit exposes no operator-facing public API, PHP software development kit, or CLI Schedule operation.
+Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Orbit exposes no PHP software development kit or CLI Schedule operation.
