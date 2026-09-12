@@ -18,6 +18,14 @@ use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Schedules\ActivateScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\AddScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
+use Orbit\Sdk\Requests\Schedules\RemoveScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
+use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
 
 describe('repository guidance bootstrap', function (): void {
     it('indexes every required readable rule file', function (): void {
@@ -131,7 +139,19 @@ describe('repository guidance bootstrap', function (): void {
         }
     });
 
-    it('inventories every Tool transport operation and response DTO', function (): void {
+    it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
+        $preScheduleOperationCount = 89;
+        $scheduleRequests = [
+            ListSchedulesRequest::class,
+            AddScheduleRequest::class,
+            ShowScheduleRequest::class,
+            RunScheduleRequest::class,
+            ScheduleLogsRequest::class,
+            CompleteScheduleRequest::class,
+            RemoveScheduleRequest::class,
+            ActivateScheduleRequest::class,
+        ];
+        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -220,9 +240,9 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(93)
+            ->toBe($expectedOperationCount + 4)
             ->and($requestClasses)
-            ->toHaveCount(89)
+            ->toHaveCount($expectedOperationCount)
             ->toContain(AppInstanceDeploymentLayoutRequest::class)
             ->toContain(CloneAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
@@ -239,14 +259,21 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
             ->toContain(ClearClusterRouterRequest::class);
+
+        expect(array_values(array_filter(
+            $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\Schedules\\'),
+        )))
+            ->toHaveCount(count($scheduleRequests))
+            ->toEqualCanonicalizing($scheduleRequests);
     });
 
-    it('documents the 89-operation SDK surface including candidate cloning', function (): void {
+    it('documents the 97-operation SDK surface including candidate cloning and Schedule transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 89 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 97 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -254,6 +281,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
+            ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
             ->toContain(
                 '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
             )
@@ -287,6 +315,9 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 "Keep App runtime definition transport limited to a numeric App ID, a definition UUID for item operations, and the caller's exact JSON document for create and full replacement.",
+            )
+            ->toContain(
+                'Keep Schedule transport limited to typed Node and AppInstance targets and the eight shipped operations.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -296,8 +327,10 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 88 public Gateway operations.',
+                'The SDK exposes exactly 97 public Gateway operations.',
                 'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
+                'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
+                'Doctor accepts the current Gateway family set, including Schedule.',
                 "Create and replace requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
                 'The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations.',

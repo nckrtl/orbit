@@ -42,6 +42,14 @@ List and show expose `desired_timer_state` as `enabled` or `disabled`, independe
 
 The Gateway records one sanitized Activity for list, add, show, run, logs, remove, and activate. Each record can identify the operation, Schedule UUID, target, result, and request, but it contains no command, calendar, journal line, output, path, runtime user, or systemd unit text. Completion creates no Activity.
 
+## Use the PHP software development kit
+
+The PHP software development kit (SDK) exposes typed transport for the same eight Schedule operations. It encodes each Schedule UUID path segment, sends Node and AppInstance targets as distinct shapes, preserves an omitted optional value separately from an explicit value, and leaves target and lifecycle policy to the Gateway.
+
+Schedule responses are immutable and preserve bounded request IDs and accepted Schedule fields. They bound command, log, identifier, error, and nested values, redact credential-shaped content, reject malformed nested data, and omit command text from collection items.
+
+The typed Doctor report accepts the Gateway's complete current family set, including `schedule`, and validates Schedule family and issue data without inferring Schedule policy.
+
 ## Derive the execution context
 
 The Gateway derives the host Node, runtime user, home, working directory, and shell from authoritative target placement. It rejects caller-supplied values for those fields and refuses an unavailable target or unusable derived account before remote mutation.
@@ -146,4 +154,4 @@ Doctor issues, Activity, errors, and generic diagnostics contain no command, cal
 
 ## Limits
 
-Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Orbit exposes no PHP software development kit or CLI Schedule operation.
+Schedule owns no Workspace or Orbit-wide target, central scheduler, queue, worker, run-history store, replay, backfill, automatic movement, failover, or specification edit. It does not place the public Orbit CLI on workload Nodes. Orbit exposes no CLI Schedule operation.

@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 89 concrete public Gateway API operations:
+The SDK models exactly 97 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -12,6 +12,7 @@ The SDK models exactly 89 concrete public Gateway API operations:
 - Route: list, show, create, update, target set, target clear, and remove.
 - Workspace: list, show, create, remove, and update PHP.
 - Process: list, add, start, stop, restart, logs, and remove.
+- Schedule: list, add, show, run, logs, complete, remove, and activate.
 - Firewall: list, allow, deny, and remove.
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
@@ -61,12 +62,21 @@ operations. Keep the public API typed and small.
   definition UUID for item operations, and the caller's exact JSON document for
   create and full replacement. The Gateway owns definition validation and
   persistence. Collection responses omit commands.
+- Keep Schedule transport limited to typed Node and AppInstance targets and the
+  eight shipped operations. Preserve caller-supplied optional values, bounded
+  and redacted command and log responses, the Gateway's JSON envelopes for
+  seven operations, and completion's validated response-header request ID with
+  no response body. The Gateway owns target resolution, validation, execution,
+  and lifecycle policy.
+- Accept only the current Doctor family tokens: node, role, app, instance,
+  workspace, schedule, tool, process, and firewall. Keep Doctor verify-only and
+  policy-free.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy
   grant/revoke compatibility.
 - Do not restore the retired Agent, generic executor, direct SSH execution,
   Docker Swarm, Compose, image-building, generic stream, database,
-  proxy, or generic Schedule surfaces.
+  or proxy surfaces.
 - Coordinate contract changes with Gateway and CLI owners. Do not implement
   Gateway policy or CLI presentation in this repository.
 - Preserve manager, package, nullable constraint, outcomes, structured errors,
