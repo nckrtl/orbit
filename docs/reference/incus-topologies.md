@@ -17,7 +17,7 @@ Orbit registers the three-Node profile `gateway_app-dev_app-prod`. A discovery o
 | Checkout roles | `gateway` and `app-dev` at `/home/orbit/orbit`; `app-prod` has no checkout |
 | Network | `oe-<hash>` on `10.232.<slot>.0/24`; the hash is 12 hex characters of the SHA-256 of `<issue>:<attempt>` |
 | Instances | `orbit-e2e-<issue-lowercase>-<attempt-prefix>-<role>`, with 8 characters of the attempt ID |
-| Addresses | Incus `.10`, `.11`, `.12`; WireGuard `10.44.0.1`, `.2`, `.3`, fixed on every clone; `retarget-vpn.sh` on `app-dev` and `app-prod` rewrites only the WireGuard peer `Endpoint` to the cloned Gateway's Incus address |
+| Addresses | Incus `.10`, `.11`, `.12`; WireGuard `10.44.0.1`, `.2`, `.3`, fixed on every clone; acquisition aligns the Gateway's stored network identity and each peer's saved and running endpoint with the cloned network |
 | Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}` and appears in the worktree branch name |
 
 An extended attempt keeps the three cloned Nodes and constructs one Node from the configured `orbit-base-ubuntu-26.04-runtime` image.
@@ -94,6 +94,10 @@ The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit
 ## Discovery mount
 
 `acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests. Guests never run Composer: host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. The harness places the preserved Gateway `.env` into the worktree when it is absent there. The mount device is part of the attempt inventory, so exact release removes it.
+
+Before reporting readiness, acquisition updates the three cloned Nodes' stored public SSH addresses and retargets stored VPN endpoints that name the snapshot Gateway. It keeps omitted endpoints omitted, preserves endpoint ports, and aligns each peer's saved and running endpoint with the Gateway's provisioning inputs. A later peer configuration therefore selects the acquired Gateway without a manual override. Acquisition uses the current harness preparation code, not a cached copy from the snapshot.
+
+This preparation preserves WireGuard keys and private addresses, DNS settings, SSH ports, roles, workloads, and unrelated configuration. It does not reprovision roles or workloads. Missing, invalid, or conflicting clone identity fails acquisition before readiness; an endpoint that names an unrelated host is a conflict, not permission to replace custom configuration. Acquisition rolls back only that attempt's resources.
 
 ## Release and network ownership
 

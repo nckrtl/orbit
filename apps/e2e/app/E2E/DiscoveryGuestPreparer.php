@@ -9,6 +9,7 @@ use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
+use JsonException;
 use RuntimeException;
 
 /**
@@ -90,15 +91,17 @@ final readonly class DiscoveryGuestPreparer
             array_map($target->instance(...), TopologyProfile::ROLES),
         );
         $addresses = $this->host->globalIpv4All($instances);
-        $retarget = [];
         $gateway = $target->recipe->nodeForRole('gateway')->key;
+        $endpoints = $this->retargetGateway($target, $addresses);
+        $script = $this->guestResource('retarget-vpn.sh');
+        $retarget = [];
         foreach (TopologyProfile::ROLES as $node) {
             if ($node === $gateway) {
                 continue;
             }
             $retarget["retarget-vpn.{$node}"] = [
                 'instance' => $instances[$node],
-                'command' => new GuestCommand(['/usr/local/bin/retarget-vpn.sh', $addresses[$gateway]], 300),
+                'command' => new GuestCommand(['bash', '-s', '--', $addresses[$gateway], $endpoints[$node]], 300, $script),
             ];
         }
         $this->assertGuestBatch($this->host->execAll($retarget), 'WireGuard retargeting failed on');
@@ -111,6 +114,54 @@ final readonly class DiscoveryGuestPreparer
             ];
         }
         $this->assertGuestBatch($this->host->execAll($restart), 'PHP-FPM restart failed on');
+    }
+
+    /**
+     * @param  array<string, string>  $addresses
+     * @return array<string, string>
+     */
+    private function retargetGateway(TopologyTarget $target, array $addresses): array
+    {
+        if (count(array_unique($addresses)) !== count(TopologyProfile::ROLES)) {
+            throw new RuntimeException('Cloned Nodes must have distinct global IPv4 addresses.');
+        }
+        $results = $this->host->execAll([
+            'retarget-gateway' => [
+                'instance' => $target->instance('gateway'),
+                'command' => GuestCommand::asOrbitUser([
+                    'php', MountPath::GUEST_SOURCE.'/apps/e2e/resources/guest/retarget-gateway.php', '/home/orbit/.orbit/gateway.sqlite',
+                    ...array_map(static fn (string $role): string => $addresses[$role], TopologyProfile::ROLES),
+                ], 60),
+            ],
+        ]);
+        $this->assertGuestBatch($results, 'Gateway clone identity preparation failed on');
+        try {
+            $endpoints = json_decode($results['retarget-gateway']->stdout, true, 8, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new RuntimeException('Gateway clone identity preparation returned invalid endpoints.');
+        }
+        if (! is_array($endpoints) || array_keys($endpoints) !== ['app-dev', 'app-prod']) {
+            throw new RuntimeException('Gateway clone identity preparation returned incomplete endpoints.');
+        }
+        foreach ($endpoints as $endpoint) {
+            if (! is_string($endpoint)
+                || preg_match('/\A'.preg_quote($addresses['gateway'], '/').':([1-9][0-9]{0,4})\z/D', $endpoint, $parts) !== 1
+                || (int) $parts[1] > 65_535) {
+                throw new RuntimeException('Gateway clone identity preparation returned invalid endpoints.');
+            }
+        }
+
+        return $endpoints;
+    }
+
+    private function guestResource(string $name): string
+    {
+        $source = file_get_contents(__DIR__.'/../../resources/guest/'.$name);
+        if (! is_string($source) || $source === '') {
+            throw new RuntimeException('The clone identity preparation resource is missing.');
+        }
+
+        return $source;
     }
 
     /** @param array<string, GuestCommandResult> $results */
