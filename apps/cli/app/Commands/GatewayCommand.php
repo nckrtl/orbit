@@ -189,11 +189,16 @@ abstract class GatewayCommand extends Command
         try {
             $response = $this->sendOrThrow($connector, $request, $responseClass);
         } catch (GatewayApiException $exception) {
+            $code = $exception->errorCode() ?? 'gateway.request_failed';
+
             GatewayFailureRenderer::write(
                 $this,
-                $exception->errorCode() ?? 'gateway.request_failed',
+                $code,
                 $exception->getMessage(),
                 $exception->requestId(),
+                details: $code === 'validation.failed'
+                    ? GatewayFailureRenderer::fieldDetails($exception->details())
+                    : [],
             );
 
             return null;

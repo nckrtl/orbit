@@ -9,6 +9,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Activities\ListActivitiesRequest;
+use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
@@ -73,6 +74,209 @@ it('renders one deterministic json envelope for a resource gateway error', funct
         ->not->toContain('details')
         ->not->toContain('fixture-secret');
     expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
+});
+
+it('renders validation field details in the json envelope', function (): void {
+    MockClient::global([
+        CreateAppRequest::class => gateway_validation_failure([
+            'slug' => ['The slug field must only contain letters, numbers, dashes, and underscores.'],
+        ]),
+    ]);
+    $expectedPayload = [
+        'error' => [
+            'code' => 'validation.failed',
+            'message' => 'The request data is invalid.',
+            'details' => [
+                'slug' => ['The slug field must only contain letters, numbers, dashes, and underscores.'],
+            ],
+            'request_id' => gateway_error_request_id(),
+        ],
+    ];
+
+    $exitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($output)->toBe(json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
+});
+
+it('prints each validation field message on its own line after the error message', function (): void {
+    MockClient::global([
+        CreateAppRequest::class => gateway_validation_failure([
+            'slug' => [
+                'The slug field must only contain letters, numbers, dashes, and underscores.',
+                'The slug has already been taken.',
+            ],
+            'repository_url' => ['The repository url field must be a valid URL.'],
+        ]),
+    ]);
+
+    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($output)->toBe(implode("\n", [
+        'The request data is invalid.',
+        'slug: The slug field must only contain letters, numbers, dashes, and underscores.',
+        'slug: The slug has already been taken.',
+        'repository_url: The repository url field must be a valid URL.',
+        'Request ID: '.gateway_error_request_id(),
+    ]));
+});
+
+it('renders a validation failure without details as before in both modes', function (?array $details): void {
+    $expectedPayload = [
+        'error' => [
+            'code' => 'validation.failed',
+            'message' => 'The request data is invalid.',
+            'request_id' => gateway_error_request_id(),
+        ],
+    ];
+
+    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    $jsonExitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonOutput = trim(Artisan::output());
+
+    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    $humanExitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $humanOutput = trim(Artisan::output());
+
+    expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($jsonOutput)
+        ->toBe(json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->not->toContain('details');
+    expect(json_decode($jsonOutput, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
+    expect($humanExitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($humanOutput)->toBe("The request data is invalid.\nRequest ID: ".gateway_error_request_id());
+})->with([
+    'empty details' => [[]],
+    'no details key' => [null],
+]);
+
+it('keeps non-validation failure details out of human output', function (): void {
+    MockClient::global([
+        CreateAppRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'gateway.unavailable',
+                    'message' => 'Gateway is unavailable.',
+                    'details' => ['trace_id' => 'fixture-secret'],
+                ],
+            ],
+            503,
+            ['X-Orbit-Request-Id' => gateway_error_request_id()],
+        ),
+    ]);
+
+    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($output)
+        ->toBe("Gateway is unavailable.\nRequest ID: ".gateway_error_request_id())
+        ->not->toContain('fixture-secret');
+});
+
+it('never prints secret-looking validation details in either mode', function (): void {
+    $details = [
+        'password' => ['The password hunter2-secret is too short.'],
+        'repository_url' => ['Use token=abc123 to access the repository.'],
+    ];
+    $expectedPayload = [
+        'error' => [
+            'code' => 'validation.failed',
+            'message' => 'The request data is invalid.',
+            'details' => [
+                'password' => '[REDACTED]',
+                'repository_url' => ['Use token=[REDACTED] to access the repository.'],
+            ],
+            'request_id' => gateway_error_request_id(),
+        ],
+    ];
+
+    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    $jsonExitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonOutput = trim(Artisan::output());
+
+    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    $humanExitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $humanOutput = trim(Artisan::output());
+
+    expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($jsonOutput)
+        ->toBe(json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->not->toContain('hunter2-secret')
+        ->not->toContain('abc123');
+    expect(json_decode($jsonOutput, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
+    expect($humanExitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($humanOutput)
+        ->toBe(implode("\n", [
+            'The request data is invalid.',
+            'password: [REDACTED]',
+            'repository_url: Use token=[REDACTED] to access the repository.',
+            'Request ID: '.gateway_error_request_id(),
+        ]))
+        ->not->toContain('hunter2-secret')
+        ->not->toContain('abc123');
+});
+
+it('bounds validation details to sanitized field messages', function (): void {
+    MockClient::global([
+        CreateAppRequest::class => gateway_validation_failure([
+            'slug' => [
+                "Line\x1b[31mone\nbreak",
+                '',
+                str_repeat('a', 513),
+                7,
+                'Kept message',
+            ],
+            'nested' => ['field' => 'The nested value is invalid.'],
+            'count' => 3,
+            '' => ['The empty field name is dropped.'],
+            str_repeat('f', 129) => ['The oversized field name is dropped.'],
+        ]),
+    ]);
+    $expectedPayload = [
+        'error' => [
+            'code' => 'validation.failed',
+            'message' => 'The request data is invalid.',
+            'details' => ['slug' => ['Line [31mone break', 'Kept message']],
+            'request_id' => gateway_error_request_id(),
+        ],
+    ];
+
+    $exitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($output)
+        ->toBe(json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->not->toContain('nested')
+        ->not->toContain('dropped');
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
+});
+
+it('caps validation details at fifty field messages', function (): void {
+    $details = [];
+
+    for ($index = 1; $index <= 60; $index++) {
+        $details["field_{$index}"] = ["Message {$index}"];
+    }
+
+    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+
+    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $output = trim(Artisan::output());
+    $lines = explode("\n", $output);
+
+    expect($exitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($lines)->toHaveCount(52);
+    expect($lines[0])->toBe('The request data is invalid.');
+    expect($lines[1])->toBe('field_1: Message 1');
+    expect($lines[50])->toBe('field_50: Message 50');
+    expect($lines[51])->toBe('Request ID: '.gateway_error_request_id());
+    expect($output)->not->toContain('field_51');
 });
 
 it('renders shared gateway errors safely for every tool command', function (
@@ -606,4 +810,32 @@ it('renders console input failures through the exact json boundary', function (a
 function gateway_error_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array<string, string> */
+function gateway_validation_arguments(): array
+{
+    return [
+        'slug' => 'Bad Slug',
+        'repository' => 'https://github.com/laravel/framework.git',
+    ];
+}
+
+/** @param array<string, mixed>|null $details */
+function gateway_validation_failure(?array $details): MockResponse
+{
+    $error = [
+        'code' => 'validation.failed',
+        'message' => 'The request data is invalid.',
+    ];
+
+    if ($details !== null) {
+        $error['details'] = $details;
+    }
+
+    return MockResponse::make(
+        ['error' => $error],
+        422,
+        ['X-Orbit-Request-Id' => gateway_error_request_id()],
+    );
 }
