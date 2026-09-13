@@ -137,8 +137,8 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
 
     /**
      * Reports whether every stock dnsmasq snippet the VPN converger retires is
-     * absent from the conf directory. A returned snippet would keep dnsmasq
-     * from starting with the managed `bind-dynamic` fragment.
+     * absent from the conf directory. A returned snippet would add extra
+     * listen addresses beside the managed loopback backend fragment.
      */
     private function conflictFree(SshConnection $connection): bool
     {

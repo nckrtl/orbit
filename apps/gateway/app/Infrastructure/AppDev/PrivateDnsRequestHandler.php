@@ -7,6 +7,9 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\PrivateDnsAnswerCache;
 use App\Domain\AppDev\PrivateDnsAnswerSelector;
 use App\Domain\AppDev\PrivateDnsRequesterResolver;
+use App\Domain\AppDev\PrivateDnsUpstream;
+use InvalidArgumentException;
+use Throwable;
 
 final readonly class PrivateDnsRequestHandler
 {
@@ -15,11 +18,17 @@ final readonly class PrivateDnsRequestHandler
         private PrivateDnsAnswerSelector $selector,
         private PrivateDnsAnswerCache $cache,
         private PrivateDnsMessageCodec $codec = new PrivateDnsMessageCodec,
+        private ?PrivateDnsUpstream $upstream = null,
     ) {}
 
     public function handle(string $sourceAddress, string $message): string
     {
-        $query = $this->codec->decodeQuestion($message);
+        try {
+            $query = $this->codec->decodeQuestion($message);
+        } catch (InvalidArgumentException $exception) {
+            return $this->forward($message, $exception);
+        }
+
         $requester = $this->requesters->resolve($sourceAddress);
         $answer = $this->cache->remember(
             $requester,
@@ -27,6 +36,23 @@ final readonly class PrivateDnsRequestHandler
             fn () => $this->selector->select($query->question, $requester),
         );
 
-        return $this->codec->encodeAnswer($query, $answer);
+        if ($answer->authoritative || $this->upstream === null) {
+            return $this->codec->encodeAnswer($query, $answer);
+        }
+
+        try {
+            return $this->upstream->resolve($message);
+        } catch (Throwable) {
+            return $this->codec->encodeAnswer($query, $answer);
+        }
+    }
+
+    private function forward(string $message, InvalidArgumentException $exception): string
+    {
+        if ($this->upstream === null) {
+            throw $exception;
+        }
+
+        return $this->upstream->resolve($message);
     }
 }

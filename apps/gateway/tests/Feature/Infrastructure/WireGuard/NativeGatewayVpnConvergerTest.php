@@ -120,7 +120,7 @@ function assert_gateway_generated_files(GatewayVpnFakeProcessRunner $processes, 
     expect($processes->observedProjectionLock)->toBeTrue();
     expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
         ->toBe(gateway_orbit_vpn_dnsmasq_conf())
-        ->not->toContain('bind-interfaces', 'server=127.0.0.53');
+        ->not->toContain('bind-dynamic', 'interface=orbit', 'server=127.0.0.53');
 }
 
 /** @param list<list<string>> $arguments */
@@ -228,7 +228,7 @@ function assert_gateway_publication_commands(
     expect(base64_decode(
         Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[10]->input ?? ''),
         strict: true,
-    ))->toContain('bind-dynamic');
+    ))->toContain('listen-address=127.0.0.54', 'bind-interfaces');
 }
 
 /** @param list<list<string>> $arguments */
@@ -545,14 +545,13 @@ it('limits private DNS to the WireGuard and explicit private interfaces', functi
 
         expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
             ->toContain(
-                "interface=orbit\n",
-                "interface=eth3\n",
-                'bind-dynamic',
+                'listen-address=127.0.0.54',
+                'bind-interfaces',
                 'local=/orbit/',
                 'host-record=gateway.orbit,10.44.0.1',
             )
             ->not
-            ->toContain('interface=lo', 'listen-address=0.0.0.0')
+            ->toContain('interface=orbit', 'interface=eth3', 'interface=lo', 'listen-address=0.0.0.0', 'bind-dynamic')
             ->and($arguments->contains([
                 'sudo',
                 'ufw',
@@ -683,7 +682,7 @@ it('writes mesh dnsmasq upstreams from visible uplink resolvers', function (): v
 
         expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
             ->toBe(gateway_orbit_vpn_dnsmasq_conf(['192.0.2.53', '192.0.2.54']))
-            ->not->toContain('server=1.1.1.1', 'server=8.8.8.8', 'server=127.0.0.53', 'bind-interfaces');
+            ->not->toContain('server=1.1.1.1', 'server=8.8.8.8', 'server=127.0.0.53', 'bind-dynamic');
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -958,7 +957,7 @@ function gateway_orbit_vpn_dnsmasq_conf(array $servers = UplinkDnsResolvers::FAL
         $servers,
     ));
 
-    return "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\ndomain-needed\nbogus-priv\nno-resolv\n{$upstream}\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n";
+    return "# Managed by Orbit.\nlisten-address=127.0.0.54\nbind-interfaces\ndomain-needed\nbogus-priv\nno-resolv\n{$upstream}\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n";
 }
 
 function gateway_write_host_file(string $orbitHome, string $relative, string $contents): void
