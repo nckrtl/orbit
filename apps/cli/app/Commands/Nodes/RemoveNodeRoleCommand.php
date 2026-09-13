@@ -7,6 +7,7 @@ namespace App\Commands\Nodes;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
@@ -116,11 +117,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
             );
         } catch (GatewayApiException $exception) {
             if (! $this->isConsentPreview($exception)) {
-                return $this->renderGatewayFailure(
-                    $exception->errorCode() ?? 'gateway.request_failed',
-                    $exception->getMessage(),
-                    $exception->requestId(),
-                );
+                return $this->renderPreviewFailure($exception);
             }
 
             if ($this->option('json') === true || ! $this->input->isInteractive()) {
@@ -147,6 +144,20 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         }
 
         return null;
+    }
+
+    private function renderPreviewFailure(GatewayApiException $exception): int
+    {
+        $code = $exception->errorCode() ?? 'gateway.request_failed';
+
+        return $this->renderGatewayFailure(
+            $code,
+            $exception->getMessage(),
+            $exception->requestId(),
+            details: $code === 'validation.failed'
+                ? GatewayFailureRenderer::fieldDetails($exception->details())
+                : [],
+        );
     }
 
     private function isConsentPreview(GatewayApiException $exception): bool
