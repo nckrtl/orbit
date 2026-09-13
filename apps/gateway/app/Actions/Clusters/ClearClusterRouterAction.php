@@ -60,10 +60,16 @@ final readonly class ClearClusterRouterAction
         }
 
         foreach ($assignments as $assignment) {
+            $neverActivated = $assignment->neverActivated();
             $assignment->update(['status' => LifecycleStatus::Removing, 'failed_step' => null, 'error_code' => null]);
 
             try {
-                $this->baselines->remove($assignment->node, $assignment, false);
+                if ($neverActivated) {
+                    $this->baselines->removeUnreachable($assignment->node, $assignment);
+                } else {
+                    $this->baselines->remove($assignment->node, $assignment, false);
+                }
+
                 $assignment->delete();
             } catch (Throwable $exception) {
                 $step = property_exists($exception, 'step') && is_string($exception->step)
