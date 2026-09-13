@@ -10,6 +10,7 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Infrastructure\SharedOrbitDirectory;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use Illuminate\Support\Collection;
@@ -22,6 +23,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         private string $lockDirectory = '/run/lock/orbit',
         private RemotePhpPackageManager $packages = new RemotePhpPackageManager,
         private int $cacheDeadlineSeconds = 30,
+        private SharedOrbitDirectory $sharedOrbitDirectory = new SharedOrbitDirectory,
     ) {}
 
     public function converge(AppInstance $appInstance): void
@@ -615,7 +617,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
     private function convergeScript(): string
     {
-        return <<<'BASH'
+        return $this->sharedOrbitDirectory->convergenceFunction()."\n".<<<'BASH'
             operation=$1
             user=$2
             home=$3
@@ -672,6 +674,8 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             exec 9>>"$lock"
             chmod 0600 -- "$lock"
             flock -w 30 9
+
+            converge_shared_orbit_directory /etc/orbit 1
 
             expected_marker=$(mktemp)
             work_directory=$(mktemp -d)
