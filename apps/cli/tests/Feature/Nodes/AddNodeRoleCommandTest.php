@@ -215,6 +215,10 @@ it('renders gateway-owned node role add failures through the shared boundary', f
         'error' => [
             'code' => 'validation.failed',
             'message' => 'Role [gateway] is protected from generic mutation.',
+            'details' => [
+                'field' => 'role',
+                'role' => 'gateway',
+            ],
             'request_id' => node_role_add_request_id(),
         ],
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
