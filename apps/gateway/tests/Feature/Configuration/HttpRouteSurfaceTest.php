@@ -68,11 +68,16 @@ it('exposes only API and health routes in an HTTP runtime', function (
     $routes = $bootHttpRoutes($environment, $debug);
 
     foreach ($routes as $route) {
-        expect($route['uri'] === 'up' || str_starts_with($route['uri'], 'api/v1/'))
-            ->toBeTrue("Unexpected HTTP route [{$route['uri']}].");
+        expect(
+            $route['uri'] === 'up'
+            || $route['uri'] === '.well-known/jwks.json'
+            || str_starts_with($route['uri'], 'api/v1/'),
+        )->toBeTrue("Unexpected HTTP route [{$route['uri']}].");
     }
 
-    expect(array_column($routes, 'uri'))->not->toContain('_boost/browser-logs', 'storage/{path}');
+    expect(array_column($routes, 'uri'))
+        ->toContain('.well-known/jwks.json')
+        ->not->toContain('_boost/browser-logs', 'storage/{path}');
     expect(array_column($routes, 'name'))
         ->not
         ->toContain('boost.browser-logs', 'storage.local', 'storage.local.upload');

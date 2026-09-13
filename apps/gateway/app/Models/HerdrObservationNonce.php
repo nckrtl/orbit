@@ -14,10 +14,13 @@ use Illuminate\Support\Carbon;
  */
 final class HerdrObservationNonce extends Model
 {
+    #[\Override]
     public $incrementing = false;
 
+    #[\Override]
     public $timestamps = false;
 
+    #[\Override]
     protected $primaryKey = 'jti';
 
     /** @var list<string> */

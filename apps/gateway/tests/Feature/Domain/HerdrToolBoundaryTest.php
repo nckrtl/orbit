@@ -16,6 +16,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Tests\Support\FakeToolManager;
 use Tests\Support\ImmediateToolOperationLock;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 it('does not restart a managed Herdr session when the Herdr Tool is updated', function (): void {
     $runtime = new ProcessesApiFakeRuntimeManager;

@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\Process;
 use Tests\Support\FakeHerdrObserverPublisher;
 use Tests\Support\FakeHerdrSessionInspector;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
@@ -205,7 +206,6 @@ it('rejects expired, wrong-node, and pane-mismatch grants', function (): void {
         'public_ssh_host' => '192.0.2.21',
         'public_ssh_port' => 22,
         'user' => 'nckrtl',
-        'tld' => 'orbit',
         'wireguard_ip' => '10.44.0.9',
     ]);
     $this->postJson('/api/v1/herdr/sessions', [
@@ -311,7 +311,6 @@ it('lets Commander observe panes on two Nodes without SSH or input capability', 
         'public_ssh_host' => '192.0.2.22',
         'public_ssh_port' => 22,
         'user' => 'nckrtl',
-        'tld' => 'orbit',
         'wireguard_ip' => '10.44.0.10',
     ]);
 

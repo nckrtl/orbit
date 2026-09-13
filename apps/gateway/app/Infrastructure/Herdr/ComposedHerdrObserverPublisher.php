@@ -28,7 +28,7 @@ final readonly class ComposedHerdrObserverPublisher implements HerdrObserverPubl
         try {
             $this->sites->publish($session, $node, $this->caddy->render($session));
             $this->dns->converge();
-        } catch (Throwable $exception) {
+        } catch (Throwable) {
             return new HerdrObserverPublication(
                 url: $url,
                 published: false,

@@ -90,11 +90,13 @@ final readonly class AppDevDnsConfigRenderer
             ->orderBy('id')
             ->get()
             ->each(static function (HerdrSession $session) use ($records): void {
-                if (! $session->node instanceof Node || ! is_string($session->node->wireguard_ip) || $session->node->wireguard_ip === '') {
+                $address = $session->node->wireguard_ip;
+
+                if (! is_string($address) || $address === '') {
                     return;
                 }
 
-                $records->push("host-record={$session->observer_hostname},{$session->node->wireguard_ip}");
+                $records->push("host-record={$session->observer_hostname},{$address}");
             });
 
         if ($gateway instanceof Node) {

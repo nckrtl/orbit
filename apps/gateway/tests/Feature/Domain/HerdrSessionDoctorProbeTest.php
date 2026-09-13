@@ -14,6 +14,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\HerdrSession;
 use App\Models\Node;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 it('reports distinct Process, listener, and session findings', function (): void {
     $runtime = new ProcessesApiFakeRuntimeManager;
@@ -49,7 +50,7 @@ it('reports distinct Process, listener, and session findings', function (): void
     ]);
 
     $report = new HerdrSessionDoctorProbe(new HerdrSessionHealth($runtime))
-        ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', '10.44.0.8')));
+        ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
 
     expect($report->family)
         ->toBe(DoctorFamily::Herdr)
