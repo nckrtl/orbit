@@ -22,6 +22,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Throwable;
 
 final readonly class RemoveNodeAction
@@ -61,17 +62,16 @@ final readonly class RemoveNodeAction
         bool $offline,
         bool $force,
     ): RemoveNodeData {
-        $current = Node::query()->find($node->id);
-
-        if (! $current instanceof Node) {
-            throw new ResourceOperationException(
-                'node.not_found',
-                "Node [{$node->name}] does not exist.",
-                404,
-            );
+        try {
+            $node->refresh();
+        } catch (ModelNotFoundException) {
+            throw $this->missing($node);
         }
 
-        $node = $current;
+        if (! $node->exists) {
+            throw $this->missing($node);
+        }
+
         ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertNodeRemovable($node);
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardProtected($node, $caller);
@@ -322,6 +322,15 @@ final readonly class RemoveNodeAction
     private function conflict(string $errorCode, string $message): ResourceOperationException
     {
         return new ResourceOperationException($errorCode, $message, 409);
+    }
+
+    private function missing(Node $node): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            'node.not_found',
+            "Node [{$node->name}] does not exist.",
+            404,
+        );
     }
 
     private function restoreMetricsSelection(): ?Throwable
