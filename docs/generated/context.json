@@ -1432,6 +1432,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0068-accept-only-apps-path-node-storage-setting.md",
+            "title": "ADR 0068: Accept only apps.path as the node storage setting path",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0008",
+                "0009",
+                "0068"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1726,6 +1747,23 @@
                 "Node"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/node-settings.md",
+            "title": "Node settings",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0008",
+                "0009",
+                "0068"
+            ]
         },
         {
             "path": "docs/reference/php-runtime.md",
