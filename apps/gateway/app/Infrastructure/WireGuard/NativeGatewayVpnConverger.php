@@ -8,6 +8,7 @@ use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\AppDev\VpnDnsmasqBackendListen;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
@@ -223,11 +224,10 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
     {
         $this->removeDnsOrderingDropIn();
         $this->retireStockDnsSnippets();
-        $interfaces = $this->privateInterfaces($data);
         $configuration = implode(PHP_EOL, [
             '# Managed by Orbit.',
-            ...array_map(static fn (string $interface): string => "interface={$interface}", $interfaces),
-            'bind-dynamic',
+            'listen-address='.VpnDnsmasqBackendListen::Address,
+            'bind-interfaces',
             'domain-needed',
             'bogus-priv',
             'no-resolv',
@@ -295,10 +295,10 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
     }
 
     /**
-     * Retires the stock dnsmasq snippets that cannot coexist with the managed
-     * fragment. `dnsmasq --test` accepts a conf directory that mixes
-     * `bind-interfaces` and `bind-dynamic`, so only the restart in the
-     * fragment step exposes the conflict. That restart runs because
+     * Retires the stock dnsmasq snippets that would add extra listen
+     * addresses beside the managed loopback backend. `dnsmasq --test`
+     * accepts a mixed conf directory, so only the restart in the fragment
+     * step exposes a listen conflict. That restart runs because
      * `systemctl is-active` also reports a failed unit as inactive.
      */
     private function retireStockDnsSnippets(): void

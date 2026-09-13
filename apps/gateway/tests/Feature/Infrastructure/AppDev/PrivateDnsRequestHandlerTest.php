@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\DnsRequester;
+use App\Domain\AppDev\PrivateDnsAnswer;
+use App\Domain\AppDev\PrivateDnsUpstream;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\CatalogPrivateDnsAnswerSelector;
 use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
@@ -119,6 +121,42 @@ it('returns the established WireGuard answer for every requester until LAN selec
         ->toBe('10.44.0.1')
         ->and(orb258_answer_address($handler->handle('10.44.0.14', $codec->encodeQuery('site.solo.test'))))
         ->toBe('10.44.0.40');
+});
+
+it('forwards names outside the catalog to the backend resolver and keeps catalog answers local', function (): void {
+    $codec = new PrivateDnsMessageCodec;
+    $upstream = new class($codec) implements PrivateDnsUpstream
+    {
+        public int $calls = 0;
+
+        public function __construct(private PrivateDnsMessageCodec $codec) {}
+
+        public function resolve(string $message): string
+        {
+            $this->calls++;
+
+            return $this->codec->encodeAnswer(
+                $this->codec->decodeQuestion($message),
+                PrivateDnsAnswer::a('1.1.1.1'),
+            );
+        }
+    };
+    $handler = new PrivateDnsRequestHandler(
+        requesters: new WireGuardDnsRequesterResolver,
+        selector: new CatalogPrivateDnsAnswerSelector(new PrivateDnsAnswerCatalog(
+            exact: ['gateway.orbit' => '10.44.0.1'],
+            suffixes: [],
+        )),
+        cache: new InMemoryPrivateDnsAnswerCache,
+        upstream: $upstream,
+    );
+
+    expect(orb258_answer_address($handler->handle('10.44.0.14', $codec->encodeQuery('gateway.orbit'))))
+        ->toBe('10.44.0.1')
+        ->and(orb258_answer_address($handler->handle('10.44.0.14', $codec->encodeQuery('example.com'))))
+        ->toBe('1.1.1.1')
+        ->and($upstream->calls)
+        ->toBe(1);
 });
 
 function orb258_handler(

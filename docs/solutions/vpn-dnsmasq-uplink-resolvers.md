@@ -12,17 +12,18 @@ resolvers the node already received on its public NIC.
 The managed fragment set `no-resolv` and always emitted `server=1.1.1.1` and
 `server=8.8.8.8`. That ignored the nameservers systemd-resolved and DHCP already
 use on the uplink interface. Deleting `no-resolv` and pointing at `127.0.0.53`
-would recurse through the stub resolver and can loop once the mesh listener is
-bound.
+or `127.0.0.54` would recurse through systemd-resolved's stub or proxy listener
+and can loop once the mesh listener is bound.
 
 ## Solution
 
 At converge, `UplinkDnsResolvers` in `apps/gateway` reads the systemd-resolved
 uplink file, then the DHCP lease for the public NIC. The managed
 fragment still sets `no-resolv` and emits `server=` lines for those IPv4
-addresses. Local mesh records, `bind-dynamic`, and interface binding stay
-unchanged. When no uplink resolvers are visible, the fragment keeps the
-documented public recursive fallback (`1.1.1.1` and `8.8.8.8`).
+addresses. The fragment listens on `127.0.0.55` so the requester-aware listener
+can own the Gateway WireGuard DNS port without colliding with systemd-resolved.
+When no uplink resolvers are visible, the fragment keeps the documented public
+recursive fallback (`1.1.1.1` and `8.8.8.8`).
 
 ## Limits
 

@@ -112,6 +112,7 @@ use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
+use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
@@ -315,7 +316,6 @@ final class AppServiceProvider extends ServiceProvider
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
-        PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
         RoleStateInspector::class => NativeRoleStateInspector::class,
         ScheduleStateInspector::class => NativeScheduleStateInspector::class,
@@ -377,6 +377,18 @@ final class AppServiceProvider extends ServiceProvider
             $this->app->singleton(InstallCommand::class, GatewayBoostInstallCommand::class);
         }
 
+        $this->app->singleton(
+            DnsmasqPrivateDnsManager::class,
+            static fn (): DnsmasqPrivateDnsManager => new DnsmasqPrivateDnsManager(
+                processes: app(ProcessRunner::class),
+                renderer: app(AppDevDnsConfigRenderer::class),
+                activateListener: true,
+                checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
+                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                vpnSettings: app(VpnSettings::class),
+            ),
+        );
+        $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));
         $this->app->singleton(CommandDeadline::class);
         $this->app->singleton(
             ToolManagerRegistry::class,
