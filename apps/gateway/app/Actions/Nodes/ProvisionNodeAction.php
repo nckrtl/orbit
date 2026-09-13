@@ -6,6 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
@@ -58,6 +59,7 @@ final readonly class ProvisionNodeAction
         private ActiveTldScopeGuard $tldScope,
         private ?RouteMutationReconciler $routes = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
+        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -378,6 +380,12 @@ final readonly class ProvisionNodeAction
         }
 
         try {
+            $this->expandDnsSelection($node, $lanClusterIds);
+        } catch (Throwable $exception) {
+            $this->failDnsSelection($node, $exception, $priorActiveState, $lanClusterIds);
+        }
+
+        try {
             DB::transaction(function () use ($node, $managedUser): void {
                 $node->update([
                     'user' => $managedUser,
@@ -387,17 +395,21 @@ final readonly class ProvisionNodeAction
                 ]);
             });
         } catch (Throwable $exception) {
+            $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
             $this->lanIngress()->prune(clusterIds: $lanClusterIds);
 
             if ($priorActiveState !== null) {
                 $this->restorePriorActiveState($node, $priorActiveState);
                 $this->lanIngress()->expand(clusterIds: $lanClusterIds);
                 $this->lanIngress()->prune(clusterIds: $lanClusterIds);
+                $this->dnsSelection()->expand(clusterIds: $lanClusterIds);
+                $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
             }
 
             throw $exception;
         }
 
+        $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
 
         if ($data->settingsProvided) {
@@ -535,10 +547,34 @@ final readonly class ProvisionNodeAction
         return $this->lanIngress ?? app(RouterLanIngressReconciler::class);
     }
 
+    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
+    {
+        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
+    }
+
     /** @param list<int> $clusterIds */
     private function expandRouterLanIngress(Node $node, array $clusterIds): void
     {
         $this->lanIngress()->expand(
+            nodeOverrides: [
+                $node->id => [
+                    'status' => LifecycleStatus::Active,
+                    'cluster_id' => $node->cluster_id,
+                    'lan_ip' => is_string($node->lan_ip) ? $node->lan_ip : null,
+                    'wireguard_ip' => is_string($node->wireguard_ip) ? $node->wireguard_ip : null,
+                    'wireguard_public_key' => is_string($node->wireguard_public_key)
+                        ? $node->wireguard_public_key
+                        : null,
+                ],
+            ],
+            clusterIds: $clusterIds,
+        );
+    }
+
+    /** @param list<int> $clusterIds */
+    private function expandDnsSelection(Node $node, array $clusterIds): void
+    {
+        $this->dnsSelection()->expand(
             nodeOverrides: [
                 $node->id => [
                     'status' => LifecycleStatus::Active,
@@ -564,6 +600,8 @@ final readonly class ProvisionNodeAction
 
         $this->lanIngress()->expand(clusterIds: [$clusterId]);
         $this->lanIngress()->prune(clusterIds: [$clusterId]);
+        $this->dnsSelection()->expand(clusterIds: [$clusterId]);
+        $this->dnsSelection()->prune(clusterIds: [$clusterId]);
     }
 
     /**
@@ -577,6 +615,7 @@ final readonly class ProvisionNodeAction
         array $clusterIds,
     ): never {
         $this->lanIngress()->prune(clusterIds: $clusterIds);
+        $this->dnsSelection()->prune(clusterIds: $clusterIds);
 
         $failure = new NodeProvisioningException(
             step: 'router-lan-ingress',
@@ -586,6 +625,33 @@ final readonly class ProvisionNodeAction
             message: "Could not reconcile Router LAN ingress for node [{$node->name}].",
             previous: $exception,
             result: $exception instanceof FirewallOperationException ? $exception->result : null,
+        );
+        $this->handleFailure($node, $failure, $priorActiveState);
+
+        throw $failure;
+    }
+
+    /**
+     * @param  list<int>  $clusterIds
+     * @param  ?array<string, mixed>  $priorActiveState
+     */
+    private function failDnsSelection(
+        Node $node,
+        Throwable $exception,
+        ?array $priorActiveState,
+        array $clusterIds,
+    ): never {
+        $this->dnsSelection()->prune(clusterIds: $clusterIds);
+        $this->lanIngress()->prune(clusterIds: $clusterIds);
+
+        $failure = new NodeProvisioningException(
+            step: 'private-dns',
+            errorCode: $exception instanceof RuntimeConvergenceException
+                ? $exception->errorCode
+                : 'app-dev.dns_config_failed',
+            message: "Could not reconcile Cluster Router DNS selection for node [{$node->name}].",
+            previous: $exception,
+            result: $exception instanceof RuntimeConvergenceException ? $exception->result : null,
         );
         $this->handleFailure($node, $failure, $priorActiveState);
 

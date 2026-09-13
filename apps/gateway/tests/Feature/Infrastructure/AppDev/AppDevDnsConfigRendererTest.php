@@ -120,6 +120,19 @@ it('keeps gateway.orbit and metrics.orbit on the Gateway WireGuard address', fun
         ->toContain('host-record=gateway.orbit,10.44.0.1');
 });
 
+it('projects an active Cluster TLD to the Router WireGuard address', function (): void {
+    $route = orb258_cluster_route();
+    $route->cluster->update(['tld' => 'cluster.test']);
+    $route->targets->first()->appInstance->node->update(['tld' => 'cluster.test']);
+
+    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+
+    expect($configuration)
+        ->toContain('address=/.cluster.test/10.44.0.20')
+        ->not
+        ->toContain('address=/.cluster.test/10.44.0.10');
+});
+
 it('builds a requester catalog from the same records the renderer publishes', function (): void {
     $route = orb258_cluster_route();
     $renderer = new AppDevDnsConfigRenderer(new AppDevSiteRepository);

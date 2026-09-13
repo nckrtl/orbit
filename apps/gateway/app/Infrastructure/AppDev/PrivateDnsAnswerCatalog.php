@@ -66,7 +66,8 @@ final readonly class PrivateDnsAnswerCatalog
     public function addressFor(DnsQuestion $question, DnsRequester $requester): ?string
     {
         $name = $question->normalizedName();
-        $override = $this->overrides[$requester->cacheKey()][$name] ?? null;
+        $requesterOverrides = $this->overrides[$requester->cacheKey()] ?? [];
+        $override = $requesterOverrides[$name] ?? null;
 
         if (is_string($override) && $override !== '') {
             return $override;
@@ -77,9 +78,17 @@ final readonly class PrivateDnsAnswerCatalog
         }
 
         foreach ($this->suffixes as $suffix => $address) {
-            if ($name === $suffix || str_ends_with($name, '.'.$suffix)) {
-                return $address;
+            if ($name !== $suffix && ! str_ends_with($name, '.'.$suffix)) {
+                continue;
             }
+
+            $suffixOverride = $requesterOverrides[$suffix] ?? null;
+
+            if (is_string($suffixOverride) && $suffixOverride !== '') {
+                return $suffixOverride;
+            }
+
+            return $address;
         }
 
         return null;

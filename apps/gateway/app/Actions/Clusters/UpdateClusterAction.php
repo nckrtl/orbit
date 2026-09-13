@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Clusters;
 
 use App\Data\Clusters\UpdateClusterData;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -23,6 +24,7 @@ final readonly class UpdateClusterAction
         private ClusterRouterOperationLock $routerOperations,
         private ?RouteMutationReconciler $routes = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
+        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(Cluster $cluster, UpdateClusterData $data): Cluster
@@ -44,11 +46,33 @@ final readonly class UpdateClusterAction
             && $data->state instanceof ClusterState
             && $data->state !== $current->state;
 
+        $proposedTld = $data->tldProvided ? $data->tld : $current->tld;
+        $proposedState = $data->state ?? $current->state;
+        $selectionChanging = $data->tldProvided || $stateChanging;
+
         if ($stateChanging) {
             $this->lanIngress()->expand(
                 clusterOverrides: [$clusterId => ['state' => $data->state]],
                 clusterIds: [$clusterId],
             );
+        }
+
+        try {
+            if ($selectionChanging) {
+                $this->dnsSelection()->expand(
+                    clusterOverrides: [$clusterId => [
+                        'tld' => $proposedTld,
+                        'state' => $proposedState,
+                    ]],
+                    clusterIds: [$clusterId],
+                );
+            }
+        } catch (Throwable $exception) {
+            if ($stateChanging) {
+                $this->lanIngress()->prune(clusterIds: [$clusterId]);
+            }
+
+            throw $exception;
         }
 
         try {
@@ -102,11 +126,19 @@ final readonly class UpdateClusterAction
                 return $locked->refresh();
             });
         } catch (Throwable $exception) {
+            if ($selectionChanging) {
+                $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+            }
+
             if ($stateChanging) {
                 $this->lanIngress()->prune(clusterIds: [$clusterId]);
             }
 
             throw $exception;
+        }
+
+        if ($selectionChanging) {
+            $this->dnsSelection()->prune(clusterIds: [$clusterId]);
         }
 
         if ($stateChanging) {
@@ -119,5 +151,10 @@ final readonly class UpdateClusterAction
     private function lanIngress(): RouterLanIngressReconciler
     {
         return $this->lanIngress ?? app(RouterLanIngressReconciler::class);
+    }
+
+    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
+    {
+        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
     }
 }

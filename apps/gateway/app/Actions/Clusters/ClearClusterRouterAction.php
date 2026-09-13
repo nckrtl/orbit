@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -23,6 +24,7 @@ final readonly class ClearClusterRouterAction
         private ClusterRouterOperationLock $operations,
         private ?RouteReconciliationGuard $routes = null,
         private ?RouteRemovalGuard $removal = null,
+        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(Cluster $cluster): Cluster
@@ -59,6 +61,11 @@ final readonly class ClearClusterRouterAction
             return $cluster;
         }
 
+        $this->dnsSelection()->expand(
+            clusterOverrides: [$clusterId => ['router_node_id' => null]],
+            clusterIds: [$clusterId],
+        );
+
         foreach ($assignments as $assignment) {
             $neverActivated = $assignment->neverActivated();
             $assignment->update(['status' => LifecycleStatus::Removing, 'failed_step' => null, 'error_code' => null]);
@@ -84,10 +91,19 @@ final readonly class ClearClusterRouterAction
                     'error_code' => $errorCode,
                 ]);
 
+                $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+
                 throw $exception;
             }
         }
 
+        $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+
         return $cluster->refresh();
+    }
+
+    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
+    {
+        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
     }
 }

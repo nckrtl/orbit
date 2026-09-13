@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -16,6 +18,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 
 beforeEach(function (): void {
     $this->operator = Node::query()->create([
@@ -173,6 +176,50 @@ describe('Cluster lifecycle', function (): void {
             ->toBe(2);
     });
 
+    it('reconciles Router DNS selection before Cluster activation becomes authoritative', function (): void {
+        $cluster = Cluster::query()->create([
+            'name' => 'dns-activation',
+            'state' => ClusterState::Inactive,
+        ]);
+        $dns = clusters_dns_reconciler();
+        $dns->onExpand = static function () use ($cluster): void {
+            expect($cluster->fresh()?->state)->toBe(ClusterState::Inactive);
+        };
+
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->assertOk();
+
+        expect($cluster->refresh()->state)
+            ->toBe(ClusterState::Active)
+            ->and(array_column($dns->events, 'phase'))
+            ->toBe(['expand', 'prune'])
+            ->and($dns->events[0]['clusterOverrides'][$cluster->id]['state'])
+            ->toBe(ClusterState::Active);
+    });
+
+    it('leaves Cluster state unchanged when DNS selection expansion fails', function (): void {
+        $cluster = Cluster::query()->create([
+            'name' => 'dns-activation-failure',
+            'state' => ClusterState::Inactive,
+        ]);
+        $dns = clusters_dns_reconciler();
+        $dns->expandFailure = new RuntimeConvergenceException(
+            step: 'private-dns',
+            errorCode: 'app-dev.dns_config_failed',
+            message: 'DNS selection failed.',
+        );
+
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->assertServerError();
+
+        expect($cluster->refresh()->state)
+            ->toBe(ClusterState::Inactive)
+            ->and(array_column($dns->events, 'phase'))
+            ->toBe(['expand']);
+    });
+
     it('activates a TLD-less Cluster without a Router', function (): void {
         $cluster = Cluster::query()->create([
             'name' => 'development',
@@ -199,6 +246,7 @@ describe('Cluster lifecycle', function (): void {
             'name' => 'without-tld',
             'state' => ClusterState::Active,
         ]);
+        $dns = clusters_dns_reconciler();
 
         $this
             ->patchJson("/api/v1/clusters/{$withTld->id}", ['state' => 'active'])
@@ -212,7 +260,9 @@ describe('Cluster lifecycle', function (): void {
         expect($withTld->refresh()->state)
             ->toBe(ClusterState::Inactive)
             ->and($withoutTld->refresh()->tld)
-            ->toBeNull();
+            ->toBeNull()
+            ->and(array_column($dns->events, 'phase'))
+            ->toBe(['expand', 'prune', 'expand', 'prune']);
     });
 
     it('validates combined updates against their proposed final state', function (): void {
@@ -340,6 +390,14 @@ describe('Cluster lifecycle', function (): void {
             ->toBeNull();
     });
 });
+
+function clusters_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
+{
+    $dns = app(ClusterRouterDnsSelectionReconciler::class);
+    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
+
+    return $dns;
+}
 
 final class ClusterUpdateRouterOperationLock implements ClusterRouterOperationLock
 {

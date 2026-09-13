@@ -87,7 +87,15 @@ For Node scope, Gateway DNS resolves the Route hostname to the workload Node. Th
 
 Cluster scope sends private traffic through the Router.
 
-For Cluster scope, Gateway DNS resolves the same hostname to the Router. Router Caddy preserves the hostname as the HTTP `Host` value and Transport Layer Security (TLS) server name when it forwards Orbit-CA HTTPS to the workload Node. Orbit issues separate private keys to the Router and workload Node. When both roles share one Node, the composed Caddy service sends the request to the local runtime without proxying to its own HTTPS listener.
+For Cluster scope, Gateway DNS resolves the Route hostname and the Cluster TLD to the Cluster Router. [ADR 0062](../decisions/0062-select-cluster-router-dns-addresses-from-lan-intent.md) owns which Router address a requester receives.
+
+An active LAN-configured WireGuard member of that active Cluster receives the Router's configured LAN address for the Cluster TLD and for each exact Cluster-scoped Route, including a Route hostname outside the Cluster TLD. Other permitted requesters receive the Router's WireGuard address.
+
+The Gateway identifies the requester from the registered WireGuard source that delivered the query. A shared LAN subnet or an identity in the DNS message does not change the selected address.
+
+[Private DNS](private-dns.md#cluster-router-addresses) owns how an operator inspects that selection, removes incorrect LAN intent, and recognizes an unreachable configured LAN path.
+
+Router Caddy preserves the hostname as the HTTP `Host` value and Transport Layer Security (TLS) server name when it forwards Orbit-CA HTTPS to the workload Node. Orbit issues separate private keys to the Router and workload Node. When both roles share one Node, the composed Caddy service sends the request to the local runtime without proxying to its own HTTPS listener.
 
 The Router uses the workload Node's configured LAN address. It uses WireGuard only when that LAN address is absent. A configured but unreachable LAN path fails publication and never falls back to WireGuard.
 

@@ -1,6 +1,6 @@
 # Private DNS
 
-This page tells an operator how a managed Linux Node selects a Domain Name System (DNS) resolver, how to inspect that selection, and what remains unchanged when the Gateway converges DNS. [ADR 0061](../decisions/0061-use-vpn-dns-by-default-on-managed-peers.md) owns the default resolver policy.
+This page tells an operator how a managed Linux Node selects a Domain Name System (DNS) resolver, how the Gateway selects a Cluster Router address, how to inspect those answers, and what remains unchanged when the Gateway converges DNS. [ADR 0061](../decisions/0061-use-vpn-dns-by-default-on-managed-peers.md) owns the default resolver policy.
 
 ## Resolver selection
 
@@ -83,3 +83,29 @@ A peer that uses Orbit VPN DNS as its default loses both private and ordinary DN
 Orbit VPN DNS forwards ordinary queries through independent uplink resolvers. It excludes loopback and the `orbit` interface so forwarding cannot return to its own listener. [VPN dnsmasq uplink resolvers](../solutions/vpn-dnsmasq-uplink-resolvers.md) owns upstream selection, fallback behavior, and verification.
 
 DNS answers select an application address; they do not select or rewrite the application traffic route. [Routes](routes.md) explains how a resolved private Route reaches its workload through a Node or Router.
+
+## Cluster Router addresses
+
+This section tells an operator how to see which Cluster Router address a requester receives and how to correct LAN intent. [ADR 0062](../decisions/0062-select-cluster-router-dns-addresses-from-lan-intent.md) owns the selection rule.
+
+The Gateway returns the Router's configured LAN address to an active, LAN-configured WireGuard member of the same active Cluster. It returns the Router's WireGuard address to every other permitted requester, including a member without a LAN address, a member of another Cluster, and a source it cannot identify as an active registered WireGuard Node.
+
+The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route hostname. Node-scoped Routes, `gateway.orbit`, and `metrics.orbit` keep their established addresses.
+
+| Observation | Meaning |
+| --- | --- |
+| `overrides` contains `node:<id>` for the Route hostname or Cluster TLD | That registered Node receives the Router LAN address. |
+| The name appears only under `records` or `suffixes` | The published default is the Router WireGuard address. |
+| The query source is absent from `requesters` | The Gateway treats the source as unidentified and returns the WireGuard default. |
+
+Inspect the published catalog on the Gateway, then query from the Node whose address you need to explain.
+
+| Command | Expected result |
+| --- | --- |
+| `sudo cat /var/lib/orbit/private-dns/catalog.json` | `requesters` maps each registered WireGuard address to a Node id. `records` and `suffixes` hold WireGuard defaults. `overrides` lists LAN answers by `node:<id>`. |
+| `dig +noall +answer @<vpn-dns-address> <route-hostname> A` | A direct query from that Node returns the address selected for its registered WireGuard source. |
+| `dig +tcp +noall +answer @<vpn-dns-address> <route-hostname> A` | The TCP query returns the same selected address. |
+
+Remove incorrect LAN intent through the Node's existing provision operation by omitting or replacing `lan_ip`, then retry that operation. The Gateway republishes affected selection before the new Node, Cluster, Router, or Route state becomes authoritative. A publication failure keeps the previous complete answer set or retains explicit recovery state, and a refused Cluster or Router transition remains refused.
+
+A configured Router LAN address that does not respond stays selected. The Gateway does not substitute the WireGuard address. Correct the LAN path, or remove the LAN intent, then retry the owning operation. An HTTPS client that uses that address fails the connection until the operator changes the configuration.
