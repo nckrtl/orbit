@@ -71,7 +71,9 @@ orbit metrics:credentials
 orbit metrics:credentials --reset
 ```
 
-The username is `admin`. The Gateway stores the active and pending passwords as encrypted node settings on the Metrics node. A reset reuses a pending password after a partial failure and returns a password only after Grafana has accepted it. Credential responses carry `Cache-Control: no-store`.
+The username is `admin`. The Gateway stores the active and pending passwords as encrypted node settings on the Metrics node. The Gateway gives each Metrics Node one credential owner. That owner serializes initial creation, verified reads, reset, and purge from their first credential read through their final state change. A contender waits within the command deadline and then either reads the state left by the owner or gets `metrics.credentials_busy` (HTTP 409) without changing credential state. The owner does not expire while its operation runs.
+
+A reset retains the encrypted pending password when an error occurs before apply, after apply, or during authentication. A retry first authenticates the pending password. It promotes that password without applying it again when Grafana already accepts it; otherwise it applies the pending password and promotes it only after authenticated verification. A credential response contains the password only after verification and carries `Cache-Control: no-store`.
 
 ## Status, disable, and purge
 
@@ -94,7 +96,7 @@ Interactive disable asks for confirmation. Non-interactive disable requires `--f
 
 After a disable without `--purge-data`, the Metrics node runs neither container. The Gateway removes `/etc/orbit/metrics`, both Grafana firewall rules, every exporter drop-in and exporter firewall rule on an eligible managed Node, and the `metrics.orbit` route, certificate, and DNS record. Exporter state that was converged before a Node became ineligible remains unchanged because the Gateway does not inspect or change it. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
 
-With `--purge-data`, the Gateway also deletes both volumes and the active and pending password settings, and nothing else. When a volume of either name lacks the Orbit ownership labels, the Gateway deletes neither volume nor password, leaves the assignment failed at step `remove:baseline`, and answers `node_role.remove_failed` (HTTP 502).
+With `--purge-data`, the Gateway also deletes both volumes and the active and pending password settings, and nothing else. Credential purge uses the same owner as creation, reads, and reset, so it cannot delete or restore a stale credential snapshot. A later authorized enable can initialize a new credential. When a volume of either name lacks the Orbit ownership labels, the Gateway deletes neither volume nor password, leaves the assignment failed at step `remove:baseline`, and answers `node_role.remove_failed` (HTTP 502).
 
 `DELETE /api/v1/metrics` and `orbit metrics:disable` report the Gateway-side outcome in `publication`:
 
