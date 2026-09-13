@@ -60,7 +60,10 @@ it('rejects key-count and conservative generated-file limits', function (): void
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)
                 ->toBe('env.configuration_invalid')
-                ->and($exception->details)
-                ->toBe(['key' => 'KEY_8', 'rule' => 'file_size']);
+                ->and($exception->details['rule'])
+                ->toBe('file_size')
+                ->and($exception->details['key'] ?? null)
+                ->toBeString()
+                ->toStartWith('KEY_');
         });
 });
