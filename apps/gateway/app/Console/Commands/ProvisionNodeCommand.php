@@ -19,7 +19,7 @@ final class ProvisionNodeCommand extends Command
         {--ssh-port=22 : Public SSH port}
         {--user= : Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node}
         {--orbit-user= : Managed Orbit user}
-        {--architecture= : Node machine architecture}
+        {--architecture= : Node machine architecture; defaults to the architecture observed on the machine and must match it when given}
         {--tld= : Unique development TLD for app-dev}
         {--role=* : Initial role assignment}
         {--cluster= : Cluster ID}

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -236,7 +237,7 @@ it('pins the host and converges only base node identity and connectivity', funct
         firewall: $firewall,
     );
 
-    $converger->converge($node, base_identity(), 'SHA256:pinned');
+    $observation = $converger->converge($node, base_identity(), 'SHA256:pinned');
 
     expect($node->refresh()->user)
         ->toBe('root')
@@ -253,17 +254,83 @@ it('pins the host and converges only base node identity and connectivity', funct
         ->toBe([RoleName::Vpn])
         ->and($wireGuard->converged)
         ->toBeTrue()
+        ->and($observation->architecture)
+        ->toBe('x86_64')
         ->and($ssh->calls)
-        ->toHaveCount(3)
+        ->toHaveCount(4)
         ->and($ssh->calls[0]['connection']->user)
         ->toBe('root')
+        ->and($ssh->calls[1]['connection']->user)
+        ->toBe('orbit')
         ->and($ssh->calls[1]['command']->arguments)
         ->toBe(['true'])
+        ->and($ssh->calls[2]['connection']->user)
+        ->toBe('orbit')
         ->and($ssh->calls[2]['connection']->host)
-        ->toBe('10.44.0.2')
+        ->toBe('192.0.2.10')
         ->and($ssh->calls[2]['command']->arguments)
+        ->toBe(['uname', '-m'])
+        ->and($ssh->calls[3]['connection']->host)
+        ->toBe('10.44.0.2')
+        ->and($ssh->calls[3]['command']->arguments)
         ->toBe(['true']);
 });
+
+it('reports a bounded failure when the machine architecture cannot be observed', function (CommandResult $result): void {
+    $node = base_provisionable_node();
+    $ssh = new class($result) implements SshExecutor
+    {
+        public int $calls = 0;
+
+        public function __construct(
+            private CommandResult $result,
+        ) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->calls++;
+
+            return $command->arguments === ['uname', '-m']
+                ? $this->result
+                : new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $wireGuard = new class implements WireGuardPeerConverger
+    {
+        public bool $converged = false;
+
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
+        {
+            $this->converged = true;
+        }
+    };
+    $converger = new NativeNodeConverger(
+        hostKeys: base_test_scanner(),
+        knownHosts: base_test_known_hosts(),
+        sshKeys: base_test_keys(),
+        ssh: $ssh,
+        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
+        wireGuard: $wireGuard,
+        firewall: base_firewall_spy(),
+    );
+
+    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
+        ->toThrow(function (NodeProvisioningException $exception) use ($result): void {
+            expect($exception->step)
+                ->toBe('machine-architecture')
+                ->and($exception->errorCode)
+                ->toBe('node.architecture_unavailable')
+                ->and($exception->getMessage())
+                ->toBe('Could not observe the machine architecture of node [base-node].')
+                ->and($exception->result)
+                ->toBe($result);
+        });
+    expect($ssh->calls)->toBe(3)->and($wireGuard->converged)->toBeFalse();
+})->with([
+    'command failure' => [new CommandResult(1, '', 'uname: not found', 1, false)],
+    'empty output' => [new CommandResult(0, "\n", '', 1, false)],
+    'unsafe output' => [new CommandResult(0, "x86_64; touch /tmp/orbit\n", '', 1, false)],
+]);
 
 it('reprovisions active role-bearing nodes only through WireGuard', function (): void {
     $node = base_provisionable_node();
@@ -334,6 +401,7 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
         '10.44.0.2:22',
         '10.44.0.2:22',
         '10.44.0.2:22',
+        '10.44.0.2:22',
     ]);
 });
 
@@ -376,16 +444,21 @@ it('commits recoverable peer publication before activating orbit SSH for active 
     );
 
     expect($converger)->toBeInstanceOf(RecoverableNodeConverger::class);
-    $converger->convergeRecoverably($node, base_identity(), 'SHA256:pinned', function () use (&$events): void {
-        $events[] = 'apt';
-    });
+    $converger->convergeRecoverably(
+        $node,
+        base_identity(),
+        'SHA256:pinned',
+        function (NodeObservation $observation) use (&$events): void {
+            $events[] = "apt:{$observation->architecture}";
+        },
+    );
 
     expect($events)->toBe([
         'wireguard-publish',
-        'apt',
+        'apt:x86_64',
         'wireguard-commit',
     ]);
-    expect($ssh->calls)->toHaveCount(3);
+    expect($ssh->calls)->toHaveCount(4);
 });
 
 it('rolls back recoverable peer publication when roleless private ssh verification fails', function (): void {
@@ -428,6 +501,7 @@ it('rolls back recoverable peer publication when roleless private ssh verificati
 
             return match ($this->calls) {
                 1, 2 => new CommandResult(0, '', '', 1, false),
+                3 => new CommandResult(0, "x86_64\n", '', 1, false),
                 default => new CommandResult(1, '', 'no route', 1, false),
             };
         }
@@ -466,14 +540,15 @@ it('retries a transient private WireGuard SSH connection with bounded backoff', 
             $this->calls++;
 
             return match ($this->calls) {
-                3 => new CommandResult(
+                3 => new CommandResult(0, "x86_64\n", '', 1, false),
+                4 => new CommandResult(
                     255,
                     '',
                     'ssh: connect to host 10.44.0.7 port 22: Connection timed out',
                     1,
                     false,
                 ),
-                4 => new CommandResult(0, '', '', 1, false),
+                5 => new CommandResult(0, '', '', 1, false),
                 default => new CommandResult(0, '', '', 1, false),
             };
         }
@@ -499,7 +574,7 @@ it('retries a transient private WireGuard SSH connection with bounded backoff', 
 
     $converger->converge($node, base_identity(), 'SHA256:pinned');
 
-    expect($ssh->calls)->toBe(4)->and($sleeps)->toBe([1_000_000]);
+    expect($ssh->calls)->toBe(5)->and($sleeps)->toBe([1_000_000]);
 });
 
 it('preserves the final transient private SSH failure after retries', function (): void {
@@ -514,13 +589,14 @@ it('preserves the final transient private SSH failure after retries', function (
 
             return match ($this->calls) {
                 1, 2 => new CommandResult(0, '', '', $this->calls, false),
-                3 => new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: timeout-1', 3, false),
-                4 => new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: timeout-2', 4, false),
+                3 => new CommandResult(0, "x86_64\n", '', 3, false),
+                4 => new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: timeout-1', 4, false),
+                5 => new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: timeout-2', 5, false),
                 default => new CommandResult(
                     255,
                     '',
                     'ssh: connect to host 10.44.0.7 port 22: timeout-final',
-                    5,
+                    6,
                     false,
                 ),
             };
@@ -552,14 +628,14 @@ it('preserves the final transient private SSH failure after retries', function (
             ->and($exception->errorCode)
             ->toBe('vpn.peer_ssh_failed')
             ->and($exception->result?->durationMs)
-            ->toBe(5);
+            ->toBe(6);
         expect($exception->result?->exitCode)
             ->toBe(255)
             ->and($exception->result?->stderr)
             ->toBe('ssh: connect to host 10.44.0.7 port 22: timeout-final')
             ->and($exception->getMessage())
             ->toBe('Could not reach node [base-node] through WireGuard.');
-        expect($ssh->calls)->toBe(5)->and($sleeps)->toBe([1_000_000, 2_000_000]);
+        expect($ssh->calls)->toBe(6)->and($sleeps)->toBe([1_000_000, 2_000_000]);
     });
 });
 
@@ -573,9 +649,11 @@ it('does not retry semantic private SSH exit 255 failures', function (): void {
         {
             $this->calls++;
 
-            return $this->calls < 3
-                ? new CommandResult(0, '', '', 1, false)
-                : new CommandResult(255, '', 'remote command failed', 3, false);
+            return match (true) {
+                $this->calls === 3 => new CommandResult(0, "x86_64\n", '', 1, false),
+                $this->calls < 3 => new CommandResult(0, '', '', 1, false),
+                default => new CommandResult(255, '', 'remote command failed', 3, false),
+            };
         }
     };
     $sleeps = [];
@@ -599,7 +677,7 @@ it('does not retry semantic private SSH exit 255 failures', function (): void {
     expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
         ->toThrow('Could not reach node')
         ->and($ssh->calls)
-        ->toBe(3)
+        ->toBe(4)
         ->and($sleeps)
         ->toBeEmpty();
 });
@@ -964,7 +1042,9 @@ final class BaseNodeSshExecutor implements SshExecutor
     {
         $this->calls[] = ['connection' => $connection, 'command' => $command];
 
-        return new CommandResult(0, '', '', 1, false);
+        return $command->arguments === ['uname', '-m']
+            ? new CommandResult(0, "x86_64\n", '', 1, false)
+            : new CommandResult(0, '', '', 1, false);
     }
 }
 
