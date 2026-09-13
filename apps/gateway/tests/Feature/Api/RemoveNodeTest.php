@@ -7,6 +7,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -38,6 +39,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Schedule;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\FakeRouterLanIngressReconciler;
 
 beforeEach(function (): void {
     $this->dns = new RemoveNodeFakeDnsManager;
@@ -175,6 +177,64 @@ it('allows an independent node name to proceed while another lifecycle guard is 
     });
 
     expect($held->refresh()->status)->toBe(LifecycleStatus::Active);
+});
+
+it('prunes Router LAN ingress after WireGuard removal and before the Node is deleted', function (): void {
+    $reconciler = new FakeRouterLanIngressReconciler;
+    app()->instance(RouterLanIngressReconciler::class, $reconciler);
+    $cluster = Cluster::query()->create(['name' => 'lan-remove']);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update([
+        'cluster_id' => $cluster->id,
+        'lan_ip' => '10.20.0.3',
+        'wireguard_public_key' => 'TARGET_PUBLIC_KEY',
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller);
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and(array_column($reconciler->events, 'phase'))
+        ->toBe(['prune'])
+        ->and($reconciler->events[0]['nodeOverrides'][$target->id]['status'])
+        ->toBe(LifecycleStatus::Removing)
+        ->and($this->peers->removed)
+        ->toBe([$target->id])
+        ->and($this->dns->convergences)
+        ->toBe(1);
+});
+
+it('restores the Node when Router LAN prune fails after WireGuard removal', function (): void {
+    $reconciler = new FakeRouterLanIngressReconciler;
+    $reconciler->pruneFailure = new FirewallOperationException(
+        step: 'host-firewall',
+        errorCode: 'node.firewall_convergence_failed',
+        message: 'LAN prune failed.',
+    );
+    app()->instance(RouterLanIngressReconciler::class, $reconciler);
+    $cluster = Cluster::query()->create(['name' => 'lan-remove-failure']);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update([
+        'cluster_id' => $cluster->id,
+        'lan_ip' => '10.20.0.3',
+        'wireguard_public_key' => 'TARGET_PUBLIC_KEY',
+    ]);
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'router.lan_ingress_failed');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBe([$target->id])
+        ->and($this->peers->restored)
+        ->toBe([$target->id])
+        ->and($target->fresh())
+        ->not->toBeNull();
 });
 
 it('retries Grafana stream revocation before removing membership', function (): void {
