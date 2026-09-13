@@ -228,7 +228,7 @@ function assert_gateway_publication_commands(
     expect(base64_decode(
         Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[10]->input ?? ''),
         strict: true,
-    ))->toContain('listen-address=127.0.0.54', 'bind-interfaces');
+    ))->toContain('listen-address=127.0.0.55', 'bind-interfaces');
 }
 
 /** @param list<list<string>> $arguments */
@@ -545,7 +545,7 @@ it('limits private DNS to the WireGuard and explicit private interfaces', functi
 
         expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
             ->toContain(
-                'listen-address=127.0.0.54',
+                'listen-address=127.0.0.55',
                 'bind-interfaces',
                 'local=/orbit/',
                 'host-record=gateway.orbit,10.44.0.1',
@@ -957,7 +957,7 @@ function gateway_orbit_vpn_dnsmasq_conf(array $servers = UplinkDnsResolvers::FAL
         $servers,
     ));
 
-    return "# Managed by Orbit.\nlisten-address=127.0.0.54\nbind-interfaces\ndomain-needed\nbogus-priv\nno-resolv\n{$upstream}\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n";
+    return "# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\ndomain-needed\nbogus-priv\nno-resolv\n{$upstream}\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n";
 }
 
 function gateway_write_host_file(string $orbitHome, string $relative, string $contents): void

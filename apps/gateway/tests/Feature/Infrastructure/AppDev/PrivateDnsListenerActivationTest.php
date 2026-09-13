@@ -37,7 +37,7 @@ it('activates the requester-aware listener from a published catalog without rewr
             ->toContain('host-record='.$route->hostname.',10.44.0.20')
             ->not->toContain('192.168.10.20')
             ->and($vpn)
-            ->toContain('listen-address=127.0.0.54', 'bind-interfaces')
+            ->toContain('listen-address=127.0.0.55', 'bind-interfaces')
             ->not->toContain('interface=orbit', 'bind-dynamic')
             ->and($unit)
             ->toContain('orbit:private-dns-serve')
@@ -53,7 +53,7 @@ it('activates the requester-aware listener from a published catalog without rewr
 it('picks up a catalog republish without restarting the listener once it is already active', function (): void {
     $harness = new PrivateDnsPublishHarness;
     orb307_published_cluster();
-    $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.54\nbind-interfaces\n");
+    $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\n");
 
     try {
         $manager = $harness->listenerManager();
@@ -123,7 +123,7 @@ it('answers UDP and TCP from a file-backed catalog after a republish without res
             ],
         ],
     ], JSON_THROW_ON_ERROR));
-    $server = new PrivateDnsListenerFactory()->make($catalog, '127.0.0.1', 0, '127.0.0.54:53535');
+    $server = new PrivateDnsListenerFactory()->make($catalog, '127.0.0.1', 0, '127.0.0.55:53535');
 
     try {
         $server->start();

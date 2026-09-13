@@ -104,7 +104,7 @@ Inspect the published catalog and the live listener on the Gateway, then query f
 | --- | --- |
 | `sudo cat /var/lib/orbit/private-dns/catalog.json` | `requesters` maps each registered WireGuard address to a Node id. `records` and `suffixes` hold WireGuard defaults. `overrides` lists LAN answers by `node:<id>`. |
 | `systemctl is-active orbit-private-dns.service` | The requester-aware listener is active on the Gateway WireGuard DNS address. |
-| `ss -ulpn sport = :53` and `ss -tlpn sport = :53` | `orbit-private-dns` owns the WireGuard address on UDP and TCP port 53. dnsmasq owns `127.0.0.54:53`. |
+| `ss -ulpn sport = :53` and `ss -tlpn sport = :53` | `orbit-private-dns` owns the WireGuard address on UDP and TCP port 53. dnsmasq owns `127.0.0.55:53`. |
 | `dig +noall +answer @<vpn-dns-address> <route-hostname> A` | A direct query from that Node returns the address selected for its registered WireGuard source. |
 | `dig +tcp +noall +answer @<vpn-dns-address> <route-hostname> A` | The TCP query returns the same selected address. |
 
