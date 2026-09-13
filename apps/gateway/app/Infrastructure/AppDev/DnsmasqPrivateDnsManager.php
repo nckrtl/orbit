@@ -12,13 +12,26 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
+use JsonException;
 
 final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
 {
+    /**
+     * @param  list<string>  $shell
+     */
     public function __construct(
         private ProcessRunner $processes,
         private AppDevDnsConfigRenderer $renderer,
         private ?DevelopmentProjectionOperationLock $projection = null,
+        private string $recordsDirectory = '/etc/dnsmasq.d',
+        private string $recordsFile = 'orbit-records.conf',
+        private string $dnsmasqConf = '/etc/dnsmasq.conf',
+        private string $catalogDirectory = '/var/lib/orbit/private-dns',
+        private string $catalogFile = 'catalog.json',
+        private string $lockPath = '/run/lock/orbit-dnsmasq.lock',
+        private array $shell = ['sudo', 'bash', '-seu'],
+        private bool $preserveRootOwnership = true,
+        private ?string $executablePath = null,
     ) {}
 
     public function converge(?Node $pendingNode = null): void
@@ -48,42 +61,88 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         ?Route $additionalRoute = null,
     ): void {
         $configuration = $this->renderer->render($pendingNode, $pendingRoute, $unavailableInstance, $additionalRoute);
+        $catalog = $this->publication($configuration);
         $encoded = base64_encode($configuration);
+        $catalogEncoded = base64_encode($catalog);
+        $recordsDirectory = $this->recordsDirectory;
+        $recordsFile = $this->recordsFile;
+        $dnsmasqConf = $this->dnsmasqConf;
+        $catalogDirectory = $this->catalogDirectory;
+        $catalogFile = $this->catalogFile;
+        $lockPath = $this->lockPath;
+        $ownership = $this->preserveRootOwnership ? '-o root -g root ' : '';
+        $pathExport = $this->executablePath === null
+            ? ''
+            : 'export PATH='.escapeshellarg($this->executablePath).':"$PATH"'."\n";
         $result = $this->processes->run(new ProcessInvocation(
-            arguments: ['sudo', 'bash', '-seu'],
+            arguments: $this->shell,
             timeout: 60.0,
             input: <<<BASH
-                managed=/etc/dnsmasq.d/orbit-records.conf
-                candidate=/etc/dnsmasq.d/.orbit-records.\$\$.candidate
+                {$pathExport}managed={$recordsDirectory}/{$recordsFile}
+                candidate={$recordsDirectory}/.orbit-records.\$\$.candidate
+                catalog_managed={$catalogDirectory}/{$catalogFile}
+                catalog_candidate={$catalogDirectory}/.orbit-catalog.\$\$.candidate
+                catalog_directory={$catalogDirectory}
+                install -d -m 0755 -- "\$catalog_directory" {$recordsDirectory}
                 validation=\$(mktemp -d)
-                backup=\$(mktemp /etc/dnsmasq.d/.orbit-records.backup.XXXXXX)
+                backup=\$(mktemp {$recordsDirectory}/.orbit-records.backup.XXXXXX)
+                catalog_backup=\$(mktemp {$catalogDirectory}/.orbit-catalog.backup.XXXXXX)
                 had_managed=0
-                trap 'rm -rf -- "\$validation"; rm -f -- "\$candidate" "\$backup"' EXIT
-                exec 9>/run/lock/orbit-dnsmasq.lock
+                had_catalog=0
+                trap 'rm -rf -- "\$validation"; rm -f -- "\$candidate" "\$backup" "\$catalog_candidate" "\$catalog_backup"' EXIT
+                exec 9>{$lockPath}
                 flock -w 30 9
                 if [ -f "\$managed" ]; then
                     cp --preserve=mode,ownership -- "\$managed" "\$backup"
                     had_managed=1
                 fi
+                if [ -f "\$catalog_managed" ]; then
+                    cp --preserve=mode,ownership -- "\$catalog_managed" "\$catalog_backup"
+                    had_catalog=1
+                fi
                 install -d -m 0755 -- "\$validation/fragments"
-                cp -a -- /etc/dnsmasq.d/. "\$validation/fragments/"
-                printf '%s' '{$encoded}' | base64 --decode > "\$validation/fragments/orbit-records.conf"
-                sed "s#/etc/dnsmasq.d#\$validation/fragments#g" /etc/dnsmasq.conf > "\$validation/dnsmasq.conf"
+                cp -a -- {$recordsDirectory}/. "\$validation/fragments/"
+                printf '%s' '{$encoded}' | base64 --decode > "\$validation/fragments/{$recordsFile}"
+                printf '%s' '{$catalogEncoded}' | base64 --decode > "\$validation/catalog.json"
+                python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "\$validation/catalog.json"
+                sed "s#{$recordsDirectory}#\$validation/fragments#g" {$dnsmasqConf} > "\$validation/dnsmasq.conf"
                 dnsmasq --test --conf-file="\$validation/dnsmasq.conf"
-                if [ -f "\$managed" ] && cmp -s -- "\$validation/fragments/orbit-records.conf" "\$managed"; then
+                records_changed=1
+                catalog_changed=1
+                if [ -f "\$managed" ] && cmp -s -- "\$validation/fragments/{$recordsFile}" "\$managed"; then
+                    records_changed=0
+                fi
+                if [ -f "\$catalog_managed" ] && cmp -s -- "\$validation/catalog.json" "\$catalog_managed"; then
+                    catalog_changed=0
+                fi
+                if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ]; then
                     if systemctl is-active --quiet dnsmasq; then
                         exit 0
                     fi
                     systemctl restart dnsmasq
                     exit 0
                 fi
-                install -o root -g root -m 0644 -- "\$validation/fragments/orbit-records.conf" "\$candidate"
-                mv -fT -- "\$candidate" "\$managed"
+                if [ "\$records_changed" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$validation/fragments/{$recordsFile}" "\$candidate"
+                    mv -fT -- "\$candidate" "\$managed"
+                fi
+                if [ "\$catalog_changed" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$validation/catalog.json" "\$catalog_candidate"
+                    mv -fT -- "\$catalog_candidate" "\$catalog_managed"
+                fi
+                if [ "\$records_changed" = 0 ] && systemctl is-active --quiet dnsmasq; then
+                    exit 0
+                fi
                 if ! systemctl restart dnsmasq; then
                     if [ "\$had_managed" = 1 ]; then
-                        install -o root -g root -m 0644 -- "\$backup" "\$managed"
+                        install {$ownership}-m 0644 -- "\$backup" "\$managed"
                     else
                         rm -f -- "\$managed"
+                    fi
+                    if [ "\$had_catalog" = 1 ]; then
+                        install {$ownership}-m 0644 -- "\$catalog_backup" "\$catalog_managed"
+                    else
+                        rm -f -- "\$catalog_managed"
                     fi
                     systemctl restart dnsmasq || true
                     exit 1
@@ -97,6 +156,23 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 errorCode: 'app-dev.dns_config_failed',
                 message: 'Could not converge Orbit private DNS records.',
                 result: $result,
+            );
+        }
+    }
+
+    private function publication(string $configuration): string
+    {
+        try {
+            return json_encode([
+                'requesters' => $this->renderer->registeredRequesters(),
+                ...PrivateDnsAnswerCatalog::fromDnsmasqConfiguration($configuration)->toPublished(),
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+        } catch (JsonException $exception) {
+            throw new RuntimeConvergenceException(
+                step: 'private-dns',
+                errorCode: 'app-dev.dns_config_failed',
+                message: 'Could not encode Orbit private DNS requester catalog.',
+                previous: $exception,
             );
         }
     }
