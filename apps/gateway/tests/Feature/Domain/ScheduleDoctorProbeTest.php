@@ -69,6 +69,23 @@ it('accepts a requested disabled and stopped AppInstance timer as healthy', func
         ->and($report->issues)->toBeEmpty();
 });
 
+it('reports the existing artifact permissions issue when the runtime cannot reach the script', function (): void {
+    $this->inspector->inspection = new ScheduleInspectionData(true, false, true, true, true, true, true);
+
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+
+    expect($report->status)
+        ->toBe(DoctorFamilyStatus::Drift)
+        ->and($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('schedule.artifact_permissions_mismatch')
+        ->and($report->issues[0]->expected)
+        ->toBe('matching')
+        ->and($report->issues[0]->observed)
+        ->toBe('mismatch');
+});
+
 it('reports only stable bounded codes and redacted values', function (): void {
     $this->inspector->inspection = new ScheduleInspectionData(true, false, false, false, false, false, false);
     $this->inspector->orphans = ['123e4567-e89b-42d3-a456-426614174099'];

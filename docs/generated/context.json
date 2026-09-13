@@ -1794,7 +1794,8 @@
                 "Gateway",
                 "Node",
                 "Route",
-                "Router"
+                "Router",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0021",

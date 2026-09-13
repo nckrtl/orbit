@@ -39,7 +39,7 @@ final readonly class NativeScheduleStateInspector implements ScheduleStateInspec
             $result = $this->ssh->execute(
                 $this->connection($target->node),
                 new RemoteCommand(
-                    ['sudo', 'bash', '-s', '--', $schedule->id, $target->group, $schedule->desired_timer_state->value],
+                    ['sudo', 'bash', '-s', '--', $schedule->id, $target->group, $target->user, $schedule->desired_timer_state->value],
                     protectedInput: ProtectedInput::fromString($this->program($fingerprints, $details)),
                     maxOutputBytes: 128,
                     timeout: 15.0,
@@ -110,7 +110,7 @@ final readonly class NativeScheduleStateInspector implements ScheduleStateInspec
     {
         return <<<BASH
             set -euo pipefail
-            id="\$1"; runtime_group="\$2"; desired="\$3"
+            id="\$1"; runtime_group="\$2"; runtime_user="\$3"; desired="\$4"
             script="/etc/orbit/schedules/\${id}.sh"
             service="/etc/systemd/system/orbit-schedule-\${id}.service"
             timer="/etc/systemd/system/orbit-schedule-\${id}.timer"
@@ -120,6 +120,7 @@ final readonly class NativeScheduleStateInspector implements ScheduleStateInspec
               [ "\$(stat -c '%U:%G:%a' -- "\$script")" = "root:\${runtime_group}:750" ] || permissions=0
               [ "\$(stat -c '%U:%G:%a' -- "\$service")" = root:root:644 ] || permissions=0
               [ "\$(stat -c '%U:%G:%a' -- "\$timer")" = root:root:644 ] || permissions=0
+              sudo -u "\$runtime_user" -- test -r "\$script" && sudo -u "\$runtime_user" -- test -x "\$script" || permissions=0
               [ "\$(sha256sum "\$script" | cut -d ' ' -f 1)" = '{$fingerprints['script']}' ] || specification=0
               [ "\$(sha256sum "\$service" | cut -d ' ' -f 1)" = '{$fingerprints['service']}' ] || specification=0
               [ "\$(sha256sum "\$timer" | cut -d ' ' -f 1)" = '{$fingerprints['timer']}' ] || specification=0
