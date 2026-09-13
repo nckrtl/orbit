@@ -34,7 +34,7 @@ Use another name for a named source, or use `--branch` when either identity must
 orbit instance:new <app-id> <node-id> feature-one [--branch=release] [--hostname=feature.example.test]
 ```
 
-The Gateway derives placement from the requested identity and selects the branch independently.
+The Gateway derives placement from the requested identity and the Node apps root, and it selects the branch independently. [Node settings](../reference/node-settings.md) owns the `apps.path` contract that supplies that root.
 
 | Creation input | Managed placement | Selected branch |
 | --- | --- | --- |
