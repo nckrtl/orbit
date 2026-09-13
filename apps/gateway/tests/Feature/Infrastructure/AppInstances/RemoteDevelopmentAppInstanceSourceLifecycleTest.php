@@ -734,12 +734,67 @@ it('finalizes one recorded checkout with durable matching evidence', function ()
         ->toBe($receipt)
         ->and(file_exists($instance->checkout_path))
         ->toBeFalse()
+        ->and(is_dir(dirname($instance->checkout_path)))
+        ->toBeFalse()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue()
         ->and($this->removal->revalidate($member))
         ->toBe(AppInstanceSourceRevalidationState::Completed)
         ->and($this->removal->finalize($member))
         ->toBe($receipt);
     expect(file_get_contents(orb180_receipt_path($member)))
         ->toBe("{$receipt}\n");
+});
+
+it('removes an empty App slug parent after forced finalization of the last checkout', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'last');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $grouping = dirname($instance->checkout_path);
+
+    expect($this->removal->finalize($member))
+        ->toBeString()
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse()
+        ->and(is_dir($grouping))
+        ->toBeFalse()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue();
+});
+
+it('retains an App slug parent that still holds another Orbit checkout', function (): void {
+    $first = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'one');
+    $second = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'two');
+    $member = orb180_record_source($this->removal, $first, true);
+    $grouping = dirname($first->checkout_path);
+
+    expect($this->removal->finalize($member))
+        ->toBeString()
+        ->and(file_exists($first->checkout_path))
+        ->toBeFalse()
+        ->and(is_dir($second->checkout_path))
+        ->toBeTrue()
+        ->and(is_dir($grouping))
+        ->toBeTrue()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue();
+});
+
+it('retains an App slug parent that still holds unrelated entries', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'only');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $grouping = dirname($instance->checkout_path);
+    file_put_contents($grouping.'/notes.txt', "keep\n");
+
+    expect($this->removal->finalize($member))
+        ->toBeString()
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse()
+        ->and(is_dir($grouping))
+        ->toBeTrue()
+        ->and(is_file($grouping.'/notes.txt'))
+        ->toBeTrue()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue();
 });
 
 it('removes a detached checkout with forced nullable branch evidence', function (): void {
@@ -752,7 +807,11 @@ it('removes a detached checkout with forced nullable branch evidence', function 
     expect($inventory->branch)
         ->toBeNull()
         ->and(file_exists($instance->checkout_path))
-        ->toBeFalse();
+        ->toBeFalse()
+        ->and(is_dir(dirname($instance->checkout_path)))
+        ->toBeFalse()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue();
 });
 
 it('finalizes a detached checkout from durable nullable branch evidence', function (): void {
@@ -907,6 +966,8 @@ it('finalizes one recorded worktree while preserving shared Git state', function
         ->toBeTrue()
         ->and(is_dir($siblingPath))
         ->toBeTrue()
+        ->and(is_dir(dirname($worktreePath)))
+        ->toBeTrue()
         ->and($worktrees)
         ->toContain("worktree {$checkout->checkout_path}")
         ->toContain("worktree {$siblingPath}")
@@ -995,6 +1056,10 @@ it('finalizes a recorded fixed set against each expected real Git inventory', fu
 
     expect(file_exists($checkout->checkout_path))
         ->toBeFalse()
+        ->and(is_dir(dirname($checkout->checkout_path)))
+        ->toBeFalse()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue()
         ->and($this->removal->revalidate($members[0], $expectation))
         ->toBe(AppInstanceSourceRevalidationState::Completed)
         ->and(orb76_run([
@@ -1211,7 +1276,11 @@ it('cleans an acknowledged checkout after its Git directory was partially delete
         ->and($this->removal->finalize($member))
         ->toBe($receipt)
         ->and(file_exists($quarantine))
-        ->toBeFalse();
+        ->toBeFalse()
+        ->and(is_dir(dirname($instance->checkout_path)))
+        ->toBeFalse()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue();
 });
 
 it('cleans an acknowledged worktree after one Git structure was partially deleted', function (string $fault): void {
