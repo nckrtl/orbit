@@ -10,6 +10,7 @@ use App\Domain\Tools\ToolOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\FirewallRule;
+use App\Models\HerdrSession;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
@@ -156,6 +157,10 @@ final readonly class CommandActivityTargetResolver
             return $registration;
         }
 
+        if (str_starts_with((string) $request->route()?->getName(), 'herdr:')) {
+            return $this->herdrSessionNode($request);
+        }
+
         if (str_starts_with((string) $request->route()?->getName(), 'process:')) {
             return $this->processOwner($request);
         }
@@ -254,6 +259,19 @@ final readonly class CommandActivityTargetResolver
             ->where('owner_id', $request->integer('target_id'))
             ->where('name', $name)
             ->first();
+    }
+
+    private function herdrSessionNode(Request $request): ?Node
+    {
+        $session = $request->route('session');
+
+        if ($session instanceof HerdrSession) {
+            return Node::query()->find($session->node_id);
+        }
+
+        $nodeId = $request->integer('node_id');
+
+        return $nodeId > 0 ? Node::query()->find($nodeId) : null;
     }
 
     private function processOwner(Request $request): Node|AppInstance|null

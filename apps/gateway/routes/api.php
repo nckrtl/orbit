@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
+use App\Http\Controllers\Api\HerdrSessionsController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeRolesController;
@@ -273,6 +274,22 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:restart');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:remove');
+        Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
+            ->name('herdr:session:list');
+        Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])
+            ->name('herdr:session:add');
+        Route::get('herdr/sessions/{session}', [HerdrSessionsController::class, 'show'])
+            ->whereNumber('session')
+            ->name('herdr:session:show');
+        Route::post('herdr/sessions/{session}/restart', [HerdrSessionsController::class, 'restart'])
+            ->whereNumber('session')
+            ->name('herdr:session:restart');
+        Route::delete('herdr/sessions/{session}', [HerdrSessionsController::class, 'destroy'])
+            ->whereNumber('session')
+            ->name('herdr:session:remove');
+        Route::post('herdr/sessions/{session}/observation-grants', [HerdrSessionsController::class, 'storeGrant'])
+            ->whereNumber('session')
+            ->name('herdr:observe');
         Route::get('tool-managers', [ToolManagersController::class, 'index'])
             ->name('tool:manager:list');
         Route::get('tools', [ToolsController::class, 'index'])->name('tool:list');

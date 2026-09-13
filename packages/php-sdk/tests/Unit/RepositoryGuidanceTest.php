@@ -18,6 +18,12 @@ use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Herdr\AddHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
+use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
+use Orbit\Sdk\Requests\Herdr\RemoveHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
 use Orbit\Sdk\Requests\Schedules\ActivateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\AddScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
@@ -151,7 +157,15 @@ describe('repository guidance bootstrap', function (): void {
             RemoveScheduleRequest::class,
             ActivateScheduleRequest::class,
         ];
-        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests);
+        $herdrRequests = [
+            ListHerdrSessionsRequest::class,
+            AddHerdrSessionRequest::class,
+            ShowHerdrSessionRequest::class,
+            RestartHerdrSessionRequest::class,
+            RemoveHerdrSessionRequest::class,
+            IssueObservationGrantRequest::class,
+        ];
+        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -266,14 +280,21 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($scheduleRequests))
             ->toEqualCanonicalizing($scheduleRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\Herdr\\'),
+        )))
+            ->toHaveCount(count($herdrRequests))
+            ->toEqualCanonicalizing($herdrRequests);
     });
 
-    it('documents the 97-operation SDK surface including candidate cloning and Schedule transport', function (): void {
+    it('documents the 103-operation SDK surface including Herdr session transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 97 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 103 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -282,6 +303,7 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
+            ->toContain('- Herdr: session list, add, show, restart, remove, and observation-grant.')
             ->toContain(
                 '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
             )
@@ -318,6 +340,9 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 'Keep Schedule transport limited to typed Node and AppInstance targets and the eight shipped operations.',
+            )
+            ->toContain(
+                'Keep Herdr transport limited to a numeric Node ID, a numeric session ID for item operations, explicit session name and Unix user on add, optional observer publication and restart handoff flags, optional removal termination acceptance, and pane, terminal, columns, and rows for observation grants.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -327,10 +352,12 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 97 public Gateway operations.',
+                'The SDK exposes exactly 103 public Gateway operations.',
                 'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
-                'Doctor accepts the current Gateway family set, including Schedule.',
+                'Doctor accepts the current Gateway family set, including Schedule and Herdr.',
+                'The SDK exposes typed list, add, show, restart, remove, and observation-grant requests for managed Herdr sessions.',
+                'Observation grant URLs stay out of generic diagnostics.',
                 "Create and replace requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
                 'The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations.',

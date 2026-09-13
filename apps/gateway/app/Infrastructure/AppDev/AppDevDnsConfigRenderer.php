@@ -9,6 +9,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\AppInstance;
+use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
@@ -82,6 +83,20 @@ final readonly class AppDevDnsConfigRenderer
                 LifecycleStatus::Active->value,
             ))
             ->first();
+        HerdrSession::query()
+            ->with('node')
+            ->where('observer_status', 'published')
+            ->whereNotNull('observer_hostname')
+            ->orderBy('id')
+            ->get()
+            ->each(static function (HerdrSession $session) use ($records): void {
+                if (! $session->node instanceof Node || ! is_string($session->node->wireguard_ip) || $session->node->wireguard_ip === '') {
+                    return;
+                }
+
+                $records->push("host-record={$session->observer_hostname},{$session->node->wireguard_ip}");
+            });
+
         if ($gateway instanceof Node) {
             $records->push("host-record=gateway.orbit,{$gateway->wireguard_ip}");
 

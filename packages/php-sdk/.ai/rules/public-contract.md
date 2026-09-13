@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 97 concrete public Gateway API operations:
+The SDK models exactly 103 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -16,6 +16,7 @@ The SDK models exactly 97 concrete public Gateway API operations:
 - Firewall: list, allow, deny, and remove.
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
+- Herdr: session list, add, show, restart, remove, and observation-grant.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
 The four abstract request bases are implementation details, not extra Gateway
@@ -68,8 +69,15 @@ operations. Keep the public API typed and small.
   seven operations, and completion's validated response-header request ID with
   no response body. The Gateway owns target resolution, validation, execution,
   and lifecycle policy.
+- Keep Herdr transport limited to a numeric Node ID, a numeric session ID for
+  item operations, explicit session name and Unix user on add, optional
+  observer publication and restart handoff flags, optional removal termination
+  acceptance, and pane, terminal, columns, and rows for observation grants.
+  Preserve omitted optional flags as explicit `false`. Observation grant URLs
+  stay out of generic diagnostics. The Gateway owns session lifecycle,
+  publication, trust, and grant policy.
 - Accept only the current Doctor family tokens: node, role, app, instance,
-  workspace, schedule, tool, process, and firewall. Keep Doctor verify-only and
+  workspace, schedule, tool, process, firewall, and herdr. Keep Doctor verify-only and
   policy-free.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy

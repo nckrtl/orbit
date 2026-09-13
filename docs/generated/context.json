@@ -37,9 +37,11 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
+                "Herdr session",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Route",
                 "Router",
@@ -77,6 +79,7 @@
                 "Documentation context",
                 "Effective web root",
                 "Gateway",
+                "Herdr session",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
@@ -1576,6 +1579,7 @@
                 "Development-server endpoint",
                 "Doctor",
                 "Gateway",
+                "Herdr session",
                 "Node",
                 "Process",
                 "Route",
@@ -1709,6 +1713,26 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/herdr-sessions.md",
+            "title": "Herdr sessions",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Tool",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0069"
+            ]
+        },
+        {
             "path": "docs/reference/implementation-loop.md",
             "title": "Implementation loop",
             "kind": "reference",
@@ -1798,6 +1822,7 @@
             "concepts": [
                 "App",
                 "Gateway",
+                "Herdr session",
                 "Node",
                 "Process",
                 "Tool",
@@ -1961,6 +1986,7 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
+                "Herdr session",
                 "Node",
                 "Process",
                 "Tool",

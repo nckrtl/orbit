@@ -16,6 +16,7 @@ use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationException;
+use App\Http\Controllers\Api\JwksController;
 use App\Http\Middleware\EnsureRequestId;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -27,6 +28,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -43,6 +45,12 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         api: __DIR__.'/../routes/api.php',
         health: '/up',
+        then: function (): void {
+            Route::get('.well-known/jwks.json', [
+                JwksController::class,
+                'show',
+            ])->name('jwks:show');
+        },
     )
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

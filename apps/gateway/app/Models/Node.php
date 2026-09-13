@@ -37,6 +37,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property-read Collection<int, Node> $accessingNodes
  * @property-read Cluster|null $cluster
  * @property-read Collection<int, Process> $processes
+ * @property-read Collection<int, HerdrSession> $herdrSessions
  * @property-read Collection<int, Schedule> $schedules
  * @property-read Collection<int, Schedule> $hostedSchedules
  */
@@ -113,6 +114,12 @@ final class Node extends Model
     public function processes(): MorphMany
     {
         return $this->morphMany(Process::class, 'owner');
+    }
+
+    /** @return HasMany<HerdrSession, $this> */
+    public function herdrSessions(): HasMany
+    {
+        return $this->hasMany(HerdrSession::class);
     }
 
     /** @return HasMany<Route, $this> */
