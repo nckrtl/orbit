@@ -9,6 +9,8 @@ use RuntimeException;
 
 final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
 {
+    private const int MaxUdpDatagramBytes = 65535;
+
     public function __construct(
         private string $host,
         private int $port,
@@ -38,11 +40,17 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
         }
 
         try {
-            stream_set_timeout($socket, (int) $this->timeoutSeconds, (int) (($this->timeoutSeconds - (int) $this->timeoutSeconds) * 1_000_000));
-            fwrite($socket, $message);
-            $response = stream_get_contents($socket);
+            stream_set_blocking($socket, false);
+            $this->writeAll($socket, $message);
+            if (! $this->await($socket, write: false)) {
+                return null;
+            }
+
+            $response = fread($socket, self::MaxUdpDatagramBytes);
 
             return is_string($response) && $response !== '' ? $response : null;
+        } catch (RuntimeException) {
+            return null;
         } finally {
             fclose($socket);
         }
@@ -61,8 +69,8 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
         }
 
         try {
-            stream_set_timeout($socket, (int) $this->timeoutSeconds, (int) (($this->timeoutSeconds - (int) $this->timeoutSeconds) * 1_000_000));
-            fwrite($socket, pack('n', strlen($message)).$message);
+            stream_set_blocking($socket, false);
+            $this->writeAll($socket, pack('n', strlen($message)).$message);
             $lengthBytes = $this->readExact($socket, 2);
             $length = unpack('nlen', $lengthBytes);
             if ($length === false) {
@@ -81,8 +89,14 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
     private function readExact($socket, int $bytes): string
     {
         $buffer = '';
+        $deadline = microtime(true) + $this->timeoutSeconds;
 
         while (strlen($buffer) < $bytes) {
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0 || ! $this->await($socket, write: false, timeoutSeconds: $remaining)) {
+                throw new RuntimeException('The private DNS upstream TCP response timed out.');
+            }
+
             $chunk = fread($socket, $bytes - strlen($buffer));
             if (! is_string($chunk) || $chunk === '') {
                 throw new RuntimeException('The private DNS upstream TCP response was truncated.');
@@ -92,6 +106,59 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
         }
 
         return $buffer;
+    }
+
+    /**
+     * @param  resource  $socket
+     */
+    private function writeAll($socket, string $payload): void
+    {
+        $written = 0;
+        $deadline = microtime(true) + $this->timeoutSeconds;
+
+        while ($written < strlen($payload)) {
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0 || ! $this->await($socket, write: true, timeoutSeconds: $remaining)) {
+                throw new RuntimeException('The private DNS upstream write timed out.');
+            }
+
+            $chunk = fwrite($socket, substr($payload, $written));
+            if (! is_int($chunk) || $chunk < 1) {
+                throw new RuntimeException('The private DNS upstream write failed.');
+            }
+
+            $written += $chunk;
+        }
+    }
+
+    /**
+     * @param  resource  $socket
+     */
+    private function await($socket, bool $write, ?float $timeoutSeconds = null): bool
+    {
+        $timeout = $timeoutSeconds ?? $this->timeoutSeconds;
+        $read = $write ? [] : [$socket];
+        $writeables = $write ? [$socket] : [];
+        $except = [];
+        [$seconds, $microseconds] = $this->timeoutParts($timeout);
+        $ready = @stream_select($read, $writeables, $except, $seconds, $microseconds);
+
+        return $ready === 1;
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function timeoutParts(float $seconds): array
+    {
+        $clamped = max(0.0, $seconds);
+        $whole = (int) $clamped;
+        $microseconds = (int) round(($clamped - $whole) * 1_000_000);
+        if ($microseconds === 1_000_000) {
+            return [$whole + 1, 0];
+        }
+
+        return [$whole, $microseconds];
     }
 
     private function truncated(string $message): bool
