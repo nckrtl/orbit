@@ -165,7 +165,11 @@ final readonly class CommandActivityTargetResolver
         }
 
         if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny'], strict: true)) {
-            return $this->createdFirewallRule($request);
+            $rule = $this->createdFirewallRule($request);
+
+            if ($rule instanceof FirewallRule) {
+                return $rule;
+            }
         }
 
         foreach ([
@@ -199,7 +203,6 @@ final readonly class CommandActivityTargetResolver
                 ->where('instance_id', $request->integer('instance_id'))
                 ->where('name', $request->input('name'))
                 ->first(),
-            'firewall:allow', 'firewall:deny' => $this->createdFirewallRule($request),
             default => null,
         };
     }
