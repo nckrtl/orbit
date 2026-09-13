@@ -37,7 +37,7 @@ final class ServePrivateDnsCommand extends Command
 
         try {
             $server->start();
-            while (true) {
+            while ($server->listening()) {
                 $server->serveOnce(1.0);
             }
         } catch (Throwable $exception) {
@@ -47,5 +47,9 @@ final class ServePrivateDnsCommand extends Command
         } finally {
             $server->stop();
         }
+
+        $this->error('The private DNS listener stopped unexpectedly.');
+
+        return self::FAILURE;
     }
 }

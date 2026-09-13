@@ -34,6 +34,7 @@ it('answers UDP and TCP questions from the actual transport source', function ()
 
     try {
         $server->start();
+        expect($server->listening())->toBeTrue();
         $udpRegistered = orb258_query($server, '127.0.0.2', 'udp');
         $udpUnknown = orb258_query($server, '127.0.0.1', 'udp');
         $tcpRegistered = orb258_query($server, '127.0.0.2', 'tcp');
@@ -50,6 +51,8 @@ it('answers UDP and TCP questions from the actual transport source', function ()
     } finally {
         $server->stop();
     }
+
+    expect($server->listening())->toBeFalse();
 });
 
 it('does not let one UDP requester pollute another requesters TCP cache', function (): void {

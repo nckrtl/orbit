@@ -64,6 +64,11 @@ final class PrivateDnsTransportServer
         return $this->port;
     }
 
+    public function listening(): bool
+    {
+        return is_resource($this->udp) && is_resource($this->tcp);
+    }
+
     public function serveOnce(float $timeoutSeconds = 0.2): void
     {
         if (! is_resource($this->udp) || ! is_resource($this->tcp)) {

@@ -50,7 +50,7 @@ final readonly class VpnDnsmasqBackendListen
             }
         }
 
-        while ($kept !== [] && $kept[array_key_last($kept)] === '') {
+        while ($kept !== [] && array_last($kept) === '') {
             array_pop($kept);
         }
 
