@@ -193,7 +193,7 @@ final readonly class ClusterRouterDnsSelection
             ->with('node')
             ->first();
 
-        if (! $assignment instanceof NodeRole || ! $assignment->node instanceof Node) {
+        if (! $assignment instanceof NodeRole) {
             return null;
         }
 
@@ -295,7 +295,7 @@ final readonly class ClusterRouterDnsSelection
         if (
             $additionalRoute instanceof Route
             && $additionalRoute->cluster_id === $clusterId
-            && is_string($additionalRoute->hostname)
+            && $additionalRoute->hostname !== ''
         ) {
             $names[] = $this->normalizeName($additionalRoute->hostname);
         }
