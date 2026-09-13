@@ -7,7 +7,10 @@ namespace App\Commands\Nodes;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeAccessRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 
 final class RemoveNodeAccessCommand extends GatewayCommand
@@ -38,13 +41,21 @@ final class RemoveNodeAccessCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        if (! $this->confirmed($consumerId, $servingId)) {
-            return self::FAILURE;
-        }
-
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        if (! $this->existingNode($connector, $consumerId) instanceof NodeResponse) {
+            return self::FAILURE;
+        }
+
+        if (! $this->existingNode($connector, $servingId) instanceof NodeResponse) {
+            return self::FAILURE;
+        }
+
+        if (! $this->confirmed($consumerId, $servingId)) {
             return self::FAILURE;
         }
 
@@ -77,6 +88,13 @@ final class RemoveNodeAccessCommand extends GatewayCommand
         $this->line("Request ID: {$access->requestId}");
 
         return self::SUCCESS;
+    }
+
+    private function existingNode(GatewayConnector $connector, int $nodeId): ?NodeResponse
+    {
+        $node = $this->send($connector, new ShowNodeRequest($nodeId), NodeResponse::class);
+
+        return $node instanceof NodeResponse ? $node : null;
     }
 
     private function confirmed(int $consumerId, int $servingId): bool

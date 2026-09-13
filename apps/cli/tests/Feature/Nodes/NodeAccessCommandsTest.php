@@ -9,11 +9,13 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeAccessRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeAccessRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 beforeEach(function (): void {
@@ -216,23 +218,21 @@ it('rejects an invalid serving node id for removal before connector io', functio
 ]);
 
 it('does not send a removal request when interactive confirmation is declined', function (): void {
-    $mockClient = MockClient::global();
+    $mockClient = node_access_existing_show_mock();
 
     $this
         ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3'])
         ->expectsConfirmation('Remove access from node #2 to node #3?', 'no')
         ->assertExitCode(1);
 
-    expect($mockClient->getLastPendingRequest())->toBeNull();
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowNodeRequest::class)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(2);
 });
 
 it('sends exactly one removal request when interactive confirmation is accepted', function (): void {
-    $mockClient = MockClient::global([
-        RemoveNodeAccessRequest::class => MockResponse::make([
-            'data' => removed_node_access_payload(),
-            'meta' => ['request_id' => node_access_command_request_id()],
-        ]),
-    ]);
+    $mockClient = node_access_confirmed_remove_mock();
 
     $this
         ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3'])
@@ -242,22 +242,91 @@ it('sends exactly one removal request when interactive confirmation is accepted'
     expect($mockClient->getLastRequest())
         ->toBeInstanceOf(RemoveNodeAccessRequest::class)
         ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(3);
+});
+
+it('fails as not-found for a missing access node without force', function (string $consumerId, string $servingId, string $missingId): void {
+    $mockClient = node_access_missing_show_mock((int) $missingId);
+    $expected = json_encode(node_access_missing_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $this
+        ->artisan('node:access:remove', ['consumer' => $consumerId, 'serving' => $servingId, '--json' => true])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowNodeRequest::class)
+        ->and($mockClient->getLastPendingRequest()?->getUrl())
+        ->toBe("https://10.44.0.1/api/v1/nodes/{$missingId}")
+        ->and($mockClient->getLastPendingRequest()?->getMethod())
+        ->toBe(Method::GET)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount($missingId === $consumerId ? 1 : 2);
+})->with([
+    'missing consumer' => ['999999', '13', '999999'],
+    'missing serving' => ['13', '999999', '999999'],
+]);
+
+it('fails as not-found for a missing access node with force', function (string $consumerId, string $servingId, string $missingId): void {
+    $mockClient = node_access_missing_show_mock((int) $missingId);
+    $expected = json_encode(node_access_missing_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $this
+        ->artisan('node:access:remove', [
+            'consumer' => $consumerId,
+            'serving' => $servingId,
+            '--force' => true,
+            '--json' => true,
+        ])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowNodeRequest::class)
+        ->and($mockClient->getLastPendingRequest()?->getMethod())
+        ->toBe(Method::GET)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount($missingId === $consumerId ? 1 : 2);
+})->with([
+    'missing consumer' => ['999999', '13', '999999'],
+    'missing serving' => ['13', '999999', '999999'],
+]);
+
+it('fails as typed not-found when the gateway names the missing access node', function (): void {
+    $mockClient = MockClient::global([
+        ShowNodeRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'node.not_found',
+                    'message' => 'Node was not found.',
+                    'details' => [],
+                ],
+            ],
+            404,
+            ['X-Orbit-Request-Id' => node_access_command_request_id()],
+        ),
+    ]);
+    $expected = json_encode([
+        'error' => [
+            'code' => 'node.not_found',
+            'message' => 'Node was not found.',
+            'request_id' => node_access_command_request_id(),
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $this
+        ->artisan('node:access:remove', ['consumer' => '999999', 'serving' => '13', '--json' => true])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowNodeRequest::class)
+        ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
 });
 
-it('requires force for non-interactive human removal execution', function (): void {
-    $mockClient = MockClient::global();
-
-    $this
-        ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3', '--no-interaction' => true])
-        ->expectsOutputToContain('Use --force to confirm node access removal.')
-        ->assertExitCode(1);
-
-    expect($mockClient->getLastPendingRequest())->toBeNull();
-});
-
-it('requires force for json removal execution', function (): void {
-    $mockClient = MockClient::global();
+it('requires force only after existing access nodes are resolved', function (): void {
+    $mockClient = node_access_existing_show_mock();
     $expected = json_encode([
         'error' => [
             'code' => 'node_access.confirmation_required',
@@ -271,16 +340,28 @@ it('requires force for json removal execution', function (): void {
         ->expectsOutput($expected)
         ->assertExitCode(1);
 
-    expect($mockClient->getLastPendingRequest())->toBeNull();
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowNodeRequest::class)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(2);
+});
+
+it('requires force for non-interactive human removal execution after lookup', function (): void {
+    $mockClient = node_access_existing_show_mock();
+
+    $this
+        ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3', '--no-interaction' => true])
+        ->expectsOutputToContain('Use --force to confirm node access removal.')
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowNodeRequest::class)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(2);
 });
 
 it('sends one node access removal request to the active gateway as json when forced', function (): void {
-    $mockClient = MockClient::global([
-        RemoveNodeAccessRequest::class => MockResponse::make([
-            'data' => removed_node_access_payload(),
-            'meta' => ['request_id' => node_access_command_request_id()],
-        ]),
-    ]);
+    $mockClient = node_access_confirmed_remove_mock();
     $expected = json_encode(removed_node_access_payload(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
     $this
@@ -297,16 +378,11 @@ it('sends one node access removal request to the active gateway as json when for
         ->and($request?->resolveEndpoint())
         ->toBe('/api/v1/nodes/3/access/2')
         ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(1);
+        ->toHaveCount(3);
 });
 
 it('shows deterministic human output for removed node access', function (): void {
-    MockClient::global([
-        RemoveNodeAccessRequest::class => MockResponse::make([
-            'data' => removed_node_access_payload(),
-            'meta' => ['request_id' => node_access_command_request_id()],
-        ]),
-    ]);
+    node_access_confirmed_remove_mock();
 
     $this
         ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3', '--force' => true])
@@ -319,12 +395,7 @@ it('shows deterministic human output for already absent node access', function (
     $payload = removed_node_access_payload();
     $payload['already_absent'] = true;
 
-    MockClient::global([
-        RemoveNodeAccessRequest::class => MockResponse::make([
-            'data' => $payload,
-            'meta' => ['request_id' => node_access_command_request_id()],
-        ]),
-    ]);
+    node_access_confirmed_remove_mock($payload);
 
     $this
         ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3', '--force' => true])
@@ -337,12 +408,7 @@ it('shows a self lockout warning after successful removal', function (): void {
     $payload = removed_node_access_payload();
     $payload['self_lockout'] = true;
 
-    MockClient::global([
-        RemoveNodeAccessRequest::class => MockResponse::make([
-            'data' => $payload,
-            'meta' => ['request_id' => node_access_command_request_id()],
-        ]),
-    ]);
+    node_access_confirmed_remove_mock($payload);
 
     $this
         ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3', '--force' => true])
@@ -362,6 +428,7 @@ it('renders node access removal gateway api failures through the shared boundary
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
     MockClient::global([
+        ShowNodeRequest::class => MockResponse::make(node_access_existing_show_payload()),
         RemoveNodeAccessRequest::class => MockResponse::make(
             [
                 'error' => [
@@ -404,6 +471,83 @@ function command_options(?SymfonyCommand $command): array
         ])
         ->map(static fn ($option): mixed => $option->getDefault())
         ->all();
+}
+
+function node_access_existing_show_mock(): MockClient
+{
+    return MockClient::global([
+        ShowNodeRequest::class => MockResponse::make(node_access_existing_show_payload()),
+    ]);
+}
+
+function node_access_missing_show_mock(int $missingId): MockClient
+{
+    return MockClient::global([
+        ShowNodeRequest::class => static function (PendingRequest $pendingRequest) use ($missingId): MockResponse {
+            if (str_ends_with($pendingRequest->getUrl(), "/nodes/{$missingId}")) {
+                return MockResponse::make(
+                    node_access_missing_payload(),
+                    404,
+                    ['X-Orbit-Request-Id' => node_access_command_request_id()],
+                );
+            }
+
+            return MockResponse::make(node_access_existing_show_payload());
+        },
+    ]);
+}
+
+/** @param array<string, mixed>|null $removed */
+function node_access_confirmed_remove_mock(?array $removed = null): MockClient
+{
+    return MockClient::global([
+        ShowNodeRequest::class => MockResponse::make(node_access_existing_show_payload()),
+        RemoveNodeAccessRequest::class => MockResponse::make([
+            'data' => $removed ?? removed_node_access_payload(),
+            'meta' => ['request_id' => node_access_command_request_id()],
+        ]),
+    ]);
+}
+
+/** @return array<string, mixed> */
+function node_access_existing_show_payload(): array
+{
+    return [
+        'data' => [
+            'id' => 2,
+            'name' => 'operator',
+            'status' => 'active',
+            'public_ssh_host' => '10.0.0.3',
+            'public_ssh_port' => 22,
+            'user' => 'orbit',
+            'roles' => [],
+        ],
+        'meta' => ['request_id' => node_access_command_request_id()],
+    ];
+}
+
+/** @return array{error: array{code: string, message: string, details: array<never, never>}} */
+function node_access_missing_payload(): array
+{
+    return [
+        'error' => [
+            'code' => 'http.404',
+            'message' => 'Resource not found.',
+            'details' => [],
+        ],
+    ];
+}
+
+/** @return array{error: array{code: string, message: string, request_id: string}} */
+function node_access_missing_json(): array
+{
+    return [
+        'error' => [
+            'code' => 'http.404',
+            'message' => 'Resource not found.',
+            'request_id' => node_access_command_request_id(),
+        ],
+    ];
 }
 
 /** @return array<string, mixed> */
