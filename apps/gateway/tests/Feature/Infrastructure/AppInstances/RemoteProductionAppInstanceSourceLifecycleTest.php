@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstancePhpVersionCatalog;
 use App\Domain\AppInstances\ComposerSourceClassifier;
 use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
@@ -89,8 +90,8 @@ it('prepares the recorded user and home and resolves only the App default branch
         ->and($ssh->commands[3]->input)
         ->toContain(
             'resolved=$(sudo -u "$user" -H realpath',
-            'unexpected_user=$(sudo -u "$user" -H find -P "$release"',
-            'unexpected_group=$(sudo -u "$user" -H find -P "$release"',
+            'unexpected_user=$(sudo -u "$user" -H find -P "$checkout"',
+            'unexpected_group=$(sudo -u "$user" -H find -P "$checkout"',
             'sudo -u "$user" -H test -e "$composer"',
             'sudo -u "$user" -H test -f "$artisan"',
             'sudo -u "$user" -H base64',
@@ -280,6 +281,64 @@ it('propagates every source safety enumeration failure before treating its outpu
             'unexpected_group=$(sudo find',
         );
 });
+
+it('inspects the recorded production checkout when classifying the source', function (string $checkoutPath): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, "NONE\n", '', 1, false),
+    ]);
+    $instance->update(['checkout_path' => $checkoutPath]);
+
+    $profile = $source->inspectProfile($instance);
+
+    expect($ssh->commands[0]->arguments)
+        ->toBe(['bash', '-seu', '--', 'orbit-app-1', 'public', $checkoutPath])
+        ->and($ssh->commands[0]->input)
+        ->toContain(
+            'checkout=$3',
+            'composer="$checkout/composer.json"',
+            'artisan="$checkout/artisan"',
+            'candidate="$checkout/$relative_root"',
+            'case "$resolved" in',
+            '"$checkout"/*) ;;',
+            'unexpected_user=$(sudo -u "$user" -H find -P "$checkout"',
+            'unexpected_group=$(sudo -u "$user" -H find -P "$checkout"',
+        )
+        ->not
+        ->toContain('releases/initial')
+        ->and($profile->phpVersion)
+        ->toBeNull()
+        ->and($profile->laravel)
+        ->toBeFalse();
+})->with([
+    'flat production home' => '/home/orbit-app-1',
+    'staged initial release' => '/home/orbit-app-1/releases/initial',
+    'selected release' => '/home/orbit-app-1/releases/20260913120000',
+]);
+
+it('refuses to inspect a recorded production checkout outside the home or its releases', function (
+    string $checkoutPath,
+): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([]);
+    $instance->update(['checkout_path' => $checkoutPath]);
+
+    expect(fn () => $source->inspectProfile($instance))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('app-prod.source_metadata_unsafe')
+                ->and($exception->step)
+                ->toBe('production-source-classification');
+        });
+
+    expect($ssh->commands)->toBe([]);
+})->with([
+    'foreign path' => '/srv/other',
+    'home prefix without separator' => '/home/orbit-app-1-other',
+    'releases directory itself' => '/home/orbit-app-1/releases',
+    'empty release name' => '/home/orbit-app-1/releases/',
+    'current directory release' => '/home/orbit-app-1/releases/.',
+    'parent traversal' => '/home/orbit-app-1/releases/..',
+    'nested release path' => '/home/orbit-app-1/releases/initial/public',
+]);
 
 /**
  * @param  list<CommandResult>  $results

@@ -266,32 +266,32 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
         $root = $appInstance->root ?? $appInstance->app->root;
+        $checkout = $appInstance->checkout_path;
 
-        if (! is_string($root)) {
+        if (! is_string($root) || ! $this->withinRecordedHome($home, $checkout)) {
             throw $this->failure('production-source-classification', 'app-prod.source_metadata_unsafe');
         }
 
         $result = $this->ssh->execute(
             $appInstance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $home, $user, $root],
+                arguments: ['bash', '-seu', '--', $user, $root, $checkout],
                 input: <<<'BASH'
-                    home=$1
-                    user=$2
-                    relative_root=$3
-                    release="$home/releases/initial"
-                    composer="$release/composer.json"
-                    artisan="$release/artisan"
-                    candidate="$release/$relative_root"
+                    user=$1
+                    relative_root=$2
+                    checkout=$3
+                    composer="$checkout/composer.json"
+                    artisan="$checkout/artisan"
+                    candidate="$checkout/$relative_root"
                     resolved=$(sudo -u "$user" -H realpath -m -- "$candidate")
 
                     case "$resolved" in
-                        "$release"/*) ;;
+                        "$checkout"/*) ;;
                         *) printf 'UNSAFE\n'; exit 0 ;;
                     esac
-                    unexpected_user=$(sudo -u "$user" -H find -P "$release" -xdev ! -user "$user" -print -quit)
+                    unexpected_user=$(sudo -u "$user" -H find -P "$checkout" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user" || { printf 'UNSAFE\n'; exit 0; }
-                    unexpected_group=$(sudo -u "$user" -H find -P "$release" -xdev ! -group "$user" -print -quit)
+                    unexpected_group=$(sudo -u "$user" -H find -P "$checkout" -xdev ! -group "$user" -print -quit)
                     test -z "$unexpected_group" || { printf 'UNSAFE\n'; exit 0; }
                     if sudo -u "$user" -H test -e "$resolved" || sudo -u "$user" -H test -L "$resolved"; then
                         test "$(sudo -u "$user" -H stat -c %U -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
@@ -534,6 +534,12 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         }
 
         return [$appInstance->production_user, $appInstance->production_home];
+    }
+
+    private function withinRecordedHome(string $home, string $checkout): bool
+    {
+        return $checkout === $home
+            || preg_match('#\A'.preg_quote("{$home}/releases/", '#').'(?!\.\.?\z)[^/]+\z#D', $checkout) === 1;
     }
 
     private function profile(string $result): DevelopmentSourceProfile

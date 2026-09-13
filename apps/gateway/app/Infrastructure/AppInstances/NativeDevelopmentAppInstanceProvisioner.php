@@ -143,8 +143,8 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
 
         $profile = $this->configuration->inspect($appInstance);
         $appInstance->update([
-            'selected_php_version' => $profile->phpVersion,
             'source_is_laravel' => $profile->laravel,
+            ...($appInstance->selected_php_version === null ? ['selected_php_version' => $profile->phpVersion] : []),
         ]);
 
         return $appInstance->refresh()->load('routes.targets');

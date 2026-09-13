@@ -189,6 +189,9 @@ beforeEach(function (): void {
 
         public ?string $phpVersion = '8.5';
 
+        /** @var list<string> */
+        public array $inspected = [];
+
         public function prepareUser(AppInstance $appInstance): void
         {
             $this->calls[] = 'user';
@@ -212,6 +215,7 @@ beforeEach(function (): void {
         public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile
         {
             $this->calls[] = 'profile';
+            $this->inspected[] = $appInstance->checkout_path;
 
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
@@ -1247,7 +1251,10 @@ it('does not let source profile recovery bypass known complete drift', function 
         ->toBe(0);
 });
 
-it('recovers a missing source profile on an active AppInstance without reprovisioning', function (): void {
+it('recovers a missing source profile on an active AppInstance without reprovisioning', function (
+    ?string $recordedPhpVersion,
+    ?string $expectedPhpVersion,
+): void {
     $payload = [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -1257,8 +1264,8 @@ it('recovers a missing source profile on an active AppInstance without reprovisi
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
     $instance = AppInstance::query()->sole();
     $route = Route::query()->sole();
-    $instance->update(['source_is_laravel' => null]);
-    $identity = $instance->only([
+    $instance->update(['selected_php_version' => $recordedPhpVersion, 'source_is_laravel' => null]);
+    $identity = $instance->refresh()->only([
         'id',
         'app_id',
         'node_id',
@@ -1286,7 +1293,7 @@ it('recovers a missing source profile on an active AppInstance without reprovisi
     expect($instance->refresh()->only(array_keys($identity)))
         ->toBe($identity)
         ->and($instance->only(['selected_php_version', 'source_is_laravel']))
-        ->toBe(['selected_php_version' => '8.4', 'source_is_laravel' => true])
+        ->toBe(['selected_php_version' => $expectedPhpVersion, 'source_is_laravel' => true])
         ->and($instance->routes()->sole()->only(['id', 'hostname', 'status']))
         ->toBe($route->only(['id', 'hostname', 'status']))
         ->and($this->configuration->inspections)
@@ -1295,7 +1302,10 @@ it('recovers a missing source profile on an active AppInstance without reprovisi
         ->toBe(0)
         ->and($this->projection->convergences)
         ->toBe(0);
-});
+})->with([
+    'recorded PHP version retained' => ['8.5', '8.5'],
+    'missing PHP version stored' => [null, '8.4'],
+]);
 
 it('leaves an active AppInstance unchanged when source profile recovery finds a recorded profile', function (): void {
     $payload = [
@@ -1325,7 +1335,11 @@ it('leaves an active AppInstance unchanged when source profile recovery finds a 
         ->toBe(0);
 });
 
-it('recovers a missing source profile on an active production AppInstance without reprovisioning', function (): void {
+it('recovers a missing source profile on an active production AppInstance without reprovisioning', function (
+    bool $flatHome,
+    ?string $recordedPhpVersion,
+    ?string $expectedPhpVersion,
+): void {
     $node = create_app_prod_node('app-prod');
     $payload = [
         'app_id' => $this->orbitApp->id,
@@ -1336,20 +1350,37 @@ it('recovers a missing source profile on an active production AppInstance withou
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
     $instance = AppInstance::query()->sole();
     $route = Route::query()->sole();
-    $instance->update(['source_is_laravel' => null]);
-    $identity = $instance->only([
+    $instance->update([
+        'source_is_laravel' => null,
+        'selected_php_version' => $recordedPhpVersion,
+        ...($recordedPhpVersion === null ? [
+            'production_php_service' => null,
+            'production_php_pool' => null,
+            'production_php_socket' => null,
+        ] : []),
+        ...($flatHome ? ['checkout_path' => $instance->production_home] : []),
+    ]);
+    $identity = $instance->refresh()->only([
         'id',
         'app_id',
         'node_id',
         'source_layout',
         'checkout_path',
+        'production_user',
         'production_home',
+        'root',
+        'branch',
+        'starting_commit',
         'status',
         'provisioning_step',
+        'failed_step',
+        'error_code',
     ]);
-    $this->productionSource->phpVersion = '8.3';
+    $routeBefore = $route->refresh()->getAttributes();
+    $this->productionSource->phpVersion = '8.4';
     $this->productionSource->laravel = false;
     $this->productionSource->calls = [];
+    $this->productionSource->inspected = [];
     $this->productionProjection->calls = [];
 
     $this
@@ -1359,12 +1390,106 @@ it('recovers a missing source profile on an active production AppInstance withou
         ->assertJsonPath('data.status', 'active')
         ->assertJsonPath('data.route.id', $route->id);
 
-    expect($instance->refresh()->only(array_keys($identity)))
+    expect($identity['checkout_path'])
+        ->toBe($flatHome ? $identity['production_home'] : "{$identity['production_home']}/releases/initial")
+        ->and($instance->refresh()->only(array_keys($identity)))
         ->toBe($identity)
-        ->and($instance->only(['selected_php_version', 'source_is_laravel']))
-        ->toBe(['selected_php_version' => '8.3', 'source_is_laravel' => false])
+        ->and($instance->only([
+            'selected_php_version',
+            'source_is_laravel',
+            'production_php_service',
+            'production_php_pool',
+            'production_php_socket',
+        ]))
+        ->toBe([
+            'selected_php_version' => $expectedPhpVersion,
+            'source_is_laravel' => false,
+            'production_php_service' => "orbit-{$identity['production_user']}-php{$expectedPhpVersion}-fpm.service",
+            'production_php_pool' => "orbit-{$identity['production_user']}",
+            'production_php_socket' => "/run/php/{$identity['production_user']}.sock",
+        ])
+        ->and($route->refresh()->getAttributes())
+        ->toBe($routeBefore)
         ->and($this->productionSource->calls)
         ->toBe(['profile'])
+        ->and($this->productionSource->inspected)
+        ->toBe([$identity['checkout_path']])
+        ->and($this->productionProjection->calls)
+        ->toBe([]);
+})->with([
+    'staged release, recorded PHP version retained' => [false, '8.5', '8.5'],
+    'staged release, missing PHP version stored' => [false, null, '8.4'],
+    'flat home, recorded PHP version retained' => [true, '8.5', '8.5'],
+    'flat home, missing PHP version stored' => [true, null, '8.4'],
+]);
+
+it('refuses production source profile recovery before writing when the runtime identity cannot be derived', function (): void {
+    $node = create_app_prod_node('app-prod');
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $node->id,
+        'name' => 'stable',
+        'hostname' => 'www.example.test',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $instance = AppInstance::query()->sole();
+    $instance->update([
+        'source_is_laravel' => null,
+        'selected_php_version' => null,
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    $before = $instance->refresh()->getAttributes();
+    $routeBefore = Route::query()->sole()->getAttributes();
+    $this->productionSource->phpVersion = '8';
+    $this->productionSource->calls = [];
+    $this->productionProjection->calls = [];
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'app-prod.php_runtime_identity_invalid');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and(Route::query()->sole()->getAttributes())
+        ->toBe($routeBefore)
+        ->and($this->productionSource->calls)
+        ->toBe(['profile'])
+        ->and($this->productionProjection->calls)
+        ->toBe([]);
+});
+
+it('leaves an active production AppInstance unchanged when source profile recovery finds a recorded profile', function (): void {
+    $node = create_app_prod_node('app-prod');
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $node->id,
+        'name' => 'stable',
+        'hostname' => 'www.example.test',
+    ];
+    $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $instance = AppInstance::query()->sole();
+    $before = $instance->getAttributes();
+    $routeBefore = Route::query()->sole()->getAttributes();
+    $this->productionSource->phpVersion = '8.4';
+    $this->productionSource->laravel = true;
+    $this->productionSource->calls = [];
+    $this->productionProjection->calls = [];
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertOk()
+        ->assertJsonPath('data.id', $created->json('data.id'))
+        ->assertJsonPath('data.status', 'active');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and(Route::query()->sole()->getAttributes())
+        ->toBe($routeBefore)
+        ->and($this->productionSource->calls)
+        ->toBe([])
         ->and($this->productionProjection->calls)
         ->toBe([]);
 });
