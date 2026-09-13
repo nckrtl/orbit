@@ -170,6 +170,31 @@ it('throws for a missing candidate clone destination Node', function (): void {
     );
 })->throws(ModelNotFoundException::class);
 
+it('refuses workspace create input that identifies an AppInstance', function (): void {
+    $app = resolver_app('workspace-app-instance');
+    $node = resolver_node('workspace-app-instance-node');
+    $appInstance = resolver_app_instance($app, $node, name: 'workspace-app-instance');
+
+    resolver()->resolve(
+        resolver_request(input: ['instance_id' => $appInstance->id]),
+        ServingNode::WorkspaceOwning,
+    );
+})->throws(ResourceOperationException::class, 'legacy Instance surface');
+
+it('refuses workspace create input when an AppInstance ID collides with a legacy Instance', function (): void {
+    $app = resolver_app('workspace-collision');
+    $node = resolver_node('workspace-collision-node');
+    $instance = resolver_instance($app, $node, name: 'workspace-collision-legacy');
+    $appInstance = resolver_app_instance($app, $node, name: 'workspace-collision-app', id: $instance->id);
+
+    expect($appInstance->id)->toBe($instance->id);
+
+    resolver()->resolve(
+        resolver_request(input: ['instance_id' => $instance->id]),
+        ServingNode::WorkspaceOwning,
+    );
+})->throws(ResourceOperationException::class, 'legacy Instance surface');
+
 it('resolves workspace-owning nodes from a bound workspace and create input', function (): void {
     $app = resolver_app('workspace-owner');
     $node = resolver_node('workspace-node');
@@ -370,9 +395,9 @@ function resolver_instance(OrbitApp $app, Node $node, string $name): Instance
     ]);
 }
 
-function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function resolver_app_instance(OrbitApp $app, Node $node, string $name, ?int $id = null): AppInstance
 {
-    return AppInstance::query()->create([
+    $appInstance = new AppInstance([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
@@ -382,6 +407,14 @@ function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInst
         'provisioning_step' => 'active',
         'status' => 'active',
     ]);
+
+    if ($id !== null) {
+        $appInstance->id = $id;
+    }
+
+    $appInstance->save();
+
+    return $appInstance;
 }
 
 function resolver_workspace(Instance $instance, string $name): Workspace

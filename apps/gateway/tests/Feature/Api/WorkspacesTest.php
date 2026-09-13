@@ -17,6 +17,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -182,6 +183,64 @@ describe('workspace API', function (): void {
             ->toBe(CheckoutPathOrigin::Explicit->value);
     });
 
+    it('rejects an AppInstance ID that has no matching legacy Instance with a typed error', function (): void {
+        $appId = $this->instance->app_id;
+        $this->instance->delete();
+        $appInstance = create_app_instance_for_workspace_api_test($this->node, $appId);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $appInstance->id,
+                'name' => 'feature-one',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_app_instance')
+            ->assertJsonPath('error.message', "Workspaces are a legacy Instance surface and cannot be created for AppInstance [{$appInstance->id}].");
+
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
+    it('rejects a colliding AppInstance ID instead of mutating the legacy Instance', function (): void {
+        $appInstance = create_app_instance_for_workspace_api_test(
+            $this->node,
+            $this->instance->app_id,
+            $this->instance->id,
+        );
+
+        expect($appInstance->id)->toBe($this->instance->id);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $appInstance->id,
+                'name' => 'feature-one',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_app_instance');
+
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
+    it('still returns http.404 for a missing legacy Instance that is not an AppInstance', function (): void {
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => 999_999,
+                'name' => 'feature-one',
+            ])
+            ->assertNotFound()
+            ->assertJsonPath('error.code', 'http.404');
+
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
     it('rejects workspaces on an active app-prod node with a stable error', function (): void {
         $this->node->roles()->delete();
         $this->node
@@ -337,6 +396,31 @@ describe('workspace API', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'workspace.path_taken');
 
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
+    it('rejects a colliding AppInstance owner before mutating a legacy Instance', function (): void {
+        $appInstance = create_app_instance_for_workspace_api_test(
+            $this->node,
+            $this->instance->app_id,
+            $this->instance->id,
+        );
+        $data = new CreateWorkspaceData(
+            instanceId: $appInstance->id,
+            name: 'feature-one',
+            branch: 'feature-one',
+            checkoutPath: null,
+            phpVersion: null,
+        );
+
+        expect($appInstance->id)->toBe($this->instance->id);
+        expect(fn (): array => app(CreateWorkspaceAction::class)->execute($data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('workspace.unsupported_for_app_instance');
+            });
         expect(Workspace::query()->count())
             ->toBe(0)
             ->and($this->runtime->calls)
@@ -556,6 +640,28 @@ describe('workspace API', function (): void {
             ->assertJsonPath('error.code', 'node_access.required');
     });
 });
+
+function create_app_instance_for_workspace_api_test(Node $node, int $appId, ?int $id = null): AppInstance
+{
+    $appInstance = new AppInstance([
+        'app_id' => $appId,
+        'node_id' => $node->id,
+        'name' => 'app-instance',
+        'environment' => 'development',
+        'checkout_path' => '/srv/users/nckrtl/apps/acme-app-instance',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+
+    if ($id !== null) {
+        $appInstance->id = $id;
+    }
+
+    $appInstance->save();
+
+    return $appInstance;
+}
 
 function create_workspace_for_api_test(Instance $instance): Workspace
 {
