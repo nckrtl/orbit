@@ -263,7 +263,7 @@ describe('tool writes', function (): void {
         expect(Tool::query()->find($tool->id))->toBeNull();
     });
 
-    it('removes a failed version-probe install without probing', function (): void {
+    it('removes a failed version-probe tool without probing', function (ToolOperation $failedOperation): void {
         $tool = $this->node
             ->tools()
             ->create([
@@ -271,7 +271,7 @@ describe('tool writes', function (): void {
                 'package' => 'jq',
                 'status' => ToolStatus::Failed,
                 'installed_version' => null,
-                'failed_operation' => ToolOperation::Install,
+                'failed_operation' => $failedOperation,
                 'error_code' => 'tool.version_probe_failed',
             ]);
         $this->toolManager->installedVersions = [new ToolManagerException('installed', 'Probe failed.')];
@@ -286,7 +286,7 @@ describe('tool writes', function (): void {
             ->toBeNull()
             ->and($this->toolManager->calls)
             ->toBeEmpty();
-    });
+    })->with(ToolOperation::cases());
 });
 
 describe('tool request validation and isolation', function (): void {

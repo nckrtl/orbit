@@ -128,10 +128,10 @@ describe(RemoveToolAction::class, function (): void {
             ->toBeNull();
     })->with(ToolOperation::cases());
 
-    it('deletes a failed version-probe install without probing the package', function (): void {
+    it('deletes a failed version-probe tool without probing the package', function (ToolOperation $failedOperation): void {
         [$tool] = removal_tool_fixture(
             status: ToolStatus::Failed,
-            failedOperation: ToolOperation::Install,
+            failedOperation: $failedOperation,
             installedVersion: null,
             errorCode: 'tool.version_probe_failed',
         );
@@ -150,39 +150,12 @@ describe(RemoveToolAction::class, function (): void {
             ->toBe(1)
             ->and(Tool::query()->find($tool->id))
             ->toBeNull();
-    });
+    })->with(ToolOperation::cases());
 
-    it('retains a failed removal when the installed probe fails', function (): void {
+    it('still probes a failed tool that recorded a version', function (ToolOperation $failedOperation): void {
         [$tool] = removal_tool_fixture(
             status: ToolStatus::Failed,
-            failedOperation: ToolOperation::Remove,
-            installedVersion: null,
-            errorCode: 'tool.version_probe_failed',
-        );
-        [$action, $manager] = removal_tool_action();
-        $manager->installedVersions = [new ToolManagerException('installed', 'Probe failed.')];
-
-        $exception = removal_tool_exception(fn () => $action->execute($tool));
-        $failed = $tool->refresh();
-
-        expect($exception->errorCode)
-            ->toBe('tool.version_probe_failed')
-            ->and($exception->status)
-            ->toBe(502)
-            ->and($manager->calls)
-            ->toBe(['installedVersion'])
-            ->and($failed->status)
-            ->toBe(ToolStatus::Failed)
-            ->and($failed->failed_operation)
-            ->toBe(ToolOperation::Remove)
-            ->and($failed->error_code)
-            ->toBe('tool.version_probe_failed');
-    });
-
-    it('still probes a failed install that recorded a version', function (): void {
-        [$tool] = removal_tool_fixture(
-            status: ToolStatus::Failed,
-            failedOperation: ToolOperation::Install,
+            failedOperation: $failedOperation,
             errorCode: 'tool.version_probe_failed',
         );
         [$action, $manager] = removal_tool_action();
@@ -196,7 +169,7 @@ describe(RemoveToolAction::class, function (): void {
             ->toBe(['installedVersion'])
             ->and(Tool::query()->find($tool->id))
             ->not->toBeNull();
-    });
+    })->with(ToolOperation::cases());
 
     it('retains a bounded failure when the initial installed probe fails', function (): void {
         [$tool] = removal_tool_fixture();
