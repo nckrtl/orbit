@@ -24,6 +24,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteHostnameProjector;
@@ -790,10 +791,12 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
             bool $rolelessOperator = false,
-        ): void {
+        ): NodeObservation {
             if ($this->onConverge instanceof Closure) {
                 ($this->onConverge)($node);
             }
+
+            return new NodeObservation('x86_64');
         }
     });
     app()->instance(AppDevTldConverger::class, new class implements AppDevTldConverger

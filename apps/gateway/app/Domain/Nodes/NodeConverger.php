@@ -13,5 +13,5 @@ interface NodeConverger
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint = null,
         bool $rolelessOperator = false,
-    ): void;
+    ): NodeObservation;
 }

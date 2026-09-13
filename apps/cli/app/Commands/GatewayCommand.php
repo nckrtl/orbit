@@ -35,9 +35,11 @@ abstract class GatewayCommand extends Command
                 throw $exception;
             }
 
+            $message = trim($exception->getMessage());
+
             $output->writeln(GatewayFailureRenderer::json(
                 'input.invalid',
-                'Command input is invalid.',
+                $message !== '' ? $message : 'Command input is invalid.',
             ));
 
             return self::FAILURE;

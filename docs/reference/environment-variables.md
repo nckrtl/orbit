@@ -22,7 +22,7 @@ The SDK sends one JSON object for each operation and preserves every supplied va
 
 A successful SDK result contains only a positive `app_instance_id`, the expected `operation` token, a boolean `changed`, a `key_count` from 0 through 1,024, and the correlated `request_id`. The SDK rejects missing, wrongly typed, contradictory, extra, or value-bearing result data through a bounded error. Environment values remain available only to the intended HTTP request-body serialization and do not appear in normal request, response, error, exception, or debugging state.
 
-The SDK keeps a valid structured Gateway error code and request ID for an import conflict, unavailable target, failed preflight, unresolved reference, failed synchronization, or unconfirmed synchronization. It omits remote response content from that error boundary.
+The SDK keeps a valid structured Gateway error code, safe message, details, and request ID for an import conflict, unavailable target, failed preflight, unresolved reference, failed synchronization, or unconfirmed synchronization. Environment values remain omitted from that error boundary.
 
 ## Use the CLI
 
@@ -38,7 +38,7 @@ Quote environment values for the shell so Orbit receives the intended string. An
 
 Import or update changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` explicitly to install it in the workload file. Synchronization does not refresh an application cache or restart a service or process, so run those application steps separately when existing application code must use the new configuration.
 
-Human and JSON success output contains the selected AppInstance ID, the operation, whether the owned boundary changed, the total stored key count, and the request ID. Import and update output also states that the workload file is unchanged. Failures use a bounded error code and request ID and omit environment values.
+Human and JSON success output contains the selected AppInstance ID, the operation, whether the owned boundary changed, the total stored key count, and the request ID. Import and update output also states that the workload file is unchanged. Failures use a bounded error code, the Gateway error message, and request ID, and omit environment values.
 
 ## Import an environment file
 

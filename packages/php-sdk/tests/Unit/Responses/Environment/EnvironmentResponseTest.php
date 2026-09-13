@@ -153,20 +153,31 @@ describe('AppInstance environment response', function (): void {
         'invalid' => [['request_id' => 'remote-content-should-not-survive']],
     ]);
 
-    it('retains named Gateway failures and request IDs without remote content', function (string $errorCode): void {
-        $sentinel = 'ordinary-remote-content-6a9e';
+    it('surfaces Gateway error messages, redacted details, and request IDs', function (
+        string $errorCode,
+        string $message,
+        int $status,
+    ): void {
+        $credential = 'environment-failure-credential-4c81';
         $requestId = '22222222-2222-4222-8222-222222222222';
         $request = new SynchronizeAppInstanceEnvironmentRequest(17);
+        $expectedDetails = [
+            'field' => 'replace',
+            'APP_KEY' => '[REDACTED]',
+        ];
         $mock = new MockClient([
             SynchronizeAppInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => $errorCode,
-                        'message' => "Failure contains {$sentinel}",
-                        'details' => ['VISIBLE_NAME' => $sentinel],
+                        'message' => $message,
+                        'details' => [
+                            'field' => 'replace',
+                            'APP_KEY' => $credential,
+                        ],
                     ],
                 ],
-                409,
+                $status,
                 ['X-Orbit-Request-Id' => $requestId],
             ),
         ]);
@@ -184,7 +195,7 @@ describe('AppInstance environment response', function (): void {
 
             $translated = $request->getRequestException(
                 $response,
-                new RuntimeException("Transport contained {$sentinel}"),
+                new RuntimeException("Connection failed with password={$credential}"),
             );
 
             expect($translated)->toBeInstanceOf(GatewayApiException::class);
@@ -202,6 +213,7 @@ describe('AppInstance environment response', function (): void {
                 (string) $translated,
                 print_r($translated, return: true),
                 environment_sdk_trace($translated),
+                $translated->getPrevious()?->getMessage() ?? '',
             ]);
 
             foreach ([$exception, $translated] as $failure) {
@@ -209,21 +221,46 @@ describe('AppInstance environment response', function (): void {
                     ->toBe($errorCode)
                     ->and($failure->requestId())
                     ->toBe($requestId)
+                    ->and($failure->getMessage())
+                    ->toBe($message)
                     ->and($failure->details())
-                    ->toBeEmpty()
-                    ->and($failure->getPrevious())
-                    ->toBeNull();
+                    ->toBe($expectedDetails);
             }
 
-            expect($diagnostics)->not->toContain($sentinel);
+            expect($translated->getPrevious()?->getMessage())
+                ->toBe('Connection failed with password=[REDACTED]')
+                ->and($diagnostics)
+                ->not->toContain($credential)
+                ->not->toContain('Gateway environment operation failed with HTTP status');
         }
     })->with([
-        'import conflict' => ['env.import_conflict'],
-        'unavailable target' => ['env.owner_unavailable'],
-        'failed preflight' => ['env.write_preflight_failed'],
-        'unresolved reference' => ['env.reference_unavailable'],
-        'failed synchronization' => ['env.write_failed'],
-        'unconfirmed synchronization' => ['env.sync_unconfirmed'],
+        'import conflict' => ['env.import_conflict', 'The import contains keys that are already stored.', 409],
+        'missing resource' => ['http.404', 'Resource not found.', 404],
+        'unavailable target' => [
+            'env.owner_unavailable',
+            'The AppInstance environment owner is not available for this operation.',
+            409,
+        ],
+        'failed preflight' => [
+            'env.write_preflight_failed',
+            'The recorded AppInstance environment file cannot be replaced safely.',
+            409,
+        ],
+        'unresolved reference' => [
+            'env.reference_unavailable',
+            'The stored AppInstance environment configuration has an unavailable reference.',
+            409,
+        ],
+        'failed synchronization' => [
+            'env.write_failed',
+            'The AppInstance environment file replacement failed safely.',
+            409,
+        ],
+        'unconfirmed synchronization' => [
+            'env.sync_unconfirmed',
+            'The AppInstance environment synchronization result is unconfirmed. Retry the request.',
+            409,
+        ],
     ]);
 
     it('rejects a malformed value-bearing response without retaining its body', function (): void {

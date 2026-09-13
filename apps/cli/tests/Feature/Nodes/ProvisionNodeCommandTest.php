@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 beforeEach(function (): void {
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-'.Str::uuid();
@@ -115,6 +117,20 @@ it('sends node provisioning to the active gateway', function (): void {
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         ]);
+});
+
+it('describes the architecture option as optional with the observed machine value as its default', function (): void {
+    $command = app(Kernel::class)->all()['node:provision'] ?? null;
+    $option = $command?->getDefinition()->getOption('architecture');
+
+    expect($command)
+        ->toBeInstanceOf(SymfonyCommand::class)
+        ->and($option?->getDefault())
+        ->toBeNull()
+        ->and($option?->isValueRequired())
+        ->toBeFalse()
+        ->and($option?->getDescription())
+        ->toBe('Node machine architecture; defaults to the architecture observed on the machine and must match it when given');
 });
 
 it('omits the bootstrap user when --user is not given', function (): void {

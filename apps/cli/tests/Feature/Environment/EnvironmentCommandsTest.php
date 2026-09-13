@@ -224,8 +224,8 @@ describe('environment failures', function (): void {
             UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
-                        'code' => 'env.value_invalid',
-                        'message' => 'Rejected environment-secret-sentinel',
+                        'code' => 'env.configuration_invalid',
+                        'message' => 'The complete AppInstance environment configuration is invalid.',
                         'details' => ['value' => 'environment-secret-sentinel'],
                     ],
                 ],
@@ -245,11 +245,74 @@ describe('environment failures', function (): void {
         expect($exitCode)->toBe(1);
         expect(trim(Artisan::output()))
             ->toBe(environment_cli_error_json(
-                code: 'env.value_invalid',
-                message: 'Gateway environment operation failed with HTTP status 422.',
+                code: 'env.configuration_invalid',
+                message: 'The complete AppInstance environment configuration is invalid.',
                 requestId: environment_cli_request_id(),
             ))
-            ->not->toContain('environment-secret-sentinel');
+            ->not->toContain('environment-secret-sentinel')
+            ->not->toContain('Gateway environment operation failed with HTTP status');
+    });
+
+    it('renders the Gateway import-conflict message instead of an HTTP status wrapper', function (): void {
+        MockClient::global([
+            ImportAppInstanceEnvironmentRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'env.import_conflict',
+                        'message' => 'The import contains keys that are already stored.',
+                        'details' => [],
+                    ],
+                ],
+                409,
+                ['X-Orbit-Request-Id' => environment_cli_request_id()],
+            ),
+        ]);
+
+        $exitCode = Artisan::call('env:import', [
+            '--instance' => '17',
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(1);
+        expect(trim(Artisan::output()))
+            ->toBe(environment_cli_error_json(
+                code: 'env.import_conflict',
+                message: 'The import contains keys that are already stored.',
+                requestId: environment_cli_request_id(),
+            ))
+            ->not->toContain('Gateway environment operation failed with HTTP status');
+    });
+
+    it('renders the Gateway not-found message instead of an HTTP status wrapper', function (): void {
+        MockClient::global([
+            ImportAppInstanceEnvironmentRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'http.404',
+                        'message' => 'Resource not found.',
+                        'details' => [],
+                    ],
+                ],
+                404,
+                ['X-Orbit-Request-Id' => environment_cli_request_id()],
+            ),
+        ]);
+
+        $exitCode = Artisan::call('env:import', [
+            '--instance' => '999999',
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(1);
+        expect(trim(Artisan::output()))
+            ->toBe(environment_cli_error_json(
+                code: 'http.404',
+                message: 'Resource not found.',
+                requestId: environment_cli_request_id(),
+            ))
+            ->not->toContain('Gateway environment operation failed with HTTP status');
     });
 
     it('renders a bounded transport failure without exception-chain diagnostics or the submitted value', function (): void {

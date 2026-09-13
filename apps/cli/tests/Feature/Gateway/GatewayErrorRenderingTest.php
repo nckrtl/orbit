@@ -621,12 +621,6 @@ it('renders local validation failures through the exact json boundary', function
         'node.host_key_fingerprint_invalid',
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
     ],
-    'node removal confirmation' => [
-        'node:remove',
-        ['node' => '1'],
-        'node.confirmation_required',
-        'Use --force to confirm node removal.',
-    ],
     'process target selection' => [
         'process:add',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
@@ -751,13 +745,13 @@ it('renders local validation failures through the exact json boundary', function
     ],
 ]);
 
-it('renders console input failures through the exact json boundary', function (array $arguments): void {
+it('renders console input failures through the exact json boundary', function (array $arguments, string $message): void {
     $command = app(Kernel::class)->all()[$arguments['command']];
     $tester = new CommandTester($command);
     $expectedPayload = [
         'error' => [
             'code' => 'input.invalid',
-            'message' => 'Command input is invalid.',
+            'message' => $message,
             'request_id' => null,
         ],
     ];
@@ -771,40 +765,99 @@ it('renders console input failures through the exact json boundary', function (a
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
     expect($output)
         ->toBe(json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->not->toContain('validation-secret');
+        ->not->toBe(json_encode([
+            'error' => [
+                'code' => 'input.invalid',
+                'message' => 'Command input is invalid.',
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
         ->toBe($expectedPayload);
 })->with([
-    'app show missing required argument' => [['command' => 'app:show', '--json' => true]],
-    'app show unknown option' => [[
-        'command' => 'app:show',
-        'app' => '1',
-        '--json' => true,
-        '--validation-secret' => true,
-    ]],
-    'node role list missing required argument' => [['command' => 'node:role:list', '--json' => true]],
-    'node role list unknown option' => [[
-        'command' => 'node:role:list',
-        'node' => '7',
-        '--json' => true,
-        '--validation-secret' => true,
-    ]],
-    'node role add missing required arguments' => [['command' => 'node:role:add', '--json' => true]],
-    'node role add unknown option' => [[
-        'command' => 'node:role:add',
-        'node' => '7',
-        'role' => 'app-dev',
-        '--json' => true,
-        '--validation-secret' => true,
-    ]],
-    'node role remove missing required arguments' => [['command' => 'node:role:remove', '--json' => true]],
-    'node role remove unknown option' => [[
-        'command' => 'node:role:remove',
-        'node' => '7',
-        'role' => 'app-dev',
-        '--json' => true,
-        '--validation-secret' => true,
-    ]],
+    'app show missing required argument' => [
+        ['command' => 'app:show', '--json' => true],
+        'Not enough arguments (missing: "app").',
+    ],
+    'app remove unknown force option' => [
+        [
+            'command' => 'app:remove',
+            'app' => '1',
+            '--json' => true,
+            '--force' => true,
+        ],
+        'The "--force" option does not exist.',
+    ],
+    'instance show missing required argument' => [
+        ['command' => 'instance:show', '--json' => true],
+        'Not enough arguments (missing: "instance").',
+    ],
+    'route show missing required argument' => [
+        ['command' => 'route:show', '--json' => true],
+        'Not enough arguments (missing: "route").',
+    ],
+    'process start missing required argument' => [
+        ['command' => 'process:start', '--json' => true],
+        'Not enough arguments (missing: "process").',
+    ],
+    'activity show missing required argument' => [
+        ['command' => 'activity:show', '--json' => true],
+        'Not enough arguments (missing: "activity").',
+    ],
+    'gateway use missing required argument' => [
+        ['command' => 'gateway:use', '--json' => true],
+        'Not enough arguments (missing: "name").',
+    ],
+    'app show unknown option' => [
+        [
+            'command' => 'app:show',
+            'app' => '1',
+            '--json' => true,
+            '--unknown-option' => true,
+        ],
+        'The "--unknown-option" option does not exist.',
+    ],
+    'node role list missing required argument' => [
+        ['command' => 'node:role:list', '--json' => true],
+        'Not enough arguments (missing: "node").',
+    ],
+    'node role list unknown option' => [
+        [
+            'command' => 'node:role:list',
+            'node' => '7',
+            '--json' => true,
+            '--unknown-option' => true,
+        ],
+        'The "--unknown-option" option does not exist.',
+    ],
+    'node role add missing required arguments' => [
+        ['command' => 'node:role:add', '--json' => true],
+        'Not enough arguments (missing: "node, role").',
+    ],
+    'node role add unknown option' => [
+        [
+            'command' => 'node:role:add',
+            'node' => '7',
+            'role' => 'app-dev',
+            '--json' => true,
+            '--unknown-option' => true,
+        ],
+        'The "--unknown-option" option does not exist.',
+    ],
+    'node role remove missing required arguments' => [
+        ['command' => 'node:role:remove', '--json' => true],
+        'Not enough arguments (missing: "node, role").',
+    ],
+    'node role remove unknown option' => [
+        [
+            'command' => 'node:role:remove',
+            'node' => '7',
+            'role' => 'app-dev',
+            '--json' => true,
+            '--unknown-option' => true,
+        ],
+        'The "--unknown-option" option does not exist.',
+    ],
 ]);
 
 function gateway_error_request_id(): string

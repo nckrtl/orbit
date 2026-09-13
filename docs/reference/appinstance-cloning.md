@@ -21,7 +21,7 @@ The caller needs directed access to both the candidate Node and the destination 
 
 ## Clone from the CLI
 
-Provision the production Node with its own TLD before it receives a clone. The `--tld` value supplies the suffix for private production preview hostnames:
+Provision the production Node with its own TLD before it receives a clone. The `--tld` value supplies the suffix for private production preview hostnames. The command needs no `--architecture` value, because the Gateway records the architecture it observes on the machine, as [Node provisioning](node-provisioning.md#machine-architecture) describes:
 
 ```text
 orbit node:provision production production.example \

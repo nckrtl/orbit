@@ -16,7 +16,6 @@ use Saloon\Http\Response;
 use Saloon\Repositories\Body\JsonBodyRepository;
 use Saloon\Traits\Body\HasJsonBody;
 use SensitiveParameter;
-use Throwable;
 
 abstract class EnvironmentRequest extends GatewayRequest implements HasBody
 {
@@ -56,19 +55,6 @@ abstract class EnvironmentRequest extends GatewayRequest implements HasBody
         );
     }
 
-    final public function getRequestException(
-        #[SensitiveParameter]
-        Response $response,
-        #[SensitiveParameter]
-        ?Throwable $senderException,
-    ): Throwable {
-        return new GatewayApiException(
-            "Gateway environment operation failed with HTTP status {$response->status()}.",
-            errorCode: $this->errorCode($response),
-            requestId: $response->getPsrResponse()->getHeaderLine('X-Orbit-Request-Id'),
-        );
-    }
-
     abstract protected function expectedOperation(): string;
 
     /**
@@ -95,27 +81,5 @@ abstract class EnvironmentRequest extends GatewayRequest implements HasBody
         }
 
         return $body['data'];
-    }
-
-    private function errorCode(#[SensitiveParameter] Response $response): ?string
-    {
-        try {
-            $body = json_decode(
-                json: $response->body(),
-                associative: true,
-                depth: 16,
-                flags: JSON_THROW_ON_ERROR,
-            );
-        } catch (JsonException) {
-            return null;
-        }
-
-        if (! is_array($body) || ! is_array($body['error'] ?? null)) {
-            return null;
-        }
-
-        $errorCode = $body['error']['code'] ?? null;
-
-        return is_string($errorCode) ? $errorCode : null;
     }
 }

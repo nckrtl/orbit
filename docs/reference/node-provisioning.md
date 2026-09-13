@@ -1,6 +1,6 @@
 # Node provisioning
 
-This page tells an operator which Linux user the Gateway connects as when `orbit node:provision <name> [host]` bootstraps a Node, and how `orbit node:remove <node>` returns a machine to a state that a later provisioning can reach. It explains how the user choice differs between a new Node and an existing Node, and which identity inputs the command accepts. The same provisioning request serves a first provisioning and a later change to a Node's TLD, roles, or settings.
+This page tells an operator which Linux user the Gateway connects as when `orbit node:provision <name> [host]` bootstraps a Node, how the Gateway records the machine architecture of that Node, and how `orbit node:remove <node>` returns a machine to a state that a later provisioning can reach. It explains how each choice differs between a new Node and an existing Node, and which identity and architecture inputs the command accepts. The same request serves a first provisioning and a later change to a Node's TLD, roles, or settings.
 
 ## Bootstrap identity
 
@@ -26,9 +26,21 @@ The CLI sends a bootstrap user only when the option is present. The Gateway API 
 
 The Gateway console command `orbit:node-provision` applies the same defaults for the first Node.
 
+## Machine architecture
+
+The Gateway observes the machine architecture right after it verifies SSH access as the managed user. It runs `uname -m` on the Node and reads the reported value, for example `x86_64` or `aarch64`. A new Node records that observed value, so the request needs no architecture input. An existing Node keeps its recorded architecture whatever the request carries.
+
+When the request names an architecture for a new Node, the Gateway compares it with the observed value. The Gateway records an equal value. A different value stops the request with status `409` before the Gateway materializes a Tool Manager or converges a role. Each architecture failure leaves the Node record failed at the `machine-architecture` step.
+
+| Input | Meaning |
+| --- | --- |
+| `--architecture` | Optional machine architecture; the API and SDK field is `architecture`. A new Node records the observed value, which an explicit value must equal. An existing Node keeps its record. |
+
+The Gateway console command `orbit:node-provision` accepts the same option with the same default.
+
 ## Failure codes
 
-Each identity failure names the boundary that stopped the request.
+Each identity or architecture failure names the boundary that stopped the request.
 
 | Code | Meaning |
 | --- | --- |
@@ -36,6 +48,8 @@ Each identity failure names the boundary that stopped the request.
 | `node.user_change_unsupported` | The request names another managed user for a Node that owns roles or instances. The Gateway changes no Node. |
 | `node.bootstrap_failed` | The bootstrap session or the base bootstrap failed as the bootstrap user. |
 | `node.orbit_ssh_failed` | The Gateway could not connect as the managed user after the bootstrap. |
+| `node.architecture_unavailable` | The Gateway could not read a machine architecture from the Node as the managed user. |
+| `node.architecture_mismatch` | The request names an architecture that differs from the observed one for a Node without a record. The Gateway records no architecture and converges no role. |
 
 ## Remove a Node
 

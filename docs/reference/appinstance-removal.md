@@ -53,11 +53,13 @@ After preflight succeeds, the Gateway records one immutable member for a worktre
 | --- | --- |
 | `source_preparation` | Record verified development source identity or the production content-retention boundary without deleting content. |
 | `route_target_clear` | Stop the Route from forwarding to the AppInstance, republish an ordered surviving production set or delete the final-target Route after managed projection cleanup, and release a deleted Route's hostname. |
-| `source_finalization` | Delete the exact recorded development checkout or retain production application content, then store matching completion evidence. |
+| `source_finalization` | Delete the exact recorded development checkout or retain production application content, store matching completion evidence, and remove the App slug grouping directory when that directory is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule with its exact artifacts and record, then remove AppInstance runtime artifacts after Route traffic stops. |
 | `row_deletion` | Delete the member's AppInstance row. The final member's transaction also marks the operation completed. |
 
 Development source finalization never starts before that member's Route deletion releases the hostname. The Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections before it deletes the Route. A projection failure keeps the AppInstance `removing` and keeps the unfinished checkpoint available for retry. The common checkout stays usable while Orbit removes its worktree members and their Git administration entries. Orbit deletes the common checkout only after every accepted worktree completes.
+
+After that deletion leaves an App slug grouping directory empty, the Gateway removes that directory. It leaves a grouping directory that still has entries, the apps root, and unrelated paths unchanged.
 
 Production source finalization starts after Route target cleanup completes. Removing one member of a shared production Route keeps the Route active, compacts its ordered target positions, republishes the complete survivor set, and removes the departing workload's Caddy, PHP FastCGI Process Manager (PHP-FPM), and private certificate projections.
 
@@ -94,4 +96,4 @@ Production finalization records deterministic retained-content evidence and does
 
 ## Limits
 
-AppInstance removal does not change App source settings, migrate a default source, adopt local source, delete branches, clean retained releases automatically, create production target pools, select a balancing policy, or reconcile unrelated Route changes. It leaves other AppInstances' Processes and Schedules, unrelated services and containers, Node-owned state, and unrecognized runtime artifacts unchanged. It retains production application content, persistent environment and SQLite files, the dedicated production user, and local PHP-FPM tuning.
+AppInstance removal does not change App source settings, migrate a default source, adopt local source, delete branches, clean retained releases automatically, create production target pools, select a balancing policy, or reconcile unrelated Route changes. It leaves other AppInstances' Processes and Schedules, unrelated services and containers, Node-owned state, unrecognized runtime artifacts, and the apps root unchanged. It also leaves a grouping directory that still contains entries. It retains production application content, persistent environment and SQLite files, the dedicated production user, and local PHP-FPM tuning.

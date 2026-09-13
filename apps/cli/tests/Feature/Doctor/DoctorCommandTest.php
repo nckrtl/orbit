@@ -9,6 +9,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
+use Orbit\Sdk\Responses\Doctor\DoctorFamily;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -33,6 +34,20 @@ afterEach(function (): void {
 
 it('exposes the doctor command', function (): void {
     expect(app(Kernel::class)->all())->toHaveKey('doctor');
+});
+
+it('lists every accepted family including schedule in doctor help', function (): void {
+    $families = array_map(
+        static fn (DoctorFamily $family): string => $family->value,
+        DoctorFamily::cases(),
+    );
+
+    expect($families)->toContain('schedule');
+    expect(app(Kernel::class)->all()['doctor']->getDefinition()->getOption('family')->getDescription())
+        ->toContain(...$families);
+
+    expect(Artisan::call('help', ['command_name' => 'doctor']))->toBe(Command::SUCCESS);
+    expect(Artisan::output())->toContain(...$families);
 });
 
 it('rejects invalid node options through the exact json envelope before HTTP', function (mixed $node): void {

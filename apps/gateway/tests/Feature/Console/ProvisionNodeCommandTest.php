@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -28,7 +29,9 @@ it('provisions the first peer from the gateway console', function (): void {
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
             bool $rolelessOperator = false,
-        ): void {}
+        ): NodeObservation {
+            return new NodeObservation('x86_64');
+        }
     });
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
     {
@@ -100,7 +103,7 @@ it('reports typed provisioning failures without leaking command output', functio
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
             bool $rolelessOperator = false,
-        ): void {
+        ): NodeObservation {
             throw new NodeProvisioningException(
                 step: 'base-packages',
                 errorCode: 'node.package_install_failed',
@@ -142,8 +145,10 @@ it('passes explicit console user identities', function (): void {
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
             bool $rolelessOperator = false,
-        ): void {
+        ): NodeObservation {
             $this->identity = $identity;
+
+            return new NodeObservation('x86_64');
         }
     });
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
@@ -183,8 +188,10 @@ it('bootstraps as root for a new node and as the managed user for an existing no
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
             bool $rolelessOperator = false,
-        ): void {
+        ): NodeObservation {
             $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
+
+            return new NodeObservation('x86_64');
         }
     });
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger

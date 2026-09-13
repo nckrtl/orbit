@@ -19,6 +19,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
@@ -26,6 +27,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceDeploymentLayout;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\Schedule;
 
 beforeEach(function (): void {
     [$this->caller, $this->instance, $this->route] = orb217_deployment_api_fixture();
@@ -112,6 +114,40 @@ it('keeps a completed retry read-only and requires the recorded SQLite selection
         ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
         ->assertConflict()
         ->assertJsonPath('error.code', 'deployment_layout.request_conflict');
+});
+
+it('answers not_convertible for a release-layout AppInstance with a copied Schedule and changes nothing', function (): void {
+    $releasePath = "{$this->instance->production_home}/releases/initial";
+    $this->instance->update(['checkout_path' => $releasePath]);
+    Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->instance->node_id,
+        'name' => 'prune',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/deployment-layout",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'deployment_layout.not_convertible');
+
+    expect($this->converter->calls)
+        ->toBe([])
+        ->and(AppInstanceDeploymentLayout::query()->count())
+        ->toBe(0)
+        ->and($this->instance->refresh()->checkout_path)
+        ->toBe($releasePath);
 });
 
 it('rejects unknown malformed and wrongly typed input before conversion', function (string $body): void {
