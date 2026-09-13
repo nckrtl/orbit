@@ -71,6 +71,7 @@ use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
+use App\Domain\Metrics\MetricsCredentialOperationLock;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
@@ -176,6 +177,7 @@ use App\Infrastructure\Metrics\MetricsSshExecutor;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
+use App\Infrastructure\Metrics\NativeMetricsCredentialOperationLock;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
@@ -320,6 +322,14 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
+        $this->app->scoped(
+            MetricsCredentialOperationLock::class,
+            static fn (): MetricsCredentialOperationLock => new NativeMetricsCredentialOperationLock(
+                directory: rtrim(string: (string) config('orbit.home'), characters: '/')
+                    .'/locks/metrics-credentials',
+                deadline: app(CommandDeadline::class),
+            ),
+        );
         $this->app->scoped(
             ClusterRouterOperationLock::class,
             static fn (): ClusterRouterOperationLock => new NativeClusterRouterOperationLock(
