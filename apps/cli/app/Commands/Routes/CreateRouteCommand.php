@@ -51,8 +51,8 @@ final class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $publication = $this->option('publication');
-        if (! is_string($publication)) {
+        $publication = $this->publication($this->option('publication'));
+        if ($publication === null) {
             return self::FAILURE;
         }
 

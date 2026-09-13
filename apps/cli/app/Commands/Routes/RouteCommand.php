@@ -33,6 +33,22 @@ abstract class RouteCommand extends GatewayCommand
         return $id;
     }
 
+    /**
+     * Returns the given `--publication` value when it is a non-empty string, or null after rendering
+     * `route.publication_invalid`. The Gateway owns the accepted publication values; this only
+     * refuses a missing or empty value.
+     */
+    protected function publication(mixed $publication): ?string
+    {
+        if (is_string($publication) && $publication !== '') {
+            return $publication;
+        }
+
+        $this->renderGatewayFailure('route.publication_invalid', 'Publication intent must be a non-empty value.');
+
+        return null;
+    }
+
     protected function renderRoute(RouteResponse $route, string $message): int
     {
         if ($this->option('json') === true) {
