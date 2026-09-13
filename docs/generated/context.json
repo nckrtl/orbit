@@ -1312,6 +1312,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0063-prefer-active-cluster-tlds-for-generated-routes.md",
+            "title": "ADR 0063: Prefer active Cluster TLDs for generated Routes",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0023",
+                "0063"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
