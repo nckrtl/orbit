@@ -38,6 +38,9 @@ describe('workspace:new', function (): void {
             ->expectsOutputToContain(
                 'Absolute target-node checkout path',
             )
+            ->expectsOutputToContain(
+                'Numeric legacy Instance ID, not an AppInstance ID',
+            )
             ->assertExitCode(0);
     });
 

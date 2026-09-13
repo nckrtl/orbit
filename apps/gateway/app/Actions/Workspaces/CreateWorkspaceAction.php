@@ -16,6 +16,7 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Workspaces\LegacyWorkspaceOwner;
 use App\Models\Instance;
 use App\Models\Workspace;
 use Throwable;
@@ -34,6 +35,7 @@ final readonly class CreateWorkspaceAction
     /** @return array{workspace: Workspace, created: bool} */
     public function execute(CreateWorkspaceData $data): array
     {
+        new LegacyWorkspaceOwner()->refuseAppInstance($data->instanceId);
         $instance = Instance::query()->with(['app', 'node.roles'])->findOrFail($data->instanceId);
         $this->ensureAppDevInstance($instance);
         $workspace = Workspace::query()->firstOrNew([
