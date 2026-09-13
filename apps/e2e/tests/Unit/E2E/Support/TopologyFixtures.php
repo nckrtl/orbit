@@ -464,6 +464,7 @@ function pinnedWorktreeBatchResult(
  * @param  list<array<array-key, mixed>>  $events
  * @param  null|Closure(list<string>): void  $observe
  * @param  null|Closure(list<string>): (?ProcessResult)  $guestOverride
+ * @param  null|Closure(list<string>, ProcessResult): (?ProcessResult)  $inventoryOverride
  */
 function fakePinnedWorktreeProcesses(
     TopologyTarget $target,
@@ -472,6 +473,7 @@ function fakePinnedWorktreeProcesses(
     ?Closure $guestOverride = null,
     ?string $operationId = null,
     ?TopologyTarget $existingTarget = null,
+    ?Closure $inventoryOverride = null,
 ): void {
     $realProcess = new ProcessFactory;
     $runningInstances = [];
@@ -488,6 +490,7 @@ function fakePinnedWorktreeProcesses(
         $guestOverride,
         $operationId,
         $existingTarget,
+        $inventoryOverride,
     ) {
         $command = $process->command;
         $observe?->__invoke($command);
@@ -615,6 +618,9 @@ function fakePinnedWorktreeProcesses(
             $runningInstances,
             $existingTarget === null ? 2 : 3,
         );
+        if ($inventory !== null && $inventoryOverride !== null) {
+            $inventory = $inventoryOverride($command, $inventory) ?? $inventory;
+        }
         if ($inventory !== null && ($command[3] ?? null) === 'list' && $deletedInstances !== []) {
             return Process::result(json_encode(array_values(array_filter(
                 json_decode($inventory->output(), true, 512, JSON_THROW_ON_ERROR),

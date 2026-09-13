@@ -21,7 +21,7 @@ uses(TestCase::class);
  *
  * @param  array<string, int>  $failures
  * @param  list<array{labels:list<string>,instances:list<string>,argv:list<list<string>>}>  $batches
- * @param  list<array{instance:string,argv:list<string>}>  $execs
+ * @param  list<array{instance:string,argv:list<string>,stdin:?string,timeout:int}>  $execs
  */
 function fakePreparerGuests(array $failures, array &$batches, array &$execs, array $outputs = []): void
 {
@@ -65,7 +65,16 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
             ), JSON_THROW_ON_ERROR));
         }
         expect($command[3] ?? null)->toBe('exec');
-        $execs[] = ['instance' => (string) $command[4], 'argv' => array_slice($command, 6)];
+        $execs[] = [
+            'instance' => (string) $command[4],
+            'argv' => array_slice($command, 6),
+            'stdin' => is_string($process->input) ? $process->input : null,
+            'timeout' => $process->timeout,
+        ];
+
+        if (($failures['schema-timeout'] ?? null) !== null && in_array('migrate', $command, true)) {
+            throw new RuntimeException('simulated timeout with private output');
+        }
 
         return Process::result('', '', $failures['environment'] ?? 0);
     });
@@ -131,7 +140,11 @@ describe('mount.source', function () {
                 'orbit-e2e',
                 '/home/orbit/orbit/apps/gateway/.env',
                 '/var/lib/orbit-e2e/gateway.env',
-            ]);
+            ])
+            ->and($execs[0]['stdin'])
+            ->toBeNull()
+            ->and($execs[0]['timeout'])
+            ->toBe(30);
     });
 
     it('names the refresh remedy when the preserved gateway environment is absent', function () {
@@ -176,6 +189,67 @@ describe('mount.source', function () {
 
         expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->exposeOrbitCli(preparerTarget()))
             ->toThrow(RuntimeException::class, 'The orbit CLI could not be linked onto the PATH on orbit-cli.app-dev.');
+    });
+});
+
+describe('prepare.schema', function () {
+    it('runs the current migration resource on the Gateway before readiness', function (): void {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests([], $batches, $execs);
+        $target = preparerTarget();
+
+        new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema($target);
+
+        expect($batches)
+            ->toBe([])
+            ->and($execs)
+            ->toHaveCount(1)
+            ->and($execs[0]['instance'])
+            ->toBe('local:'.$target->instance('gateway'))
+            ->and($execs[0]['argv'])
+            ->toBe([
+                ...GuestCommand::ORBIT_USER_PREFIX,
+                'env',
+                '-C',
+                '/home/orbit/orbit/apps/gateway',
+                'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
+                'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
+                'php',
+                'artisan',
+                'migrate',
+                '--force',
+                '--no-interaction',
+            ])
+            ->and($execs[0]['stdin'])
+            ->toBeNull()
+            ->and($execs[0]['timeout'])
+            ->toBe(900);
+    });
+
+    it('reports a migration failure without guest output', function (): void {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests(['environment' => 73], $batches, $execs);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'Gateway schema preparation failed with exit code 73.')
+            ->and($execs)
+            ->toHaveCount(1);
+    });
+
+    it('reports a migration timeout without guest output', function (): void {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests(['schema-timeout' => 1], $batches, $execs);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
+            ->toThrow(
+                RuntimeException::class,
+                'Gateway schema preparation could not complete: Incus command timed out or could not run: Incus guest command could not run.',
+            )
+            ->and($execs)
+            ->toHaveCount(1);
     });
 });
 

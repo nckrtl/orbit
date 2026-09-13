@@ -1566,7 +1566,8 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/e2e"
+                "apps/e2e",
+                "apps/gateway"
             ],
             "concepts": [
                 "App",
