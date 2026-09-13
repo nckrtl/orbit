@@ -1331,6 +1331,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0064-name-application-endpoints-as-domains.md",
+            "title": "ADR 0064: Name application endpoints as domains",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Legacy Instance",
+                "Node",
+                "Route",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0023",
+                "0044",
+                "0063",
+                "0064"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
