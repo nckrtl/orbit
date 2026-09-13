@@ -1152,6 +1152,7 @@ it('records pre-persistence firewall allow and deny failures against the path-bo
     ]);
     $node->accessibleNodes()->attach($node);
     $denyRequestId = (string) Str::uuid();
+    $allowRequestId = (string) Str::uuid();
     $conflictRequestId = (string) Str::uuid();
 
     $this
@@ -1168,6 +1169,7 @@ it('records pre-persistence firewall allow and deny failures against the path-bo
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $allowRequestId)
         ->postJson("/api/v1/nodes/{$node->id}/firewall-rules/allow", [
             'name' => 'private-web',
             'source' => 'any',
