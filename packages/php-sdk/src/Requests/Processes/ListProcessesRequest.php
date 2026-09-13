@@ -16,7 +16,7 @@ final class ListProcessesRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        private readonly int $appInstanceId,
+        private readonly AppInstanceProcessTarget|NodeProcessTarget $target,
     ) {}
 
     public function resolveEndpoint(): string
@@ -39,9 +39,6 @@ final class ListProcessesRequest extends GatewayRequest
     /** @return array{target_type: string, target_id: int} */
     protected function defaultQuery(): array
     {
-        return [
-            'target_type' => 'instance',
-            'target_id' => $this->appInstanceId,
-        ];
+        return $this->target->toRequestData();
     }
 }

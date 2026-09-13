@@ -94,6 +94,70 @@ it('adds and lists a systemd process through the minimal API contract', function
         ->assertJsonPath('data.0.runtime_status', 'running');
 });
 
+it('adds and lists a Node-targeted Docker process', function (): void {
+    $response = $this->postJson('/api/v1/processes', [
+        'target_type' => 'node',
+        'target_id' => $this->node->id,
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'image' => 'postgres:18',
+        'command' => ['postgres'],
+        'restart_policy' => 'unless-stopped',
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.target_type', 'node')
+        ->assertJsonPath('data.target_id', $this->node->id)
+        ->assertJsonPath('data.name', 'postgres')
+        ->assertJsonPath('data.runtime', 'docker')
+        ->assertJsonPath('data.working_directory', '/app')
+        ->assertJsonMissingPath('data.node_id');
+
+    $this->assertDatabaseHas('activity_log', [
+        'command' => 'process:add',
+        'subject_type' => Node::class,
+        'subject_id' => $this->node->id,
+        'target_node_id' => $this->node->id,
+        'status' => 'succeeded',
+    ]);
+
+    $this
+        ->getJson('/api/v1/processes?target_type=node&target_id='.$this->node->id)
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.name', 'postgres')
+        ->assertJsonPath('data.0.target_type', 'node');
+
+    $this
+        ->getJson('/api/v1/processes?target_type=instance&target_id='.$this->instance->id)
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
+it('adds a Node-targeted systemd process without an AppInstance environment file', function (): void {
+    $response = $this->postJson('/api/v1/processes', [
+        'target_type' => 'node',
+        'target_id' => $this->node->id,
+        'name' => 'herdr-observer',
+        'runtime' => 'systemd',
+        'command' => ['/usr/local/bin/herdr-observer'],
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.target_type', 'node')
+        ->assertJsonPath('data.working_directory', '/home/orbit')
+        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/herdr-observer']);
+
+    $process = Process::query()->sole();
+
+    expect($process->owner_type)
+        ->toBe(Node::class)
+        ->and($process->runtime_config['environment_file'] ?? null)
+        ->toBe('');
+});
+
 it('rejects Workspace process targets before runtime or record mutation', function (): void {
     $this
         ->postJson('/api/v1/processes', [

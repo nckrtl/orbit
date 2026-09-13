@@ -65,6 +65,7 @@ The online removal runs these steps in order and reports success only after the 
 
 | Step | Observable result |
 | --- | --- |
+| Node Processes | The Gateway stops and removes every Process owned by the Node, then deletes those records. |
 | Grafana access | The Gateway revokes the Node's Grafana access. |
 | Metrics exporter | The Gateway retires the Node's Metrics exporter state and converges the remaining fleet. |
 | Public SSH recovery | The Gateway restores the exact `orbit:public-ssh-recovery` UFW rule on the machine over WireGuard without enabling UFW. |
@@ -76,13 +77,14 @@ The Gateway skips the public SSH step for a Node without a WireGuard peer, becau
 
 `--offline` is for a Node the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps the ordinary guards, so the flag never bypasses a guard on a reachable machine. The flag also skips the public SSH recovery step when the Node answers, so omit it for a reachable Node.
 
-For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, and Orbit UFW rules and the Metrics exporter stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
+For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, and Orbit UFW rules and the Metrics exporter stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
 
 A failed step rolls the Gateway back and keeps the Node record active. Each failure names the step that stopped and the state the Gateway leaves behind.
 
 | Code | Step | Result |
 | --- | --- | --- |
 | `node.has_app_instances`, `node.has_instances`, `node.has_firewall_rules`, `node.has_roles` | guard | The Gateway changes nothing. |
+| `node.process_cleanup_failed` | `process-cleanup` | The Node record stays active. Removed Processes stay removed, and unfinished Process cleanup remains for retry. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | guard | The Gateway changes nothing. |
 | `node.confirmation_required` | guard | The Gateway changes nothing; `--offline` needs `--force`. |
 | `node.provisioning_busy` | lifecycle owner | The Gateway changes nothing; another lifecycle operation holds the Node name. |

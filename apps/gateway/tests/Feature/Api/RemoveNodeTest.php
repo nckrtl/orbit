@@ -21,6 +21,8 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -37,6 +39,7 @@ use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Process;
 use App\Models\Schedule;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
@@ -334,6 +337,82 @@ it('retires Metrics exporter state before removing network projections', functio
         ->assertOk();
 
     expect($this->peers->removed)->toBe([$target->id]);
+});
+
+it('removes Node-owned Processes before deleting the Node', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $process = $target->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller);
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and($runtime->removed)
+        ->toBe([$process->id]);
+    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
+});
+
+it('keeps the Node and remaining Processes when owned Process cleanup fails', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    $runtime->failRemove = true;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $process = $target->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'node.process_cleanup_failed');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty();
+    $this->assertDatabaseHas('processes', ['id' => $process->id]);
+});
+
+it('forgets Node-owned Process records during offline removal without remote cleanup', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_offline_probe($target);
+    $process = $target->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller, offline: true, force: true);
+
+    expect($target->fresh())->toBeNull()
+        ->and($runtime->removed)
+        ->toBeEmpty();
+    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
 });
 
 it('refuses Node removal before mutation while a Schedule uses the Node', function (): void {
@@ -1183,6 +1262,47 @@ final class RemoveNodeFakeReachability implements NodeReachabilityProbe
     public function degradation(Node $node): ?ExporterDegradationReason
     {
         return $node->id === $this->unreachableNodeId ? ExporterDegradationReason::Unreachable : null;
+    }
+}
+
+final class RemoveNodeFakeProcessRuntimeManager implements ProcessRuntimeManager
+{
+    /** @var list<int> */
+    public array $removed = [];
+
+    public bool $failRemove = false;
+
+    public function assertCanStart(Process $process): void {}
+
+    public function converge(Process $process): void {}
+
+    public function start(Process $process): void {}
+
+    public function stop(Process $process): void {}
+
+    public function restart(Process $process): void {}
+
+    public function status(Process $process): string
+    {
+        return 'stopped';
+    }
+
+    public function logs(Process $process, int $lines): string
+    {
+        return '';
+    }
+
+    public function remove(Process $process): void
+    {
+        if ($this->failRemove) {
+            throw new ProcessOperationException(
+                step: 'remove',
+                errorCode: 'process.remove_failed',
+                message: 'Exact Process ownership could not be verified.',
+            );
+        }
+
+        $this->removed[] = $process->id;
     }
 }
 

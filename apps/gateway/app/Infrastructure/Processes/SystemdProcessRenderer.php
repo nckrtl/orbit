@@ -35,15 +35,17 @@ final readonly class SystemdProcessRenderer
         if (
             $command === []
             || ! str_starts_with($command[0], '/')
-            || ! is_string($environmentFile)
-            || $environmentFile === ''
+            || ($environmentFile !== null && ! is_string($environmentFile))
         ) {
             throw new InvalidArgumentException(
-                'A systemd process needs an absolute executable, command argv, and an environment file.',
+                'A systemd process needs an absolute executable and command argv.',
             );
         }
 
         $environmentProjection = $this->environmentProjection($target, $managedAccount);
+        $environmentFileLine = is_string($environmentFile) && $environmentFile !== ''
+            ? ['EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile)]
+            : [];
 
         return implode("\n", [
             '[Unit]',
@@ -58,7 +60,7 @@ final readonly class SystemdProcessRenderer
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory),
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
-            'EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile),
+            ...$environmentFileLine,
             ...$environmentProjection['directives'],
             'ExecStart='
                 .implode(

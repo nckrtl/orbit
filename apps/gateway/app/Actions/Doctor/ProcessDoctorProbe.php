@@ -17,6 +17,7 @@ use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Process;
 
 final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
@@ -33,13 +34,24 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $processes = Process::query()
-            ->where('owner_type', AppInstance::class)
-            ->whereIn(
-                'owner_id',
-                AppInstance::query()
-                    ->select('id')
-                    ->where('node_id', $context->node->id),
-            )
+            ->where(function ($query) use ($context): void {
+                $query
+                    ->where(function ($query) use ($context): void {
+                        $query
+                            ->where('owner_type', AppInstance::class)
+                            ->whereIn(
+                                'owner_id',
+                                AppInstance::query()
+                                    ->select('id')
+                                    ->where('node_id', $context->node->id),
+                            );
+                    })
+                    ->orWhere(function ($query) use ($context): void {
+                        $query
+                            ->where('owner_type', Node::class)
+                            ->where('owner_id', $context->node->id);
+                    });
+            })
             ->orderBy('id')
             ->get();
 
