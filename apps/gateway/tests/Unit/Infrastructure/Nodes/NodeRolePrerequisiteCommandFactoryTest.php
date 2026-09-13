@@ -673,6 +673,8 @@ it('rejects foreign launchers before publishing stable entry points', function (
         foreach (['vp', 'node', 'pnpm', 'npx', 'bun'] as $binary) {
             expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
         }
+
+        expect($harness['candidateDirectories'])->toBeEmpty();
     } finally {
         new Filesystem()->deleteDirectory($harness['root']);
     }
@@ -689,6 +691,14 @@ it('accepts existing Orbit launchers for the old Vite Plus home', function (): v
 
     try {
         expect($harness['process']->isSuccessful())->toBeTrue($harness['process']->getErrorOutput());
+        expect($harness['versionChecks'])->toBe([
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/pnpm --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/npm --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/npx --version => 0",
+            "-u {$harness['owner']} -H env BUN_INSTALL=/opt/orbit/bun {$harness['stableDirectory']}/bun --version => 0",
+        ]);
 
         foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
             expect(file_get_contents("{$harness['stableDirectory']}/{$binary}"))
@@ -708,13 +718,32 @@ it('preserves exact launchers while rolling back new entry points after verifica
             RoleName::AppDev,
             default_managed_user_account(),
         )->input ?? '';
-    $harness = role_javascript_runtime_harness($script, failingRuntime: 'npx', exactLauncher: 'vp');
+    $harness = role_javascript_runtime_harness(
+        $script,
+        failingRuntime: 'npx',
+        failingRuntimeExitCode: 23,
+        exactLauncher: 'vp',
+    );
 
     try {
         expect($harness['process']->isSuccessful())
             ->toBeFalse()
+            ->and($harness['process']->getExitCode())
+            ->toBe(23)
+            ->and($harness['versionChecks'])
+            ->toBe([
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/pnpm --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/npm --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/npx --version => 23",
+            ])
             ->and(file_get_contents("{$harness['stableDirectory']}/vp"))
-            ->toBe($harness['exactLauncherContents']);
+            ->toBe($harness['exactLauncherContents'])
+            ->and(file_get_contents("{$harness['stableDirectory']}/unrelated"))
+            ->toBe("unrelated\n")
+            ->and($harness['candidateDirectories'])
+            ->toBeEmpty();
 
         foreach (['node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
             expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
@@ -723,6 +752,76 @@ it('preserves exact launchers while rolling back new entry points after verifica
         new Filesystem()->deleteDirectory($harness['root']);
     }
 });
+
+it('distinguishes an earlier version failure from the intended npx rollback failure', function (): void {
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '';
+    $harness = role_javascript_runtime_harness(
+        $script,
+        failingRuntime: 'node',
+        failingRuntimeExitCode: 19,
+        exactLauncher: 'vp',
+    );
+
+    try {
+        expect($harness['process']->getExitCode())
+            ->toBe(19)
+            ->and($harness['versionChecks'])
+            ->toBe([
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 19",
+            ])
+            ->and(file_get_contents("{$harness['stableDirectory']}/vp"))
+            ->toBe($harness['exactLauncherContents'])
+            ->and($harness['candidateDirectories'])
+            ->toBeEmpty();
+
+        foreach (['node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
+            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
+it('rejects privileged version checks outside the fixture contract', function (string $unexpectedInvocation): void {
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppProd,
+            default_managed_user_account(),
+        )->input ?? '';
+    $harness = role_javascript_runtime_harness($script, unexpectedPrivilegedInvocation: $unexpectedInvocation);
+    $unexpectedCommand = $unexpectedInvocation === 'shape'
+        ? "-u {$harness['owner']} {$harness['stableDirectory']}/vp --version"
+        : "-u {$harness['owner']} -H {$harness['root']}/nonfixture --version";
+
+    try {
+        expect($harness['process']->getExitCode())
+            ->toBe(125)
+            ->and($harness['process']->getErrorOutput())
+            ->toContain("Rejected JavaScript runtime fixture command ({$unexpectedInvocation}): {$unexpectedCommand}")
+            ->and($harness['versionChecks'])
+            ->toBeEmpty()
+            ->and($harness['nonFixtureExecuted'])
+            ->toBeFalse()
+            ->and($harness['candidateDirectories'])
+            ->toBeEmpty();
+
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
+            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+})->with([
+    'unexpected command shape' => 'shape',
+    'nonfixture executable target' => 'target',
+]);
 
 it('materializes the Composer manifest and vendor bin directory idempotently', function (): void {
     $harness = role_composer_harness();
@@ -791,14 +890,16 @@ it('cleans Composer temp candidates after success, failure, and publication race
 });
 
 /**
- * @return array{root: string, sourceDirectory: string, stableDirectory: string, exactLauncherContents: string, process: Process}
+ * @return array{root: string, sourceDirectory: string, stableDirectory: string, owner: string, exactLauncherContents: string, versionChecks: list<string>, nonFixtureExecuted: bool, candidateDirectories: list<string>, process: Process}
  */
 function role_javascript_runtime_harness(
     string $script,
     ?string $foreignLauncher = null,
     ?string $failingRuntime = null,
+    int $failingRuntimeExitCode = 1,
     ?string $exactLauncher = null,
     bool $legacyLaunchers = false,
+    ?string $unexpectedPrivilegedInvocation = null,
 ): array {
     $filesystem = new Filesystem;
     $root = sys_get_temp_dir().'/orbit-role-javascript-runtime-'.Str::random(16);
@@ -806,9 +907,10 @@ function role_javascript_runtime_harness(
     $stableDirectory = "{$root}/stable";
     $filesystem->makeDirectory($sourceDirectory, 0o700, recursive: true);
     $filesystem->makeDirectory($stableDirectory, 0o700, recursive: true);
+    $filesystem->put("{$stableDirectory}/unrelated", "unrelated\n");
 
     foreach (['vp', 'node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
-        $exitCode = $binary === $failingRuntime ? 1 : 0;
+        $exitCode = $binary === $failingRuntime ? $failingRuntimeExitCode : 0;
         $filesystem->put("{$sourceDirectory}/{$binary}", "#!/bin/sh\nexit {$exitCode}\n");
         chmod(filename: "{$sourceDirectory}/{$binary}", permissions: 0o755);
     }
@@ -869,6 +971,75 @@ function role_javascript_runtime_harness(
         [$sourceDirectory, $sourceDirectory, $stableDirectory, "'{$owner['name']}:{$group['name']}'", 'true'],
         $publicationScript,
     );
+    $privilegeFixture = "{$root}/privilege-fixture";
+    $versionCheckLog = "{$root}/version-checks.log";
+    $privilegeFixtureScript = <<<'SH'
+#!/bin/sh
+set -u
+reject() {
+    printf 'Rejected JavaScript runtime fixture command (%s): %s\n' "$1" "$original" >&2
+    exit 125
+}
+original="$*"
+[ "$#" -ge 5 ] || reject shape
+[ "$1" = -u ] || reject shape
+[ "$2" = "__OWNER__" ] || reject shape
+[ "$3" = -H ] || reject shape
+shift 3
+if [ "$1" = env ]; then
+    [ "$#" -eq 4 ] || reject shape
+    [ "$2" = BUN_INSTALL=/opt/orbit/bun ] || reject shape
+    shift 2
+else
+    [ "$#" -eq 2 ] || reject shape
+fi
+target=$1
+[ "$2" = --version ] || reject shape
+case "$target" in
+    __STABLE_DIRECTORY__/vp|__STABLE_DIRECTORY__/node|__STABLE_DIRECTORY__/pnpm|__STABLE_DIRECTORY__/npm|__STABLE_DIRECTORY__/npx|__STABLE_DIRECTORY__/bun) ;;
+    *) reject target ;;
+esac
+[ -x "$target" ] || reject target
+if "$target" --version; then
+    status=0
+else
+    status=$?
+fi
+printf '%s => %s\n' "$original" "$status" >> __VERSION_CHECK_LOG__
+exit "$status"
+SH;
+    $privilegeFixtureScript = str_replace(
+        ['__OWNER__', '__STABLE_DIRECTORY__', '__VERSION_CHECK_LOG__'],
+        [$owner['name'], $stableDirectory, $versionCheckLog],
+        $privilegeFixtureScript,
+    );
+    $filesystem->put($privilegeFixture, $privilegeFixtureScript);
+    chmod(filename: $privilegeFixture, permissions: 0o755);
+    $nonFixtureMarker = "{$root}/nonfixture-ran";
+    $nonFixtureExecutable = "{$root}/nonfixture";
+    $filesystem->put($nonFixtureExecutable, "#!/bin/sh\nprintf 'ran\\n' > {$nonFixtureMarker}\n");
+    chmod(filename: $nonFixtureExecutable, permissions: 0o755);
+
+    $publicationScript = match ($unexpectedPrivilegedInvocation) {
+        null => $publicationScript,
+        'shape' => str_replace(
+            "sudo -u \"\$managed_user\" -H {$stableDirectory}/vp --version",
+            "sudo -u \"\$managed_user\" {$stableDirectory}/vp --version",
+            $publicationScript,
+        ),
+        'target' => str_replace(
+            "sudo -u \"\$managed_user\" -H {$stableDirectory}/vp --version",
+            "sudo -u \"\$managed_user\" -H {$nonFixtureExecutable} --version",
+            $publicationScript,
+        ),
+        default => throw new InvalidArgumentException('Unknown unexpected privileged invocation.'),
+    };
+    $publicationScript = str_replace('sudo -u ', escapeshellarg($privilegeFixture).' -u ', $publicationScript, $adaptedCalls);
+
+    if ($adaptedCalls !== 6 || preg_match('/(^|\s)sudo(\s|$)/m', $publicationScript) === 1) {
+        throw new RuntimeException('Could not isolate every JavaScript runtime privileged fixture command.');
+    }
+
     $process = new Process(['bash', '-seu']);
     $process->setInput(
         "managed_user=$(id -un)\nvp_home={$sourceDirectory}\nvp_environment='VP_HOME=/opt/orbit/vite-plus'\nlauncher_environment='export VP_HOME=/opt/orbit/vite-plus'\nbun_binary={$sourceDirectory}/bun\n{$publicationScript}\n",
@@ -879,7 +1050,11 @@ function role_javascript_runtime_harness(
         'root' => $root,
         'sourceDirectory' => $sourceDirectory,
         'stableDirectory' => $stableDirectory,
+        'owner' => $owner['name'],
         'exactLauncherContents' => $exactLauncherContents,
+        'versionChecks' => is_file($versionCheckLog) ? file($versionCheckLog, FILE_IGNORE_NEW_LINES) : [],
+        'nonFixtureExecuted' => is_file($nonFixtureMarker),
+        'candidateDirectories' => glob("{$stableDirectory}/.orbit-js-runtime.*") ?: [],
         'process' => $process,
     ];
 }
