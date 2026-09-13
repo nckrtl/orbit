@@ -6,9 +6,14 @@ namespace App\Infrastructure\AppDev;
 
 use Closure;
 use RuntimeException;
+use Throwable;
 
 final class PrivateDnsTransportServer
 {
+    private const int MaxUdpDatagramsPerWake = 64;
+
+    private const int MaxUdpDatagramBytes = 4096;
+
     /** @var resource|null */
     private $udp;
 
@@ -20,6 +25,7 @@ final class PrivateDnsTransportServer
         private readonly string $listenAddress = '127.0.0.1',
         private int $port = 0,
         private readonly ?Closure $onIdle = null,
+        private readonly float $ioTimeoutSeconds = 2.0,
     ) {}
 
     public function start(): void
@@ -116,15 +122,20 @@ final class PrivateDnsTransportServer
             return;
         }
 
-        $peer = '';
-        $message = stream_socket_recvfrom($this->udp, 4096, 0, $peer);
-        if (! is_string($message) || $message === '' || $peer === '') {
-            return;
-        }
+        for ($drained = 0; $drained < self::MaxUdpDatagramsPerWake; $drained++) {
+            $peer = '';
+            $message = @stream_socket_recvfrom($this->udp, self::MaxUdpDatagramBytes, 0, $peer);
+            if (! is_string($message) || $message === '' || $peer === '') {
+                return;
+            }
 
-        $source = $this->peerAddress($peer);
-        $response = $this->handler->handle($source, $message);
-        stream_socket_sendto($this->udp, $response, 0, $peer);
+            try {
+                $response = $this->handler->handle($this->peerAddress($peer), $message);
+                stream_socket_sendto($this->udp, $response, 0, $peer);
+            } catch (Throwable) {
+                continue;
+            }
+        }
     }
 
     private function handleTcp(): void
@@ -139,6 +150,7 @@ final class PrivateDnsTransportServer
         }
 
         try {
+            stream_set_blocking($connection, false);
             $peer = stream_socket_get_name($connection, true);
             $source = is_string($peer) ? $this->peerAddress($peer) : '';
             $lengthBytes = $this->readExact($connection, 2);
@@ -149,7 +161,9 @@ final class PrivateDnsTransportServer
 
             $message = $this->readExact($connection, $length['len']);
             $response = $this->handler->handle($source, $message);
-            fwrite($connection, pack('n', strlen($response)).$response);
+            $this->writeAll($connection, pack('n', strlen($response)).$response);
+        } catch (RuntimeException) {
+            return;
         } finally {
             fclose($connection);
         }
@@ -171,8 +185,14 @@ final class PrivateDnsTransportServer
     private function readExact($connection, int $bytes): string
     {
         $buffer = '';
+        $deadline = microtime(true) + $this->ioTimeoutSeconds;
 
         while (strlen($buffer) < $bytes) {
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0 || ! $this->await($connection, write: false, timeoutSeconds: $remaining)) {
+                throw new RuntimeException('The private DNS TCP query timed out.');
+            }
+
             $chunk = fread($connection, $bytes - strlen($buffer));
             if (! is_string($chunk) || $chunk === '') {
                 throw new RuntimeException('The private DNS TCP query was truncated.');
@@ -182,5 +202,58 @@ final class PrivateDnsTransportServer
         }
 
         return $buffer;
+    }
+
+    /**
+     * @param  resource  $connection
+     */
+    private function writeAll($connection, string $payload): void
+    {
+        $written = 0;
+        $deadline = microtime(true) + $this->ioTimeoutSeconds;
+
+        while ($written < strlen($payload)) {
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0 || ! $this->await($connection, write: true, timeoutSeconds: $remaining)) {
+                throw new RuntimeException('The private DNS TCP response write timed out.');
+            }
+
+            $chunk = fwrite($connection, substr($payload, $written));
+            if (! is_int($chunk) || $chunk < 1) {
+                throw new RuntimeException('The private DNS TCP response write failed.');
+            }
+
+            $written += $chunk;
+        }
+    }
+
+    /**
+     * @param  resource  $socket
+     */
+    private function await($socket, bool $write, ?float $timeoutSeconds = null): bool
+    {
+        $timeout = $timeoutSeconds ?? $this->ioTimeoutSeconds;
+        $read = $write ? [] : [$socket];
+        $writeables = $write ? [$socket] : [];
+        $except = [];
+        [$seconds, $microseconds] = $this->timeoutParts($timeout);
+        $ready = @stream_select($read, $writeables, $except, $seconds, $microseconds);
+
+        return $ready === 1;
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function timeoutParts(float $seconds): array
+    {
+        $clamped = max(0.0, $seconds);
+        $whole = (int) $clamped;
+        $microseconds = (int) round(($clamped - $whole) * 1_000_000);
+        if ($microseconds === 1_000_000) {
+            return [$whole + 1, 0];
+        }
+
+        return [$whole, $microseconds];
     }
 }
