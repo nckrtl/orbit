@@ -16,6 +16,25 @@ final class GatewayFailureRenderer
 
     /**
      * @param  array<string,mixed>  $details
+     * @return array<string,mixed>
+     */
+    public static function safeDetails(string $code, array $details): array
+    {
+        if ($code === 'validation.failed') {
+            return self::fieldDetails($details);
+        }
+
+        $id = $details['id'] ?? null;
+
+        if (is_int($id) && $id > 0) {
+            return ['id' => $id];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<string,mixed>  $details
      */
     public static function write(
         Command $command,
@@ -37,7 +56,14 @@ final class GatewayFailureRenderer
 
         $command->error(self::safeErrorMessage($humanMessage ?? $message));
 
-        foreach (self::fieldDetails($details) as $field => $messages) {
+        $humanDetails = $details;
+        $id = $humanDetails['id'] ?? null;
+
+        if (is_int($id) && $id > 0) {
+            $humanDetails['id'] = (string) $id;
+        }
+
+        foreach (self::fieldDetails($humanDetails) as $field => $messages) {
             foreach (is_string($messages) ? [$messages] : $messages as $fieldMessage) {
                 $command->line("{$field}: {$fieldMessage}");
             }

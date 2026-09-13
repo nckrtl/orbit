@@ -469,6 +469,7 @@ final readonly class UpdateToolAction
             versionConstraint: $tool->version_constraint,
             message: $message,
             previous: $previous,
+            toolId: $tool->id,
         );
     }
 }

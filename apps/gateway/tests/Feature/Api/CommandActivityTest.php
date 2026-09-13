@@ -902,6 +902,60 @@ it('records retained failed tools as subjects with safe outcomes', function (): 
         ->not->toContain('RAW_EXCEPTION_SENTINEL');
 });
 
+it('surfaces the persisted tool id when install version probe fails', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-probe-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.46',
+        'wireguard_ip' => '10.44.0.46',
+        'ssh_host_fingerprint' => 'SHA256:tool-probe',
+    ]);
+    $this->markAsGateway($node);
+    ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Brew,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $fake = new FakeToolManager(ToolManagerName::Brew);
+    $fake->installedVersions = [new ToolManagerException('installed', 'RAW_PROBE_SENTINEL')];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'brew', 'package' => 'totally-fake'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'tool.version_probe_failed');
+
+    $tool = Tool::query()->where('node_id', $node->id)->sole();
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    expect($tool->status)
+        ->toBe(ToolStatus::Failed)
+        ->and($tool->error_code)
+        ->toBe('tool.version_probe_failed')
+        ->and($response->json('error.details.id'))
+        ->toBe($tool->id)
+        ->and($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($tool->id)
+        ->and($activity->target_node_id)
+        ->toBe($node->id);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->getJson("/api/v1/activities/{$activity->id}")
+        ->assertOk()
+        ->assertJsonPath('data.subject_type', 'tool')
+        ->assertJsonPath('data.subject_id', $tool->id)
+        ->assertJsonPath('data.target_node_id', $node->id);
+
+    expect($response->getContent())->not->toContain('RAW_PROBE_SENTINEL');
+});
+
 it('does not persist command result data from manager failures', function (): void {
     $node = Node::query()->create([
         'name' => 'tool-redaction-node',
