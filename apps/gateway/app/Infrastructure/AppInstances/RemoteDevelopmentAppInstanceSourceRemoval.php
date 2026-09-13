@@ -247,7 +247,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $inventory->repositoryIdentity,
                     $force ? '1' : '0',
                 ],
-                input: self::removalScript(),
+                input: self::releaseEmptyGroupingDirectoryFunction().self::removalScript(),
             ),
             step: 'app-instance-source-remove',
             errorCode: $this->failureCode($force),
@@ -363,7 +363,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             }
 
             $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
-            [$node, $user, $group, $root] = $this->memberContext($member);
+            [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
             $result = $this->ssh->execute(
                 $node,
@@ -389,8 +389,9 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                         $inventory->origin,
                         base64_encode($inventory->worktreeInventory),
                         (string) $member->source_commit,
+                        $groupingDirectory,
                     ],
-                    input: self::finalizationScript(),
+                    input: self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript(),
                 ),
                 step: 'app-instance-source-finalization',
                 errorCode: 'instance.removal_incomplete',
@@ -535,7 +536,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
 
     private function cleanupReceiptLocked(AppInstanceRemovalMember $member, string $receipt): string
     {
-        [$node, $user, $group, $root] = $this->memberContext($member);
+        [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
         $result = $this->ssh->execute(
             $node,
             new RemoteCommand(
@@ -554,8 +555,9 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $user,
                     $group,
                     (string) $member->source_identity,
+                    $groupingDirectory,
                 ],
-                input: self::receiptCleanupScript(),
+                    input: self::releaseEmptyGroupingDirectoryFunction().self::receiptCleanupScript(),
             ),
             step: 'app-instance-source-finalization',
             errorCode: 'instance.removal_incomplete',
@@ -659,7 +661,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         return $state;
     }
 
-    /** @return array{0: Node, 1: string, 2: string, 3: StoragePath} */
+    /** @return array{0: Node, 1: string, 2: string, 3: StoragePath, 4: string} */
     private function memberContext(AppInstanceRemovalMember $member): array
     {
         $appInstance = AppInstance::query()->with(['app', 'node'])->find($member->app_instance_id);
@@ -672,7 +674,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
 
         $context = $this->context($appInstance);
 
-        return [$appInstance->node, $context['user'], $context['group'], $context['root']];
+        return [
+            $appInstance->node,
+            $context['user'],
+            $context['group'],
+            $context['root'],
+            $this->boundaries->appInstanceGroupingDirectory($appInstance, $context['root'])->value,
+        ];
     }
 
     private function assertRecordedOwnership(
@@ -1241,6 +1249,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             shift 9
             managed_group=$1
             source_identity=$2
+            grouping_directory=$3
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
             receipt_path="$state/$operation.$member.receipt"
@@ -1352,6 +1361,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             esac
             test ! -e "$quarantine"
             test ! -L "$quarantine"
+            release_empty_grouping_directory "$grouping_directory"
             printf '%s\n' "$receipt"
             BASH;
     }
@@ -1377,6 +1387,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             expected_origin=$6
             expected_worktrees=$7
             source_commit=$8
+            grouping_directory=$9
             export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
@@ -1396,6 +1407,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 test -f "$receipt_path"
                 test ! -L "$receipt_path"
                 printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
+                release_empty_grouping_directory "$grouping_directory"
                 printf '%s\n' "$receipt"
                 exit 0
             fi
@@ -1559,6 +1571,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             esac
             test ! -e "$quarantine"
             test ! -L "$quarantine"
+            release_empty_grouping_directory "$grouping_directory"
             printf '%s\n' "$receipt"
             BASH;
     }
@@ -1806,7 +1819,39 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 trap - EXIT
             fi
             rm -rf -- "$checkout"
-            rmdir --ignore-fail-on-non-empty -- "$grouping_directory"
+            release_empty_grouping_directory "$grouping_directory"
+            BASH;
+    }
+
+    private static function releaseEmptyGroupingDirectoryFunction(): string
+    {
+        return <<<'BASH'
+            release_empty_grouping_directory() {
+                grouping_directory=$1
+                test "$grouping_directory" != "$root"
+                test "$grouping_directory" = "$(dirname "$checkout")"
+                case "$grouping_directory" in
+                    "$root"/*) ;;
+                    *) return 1 ;;
+                esac
+                if [ ! -e "$grouping_directory" ] && [ ! -L "$grouping_directory" ]; then
+                    return 0
+                fi
+                if [ -L "$grouping_directory" ] || [ ! -d "$grouping_directory" ]; then
+                    return 0
+                fi
+                if [ "$(realpath -e "$grouping_directory")" != "$grouping_directory" ]; then
+                    return 0
+                fi
+                if [ "$(stat -c '%U:%G' "$grouping_directory")" != "$managed_user:$managed_group" ]; then
+                    return 0
+                fi
+                if [ -n "$(find -P "$grouping_directory" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+                    return 0
+                fi
+                rmdir -- "$grouping_directory"
+            }
+
             BASH;
     }
 }
