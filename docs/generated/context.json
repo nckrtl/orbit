@@ -1384,9 +1384,7 @@
             "title": "ADR 0066: Transfer development AppInstances between Nodes",
             "kind": "decision",
             "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
+                "apps/gateway"
             ],
             "concepts": [
                 "App",
@@ -1506,7 +1504,8 @@
                 "0025",
                 "0027",
                 "0032",
-                "0046"
+                "0046",
+                "0066"
             ]
         },
         {

@@ -186,6 +186,10 @@ Production removal uses the same command without deleting application content. I
 
 The removal reference also describes worktree preflight, forced fixed-set cascades, retained branches, ordered cleanup, and transient unavailable traffic.
 
+## Move an AppInstance
+
+Orbit exposes no HTTP route, CLI command, or PHP SDK method that moves an AppInstance to another Node while preserving its ID. [ADR 0066](../decisions/0066-transfer-development-appinstances-between-nodes.md) records the Gateway obligations for that move.
+
 ## Input boundary
 
 AppInstance creation and removal do not accept a repository, command, process, or shell input. Registration accepts bounded source facts for independent Gateway verification; it does not accept a command, process, shell input, or caller-selected Node. The App owns the repository, and the optional creation branch selects source without changing placement or Route identity. Orbit does not install application dependencies as part of framework detection.
