@@ -12,6 +12,7 @@ use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Tool;
 use App\Models\Workspace;
 use DateTimeInterface;
 
@@ -118,6 +119,7 @@ final readonly class ActivityData
             Workspace::class => 'workspace',
             OrbitProcess::class => 'process',
             FirewallRule::class => 'firewall_rule',
+            Tool::class => 'tool',
             default => null,
         };
     }

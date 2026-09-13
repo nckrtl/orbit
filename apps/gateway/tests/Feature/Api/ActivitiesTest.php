@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\Node;
+use App\Models\Tool;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -174,6 +175,28 @@ describe('activity access and redaction', function (): void {
             ->assertJsonPath('data.properties', activity_api_sanitized_properties());
 
         expect($response->getContent())->not->toContain($credential, $invalidKeyCredential);
+    });
+
+    it('exposes a persisted tool subject with the public tool vocabulary', function (): void {
+        $activity = activity_api_record(
+            requestId: '99999999-9999-4999-8999-999999999999',
+            command: 'tool:install',
+            status: 'failed',
+            properties: ['tool' => ['package' => 'totally-fake']],
+            errorCode: 'tool.version_probe_failed',
+        );
+        $activity->update([
+            'subject_type' => Tool::class,
+            'subject_id' => 110,
+            'target_node_id' => $this->operator->id,
+        ]);
+
+        $this
+            ->getJson("/api/v1/activities/{$activity->id}")
+            ->assertOk()
+            ->assertJsonPath('data.subject_type', 'tool')
+            ->assertJsonPath('data.subject_id', 110)
+            ->assertJsonPath('data.target_node_id', $this->operator->id);
     });
 
     it('recursively sanitizes arbitrary properties before persistence and API serialization', function (): void {

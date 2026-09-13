@@ -302,6 +302,77 @@ it('rejects unsupported successful outcomes as invalid response JSON', function 
         ->assertExitCode(1);
 });
 
+it('surfaces the persisted tool id from a version-probe failure', function (): void {
+    $id = '99999999-9999-4999-8999-999999999999';
+    MockClient::global([
+        InstallToolRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'tool.version_probe_failed',
+                    'message' => 'The tool manager operation failed.',
+                    'details' => [
+                        'step' => 'install',
+                        'outcome' => 'manager_failed',
+                        'id' => 110,
+                        'manager_output' => 'validation-secret',
+                    ],
+                ],
+            ],
+            502,
+            ['X-Orbit-Request-Id' => $id],
+        ),
+    ]);
+
+    $this
+        ->artisan('tool:install', [
+            'package' => 'totally-fake',
+            '--node' => 12,
+            '--manager' => 'brew',
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode(['error' => [
+            'code' => 'tool.version_probe_failed',
+            'message' => 'The tool manager operation failed.',
+            'details' => ['id' => 110],
+            'request_id' => $id,
+        ]], JSON_THROW_ON_ERROR))
+        ->doesntExpectOutputToContain('validation-secret')
+        ->doesntExpectOutputToContain('step')
+        ->assertExitCode(1);
+});
+
+it('prints the persisted tool id for a human version-probe failure', function (): void {
+    $id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    MockClient::global([
+        InstallToolRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'tool.version_probe_failed',
+                    'message' => 'The tool manager operation failed.',
+                    'details' => [
+                        'step' => 'install',
+                        'outcome' => 'manager_failed',
+                        'id' => 110,
+                    ],
+                ],
+            ],
+            502,
+            ['X-Orbit-Request-Id' => $id],
+        ),
+    ]);
+
+    $this
+        ->artisan('tool:install', [
+            'package' => 'totally-fake',
+            '--node' => 12,
+            '--manager' => 'brew',
+        ])
+        ->expectsOutput('The tool manager operation failed.')
+        ->expectsOutput('id: 110')
+        ->expectsOutput("Request ID: {$id}")
+        ->assertExitCode(1);
+});
+
 it('renders both constraint failures as one line JSON envelopes', function (string $code, string $message): void {
     $id = '77777777-7777-4777-8777-777777777777';
     MockClient::global([

@@ -128,9 +128,11 @@ it('records exactly one bounded doctor activity without report findings or diagn
         ->and($activity->error_code)
         ->toBeNull()
         ->and($activity->subject_type)
-        ->toBeNull()
+        ->toBe(Node::class)
+        ->and($activity->subject_id)
+        ->toBe($selected->id)
         ->and($activity->target_node_id)
-        ->toBeNull()
+        ->toBe($selected->id)
         ->and($activity->properties?->toArray())
         ->toBe([
             'method' => 'POST',
@@ -142,6 +144,105 @@ it('records exactly one bounded doctor activity without report findings or diagn
         ])
         ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))
         ->not->toContain('issues', 'findings', 'summary', 'stdout', 'stderr', 'diagnostics');
+});
+
+it('leaves doctor activity unattributed when node_id is omitted', function (): void {
+    $caller = command_activity_doctor_node('doctor-fleet-caller');
+    $selected = command_activity_doctor_node('doctor-fleet-selected');
+    $caller->accessibleNodes()->attach($selected->id);
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            return new NodeInspectionData(true, 'linux', 'x86_64', true);
+        }
+    });
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/doctor', [
+            'families' => ['node'],
+        ])
+        ->assertOk();
+
+    $activity = Activity::query()->sole();
+
+    expect($activity->command)
+        ->toBe('doctor:run')
+        ->and($activity->status)
+        ->toBe('succeeded')
+        ->and($activity->subject_type)
+        ->toBeNull()
+        ->and($activity->subject_id)
+        ->toBeNull()
+        ->and($activity->target_node_id)
+        ->toBeNull()
+        ->and($activity->properties?->get('input'))
+        ->toBe(['families' => ['node']]);
+});
+
+it('does not attribute doctor activity to a missing node on 404', function (): void {
+    $caller = command_activity_doctor_node('doctor-missing-caller');
+    $allowed = command_activity_doctor_node('doctor-missing-allowed');
+    $caller->accessibleNodes()->attach($allowed->id);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/doctor', [
+            'node_id' => 999_999,
+            'families' => ['node'],
+        ])
+        ->assertNotFound()
+        ->assertJsonPath('error.code', 'http.404');
+
+    $activity = Activity::query()->sole();
+
+    expect($activity->command)
+        ->toBe('doctor:run')
+        ->and($activity->status)
+        ->toBe('failed')
+        ->and($activity->error_code)
+        ->toBe('http.404')
+        ->and($activity->subject_type)
+        ->toBeNull()
+        ->and($activity->subject_id)
+        ->toBeNull()
+        ->and($activity->target_node_id)
+        ->toBeNull()
+        ->and($activity->properties?->get('input'))
+        ->toBe([
+            'node_id' => 999_999,
+            'families' => ['node'],
+        ]);
+});
+
+it('attributes a failed doctor activity to an inaccessible node on 403', function (): void {
+    $caller = command_activity_doctor_node('doctor-denied-caller');
+    $allowed = command_activity_doctor_node('doctor-denied-allowed');
+    $inaccessible = command_activity_doctor_node('doctor-denied-inaccessible');
+    $caller->accessibleNodes()->attach($allowed->id);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/doctor', [
+            'node_id' => $inaccessible->id,
+            'families' => ['node'],
+        ])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required');
+
+    $activity = Activity::query()->sole();
+
+    expect($activity->command)
+        ->toBe('doctor:run')
+        ->and($activity->status)
+        ->toBe('failed')
+        ->and($activity->subject_type)
+        ->toBe(Node::class)
+        ->and($activity->subject_id)
+        ->toBe($inaccessible->id)
+        ->and($activity->target_node_id)
+        ->toBe($inaccessible->id);
 });
 
 it('does not persist rejected doctor request data in activity', function (string $body): void {
@@ -799,6 +900,60 @@ it('records retained failed tools as subjects with safe outcomes', function (): 
             'error_code' => 'tool.install_failed',
         ])->and(json_encode($activity->toArray()))
         ->not->toContain('RAW_EXCEPTION_SENTINEL');
+});
+
+it('surfaces the persisted tool id when install version probe fails', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-probe-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.46',
+        'wireguard_ip' => '10.44.0.46',
+        'ssh_host_fingerprint' => 'SHA256:tool-probe',
+    ]);
+    $this->markAsGateway($node);
+    ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Brew,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $fake = new FakeToolManager(ToolManagerName::Brew);
+    $fake->installedVersions = [new ToolManagerException('installed', 'RAW_PROBE_SENTINEL')];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'brew', 'package' => 'totally-fake'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'tool.version_probe_failed');
+
+    $tool = Tool::query()->where('node_id', $node->id)->sole();
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    expect($tool->status)
+        ->toBe(ToolStatus::Failed)
+        ->and($tool->error_code)
+        ->toBe('tool.version_probe_failed')
+        ->and($response->json('error.details.id'))
+        ->toBe($tool->id)
+        ->and($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($tool->id)
+        ->and($activity->target_node_id)
+        ->toBe($node->id);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->getJson("/api/v1/activities/{$activity->id}")
+        ->assertOk()
+        ->assertJsonPath('data.subject_type', 'tool')
+        ->assertJsonPath('data.subject_id', $tool->id)
+        ->assertJsonPath('data.target_node_id', $node->id);
+
+    expect($response->getContent())->not->toContain('RAW_PROBE_SENTINEL');
 });
 
 it('does not persist command result data from manager failures', function (): void {

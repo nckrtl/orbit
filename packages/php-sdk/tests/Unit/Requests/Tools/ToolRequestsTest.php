@@ -140,6 +140,45 @@ describe('tool requests', function (): void {
         ],
         'tool malformed member' => [new ListToolsRequest(12), [['id' => '41']], InvalidArgumentException::class],
     ]);
+
+    it('preserves a persisted tool id from a version-probe install failure', function (): void {
+        $requestId = tool_request_id();
+        $mockClient = new MockClient([
+            InstallToolRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'tool.version_probe_failed',
+                        'message' => 'The tool manager operation failed.',
+                        'details' => [
+                            'step' => 'install',
+                            'outcome' => 'manager_failed',
+                            'id' => 110,
+                        ],
+                    ],
+                ],
+                502,
+                ['X-Orbit-Request-Id' => $requestId],
+            ),
+        ]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+
+        try {
+            $connector->send(new InstallToolRequest(12, 'brew', 'totally-fake'))->dto();
+            $this->fail('Expected GatewayApiException.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe('tool.version_probe_failed')
+                ->and($exception->details())
+                ->toBe([
+                    'step' => 'install',
+                    'outcome' => 'manager_failed',
+                    'id' => 110,
+                ])
+                ->and($exception->requestId())
+                ->toBe($requestId);
+        }
+    });
 });
 
 /**
