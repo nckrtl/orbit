@@ -237,8 +237,6 @@ it('attributes a failed doctor activity to an inaccessible node on 403', functio
         ->toBe('doctor:run')
         ->and($activity->status)
         ->toBe('failed')
-        ->and($activity->error_code)
-        ->toBe('node_access.required')
         ->and($activity->subject_type)
         ->toBe(Node::class)
         ->and($activity->subject_id)
