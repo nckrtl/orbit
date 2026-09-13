@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Models\Cluster;
+use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\FakeRouterLanIngressReconciler;
@@ -79,4 +84,64 @@ function caddy_adapt(string $configuration): CommandResult
     } finally {
         unlink($path);
     }
+}
+
+/**
+ * @return array{Node, Node}
+ */
+function router_lan_topology(): array
+{
+    $cluster = Cluster::query()->create([
+        'name' => 'lan-cluster',
+        'state' => ClusterState::Active,
+    ]);
+    $router = router_lan_node('lan-router', '10.44.0.10', '10.20.0.10', $cluster);
+    $eligible = router_lan_node('lan-member', '10.44.0.11', '10.20.0.11', $cluster);
+    $router->roles()->create([
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+        'cluster_id' => $cluster->id,
+    ]);
+
+    return [$router->fresh('cluster') ?? $router, $eligible];
+}
+
+/** @return list<Node> */
+function router_lan_denied_sources(Cluster $cluster): array
+{
+    $other = Cluster::query()->create([
+        'name' => 'other-lan-cluster',
+        'state' => ClusterState::Active,
+    ]);
+
+    return [
+        router_lan_node('vpn-only', '10.44.0.12', null, $cluster),
+        router_lan_node('inactive-member', '10.44.0.13', '10.20.0.13', $cluster, LifecycleStatus::Failed),
+        router_lan_node('standalone', '10.44.0.14', '10.20.0.14'),
+        router_lan_node('other-cluster', '10.44.0.15', '10.20.0.15', $other),
+        router_lan_node('lan-only', '10.44.0.16', '10.20.0.16', $cluster, publicKey: null),
+        router_lan_node('public-source', '10.44.0.17', '10.20.0.17'),
+    ];
+}
+
+function router_lan_node(
+    string $name,
+    string $wireguardIp,
+    ?string $lanIp,
+    ?Cluster $cluster = null,
+    LifecycleStatus $status = LifecycleStatus::Active,
+    ?string $publicKey = 'wg-key',
+): Node {
+    return Node::query()->create([
+        'name' => $name,
+        'cluster_id' => $cluster?->id,
+        'status' => $status,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.'.str_replace('10.44.0.', '', $wireguardIp),
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_ip' => $wireguardIp,
+        'lan_ip' => $lanIp,
+        'wireguard_public_key' => $publicKey,
+    ]);
 }
