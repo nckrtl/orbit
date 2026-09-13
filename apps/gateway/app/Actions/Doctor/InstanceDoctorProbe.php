@@ -16,6 +16,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Models\AppInstance;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 {
@@ -89,42 +90,119 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 );
             }
 
+            if ($instance->environment === 'production' && $this->productionAssociationMissing($instance)) {
+                $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationMissing);
+            }
+
+            if ($instance->environment === 'production' && $this->productionAssociationShared($instance, $rows)) {
+                $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationShared);
+            }
+
             try {
                 $observation = $this->inspector->inspect($instance);
-                foreach ([
+                $fields = $instance->environment === 'production' ? [
+                    'productionHomeMatches' => InstanceDoctorIssueCode::ProductionHomeMismatch,
+                    'releaseSelectionMatches' => InstanceDoctorIssueCode::ReleaseSelectionMismatch,
+                    'selectedReleaseRootMatches' => InstanceDoctorIssueCode::SelectedReleaseRootMismatch,
+                    'environmentProjectionMatches' => InstanceDoctorIssueCode::EnvironmentProjectionMismatch,
+                    'phpFpmProjectionMatches' => InstanceDoctorIssueCode::PhpFpmProjectionMismatch,
+                    'caddyProjectionMatches' => InstanceDoctorIssueCode::CaddyProjectionMismatch,
+                ] : [
                     'checkoutExists' => InstanceDoctorIssueCode::CheckoutMissing,
                     'repositoryLayoutMatches' => InstanceDoctorIssueCode::RepositoryLayoutMismatch,
                     'originMatches' => InstanceDoctorIssueCode::OriginMismatch,
                     'sourceIdentityMatches' => InstanceDoctorIssueCode::SourceIdentityMismatch,
-                ] as $field => $code) {
+                ];
+
+                $inspectionFailed = false;
+                foreach ($fields as $field => $code) {
+                    if ($observation->{$field} === null) {
+                        $inspectionFailed = true;
+
+                        continue;
+                    }
+
                     if ($observation->{$field} !== false) {
                         continue;
                     }
-                    $issues[] = new DoctorIssueData(
-                        $code,
-                        DoctorIssueKind::Drift,
-                        'instance',
-                        $instance->id,
-                        $instance->name,
-                        'Instance projection does not match managed intent.',
-                        'matching',
-                        'mismatch',
-                    );
+                    $issues[] = $this->projectionIssue($instance, $code);
+                }
+
+                if ($inspectionFailed) {
+                    $issues[] = $this->inspectionFailedIssue($instance);
                 }
             } catch (DoctorInspectionException) {
-                $issues[] = new DoctorIssueData(
-                    InstanceDoctorIssueCode::InspectionFailed,
-                    DoctorIssueKind::Unverifiable,
-                    'instance',
-                    $instance->id,
-                    $instance->name,
-                    'Instance inspection could not be verified.',
-                    'verifiable',
-                    'unverifiable',
-                );
+                $issues[] = $this->inspectionFailedIssue($instance);
             }
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+    }
+
+    private function productionAssociationMissing(AppInstance $instance): bool
+    {
+        if ($instance->selected_php_version === null) {
+            return false;
+        }
+
+        return array_any(
+            [
+                $instance->production_php_service,
+                $instance->production_php_pool,
+                $instance->production_php_socket,
+            ],
+            static fn (?string $value): bool => ! is_string($value) || $value === '',
+        );
+    }
+
+    /** @param Collection<int, AppInstance> $instances */
+    private function productionAssociationShared(AppInstance $instance, Collection $instances): bool
+    {
+        if ($instance->selected_php_version === null || $this->productionAssociationMissing($instance)) {
+            return false;
+        }
+
+        return $instances->contains(function (AppInstance $other) use ($instance): bool {
+            if (
+                $other->id === $instance->id
+                || $other->environment !== 'production'
+                || $other->selected_php_version === null
+            ) {
+                return false;
+            }
+
+            return
+                $other->production_php_service === $instance->production_php_service
+                || $other->production_php_pool === $instance->production_php_pool
+                || $other->production_php_socket === $instance->production_php_socket;
+        });
+    }
+
+    private function projectionIssue(AppInstance $instance, InstanceDoctorIssueCode $code): DoctorIssueData
+    {
+        return new DoctorIssueData(
+            $code,
+            DoctorIssueKind::Drift,
+            'instance',
+            $instance->id,
+            $instance->name,
+            'Instance projection does not match managed intent.',
+            'matching',
+            'mismatch',
+        );
+    }
+
+    private function inspectionFailedIssue(AppInstance $instance): DoctorIssueData
+    {
+        return new DoctorIssueData(
+            InstanceDoctorIssueCode::InspectionFailed,
+            DoctorIssueKind::Unverifiable,
+            'instance',
+            $instance->id,
+            $instance->name,
+            'Instance inspection could not be verified.',
+            'verifiable',
+            'unverifiable',
+        );
     }
 }

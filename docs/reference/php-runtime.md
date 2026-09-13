@@ -108,6 +108,16 @@ header @vite Cache-Control "public, max-age=31536000, immutable"
 
 Laravel's Vite plugin fingerprints every file under `public/build/assets`, so browsers can keep them for a year. The `file` matcher limits the header to assets that exist on disk. A request for a removed fingerprint falls through to Laravel's front controller without the header, so a 404 is never cached as immutable. Development sites set no caching header. `php_fastcgi`, `encode zstd gzip`, and `file_server` keep Caddy defaults; Orbit renders no `try_files`, and the `php_fastcgi` default tries `{path}`, then `{path}/index.php`, then `index.php`.
 
+## Inspect production runtime with Doctor
+
+Doctor checks that each production PHP AppInstance has one dedicated service, pool, and socket association and that another AppInstance does not share them. It compares the current generated identity files and rejects a `local.conf` override of the recorded user, home, pool, socket, or application path.
+
+Doctor also checks the service's loaded `ExecStart` and `PHP_INI_SCAN_DIR`, the active master's executable and root identity, and the master's ownership of the expected service-owned socket. For each worker that exists during inspection, it checks the parent, user IDs, group IDs, and process root. An idle `ondemand` pool with no workers is valid. The workload Caddy check applies to standalone and Cluster-scoped Routes; it does not inspect the Router as a second AppInstance runtime.
+
+These observations establish the current configuration and the directly observable runtime association. They do not reconstruct every PHP-FPM directive loaded from an earlier configuration generation. Doctor does not compare an application's mutable working directory with the configured initial directory. It accepts an operating agent's `local.conf` changes when they preserve generated identity, does not compare allowed tuning with Orbit's seeded defaults, and does not require a tuning edit to be reloaded only to satisfy inspection.
+
+Doctor reports bounded drift when a current file or reliable live association does not match. It reports `instance.inspection_failed` as unverifiable when a required service, process, worker, or socket observation cannot be read or parsed, while retaining other findings that it established independently. Inspection does not invoke PHP-FPM, create a FastCGI or application request, reload or signal a service, reset a cache, or rewrite a file.
+
 ## Verification
 
 On a Node, an operator checks a dedicated service, socket, generated identity, and local tuning separately:

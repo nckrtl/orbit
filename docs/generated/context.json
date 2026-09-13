@@ -1572,6 +1572,8 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Cluster",
+                "Doctor",
                 "Effective web root",
                 "Gateway",
                 "Node",
@@ -1589,6 +1591,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Route"
@@ -1705,9 +1708,12 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Cluster",
+                "Doctor",
                 "Gateway",
                 "Node",
-                "Route"
+                "Route",
+                "Router"
             ],
             "governing_adrs": [
                 "0021",
