@@ -8,6 +8,11 @@ The import and update endpoints accept either a positive numeric AppInstance ID 
 
 The Gateway accepts an active AppInstance only after its recorded placement is complete and no source migration or Route hostname change is pending. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
 
+| Owner condition | Refusal |
+| --- | --- |
+| The active AppInstance has no recorded source profile | HTTP 409 with `instance.source_profile_missing` from import, update, and synchronization; the message names the creation retry with `--recover-source-profile` that [Applications](../domains/applications.md#recover-a-missing-source-profile) describes |
+| The AppInstance, its Node, or its sole Route is otherwise unavailable | HTTP 409 with `env.owner_unavailable` |
+
 ## Use the PHP SDK
 
 The PHP software development kit (SDK) provides typed import, update, and synchronization requests. Each request accepts a positive numeric AppInstance ID or an exact Route hostname and encodes the selector as one path segment. The update request also encodes its environment key as one path segment. The SDK forwards these inputs without looking up the AppInstance or resolving placeholders.

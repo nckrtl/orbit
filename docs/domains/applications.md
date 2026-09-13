@@ -149,9 +149,15 @@ The Gateway reports a failed source, PHP selection, Laravel URL, runtime, certif
 
 Active state means that Orbit prepared the source, selected any required PHP runtime, aligned Laravel configuration when applicable, and prepared the Route. It does not promise that the application is healthy. Missing dependencies, an application key, or a database can make a new Laravel application return an error, including HTTP 500, without making the AppInstance or Route inactive.
 
-An active AppInstance is terminal for creation retry. The Gateway does not inspect its source profile again, including when `recover_source_profile` is true. The existing removal operation and its source and Route checks remain unchanged.
+An active AppInstance is terminal for creation retry. The identical request returns the recorded AppInstance and Route without inspecting the source or changing Laravel configuration, runtime, or Route projection, including when `recover_source_profile` is true and the profile is already recorded. The existing removal operation and its source and Route checks remain unchanged.
 
 The endpoint is available for an agent or operator to inspect and finish application setup. App setup-step configuration and execution belong to a separate contract.
+
+### Recover a missing source profile
+
+An active development or production AppInstance provisioned before the Gateway recorded source profiles has no Laravel classification. The Gateway refuses environment import, update, and synchronization and the explicit Route hostname change for that AppInstance with `instance.source_profile_missing` and HTTP 409, and the message names the recovery.
+
+To recover the profile, repeat the identical creation request with `--recover-source-profile`. The Gateway verifies the recorded request identity as for every retry, inspects the recorded source once, stores the Laravel classification, stores the selected PHP version only when none is recorded, and returns the unchanged active AppInstance and Route. Development inspects the recorded checkout; production inspects the recorded production home or its selected release. Without the option, the request returns the AppInstance unchanged and the refusal remains.
 
 ## Set the effective web root
 
