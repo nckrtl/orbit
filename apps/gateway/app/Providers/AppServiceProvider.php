@@ -34,6 +34,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentSynchronizer;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
+use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionCloneRouteProjector;
@@ -259,6 +260,7 @@ final class AppServiceProvider extends ServiceProvider
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
         ProductionCloneRouteProjector::class => NativeProductionRouteProjector::class,
         AppInstanceEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
+        AppInstanceRouteEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         RouteHostnameProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,

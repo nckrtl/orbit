@@ -14,6 +14,7 @@ enum RouteHostnameChangeStep: string
     case WorkloadVerified = 'workload-verified';
     case RouterCaddy = 'router-caddy';
     case LaravelUrl = 'laravel-url';
+    case EnvironmentSynchronized = 'environment-synchronized';
     case DnsPublished = 'dns-published';
     case DatabaseCutover = 'database-cutover';
     case RollbackPending = 'rollback-pending';
@@ -21,5 +22,6 @@ enum RouteHostnameChangeStep: string
     case RollbackCaddy = 'rollback-caddy';
     case RollbackCertificates = 'rollback-certificates';
     case RollbackLaravelUrl = 'rollback-laravel-url';
+    case RollbackEnvironment = 'rollback-environment';
     case RolledBack = 'rolled-back';
 }

@@ -42,6 +42,10 @@ class CommandFailure(RuntimeError):
         self.exit_code = exit_code
 
 
+class RecoveryNotExecuted(RuntimeError):
+    pass
+
+
 def run(root, *command, capture=True):
     options = {'cwd': root, 'text': True, 'start_new_session': True,
                'pass_fds': () if COMMAND_LOCK is None else (COMMAND_LOCK,),
@@ -232,7 +236,7 @@ def install_project(root, project):
     run(directory, 'composer', 'install', '--no-interaction', '--prefer-dist', capture=False)
 
 
-def refresh_project(root, store, project, commit, installed=False, force=False):
+def refresh_project(root, store, project, commit, installed=False, recover=False):
     if not installed:
         install_project(root, project)
     info = metadata(root, project)
@@ -242,7 +246,7 @@ def refresh_project(root, store, project, commit, installed=False, force=False):
     try:
         snapshot = read_publication(store, project)
         compatible(root, project, snapshot, info)
-        if snapshot['tested_commit'] == commit and not force:
+        if snapshot['tested_commit'] == commit and not recover:
             print(f'[{project}] already published at {commit[:12]}', flush=True)
             return
         baseline = snapshot['graph']
@@ -256,11 +260,17 @@ def refresh_project(root, store, project, commit, installed=False, force=False):
         graph_path.unlink(missing_ok=True)
     else:
         atomic_write(graph_path, baseline.encode())
-    run(root / project, 'composer', 'test:affected', capture=False)
+    command = ['composer', 'test:affected']
+    if recover:
+        command += ['--', '--fresh']
+    run(root / project, *command, capture=False)
     if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
         raise RuntimeError('Cache checkout changed during testing; publication refused.')
     graph = graph_path.read_text()
     anchor = validate_graph(root, graph, info, commit)
+    if recover and anchor != commit:
+        raise RecoveryNotExecuted(
+            f'TIA recovery at {commit} did not record executed tests; graph remains at {anchor}.')
     snapshot = {
         'schema': 1, 'project': project, 'tested_commit': commit, 'graph_commit': anchor,
         'published_at': datetime.now(timezone.utc).isoformat(),
@@ -376,7 +386,8 @@ def record_outcome(state, project, outcome):
         tool = check['tool']
         if check.get('kind') == 'check_failure':
             unresolved[tool] = {**check, 'commit': outcome['commit']}
-        elif check['exit_code'] == 0:
+        elif check['exit_code'] == 0 and (tool != 'tia' or tool not in unresolved
+                                          or check.get('recovery') == 'executed'):
             unresolved.pop(tool, None)
     if not unresolved:
         del state['correctness_failures'][project]
@@ -455,19 +466,27 @@ def project_checks(root, store, project, commit, directory):
     global COMMAND_LOG
     checks = []
     unresolved = load_requests(store).get('correctness_failures', {}).get(project, {})
-    operations = [('install', lambda: install_project(root, project)),
-                  ('tia', lambda: refresh_project(root, store, project, commit, installed=True, force='tia' in unresolved))]
-    operations += [(tool, lambda tool=tool: refresh_quality(root, store, project, commit, tool, force=tool in unresolved)) for tool in QUALITY]
-    for tool, operation in operations:
+    recovering_tia = 'tia' in unresolved
+    operations = [('install', lambda: install_project(root, project), False),
+                  ('tia', lambda: refresh_project(root, store, project, commit, installed=True,
+                                                  recover=recovering_tia), recovering_tia)]
+    operations += [(tool, lambda tool=tool: refresh_quality(root, store, project, commit, tool,
+                                                            force=tool in unresolved), False)
+                   for tool in QUALITY]
+    for tool, operation, recovering in operations:
         COMMAND_LOG = directory / (project.replace('/', '-') + '-' + tool + '.log')
         COMMAND_LOG.write_text(f'{project}: {tool} at {commit}\n')
         entry = {'tool': tool, 'log': str(COMMAND_LOG), 'exit_code': 0}
         try:
             operation()
+            if recovering:
+                entry['recovery'] = 'executed'
         except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
             entry.update(exit_code=getattr(error, 'exit_code', None) or 1, error=str(error),
                          kind='check_failure' if tool != 'install' and isinstance(error, CommandFailure)
                          and error.exit_code is not None else 'maintenance_failure')
+            if recovering:
+                entry['recovery'] = ('not_executed' if isinstance(error, RecoveryNotExecuted) else 'failed')
             with COMMAND_LOG.open('a') as output:
                 output.write(str(error) + '\n')
         finally:

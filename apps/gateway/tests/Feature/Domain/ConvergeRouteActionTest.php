@@ -7,6 +7,9 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
+use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteHostnameProjector;
@@ -24,8 +27,10 @@ beforeEach(function (): void {
     $this->events = new RouteHostnameChangeEvents;
     $this->projector = new RouteHostnameChangeProjectorFake($this->events);
     $this->configuration = new RouteHostnameChangeConfiguratorFake($this->events);
+    $this->environment = new RouteHostnameChangeEnvironmentFake($this->events);
     app()->instance(RouteHostnameProjector::class, $this->projector);
     app()->instance(DevelopmentAppInstanceConfigurator::class, $this->configuration);
+    app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, $this->environment);
     app()->instance(
         DevelopmentProjectionOperationLock::class,
         new RouteHostnameChangeOwnerFake($this->events),
@@ -78,6 +83,75 @@ it('does not configure Laravel for a source profile classified as non-Laravel', 
     app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
     expect($this->events->values)->not->toContain('url:https://next.example.test', 'url:https://old.example.test');
+});
+
+it('synchronizes the production candidate environment before DNS and preserves the Route target', function (): void {
+    $route = route_hostname_change_route(laravel: true, environment: 'production');
+    $targetId = $route->targets->sole()->app_instance_id;
+
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
+
+    expect($this->events->values)
+        ->toBe([
+            'owner',
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'environment:candidate',
+            'dns-publication',
+            'cleanup',
+        ])
+        ->and($updated->hostname)
+        ->toBe('next.example.test')
+        ->and($updated->targets)
+        ->toHaveCount(1)
+        ->and($updated->targets->sole()->app_instance_id)
+        ->toBe($targetId);
+});
+
+it('restores the previous production environment after a pre-publication failure', function (): void {
+    $route = route_hostname_change_route(laravel: true, environment: 'production');
+    $this->environment->failures['candidate'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected environment candidate failure.');
+
+    expect($this->events->values)
+        ->toContain('environment:previous')
+        ->and($route->refresh()->hostname)
+        ->toBe('old.example.test')
+        ->and($route->failed_step)
+        ->toBe('environment-synchronization')
+        ->and($route->hostname_change_step)
+        ->toBe(RouteHostnameChangeStep::RolledBack);
+});
+
+it('keeps interrupted production environment restoration bounded and resumes the identical retry', function (): void {
+    $route = route_hostname_change_route(laravel: true, environment: 'production');
+    $this->projector->failures['workload-caddy'] = 1;
+    $this->environment->failures['previous'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected environment previous failure.');
+
+    expect($route->refresh()->hostname_change_direction)
+        ->toBe(RouteHostnameChangeDirection::Rollback)
+        ->and($route->hostname_change_step)
+        ->toBe(RouteHostnameChangeStep::RollbackCertificates)
+        ->and($route->failed_step)
+        ->toBe('rollback-environment');
+
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
+
+    expect($updated->hostname)
+        ->toBe('next.example.test')
+        ->and($updated->hostname_change_target)
+        ->toBeNull()
+        ->and(array_count_values($this->events->values)['environment:previous'])
+        ->toBe(2);
 });
 
 it('records each forward boundary failure and completes rollback to the old authoritative state', function (
@@ -370,6 +444,32 @@ it('repairs completed non-projector evidence before retrying cleanup after datab
         ->toBeNull();
 });
 
+it('revalidates the production candidate environment before retrying cleanup after cutover', function (): void {
+    $route = route_hostname_change_route(laravel: true, environment: 'production');
+    $route->update([
+        'hostname' => 'next.example.test',
+        'hostname_change_previous' => 'old.example.test',
+        'hostname_change_target' => 'next.example.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
+        'failed_step' => 'cleanup',
+        'error_code' => 'route.test_cleanup',
+    ]);
+
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
+
+    expect($this->events->values)
+        ->toBe([
+            'owner',
+            'firewall-policy',
+            'environment:candidate',
+            'cleanup',
+            'workload-verify',
+        ])
+        ->and($updated->hostname_change_target)
+        ->toBeNull();
+});
+
 it('keeps database cutover authoritative when completed cleanup evidence cannot be repaired', function (): void {
     $route = route_hostname_change_route(laravel: true);
     $route->update([
@@ -422,7 +522,7 @@ it('records cleanup failure when clearing the durable operation fields fails', f
         ->toBe('route.hostname_change_failed');
 });
 
-function route_hostname_change_route(bool $laravel): Route
+function route_hostname_change_route(bool $laravel, string $environment = 'development'): Route
 {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
@@ -445,8 +545,10 @@ function route_hostname_change_route(bool $laravel): Route
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
-        'environment' => 'development',
+        'environment' => $environment,
         'checkout_path' => '/srv/acme/main',
+        'production_home' => $environment === 'production' ? '/srv/acme/main' : null,
+        'production_user' => $environment === 'production' ? 'orbit-acme' : null,
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',
@@ -466,6 +568,34 @@ function route_hostname_change_route(bool $laravel): Route
     $route->update(['status' => 'active']);
 
     return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']);
+}
+
+final class RouteHostnameChangeEnvironmentFake implements AppInstanceRouteEnvironmentSynchronizer
+{
+    /** @var array<string, int> */
+    public array $failures = [];
+
+    public function __construct(
+        private readonly RouteHostnameChangeEvents $events,
+    ) {}
+
+    public function synchronizeRouteHostname(
+        AppInstance $instance,
+        AppInstanceEnvironmentRouteHostname $hostname,
+    ): AppInstanceEnvironmentResult {
+        $this->events->values[] = "environment:{$hostname->value}";
+
+        if (($this->failures[$hostname->value] ?? 0) > 0) {
+            $this->failures[$hostname->value]--;
+
+            throw new ResourceOperationException(
+                errorCode: "route.test_environment_{$hostname->value}",
+                message: "Injected environment {$hostname->value} failure.",
+            );
+        }
+
+        return new AppInstanceEnvironmentResult($instance->id, 'sync', true, 1);
+    }
 }
 
 final class RouteHostnameChangeEvents

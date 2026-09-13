@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Actions\AppInstances\SynchronizeAppInstanceEnvironmentAction;
 use App\Actions\AppInstances\UpdateAppInstanceEnvironmentAction;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
+use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
@@ -23,6 +29,7 @@ use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Route;
+use Dotenv\Dotenv;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -215,6 +222,81 @@ it('refuses a stale import across the recorded Route hostname transition without
         ->toBe(['EXISTING'])
         ->and($instance->environmentValues()->sole()->env_value)
         ->toBe('kept');
+});
+
+it('renders stored production values for candidate and previous Route hostnames without changing storage', function (): void {
+    [$instance, $route] = orb207_concurrency_fixture();
+    $instance->update([
+        'environment' => 'production',
+        'production_home' => $instance->checkout_path,
+        'production_user' => 'orbit-production',
+    ]);
+    $instance->environmentValues()->createMany([
+        ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
+        ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.hostname}}'],
+        ['env_key' => 'OTHER', 'env_value' => 'literal'],
+    ]);
+    $route->update([
+        'hostname_change_previous' => $route->hostname,
+        'hostname_change_target' => 'next.example.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::RouterCaddy,
+    ]);
+    $preflight = new class implements AppInstanceOperationPreflight
+    {
+        /** @var list<string> */
+        public array $hostnames = [];
+
+        public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void {}
+
+        public function assertEnvironmentWritable(
+            AppInstanceEnvironmentContext $context,
+            int $requiredCapacityBytes,
+        ): void {
+            $this->hostnames[] = $context->routeHostname;
+        }
+    };
+    $writer = new class implements AppInstanceEnvironmentWriter
+    {
+        /** @var list<string> */
+        public array $contents = [];
+
+        public function write(
+            AppInstanceEnvironmentContext $context,
+            string $contents,
+        ): AppInstanceEnvironmentWriteResult {
+            $this->contents[] = $contents;
+
+            return AppInstanceEnvironmentWriteResult::changed();
+        }
+    };
+    app()->instance(AppInstanceOperationPreflight::class, $preflight);
+    app()->instance(AppInstanceEnvironmentWriter::class, $writer);
+    $synchronizer = app(SynchronizeAppInstanceEnvironmentAction::class);
+
+    $synchronizer->synchronizeRouteHostname($instance, AppInstanceEnvironmentRouteHostname::Candidate);
+    $route->update([
+        'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
+        'hostname_change_step' => RouteHostnameChangeStep::RollbackCertificates,
+    ]);
+    $synchronizer->synchronizeRouteHostname($instance, AppInstanceEnvironmentRouteHostname::Previous);
+
+    expect($preflight->hostnames)
+        ->toBe(['next.example.test', 'concurrency.example.test'])
+        ->and(Dotenv::parse($writer->contents[0]))
+        ->toBe([
+            'APP_KEY' => 'base64:literal-key',
+            'APP_URL' => 'https://next.example.test',
+            'OTHER' => 'literal',
+        ])
+        ->and(Dotenv::parse($writer->contents[1]))
+        ->toBe([
+            'APP_KEY' => 'base64:literal-key',
+            'APP_URL' => 'https://concurrency.example.test',
+            'OTHER' => 'literal',
+        ])
+        ->and($instance->environmentValues()->orderBy('env_key')->pluck('env_value')->all())
+        ->toBe(['base64:literal-key', 'https://{{app_instance.hostname}}', 'literal']);
 });
 
 it('marks every submitted and parsed value frame as sensitive', function (): void {

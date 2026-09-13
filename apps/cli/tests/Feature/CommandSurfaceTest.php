@@ -51,6 +51,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'gateway:status',
         'gateway:trust',
         'gateway:use',
+        'instance:clone',
         'instance:deploy',
         'instance:deployment-config',
         'instance:list',
@@ -109,7 +110,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(83);
+    expect($orbitCommands)->toHaveCount(84);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -206,6 +207,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'gateway:status' => [[], ['json' => false]],
         'gateway:trust' => [[], ['accept-ca-change' => false, 'json' => false]],
         'gateway:use' => [['name'], ['json' => false]],
+        'instance:clone' => [
+            ['candidate', 'node', 'name'],
+            ['preview-name' => null, 'branch' => null, 'sqlite-source-path' => null, 'json' => false],
+        ],
         'instance:deploy' => [['instance'], ['json' => false]],
         'instance:deployment-config' => [['instance'], ['file' => null, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
@@ -482,6 +487,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ['name' => 'validation-secret'],
             'code' => 'gateway.profile_not_found',
             'message' => 'Gateway profile does not exist.',
+        ],
+        'instance:clone' => [
+            ['candidate' => '1', 'node' => '2', 'name' => 'web', '--preview-name' => 'web'],
+            ...$profileMissing,
         ],
         'instance:deploy' => [['instance' => '1'], ...$profileMissing],
         'instance:deployment-config' => [['instance' => '1'], ...$profileMissing],

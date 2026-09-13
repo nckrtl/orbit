@@ -22,7 +22,7 @@ final class ProvisionNodeCommand extends GatewayCommand
         {--orbit-user= : Orbit-managed system user; defaults to orbit for a new node}
         {--platform=linux : Node platform (linux only)}
         {--architecture= : Node machine architecture}
-        {--tld= : Unique development TLD for app-dev}
+        {--tld= : Node TLD; required for production clone preview hostnames}
         {--role=* : Initial role assignment}
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
         {--cluster= : Optional numeric Cluster ID}

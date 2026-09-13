@@ -8,8 +8,6 @@ use SensitiveParameter;
 
 final readonly class DoctorFamilyResponse
 {
-    private const array FAMILIES = ['node', 'role', 'app', 'instance', 'workspace', 'tool', 'process', 'firewall'];
-
     private const array STATUSES = ['healthy', 'drift', 'unverifiable'];
 
     /** @param list<DoctorIssueResponse> $issues */
@@ -32,7 +30,7 @@ final readonly class DoctorFamilyResponse
 
         if (
             ! is_string($family)
-            || ! in_array($family, self::FAMILIES, strict: true)
+            || DoctorFamily::tryFrom($family) === null
             || ! is_string($status)
             || ! in_array($status, self::STATUSES, strict: true)
             || ! is_int($checked)

@@ -156,6 +156,39 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         ->toBe(['feature.acme.test', 'next.acme.test']);
 });
 
+it('preserves production release sites at the environment synchronization checkpoint', function (): void {
+    [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
+    $appInstance->update([
+        'environment' => 'production',
+        'checkout_path' => '/srv/acme/releases/one',
+        'production_home' => '/srv/acme',
+        'production_user' => 'orbit-acme',
+        'production_php_socket' => '/run/php/orbit-acme.sock',
+        'status' => AppInstanceState::Active,
+        'source_is_laravel' => true,
+    ]);
+    $route->update([
+        'status' => RouteStatus::Active,
+        'hostname_change_previous' => 'feature.acme.test',
+        'hostname_change_target' => 'next.acme.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::EnvironmentSynchronized,
+    ]);
+    $sites = new AppDevSiteRepository;
+
+    $workloadSites = $sites->forNode($workload);
+    $routerSites = $sites->forNode($router);
+
+    expect($workloadSites->pluck('hostname')->all())
+        ->toBe(['feature.acme.test', 'next.acme.test'])
+        ->and($workloadSites->pluck('checkoutPath')->unique()->values()->all())
+        ->toBe(['/srv/acme/current'])
+        ->and($workloadSites->pluck('productionPhpSocket')->unique()->values()->all())
+        ->toBe(['/run/php/orbit-acme.sock'])
+        ->and($routerSites->pluck('hostname')->all())
+        ->toBe(['feature.acme.test', 'next.acme.test']);
+});
+
 it('hydrates only requested workload and Router routes while global inventory stays complete', function (): void {
     [$pendingInstance, $pendingRoute, $workload, $router] = orb127_route_projection_models();
     $activeInstance = AppInstance::query()->create([

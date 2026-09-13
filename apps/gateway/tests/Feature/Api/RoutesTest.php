@@ -10,6 +10,9 @@ use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
+use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
@@ -549,7 +552,7 @@ it('keeps final cleanup failures bounded through the Route update API', function
         ]);
 });
 
-it('keeps production hostname changes behind the active reconciliation refusal', function (): void {
+it('updates an active explicit private production hostname on the same Route', function (): void {
     $this->target->update([
         'environment' => 'production',
         'source_is_laravel' => false,
@@ -564,20 +567,36 @@ it('keeps production hostname changes behind the active reconciliation refusal',
         clusterId: null,
     ))['route'];
     $route->update(['status' => 'active']);
-    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(cleanup: true));
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
     );
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
-    $before = $route->fresh(['targets'])->toArray();
+    $targetId = $this->target->id;
+    $environment = Mockery::mock(AppInstanceRouteEnvironmentSynchronizer::class);
+    $environment
+        ->shouldReceive('synchronizeRouteHostname')
+        ->once()
+        ->withArgs(static fn (
+            AppInstance $instance,
+            AppInstanceEnvironmentRouteHostname $hostname,
+        ): bool => $instance->id === $targetId
+            && $hostname === AppInstanceEnvironmentRouteHostname::Candidate)
+        ->andReturn(new AppInstanceEnvironmentResult($targetId, 'sync', true, 1));
+    app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, $environment);
 
     $this
         ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.reconciliation_required');
+        ->assertOk()
+        ->assertJsonPath('data.id', $route->id)
+        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.hostname_change_target', null);
 
-    expect($route->fresh(['targets'])->toArray())->toBe($before);
+    expect($route->fresh()->targets)
+        ->toHaveCount(1)
+        ->and($route->targets->sole()->app_instance_id)
+        ->toBe($targetId);
 });
 
 function route_node(string $name, string $wireguardIp, ?string $tld): Node

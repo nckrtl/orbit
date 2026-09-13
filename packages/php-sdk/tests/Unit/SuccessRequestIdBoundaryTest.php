@@ -442,12 +442,15 @@ function success_request_id_factory_violations(string $contents): array
 
     if (
         str_contains($contents, 'createDtoFromResponse(')
-        && preg_match('/->successRequestId\s*\(\s*\$response\s*\)/s', $contents) !== 1
+        && preg_match('/->success(?:Header)?RequestId\s*\(\s*\$response\s*\)/s', $contents) !== 1
     ) {
         $violations[] = 'missing centralized request ID extraction';
     }
 
-    $requestIdLiteralCount = preg_match_all('/[\'\"](?:meta\.)?request_id[\'\"]/', $contents);
+    $requestIdLiteralCount = preg_match_all(
+        '/[\'\"](?:(?:meta\.)?request_id|X-Orbit-Request-Id)[\'\"]/i',
+        $contents,
+    );
 
     if (is_int($requestIdLiteralCount) && $requestIdLiteralCount > 0) {
         $violations[] = 'raw metadata request ID extraction';

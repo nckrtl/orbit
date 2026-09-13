@@ -280,6 +280,9 @@ function pinnedWorktreeInventoryResult(
             'name' => $target->network(),
             'config' => [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
+                'user.orbit.e2e.issue' => $target->issue,
+                'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+                'user.orbit.e2e.operation' => $operationId ?? str_repeat('f', 32),
                 'ipv4.address' => "10.232.{$slot}.1/24",
                 'ipv4.dhcp.ranges' => "10.232.{$slot}.10-10.232.{$slot}.".(9 + count($target->recipe->nodeKeys())),
             ],
@@ -344,6 +347,12 @@ function pinnedWorktreeInventoryResult(
 /** @param list<string> $guest */
 function pinnedWorktreeGuestCommandResult(array $guest): ProcessResult
 {
+    $script = array_search('/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', $guest, true);
+    if (is_int($script) && ($guest[$script + 1] ?? null) === '/home/orbit/.orbit/gateway.sqlite') {
+        $endpoint = $guest[$script + 2].':51820';
+
+        return Process::result(json_encode(['app-dev' => $endpoint, 'app-prod' => $endpoint], JSON_THROW_ON_ERROR));
+    }
     if (array_slice($guest, 0, 6) === ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit']) {
         $guest = array_slice($guest, 6);
     }
@@ -435,6 +444,11 @@ function pinnedWorktreeBatchResult(
             ? array_slice($guest, 6)
             : $guest;
         $result = $guestOverride?->__invoke($normalizedGuest) ?? pinnedWorktreeGuestCommandResult($guest);
+        if (in_array($request['label'], TopologyProfile::ROLES, true)
+            && str_contains(implode(' ', $guest), 'ip -4 -o addr show')) {
+            $lastOctet = 10 + array_search($request['label'], TopologyProfile::ROLES, true);
+            $result = Process::result("2: enp5s0 inet 10.44.0.{$lastOctet}/24 scope global enp5s0\n");
+        }
         $results[] = [
             'label' => $request['label'],
             'stdout' => $result->output(),
@@ -450,6 +464,7 @@ function pinnedWorktreeBatchResult(
  * @param  list<array<array-key, mixed>>  $events
  * @param  null|Closure(list<string>): void  $observe
  * @param  null|Closure(list<string>): (?ProcessResult)  $guestOverride
+ * @param  null|Closure(list<string>, ProcessResult): (?ProcessResult)  $inventoryOverride
  */
 function fakePinnedWorktreeProcesses(
     TopologyTarget $target,
@@ -458,13 +473,16 @@ function fakePinnedWorktreeProcesses(
     ?Closure $guestOverride = null,
     ?string $operationId = null,
     ?TopologyTarget $existingTarget = null,
+    ?Closure $inventoryOverride = null,
 ): void {
     $realProcess = new ProcessFactory;
     $runningInstances = [];
+    $deletedInstances = [];
     $networkCreated = false;
     Process::fake(function (PendingProcess $process) use (
         &$events,
         &$runningInstances,
+        &$deletedInstances,
         &$networkCreated,
         $realProcess,
         $target,
@@ -472,6 +490,7 @@ function fakePinnedWorktreeProcesses(
         $guestOverride,
         $operationId,
         $existingTarget,
+        $inventoryOverride,
     ) {
         $command = $process->command;
         $observe?->__invoke($command);
@@ -487,6 +506,15 @@ function fakePinnedWorktreeProcesses(
         $events[] = $command;
         if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'create') {
             $networkCreated = true;
+        }
+        if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'delete') {
+            $networkCreated = false;
+        }
+        if (($command[3] ?? null) === 'stop') {
+            $runningInstances = array_values(array_diff($runningInstances, [substr($command[4], 6)]));
+        }
+        if (($command[3] ?? null) === 'delete') {
+            $deletedInstances[] = substr($command[4], 6);
         }
         if ($existingTarget !== null && ($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
             $networks = [[
@@ -583,16 +611,26 @@ function fakePinnedWorktreeProcesses(
             $runningInstances[] = preg_replace('/\A[^:]+:/', '', $command[4]);
         }
 
-        return
-            pinnedWorktreeInventoryResult(
-                $command,
-                $target,
-                $operationId,
-                $runningInstances,
-                $existingTarget === null ? 2 : 3,
-            ) ?? $guestOverride?->__invoke(array_slice(
-                $command,
-                6,
-            )) ?? pinnedWorktreeGuestResult($command);
+        $inventory = pinnedWorktreeInventoryResult(
+            $command,
+            $target,
+            $operationId,
+            $runningInstances,
+            $existingTarget === null ? 2 : 3,
+        );
+        if ($inventory !== null && $inventoryOverride !== null) {
+            $inventory = $inventoryOverride($command, $inventory) ?? $inventory;
+        }
+        if ($inventory !== null && ($command[3] ?? null) === 'list' && $deletedInstances !== []) {
+            return Process::result(json_encode(array_values(array_filter(
+                json_decode($inventory->output(), true, 512, JSON_THROW_ON_ERROR),
+                static fn (array $instance): bool => ! in_array($instance['name'], $deletedInstances, true),
+            )), JSON_THROW_ON_ERROR));
+        }
+
+        return $inventory ?? $guestOverride?->__invoke(array_slice(
+            $command,
+            6,
+        )) ?? pinnedWorktreeGuestResult($command);
     });
 }

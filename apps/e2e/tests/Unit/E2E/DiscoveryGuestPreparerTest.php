@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\IncusHost;
+use App\E2E\Value\GuestCommand;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
@@ -20,25 +21,27 @@ uses(TestCase::class);
  *
  * @param  array<string, int>  $failures
  * @param  list<array{labels:list<string>,instances:list<string>,argv:list<list<string>>}>  $batches
- * @param  list<array{instance:string,argv:list<string>}>  $execs
+ * @param  list<array{instance:string,argv:list<string>,stdin:?string,timeout:int}>  $execs
  */
-function fakePreparerGuests(array $failures, array &$batches, array &$execs): void
+function fakePreparerGuests(array $failures, array &$batches, array &$execs, array $outputs = []): void
 {
-    Process::fake(function (PendingProcess $process) use ($failures, &$batches, &$execs) {
+    Process::fake(function (PendingProcess $process) use ($failures, &$batches, &$execs, $outputs) {
         $command = $process->command;
         if (($command[0] ?? null) === 'python3' && str_ends_with((string) $command[1], '/resources/host/exec-all.py')) {
             $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $batch = ['labels' => [], 'instances' => [], 'argv' => []];
+            $batch = ['labels' => [], 'instances' => [], 'argv' => [], 'stdin' => []];
             $results = [];
             foreach ($payload['requests'] as $request) {
                 $batch['labels'][] = $request['label'];
                 $batch['instances'][] = $request['instance'];
                 $batch['argv'][] = $request['argv'];
+                $batch['stdin'][] = $request['stdin'];
                 $results[] = [
                     'label' => $request['label'],
-                    'stdout' => in_array($request['label'], ['gateway', 'app-dev', 'app-prod'], true)
+                    'stdout' => $outputs[$request['label']] ?? (in_array($request['label'], ['gateway', 'app-dev', 'app-prod'], true)
                         ? '2: enp5s0    inet 10.44.0.'.(10 + count($batch['labels']))."/24 scope global enp5s0\n"
-                        : '',
+                        : ($request['label'] === 'retarget-gateway'
+                            ? '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820"}' : '')),
                     'stderr' => '',
                     'exit_code' => $failures[$request['label']] ?? 0,
                 ];
@@ -62,7 +65,16 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs): vo
             ), JSON_THROW_ON_ERROR));
         }
         expect($command[3] ?? null)->toBe('exec');
-        $execs[] = ['instance' => (string) $command[4], 'argv' => array_slice($command, 6)];
+        $execs[] = [
+            'instance' => (string) $command[4],
+            'argv' => array_slice($command, 6),
+            'stdin' => is_string($process->input) ? $process->input : null,
+            'timeout' => $process->timeout,
+        ];
+
+        if (($failures['schema-timeout'] ?? null) !== null && in_array('migrate', $command, true)) {
+            throw new RuntimeException('simulated timeout with private output');
+        }
 
         return Process::result('', '', $failures['environment'] ?? 0);
     });
@@ -128,7 +140,11 @@ describe('mount.source', function () {
                 'orbit-e2e',
                 '/home/orbit/orbit/apps/gateway/.env',
                 '/var/lib/orbit-e2e/gateway.env',
-            ]);
+            ])
+            ->and($execs[0]['stdin'])
+            ->toBeNull()
+            ->and($execs[0]['timeout'])
+            ->toBe(30);
     });
 
     it('names the refresh remedy when the preserved gateway environment is absent', function () {
@@ -176,6 +192,67 @@ describe('mount.source', function () {
     });
 });
 
+describe('prepare.schema', function () {
+    it('runs the current migration resource on the Gateway before readiness', function (): void {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests([], $batches, $execs);
+        $target = preparerTarget();
+
+        new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema($target);
+
+        expect($batches)
+            ->toBe([])
+            ->and($execs)
+            ->toHaveCount(1)
+            ->and($execs[0]['instance'])
+            ->toBe('local:'.$target->instance('gateway'))
+            ->and($execs[0]['argv'])
+            ->toBe([
+                ...GuestCommand::ORBIT_USER_PREFIX,
+                'env',
+                '-C',
+                '/home/orbit/orbit/apps/gateway',
+                'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
+                'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
+                'php',
+                'artisan',
+                'migrate',
+                '--force',
+                '--no-interaction',
+            ])
+            ->and($execs[0]['stdin'])
+            ->toBeNull()
+            ->and($execs[0]['timeout'])
+            ->toBe(900);
+    });
+
+    it('reports a migration failure without guest output', function (): void {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests(['environment' => 73], $batches, $execs);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'Gateway schema preparation failed with exit code 73.')
+            ->and($execs)
+            ->toHaveCount(1);
+    });
+
+    it('reports a migration timeout without guest output', function (): void {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests(['schema-timeout' => 1], $batches, $execs);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
+            ->toThrow(
+                RuntimeException::class,
+                'Gateway schema preparation could not complete: Incus command timed out or could not run: Incus guest command could not run.',
+            )
+            ->and($execs)
+            ->toHaveCount(1);
+    });
+});
+
 describe('repair.identity', function () {
     it('retargets the nodes at the cloned gateway address, then restarts PHP-FPM on the checkout roles', function () {
         $batches = [];
@@ -188,16 +265,25 @@ describe('repair.identity', function () {
         expect(array_column($batches, 'labels'))
             ->toBe([
                 ['gateway', 'app-dev', 'app-prod'],
+                ['retarget-gateway'],
                 ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
                 ['php-fpm.gateway', 'php-fpm.app-dev'],
             ])
-            ->and($batches[1]['instances'])
+            ->and($batches[1]['instances'])->toBe(['local:'.$target->instance('gateway')])
+            ->and($batches[1]['argv'])->toBe([[
+                ...GuestCommand::ORBIT_USER_PREFIX,
+                'php', '/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', '/home/orbit/.orbit/gateway.sqlite', '10.44.0.11', '10.44.0.12', '10.44.0.13',
+            ]])
+            ->and($batches[1]['stdin'])->toBe([null])
+            ->and($batches[2]['instances'])
             ->toBe(['local:'.$target->instance('app-dev'), 'local:'.$target->instance('app-prod')])
-            ->and($batches[1]['argv'])
-            ->each->toBe(['/usr/local/bin/retarget-vpn.sh', '10.44.0.11'])->and($batches[2]['instances'])->toBe([
+            ->and($batches[2]['argv'])
+            ->each->toBe(['bash', '-s', '--', '10.44.0.11', '10.44.0.11:51820'])
+            ->and($batches[2]['stdin'])->each->toBe(file_get_contents(dirname(__DIR__, 3).'/resources/guest/retarget-vpn.sh'))
+            ->and($batches[3]['instances'])->toBe([
                 'local:'.$target->instance('gateway'),
                 'local:'.$target->instance('app-dev'),
-            ])->and($batches[2]['argv'])
+            ])->and($batches[3]['argv'])
             ->each->toBe(['systemctl', 'restart', 'php8.5-fpm'])->and($execs)->toBe([]);
     });
 
@@ -212,6 +298,7 @@ describe('repair.identity', function () {
         expect(array_column($batches, 'labels'))
             ->toBe([
                 ['gateway', 'app-dev', 'app-prod'],
+                ['retarget-gateway'],
                 ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
                 ['php-fpm.gateway', 'php-fpm.app-dev'],
             ])
@@ -227,7 +314,7 @@ describe('repair.identity', function () {
         expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
             ->toThrow(RuntimeException::class, 'WireGuard retargeting failed on retarget-vpn.app-prod.')
             ->and(array_column($batches, 'labels'))
-            ->toHaveCount(2);
+            ->toHaveCount(3);
     });
 
     it('reports a failed PHP-FPM restart by role', function () {
@@ -237,5 +324,44 @@ describe('repair.identity', function () {
 
         expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
             ->toThrow(RuntimeException::class, 'PHP-FPM restart failed on php-fpm.gateway.');
+    });
+
+    it('stops before peer mutation when Gateway identity publication fails', function () {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests(['retarget-gateway' => 65], $batches, $execs);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'Gateway clone identity preparation failed on retarget-gateway.')
+            ->and(array_column($batches, 'labels'))->toBe([
+                ['gateway', 'app-dev', 'app-prod'], ['retarget-gateway'],
+            ]);
+    });
+
+    it('refuses an invalid Gateway result before peer mutation', function (string $output) {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests([], $batches, $execs, ['retarget-gateway' => $output]);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'Gateway clone identity preparation returned')
+            ->and($batches)->toHaveCount(2);
+    })->with([
+        'invalid JSON' => 'not JSON',
+        'missing peer' => '{"app-dev":"10.44.0.11:51820"}',
+        'unknown peer' => '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820","extra":"10.44.0.11:51820"}',
+        'snapshot endpoint' => '{"app-dev":"10.232.1.10:51820","app-prod":"10.44.0.11:51820"}',
+        'invalid port' => '{"app-dev":"10.44.0.11:65536","app-prod":"10.44.0.11:51820"}',
+        'wrong type' => '{"app-dev":null,"app-prod":"10.44.0.11:51820"}',
+    ]);
+
+    it('refuses duplicate clone addresses before publishing identity', function () {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests([], $batches, $execs, ['app-prod' => "2: eth0 inet 10.44.0.11/24 scope global eth0\n"]);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'Cloned Nodes must have distinct global IPv4 addresses.')
+            ->and($batches)->toHaveCount(1);
     });
 });

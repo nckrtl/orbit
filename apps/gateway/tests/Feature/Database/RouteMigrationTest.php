@@ -31,6 +31,13 @@ function route_hostname_change_migration(): Migration
     );
 }
 
+function production_route_hostname_change_migration(): Migration
+{
+    return require base_path(
+        'database/migrations/2026_09_12_090000_enable_production_route_hostname_changes.php',
+    );
+}
+
 it('stores exclusive Route scope, immutable provenance, basis, and pending lifecycle', function (): void {
     expect(Schema::hasColumns('routes', [
         'app_id',
@@ -138,18 +145,62 @@ it('requires paired failure evidence during an active hostname change', function
         ->not->toThrow(QueryException::class);
 });
 
-it('limits active hostname change state to one eligible development target', function (): void {
+it('limits active hostname change state to eligible single targets and environment-specific checkpoints', function (): void {
     $production = route_migration_hostname_change_route('production-operation', environment: 'production');
     $unknown = route_migration_hostname_change_route('unknown-operation', sourceIsLaravel: null);
+    $development = route_migration_hostname_change_route('development-checkpoint');
 
-    foreach ([$production, $unknown] as $route) {
-        expect(fn () => DB::table('routes')
-            ->where('id', $route->id)
-            ->update(
-                route_migration_hostname_change_attributes("{$route->id}-next.example.test", $route->hostname),
-            ))
-            ->toThrow(QueryException::class);
-    }
+    expect(fn () => DB::table('routes')
+        ->where('id', $production->id)
+        ->update(route_migration_hostname_change_attributes(
+            'production-operation-next.example.test',
+            $production->hostname,
+        )))
+        ->not->toThrow(QueryException::class)
+        ->and(fn () => DB::table('routes')
+            ->where('id', $production->id)
+            ->update(['hostname_change_step' => 'environment-synchronized']))
+        ->not->toThrow(QueryException::class)
+        ->and(fn () => DB::table('routes')
+            ->where('id', $production->id)
+            ->update(['hostname_change_step' => 'laravel-url']))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('routes')
+            ->where('id', $development->id)
+            ->update([
+                ...route_migration_hostname_change_attributes(
+                    'development-checkpoint-next.example.test',
+                    $development->hostname,
+                ),
+                'hostname_change_step' => 'environment-synchronized',
+            ]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('routes')
+            ->where('id', $unknown->id)
+            ->update(route_migration_hostname_change_attributes(
+                'unknown-operation-next.example.test',
+                $unknown->hostname,
+            )))
+        ->toThrow(QueryException::class);
+});
+
+it('refuses production hostname support rollback while recovery is unfinished', function (): void {
+    $route = route_migration_hostname_change_route('production-rollback', environment: 'production');
+    DB::table('routes')
+        ->where('id', $route->id)
+        ->update(route_migration_hostname_change_attributes(
+            'production-rollback-next.example.test',
+            $route->hostname,
+        ));
+    $schemaBefore = route_migration_hostname_change_schema();
+
+    expect(fn () => production_route_hostname_change_migration()->down())
+        ->toThrow(RuntimeException::class, "operations are unfinished: {$route->id}");
+
+    expect(route_migration_hostname_change_schema())
+        ->toBe($schemaBefore)
+        ->and($route->refresh()->hostname_change_target)
+        ->toBe('production-rollback-next.example.test');
 });
 
 it('keeps canonical and candidate hostname ownership exclusive across Routes', function (): void {

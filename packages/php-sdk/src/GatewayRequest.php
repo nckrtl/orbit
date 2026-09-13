@@ -103,8 +103,11 @@ abstract class GatewayRequest extends Request
     /**
      * @return list<array<string, mixed>>
      */
-    protected function unwrapDataList(#[SensitiveParameter] Response $response): array
-    {
+    protected function unwrapDataList(
+        #[SensitiveParameter]
+        Response $response,
+        bool $rejectMalformed = false,
+    ): array {
         $body = $this->decodeBody($response);
 
         if (! is_array($body)) {
@@ -112,6 +115,10 @@ abstract class GatewayRequest extends Request
         }
 
         $data = $body['data'] ?? [];
+
+        if ($rejectMalformed) {
+            return $this->strictDataList($data);
+        }
 
         if (! is_array($data)) {
             return [];
@@ -130,12 +137,44 @@ abstract class GatewayRequest extends Request
         return $result;
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function strictDataList(#[SensitiveParameter] mixed $data): array
+    {
+        if (! is_array($data) || ! array_is_list($data)) {
+            throw new GatewayApiException('Gateway response contains invalid collection data.');
+        }
+
+        $result = [];
+
+        foreach ($data as $item) {
+            if (! is_array($item)) {
+                throw new GatewayApiException('Gateway response contains invalid collection data.');
+            }
+
+            $stringKeyed = $this->stringKeyedArray($item);
+            if (count($stringKeyed) !== count($item)) {
+                throw new GatewayApiException('Gateway response contains invalid collection data.');
+            }
+
+            $result[] = $stringKeyed;
+        }
+
+        return $result;
+    }
+
     protected function successRequestId(#[SensitiveParameter] Response $response): string
     {
         $body = $this->decodeBody($response);
         $meta = $this->stringKeyedArray($body['meta'] ?? []);
 
         return GatewayRequestId::fromTransport($meta['request_id'] ?? null) ?? '';
+    }
+
+    protected function successHeaderRequestId(#[SensitiveParameter] Response $response): string
+    {
+        return $this->requestId($response) ?? '';
     }
 
     /**

@@ -94,6 +94,26 @@ Run `composer test:affected` for the affected behavior and failure modes, then r
 
 Apply this check policy when an issue or retained plan names a generic full suite. The planner maps that wording to TIA development checks and the Builder's candidate gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. Every Pest invocation enables TIA without a path, filter, group, or suite; Pest disables TIA for those partial selections even when `--tia` is present.
 
+### Gateway test databases
+
+The Gateway test bootstrap keeps supported local test commands out of caller databases. It applies the same test values to the process environment and PHP environment and server variables before Laravel loads configuration. It then checks Laravel's effective connection, including a connection URL or cached configuration, before service providers and database refresh hooks run.
+
+| Input | Test behavior |
+| --- | --- |
+| No explicit test database | Uses in-memory SQLite |
+| Inherited `DB_DATABASE`, `DB_URL`, or `DB_CONNECTION` | Replaces the inherited value with the safe test value |
+| `ORBIT_TEST_DATABASE=/tmp/.../orbit-gateway-test-*.sqlite` | Uses the explicitly allocated disposable SQLite file; parallel tests use their worker-specific copies |
+| Any other effective driver, path, URL, or application environment | Exits nonzero before migrations with a database safety refusal |
+
+Allocate a new temporary file for each run that needs a file-backed fixture. Never set `ORBIT_TEST_DATABASE` to a Gateway runtime database, another application's database, or a retained backup.
+
+An unexpected refusal commonly means that Laravel loaded stale cached configuration. Run the recovery commands from `apps/gateway`, then rerun the same supported Composer or Pest command. Do not disable or bypass the test guard.
+
+| Command | Result |
+| --- | --- |
+| `unset APP_CONFIG_CACHE` | Stops selecting a custom cached configuration path in the current shell |
+| `php artisan config:clear` | Removes the default cached configuration |
+
 Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
 
 Every project runs analysis at level 6. The configured paths keep the existing analysis scopes. Tests remain covered by Pint and Pest.
@@ -118,7 +138,9 @@ Creation and `bin/worktree-remove ORB-217` also resolve an existing branch with 
 
 Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and TIA baselines. Run checks in each project that a change affects.
 
-Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. A modified or unsupported Pest build fails setup. Installations without development dependencies skip Pest setup.
+Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. Installations without development dependencies skip Pest setup.
+
+Pest setup distinguishes patch execution failure from modified package files. After a patch execution failure leaves the verified upstream files unchanged, rerun the same Composer command without reinstalling Pest or deleting test caches. If setup instead reports that Pest files differ from both pinned builds, reinstall the locked Pest distribution before retrying. An unsupported version or changed pinned patch checksum remains an error that requires a reviewed setup update.
 
 Use these commands from the affected project directory.
 
@@ -192,7 +214,11 @@ New worktrees may use the previous successful compatible publication while a ref
 
 When publications lag main and no worker is active, the orchestrator queues refresh. This also recovers merges outside its closeout flow and requests left after interruption. A reported failure is an owned recovery task. Cache transport, installation, and publication failures can use prior compatible caches or cold checks.
 
-A nonzero test, formatting, or analysis command is a correctness signal requiring diagnosis and a hold on unrelated feature merges. Later infrastructure failures retain the earlier correctness failure. The failed tool must pass again before its retained failure clears. The orchestrator permits a reviewed repair or revert through that hold and clears it only after verification on main containing the repair.
+A nonzero test, formatting, or analysis command is a correctness signal requiring diagnosis and a hold on unrelated feature merges. Later infrastructure failures retain the earlier correctness failure. An open TIA failure makes recovery run the unfiltered affected-test command with `--fresh` on checked clean main. Maintenance accepts successful recovery only when the resulting graph records that checked commit.
+
+A cached or zero-execution result that leaves an older graph anchor reports `recovery: not_executed` in the project result and retains the original failed commit, tool, and diagnostic log. An executed successful recovery reports `recovery: executed` and clears only that project's TIA failure. Failed or interrupted recovery keeps the preceding successful publication and unresolved signal.
+
+Status and retained command logs distinguish the unresolved correctness failure from the latest recovery result. These records prove native maintenance execution and cache publication only. The orchestrator separately admits a reviewed repair or revert through the merge hold and clears that hold only after verification on main containing the repair.
 
 One maintenance owner covers all five projects. Routine warming uses scripts; failures needing investigation use [maintaining-monorepo](../../.agents/skills/maintaining-monorepo/SKILL.md). The agent diagnoses the exact failed commit, preserves evidence, and performs source repairs in a separate worktree. It returns verification to the orchestrator instead of approving its own change or mutating primary main. Feature development can continue during a correctness hold. Cache freshness alone never holds creation, merge, or cleanup.
 

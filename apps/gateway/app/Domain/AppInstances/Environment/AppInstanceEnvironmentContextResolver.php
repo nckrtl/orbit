@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances\Environment;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -153,6 +156,87 @@ final readonly class AppInstanceEnvironmentContextResolver
             routeHostname: $route->hostname,
             nodeStatus: $node->status->value,
             node: $node,
+        );
+    }
+
+    public function resolveForRouteTransition(
+        AppInstance $instance,
+        AppInstanceEnvironmentRouteHostname $hostname,
+        bool $requireActiveNode,
+        bool $lockRoute = false,
+    ): AppInstanceEnvironmentContext {
+        $sourceIsLaravel = $instance->source_is_laravel;
+
+        if (
+            $instance->status !== AppInstanceState::Active
+            || $instance->environment !== 'production'
+            || $instance->migration_required
+            || $instance->provisioning_step !== 'active'
+            || ! is_bool($sourceIsLaravel)
+        ) {
+            $this->conflict();
+        }
+
+        $node = Node::query()->findOrFail($instance->node_id);
+
+        if ($requireActiveNode && $node->status !== LifecycleStatus::Active) {
+            $this->conflict();
+        }
+
+        $routeQuery = Route::query()
+            ->whereHas('targets', static fn (Builder $query): Builder => $query
+                ->where('app_instance_id', $instance->id))
+            ->orderBy('id')
+            ->limit(2);
+
+        if ($lockRoute) {
+            $routeQuery->lockForUpdate();
+        }
+
+        $routes = $routeQuery->get();
+
+        if ($routes->count() !== 1) {
+            $this->conflict();
+        }
+
+        $route = $routes->sole();
+        $direction = $hostname === AppInstanceEnvironmentRouteHostname::Candidate
+            ? RouteHostnameChangeDirection::Forward
+            : RouteHostnameChangeDirection::Rollback;
+        $routeHostname = $hostname === AppInstanceEnvironmentRouteHostname::Candidate
+            ? $route->hostname_change_target
+            : $route->hostname_change_previous;
+
+        if (
+            $route->status !== RouteStatus::Active
+            || $route->provenance !== RouteProvenance::Explicit
+            || $route->publication !== RoutePublication::Private
+            || $route->hostname_change_direction !== $direction
+            || $route->hostname_change_step === null
+            || ! is_string($route->hostname_change_previous)
+            || ! is_string($route->hostname_change_target)
+            || ! is_string($routeHostname)
+            || $routeHostname === ''
+            || $route->targets()->count() !== 1
+        ) {
+            $this->conflict();
+        }
+
+        [$path, $executionUser] = $this->placement($instance, $node);
+
+        return new AppInstanceEnvironmentContext(
+            appInstanceId: $instance->id,
+            appId: $instance->app_id,
+            nodeId: $instance->node_id,
+            environment: $instance->environment,
+            path: $path,
+            executionUser: $executionUser,
+            laravel: $sourceIsLaravel,
+            routeId: $route->id,
+            routeHostname: $routeHostname,
+            nodeStatus: $node->status->value,
+            node: $node,
+            routeHostnameSource: $hostname,
         );
     }
 

@@ -220,7 +220,14 @@ final readonly class AppInstanceEnvironmentStore
         }
 
         try {
-            $current = $this->contexts->resolve($instance, $requireActiveNode, lockRoute: true);
+            $current = $expected->routeHostnameSource instanceof AppInstanceEnvironmentRouteHostname
+                ? $this->contexts->resolveForRouteTransition(
+                    $instance,
+                    $expected->routeHostnameSource,
+                    $requireActiveNode,
+                    lockRoute: true,
+                )
+                : $this->contexts->resolve($instance, $requireActiveNode, lockRoute: true);
         } catch (ResourceOperationException) {
             $this->conflict();
         }
