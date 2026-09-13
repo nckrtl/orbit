@@ -132,38 +132,32 @@ it('renders status exporter rows in JSON', function (): void {
         ->assertExitCode(0);
 });
 
-it('blocks enabling when any assignment already exists', function (): void {
-    MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => [
-                'enabled' => true,
-                'url' => 'https://metrics.orbit',
-                'assignment' => [
-                    'id' => 9,
-                    'node_id' => 7,
-                    'node_name' => 'metrics-node',
-                    'status' => 'failed',
-                    'failed_step' => 'metrics:runtime',
-                    'error_code' => 'metrics.runtime_failed',
-                ],
-                'prometheus' => 'unknown',
-                'grafana' => 'unknown',
-                'exporters' => [],
-            ],
-            'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
-        ]),
-    ]);
+it('renders the Gateway role conflict for a second enable while an assignment exists', function (): void {
+    $mock = MockClient::global([EnableMetricsRequest::class => metrics_cli_role_conflict_response()]);
 
     $this
         ->artisan('metrics:enable', ['node' => '7', '--json' => true])
         ->expectsOutput(json_encode([
             'error' => [
-                'code' => 'metrics.assignment_exists',
-                'message' => 'Metrics already has a non-terminal assignment.',
-                'request_id' => null,
+                'code' => 'node.role_conflict',
+                'message' => 'The metrics role is already assigned; remove it before enabling it on another node.',
+                'request_id' => metrics_cli_request_id(),
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(1);
+
+    $mock->assertSentCount(1);
+    $mock->assertNotSent(ShowMetricsStatusRequest::class);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 7]);
+
+    $this
+        ->artisan('metrics:enable', ['node' => '7'])
+        ->expectsOutputToContain('The metrics role is already assigned; remove it before enabling it on another node.')
+        ->expectsOutput('Request ID: '.metrics_cli_request_id())
+        ->assertExitCode(1);
+
+    $mock->assertSentCount(2);
+    $mock->assertNotSent(ShowMetricsStatusRequest::class);
 });
 
 it('renders credentials in human output without leaking them in errors', function (): void {
@@ -185,39 +179,18 @@ it('renders credentials in human output without leaking them in errors', functio
 });
 
 it('requires a node id in non-interactive enable mode', function (): void {
-    MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => [
-                'enabled' => false,
-                'url' => null,
-                'assignment' => null,
-                'prometheus' => 'disabled',
-                'grafana' => 'disabled',
-                'exporters' => [],
-            ],
-            'meta' => ['request_id' => '44444444-4444-4444-8444-444444444444'],
-        ]),
-    ]);
+    $mock = MockClient::global();
 
     $this
         ->artisan('metrics:enable', ['--json' => true])
         ->expectsOutputToContain('Node ID or name is required.')
         ->assertExitCode(1);
+
+    expect($mock->getLastPendingRequest())->toBeNull();
 });
 
 it('enables Metrics on an explicit node and sends the node payload', function (): void {
     $mock = MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => [
-                'enabled' => false,
-                'url' => null,
-                'assignment' => null,
-                'prometheus' => 'disabled',
-                'grafana' => 'disabled',
-                'exporters' => [],
-            ],
-            'meta' => ['request_id' => '55555555-5555-4555-8555-555555555555'],
-        ]),
         EnableMetricsRequest::class => MockResponse::make([
             'data' => ['node_id' => 7, 'status' => 'active'],
             'meta' => ['request_id' => '66666666-6666-4666-8666-666666666666'],
@@ -229,6 +202,7 @@ it('enables Metrics on an explicit node and sends the node payload', function ()
         ->expectsOutput('Metrics operation completed for node #7: active.')
         ->assertExitCode(0);
 
+    $mock->assertSentCount(1);
     expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 7]);
 });
 
@@ -276,10 +250,6 @@ it('sends the force and purge disable payload', function (): void {
 
 it('prompts from the active eligible node list before enabling Metrics', function (): void {
     $mock = MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => metrics_cli_status_payload(),
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
         ListNodesRequest::class => MockResponse::make([
             'data' => [
                 metrics_cli_node_payload(id: 3, name: 'app-dev', status: 'active', roles: ['app-dev']),
@@ -309,20 +279,13 @@ it('prompts from the active eligible node list before enabling Metrics', functio
         ->expectsOutput('Request ID: '.metrics_cli_request_id())
         ->assertSuccessful();
 
-    $mock->assertSentInOrder([
-        ShowMetricsStatusRequest::class,
-        ListNodesRequest::class,
-        EnableMetricsRequest::class,
-    ]);
+    $mock->assertSentInOrder([ListNodesRequest::class, EnableMetricsRequest::class]);
+    $mock->assertNotSent(ShowMetricsStatusRequest::class);
     expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 3]);
 });
 
 it('resolves a typed node name against the already-fetched node list without listing nodes twice', function (): void {
     $mock = MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => metrics_cli_status_payload(),
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
         ListNodesRequest::class => MockResponse::make([
             'data' => [
                 metrics_cli_node_payload(id: 3, name: 'app-dev', status: 'active', roles: ['app-dev']),
@@ -345,48 +308,38 @@ it('resolves a typed node name against the already-fetched node list without lis
         ->assertSuccessful();
 
     $mock->assertSentCount(1, ListNodesRequest::class);
-    $mock->assertSentInOrder([
-        ShowMetricsStatusRequest::class,
-        ListNodesRequest::class,
-        EnableMetricsRequest::class,
-    ]);
+    $mock->assertSentInOrder([ListNodesRequest::class, EnableMetricsRequest::class]);
+    $mock->assertNotSent(ShowMetricsStatusRequest::class);
     expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 7]);
 });
 
-it('rejects an existing assignment before listing or prompting for nodes', function (): void {
+it('renders the Gateway role conflict after the interactive node prompt', function (): void {
     $mock = MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => metrics_cli_status_payload([
-                'id' => 9,
-                'node_id' => 3,
-                'node_name' => 'app-dev',
-                'status' => 'failed',
-                'failed_step' => 'metrics:runtime',
-                'error_code' => 'metrics.runtime_failed',
-            ]),
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [
+                metrics_cli_node_payload(id: 3, name: 'app-dev', status: 'active', roles: ['app-dev']),
+                metrics_cli_node_payload(id: 7, name: 'orbit-ops', status: 'active', roles: []),
+            ],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
+        EnableMetricsRequest::class => metrics_cli_role_conflict_response(),
     ]);
 
     $this
         ->artisan('metrics:enable')
-        ->doesntExpectOutput('Eligible active nodes:')
-        ->expectsOutputToContain('Metrics already has a non-terminal assignment.')
+        ->expectsOutput('Eligible active nodes:')
+        ->expectsQuestion('Node ID or name', '3')
+        ->expectsOutputToContain('The metrics role is already assigned; remove it before enabling it on another node.')
+        ->expectsOutput('Request ID: '.metrics_cli_request_id())
         ->assertExitCode(SymfonyCommand::FAILURE);
 
-    $mock->assertSentCount(1);
-    $mock->assertSent(ShowMetricsStatusRequest::class);
-    $mock->assertNotSent(ListNodesRequest::class);
-    $mock->assertNotSent(EnableMetricsRequest::class);
+    $mock->assertSentInOrder([ListNodesRequest::class, EnableMetricsRequest::class]);
+    $mock->assertNotSent(ShowMetricsStatusRequest::class);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 3]);
 });
 
 it('returns field=node when non-interactive enable omits the node', function (): void {
-    MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => metrics_cli_status_payload(),
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
-    ]);
+    $mock = MockClient::global();
 
     $this
         ->artisan('metrics:enable', ['--json' => true])
@@ -399,6 +352,8 @@ it('returns field=node when non-interactive enable omits the node', function ():
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(SymfonyCommand::FAILURE);
+
+    expect($mock->getLastPendingRequest())->toBeNull();
 });
 
 it('cancels interactive disable without sending a mutation', function (): void {
@@ -524,10 +479,6 @@ it('resets credentials through the focused request and renders exact JSON', func
 
 it('enables Metrics on a node given by name', function (): void {
     $mock = MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => metrics_cli_status_payload(),
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
         ListNodesRequest::class => MockResponse::make([
             'data' => [
                 metrics_cli_node_payload(id: 1, name: 'gateway', status: 'active', roles: ['gateway', 'vpn']),
@@ -555,10 +506,6 @@ it('enables Metrics on a node given by name', function (): void {
 
 it('rejects an unknown node name before any Metrics mutation', function (): void {
     $mock = MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => metrics_cli_status_payload(),
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
         ListNodesRequest::class => MockResponse::make([
             'data' => [metrics_cli_node_payload(id: 2, name: 'app-dev', status: 'active', roles: ['app-dev'])],
             'meta' => ['request_id' => metrics_cli_request_id()],
@@ -747,7 +694,7 @@ it('renders structured secret-safe failures for every Metrics command', function
         ->not->toContain($secret);
     $mock->assertSent($requestClass);
 })->with([
-    'enable preflight' => ['metrics:enable', ['node' => '3'], ShowMetricsStatusRequest::class],
+    'enable' => ['metrics:enable', ['node' => '3'], EnableMetricsRequest::class],
     'disable preflight' => ['metrics:disable', ['--force' => true], ShowMetricsStatusRequest::class],
     'status' => ['metrics:status', [], ShowMetricsStatusRequest::class],
     'credentials' => ['metrics:credentials', [], ShowMetricsCredentialsRequest::class],
@@ -772,6 +719,24 @@ function metrics_cli_status_payload(?array $assignment = null): array
         'grafana' => $enabled ? 'unknown' : 'disabled',
         'exporters' => [],
     ];
+}
+
+/**
+ * The Gateway's refusal of a second Metrics enable while an assignment exists.
+ */
+function metrics_cli_role_conflict_response(): MockResponse
+{
+    return MockResponse::make(
+        [
+            'error' => [
+                'code' => 'node.role_conflict',
+                'message' => 'The metrics role is already assigned; remove it before enabling it on another node.',
+                'details' => [],
+            ],
+        ],
+        409,
+        ['X-Orbit-Request-Id' => metrics_cli_request_id()],
+    );
 }
 
 /** @param list<string> $roles */
