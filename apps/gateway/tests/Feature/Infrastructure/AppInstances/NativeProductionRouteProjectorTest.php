@@ -443,6 +443,8 @@ final class Orb199ProductionFirewall implements NodeRoleFirewallManager
     public function remove(Node $node, RoleName $role, string $managedUser): void {}
 
     public function restorePublicSsh(Node $node, string $managedUser): void {}
+
+    public function trustWireGuardMembers(Node $node, string $managedUser): void {}
 }
 
 final class Orb199ProductionReleaseLayout implements ProductionReleaseLayout
