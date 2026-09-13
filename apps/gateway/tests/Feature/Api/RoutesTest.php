@@ -195,6 +195,33 @@ it('returns 409 with both Routes when the requested target belongs to another Ro
         ->toBe($targetRowsBefore);
 });
 
+it('returns 409 with route.target_conflict when creating a Route for an AppInstance that already has one', function (): void {
+    $existing = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $routesBefore = route_api_routes();
+    $targetRowsBefore = route_api_target_rows();
+
+    $this
+        ->postJson('/api/v1/routes', [
+            'app_id' => $this->orbitApp->id,
+            'hostname' => 'unused-host.example.test',
+            'publication' => 'private',
+            'app_instance_id' => $this->target->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_conflict')
+        ->assertJsonPath(
+            'error.message',
+            "AppInstance [{$this->target->id}] is already associated with Route [{$existing->id}].",
+        );
+
+    expect(route_api_routes())
+        ->toBe($routesBefore)
+        ->and(route_api_target_rows())
+        ->toBe($targetRowsBefore)
+        ->and(Route::query()->where('hostname', 'unused-host.example.test')->exists())
+        ->toBeFalse();
+});
+
 it('keeps every Route association unchanged for exact target no-ops', function (): void {
     $targeted = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $targeted->update(['status' => 'active']);

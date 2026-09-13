@@ -14,10 +14,7 @@ final readonly class RouteAssociationGuard
 {
     public function assertTargetAssignable(Route $route, AppInstance $appInstance): void
     {
-        $association = RouteTarget::query()
-            ->where('app_instance_id', $appInstance->id)
-            ->lockForUpdate()
-            ->first();
+        $association = $this->lockedAssociation($appInstance);
 
         if (! $association instanceof RouteTarget || $association->route_id === $route->id) {
             return;
@@ -26,6 +23,21 @@ final readonly class RouteAssociationGuard
         throw new ResourceOperationException(
             errorCode: 'route.target_conflict',
             message: "AppInstance [{$appInstance->id}] is already associated with Route [{$association->route_id}] and cannot be assigned to Route [{$route->id}].",
+            status: 409,
+        );
+    }
+
+    public function assertTargetUnassociated(AppInstance $appInstance): void
+    {
+        $association = $this->lockedAssociation($appInstance);
+
+        if (! $association instanceof RouteTarget) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'route.target_conflict',
+            message: "AppInstance [{$appInstance->id}] is already associated with Route [{$association->route_id}].",
             status: 409,
         );
     }
@@ -54,5 +66,15 @@ final readonly class RouteAssociationGuard
                 status: 409,
             );
         }
+    }
+
+    private function lockedAssociation(AppInstance $appInstance): ?RouteTarget
+    {
+        $association = RouteTarget::query()
+            ->where('app_instance_id', $appInstance->id)
+            ->lockForUpdate()
+            ->first();
+
+        return $association instanceof RouteTarget ? $association : null;
     }
 }
