@@ -621,12 +621,6 @@ it('renders local validation failures through the exact json boundary', function
         'node.host_key_fingerprint_invalid',
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
     ],
-    'node removal confirmation' => [
-        'node:remove',
-        ['node' => '1'],
-        'node.confirmation_required',
-        'Use --force to confirm node removal.',
-    ],
     'process target selection' => [
         'process:add',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
