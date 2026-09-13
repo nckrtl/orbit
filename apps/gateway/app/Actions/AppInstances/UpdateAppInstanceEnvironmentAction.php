@@ -8,6 +8,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentValidator;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 
@@ -40,6 +41,10 @@ final readonly class UpdateAppInstanceEnvironmentAction
                 throw new ResourceOperationException(
                     errorCode: 'env.configuration_invalid',
                     message: 'The complete AppInstance environment configuration is invalid.',
+                    details: [
+                        'key' => 'APP_URL',
+                        'rule' => AppInstanceEnvironmentValidator::RuleLaravelAppUrl,
+                    ],
                 );
             }
 

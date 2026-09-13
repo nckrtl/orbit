@@ -24,6 +24,10 @@ final class GatewayFailureRenderer
             return self::fieldDetails($details);
         }
 
+        if ($code === 'env.configuration_invalid') {
+            return self::environmentConfigurationDetails($details);
+        }
+
         $id = $details['id'] ?? null;
 
         if (is_int($id) && $id > 0) {
@@ -72,6 +76,40 @@ final class GatewayFailureRenderer
         if ($requestId !== null) {
             $command->line("Request ID: {$requestId}");
         }
+    }
+
+    /**
+     * Keeps only redacted environment-configuration fields: the invalid key, a closed
+     * rule token, and a well-formed leftover placeholder. Values and other members drop.
+     *
+     * @param  array<array-key,mixed>  $details
+     * @return array<string,string|list<string>>
+     */
+    public static function environmentConfigurationDetails(array $details): array
+    {
+        $safe = [];
+
+        if (isset($details['key']) && is_string($details['key'])) {
+            $safe['key'] = $details['key'];
+        }
+
+        if (
+            isset($details['rule'])
+            && is_string($details['rule'])
+            && preg_match('/\A[a-z][a-z0-9_]*\z/D', $details['rule']) === 1
+        ) {
+            $safe['rule'] = $details['rule'];
+        }
+
+        if (
+            isset($details['placeholder'])
+            && is_string($details['placeholder'])
+            && preg_match('/\A\{\{[A-Za-z0-9_.]+\}\}\z/D', $details['placeholder']) === 1
+        ) {
+            $safe['placeholder'] = $details['placeholder'];
+        }
+
+        return self::fieldDetails($safe);
     }
 
     /**

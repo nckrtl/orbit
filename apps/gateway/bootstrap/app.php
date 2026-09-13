@@ -313,7 +313,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => [],
+                            'details' => $exception->details,
                         ],
                     ], $exception->status)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
