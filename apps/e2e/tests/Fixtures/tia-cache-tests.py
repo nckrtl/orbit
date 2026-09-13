@@ -462,7 +462,7 @@ with open('release-command') as release:
             self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
         self.assertEqual({}, cache.load_requests(self.store)['pending'])
 
-    def test_correctness_hold_survives_environment_failure_until_the_failed_check_passes(self):
+    def test_correctness_hold_survives_environment_and_cached_results_until_executed_recovery(self):
         outcomes = [
             {'commit': self.commit, 'success': False, 'checks': [
                 {'tool': 'tia', 'kind': 'check_failure', 'exit_code': 2}]},
@@ -470,13 +470,16 @@ with open('release-command') as release:
                 {'tool': 'install', 'kind': 'maintenance_failure', 'exit_code': 1}]},
             {'commit': self.commit, 'success': True, 'checks': [
                 {'tool': 'install', 'exit_code': 0}, {'tool': 'tia', 'exit_code': 0}]},
+            {'commit': self.commit, 'success': True, 'checks': [
+                {'tool': 'install', 'exit_code': 0},
+                {'tool': 'tia', 'exit_code': 0, 'recovery': 'executed'}]},
         ]
         for index, outcome in enumerate(outcomes):
             self.submit()
             with patch.object(cache, 'project_checks', return_value=outcome):
                 cache.drain(self.common, self.store, cache.acquire_worker(self.store))
             unresolved = cache.status(self.common, self.store)['correctness_failures']
-            self.assertEqual(index < 2, bool(unresolved))
+            self.assertEqual(index < 3, bool(unresolved))
             if unresolved:
                 self.assertEqual(2, unresolved[self.project]['tia']['exit_code'])
 
@@ -648,6 +651,219 @@ fi
         self.assertEqual(1, result.returncode)
         self.assertIn('clean candidate', result.stderr)
         self.assertFalse((self.common / 'calls').exists())
+
+
+class TiaRecoveryTest(unittest.TestCase):
+    setUp = MainCacheTest.setUp
+    commit_change = MainCacheTest.commit_change
+    write_graph = MainCacheTest.write_graph
+    publish = MainCacheTest.publish
+
+    def observed_failure(self):
+        self.publish()
+        self.original_publication = cache.publication_path(self.store, self.project).read_bytes()
+        self.original_graph = json.loads(cache.read_publication(self.store, self.project)['graph'])
+        (self.root / 'source.php').write_text('main with an observed failing behavior')
+        self.failed_commit = self.commit_change('observed failure on main')
+        self.execution_count = 0
+        self.calls = []
+        self.run_number = 0
+        outcome = self.check('executed-failure', self.failed_commit)
+        self.assertFalse(outcome['success'])
+        self.assertEqual(1, self.execution_count)
+        self.assertEqual(['composer', 'test:affected'], self.calls[-1]['argv'])
+        state = cache.load_requests(self.store)
+        cache.record_outcome(state, self.project, outcome)
+        cache.save_requests(self.store, state)
+        self.original_failure = copy.deepcopy(state['correctness_failures'][self.project]['tia'])
+        self.original_failure_log = Path(self.original_failure['log']).read_bytes()
+        self.assertEqual(2, self.original_failure['exit_code'])
+        self.assertEqual(self.failed_commit, self.original_failure['commit'])
+        self.assertEqual(self.original_publication,
+                         cache.publication_path(self.store, self.project).read_bytes())
+        return state
+
+    def check(self, mode, commit, pint_environment_failure=False):
+        original_run = cache.run
+        self.run_number += 1
+        directory = self.store / 'fixture-runs' / str(self.run_number)
+        directory.mkdir(parents=True)
+
+        def runner(root, *command, **kwargs):
+            if command[0] != 'composer':
+                return original_run(root, *command, **kwargs)
+            self.assertEqual('test:affected', command[1])
+            restored = json.loads((Path(self.info['cache']) / 'graph.json').read_text())
+            self.assertEqual(self.original_graph, restored)
+            observation = {'argv': list(command), 'mode': mode,
+                           'restored_graph_commit': restored['baselines']['main']['sha']}
+            self.calls.append(observation)
+            with cache.COMMAND_LOG.open('a') as output:
+                output.write(json.dumps(observation) + '\n')
+            if mode == 'cached-success':
+                return None
+            self.execution_count += 1
+            self.graph = copy.deepcopy(self.original_graph)
+            self.graph['baselines']['main']['sha'] = commit
+            if mode == 'executed-failure':
+                self.graph['baselines']['main']['results']['example']['status'] = 8
+                self.write_graph()
+                raise cache.CommandFailure('fixture behavior is still broken', 2)
+            self.assertEqual('executed-success', mode)
+            self.write_graph()
+
+        def quality(root, store, project, checked_commit, tool, force=False):
+            if pint_environment_failure and tool == 'pint':
+                raise RuntimeError('fixture Pint environment is unavailable')
+
+        with patch.object(cache, 'install_project'), \
+                patch.object(cache, 'metadata', return_value=self.info), \
+                patch.object(cache, 'refresh_quality', side_effect=quality), \
+                patch.object(cache, 'run', side_effect=runner):
+            return cache.project_checks(self.root, self.store, self.project, commit, directory)
+
+    def installation_failure(self, commit):
+        self.run_number += 1
+        directory = self.store / 'fixture-runs' / str(self.run_number)
+        directory.mkdir(parents=True)
+        with patch.object(cache, 'install_project',
+                          side_effect=cache.CommandFailure('fixture download failed', 1)):
+            return cache.project_checks(self.root, self.store, self.project, commit, directory)
+
+    def persist(self, outcome):
+        state = cache.load_requests(self.store)
+        cache.record_outcome(state, self.project, outcome)
+        cache.save_requests(self.store, state)
+        return cache.load_requests(self.store)
+
+    def assert_original_failure_is_retained(self, state):
+        self.assertEqual(self.original_failure,
+                         state['correctness_failures'][self.project]['tia'])
+        self.assertEqual(self.original_failure_log, Path(self.original_failure['log']).read_bytes())
+        self.assertEqual(self.original_publication,
+                         cache.publication_path(self.store, self.project).read_bytes())
+
+    def retain_evidence(self, name, before, after, outcome):
+        snapshot = cache.read_publication(self.store, self.project)
+        report = {
+            'scenario': name,
+            'failed_commit': self.failed_commit,
+            'checked_commit': outcome['commit'],
+            'total_executed_fixture_checks': self.execution_count,
+            'invoked_commands': self.calls,
+            'pending': after['pending'],
+            'hold_before': before['correctness_failures'],
+            'hold_after': after['correctness_failures'],
+            'latest_result': after['results'][self.project],
+            'published_tested_commit': snapshot['tested_commit'],
+            'published_graph_commit': snapshot['graph_commit'],
+            'published_graph_unchanged': json.loads(snapshot['graph']) == self.original_graph,
+        }
+        destination = os.environ.get('TIA_CACHE_EVIDENCE_DIR')
+        if destination:
+            directory = Path(destination)
+            directory.mkdir(parents=True, exist_ok=True)
+            retained_logs = {}
+            logs = {'original-failure': self.original_failure['log']}
+            logs.update({check['tool']: check['log'] for check in outcome['checks']})
+            for label, source in logs.items():
+                retained = directory / f'{name}-{label}.log'
+                retained.write_bytes(Path(source).read_bytes())
+                retained_logs[label] = str(retained)
+            report['retained_logs'] = retained_logs
+            (directory / f'{name}.json').write_text(json.dumps(report, indent=2) + '\n')
+        print('TIA_RECOVERY_OBSERVATION ' + json.dumps(report), flush=True)
+
+    def test_zero_execution_retry_at_failed_main_retains_original_failure_and_diagnostic(self):
+        before = self.observed_failure()
+        outcome = self.check('cached-success', self.failed_commit)
+        after = self.persist(outcome)
+
+        self.assertFalse(outcome['success'])
+        self.assertEqual('not_executed', outcome['checks'][1]['recovery'])
+        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
+        self.assertEqual(1, self.execution_count)
+        self.assert_original_failure_is_retained(after)
+        self.retain_evidence('zero-execution-same-main', before, after, outcome)
+
+    def test_zero_execution_retry_at_unrelated_successor_retains_original_failure_and_diagnostic(self):
+        before = self.observed_failure()
+        (self.root / 'notes.md').write_text('unrelated notes; no repair')
+        current = self.commit_change('unrelated main advancement')
+        outcome = self.check('cached-success', current)
+        after = self.persist(outcome)
+
+        self.assertFalse(outcome['success'])
+        self.assertEqual('not_executed', outcome['checks'][1]['recovery'])
+        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
+        self.assertEqual(1, self.execution_count)
+        self.assert_original_failure_is_retained(after)
+        self.retain_evidence('zero-execution-later-main', before, after, outcome)
+
+    def test_failing_executed_recovery_retains_failure_and_successful_publication(self):
+        before = self.observed_failure()
+        outcome = self.check('executed-failure', self.failed_commit)
+        after = self.persist(outcome)
+
+        self.assertFalse(outcome['success'])
+        self.assertEqual('failed', outcome['checks'][1]['recovery'])
+        self.assertEqual('check_failure', outcome['checks'][1]['kind'])
+        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
+        self.assertEqual(2, self.execution_count)
+        self.assertIn('tia', after['correctness_failures'][self.project])
+        self.assertEqual(self.original_publication,
+                         cache.publication_path(self.store, self.project).read_bytes())
+        self.retain_evidence('failing-executed-recovery', before, after, outcome)
+
+    def test_successful_executed_recovery_clears_only_recovered_project_tia_failure(self):
+        before = self.observed_failure()
+        other_project_failure = copy.deepcopy(self.original_failure)
+        pint_log = self.store / 'original-pint-failure.log'
+        pint_log.write_text('apps/docs: pint failed before TIA recovery\n')
+        pint_failure = {**self.original_failure, 'tool': 'pint', 'exit_code': 3,
+                        'log': str(pint_log)}
+        before['correctness_failures']['apps/cli'] = {'tia': other_project_failure}
+        before['correctness_failures'][self.project]['pint'] = pint_failure
+        cache.save_requests(self.store, before)
+        (self.root / 'source.php').write_text('reviewed repair fixture')
+        current = self.commit_change('repair fixture')
+        outcome = self.check('executed-success', current, pint_environment_failure=True)
+        after = self.persist(outcome)
+
+        self.assertEqual('executed', outcome['checks'][1]['recovery'])
+        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
+        self.assertEqual(2, self.execution_count)
+        self.assertNotIn('tia', after['correctness_failures'][self.project])
+        self.assertEqual(pint_failure, after['correctness_failures'][self.project]['pint'])
+        self.assertEqual(other_project_failure, after['correctness_failures']['apps/cli']['tia'])
+        self.assertEqual(current, outcome['commit'])
+        self.assertEqual(current, cache.read_publication(self.store, self.project)['tested_commit'])
+        self.assertEqual(current, cache.read_publication(self.store, self.project)['graph_commit'])
+        self.retain_evidence('successful-executed-recovery', before, after, outcome)
+
+    def test_installation_failure_preserves_original_failure_and_successful_publication(self):
+        before = self.observed_failure()
+        outcome = self.installation_failure(self.failed_commit)
+        after = self.persist(outcome)
+
+        self.assertFalse(outcome['success'])
+        self.assertEqual('maintenance_failure', outcome['checks'][0]['kind'])
+        self.assert_original_failure_is_retained(after)
+        self.retain_evidence('installation-failure', before, after, outcome)
+
+    def test_interrupted_recovery_preserves_request_failure_and_successful_publication(self):
+        before = self.observed_failure()
+        with cache.queue_lock(self.store):
+            cache.enqueue(self.common, self.store, [self.project])
+        with patch.object(cache, 'project_checks', side_effect=SystemExit('fixture interruption')):
+            with self.assertRaises(SystemExit):
+                cache.drain(self.common, self.store, cache.acquire_worker(self.store))
+        after = cache.load_requests(self.store)
+
+        self.assertIn(self.project, after['pending'])
+        self.assert_original_failure_is_retained(after)
+        self.retain_evidence('interrupted-recovery', before, after,
+                             after['results'][self.project])
 
 
 if __name__ == '__main__':
