@@ -185,6 +185,46 @@ it('repeats Ingress removal and supports remove-then-add replacement in human an
         ->toBe(['role' => 'ingress', 'converge_existing' => false]);
 });
 
+it('renders unknown role enum validation details from the preview request', function (): void {
+    $expected = json_encode([
+        'error' => [
+            'code' => 'validation.failed',
+            'message' => 'The request data is invalid.',
+            'details' => [
+                'role' => ['The selected role is invalid.'],
+            ],
+            'request_id' => node_role_remove_request_id(),
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    $mockClient = MockClient::global([
+        RemoveNodeRoleRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'validation.failed',
+                    'message' => 'The request data is invalid.',
+                    'details' => [
+                        'role' => ['The selected role is invalid.'],
+                    ],
+                ],
+            ],
+            422,
+            ['X-Orbit-Request-Id' => node_role_remove_request_id()],
+        ),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', [
+            'node' => '7',
+            'role' => 'nosuch',
+            '--json' => true,
+            '--no-interaction' => true,
+        ])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getRecordedResponses())->toHaveCount(1);
+});
+
 it('requires the preview failure in json mode and sends no forced retry', function (): void {
     $expected = json_encode([
         'error' => [

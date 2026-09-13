@@ -449,6 +449,26 @@ it('returns standard validation failures for protected unknown and duplicate ass
     'existing role requires explicit convergence' => ['app-dev', 'preassigned'],
 ]);
 
+it('includes the same role enum validation details for add and remove', function (): void {
+    $add = $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'nosuch'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+    $remove = $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/nosuch", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect($add->json('error.details.role'))
+        ->not->toBeEmpty()
+        ->and($remove->json('error.details.role'))
+        ->toBe($add->json('error.details.role'))
+        ->and($this->roleLifecycle->converged)
+        ->toBeEmpty()
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty();
+});
+
 it('always returns the exact preview without mutating when force is absent or false', function (
     array $body,
     array $expectedInput,
