@@ -1743,7 +1743,9 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool",
+                "Tool Manager"
             ],
             "governing_adrs": []
         },
