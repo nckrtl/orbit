@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
@@ -233,6 +234,75 @@ it('omits Docker environment values from process JSON output', function (): void
         ])
         ->doesntExpectOutputToContain('"environment"')
         ->doesntExpectOutputToContain(process_cli_secret('secret'))
+        ->assertExitCode(0);
+});
+
+it('adds one node-targeted Docker process through the active gateway', function (): void {
+    $mock = MockClient::global([
+        AddProcessRequest::class => process_cli_response(201),
+    ]);
+
+    $this
+        ->artisan('process:add', [
+            'name' => 'postgres',
+            '--node' => '4',
+            '--runtime' => 'docker',
+            '--command' => ['postgres'],
+            '--image' => 'postgres:18',
+        ])
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())
+        ->toMatchArray([
+            'target_type' => 'node',
+            'target_id' => 4,
+            'name' => 'postgres',
+            'runtime' => 'docker',
+            'command' => ['postgres'],
+            'image' => 'postgres:18',
+        ]);
+});
+
+it('resolves a node name before adding a node-targeted process', function (): void {
+    $mock = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [process_cli_node_payload()],
+            'meta' => ['request_id' => process_cli_request_id()],
+        ]),
+        AddProcessRequest::class => process_cli_response(201),
+    ]);
+
+    $this
+        ->artisan('process:add', [
+            'name' => 'postgres',
+            '--node' => 'beast',
+            '--runtime' => 'docker',
+            '--command' => ['postgres'],
+            '--image' => 'postgres:18',
+        ])
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())
+        ->toMatchArray([
+            'target_type' => 'node',
+            'target_id' => 4,
+        ]);
+});
+
+it('lists one node-targeted process collection', function (): void {
+    MockClient::global([
+        ListProcessesRequest::class => MockResponse::make([
+            'data' => [process_cli_payload(['target_type' => 'node', 'target_id' => 4, 'name' => 'postgres'])],
+            'meta' => ['request_id' => process_cli_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('process:list', ['--node' => '4'])
+        ->expectsTable(
+            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart'],
+            [[12, 'postgres', 'docker', 'running', 'running', 'unless-stopped']],
+        )
         ->assertExitCode(0);
 });
 
@@ -842,7 +912,17 @@ it('rejects invalid local process input before making a gateway request', functi
             'name' => 'queue',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --instance option is required.',
+        'The --instance or --node option is required.',
+    ],
+    'combined selectors' => [
+        'process:add',
+        [
+            'name' => 'queue',
+            '--instance' => '7',
+            '--node' => '4',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'Use either --instance or --node, not both.',
     ],
     'invalid AppInstance' => [
         'process:list',
@@ -856,12 +936,14 @@ it('rejects invalid local process input before making a gateway request', functi
     ],
 ]);
 
-it('exposes only the AppInstance selector on targeted process commands', function (): void {
+it('exposes AppInstance and Node selectors on targeted process commands', function (): void {
     $commands = Artisan::all();
 
     expect($commands['process:add']->getDefinition()->hasOption('instance'))->toBeTrue()
+        ->and($commands['process:add']->getDefinition()->hasOption('node'))->toBeTrue()
         ->and($commands['process:add']->getDefinition()->hasOption('workspace'))->toBeFalse()
         ->and($commands['process:list']->getDefinition()->hasOption('instance'))->toBeTrue()
+        ->and($commands['process:list']->getDefinition()->hasOption('node'))->toBeTrue()
         ->and($commands['process:list']->getDefinition()->hasOption('workspace'))->toBeFalse();
 });
 
@@ -937,6 +1019,29 @@ function process_cli_response(int $status = 200): MockResponse
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
  */
+function process_cli_node_payload(): array
+{
+    return [
+        'id' => 4,
+        'name' => 'beast',
+        'status' => 'active',
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => null,
+        'public_ssh_host' => '203.0.113.7',
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.7',
+        'wireguard_public_key' => 'key',
+        'wireguard_endpoint_override' => null,
+        'dns_server_override' => null,
+        'ssh_host_fingerprint' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'roles' => [],
+    ];
+}
+
 function process_cli_payload(array $overrides = []): array
 {
     return array_replace_recursive([

@@ -9,35 +9,36 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 
-final class ListProcessesCommand extends ProcessCommand
+final class ListProcessesCommand extends TargetedProcessCommand
 {
     #[\Override]
     protected $signature = 'process:list
         {--instance= : Positive AppInstance ID}
+        {--node= : Node ID or registered name}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List processes for one AppInstance.';
+    protected $description = 'List processes for one AppInstance or Node.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appInstanceId = $this->appInstanceId();
-
-        if ($appInstanceId === null) {
-            return self::FAILURE;
-        }
-
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;
         }
 
+        $target = $this->processTarget($connector);
+
+        if ($target === null) {
+            return self::FAILURE;
+        }
+
         $response = $this->send(
             $connector,
-            new ListProcessesRequest($appInstanceId),
+            new ListProcessesRequest($target),
             ProcessesResponse::class,
         );
 
