@@ -40,7 +40,8 @@ final readonly class RemoteAppDevTldRouteManager implements AppDevTldRouteManage
                     live=/etc/wireguard/orbit.conf
                     candidate=/etc/wireguard/orbit-candidate.conf
                     dns_state=/etc/wireguard/orbit.dns-link
-                    trap 'rm -f -- "$candidate"' EXIT
+                    dns_state_candidate=/etc/wireguard/.orbit.dns-link.candidate
+                    trap 'rm -f -- "$candidate" "$dns_state_candidate"' EXIT
 
                     if [ ! -f "$live" ] || [ -L "$live" ] || [ ! -s "$dns_state" ]; then
                         exit 42
@@ -49,18 +50,40 @@ final readonly class RemoteAppDevTldRouteManager implements AppDevTldRouteManage
                     mapfile -t dns < "$dns_state"
                     dns_link=${dns[0]:-}
                     dns_server=${dns[1]:-}
-                    domain=${dns[2]:-}
+                    dns_domains=("${dns[@]:2}")
                     if [[ ! "$dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]] \
                         || [[ ! "$dns_server" =~ ^[A-Fa-f0-9:.]+$ ]] \
-                        || [[ ! "$domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+                        || [ "${#dns_domains[@]}" -eq 0 ]; then
                         exit 42
                     fi
+                    for dns_domain in "${dns_domains[@]}"; do
+                        if [[ ! "$dns_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+                            exit 42
+                        fi
+                    done
+
+                    if [[ " ${dns_domains[*]} " = *' . '* ]]; then
+                        dns_domains=(".")
+                    else
+                        domain=${dns_domains[0]}
+                        dns_domains=("$domain")
+                        if [ "$tld" != "$domain" ]; then
+                            dns_domains+=("$tld")
+                        fi
+                    fi
+
+                    resolvectl_domains=()
+                    persistent_domains=()
+                    for dns_domain in "${dns_domains[@]}"; do
+                        resolvectl_domains+=("~$dns_domain")
+                        printf -v dns_domain_escaped '%q' "~$dns_domain"
+                        persistent_domains+=("$dns_domain_escaped")
+                    done
 
                     php -r '
-                        [$live, $candidate, $server, $domain, $tld] = array_slice($argv, 1);
+                        [$live, $candidate, $server, $domains] = array_slice($argv, 1);
                         $configuration = file_get_contents($live);
                         if (!is_string($configuration)) { exit(42); }
-                        $domains = "\\~{$domain}" . ($tld === $domain ? "" : " \\~{$tld}");
                         $replacement = "PostUp = resolvectl dns %i {$server}; resolvectl domain %i {$domains}";
                         $updated = preg_replace(
                             "/^PostUp = resolvectl dns %i [^;\\r\\n]+; resolvectl domain %i [^\\r\\n]+$/m",
@@ -72,18 +95,17 @@ final readonly class RemoteAppDevTldRouteManager implements AppDevTldRouteManage
                         if (!is_string($updated) || $count !== 1 || file_put_contents($candidate, $updated) === false) {
                             exit(42);
                         }
-                    ' -- "$live" "$candidate" "$dns_server" "$domain" "$tld"
+                    ' -- "$live" "$candidate" "$dns_server" "${persistent_domains[*]}"
 
                     chown root:root "$candidate"
                     chmod 0600 "$candidate"
                     wg-quick strip "$candidate" >/dev/null
+                    printf '%s\n' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"
+                    chmod 0600 "$dns_state_candidate"
                     mv -fT -- "$candidate" "$live"
                     resolvectl dns "$dns_link" "$dns_server"
-                    if [ "$tld" = "$domain" ]; then
-                        resolvectl domain "$dns_link" "~$domain"
-                    else
-                        resolvectl domain "$dns_link" "~$domain" "~$tld"
-                    fi
+                    resolvectl domain "$dns_link" "${resolvectl_domains[@]}"
+                    mv -fT -- "$dns_state_candidate" "$dns_state"
                     BASH,
             ),
             step: 'app-dev-tld-route',

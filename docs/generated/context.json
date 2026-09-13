@@ -1803,6 +1803,22 @@
             ]
         },
         {
+            "path": "docs/reference/private-dns.md",
+            "title": "Private DNS",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0061"
+            ]
+        },
+        {
             "path": "docs/reference/proof-plans.md",
             "title": "Proof plans",
             "kind": "reference",

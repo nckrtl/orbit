@@ -104,6 +104,7 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
+use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
@@ -218,6 +219,7 @@ use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
+use App\Infrastructure\WireGuard\NativeWireGuardPeerDnsRepairer;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
@@ -489,6 +491,16 @@ final class AppServiceProvider extends ServiceProvider
             ),
         );
         $this->app->alias(NativeWireGuardPeerConverger::class, WireGuardPeerConverger::class);
+        $this->app->singleton(
+            NativeWireGuardPeerDnsRepairer::class,
+            static fn (): NativeWireGuardPeerDnsRepairer => new NativeWireGuardPeerDnsRepairer(
+                configuration: app(VpnConfigurationRepository::class),
+                ssh: app(SshExecutor::class),
+                sshKeys: app(SshKeyProvider::class),
+                knownHosts: app(KnownHostsStore::class),
+            ),
+        );
+        $this->app->alias(NativeWireGuardPeerDnsRepairer::class, WireGuardPeerDnsRepairer::class);
     }
 
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
