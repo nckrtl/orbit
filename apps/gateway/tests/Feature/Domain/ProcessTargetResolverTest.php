@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
@@ -12,6 +15,7 @@ use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Route;
 
 it('derives development placement from the AppInstance', function (): void {
     $instance = process_target_instance();
@@ -31,7 +35,27 @@ it('derives development placement from the AppInstance', function (): void {
         ->and($target->certificateScope)
         ->toBe("app-instance-{$instance->id}")
         ->and($target->productionReleaseLayout)
-        ->toBeFalse();
+        ->toBeFalse()
+        ->and($target->routeHostname)
+        ->toBeNull();
+});
+
+it('derives the development-server origin hostname from the AppInstance Route', function (): void {
+    $instance = process_target_instance();
+    $route = Route::query()->create([
+        'app_id' => $instance->app_id,
+        'node_id' => $instance->node_id,
+        'hostname' => 'tasks.commander.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::AppInstance, $instance->id);
+
+    expect($target->routeHostname)->toBe('tasks.commander.test');
 });
 
 it('derives production placement from the dedicated identity and current release', function (): void {

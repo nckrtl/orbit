@@ -103,7 +103,7 @@ The two runtimes accept these values.
 | systemd | Process name and absolute executable with argv | Absolute working directory, restart policy, and initial start | The development checkout or the production home's `current` path |
 | Docker | Process name, image, and command argv | Container working directory, environment, published ports, volumes, restart policy, and initial start | `/app` |
 
-A development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the AppInstance Route hostname from that user's certificate projection.
+A development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the AppInstance Route hostname from that user's certificate projection. When the AppInstance has a Route, the unit also receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` so the frontend toolchain publishes assets and hot module replacement on the [development-server endpoint](routes.md#development-server-endpoint).
 
 A production systemd Process runs as the AppInstance's dedicated production user. It reads the persistent environment file in the recorded production home and uses the `current` path as its default working directory. Orbit resolves the recorded Node, user, home, and current release when it performs an operation, independent of Node role co-location or certificate mode.
 

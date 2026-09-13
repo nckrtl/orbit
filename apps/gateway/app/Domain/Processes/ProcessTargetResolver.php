@@ -150,7 +150,20 @@ final readonly class ProcessTargetResolver
             appInstance: $instance,
             environmentFile: $environmentFile,
             productionReleaseLayout: $productionReleaseLayout,
+            routeHostname: $this->developmentRouteHostname($instance),
         );
+    }
+
+    private function developmentRouteHostname(AppInstance $instance): ?string
+    {
+        if ($instance->environment !== 'development') {
+            return null;
+        }
+
+        $instance->loadMissing('routes');
+        $hostname = $instance->routes->sortBy('id')->first()?->hostname;
+
+        return is_string($hostname) && $hostname !== '' ? $hostname : null;
     }
 
     private function ensureActive(AppInstance $instance): void

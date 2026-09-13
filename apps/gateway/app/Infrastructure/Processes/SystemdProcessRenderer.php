@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Models\Process;
@@ -42,7 +43,7 @@ final readonly class SystemdProcessRenderer
             );
         }
 
-        $certificateProjection = $this->certificateProjection($target, $managedAccount);
+        $environmentProjection = $this->environmentProjection($target, $managedAccount);
 
         return implode("\n", [
             '[Unit]',
@@ -58,13 +59,13 @@ final readonly class SystemdProcessRenderer
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
             'EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile),
-            ...$certificateProjection['directives'],
+            ...$environmentProjection['directives'],
             'ExecStart='
                 .implode(
                     ' ',
                     array_map(
                         $this->quoteArgument(...),
-                        [...$certificateProjection['commandPrefix'], ...$command],
+                        [...$environmentProjection['commandPrefix'], ...$command],
                     ),
                 ),
             'Restart='.$this->restartPolicy($process),
@@ -77,30 +78,40 @@ final readonly class SystemdProcessRenderer
     }
 
     /** @return array{directives: list<string>, commandPrefix: list<string>} */
-    private function certificateProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount): array
+    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount): array
     {
-        if ($target->certificateScope === null) {
-            return ['directives' => [], 'commandPrefix' => []];
+        $directives = [];
+        $commandValues = [];
+
+        if (is_string($target->routeHostname) && $target->routeHostname !== '') {
+            $origin = DevelopmentServerEndpoint::origin($target->routeHostname);
+            $directives[] = 'Environment=ORBIT_DEV_SERVER_ORIGIN='.$this->escapeDirectivePath($origin);
+            $directives[] = 'Environment=ORBIT_DEV_SERVER_HOST='.$this->escapeDirectivePath($target->routeHostname);
+            $directives[] = 'Environment=ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
+            $directives[] = 'Environment=ORBIT_DEV_SERVER_PORT='.(string) DevelopmentServerEndpoint::PORT;
+            $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
+            $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeHostname}";
+            $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
+            $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) DevelopmentServerEndpoint::PORT;
         }
 
-        if ($managedAccount === null || $managedAccount->user !== $target->user) {
-            throw new InvalidArgumentException('A matching managed account is required for process certificates.');
-        }
+        if ($target->certificateScope !== null) {
+            if ($managedAccount === null || $managedAccount->user !== $target->user) {
+                throw new InvalidArgumentException('A matching managed account is required for process certificates.');
+            }
 
-        $base = rtrim($managedAccount->home, '/')."/.orbit/certificates/{$target->certificateScope}/current/";
-        $certificate = $base.'cert.pem';
-        $key = $base.'key.pem';
+            $base = rtrim($managedAccount->home, '/')."/.orbit/certificates/{$target->certificateScope}/current/";
+            $certificate = $base.'cert.pem';
+            $key = $base.'key.pem';
+            $directives[] = 'Environment=VITE_DEV_SERVER_CERT='.$this->escapeDirectivePath($certificate);
+            $directives[] = 'Environment=VITE_DEV_SERVER_KEY='.$this->escapeDirectivePath($key);
+            $commandValues[] = "VITE_DEV_SERVER_CERT={$certificate}";
+            $commandValues[] = "VITE_DEV_SERVER_KEY={$key}";
+        }
 
         return [
-            'directives' => [
-                'Environment=VITE_DEV_SERVER_CERT='.$this->escapeDirectivePath($certificate),
-                'Environment=VITE_DEV_SERVER_KEY='.$this->escapeDirectivePath($key),
-            ],
-            'commandPrefix' => [
-                '/usr/bin/env',
-                "VITE_DEV_SERVER_CERT={$certificate}",
-                "VITE_DEV_SERVER_KEY={$key}",
-            ],
+            'directives' => $directives,
+            'commandPrefix' => $commandValues === [] ? [] : ['/usr/bin/env', ...$commandValues],
         ];
     }
 
