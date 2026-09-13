@@ -6,7 +6,10 @@ namespace App\Infrastructure\AppDev;
 
 final readonly class VpnDnsmasqBackendListen
 {
-    public const string Address = '127.0.0.54';
+    /**
+     * Loopback address for backend dnsmasq. systemd-resolved owns 127.0.0.53 and 127.0.0.54 on Ubuntu.
+     */
+    public const string Address = '127.0.0.55';
 
     public static function apply(string $configuration): string
     {

@@ -15,7 +15,7 @@ final class ServePrivateDnsCommand extends Command
         {--listen= : WireGuard address that receives VPN DNS queries}
         {--port=53 : UDP and TCP port to bind}
         {--catalog=/var/lib/orbit/private-dns/catalog.json : Published requester catalog}
-        {--upstream=127.0.0.54:53 : Backend dnsmasq address for names outside the catalog}';
+        {--upstream=127.0.0.55:53 : Backend dnsmasq address for names outside the catalog}';
 
     #[\Override]
     protected $description = 'Serve requester-aware Orbit VPN DNS answers from the published catalog.';
