@@ -7,6 +7,8 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Clusters\ClusterState;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\AppInstance;
@@ -54,14 +56,43 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $this->owner()->run(fn () => $this->publish(null, null, null, $candidate));
     }
 
+    /**
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     */
+    public function convergeSelection(array $nodeOverrides = [], array $clusterOverrides = []): void
+    {
+        $this->owner()->run(fn () => $this->publish(null, null, null, null, $nodeOverrides, $clusterOverrides));
+    }
+
+    /**
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     */
     private function publish(
         ?Node $pendingNode,
         ?Route $pendingRoute,
         ?AppInstance $unavailableInstance,
         ?Route $additionalRoute = null,
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
     ): void {
-        $configuration = $this->renderer->render($pendingNode, $pendingRoute, $unavailableInstance, $additionalRoute);
-        $catalog = $this->publication($configuration);
+        $configuration = $this->renderer->render(
+            $pendingNode,
+            $pendingRoute,
+            $unavailableInstance,
+            $additionalRoute,
+            $nodeOverrides,
+            $clusterOverrides,
+        );
+        $catalog = $this->publication(
+            $pendingNode,
+            $pendingRoute,
+            $unavailableInstance,
+            $additionalRoute,
+            $nodeOverrides,
+            $clusterOverrides,
+        );
         $encoded = base64_encode($configuration);
         $catalogEncoded = base64_encode($catalog);
         $recordsDirectory = $this->recordsDirectory;
@@ -160,12 +191,29 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         }
     }
 
-    private function publication(string $configuration): string
-    {
+    /**
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     */
+    private function publication(
+        ?Node $pendingNode,
+        ?Route $pendingRoute,
+        ?AppInstance $unavailableInstance,
+        ?Route $additionalRoute,
+        array $nodeOverrides,
+        array $clusterOverrides,
+    ): string {
         try {
             return json_encode([
                 'requesters' => $this->renderer->registeredRequesters(),
-                ...PrivateDnsAnswerCatalog::fromDnsmasqConfiguration($configuration)->toPublished(),
+                ...$this->renderer->catalog(
+                    $pendingNode,
+                    $pendingRoute,
+                    $unavailableInstance,
+                    $additionalRoute,
+                    $nodeOverrides,
+                    $clusterOverrides,
+                )->toPublished(),
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
         } catch (JsonException $exception) {
             throw new RuntimeConvergenceException(

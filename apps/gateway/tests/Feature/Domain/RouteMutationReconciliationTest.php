@@ -17,7 +17,9 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppDev\AppDevTldConverger;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\Clusters\ClusterRouterOperationLock;
@@ -41,6 +43,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
@@ -205,7 +208,9 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
     expect($standalone->fresh(['targets'])->toArray())
         ->toBe($standaloneBefore)
         ->and($this->node->fresh()->toArray())
-        ->toBe($nodeBefore);
+        ->toBe($nodeBefore)
+        ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
+        ->toBe(['expand', 'prune']);
 
     $workload = reconciliation_node('cluster-workload-refusal', null);
     $workload->update(['cluster_id' => $cluster->id]);
@@ -224,7 +229,10 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
     expect($cluster->fresh()->toArray())
         ->toBe($clusterBefore)
         ->and($clusterRoute->fresh(['targets'])->toArray())
-        ->toBe($clusterRouteBefore);
+        ->toBe($clusterRouteBefore)
+        ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
+        ->toContain('expand')
+        ->toContain('prune');
 
     $replacement = reconciliation_node('router-replacement-refusal', null);
     $replacement->update(['cluster_id' => $cluster->id]);
@@ -722,6 +730,41 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
         ]);
 });
 
+it('reconciles Router DNS selection before an eligible Cluster attachment becomes authoritative', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'dns-attach', 'state' => ClusterState::Active, 'tld' => null]);
+    $member = reconciliation_node('dns-attach-member', 'member.test');
+    $dns = route_mutation_dns_reconciler();
+    $dns->onExpand = static function () use ($member): void {
+        expect($member->fresh()?->cluster_id)->toBeNull();
+    };
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $member);
+
+    expect($member->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand', 'prune']);
+});
+
+it('keeps Cluster membership unchanged when DNS selection expansion fails during attach', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'dns-attach-fail', 'state' => ClusterState::Active, 'tld' => null]);
+    $member = reconciliation_node('dns-attach-fail-member', 'member.test');
+    $dns = route_mutation_dns_reconciler();
+    $dns->expandFailure = new RuntimeConvergenceException(
+        step: 'private-dns',
+        errorCode: 'app-dev.dns_config_failed',
+        message: 'DNS selection failed.',
+    );
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $member))
+        ->toThrow(RuntimeConvergenceException::class);
+
+    expect($member->refresh()->cluster_id)
+        ->toBeNull()
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand']);
+});
+
 it('requires a Router only after a TLD-less active Cluster owns a Route', function (): void {
     $cluster = Cluster::query()->create(['name' => 'tldless', 'state' => ClusterState::Active, 'tld' => null]);
     $member = reconciliation_node('member', 'member.test');
@@ -763,6 +806,14 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
             "AppInstance [{$memberTarget->id}] is already associated with Route",
         );
 });
+
+function route_mutation_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
+{
+    $dns = app(ClusterRouterDnsSelectionReconciler::class);
+    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
+
+    return $dns;
+}
 
 function reconciliation_node(string $name, ?string $tld): Node
 {

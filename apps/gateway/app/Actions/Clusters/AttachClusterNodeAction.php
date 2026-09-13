@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\LifecycleStatus;
@@ -19,6 +20,7 @@ final readonly class AttachClusterNodeAction
     public function __construct(
         private ?RouteMutationReconciler $routes = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
+        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
@@ -27,6 +29,17 @@ final readonly class AttachClusterNodeAction
             nodeOverrides: [$node->id => ['cluster_id' => $cluster->id]],
             clusterIds: [$cluster->id],
         );
+
+        try {
+            $this->dnsSelection()->expand(
+                nodeOverrides: [$node->id => ['cluster_id' => $cluster->id]],
+                clusterIds: [$cluster->id],
+            );
+        } catch (Throwable $exception) {
+            $this->lanIngress()->prune(clusterIds: [$cluster->id]);
+
+            throw $exception;
+        }
 
         try {
             /**
@@ -69,11 +82,13 @@ final readonly class AttachClusterNodeAction
                 return $lockedCluster->refresh();
             });
         } catch (Throwable $exception) {
+            $this->dnsSelection()->prune(clusterIds: [$cluster->id]);
             $this->lanIngress()->prune(clusterIds: [$cluster->id]);
 
             throw $exception;
         }
 
+        $this->dnsSelection()->prune(clusterIds: [$updated->id]);
         $this->lanIngress()->prune(clusterIds: [$updated->id]);
 
         return $updated;
@@ -82,5 +97,10 @@ final readonly class AttachClusterNodeAction
     private function lanIngress(): RouterLanIngressReconciler
     {
         return $this->lanIngress ?? app(RouterLanIngressReconciler::class);
+    }
+
+    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
+    {
+        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
     }
 }

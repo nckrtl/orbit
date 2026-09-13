@@ -18,6 +18,7 @@ use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceCloneCandidateInspector;
@@ -115,6 +116,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
+use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -314,6 +316,7 @@ final class AppServiceProvider extends ServiceProvider
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
+        ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
         RoleStateInspector::class => NativeRoleStateInspector::class,
         ScheduleStateInspector::class => NativeScheduleStateInspector::class,
         ToolInspector::class => NativeToolInspector::class,

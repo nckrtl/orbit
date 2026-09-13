@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\RoleName;
@@ -13,12 +14,14 @@ use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
+        app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
     })
     ->in('Feature');
 
