@@ -523,9 +523,12 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         dns_domains_escaped+=("$dns_domain_escaped")
                     done
 
+                    # No PreDown hook: the wg-quick AppArmor profile on Ubuntu 26.04 denies the
+                    # RevertLink call, and systemd-resolved drops the link configuration when
+                    # wg-quick deletes the interface.
                     dns_hooks=
                     if [ "$dns_mode" = wireguard ]; then
-                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"$'\n'"PreDown = resolvectl revert %i"
+                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"
                     fi
                     operator_dns_line=
                     if [ -n "$operator_dns" ]; then

@@ -90,4 +90,6 @@ A failed step rolls the Gateway back and keeps the Node record active. Each fail
 
 Removing a Node's last role also restores the public SSH recovery rule; [Node retarget](node-retarget.md#two-boundaries) describes that boundary.
 
+Provisioning the machine again after removal writes a new tunnel configuration and restarts `wg-quick@orbit` while the earlier tunnel is still up. The configuration carries a `PostUp` hook that points the link at Orbit DNS and no `PreDown` hook: the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call, and systemd-resolved drops the link configuration when wg-quick deletes the interface.
+
 The owning implementation and tests live in `apps/gateway`.

@@ -183,7 +183,6 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'if [ "$dns_mode" != operator ] && [ -s "$dns_state" ]; then',
                 'operator_dns_line="DNS = $operator_dns_escaped"',
                 'PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}',
-                'PreDown = resolvectl revert %i',
                 'route=$(ip -o route get "$dns_server")',
                 'if [[ "$route" =~ [[:space:]]dev[[:space:]]([^[:space:]]+) ]]; then',
                 'Could not resolve DNS interface.',
@@ -194,7 +193,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
             ->not->toContain(
                 'candidate=$(mktemp)',
                 'PostUp = route=',
-                'PreDown = route=',
+                'PreDown =',
                 '| sed ',
             );
 
