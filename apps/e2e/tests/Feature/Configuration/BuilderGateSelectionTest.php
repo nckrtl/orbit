@@ -122,19 +122,25 @@ function orb277_check(array $receipt, string $project, string $script): array
 }
 
 describe('Builder gate', function (): void {
+    it('runs the candidate gate from root composer check without a process timeout', function (): void {
+        $composer = json_decode((string) file_get_contents(base_path('../../composer.json')), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($composer['scripts']['check'])->toBe(['Composer\\Config::disableProcessTimeout', 'bin/review-check']);
+    });
+
     it('records guidance checks into a separate TIA cache in every project', function (string $project): void {
         $repository = realpath(base_path('../..'));
         $root = $repository.'/'.$project;
         $composer = json_decode((string) file_get_contents($root.'/composer.json'), true, flags: JSON_THROW_ON_ERROR);
-        $guidance = $root.'/.pest/guidance';
+        $guidance = $root.'/vendor/.orbit-guidance-tia';
 
         expect($composer['scripts']['guidance:check'])->toBe(
-            'ORBIT_TIA_DIRECTORY=.pest/guidance vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact',
+            'ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact',
         );
-        expect(orb277_tia_directory($root, '.pest/guidance'))->toBe($guidance);
+        expect(orb277_tia_directory($root, 'vendor/.orbit-guidance-tia'))->toBe($guidance);
         expect(orb277_tia_directory($root, false))->not->toStartWith($guidance);
 
-        $ignored = new Process(['git', 'check-ignore', '-q', $project.'/.pest/guidance/graph.json'], $repository);
+        $ignored = new Process(['git', 'check-ignore', '-q', $project.'/vendor/.orbit-guidance-tia/graph.json'], $repository);
         $ignored->run();
 
         expect($ignored->getExitCode())->toBe(0, 'The guidance cache must stay out of the candidate tree.');

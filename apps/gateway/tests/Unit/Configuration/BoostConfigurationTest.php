@@ -407,7 +407,7 @@ it('preserves project and installed testing guidance', function (): void {
 
     expect($composer['scripts']['guidance:check'] ?? null)
         ->toBe(
-            'ORBIT_TIA_DIRECTORY=.pest/guidance vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact',
+            'ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact',
         )
         ->and($composer['scripts']['guidance:update'] ?? null)
         ->toBe([

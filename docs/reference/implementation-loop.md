@@ -90,7 +90,7 @@ A failed refresh or replacement keeps the complete retained proof topology, capt
 
 ## Local checks
 
-Run `composer test:affected` for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs the project's dedicated guidance configuration with fresh TIA so its contracts execute deterministically. `guidance:check` sets `ORBIT_TIA_DIRECTORY=.pest/guidance`, so that fresh run records into the project's ignored `.pest/guidance` directory and leaves the affected-test graph that `test:affected` reads in place. The check then runs Rector, Pint formatting and syntax checks, and static analysis; it does not run the full project test configuration. Run `composer docs-lint` when documentation changes.
+Run `composer test:affected` for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs the project's dedicated guidance configuration with fresh TIA so its contracts execute deterministically. `guidance:check` sets `ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia`, so that fresh run records into the project's `vendor/.orbit-guidance-tia` directory and leaves the affected-test graph that `test:affected` reads in place. The check then runs Rector, Pint formatting and syntax checks, and static analysis; it does not run the full project test configuration. Run `composer docs-lint` when documentation changes.
 
 After committing the clean candidate, the Builder runs root `composer check` before implementation handoff. This candidate gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` also use TIA.
 
@@ -158,7 +158,7 @@ Baselines stay separate between projects. Bootstrap seeds absent worktree caches
 
 ## Candidate quality gate
 
-The Builder runs root `composer check` in the clean issue worktree at the committed candidate. The command first seeds absent TIA caches, then runs strict Composer validation, project `composer check`, and `composer test:affected` in each project, sequentially. Project quality checks use the project's configured tools, including Rector in dry-run mode. A failure in any project returns directly to the Builder and prevents review dispatch.
+The Builder runs root `composer check` in the clean issue worktree at the committed candidate. The command disables Composer's process timeout, so a cold record of a full project suite completes. It first seeds absent TIA caches, then runs strict Composer validation, project `composer check`, and `composer test:affected` in each project, sequentially. Project quality checks use the project's configured tools, including Rector in dry-run mode. A failure in any project returns directly to the Builder and prevents review dispatch.
 
 The gate writes command logs and `result.json` under the Git common directory at `orbit-checks/<candidate>/review-*/`. The receipt records `role: builder`, the exact candidate and tree, each command, exit code, duration, and log path. It reports success only when every check passes and the candidate remains clean and unchanged. The Builder includes the path in its implementation handoff. The orchestrator validates it before review dispatch, and the reviewer validates the same receipt while assessing the candidate. The reviewer does not repeat the full gate solely to approve. A later candidate needs a new gate and approval.
 

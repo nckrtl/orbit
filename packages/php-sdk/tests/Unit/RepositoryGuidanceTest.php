@@ -99,7 +99,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($dependencies)
             ->not->toHaveKeys(['laravel/framework', 'laravel/boost']);
         expect($composer['scripts']['guidance:check'] ?? null)
-            ->toBe('ORBIT_TIA_DIRECTORY=.pest/guidance vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact');
+            ->toBe('ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact');
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 

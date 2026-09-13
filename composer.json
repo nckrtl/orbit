@@ -13,7 +13,10 @@
         "docs-context": "@php apps/docs/artisan orbit:docs-context",
         "docs-lint": "@php apps/docs/artisan orbit:docs-lint --format=agent --strict",
         "test": "bin/test",
-        "check": "bin/review-check"
+        "check": [
+            "Composer\\Config::disableProcessTimeout",
+            "bin/review-check"
+        ]
     },
     "config": {
         "preferred-install": "dist",
