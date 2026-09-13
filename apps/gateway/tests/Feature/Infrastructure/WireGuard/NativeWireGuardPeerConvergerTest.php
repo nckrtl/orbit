@@ -22,6 +22,8 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process as SymfonyProcess;
 
 it('validates a candidate config under /etc/wireguard before replacing the live server config', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
@@ -915,6 +917,8 @@ it('fails bounded when a stale recoverable peer transaction is already present',
             ->toBe('wireguard-peer-transaction')
             ->and($retry['exception']->errorCode)
             ->toBe('vpn.peer_recovery_pending')
+            ->and($retry['exception']->result?->exitCode)
+            ->toBe(42)
             ->and($retry['exception']->getMessage())
             ->toContain('recovery');
 
@@ -958,6 +962,10 @@ it('restores absent peer files and an inactive disabled service after a late rem
 
         expect($result['succeeded'])
             ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(RuntimeException::class)
+            ->and($result['exception']->getMessage())
+            ->toBe('completion failed')
             ->and($result['live'])
             ->toBeNull()
             ->and($result['dns'])
@@ -985,6 +993,14 @@ it('restores absent peer files when the peer command fails internally after rest
         $result = $harness->converge(lateFailure: true);
         expect($result['succeeded'])
             ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(NodeProvisioningException::class)
+            ->and($result['exception']->step)
+            ->toBe('wireguard-peer-install')
+            ->and($result['exception']->errorCode)
+            ->toBe('vpn.peer_config_failed')
+            ->and($result['exception']->result?->exitCode)
+            ->toBe(1)
             ->and($result['live'])
             ->toBeNull()
             ->and($result['service_state'])
@@ -1010,6 +1026,10 @@ it('unmasks peer service for publication and restores the mask after a late remo
 
         expect($result['succeeded'])
             ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(RuntimeException::class)
+            ->and($result['exception']->getMessage())
+            ->toBe('completion failed')
             ->and($result['live'])
             ->toBe($harness->originalLive())
             ->and($result['dns'])
@@ -1059,7 +1079,18 @@ it('cleans finalize transaction artifacts when candidate validation fails', func
         $harness->failStrip();
         $result = $harness->converge(lateFailure: false);
 
-        expect($result['succeeded'])->toBeFalse()->and($result['rollback_artifacts'])->toBeEmpty();
+        expect($result['succeeded'])
+            ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(NodeProvisioningException::class)
+            ->and($result['exception']->step)
+            ->toBe('wireguard-peer-install')
+            ->and($result['exception']->errorCode)
+            ->toBe('vpn.peer_config_failed')
+            ->and($result['exception']->result?->exitCode)
+            ->toBe(1)
+            ->and($result['rollback_artifacts'])
+            ->toBeEmpty();
         $harness->allowStrip();
         expect($harness->converge(lateFailure: false)['succeeded'])->toBeTrue();
     } finally {
@@ -1081,6 +1112,14 @@ it('retains finalize artifacts when restoration fails after publication', functi
 
         expect($result['succeeded'])
             ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(NodeProvisioningException::class)
+            ->and($result['exception']->step)
+            ->toBe('wireguard-peer-install')
+            ->and($result['exception']->errorCode)
+            ->toBe('vpn.peer_config_failed')
+            ->and($result['exception']->result?->exitCode)
+            ->toBe(1)
             ->and($result['rollback_artifacts'])
             ->not->toBeEmpty();
     } finally {
@@ -1103,7 +1142,18 @@ it('retains pre-existing recovery artifacts when finalize is refused', function 
         $before = $harness->state()['rollback_artifacts'];
         $result = $harness->converge(lateFailure: false);
 
-        expect($result['succeeded'])->toBeFalse()->and($result['rollback_artifacts'])->toBe($before);
+        expect($result['succeeded'])
+            ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(NodeProvisioningException::class)
+            ->and($result['exception']->step)
+            ->toBe('wireguard-peer-install')
+            ->and($result['exception']->errorCode)
+            ->toBe('vpn.peer_config_failed')
+            ->and($result['exception']->result?->exitCode)
+            ->toBe(42)
+            ->and($result['rollback_artifacts'])
+            ->toBe($before);
     } finally {
         $harness->cleanup();
     }
@@ -1121,6 +1171,14 @@ it('cleans owned retain artifacts when transaction publication fails', function 
         $result = $harness->convergeRecoverably();
         expect($result['succeeded'])
             ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(NodeProvisioningException::class)
+            ->and($result['exception']->step)
+            ->toBe('wireguard-peer-install')
+            ->and($result['exception']->errorCode)
+            ->toBe('vpn.peer_config_failed')
+            ->and($result['exception']->result?->exitCode)
+            ->toBe(1)
             ->and($result['live'])
             ->toBe($harness->originalLive())
             ->and($result['service_state'])
@@ -1167,8 +1225,12 @@ it('rejects unsupported systemd enablement states before peer mutation', functio
             ->toBeFalse()
             ->and($result['exception'])
             ->toBeInstanceOf(NodeProvisioningException::class)
+            ->and($result['exception']->step)
+            ->toBe('wireguard-peer-state')
             ->and($result['exception']->errorCode)
             ->toBe('vpn.peer_state_unsupported')
+            ->and($result['exception']->result?->exitCode)
+            ->toBe(43)
             ->and($result['live'])
             ->toBe($harness->originalLive())
             ->and($result['dns'])
@@ -1606,6 +1668,9 @@ it('restores every prior DNS domain after a successive underlay convergence fail
             ->toBe("eth0\n192.0.2.53\norbit\nfirst.internal\n");
         expect($result['succeeded'])
             ->toBeFalse()
+            ->and($result['exception'])
+            ->toBeInstanceOf(RuntimeException::class)
+            ->not->toBeInstanceOf(ErrorException::class)
             ->and($result['dns']['contents'])
             ->toBe("eth0\n192.0.2.53\norbit\nfirst.internal\n")
             ->and($result['command_log'])
@@ -1620,6 +1685,347 @@ it('restores every prior DNS domain after a successive underlay convergence fail
     'immediate rollback' => 'immediate',
     'retained rollback' => 'retained',
 ]);
+
+it('returns intended early shell exits and output with input larger than ordinary pipes', function (
+    int $exitCode,
+): void {
+    $root = sys_get_temp_dir().'/orbit-wireguard-peer-transport-'.Str::uuid();
+    new Filesystem()->makeDirectory($root.'/bin', 0o700, true);
+    $pidPath = $root.'/child.pid';
+    $input = str_replace(
+        ['__PID_PATH__', '__EXIT_CODE__'],
+        [$pidPath, (string) $exitCode],
+        <<<'BASH'
+            printf '%s' "$$" > "__PID_PATH__"
+            printf 'known stdout'
+            printf 'known stderr' >&2
+            exit __EXIT_CODE__
+            BASH,
+    );
+    $input .= "\n# ".str_repeat(string: 'unread-input-', times: 174_763)."\nprintf 'unreachable tail'\n";
+    $transport = new RemoteWireGuardPeerShellFixtureTransport($root);
+
+    try {
+        $result = $transport->execute(new RemoteCommand(
+            arguments: ['sudo', 'bash', '-seu', '--', 'unused argument'],
+            input: $input,
+        ));
+        $pid = (int) file_get_contents($pidPath);
+
+        expect(strlen($input))
+            ->toBeGreaterThan(2 * 1024 * 1024)
+            ->and($result->exitCode)
+            ->toBe($exitCode)
+            ->and($result->stdout)
+            ->toBe('known stdout')
+            ->and($result->stderr)
+            ->toBe('known stderr')
+            ->and($transport->inputIsOpen())
+            ->toBeFalse()
+            ->and(file_exists((string) $transport->inputPath()))
+            ->toBeFalse()
+            ->and($transport->childIsRunning())
+            ->toBeFalse()
+            ->and(posix_kill($pid, 0))
+            ->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with([
+    'stale transaction exit 42' => 42,
+    'unsupported state exit 43' => 43,
+]);
+
+it('consumes complete large shell input while draining complete stdout and stderr', function (): void {
+    $root = sys_get_temp_dir().'/orbit-wireguard-peer-transport-'.Str::uuid();
+    new Filesystem()->makeDirectory($root.'/bin', 0o700, true);
+    remote_wireguard_peer_write_shim(
+        root: $root,
+        name: 'orbit-fixture-probe',
+        body: <<<'SH'
+            printf 'shim=fixture-path\n'
+            SH,
+    );
+    $pidPath = $root.'/child.pid';
+    $outputBytes = 256 * 1024;
+    $input = str_replace(
+        ['__PID_PATH__', '__OUTPUT_BYTES__'],
+        [$pidPath, (string) $outputBytes],
+        <<<'BASH'
+            printf '%s' "$$" > "__PID_PATH__"
+            head -c __OUTPUT_BYTES__ /dev/zero | tr '\000' 'O'
+            printf 'stdout-tail\n'
+            head -c __OUTPUT_BYTES__ /dev/zero | tr '\000' 'E' >&2
+            printf 'stderr-tail\n' >&2
+            BASH,
+    );
+    $input .= "\n# ".str_repeat(string: 'successful-input-', times: 131_073)."\n";
+    $input .= <<<'BASH'
+        printf 'argument=%s\n' "$1"
+        printf 'cwd=%s\n' "$PWD"
+        printf 'rewritten=%s\n' '/etc/wireguard/orbit.conf'
+        orbit-fixture-probe
+        printf 'input-tail=complete\n'
+        BASH;
+    $transport = new RemoteWireGuardPeerShellFixtureTransport($root);
+
+    try {
+        $result = $transport->execute(new RemoteCommand(
+            arguments: ['sudo', 'bash', '-seu', '--', 'argument sentinel'],
+            input: $input,
+        ));
+        $pid = (int) file_get_contents($pidPath);
+        $expectedStdout = str_repeat(string: 'O', times: $outputBytes)."stdout-tail\n"
+            ."argument=argument sentinel\n"
+            ."cwd={$root}\n"
+            ."rewritten={$root}/wireguard/orbit.conf\n"
+            ."shim=fixture-path\n"
+            ."input-tail=complete\n";
+        $expectedStderr = str_repeat(string: 'E', times: $outputBytes)."stderr-tail\n";
+
+        expect(strlen($input))
+            ->toBeGreaterThan(2 * 1024 * 1024)
+            ->and($result->exitCode)
+            ->toBe(0)
+            ->and(strlen($result->stdout))
+            ->toBe(strlen($expectedStdout))
+            ->and(hash('sha256', $result->stdout))
+            ->toBe(hash('sha256', $expectedStdout))
+            ->and(strlen($result->stderr))
+            ->toBe(strlen($expectedStderr))
+            ->and(hash('sha256', $result->stderr))
+            ->toBe(hash('sha256', $expectedStderr))
+            ->and($transport->inputIsOpen())
+            ->toBeFalse()
+            ->and(file_exists((string) $transport->inputPath()))
+            ->toBeFalse()
+            ->and($transport->childIsRunning())
+            ->toBeFalse()
+            ->and(posix_kill($pid, 0))
+            ->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('times out and reaps a non-completing shell without leaking its input', function (): void {
+    $root = sys_get_temp_dir().'/orbit-wireguard-peer-transport-'.Str::uuid();
+    new Filesystem()->makeDirectory($root.'/bin', 0o700, true);
+    $pidPath = $root.'/child.pid';
+    $input = str_replace('__PID_PATH__', $pidPath, <<<'BASH'
+        printf '%s' "$$" > "__PID_PATH__"
+        while :; do
+            :
+        done
+        BASH);
+    $transport = new RemoteWireGuardPeerShellFixtureTransport($root, 0.25);
+    $previousHandler = pcntl_signal_get_handler(SIGALRM);
+    $previousAsyncSignals = pcntl_async_signals();
+    pcntl_async_signals(true);
+    pcntl_signal(SIGALRM, static function (): never {
+        throw new RuntimeException('The outer transport safeguard expired.');
+    });
+    pcntl_alarm(5);
+
+    try {
+        $timeout = null;
+
+        try {
+            $transport->execute(new RemoteCommand(
+                arguments: ['sudo', 'bash', '-seu', '--'],
+                input: $input,
+            ));
+        } catch (ProcessTimedOutException $exception) {
+            $timeout = $exception;
+        }
+
+        $pid = (int) file_get_contents($pidPath);
+
+        expect($timeout)
+            ->toBeInstanceOf(ProcessTimedOutException::class)
+            ->and($timeout?->isGeneralTimeout())
+            ->toBeTrue()
+            ->and($timeout?->getExceededTimeout())
+            ->toBe(0.25)
+            ->and($transport->inputIsOpen())
+            ->toBeFalse()
+            ->and(file_exists((string) $transport->inputPath()))
+            ->toBeFalse()
+            ->and($transport->childIsRunning())
+            ->toBeFalse()
+            ->and(posix_kill($pid, 0))
+            ->toBeFalse();
+    } finally {
+        pcntl_alarm(0);
+        pcntl_signal(SIGALRM, $previousHandler);
+        pcntl_async_signals($previousAsyncSignals);
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('reports a missing fixture working directory without inventing a shell result', function (): void {
+    $root = sys_get_temp_dir().'/orbit-wireguard-peer-transport-missing-'.Str::uuid();
+    $transport = new RemoteWireGuardPeerShellFixtureTransport($root);
+
+    expect(fn (): CommandResult => $transport->execute(new RemoteCommand(
+        arguments: ['sudo', 'bash', '-seu', '--'],
+        input: "printf 'unreachable'\n",
+    )))->toThrow(RuntimeException::class, "Fixture working directory [{$root}] does not exist.");
+
+    expect($transport->inputIsOpen())
+        ->toBeFalse()
+        ->and($transport->inputPath())
+        ->toBeNull()
+        ->and($transport->childIsRunning())
+        ->toBeFalse();
+});
+
+/** Runs the peer fixture shell with concurrent bounded transport and owned input cleanup. */
+final class RemoteWireGuardPeerShellFixtureTransport
+{
+    private mixed $inputStream = null;
+
+    private ?string $inputPath = null;
+
+    private ?SymfonyProcess $process = null;
+
+    public function __construct(
+        private readonly string $root,
+        private readonly float $timeout = 10.0,
+    ) {}
+
+    public function execute(RemoteCommand $command): CommandResult
+    {
+        $result = null;
+        $failure = null;
+
+        try {
+            if (! is_dir($this->root)) {
+                throw new RuntimeException("Fixture working directory [{$this->root}] does not exist.");
+            }
+
+            $this->inputPath = tempnam($this->root, '.orbit-peer-input-');
+            if ($this->inputPath === false) {
+                throw new RuntimeException('Could not create the remote peer shell fixture input.');
+            }
+
+            if (! chmod($this->inputPath, 0o600)) {
+                throw new RuntimeException('Could not protect the remote peer shell fixture input.');
+            }
+
+            $this->inputStream = fopen($this->inputPath, 'w+b');
+            if (! is_resource($this->inputStream)) {
+                throw new RuntimeException('Could not open the remote peer shell fixture input.');
+            }
+
+            $this->writeInput(remote_wireguard_peer_rewrite_shell($command->input ?? '', $this->root));
+            if (! rewind($this->inputStream)) {
+                throw new RuntimeException('Could not rewind the remote peer shell fixture input.');
+            }
+
+            $bash = is_executable('/opt/homebrew/bin/bash') ? '/opt/homebrew/bin/bash' : '/bin/bash';
+            $environment = array_fill_keys(array_keys(getenv()), false);
+            $environment['PATH'] = "{$this->root}/bin:/usr/bin:/bin";
+            $arguments = array_merge(
+                [$bash, '-seu', '--'],
+                array_slice(array: $command->arguments, offset: 4),
+            );
+            $this->process = new SymfonyProcess(
+                command: $arguments,
+                cwd: $this->root,
+                env: $environment,
+                input: $this->inputStream,
+                timeout: $command->timeout ?? $this->timeout,
+            );
+            $startedAt = microtime(true);
+            $exitCode = $this->process->run();
+            $result = new CommandResult(
+                exitCode: $exitCode,
+                stdout: $this->process->getOutput(),
+                stderr: $this->process->getErrorOutput(),
+                durationMs: max(1, (int) round((microtime(true) - $startedAt) * 1_000)),
+                truncated: false,
+            );
+        } catch (Throwable $throwable) {
+            $failure = $throwable;
+        }
+
+        $cleanupFailure = $this->releaseOwnedResources();
+
+        if ($failure !== null) {
+            throw $failure;
+        }
+
+        if ($cleanupFailure !== null) {
+            throw $cleanupFailure;
+        }
+
+        if (! $result instanceof CommandResult) {
+            throw new LogicException('The remote peer shell fixture produced no result.');
+        }
+
+        return $result;
+    }
+
+    public function inputIsOpen(): bool
+    {
+        return is_resource($this->inputStream);
+    }
+
+    public function inputPath(): ?string
+    {
+        return $this->inputPath;
+    }
+
+    public function childIsRunning(): bool
+    {
+        return $this->process?->isRunning() ?? false;
+    }
+
+    private function writeInput(string $input): void
+    {
+        while ($input !== '') {
+            $written = fwrite($this->inputStream, $input);
+
+            if ($written === false || $written === 0) {
+                throw new RuntimeException('Could not write the remote peer shell fixture input.');
+            }
+
+            $input = substr($input, $written);
+        }
+    }
+
+    private function releaseOwnedResources(): ?Throwable
+    {
+        $failure = null;
+
+        try {
+            if ($this->process?->isRunning()) {
+                $this->process->stop(0);
+            }
+        } catch (Throwable $throwable) {
+            $failure = $throwable;
+        }
+
+        try {
+            if (is_resource($this->inputStream) && ! fclose($this->inputStream)) {
+                throw new RuntimeException('Could not close the remote peer shell fixture input.');
+            }
+        } catch (Throwable $throwable) {
+            $failure ??= $throwable;
+        }
+
+        try {
+            if ($this->inputPath !== null && is_file($this->inputPath) && ! unlink($this->inputPath)) {
+                throw new RuntimeException('Could not remove the remote peer shell fixture input.');
+            }
+        } catch (Throwable $throwable) {
+            $failure ??= $throwable;
+        }
+
+        return $failure;
+    }
+}
 
 function remote_wireguard_peer_install_harness(
     bool $filesPresent,
@@ -1842,43 +2248,8 @@ function remote_wireguard_peer_install_harness(
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $this->commands[] = $command;
-            $input = remote_wireguard_peer_rewrite_shell($command->input ?? '', $this->root);
-            $bash = is_executable('/opt/homebrew/bin/bash') ? '/opt/homebrew/bin/bash' : '/bin/bash';
-            $arguments = array_merge(
-                [$bash, '-seu', '--'],
-                array_slice(array: $command->arguments, offset: 4),
-            );
-            $process = proc_open(
-                $arguments,
-                [
-                    0 => ['pipe', 'r'],
-                    1 => ['pipe', 'w'],
-                    2 => ['pipe', 'w'],
-                ],
-                $pipes,
-                $this->root,
-                ['PATH' => "{$this->root}/bin:/usr/bin:/bin"],
-            );
 
-            if (! is_resource($process)) {
-                throw new RuntimeException('Could not start the remote peer shell fixture.');
-            }
-
-            fwrite($pipes[0], $input);
-            fclose($pipes[0]);
-            $stdout = stream_get_contents($pipes[1]);
-            fclose($pipes[1]);
-            $stderr = stream_get_contents($pipes[2]);
-            fclose($pipes[2]);
-            $exitCode = proc_close($process);
-
-            return new CommandResult(
-                $exitCode,
-                $stdout === false ? '' : $stdout,
-                $stderr === false ? '' : $stderr,
-                1,
-                false,
-            );
+            return new RemoteWireGuardPeerShellFixtureTransport($this->root)->execute($command);
         }
     };
     $converger = new NativeWireGuardPeerConverger(
@@ -1927,6 +2298,7 @@ function remote_wireguard_peer_install_harness(
 
             return [
                 'succeeded' => $exception === null,
+                'exception' => $exception,
                 'stderr' => $exception?->getMessage() ?? '',
                 ...$this->state(),
             ];
