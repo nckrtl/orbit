@@ -103,6 +103,15 @@ it('returns 422 before persistence when a deny intersects public recovery SSH', 
         ->assertJsonPath('error.code', 'firewall.public_ssh_deny_forbidden');
 
     expect(FirewallRule::query()->count())->toBe(0);
+
+    $activity = Activity::query()->where('command', 'firewall:deny')->sole();
+
+    expect($activity)
+        ->status->toBe('failed')
+        ->error_code->toBe('firewall.public_ssh_deny_forbidden')
+        ->subject_type->toBe(Node::class)
+        ->subject_id->toBe($this->node->id)
+        ->target_node_id->toBe($this->node->id);
 });
 
 it('returns 409 before UFW when allow and deny share a node source protocol and port', function (): void {
@@ -149,7 +158,19 @@ it('returns 409 before UFW when allow and deny share a node source protocol and 
         'name' => 'block-web',
     ]);
 
+    $conflict = Activity::query()
+        ->where('command', 'firewall:deny')
+        ->where('status', 'failed')
+        ->sole();
+
     expect($this->firewall->converged)->toBe(['private-web', 'private-web']);
+    expect($conflict)
+        ->error_code->toBe('firewall.action_conflict')
+        ->subject_type->toBe(Node::class)
+        ->subject_id->toBe($this->node->id)
+        ->target_node_id->toBe($this->node->id)
+        ->and($conflict->properties?->get('path'))
+        ->toBe("api/v1/nodes/{$this->node->id}/firewall-rules/deny");
 });
 
 it('lists stable named intent and removes only the selected node rule', function (): void {

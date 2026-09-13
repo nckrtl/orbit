@@ -9,6 +9,8 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Firewall\FirewallBackendStatus;
+use App\Domain\Firewall\FirewallManager;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -30,6 +32,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
@@ -1291,6 +1294,81 @@ it('keeps failed remove tools retained and redacted', function (): void {
         ->not->toContain('REMOVE_EXCEPTION_SENTINEL');
 });
 
+it('records pre-persistence firewall allow and deny failures against the path-bound node', function (): void {
+    app()->instance(FirewallManager::class, new CommandActivityFirewallFakeManager);
+    $node = Node::query()->create([
+        'name' => 'firewall-activity-target',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.80',
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.80',
+    ]);
+    $node->accessibleNodes()->attach($node);
+    $denyRequestId = (string) Str::uuid();
+    $allowRequestId = (string) Str::uuid();
+    $conflictRequestId = (string) Str::uuid();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $denyRequestId)
+        ->postJson("/api/v1/nodes/{$node->id}/firewall-rules/deny", [
+            'name' => 'block-ssh',
+            'source' => 'any',
+            'protocol' => 'tcp',
+            'port' => '1:1024',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'firewall.public_ssh_deny_forbidden');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $allowRequestId)
+        ->postJson("/api/v1/nodes/{$node->id}/firewall-rules/allow", [
+            'name' => 'private-web',
+            'source' => 'any',
+            'protocol' => 'tcp',
+            'port' => '443',
+        ])
+        ->assertCreated();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $conflictRequestId)
+        ->postJson("/api/v1/nodes/{$node->id}/firewall-rules/deny", [
+            'name' => 'block-web',
+            'source' => 'any',
+            'protocol' => 'tcp',
+            'port' => '443',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'firewall.action_conflict');
+
+    $denied = Activity::query()->where('request_id', $denyRequestId)->sole();
+    $conflicted = Activity::query()->where('request_id', $conflictRequestId)->sole();
+
+    expect($denied)
+        ->command->toBe('firewall:deny')
+        ->status->toBe('failed')
+        ->error_code->toBe('firewall.public_ssh_deny_forbidden')
+        ->subject_type->toBe(Node::class)
+        ->subject_id->toBe($node->id)
+        ->target_node_id->toBe($node->id);
+
+    expect($conflicted)
+        ->command->toBe('firewall:deny')
+        ->status->toBe('failed')
+        ->error_code->toBe('firewall.action_conflict')
+        ->subject_type->toBe(Node::class)
+        ->subject_id->toBe($node->id)
+        ->target_node_id->toBe($node->id)
+        ->and($conflicted->properties?->get('path'))
+        ->toBe("api/v1/nodes/{$node->id}/firewall-rules/deny");
+
+    expect(FirewallRule::query()->where('name', 'block-web')->exists())->toBeFalse();
+});
+
 function command_activity_doctor_node(string $name): Node
 {
     static $number = 210;
@@ -1344,6 +1422,19 @@ function command_activity_environment_fixture(): array
     $instance->update(['status' => 'active']);
 
     return [$caller, $instance->fresh(['node'])];
+}
+
+final class CommandActivityFirewallFakeManager implements FirewallManager
+{
+    public function converge(FirewallRule $rule): FirewallBackendStatus
+    {
+        return FirewallBackendStatus::Active;
+    }
+
+    public function remove(FirewallRule $rule): FirewallBackendStatus
+    {
+        return FirewallBackendStatus::Absent;
+    }
 }
 
 final readonly class CommandActivityEnvironmentAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
