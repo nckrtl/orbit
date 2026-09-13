@@ -1742,6 +1742,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "App",
                 "Gateway",
                 "Node"
             ],
