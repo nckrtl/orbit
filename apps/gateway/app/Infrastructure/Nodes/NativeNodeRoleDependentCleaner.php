@@ -12,6 +12,7 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
@@ -22,11 +23,16 @@ use Throwable;
 
 final readonly class NativeNodeRoleDependentCleaner implements NodeRoleDependentCleaner
 {
+    private ProcessRuntimeLease $lease;
+
     public function __construct(
         private ProcessRuntimeManager $processes,
         private AppDevRuntimeConverger $appDev,
         private AppProdRuntimeConverger $appProd,
-    ) {}
+        ?ProcessRuntimeLease $lease = null,
+    ) {
+        $this->lease = $lease ?? app(ProcessRuntimeLease::class);
+    }
 
     public function clean(NodeRoleDependencySet $dependencies): void
     {
@@ -34,9 +40,14 @@ final readonly class NativeNodeRoleDependentCleaner implements NodeRoleDependent
             $process = Process::query()->findOrFail($processId);
 
             try {
-                $this->processes->remove($process);
+                $this->lease->run($process, function (Process $fresh): void {
+                    $this->processes->remove($fresh);
+                });
             } catch (ProcessOperationException $exception) {
-                $this->markFailed($process, $exception->step, $exception->errorCode);
+                if ($exception->errorCode !== 'process.runtime_lock_failed') {
+                    $this->markFailed($process, $exception->step, $exception->errorCode);
+                }
+
                 $this->fail('process-runtime', $exception->errorCode, $exception, $exception->result);
             } catch (Throwable $exception) {
                 $this->markFailed($process, 'unknown', 'process.remove_failed');

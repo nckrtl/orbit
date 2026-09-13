@@ -17,6 +17,10 @@ trait MarksProcessRuntimeFailures
         #[SensitiveParameter]
         ProcessOperationException $exception,
     ): void {
+        if ($exception->errorCode === 'process.runtime_lock_failed') {
+            return;
+        }
+
         $process->update([
             'status' => LifecycleStatus::Failed,
             'failed_step' => $exception->step,

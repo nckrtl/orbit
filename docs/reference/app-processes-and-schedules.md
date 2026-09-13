@@ -127,6 +127,12 @@ The CLI exposes these Process operations through the Gateway.
 
 Adding or starting a Process requires an active, available AppInstance and reachable active Node. Orbit refuses either operation before mutation when that target is unavailable or inactive. Cleanup can use the recorded placement of a failed or removing AppInstance while its Node remains reachable.
 
+The Gateway holds one runtime owner for a Process while it re-reads the record, applies the remote systemd or Docker change, and writes the matching success, failure, or deletion. A competitor that cannot take that owner receives `process.runtime_lock_failed` and leaves desired state, errors, and lifecycle status unchanged. Add, start, and restart also take a bounded AppInstance admission owner first. A competitor waits for at most 30 seconds or the remaining command deadline, then receives `process.operation_busy` before it mutates that AppInstance. The Gateway acquires the AppInstance admission owner before the Process runtime owner and does not take a second nested Process lock.
+
+Node role cleanup uses the same Process runtime owner. It removes exact-owned runtime artifacts and leaves the Process row for the parent removal to delete after recovery. A delayed start or stop that lost the owner cannot rewrite that row after cleanup has finished.
+
+Repeating an identical add refreshes the surviving Process and its desired state. It does not create a second record.
+
 Every runtime mutation rechecks exact Orbit ownership. Systemd replacement uses a validated candidate and restores the previous owned unit when activation fails. Docker replacement retains or restores exact-owned canonical and rollback containers. Orbit does not overwrite, adopt, or delete a colliding unit, container, or recovery artifact.
 
 Process responses identify the owning AppInstance. Activity records identify that AppInstance and its target Node. Docker environment values and credential-shaped runtime data are redacted from responses, activity, errors, debug output, and bounded logs.

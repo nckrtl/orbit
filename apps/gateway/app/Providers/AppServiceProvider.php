@@ -91,6 +91,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
@@ -192,6 +193,7 @@ use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
@@ -338,6 +340,7 @@ final class AppServiceProvider extends ServiceProvider
                 deadline: app(CommandDeadline::class),
             ),
         );
+        $this->app->scoped(ProcessRuntimeLease::class, NativeProcessRuntimeLease::class);
         $this->app->scoped(
             DevelopmentProjectionOperationLock::class,
             static fn (): DevelopmentProjectionOperationLock => new NativeDevelopmentProjectionOperationLock(
