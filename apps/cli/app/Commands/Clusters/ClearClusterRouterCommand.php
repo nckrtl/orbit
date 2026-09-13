@@ -24,13 +24,19 @@ final class ClearClusterRouterCommand extends ClusterCommand
     {
         $clusterId = $this->clusterId();
 
-        if ($clusterId === null || ! $this->confirmed('Router clearing')) {
+        if ($clusterId === null) {
             return self::FAILURE;
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $existing = $this->existingCluster($connector, $clusterId);
+
+        if ($existing === null || ! $this->confirmed('Router clearing')) {
             return self::FAILURE;
         }
 
