@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use Closure;
 use RuntimeException;
 
 final class PrivateDnsTransportServer
@@ -18,6 +19,7 @@ final class PrivateDnsTransportServer
         private readonly PrivateDnsRequestHandler $handler,
         private readonly string $listenAddress = '127.0.0.1',
         private int $port = 0,
+        private readonly ?Closure $onIdle = null,
     ) {}
 
     public function start(): void
@@ -73,6 +75,8 @@ final class PrivateDnsTransportServer
         $except = null;
         $ready = stream_select($read, $write, $except, (int) $timeoutSeconds, (int) (($timeoutSeconds - (int) $timeoutSeconds) * 1_000_000));
         if ($ready === false || $ready === 0) {
+            $this->onIdle?->__invoke();
+
             return;
         }
 

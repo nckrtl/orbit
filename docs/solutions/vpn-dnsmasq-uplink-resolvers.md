@@ -20,9 +20,10 @@ bound.
 At converge, `UplinkDnsResolvers` in `apps/gateway` reads the systemd-resolved
 uplink file, then the DHCP lease for the public NIC. The managed
 fragment still sets `no-resolv` and emits `server=` lines for those IPv4
-addresses. Local mesh records, `bind-dynamic`, and interface binding stay
-unchanged. When no uplink resolvers are visible, the fragment keeps the
-documented public recursive fallback (`1.1.1.1` and `8.8.8.8`).
+addresses. The fragment listens on the loopback backend address so the
+requester-aware listener can own the Gateway WireGuard DNS port. When no
+uplink resolvers are visible, the fragment keeps the documented public
+recursive fallback (`1.1.1.1` and `8.8.8.8`).
 
 ## Limits
 

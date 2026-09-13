@@ -8,7 +8,9 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\AppInstance;
@@ -34,6 +36,17 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         private array $shell = ['sudo', 'bash', '-seu'],
         private bool $preserveRootOwnership = true,
         private ?string $executablePath = null,
+        private bool $activateListener = false,
+        private ?string $listenAddress = null,
+        private string $checkoutPath = '',
+        private string $phpBinary = '/usr/bin/php8.5',
+        private string $unitDirectory = '/etc/systemd/system',
+        private string $vpnFragmentFile = 'orbit-vpn.conf',
+        private string $backendAddress = VpnDnsmasqBackendListen::Address,
+        private int $listenPort = 53,
+        private ?string $orbitHome = null,
+        private ?VpnSettings $vpnSettings = null,
+        private PrivateDnsListenerUnitRenderer $units = new PrivateDnsListenerUnitRenderer,
     ) {}
 
     public function converge(?Node $pendingNode = null): void
@@ -105,6 +118,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $pathExport = $this->executablePath === null
             ? ''
             : 'export PATH='.escapeshellarg($this->executablePath).':"$PATH"'."\n";
+        $listener = $this->listenerPublication();
         $result = $this->processes->run(new ProcessInvocation(
             arguments: $this->shell,
             timeout: 60.0,
@@ -146,38 +160,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 if [ -f "\$catalog_managed" ] && cmp -s -- "\$validation/catalog.json" "\$catalog_managed"; then
                     catalog_changed=0
                 fi
-                if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ]; then
-                    if systemctl is-active --quiet dnsmasq; then
-                        exit 0
-                    fi
-                    systemctl restart dnsmasq
-                    exit 0
-                fi
-                if [ "\$records_changed" = 1 ]; then
-                    install {$ownership}-m 0644 -- "\$validation/fragments/{$recordsFile}" "\$candidate"
-                    mv -fT -- "\$candidate" "\$managed"
-                fi
-                if [ "\$catalog_changed" = 1 ]; then
-                    install {$ownership}-m 0644 -- "\$validation/catalog.json" "\$catalog_candidate"
-                    mv -fT -- "\$catalog_candidate" "\$catalog_managed"
-                fi
-                if [ "\$records_changed" = 0 ] && systemctl is-active --quiet dnsmasq; then
-                    exit 0
-                fi
-                if ! systemctl restart dnsmasq; then
-                    if [ "\$had_managed" = 1 ]; then
-                        install {$ownership}-m 0644 -- "\$backup" "\$managed"
-                    else
-                        rm -f -- "\$managed"
-                    fi
-                    if [ "\$had_catalog" = 1 ]; then
-                        install {$ownership}-m 0644 -- "\$catalog_backup" "\$catalog_managed"
-                    else
-                        rm -f -- "\$catalog_managed"
-                    fi
-                    systemctl restart dnsmasq || true
-                    exit 1
-                fi
+                {$listener}
                 BASH,
         ));
 
@@ -189,6 +172,259 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 result: $result,
             );
         }
+    }
+
+    private function listenerPublication(): string
+    {
+        $listen = $this->resolvedListenAddress();
+        if (! $this->activateListener || $listen === null) {
+            return $this->recordsOnlyActivation();
+        }
+
+        $unit = $this->units->render(
+            phpBinary: $this->phpBinary,
+            artisan: $this->checkout().'/artisan',
+            listenAddress: $listen,
+            port: $this->listenPort,
+            catalogPath: $this->catalogDirectory.'/'.$this->catalogFile,
+            upstream: $this->backendAddress.':53',
+            orbitHome: $this->home(),
+            workingDirectory: $this->checkout(),
+        );
+        $unitEncoded = base64_encode($unit);
+        $unitDirectory = $this->unitDirectory;
+        $unitName = $this->units->name();
+        $unitPath = $this->units->path($unitDirectory);
+        $vpnManaged = $this->recordsDirectory.'/'.$this->vpnFragmentFile;
+        $ownership = $this->preserveRootOwnership ? '-o root -g root ' : '';
+        $recordsFile = $this->recordsFile;
+        $transformEncoded = base64_encode($this->vpnBackendTransformPython());
+
+        return <<<BASH
+            vpn_managed={$vpnManaged}
+            unit_managed={$unitPath}
+            unit_directory={$unitDirectory}
+            unit_candidate={$unitDirectory}/.{$unitName}.\$\$.candidate
+            vpn_candidate={$this->recordsDirectory}/.{$this->vpnFragmentFile}.\$\$.candidate
+            unit_backup=\$(mktemp {$unitDirectory}/.{$unitName}.backup.XXXXXX)
+            vpn_backup=\$(mktemp {$this->recordsDirectory}/.{$this->vpnFragmentFile}.backup.XXXXXX)
+            had_unit=0
+            had_vpn=0
+            trap 'rm -rf -- "\$validation"; rm -f -- "\$candidate" "\$backup" "\$catalog_candidate" "\$catalog_backup" "\$unit_candidate" "\$vpn_candidate" "\$unit_backup" "\$vpn_backup"' EXIT
+            if [ -f "\$unit_managed" ]; then
+                cp --preserve=mode,ownership -- "\$unit_managed" "\$unit_backup"
+                had_unit=1
+            fi
+            if [ -f "\$vpn_managed" ]; then
+                cp --preserve=mode,ownership -- "\$vpn_managed" "\$vpn_backup"
+                had_vpn=1
+                printf '%s' '{$transformEncoded}' | base64 --decode > "\$validation/transform-vpn.py"
+                python3 "\$validation/transform-vpn.py" "\$vpn_managed" "\$validation/fragments/{$this->vpnFragmentFile}"
+            fi
+            printf '%s' '{$unitEncoded}' | base64 --decode > "\$validation/{$unitName}"
+            systemd-analyze verify "\$validation/{$unitName}"
+            sed "s#{$this->recordsDirectory}#\$validation/fragments#g" {$this->dnsmasqConf} > "\$validation/dnsmasq.conf"
+            dnsmasq --test --conf-file="\$validation/dnsmasq.conf"
+            vpn_changed=0
+            unit_changed=1
+            if [ -f "\$vpn_managed" ]; then
+                vpn_changed=1
+                if cmp -s -- "\$validation/fragments/{$this->vpnFragmentFile}" "\$vpn_managed"; then
+                    vpn_changed=0
+                fi
+            fi
+            if [ -f "\$unit_managed" ] && cmp -s -- "\$validation/{$unitName}" "\$unit_managed"; then
+                unit_changed=0
+            fi
+            restore_listener() {
+                if [ "\$had_managed" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$backup" "\$managed"
+                else
+                    rm -f -- "\$managed"
+                fi
+                if [ "\$had_catalog" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$catalog_backup" "\$catalog_managed"
+                else
+                    rm -f -- "\$catalog_managed"
+                fi
+                if [ "\$had_vpn" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$vpn_backup" "\$vpn_managed"
+                elif [ -n "\${vpn_managed:-}" ]; then
+                    rm -f -- "\$vpn_managed"
+                fi
+                if [ "\$had_unit" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$unit_backup" "\$unit_managed"
+                else
+                    rm -f -- "\$unit_managed"
+                    systemctl disable --now {$unitName} || true
+                fi
+                systemctl daemon-reload || true
+                systemctl restart dnsmasq || true
+                if [ "\$had_unit" = 1 ]; then
+                    systemctl enable --now {$unitName} || true
+                fi
+            }
+            if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ] && [ "\$vpn_changed" = 0 ] && [ "\$unit_changed" = 0 ]; then
+                if systemctl is-active --quiet dnsmasq && systemctl is-active --quiet {$unitName}; then
+                    exit 0
+                fi
+            fi
+            if [ "\$records_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/fragments/{$recordsFile}" "\$candidate"
+                mv -fT -- "\$candidate" "\$managed"
+            fi
+            if [ "\$catalog_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/catalog.json" "\$catalog_candidate"
+                mv -fT -- "\$catalog_candidate" "\$catalog_managed"
+            fi
+            if [ "\$vpn_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/fragments/{$this->vpnFragmentFile}" "\$vpn_candidate"
+                mv -fT -- "\$vpn_candidate" "\$vpn_managed"
+            fi
+            if [ "\$unit_changed" = 1 ]; then
+                install -d -m 0755 -- "\$unit_directory"
+                install {$ownership}-m 0644 -- "\$validation/{$unitName}" "\$unit_candidate"
+                mv -fT -- "\$unit_candidate" "\$unit_managed"
+                systemctl daemon-reload
+            fi
+            if [ "\$records_changed" = 1 ] || [ "\$vpn_changed" = 1 ] || ! systemctl is-active --quiet dnsmasq; then
+                if ! systemctl restart dnsmasq; then
+                    restore_listener
+                    exit 1
+                fi
+            fi
+            if [ "\$unit_changed" = 1 ] || ! systemctl is-active --quiet {$unitName}; then
+                if ! systemctl enable --now {$unitName}; then
+                    restore_listener
+                    exit 1
+                fi
+            fi
+            BASH;
+    }
+
+    private function vpnBackendTransformPython(): string
+    {
+        $address = $this->backendAddress;
+
+        return <<<PYTHON
+            from pathlib import Path
+            import sys
+            src = Path(sys.argv[1]).read_text()
+            lines = []
+            saw_listen = False
+            saw_bind = False
+            for line in src.splitlines():
+                if line.startswith("interface=") or line == "bind-dynamic":
+                    continue
+                if line.startswith("listen-address="):
+                    lines.append("listen-address={$address}")
+                    saw_listen = True
+                    continue
+                if line == "bind-interfaces":
+                    saw_bind = True
+                lines.append(line)
+            insert = []
+            if not saw_listen:
+                insert.append("listen-address={$address}")
+            if not saw_bind:
+                insert.append("bind-interfaces")
+            if insert:
+                if lines and lines[0].startswith("#"):
+                    lines[1:1] = insert
+                else:
+                    lines = insert + lines
+            while lines and lines[-1] == "":
+                lines.pop()
+            Path(sys.argv[2]).write_text("\\n".join(lines) + "\\n")
+            PYTHON;
+    }
+
+    private function recordsOnlyActivation(): string
+    {
+        $ownership = $this->preserveRootOwnership ? '-o root -g root ' : '';
+        $recordsFile = $this->recordsFile;
+
+        return <<<BASH
+            if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ]; then
+                if systemctl is-active --quiet dnsmasq; then
+                    exit 0
+                fi
+                systemctl restart dnsmasq
+                exit 0
+            fi
+            if [ "\$records_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/fragments/{$recordsFile}" "\$candidate"
+                mv -fT -- "\$candidate" "\$managed"
+            fi
+            if [ "\$catalog_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/catalog.json" "\$catalog_candidate"
+                mv -fT -- "\$catalog_candidate" "\$catalog_managed"
+            fi
+            if [ "\$records_changed" = 0 ] && systemctl is-active --quiet dnsmasq; then
+                exit 0
+            fi
+            if ! systemctl restart dnsmasq; then
+                if [ "\$had_managed" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$backup" "\$managed"
+                else
+                    rm -f -- "\$managed"
+                fi
+                if [ "\$had_catalog" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$catalog_backup" "\$catalog_managed"
+                else
+                    rm -f -- "\$catalog_managed"
+                fi
+                systemctl restart dnsmasq || true
+                exit 1
+            fi
+            BASH;
+    }
+
+    private function resolvedListenAddress(): ?string
+    {
+        if (is_string($this->listenAddress) && $this->listenAddress !== '') {
+            return DnsAddress::normalize($this->listenAddress) ?? $this->listenAddress;
+        }
+
+        $configured = $this->vpnSettings?->dnsServer();
+        if (is_string($configured) && $configured !== '') {
+            return DnsAddress::normalize($configured) ?? $configured;
+        }
+
+        $gateway = Node::query()
+            ->where('status', LifecycleStatus::Active->value)
+            ->whereNotNull('wireguard_ip')
+            ->whereHas(
+                'roles',
+                static fn ($query) => $query
+                    ->where('role', RoleName::Gateway->value)
+                    ->where('status', LifecycleStatus::Active->value),
+            )
+            ->first();
+
+        if ($gateway instanceof Node) {
+            return DnsAddress::normalize((string) $gateway->wireguard_ip);
+        }
+
+        return null;
+    }
+
+    private function checkout(): string
+    {
+        $checkout = $this->checkoutPath !== ''
+            ? $this->checkoutPath
+            : rtrim((string) config('orbit.gateway_checkout'), '/');
+
+        return $checkout !== '' ? $checkout : base_path();
+    }
+
+    private function home(): string
+    {
+        if (is_string($this->orbitHome) && $this->orbitHome !== '') {
+            return $this->orbitHome;
+        }
+
+        return rtrim((string) config('orbit.home'), '/');
     }
 
     /**
