@@ -6,6 +6,7 @@ use App\Actions\AppInstances\CreateAppInstanceAction;
 use App\Data\AppInstances\AppInstanceData;
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
@@ -15,6 +16,11 @@ use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
+use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
@@ -31,6 +37,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -1227,7 +1234,57 @@ it('does not let source profile recovery bypass known complete drift', function 
         ->toBe(0);
 });
 
-it('keeps Active creation terminal when source profile recovery is requested', function (): void {
+it('recovers a missing source profile on an active AppInstance without reprovisioning', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+        'hostname' => 'dev.example.test',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $instance->update(['source_is_laravel' => null]);
+    $identity = $instance->only([
+        'id',
+        'app_id',
+        'node_id',
+        'source_layout',
+        'checkout_path',
+        'branch',
+        'starting_commit',
+        'status',
+        'provisioning_step',
+    ]);
+    $this->configuration->phpVersion = '8.4';
+    $this->configuration->laravel = true;
+    $this->configuration->inspections = 0;
+    $this->configuration->configurations = 0;
+    $this->projection->convergences = 0;
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertOk()
+        ->assertJsonPath('data.id', $instance->id)
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.route.id', $route->id)
+        ->assertJsonPath('data.route.hostname', $route->hostname);
+
+    expect($instance->refresh()->only(array_keys($identity)))
+        ->toBe($identity)
+        ->and($instance->only(['selected_php_version', 'source_is_laravel']))
+        ->toBe(['selected_php_version' => '8.4', 'source_is_laravel' => true])
+        ->and($instance->routes()->sole()->only(['id', 'hostname', 'status']))
+        ->toBe($route->only(['id', 'hostname', 'status']))
+        ->and($this->configuration->inspections)
+        ->toBe(1)
+        ->and($this->configuration->configurations)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0);
+});
+
+it('leaves an active AppInstance unchanged when source profile recovery finds a recorded profile', function (): void {
     $payload = [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -1253,6 +1310,162 @@ it('keeps Active creation terminal when source profile recovery is requested', f
         ->toBe(0)
         ->and($this->projection->convergences)
         ->toBe(0);
+});
+
+it('recovers a missing source profile on an active production AppInstance without reprovisioning', function (): void {
+    $node = create_app_prod_node('app-prod');
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $node->id,
+        'name' => 'stable',
+        'hostname' => 'www.example.test',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $instance->update(['source_is_laravel' => null]);
+    $identity = $instance->only([
+        'id',
+        'app_id',
+        'node_id',
+        'source_layout',
+        'checkout_path',
+        'production_home',
+        'status',
+        'provisioning_step',
+    ]);
+    $this->productionSource->phpVersion = '8.3';
+    $this->productionSource->laravel = false;
+    $this->productionSource->calls = [];
+    $this->productionProjection->calls = [];
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertOk()
+        ->assertJsonPath('data.id', $instance->id)
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.route.id', $route->id);
+
+    expect($instance->refresh()->only(array_keys($identity)))
+        ->toBe($identity)
+        ->and($instance->only(['selected_php_version', 'source_is_laravel']))
+        ->toBe(['selected_php_version' => '8.3', 'source_is_laravel' => false])
+        ->and($this->productionSource->calls)
+        ->toBe(['profile'])
+        ->and($this->productionProjection->calls)
+        ->toBe([]);
+});
+
+it('accepts environment and hostname operations after recovering an active source profile', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+        'hostname' => 'dev.example.test',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $instance->update(['source_is_laravel' => null]);
+    $access = new RecoveredSourceProfileEnvironmentAccess;
+    app()->instance(AppInstanceOperationPreflight::class, $access);
+    app()->instance(AppInstanceEnvironmentReader::class, $access);
+    app()->instance(AppInstanceEnvironmentWriter::class, $access);
+
+    $this
+        ->putJson("/api/v1/instances/{$instance->id}/environment/FLAG", ['value' => 'on'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing')
+        ->assertJsonPath(
+            'error.message',
+            'The AppInstance has no recorded source profile. Repeat the same creation request with recover_source_profile to inspect the source and store the complete profile.',
+        );
+    $this
+        ->call(
+            'POST',
+            "/api/v1/instances/{$instance->id}/environment/import",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing');
+    $this
+        ->call(
+            'POST',
+            "/api/v1/instances/{$instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing');
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing');
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
+        ->assertOk();
+
+    expect($instance->refresh()->source_is_laravel)->toBeFalse();
+
+    $this
+        ->putJson("/api/v1/instances/{$instance->id}/environment/FLAG", ['value' => 'on'])
+        ->assertOk()
+        ->assertJsonPath('data.changed', true);
+    $this
+        ->call(
+            'POST',
+            "/api/v1/instances/{$instance->id}/environment/import",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertOk()
+        ->assertJsonPath('data.operation', 'import');
+    $this
+        ->call(
+            'POST',
+            "/api/v1/instances/{$instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertOk()
+        ->assertJsonPath('data.operation', 'sync');
+
+    $projector = Mockery::mock(RouteHostnameProjector::class);
+    foreach ([
+        'prepareWorkloadCertificate',
+        'prepareWorkloadCaddy',
+        'prepareRouterCertificate',
+        'prepareFirewallPolicy',
+        'verifyWorkload',
+        'prepareRouterCaddy',
+        'publishDns',
+        'cleanup',
+    ] as $method) {
+        $projector->shouldReceive($method)->once();
+    }
+    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(
+        DevelopmentProjectionOperationLock::class,
+        new class implements DevelopmentProjectionOperationLock
+        {
+            public function run(Closure $operation): mixed
+            {
+                return $operation();
+            }
+        },
+    );
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertOk()
+        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.status', 'active');
 });
 
 it('keeps explicit branch selection separate from default identity and Route identity', function (): void {
@@ -2177,6 +2390,32 @@ it('treats active creation evidence as terminal when development HEAD advances',
         ->toBe(['inspect-prepared:active']);
 });
 
+it('leaves an active AppInstance row unchanged when a creation retry is refused with route.retry_conflict', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $before = AppInstance::query()->sole()->getAttributes();
+    $routeBefore = Route::query()->sole()->getAttributes();
+    $this->travelTo(now()->addMinute());
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'hostname' => 'x.orbit'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.retry_conflict');
+
+    expect(AppInstance::query()->sole()->getAttributes())
+        ->toBe($before)
+        ->and($before['failed_step'])
+        ->toBeNull()
+        ->and($before['error_code'])
+        ->toBeNull()
+        ->and(Route::query()->sole()->getAttributes())
+        ->toBe($routeBefore);
+});
+
 it('rejects repository execution and unsupported transport keys', function (): void {
     $this
         ->postJson('/api/v1/instances', [
@@ -2776,4 +3015,29 @@ function orb182_api_removal_graph(TestCase $test): array
     }
 
     return [$checkout, $first, $second, $paths];
+}
+
+final class RecoveredSourceProfileEnvironmentAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
+{
+    public function assertEnvironmentReadable(
+        AppInstanceEnvironmentContext $context,
+    ): void {}
+
+    public function assertEnvironmentWritable(
+        AppInstanceEnvironmentContext $context,
+        int $requiredCapacityBytes,
+    ): void {}
+
+    public function read(AppInstanceEnvironmentContext $context): string
+    {
+        return "RECOVERED=yes\n";
+    }
+
+    public function write(
+        AppInstanceEnvironmentContext $context,
+        #[SensitiveParameter]
+        string $contents,
+    ): AppInstanceEnvironmentWriteResult {
+        return AppInstanceEnvironmentWriteResult::changed();
+    }
 }

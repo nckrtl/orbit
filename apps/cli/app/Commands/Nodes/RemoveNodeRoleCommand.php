@@ -16,7 +16,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'node:role:remove
-        {node : Numeric node ID}
+        {node : Node ID or name}
         {role : Role name}
         {--force : Confirm destructive role removal and dependent cleanup}
         {--purge-data : Request supported role-owned data cleanup}
@@ -30,12 +30,6 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
-
-        if ($nodeId === null) {
-            return self::FAILURE;
-        }
-
         $role = $this->stringArgument('role', 'Role', 'node_role.role_required');
 
         if ($role === null) {
@@ -45,6 +39,12 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
+
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 

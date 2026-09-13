@@ -58,9 +58,10 @@ it('omits absent optional node payload fields and maps the typed response', func
             'public_ssh_host' => '94.237.40.75',
             'platform' => 'linux',
             'public_ssh_port' => 22,
-            'user' => 'root',
             'roles' => ['app-dev'],
         ])
+        ->and($request->body()->all())
+        ->not->toHaveKey('user')
         ->and($response)
         ->toBeInstanceOf(NodeResponse::class)
         ->and($response->requestId)
@@ -172,7 +173,6 @@ it('represents a Linux node without inventing a public SSH host', function (): v
         'architecture' => 'x86_64',
         'tld' => 'dev',
         'public_ssh_port' => 22,
-        'user' => 'root',
         'roles' => [],
     ]);
 });

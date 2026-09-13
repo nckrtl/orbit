@@ -14,7 +14,7 @@ final class CreateWorkspaceCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'workspace:new
-        {instance : Numeric instance ID}
+        {instance : Numeric legacy Instance ID, not an AppInstance ID}
         {name : Workspace name}
         {--branch= : Optional Git branch}
         {--path= : Absolute target-node checkout path}

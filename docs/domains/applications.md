@@ -68,6 +68,8 @@ The CLI refuses a directory outside a Git checkout or worktree and refuses a cre
 
 The Gateway resolves an existing App by the source's canonical repository identity. The [Apps reference](../reference/apps.md#resolve-an-app-during-registration) owns App lookup, inference, confirmation, and missing-App creation.
 
+`--json` makes registration non-interactive. The CLI prints no source summary, asks no question, implies confirmation of the ownership transfer, and writes one JSON document that holds the registration result or one error.
+
 Registration infers AppInstance placement from verified source facts.
 
 | Verified source | AppInstance identity | Managed placement |
@@ -129,6 +131,8 @@ An AppInstance created before complete profiles were recorded can have a non-act
 
 To recover that legacy checkpoint, repeat the same creation request with `--recover-source-profile`. The Gateway API and PHP SDK accept the optional boolean field `recover_source_profile`; the CLI omits that field unless the option is present. Recovery still verifies the recorded request identity, source ownership, selected Git branch, and starting commit. It then adopts the currently inspected complete profile, restarts only the incomplete provisioning checkpoint, and continues normal provisioning without replacing the source, AppInstance, placement, or Route.
 
+The same option recovers an active development or production AppInstance whose recorded source profile is missing. The Gateway inspects the recorded source once, stores the complete profile, and returns the unchanged active AppInstance and Route without reprovisioning. An identical retry against an active AppInstance that already has a profile returns that AppInstance without inspecting the source again or changing records.
+
 For a recovered Laravel profile, the option permits Orbit to reconcile the canonical URL through its existing idempotent operation. If a request stops after the remote URL write and before checkpoint persistence, another identical retry safely performs the reconciliation and continues. A complete profile that later drifts remains a refusal even when the recovery option is present.
 
 Orbit records each completed boundary. The same request can continue after a failure without duplicating source or Route records. Database rollback refuses to discard a complete profile while a non-active AppInstance retains the `php-selected` or `url-configured` checkpoint. Orbit returns the active AppInstance with its Route, hostname, and HTTPS URL when every provisioning step owned by Orbit succeeds.
@@ -149,7 +153,7 @@ The Gateway reports a failed source, PHP selection, Laravel URL, runtime, certif
 
 Active state means that Orbit prepared the source, selected any required PHP runtime, aligned Laravel configuration when applicable, and prepared the Route. It does not promise that the application is healthy. Missing dependencies, an application key, or a database can make a new Laravel application return an error, including HTTP 500, without making the AppInstance or Route inactive.
 
-An active AppInstance is terminal for creation retry. The Gateway does not inspect its source profile again, including when `recover_source_profile` is true. The existing removal operation and its source and Route checks remain unchanged.
+An active AppInstance with a recorded source profile is terminal for creation retry. The existing removal operation and its source and Route checks remain unchanged.
 
 The endpoint is available for an agent or operator to inspect and finish application setup. App setup-step configuration and execution belong to a separate contract.
 

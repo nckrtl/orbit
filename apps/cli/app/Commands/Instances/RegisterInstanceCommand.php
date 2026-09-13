@@ -126,8 +126,9 @@ final class RegisterInstanceCommand extends GatewayCommand
         $selectedApp = is_int($appIdValue);
         $appValues = $selectedApp ? $this->explicitAppValues() : $this->inferredAppValues();
         $name = $this->stringOption('app-name');
+        $nonInteractive = $this->option('json') === true || ! $this->input->isInteractive();
 
-        if (! $this->input->isInteractive()) {
+        if ($nonInteractive) {
             if (
                 ! $selectedApp
                 && (($appValues['branch'] ?? $facts->defaultBranch) === null

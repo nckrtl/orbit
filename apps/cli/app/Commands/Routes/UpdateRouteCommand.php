@@ -24,10 +24,16 @@ final class UpdateRouteCommand extends RouteCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $id = $this->routeId();
-        $hostname = $this->stringOption('hostname');
-        $publication = $this->stringOption('publication');
         if ($id === null) {
             return self::FAILURE;
+        }
+        $hostname = $this->stringOption('hostname');
+        $publication = null;
+        if ($this->input->hasParameterOption('--publication')) {
+            $publication = $this->publication($this->option('publication'));
+            if ($publication === null) {
+                return self::FAILURE;
+            }
         }
         if ($hostname === null && $publication === null) {
             return $this->renderGatewayFailure('route.update_required', 'Provide at least one Route update.');

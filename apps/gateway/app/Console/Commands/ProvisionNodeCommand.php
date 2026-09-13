@@ -17,7 +17,7 @@ final class ProvisionNodeCommand extends Command
         {name : Node name}
         {host : Public SSH host}
         {--ssh-port=22 : Public SSH port}
-        {--user=root : Initial SSH user}
+        {--user= : Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node}
         {--orbit-user= : Managed Orbit user}
         {--architecture= : Node machine architecture}
         {--tld= : Unique development TLD for app-dev}
@@ -48,7 +48,6 @@ final class ProvisionNodeCommand extends Command
             $name === null
             || $host === null
             || ! is_numeric($sshPort)
-            || $user === null
             || $roles === null
             || ! $wireguardInput['valid']
             || $this->stringOption('cluster') !== null

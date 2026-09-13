@@ -22,7 +22,6 @@ final readonly class RemoveClusterAction
          */
         $removed = DB::transaction(function () use ($cluster): Cluster {
             $locked = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
-            ($this->routes ?? app(RouteRemovalGuard::class))->assertClusterRemovable($locked);
 
             if ($locked->nodes()->exists()) {
                 throw new ResourceOperationException(
@@ -31,6 +30,8 @@ final readonly class RemoveClusterAction
                     status: 409,
                 );
             }
+
+            ($this->routes ?? app(RouteRemovalGuard::class))->assertClusterRemovable($locked);
 
             $locked->delete();
 

@@ -8,6 +8,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodeRolesRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -37,6 +38,8 @@ it('registers the exact node role list command signature surface', function (): 
         ->toBeInstanceOf(SymfonyCommand::class)
         ->and(array_keys($command?->getDefinition()->getArguments() ?? []))
         ->toBe(['node'])
+        ->and($command?->getDefinition()->getArgument('node')->getDescription())
+        ->toBe('Node ID or name')
         ->and(node_role_command_options($command))
         ->toBe(['json' => false]);
 });
@@ -150,10 +153,48 @@ it('rejects an invalid node role list node id before connector io', function (st
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'non-numeric' => 'operator',
     'zero' => '0',
     'negative' => '-1',
 ]);
+
+it('resolves a node name through the node list before listing roles', function (): void {
+    $assignment = node_role_assignment_payload();
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [node_role_list_node_payload(id: 7, name: 'mini')],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+        ListNodeRolesRequest::class => MockResponse::make([
+            'data' => [$assignment],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:list', ['node' => 'mini', '--json' => true])
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ListNodeRolesRequest::class)
+        ->and($mockClient->getLastRequest()?->resolveEndpoint())
+        ->toBe('/api/v1/nodes/7/roles');
+});
+
+it('rejects an unknown node name before the role list request', function (): void {
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [node_role_list_node_payload(id: 7, name: 'app-dev')],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:list', ['node' => 'mini'])
+        ->expectsOutputToContain('Node [mini] is not registered.')
+        ->assertExitCode(1);
+
+    $mockClient->assertNotSent(ListNodeRolesRequest::class);
+});
 
 it('prints the request id for node role list gateway API errors', function (): void {
     MockClient::global([
@@ -226,4 +267,28 @@ function failed_node_role_assignment_payload(): array
 function node_role_command_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array<string, mixed> */
+function node_role_list_node_payload(int $id, string $name): array
+{
+    return [
+        'id' => $id,
+        'name' => $name,
+        'status' => 'active',
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => null,
+        'public_ssh_host' => '203.0.113.7',
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.7',
+        'wireguard_public_key' => 'key',
+        'wireguard_endpoint_override' => null,
+        'dns_server_override' => null,
+        'ssh_host_fingerprint' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'roles' => [],
+    ];
 }

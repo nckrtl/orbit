@@ -15,7 +15,7 @@ final class ProvisionNodeData extends Data
         public string $publicSshHost,
         public array $roles = [],
         public int $publicSshPort = 22,
-        public string $user = 'root',
+        public ?string $user = null,
         public ?string $orbitUser = null,
         public ?string $wireguardIp = null,
         public ?string $wireguardEndpointOverride = null,

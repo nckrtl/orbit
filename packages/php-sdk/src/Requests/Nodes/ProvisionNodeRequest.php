@@ -25,7 +25,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
         private readonly ?string $publicSshHost,
         private readonly array $roles = [],
         private readonly int $publicSshPort = 22,
-        private readonly string $user = 'root',
+        private readonly ?string $user = null,
         private readonly ?string $orbitUser = null,
         private readonly ?int $clusterId = null,
         private readonly ?string $wireguardIp = null,

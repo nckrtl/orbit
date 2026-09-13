@@ -14,7 +14,7 @@ final class ListNodeRolesCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'node:role:list
-        {node : Numeric node ID}
+        {node : Node ID or name}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -24,15 +24,15 @@ final class ListNodeRolesCommand extends GatewayCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
-
-        if ($nodeId === null) {
-            return self::FAILURE;
-        }
-
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
+
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 
