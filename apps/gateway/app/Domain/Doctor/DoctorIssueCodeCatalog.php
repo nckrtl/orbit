@@ -22,6 +22,8 @@ final class DoctorIssueCodeCatalog
             DoctorFamily::Process => ProcessDoctorIssueCode::tryFrom($code) ?? ProcessDoctorIssueCode::InspectionFailed,
             DoctorFamily::Firewall => FirewallDoctorIssueCode::tryFrom($code)
                 ?? FirewallDoctorIssueCode::InspectionFailed,
+            DoctorFamily::Herdr => HerdrSessionDoctorIssueCode::tryFrom($code)
+                ?? HerdrSessionDoctorIssueCode::InspectionFailed,
         };
     }
 }

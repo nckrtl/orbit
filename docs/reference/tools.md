@@ -44,6 +44,8 @@ orbit tool:install <package> --manager=<manager> --node=<node-id>
 
 When the selected manager is `uninstalled` or `failed`, the Gateway first provisions or retries that manager in its protected scope. A successful provisioning records the manager as `active` before the Gateway changes Tool intent. A failed provisioning returns `tool.manager_provision_failed`, keeps the bounded failure on the manager, and does not create a Tool row. Repeating the same install command retries the manager from live Node state.
 
+When an install creates a Tool row and then fails, including `tool.version_probe_failed`, the Gateway and CLI include that Tool ID in the error. Activity for the command identifies the Tool and its target Node.
+
 The Gateway rejects Tool mutations with `tool.node_unmanaged` when the Node is a roleless operator client or is otherwise outside Gateway-owned SSH management. Manager installation is independent of the Node's assigned infrastructure roles.
 
 Orbit does not install every registered manager during Node provisioning. A materialized manager remains active after its final Tool is removed, and Orbit exposes no manager-removal command.
@@ -52,7 +54,7 @@ Orbit does not install every registered manager during Node provisioning. A mate
 
 The `brew` manager accepts one unqualified lowercase formula name from Homebrew Core. Before an install or update, the Gateway resolves the canonical Core formula and requires a stable version with a Linux bottle for the Node architecture and published SHA-256 metadata. Homebrew verifies that bottle while installing it with source builds disabled.
 
-The Gateway provisions Homebrew in `/home/linuxbrew/.linuxbrew` on first use. It can recognize an existing Homebrew installation in that scope only when the installation has the expected ownership, upstream origin, pinned version, and clean revision. A conflict or an unverifiable installation leaves the manager in retryable `failed` state. Orbit does not adopt formulae that were already installed without matching Tool intent.
+The Gateway provisions Homebrew in `/home/linuxbrew/.linuxbrew` on first use. When that prefix already exists with Orbit ownership, the official Homebrew origin, and a clean working tree, the Gateway fetches the pinned revision and checks it out detached before the same verification a fresh install uses. The Gateway leaves a foreign, conflicted, or unverifiable installation unchanged and keeps the manager in retryable `failed` state. Orbit does not adopt formulae that were already installed without matching Tool intent.
 
 Homebrew input has these limits.
 
@@ -68,7 +70,7 @@ An update uses the verified bottle and keeps the installed Tool callable when no
 
 ## Remove a Tool
 
-Run the removal command with the Tool ID that Orbit returned when it created the managed package intent.
+Run the removal command with the Tool ID from a successful install or from a failed install that retained the Tool.
 
 ```bash
 orbit tool:remove <tool-id>
@@ -105,5 +107,7 @@ orbit doctor --node=<node-id> --family=tool
 A retained Tool row for an absent package produces bounded `tool.not_installed` drift. After successful removal deletes that row, Doctor reports the Tool family as healthy when no other Tool finding exists. Doctor never includes the raw dpkg status or retained package version in its report. [ADR 0004](../decisions/0004-verify-only-doctor-boundary.md) defines the verify-only and bounded-report boundary.
 
 ## Limits
+
+Installing or updating the Herdr formula changes package files only. It does not start, stop, or restart a managed [Herdr session](herdr-sessions.md).
 
 [ADR 0001](../decisions/0001-tool-management.md) governs Tool ownership and removal limits. [ADR 0004](../decisions/0004-verify-only-doctor-boundary.md) governs Doctor inspection and reporting limits.

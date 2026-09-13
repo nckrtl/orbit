@@ -19,6 +19,7 @@ use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use Psr\Log\LoggerInterface;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
@@ -92,6 +93,70 @@ it('adds and lists a systemd process through the minimal API contract', function
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.name', 'queue')
         ->assertJsonPath('data.0.runtime_status', 'running');
+});
+
+it('adds and lists a Node-targeted Docker process', function (): void {
+    $response = $this->postJson('/api/v1/processes', [
+        'target_type' => 'node',
+        'target_id' => $this->node->id,
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'image' => 'postgres:18',
+        'command' => ['postgres'],
+        'restart_policy' => 'unless-stopped',
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.target_type', 'node')
+        ->assertJsonPath('data.target_id', $this->node->id)
+        ->assertJsonPath('data.name', 'postgres')
+        ->assertJsonPath('data.runtime', 'docker')
+        ->assertJsonPath('data.working_directory', '/app')
+        ->assertJsonMissingPath('data.node_id');
+
+    $this->assertDatabaseHas('activity_log', [
+        'command' => 'process:add',
+        'subject_type' => Node::class,
+        'subject_id' => $this->node->id,
+        'target_node_id' => $this->node->id,
+        'status' => 'succeeded',
+    ]);
+
+    $this
+        ->getJson('/api/v1/processes?target_type=node&target_id='.$this->node->id)
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.name', 'postgres')
+        ->assertJsonPath('data.0.target_type', 'node');
+
+    $this
+        ->getJson('/api/v1/processes?target_type=instance&target_id='.$this->instance->id)
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
+it('adds a Node-targeted systemd process without an AppInstance environment file', function (): void {
+    $response = $this->postJson('/api/v1/processes', [
+        'target_type' => 'node',
+        'target_id' => $this->node->id,
+        'name' => 'herdr-observer',
+        'runtime' => 'systemd',
+        'command' => ['/usr/local/bin/herdr-observer'],
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.target_type', 'node')
+        ->assertJsonPath('data.working_directory', '/home/orbit')
+        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/herdr-observer']);
+
+    $process = Process::query()->sole();
+
+    expect($process->owner_type)
+        ->toBe(Node::class)
+        ->and($process->runtime_config['environment_file'] ?? null)
+        ->toBe('');
 });
 
 it('rejects Workspace process targets before runtime or record mutation', function (): void {
@@ -656,81 +721,4 @@ function processes_api_record(AppInstance $instance): Process
         'desired_state' => 'stopped',
         'status' => LifecycleStatus::Active,
     ]);
-}
-
-final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
-{
-    /** @var list<int> */
-    public array $started = [];
-
-    /** @var list<int> */
-    public array $convergedProcessIds = [];
-
-    /** @var list<int> */
-    public array $logLines = [];
-
-    public string $logs = '';
-
-    public ?ProcessOperationException $startFailure = null;
-
-    public bool $failConverge = false;
-
-    public bool $failStartDuringCall = false;
-
-    public ?ProcessOperationException $lastConvergeFailure = null;
-
-    public function assertCanStart(Process $process): void {}
-
-    public function converge(#[SensitiveParameter] Process $process): void
-    {
-        $this->convergedProcessIds[] = (int) $process->getKey();
-
-        if ($this->failConverge) {
-            $this->lastConvergeFailure = new ProcessOperationException(
-                step: 'create-container',
-                errorCode: 'process.docker_converge_failed',
-                message: 'Docker convergence failed.',
-                previous: new RuntimeException('Runtime adapter failed.'),
-            );
-
-            throw $this->lastConvergeFailure;
-        }
-    }
-
-    public function start(#[SensitiveParameter] Process $process): void
-    {
-        if ($this->failStartDuringCall) {
-            throw new ProcessOperationException(
-                step: 'start',
-                errorCode: 'process.start_failed',
-                message: 'The process did not start.',
-            );
-        }
-
-        if ($this->startFailure instanceof ProcessOperationException) {
-            throw $this->startFailure;
-        }
-
-        $this->started[] = $process->id;
-    }
-
-    public function stop(Process $process): void {}
-
-    public function restart(Process $process): void {}
-
-    public function remove(Process $process): void {}
-
-    public function status(Process $process): string
-    {
-        return $process->exists
-            ? $process->desired_state->value
-            : 'absent';
-    }
-
-    public function logs(Process $process, int $lines): string
-    {
-        $this->logLines[] = $lines;
-
-        return $this->logs;
-    }
 }

@@ -7,6 +7,9 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Herdr\HerdrObserverPublisher;
+use App\Domain\Herdr\HerdrSessionInspector;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -20,6 +23,8 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -33,11 +38,16 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
+use App\Models\HerdrSession;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Process;
 use App\Models\Schedule;
+use Tests\Support\FakeHerdrObserverPublisher;
+use Tests\Support\FakeHerdrSessionInspector;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\FakeRouterLanIngressReconciler;
 
 beforeEach(function (): void {
     $this->dns = new RemoveNodeFakeDnsManager;
@@ -177,6 +187,64 @@ it('allows an independent node name to proceed while another lifecycle guard is 
     expect($held->refresh()->status)->toBe(LifecycleStatus::Active);
 });
 
+it('prunes Router LAN ingress after WireGuard removal and before the Node is deleted', function (): void {
+    $reconciler = new FakeRouterLanIngressReconciler;
+    app()->instance(RouterLanIngressReconciler::class, $reconciler);
+    $cluster = Cluster::query()->create(['name' => 'lan-remove']);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update([
+        'cluster_id' => $cluster->id,
+        'lan_ip' => '10.20.0.3',
+        'wireguard_public_key' => 'TARGET_PUBLIC_KEY',
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller);
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and(array_column($reconciler->events, 'phase'))
+        ->toBe(['prune'])
+        ->and($reconciler->events[0]['nodeOverrides'][$target->id]['status'])
+        ->toBe(LifecycleStatus::Removing)
+        ->and($this->peers->removed)
+        ->toBe([$target->id])
+        ->and($this->dns->convergences)
+        ->toBe(1);
+});
+
+it('restores the Node when Router LAN prune fails after WireGuard removal', function (): void {
+    $reconciler = new FakeRouterLanIngressReconciler;
+    $reconciler->pruneFailure = new FirewallOperationException(
+        step: 'host-firewall',
+        errorCode: 'node.firewall_convergence_failed',
+        message: 'LAN prune failed.',
+    );
+    app()->instance(RouterLanIngressReconciler::class, $reconciler);
+    $cluster = Cluster::query()->create(['name' => 'lan-remove-failure']);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update([
+        'cluster_id' => $cluster->id,
+        'lan_ip' => '10.20.0.3',
+        'wireguard_public_key' => 'TARGET_PUBLIC_KEY',
+    ]);
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'router.lan_ingress_failed');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBe([$target->id])
+        ->and($this->peers->restored)
+        ->toBe([$target->id])
+        ->and($target->fresh())
+        ->not->toBeNull();
+});
+
 it('retries Grafana stream revocation before removing membership', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
@@ -274,6 +342,123 @@ it('retires Metrics exporter state before removing network projections', functio
         ->assertOk();
 
     expect($this->peers->removed)->toBe([$target->id]);
+});
+
+it('retracts Herdr observers before removing Node-owned Processes', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $observers = new FakeHerdrObserverPublisher;
+    app()->instance(HerdrObserverPublisher::class, $observers);
+    app()->instance(HerdrSessionInspector::class, new FakeHerdrSessionInspector);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $process = $target->processes()->create([
+        'name' => 'herdr-commander-tasks',
+        'runtime' => 'systemd',
+        'working_directory' => '/home/orbit',
+        'runtime_config' => ['command' => ['herdr'], 'environment_file' => ''],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'running',
+        'status' => LifecycleStatus::Active,
+    ]);
+    HerdrSession::query()->create([
+        'node_id' => $target->id,
+        'session' => 'commander-tasks',
+        'user' => 'orbit',
+        'process_id' => $process->id,
+        'observer_port' => 7411,
+        'observer_hostname' => 'commander-tasks.herdr.retired.orbit',
+        'observer_status' => 'published',
+        'status' => LifecycleStatus::Active,
+        'publish_observer' => true,
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller);
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and($observers->retracted)
+        ->toBe(['commander-tasks'])
+        ->and($runtime->removed)
+        ->toBe([$process->id]);
+    $this->assertDatabaseMissing('herdr_sessions', ['session' => 'commander-tasks']);
+});
+
+it('removes Node-owned Processes before deleting the Node', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $process = $target->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller);
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and($runtime->removed)
+        ->toBe([$process->id]);
+    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
+});
+
+it('keeps the Node and remaining Processes when owned Process cleanup fails', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    $runtime->failRemove = true;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $process = $target->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'node.process_cleanup_failed');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty();
+    $this->assertDatabaseHas('processes', ['id' => $process->id]);
+});
+
+it('forgets Node-owned Process records during offline removal without remote cleanup', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_offline_probe($target);
+    $process = $target->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller, offline: true, force: true);
+
+    expect($target->fresh())->toBeNull()
+        ->and($runtime->removed)
+        ->toBeEmpty();
+    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
 });
 
 it('refuses Node removal before mutation while a Schedule uses the Node', function (): void {
@@ -1123,6 +1308,47 @@ final class RemoveNodeFakeReachability implements NodeReachabilityProbe
     public function degradation(Node $node): ?ExporterDegradationReason
     {
         return $node->id === $this->unreachableNodeId ? ExporterDegradationReason::Unreachable : null;
+    }
+}
+
+final class RemoveNodeFakeProcessRuntimeManager implements ProcessRuntimeManager
+{
+    /** @var list<int> */
+    public array $removed = [];
+
+    public bool $failRemove = false;
+
+    public function assertCanStart(Process $process): void {}
+
+    public function converge(Process $process): void {}
+
+    public function start(Process $process): void {}
+
+    public function stop(Process $process): void {}
+
+    public function restart(Process $process): void {}
+
+    public function status(Process $process): string
+    {
+        return 'stopped';
+    }
+
+    public function logs(Process $process, int $lines): string
+    {
+        return '';
+    }
+
+    public function remove(Process $process): void
+    {
+        if ($this->failRemove) {
+            throw new ProcessOperationException(
+                step: 'remove',
+                errorCode: 'process.remove_failed',
+                message: 'Exact Process ownership could not be verified.',
+            );
+        }
+
+        $this->removed[] = $process->id;
     }
 }
 

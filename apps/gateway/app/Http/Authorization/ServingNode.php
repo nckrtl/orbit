@@ -14,6 +14,7 @@ enum ServingNode
     case EnvironmentInstanceOwning;
     case WorkspaceOwning;
     case ProcessOwning;
+    case HerdrSessionOwning;
     case ScheduleOwning;
     case ScheduleHost;
     case ToolOwning;

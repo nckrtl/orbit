@@ -220,6 +220,94 @@ it('publishes and removes only the recorded service while preserving local tunin
     expect($node->wireguard_ip)->toBe('10.44.0.214');
 });
 
+it('creates and repairs the shared Orbit directory before preserving protected runtime siblings', function (): void {
+    $program = orb304_production_shared_directory_program();
+    $root = sys_get_temp_dir().'/orbit-production-shared-parent-'.bin2hex(random_bytes(6));
+    $bin = $root.'/bin';
+    $missing = $root.'/missing/orbit';
+    $existing = $root.'/existing/orbit';
+
+    try {
+        mkdir($bin, 0700, true);
+        orb304_write_root_identity_commands($bin);
+        mkdir(dirname($missing), 0700, true);
+
+        $missingResult = orb304_run_shared_directory_program($program, $missing, 1, $bin);
+
+        expect($missingResult->getExitCode())
+            ->toBe(0)
+            ->and(substr(sprintf('%o', fileperms($missing)), -3))
+            ->toBe('711');
+
+        mkdir($existing.'/php-fpm/protected', 0700, true);
+        file_put_contents($existing.'/php-fpm/protected/operator.conf', "operator-tuning\n");
+        chmod($existing, 0700);
+        chmod($existing.'/php-fpm', 0700);
+        chmod($existing.'/php-fpm/protected', 0700);
+        chmod($existing.'/php-fpm/protected/operator.conf', 0600);
+        $tuningHash = hash_file('sha256', $existing.'/php-fpm/protected/operator.conf');
+
+        $first = orb304_run_shared_directory_program($program, $existing, 1, $bin);
+        $retry = orb304_run_shared_directory_program($program, $existing, 1, $bin);
+
+        expect($first->getExitCode())
+            ->toBe(0)
+            ->and($retry->getExitCode())
+            ->toBe(0)
+            ->and(substr(sprintf('%o', fileperms($existing)), -3))
+            ->toBe('711')
+            ->and(substr(sprintf('%o', fileperms($existing.'/php-fpm')), -3))
+            ->toBe('700')
+            ->and(substr(sprintf('%o', fileperms($existing.'/php-fpm/protected')), -3))
+            ->toBe('700')
+            ->and(substr(sprintf('%o', fileperms($existing.'/php-fpm/protected/operator.conf')), -3))
+            ->toBe('600')
+            ->and(hash_file('sha256', $existing.'/php-fpm/protected/operator.conf'))
+            ->toBe($tuningHash)
+            ->and(mb_strpos($program, 'converge_shared_orbit_directory /etc/orbit 1'))
+            ->toBeLessThan(mb_strpos($program, 'if [ ! -e "$runtime_directory" ]'));
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('refuses a conflicting shared Orbit object without changing it or its contents', function (string $conflict): void {
+    $program = orb304_production_shared_directory_program();
+    $root = sys_get_temp_dir().'/orbit-production-shared-conflict-'.bin2hex(random_bytes(6));
+    $parent = $root.'/orbit';
+    $target = $root.'/symlink-target';
+
+    try {
+        mkdir($root, 0700, true);
+
+        if ($conflict === 'foreign-owned-directory') {
+            mkdir($parent, 0700);
+            file_put_contents($parent.'/sentinel', "preserve-directory\n");
+        } elseif ($conflict === 'symlink') {
+            mkdir($target, 0700);
+            file_put_contents($target.'/sentinel', "preserve-target\n");
+            symlink($target, $parent);
+        } else {
+            file_put_contents($parent, "preserve-file\n");
+            chmod($parent, 0600);
+        }
+
+        $before = orb304_conflicting_object_state($parent, $target);
+        $result = orb304_run_shared_directory_program($program, $parent, 1);
+
+        expect($result->getExitCode())
+            ->toBe(1)
+            ->and(orb304_conflicting_object_state($parent, $target))
+            ->toBe($before);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with([
+    'foreign-owned directory' => ['foreign-owned-directory'],
+    'symlink' => ['symlink'],
+    'non-directory' => ['non-directory'],
+]);
+
 it('does not delete runtime state while a partially unlinked service still has an active master', function (): void {
     [$instance] = orb214_runtime_instance();
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
@@ -399,4 +487,94 @@ function orb214_app_prod_ssh(AppDevFakeSshExecutor $ssh): AppProdSshExecutor
     };
 
     return new AppProdSshExecutor($ssh, $keys, $knownHosts);
+}
+
+function orb304_production_shared_directory_program(): string
+{
+    [$instance] = orb214_runtime_instance();
+    $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
+    $instance->update($identity->attributes());
+    $ssh = new AppDevFakeSshExecutor;
+    $manager = new RemoteProductionPhpRuntimeManager(
+        renderer: new ProductionPhpRuntimeConfigRenderer,
+        ssh: orb214_app_prod_ssh($ssh),
+    );
+
+    $manager->converge($instance->refresh());
+    $command = collect($ssh->commands)
+        ->first(static fn ($command): bool => in_array('converge', $command->arguments, true));
+
+    return $command?->input ?? '';
+}
+
+function orb304_run_shared_directory_program(
+    string $program,
+    string $directory,
+    int $conflictExit,
+    ?string $bin = null,
+): Process {
+    $operation = mb_strpos($program, "\noperation=");
+    expect($operation)->not->toBeFalse();
+    $function = substr($program, 0, (int) $operation);
+    $process = new Process(
+        ['bash', '-seu', '--', $directory, (string) $conflictExit],
+        env: $bin === null ? null : ['PATH' => $bin.':'.getenv('PATH')],
+    );
+    $process->setInput($function."\n".<<<'BASH'
+        converge_shared_orbit_directory "$1" "$2"
+        BASH);
+    $process->run();
+
+    return $process;
+}
+
+function orb304_write_root_identity_commands(string $bin): void
+{
+    file_put_contents($bin.'/install', <<<'BASH'
+        #!/bin/sh
+        for argument do directory=$argument; done
+        mkdir -m 0711 -- "$directory"
+        BASH);
+    chmod($bin.'/install', 0700);
+    file_put_contents($bin.'/stat', <<<'BASH'
+        #!/bin/sh
+        if [ "$1" = -c ] && [ "$2" = %U:%G ]; then
+            printf 'root:root\n'
+            exit 0
+        fi
+        if [ "$1" = -c ] && [ "$2" = %U:%G:%a ]; then
+            shift 2
+            [ "$1" = -- ] && shift
+            printf 'root:root:%s\n' "$(/usr/bin/stat -c %a -- "$1")"
+            exit 0
+        fi
+        exec /usr/bin/stat "$@"
+        BASH);
+    chmod($bin.'/stat', 0700);
+}
+
+/** @return array{type: string, mode: string, value: string} */
+function orb304_conflicting_object_state(string $parent, string $target): array
+{
+    if (is_link($parent)) {
+        return [
+            'type' => 'symlink',
+            'mode' => substr(sprintf('%o', lstat($parent)['mode']), -3),
+            'value' => (string) readlink($parent).'|'.hash_file('sha256', $target.'/sentinel'),
+        ];
+    }
+
+    if (is_dir($parent)) {
+        return [
+            'type' => 'directory',
+            'mode' => substr(sprintf('%o', fileperms($parent)), -3),
+            'value' => hash_file('sha256', $parent.'/sentinel'),
+        ];
+    }
+
+    return [
+        'type' => 'file',
+        'mode' => substr(sprintf('%o', fileperms($parent)), -3),
+        'value' => hash_file('sha256', $parent),
+    ];
 }

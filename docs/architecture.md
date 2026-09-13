@@ -48,6 +48,10 @@ A development AppInstance owns one Git checkout or worktree. A standalone produc
 
 Legacy Instance and Workspace records remain available during staged conversion. New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route persistence remains separate from runtime projection, conversion, and Ingress behavior.
 
+## Herdr sessions
+
+A Herdr session is a named headless Herdr server on a managed Node. The Gateway composes a node-targeted Process, publishes a private receive-only observer, and issues short-lived `terminal.observe` grants so Commander can watch recorded panes without SSH or terminal input. [Herdr sessions](reference/herdr-sessions.md) owns that contract.
+
 ## Doctor
 
 `orbit doctor` compares what the Gateway expects with what is actually on a Node. It reports problems without changing the machine. This behavior is described in [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).

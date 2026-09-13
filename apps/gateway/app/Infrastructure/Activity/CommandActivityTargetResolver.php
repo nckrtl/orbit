@@ -10,6 +10,7 @@ use App\Domain\Tools\ToolOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\FirewallRule;
+use App\Models\HerdrSession;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
@@ -156,6 +157,10 @@ final readonly class CommandActivityTargetResolver
             return $registration;
         }
 
+        if (str_starts_with((string) $request->route()?->getName(), 'herdr:')) {
+            return $this->herdrSessionNode($request);
+        }
+
         if (str_starts_with((string) $request->route()?->getName(), 'process:')) {
             return $this->processOwner($request);
         }
@@ -165,7 +170,11 @@ final readonly class CommandActivityTargetResolver
         }
 
         if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny'], strict: true)) {
-            return $this->createdFirewallRule($request);
+            $rule = $this->createdFirewallRule($request);
+
+            if ($rule instanceof FirewallRule) {
+                return $rule;
+            }
         }
 
         foreach ([
@@ -187,6 +196,7 @@ final readonly class CommandActivityTargetResolver
 
         return match ($request->route()?->getName()) {
             'node:provision' => Node::query()->where('name', $request->input('name'))->first(),
+            'doctor:run' => $this->doctorNode($request),
             'app:new' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
             'instance:new' => AppInstance::query()
                 ->where('app_id', $request->integer('app_id'))
@@ -199,9 +209,19 @@ final readonly class CommandActivityTargetResolver
                 ->where('instance_id', $request->integer('instance_id'))
                 ->where('name', $request->input('name'))
                 ->first(),
-            'firewall:allow', 'firewall:deny' => $this->createdFirewallRule($request),
             default => null,
         };
+    }
+
+    private function doctorNode(Request $request): ?Node
+    {
+        $nodeId = $request->input('node_id');
+
+        if (! is_int($nodeId) || $nodeId < 1) {
+            return null;
+        }
+
+        return Node::query()->find($nodeId);
     }
 
     private function createdFirewallRule(Request $request): ?FirewallRule
@@ -241,7 +261,20 @@ final readonly class CommandActivityTargetResolver
             ->first();
     }
 
-    private function processOwner(Request $request): ?AppInstance
+    private function herdrSessionNode(Request $request): ?Node
+    {
+        $session = $request->route('session');
+
+        if ($session instanceof HerdrSession) {
+            return Node::query()->find($session->node_id);
+        }
+
+        $nodeId = $request->integer('node_id');
+
+        return $nodeId > 0 ? Node::query()->find($nodeId) : null;
+    }
+
+    private function processOwner(Request $request): Node|AppInstance|null
     {
         $process = $request->route('process');
 
@@ -250,11 +283,11 @@ final readonly class CommandActivityTargetResolver
         }
 
         if ($process instanceof OrbitProcess) {
-            if ($process->owner_type !== AppInstance::class) {
-                return null;
-            }
-
-            return AppInstance::query()->find($process->owner_id);
+            return match ($process->owner_type) {
+                AppInstance::class => AppInstance::query()->find($process->owner_id),
+                Node::class => Node::query()->find($process->owner_id),
+                default => null,
+            };
         }
 
         $targetType = $request->query('target_type');
@@ -263,11 +296,14 @@ final readonly class CommandActivityTargetResolver
             $targetType = $request->input('target_type');
         }
 
-        if ($targetType !== ProcessTargetType::AppInstance->value) {
-            return null;
-        }
+        $type = is_string($targetType) ? ProcessTargetType::tryFrom($targetType) : null;
+        $targetId = $request->integer('target_id');
 
-        return AppInstance::query()->find($request->integer('target_id'));
+        return match ($type) {
+            ProcessTargetType::AppInstance => AppInstance::query()->find($targetId),
+            ProcessTargetType::Node => Node::query()->find($targetId),
+            default => null,
+        };
     }
 
     private function scheduleTarget(Request $request): Node|AppInstance|null

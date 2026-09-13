@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Actions\Herdr\CascadeNodeHerdrSessionsAction;
+use App\Actions\Processes\CascadeNodeProcessesAction;
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -23,6 +26,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\Node;
+use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Throwable;
 
@@ -40,6 +44,9 @@ final readonly class RemoveNodeAction
         private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
+        private ?RouterLanIngressReconciler $lanIngress = null,
+        private ?CascadeNodeProcessesAction $nodeProcesses = null,
+        private ?CascadeNodeHerdrSessionsAction $herdrSessions = null,
     ) {}
 
     public function execute(
@@ -79,6 +86,8 @@ final readonly class RemoveNodeAction
         $this->guardProtected($node, $caller);
         $shed = $offline ? $this->shedRoles($node, $force) : null;
         $this->guardRemoval($node);
+        $this->cleanupHerdrSessions($node, forgetRecords: $shed !== null);
+        $this->cleanupNodeProcesses($node, forgetRecords: $shed !== null);
         $peerRemoved = false;
         $result = new RemoveNodeData(
             id: $node->id,
@@ -153,6 +162,8 @@ final readonly class RemoveNodeAction
             }
         }
 
+        $lanClusterId = $node->cluster_id;
+
         if ($node->wireguard_public_key !== null) {
             try {
                 $this->peers->remove($node);
@@ -169,6 +180,48 @@ final readonly class RemoveNodeAction
                     step: 'wireguard-projection',
                     errorCode: 'node.wireguard_projection_failed',
                     message: "Could not remove the WireGuard peer for node [{$node->name}].",
+                    previous: $exception,
+                );
+            }
+        }
+
+        if (is_int($lanClusterId)) {
+            try {
+                ($this->lanIngress ?? app(RouterLanIngressReconciler::class))->prune(
+                    nodeOverrides: [$node->id => ['status' => LifecycleStatus::Removing]],
+                    clusterIds: [$lanClusterId],
+                );
+            } catch (Throwable $exception) {
+                $node->update(['status' => LifecycleStatus::Active]);
+                $rollbackFailure = null;
+
+                if ($peerRemoved) {
+                    try {
+                        $this->peers->restore($node);
+                    } catch (Throwable $rollbackException) {
+                        $rollbackFailure = $rollbackException;
+                    }
+                }
+
+                $metricsRollbackFailure = $this->restoreMetricsSelection();
+
+                if ($rollbackFailure instanceof Throwable) {
+                    throw $this->failure(
+                        step: 'wireguard-rollback',
+                        errorCode: 'node.removal_rollback_failed',
+                        message: "Could not restore the WireGuard peer for node [{$node->name}].",
+                        previous: $rollbackFailure,
+                    );
+                }
+
+                if ($metricsRollbackFailure instanceof Throwable) {
+                    throw $this->metricsRollbackFailure($node, $metricsRollbackFailure);
+                }
+
+                throw $this->failure(
+                    step: 'router-lan-ingress',
+                    errorCode: 'router.lan_ingress_failed',
+                    message: "Could not revoke Router LAN ingress for node [{$node->name}].",
                     previous: $exception,
                 );
             }
@@ -325,6 +378,46 @@ final readonly class RemoveNodeAction
         }
 
         return $shed;
+    }
+
+    private function cleanupHerdrSessions(Node $node, bool $forgetRecords): void
+    {
+        try {
+            ($this->herdrSessions ?? app(CascadeNodeHerdrSessionsAction::class))
+                ->execute($node, $forgetRecords);
+        } catch (Throwable $exception) {
+            throw $this->failure(
+                step: 'herdr-cleanup',
+                errorCode: 'node.herdr_cleanup_failed',
+                message: "Could not remove Herdr sessions on [{$node->name}].",
+                previous: $exception,
+            );
+        }
+    }
+
+    private function cleanupNodeProcesses(Node $node, bool $forgetRecords): void
+    {
+        try {
+            if ($forgetRecords) {
+                Process::query()
+                    ->where('owner_type', Node::class)
+                    ->where('owner_id', $node->id)
+                    ->orderBy('id')
+                    ->get()
+                    ->each(fn (Process $process) => $process->delete());
+
+                return;
+            }
+
+            ($this->nodeProcesses ?? app(CascadeNodeProcessesAction::class))->execute($node->id);
+        } catch (Throwable $exception) {
+            throw $this->failure(
+                step: 'process-cleanup',
+                errorCode: 'node.process_cleanup_failed',
+                message: "Could not remove Node-owned Processes on [{$node->name}].",
+                previous: $exception,
+            );
+        }
     }
 
     private function guardRemoval(Node $node): void

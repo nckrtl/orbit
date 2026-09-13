@@ -625,7 +625,7 @@ it('renders local validation failures through the exact json boundary', function
         'process:add',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
         'process.target_invalid',
-        'The --instance option is required.',
+        'The --instance or --node option is required.',
     ],
     'process target ID' => [
         'process:add',

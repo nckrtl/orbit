@@ -12,7 +12,10 @@ use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
+use App\Models\HerdrObservationNonce;
+use App\Models\HerdrSession;
 use App\Models\Instance;
+use App\Models\JwksKey;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -38,6 +41,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Tool::class => DoctorFamily::Tool,
         Process::class => DoctorFamily::Process,
         FirewallRule::class => DoctorFamily::Firewall,
+        HerdrSession::class => DoctorFamily::Herdr,
     ];
     $ownerInputs = [
         AppInstanceEnvironmentValue::class,
@@ -49,6 +53,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteTarget::class,
         ProcessDefinition::class,
         ScheduleDefinition::class,
+        JwksKey::class,
     ];
     $excluded = [
         NodeAccess::class,
@@ -56,6 +61,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceDeploymentLayout::class,
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
+        HerdrObservationNonce::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

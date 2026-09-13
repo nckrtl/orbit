@@ -31,6 +31,32 @@ it('returns a healthy empty report without runtime inspection when the node has 
         ->toBeEmpty();
 });
 
+it('inspects Node-owned Processes on the selected Node', function (): void {
+    $node = doctor_process_node();
+    $process = $node->processes()->create([
+        'name' => 'postgres',
+        'runtime' => ProcessRuntime::Docker,
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $runtime = Mockery::mock(ProcessStateInspector::class);
+    $runtime
+        ->shouldReceive('inspect')
+        ->once()
+        ->with(Mockery::on(fn (Process $inspected): bool => $inspected->is($process)))
+        ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Running));
+
+    $report = new ProcessDoctorProbe($runtime)->inspect(doctor_process_context($node));
+
+    expect($report->checked)
+        ->toBe(1)
+        ->and($report->issues)
+        ->toBeEmpty();
+});
+
 it('compares selected process runtimes in process id order', function (): void {
     $node = Node::query()->create([
         'name' => 'doctor-node',

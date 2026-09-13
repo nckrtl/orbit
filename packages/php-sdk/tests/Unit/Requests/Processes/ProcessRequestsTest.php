@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
+use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
+use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Processes\RemoveProcessRequest;
 use Orbit\Sdk\Requests\Processes\RestartProcessRequest;
@@ -22,7 +24,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
         AddProcessRequest::class => MockResponse::make(process_envelope(), 201),
     ]);
     $request = new AddProcessRequest(
-        appInstanceId: 7,
+        target: new AppInstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -63,7 +65,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
 
 it('forwards every explicit process field without applying runtime policy', function (): void {
     $request = new AddProcessRequest(
-        appInstanceId: 7,
+        target: new AppInstanceProcessTarget(7),
         name: 'worker',
         runtime: 'systemd',
         command: ['php', 'artisan', 'queue:work'],
@@ -94,7 +96,7 @@ it('forwards every explicit process field without applying runtime policy', func
 
 it('omits every absent optional process field without applying runtime policy', function (): void {
     $request = new AddProcessRequest(
-        appInstanceId: 7,
+        target: new AppInstanceProcessTarget(7),
         name: 'worker',
         runtime: 'systemd',
         command: ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -113,7 +115,7 @@ it('omits every absent optional process field without applying runtime policy', 
 
 it('preserves explicitly supplied empty process collections', function (): void {
     $request = new AddProcessRequest(
-        appInstanceId: 7,
+        target: new AppInstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -138,7 +140,7 @@ it('preserves explicitly supplied empty process collections', function (): void 
 
 it('preserves an omitted optional volume read-only flag', function (): void {
     $request = new AddProcessRequest(
-        appInstanceId: 7,
+        target: new AppInstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -150,6 +152,27 @@ it('preserves an omitted optional volume read-only flag', function (): void {
     ]);
 });
 
+it('adds a node-targeted process with the explicit node selector', function (): void {
+    $request = new AddProcessRequest(
+        target: new NodeProcessTarget(4),
+        name: 'postgres',
+        runtime: 'docker',
+        command: ['postgres'],
+        image: 'postgres:18',
+    );
+
+    expect($request->body()->all())->toMatchArray([
+        'target_type' => 'node',
+        'target_id' => 4,
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'command' => ['postgres'],
+        'image' => 'postgres:18',
+        'restart_policy' => 'never',
+        'start' => false,
+    ]);
+});
+
 it('lists only one target process collection', function (): void {
     $mock = new MockClient([
         ListProcessesRequest::class => MockResponse::make([
@@ -157,7 +180,7 @@ it('lists only one target process collection', function (): void {
             'meta' => ['request_id' => process_request_id()],
         ]),
     ]);
-    $request = new ListProcessesRequest(appInstanceId: 7);
+    $request = new ListProcessesRequest(new AppInstanceProcessTarget(7));
     $response = process_connector($mock)->send($request)->dto();
 
     expect($request->getMethod())
@@ -184,6 +207,12 @@ it('lists only one target process collection', function (): void {
             'volumes' => [],
         ])
         ->not->toHaveKey('environment');
+});
+
+it('lists one node-targeted process collection', function (): void {
+    $request = new ListProcessesRequest(new NodeProcessTarget(4));
+
+    expect($request->query()->all())->toBe(['target_type' => 'node', 'target_id' => 4]);
 });
 
 it('bounds runtime configuration to a string-keyed response map', function (): void {

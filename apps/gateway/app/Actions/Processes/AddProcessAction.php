@@ -12,9 +12,11 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -40,9 +42,10 @@ final readonly class AddProcessAction
     public function execute(#[SensitiveParameter] AddProcessData $data): array
     {
         $this->targets->resolve($data->targetType, $data->targetId);
+        $ownerIds = $data->targetType === ProcessTargetType::AppInstance ? [$data->targetId] : [];
 
         return $this->admissions->run(
-            [$data->targetId],
+            $ownerIds,
             fn (): array => $this->executeOwned($data),
         );
     }
@@ -52,11 +55,19 @@ final readonly class AddProcessAction
     {
         /** @var array{process: Process, created: bool, attributes: array<string, mixed>} $admission */
         $admission = DB::transaction(function () use ($data): array {
-            $instance = AppInstance::query()
-                ->with('node')
-                ->lockForUpdate()
-                ->findOrFail($data->targetId);
-            $target = $this->targets->forAdmission($instance);
+            $target = match ($data->targetType) {
+                ProcessTargetType::AppInstance => $this->targets->forAdmission(
+                    AppInstance::query()
+                        ->with('node')
+                        ->lockForUpdate()
+                        ->findOrFail($data->targetId),
+                ),
+                ProcessTargetType::Node => $this->targets->forNodeAdmission(
+                    Node::query()
+                        ->lockForUpdate()
+                        ->findOrFail($data->targetId),
+                ),
+            };
             $attributes = $this->specifications->attributes($data, $target);
             $process = Process::query()->firstOrNew([
                 'owner_type' => $data->targetType->modelClass(),

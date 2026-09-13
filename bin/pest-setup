@@ -80,7 +80,7 @@ if ($lock === false || !flock($lock, LOCK_EX)) {
     failPestSetup('could not lock the project installation.');
 }
 if (pestFilesMatch($root, $manifest['files'], 'patched')) {
-    fwrite(STDOUT, "Pest monorepo TIA ready (5.1.3, Orbit patch).\n");
+    fwrite(STDOUT, "Pest monorepo TIA ready (5.1.4, Orbit patch).\n");
     exit(0);
 }
 if (is_link($root)) {
@@ -97,4 +97,4 @@ if (!pestFilesMatch($root, $manifest['files'], 'patched')) {
     }
     failPestSetup('patched files failed verification; reinstall pestphp/pest.');
 }
-fwrite(STDOUT, "Pest monorepo TIA ready (5.1.3, Orbit patch).\n");
+fwrite(STDOUT, "Pest monorepo TIA ready (5.1.4, Orbit patch).\n");

@@ -14,6 +14,7 @@ use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\SharedOrbitDirectory;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -33,6 +34,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private SharedOrbitDirectory $sharedOrbitDirectory = new SharedOrbitDirectory,
     ) {}
 
     public function install(#[SensitiveParameter] Schedule $schedule): void
@@ -223,8 +225,10 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
         $script = base64_encode($script);
         $service = base64_encode($service);
         $timer = base64_encode($timer);
+        $sharedOrbitDirectory = $this->sharedOrbitDirectory->convergenceFunction();
 
         return <<<BASH
+            {$sharedOrbitDirectory}
             set -Eeuo pipefail
             id="\$1"; runtime_group="\$2"; desired="\$3"
             script_path="/etc/orbit/schedules/\${id}.sh"
@@ -236,6 +240,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
             trap cleanup EXIT
             exec 9>"/run/lock/orbit-schedule-\${id}.lock"
             flock --wait 30 9
+            converge_shared_orbit_directory /etc/orbit 42
             existed_script=0; existed_service=0; existed_timer=0
             enabled=disabled; active=inactive
             own() {

@@ -11,11 +11,11 @@ use App\Infrastructure\Processes\ProcessInvocation;
  * fragment.
  *
  * The `ubuntu-fan` package ships `/etc/dnsmasq.d/ubuntu-fan`, which sets
- * `bind-interfaces`. dnsmasq reads every file in its conf directory and no
- * file can unset an option another file set, so that snippet and the managed
- * `bind-dynamic` fragment cannot both be present: dnsmasq refuses to start
- * with "cannot set --bind-interfaces and --bind-dynamic". `dnsmasq --test`
- * accepts the pair, so only a restart exposes the conflict.
+ * `bind-interfaces` and extra interface policy. dnsmasq reads every file in
+ * its conf directory and no file can unset an option another file set, so
+ * that snippet would add listen addresses beside the managed loopback
+ * backend. The snippet is retired so the requester-aware listener can own
+ * the VPN DNS port.
  *
  * The snippet moves outside the conf directory instead of being deleted or
  * renamed in place. A renamed file still counts, because the conf directory

@@ -19,6 +19,10 @@ final readonly class HomebrewToolManager implements ToolManager
 {
     private const string BREW = '/home/linuxbrew/.linuxbrew/bin/brew';
 
+    private const string EXPECTED_REVISION = 'd79ef822ab8136e393ed5f86e2b56afc68d04874';
+
+    private const string EXPECTED_VERSION = 'Homebrew 7.0.0';
+
     private const int MAX_PACKAGE_LENGTH = 255;
 
     private const int MAX_RESULT_LENGTH = 131_072;
@@ -64,13 +68,14 @@ final readonly class HomebrewToolManager implements ToolManager
     {
         $this->guardSupportedNode($node);
 
-        $program = <<<'BASH'
+        $program = strtr(<<<'BASH'
             managed_user=$1
             prefix=/home/linuxbrew/.linuxbrew
             repository=$prefix/Homebrew
             expected_origin=https://github.com/Homebrew/brew
-            expected_revision=2b3683acbeac84c27669195235785694b72e253e
-            expected_version='Homebrew 6.0.6'
+            expected_revision=__ORBIT_HOMEBREW_REVISION__
+            expected_version='__ORBIT_HOMEBREW_VERSION__'
+            expected_tag=${expected_version#Homebrew }
 
             passwd_entry=$(getent passwd -- "$managed_user")
             test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
@@ -108,6 +113,24 @@ final readonly class HomebrewToolManager implements ToolManager
                 trap - EXIT
             fi
 
+            current_revision=$(git -C "$repository" rev-parse HEAD)
+            if [ "$current_revision" != "$expected_revision" ]; then
+                test ! -L "$prefix"
+                test -d "$prefix"
+                test "$(stat -c %U:%G "$prefix")" = "$managed_user:$managed_group"
+                test ! -L "$repository"
+                test -d "$repository/.git"
+                test "$(stat -c %U:%G "$repository")" = "$managed_user:$managed_group"
+                test "$(git -C "$repository" remote get-url origin)" = "$expected_origin"
+                test -z "$(git -C "$repository" status --porcelain=v1 --untracked-files=all)"
+                test -L "$prefix/bin/brew"
+                test "$(readlink "$prefix/bin/brew")" = ../Homebrew/bin/brew
+                test "$(stat -c %U:%G "$prefix/bin/brew")" = "$managed_user:$managed_group"
+                sudo -u "$managed_user" -H git -C "$repository" fetch --filter=blob:none origin "$expected_revision"
+                sudo -u "$managed_user" -H git -C "$repository" \
+                    -c advice.detachedHead=false checkout --detach "$expected_revision"
+            fi
+
             test ! -L "$prefix"
             test -d "$prefix"
             test "$(stat -c %U:%G "$prefix")" = "$managed_user:$managed_group"
@@ -120,6 +143,11 @@ final readonly class HomebrewToolManager implements ToolManager
             test -L "$prefix/bin/brew"
             test "$(readlink "$prefix/bin/brew")" = ../Homebrew/bin/brew
             test "$(stat -c %U:%G "$prefix/bin/brew")" = "$managed_user:$managed_group"
+            if ! git -C "$repository" show-ref --verify --quiet "refs/tags/$expected_tag"; then
+                sudo -u "$managed_user" -H git -C "$repository" fetch --filter=blob:none origin tag "$expected_tag"
+                sudo -u "$managed_user" -H rm -rf -- "$repository/.git/describe-cache"
+            fi
+            test "$(git -C "$repository" rev-parse --verify "$expected_tag^{commit}")" = "$expected_revision"
             test "$(sudo -u "$managed_user" -H env \
                 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ENV_HINTS=1 \
                 PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin \
@@ -128,7 +156,10 @@ final readonly class HomebrewToolManager implements ToolManager
                 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ENV_HINTS=1 \
                 PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin \
                 "$prefix/bin/brew" config >/dev/null
-            BASH;
+            BASH, [
+            '__ORBIT_HOMEBREW_REVISION__' => self::EXPECTED_REVISION,
+            '__ORBIT_HOMEBREW_VERSION__' => self::EXPECTED_VERSION,
+        ]);
 
         $result = $this->commands->execute($node, ['sudo', 'bash', '-seu', '--', $node->user], $program);
 
@@ -153,7 +184,7 @@ final readonly class HomebrewToolManager implements ToolManager
 
         $version = $this->firstLine($result->stdout);
 
-        if ($version !== 'Homebrew 6.0.6') {
+        if ($version !== self::EXPECTED_VERSION) {
             throw new ToolManagerException(
                 step: 'manager-version',
                 message: 'The Homebrew manager version probe returned an unsupported version.',

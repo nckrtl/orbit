@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
 use App\Models\Node;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 
 beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(cluster_nodes_api_node('gateway', '10.44.0.1'));
@@ -28,6 +31,42 @@ it('attaches one active Node to one Cluster and exposes membership in both resou
         ->assertJsonPath('data.cluster_id', $this->firstCluster->id);
 
     expect($this->node->refresh()->cluster_id)->toBe($this->firstCluster->id);
+});
+
+it('reconciles Router DNS selection before Cluster attachment becomes authoritative', function (): void {
+    $dns = cluster_nodes_dns_reconciler();
+    $dns->onExpand = function (): void {
+        expect($this->node->fresh()?->cluster_id)->toBeNull();
+    };
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}")
+        ->assertOk();
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBe($this->firstCluster->id)
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand', 'prune'])
+        ->and($dns->events[0]['nodeOverrides'][$this->node->id]['cluster_id'])
+        ->toBe($this->firstCluster->id);
+});
+
+it('keeps Cluster membership unchanged when DNS selection expansion fails', function (): void {
+    $dns = cluster_nodes_dns_reconciler();
+    $dns->expandFailure = new RuntimeConvergenceException(
+        step: 'private-dns',
+        errorCode: 'app-dev.dns_config_failed',
+        message: 'DNS selection failed.',
+    );
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}")
+        ->assertServerError();
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBeNull()
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand']);
 });
 
 it('rejects a second simultaneous Cluster membership without changing the first', function (): void {
@@ -62,6 +101,28 @@ it('requires explicit consent to detach a Node and preserves membership on refus
     expect($this->node->refresh()->cluster_id)->toBeNull();
 });
 
+it('reconciles Router DNS selection before detach becomes authoritative', function (): void {
+    $this->node->update(['cluster_id' => $this->firstCluster->id]);
+    $dns = cluster_nodes_dns_reconciler();
+    $dns->onExpand = function (): void {
+        expect($this->node->fresh()?->cluster_id)->toBe($this->firstCluster->id);
+    };
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}",
+            ['force' => true],
+        )
+        ->assertOk();
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBeNull()
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand', 'prune'])
+        ->and($dns->events[0]['nodeOverrides'][$this->node->id]['cluster_id'])
+        ->toBeNull();
+});
+
 it('refuses to detach a matching-TLD Node from an active TLD-bearing Cluster', function (): void {
     $this->firstCluster->update([
         'tld' => 'beast',
@@ -71,6 +132,7 @@ it('refuses to detach a matching-TLD Node from an active TLD-bearing Cluster', f
         'cluster_id' => $this->firstCluster->id,
         'tld' => 'beast',
     ]);
+    $dns = cluster_nodes_dns_reconciler();
 
     $this
         ->deleteJson(
@@ -80,7 +142,10 @@ it('refuses to detach a matching-TLD Node from an active TLD-bearing Cluster', f
         ->assertConflict()
         ->assertJsonPath('error.code', 'cluster.tld_conflict');
 
-    expect($this->node->refresh()->cluster_id)->toBe($this->firstCluster->id);
+    expect($this->node->refresh()->cluster_id)
+        ->toBe($this->firstCluster->id)
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand', 'prune']);
 
     $this
         ->patchJson("/api/v1/clusters/{$this->firstCluster->id}", ['tld' => null])
@@ -163,4 +228,12 @@ function cluster_nodes_api_node(string $name, string $wireguardIp): Node
         'public_ssh_host' => '192.0.2.'.str_replace('10.44.0.', '', $wireguardIp),
         'wireguard_ip' => $wireguardIp,
     ]);
+}
+
+function cluster_nodes_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
+{
+    $dns = app(ClusterRouterDnsSelectionReconciler::class);
+    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
+
+    return $dns;
 }

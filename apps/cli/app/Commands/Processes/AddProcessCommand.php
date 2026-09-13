@@ -9,12 +9,13 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
-final class AddProcessCommand extends ProcessCommand
+final class AddProcessCommand extends TargetedProcessCommand
 {
     #[\Override]
     protected $signature = 'process:add
         {name : Process name}
         {--instance= : Positive AppInstance ID}
+        {--node= : Node ID or registered name}
         {--runtime=systemd : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
@@ -47,12 +48,6 @@ final class AddProcessCommand extends ProcessCommand
                 'process.name_invalid',
                 'Process name is invalid.',
             );
-        }
-
-        $appInstanceId = $this->appInstanceId();
-
-        if ($appInstanceId === null) {
-            return self::FAILURE;
         }
 
         $runtime = $this->stringOption('runtime');
@@ -145,10 +140,16 @@ final class AddProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
+        $target = $this->processTarget($connector);
+
+        if ($target === null) {
+            return self::FAILURE;
+        }
+
         $process = $this->send(
             $connector,
             new AddProcessRequest(
-                appInstanceId: $appInstanceId,
+                target: $target,
                 name: $name,
                 runtime: $runtime,
                 command: $command,

@@ -280,6 +280,32 @@ it('parses exact protected UFW tuple ownership from both stored rule sources', f
     expect(new UfwStoredRuleParser()->ownership($stored, $expected))->toBe(UfwRuleOwnership::Exact);
 });
 
+it('parses Router LAN ingress family shapes without v6 or unrelated comments', function (): void {
+    $output = <<<'OUTPUT'
+        Status: active
+
+        [ 1] 10.20.0.10 443/tcp ALLOW IN 10.20.0.11 # orbit:router-lan-https:5
+        [ 2] 10.20.0.10 443/tcp (v6) ALLOW IN Anywhere (v6) # orbit:router-lan-https:5
+        [ 3] 443/tcp ALLOW IN Anywhere # orbit:gateway-https
+        OUTPUT;
+
+    expect(new UfwStatusParser()->familyShapes($output, 'orbit:router-lan-https'))
+        ->toHaveCount(1)
+        ->and(new UfwStatusParser()->familyShapes($output, 'orbit:router-lan-https')[0])
+        ->toEqual(new UfwRuleShape(
+            comment: 'orbit:router-lan-https:5',
+            action: 'allow',
+            direction: 'in',
+            source: '10.20.0.11',
+            destination: '10.20.0.10',
+            port: '443',
+            protocol: 'tcp',
+            inInterface: null,
+            outInterface: null,
+            family: 'v4',
+        ));
+});
+
 it('rejects stored managed tuples with a restricted public recovery shape', function (string $interface): void {
     $expected = new UfwRuleShape(
         comment: 'orbit:public-ssh-recovery',

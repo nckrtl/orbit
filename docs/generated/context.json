@@ -15,6 +15,7 @@
                 "Cluster",
                 "Gateway",
                 "Node",
+                "Process",
                 "Schedule",
                 "Tool"
             ],
@@ -36,9 +37,11 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
+                "Herdr session",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Route",
                 "Router",
@@ -76,9 +79,11 @@
                 "Documentation context",
                 "Effective web root",
                 "Gateway",
+                "Herdr session",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Repository identity",
                 "Route",
@@ -96,7 +101,8 @@
                 "0024",
                 "0026",
                 "0042",
-                "0056"
+                "0056",
+                "0069"
             ]
         },
         {
@@ -108,6 +114,7 @@
                 "App",
                 "Gateway",
                 "Node",
+                "Process",
                 "Tool"
             ],
             "governing_adrs": [
@@ -135,6 +142,7 @@
                 "App",
                 "Gateway",
                 "Node",
+                "Process",
                 "Tool"
             ],
             "governing_adrs": [
@@ -154,6 +162,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Process",
                 "Tool",
                 "Workspace"
             ],
@@ -224,6 +233,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Route",
                 "Router",
                 "Schedule",
@@ -256,6 +266,7 @@
                 "Effective web root",
                 "Ingress",
                 "Node",
+                "Process",
                 "Route",
                 "Router"
             ],
@@ -298,6 +309,7 @@
                 "Gateway",
                 "Ingress",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Schedule",
                 "Tool",
@@ -337,6 +349,7 @@
                 "App",
                 "Gateway",
                 "Node",
+                "Process",
                 "Proof topology"
             ],
             "governing_adrs": [
@@ -423,7 +436,8 @@
                 "App",
                 "Cluster",
                 "Gateway",
-                "Node"
+                "Node",
+                "Process"
             ],
             "governing_adrs": [
                 "0005",
@@ -821,6 +835,7 @@
                 "Gateway",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Schedule",
                 "Workspace"
             ],
@@ -928,6 +943,7 @@
             "concepts": [
                 "Gateway",
                 "Node",
+                "Process",
                 "Tool",
                 "Tool Manager"
             ],
@@ -951,6 +967,7 @@
                 "AppInstance",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route"
             ],
             "governing_adrs": [
@@ -993,7 +1010,8 @@
                 "App",
                 "AppInstance",
                 "Gateway",
-                "Ingress"
+                "Ingress",
+                "Process"
             ],
             "governing_adrs": [
                 "0011",
@@ -1021,6 +1039,7 @@
                 "Gateway",
                 "Ingress",
                 "Node",
+                "Process",
                 "Route",
                 "Schedule"
             ],
@@ -1048,6 +1067,7 @@
                 "AppInstance",
                 "Doctor",
                 "Gateway",
+                "Process",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -1392,6 +1412,7 @@
                 "Cluster",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route",
                 "Schedule"
             ],
@@ -1418,6 +1439,7 @@
                 "Development-server endpoint",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route",
                 "Router"
             ],
@@ -1448,6 +1470,31 @@
                 "0008",
                 "0009",
                 "0068"
+            ]
+        },
+        {
+            "path": "docs/decisions/0069-allow-node-process-targets.md",
+            "title": "ADR 0069: Allow Process targets of AppInstance or managed Node",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0036",
+                "0038",
+                "0048",
+                "0069"
             ]
         },
         {
@@ -1493,6 +1540,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Repository identity",
                 "Route",
                 "Router",
@@ -1531,7 +1579,9 @@
                 "Development-server endpoint",
                 "Doctor",
                 "Gateway",
+                "Herdr session",
                 "Node",
+                "Process",
                 "Route",
                 "Schedule",
                 "Workspace"
@@ -1539,7 +1589,8 @@
             "governing_adrs": [
                 "0036",
                 "0038",
-                "0048"
+                "0048",
+                "0069"
             ]
         },
         {
@@ -1556,6 +1607,7 @@
                 "Gateway",
                 "Ingress",
                 "Node",
+                "Process",
                 "Route",
                 "Router",
                 "Schedule"
@@ -1578,6 +1630,7 @@
                 "Cluster",
                 "Gateway",
                 "Node",
+                "Process",
                 "Repository identity",
                 "Route",
                 "Router",
@@ -1624,6 +1677,7 @@
                 "Effective web root",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route"
             ],
             "governing_adrs": [
@@ -1641,6 +1695,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route"
             ],
             "governing_adrs": [
@@ -1658,6 +1713,26 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/herdr-sessions.md",
+            "title": "Herdr sessions",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Tool",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0069"
+            ]
+        },
+        {
             "path": "docs/reference/implementation-loop.md",
             "title": "Implementation loop",
             "kind": "reference",
@@ -1670,6 +1745,7 @@
                 "App",
                 "Gateway",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Route",
                 "Tool",
@@ -1701,6 +1777,7 @@
                 "Gateway",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Route",
                 "Workspace"
@@ -1726,6 +1803,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route"
             ],
             "governing_adrs": [
@@ -1744,7 +1822,9 @@
             "concepts": [
                 "App",
                 "Gateway",
+                "Herdr session",
                 "Node",
+                "Process",
                 "Tool",
                 "Tool Manager"
             ],
@@ -1793,8 +1873,10 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route",
-                "Router"
+                "Router",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0021",
@@ -1815,7 +1897,8 @@
                 "Router"
             ],
             "governing_adrs": [
-                "0061"
+                "0061",
+                "0062"
             ]
         },
         {
@@ -1829,6 +1912,7 @@
                 "App",
                 "Gateway",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Workspace"
             ],
@@ -1853,6 +1937,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Process",
                 "Route",
                 "Router",
                 "Workspace"
@@ -1868,6 +1953,7 @@
                 "0030",
                 "0033",
                 "0041",
+                "0062",
                 "0067"
             ]
         },
@@ -1882,6 +1968,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Process",
                 "Schedule",
                 "Workspace"
             ],
@@ -1900,7 +1987,9 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
+                "Herdr session",
                 "Node",
+                "Process",
                 "Tool",
                 "Tool Manager"
             ],
@@ -1924,6 +2013,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Process",
                 "Proof topology",
                 "Route",
                 "Workspace"

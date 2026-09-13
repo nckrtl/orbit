@@ -2267,6 +2267,8 @@ it('publishes private Caddy and DNS configurations through complete preserved va
             'if systemctl is-active --quiet dnsmasq; then',
             'mv -fT -- "$candidate" "$managed"',
             'systemctl restart dnsmasq',
+            'catalog_managed=/var/lib/orbit/private-dns/catalog.json',
+            'python3 -c \'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))\'',
         );
 });
 
@@ -2820,7 +2822,7 @@ it('keeps the live DNS fragment untouched when effective validation fails', func
             'install -o root -g root -m 0644 -- "$backup" "$managed"',
             'rm -f -- "$managed"',
             'systemctl restart dnsmasq || true',
-            'trap \'rm -rf -- "$validation"; rm -f -- "$candidate" "$backup"\' EXIT',
+            'trap \'rm -rf -- "$validation"; rm -f -- "$candidate" "$backup" "$catalog_candidate" "$catalog_backup"\' EXIT',
         );
 });
 

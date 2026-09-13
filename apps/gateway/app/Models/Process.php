@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property LifecycleStatus $status
  * @property string|null $failed_step
  * @property string|null $error_code
- * @property-read AppInstance $owner
+ * @property-read AppInstance|Node $owner
  */
 final class Process extends Model
 {

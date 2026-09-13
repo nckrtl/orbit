@@ -34,11 +34,17 @@ it('lists the supported Boost MCP tools with the Laravel Zero logger', function 
         ->not->toContain('last-error');
 });
 
-it('executes Boost MCP tools through the Orbit entry point', function (): void {
-    $server = app()->make(Boost::class, [
-        'transport' => new FakeTransporter,
-    ]);
-    $server->start();
+it('executes application info through its MCP identity and Orbit entry point without a database', function (): void {
+    expect(app()->bound('db'))->toBeFalse();
+
+    Boost::tool(ApplicationInfo::class)
+        ->assertName('application-info')
+        ->assertOk()
+        ->assertSee([
+            '"php_version":"'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION.'"',
+            '"laravel_version":"'.app()->version().'"',
+            '"database_engine":null',
+        ]);
 
     $response = app(ToolExecutor::class)->execute(ApplicationInfo::class);
 
@@ -55,6 +61,7 @@ it('executes Boost MCP tools through the Orbit entry point', function (): void {
         ->toMatchArray([
             'php_version' => PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION,
             'laravel_version' => app()->version(),
+            'database_engine' => null,
         ]);
 });
 

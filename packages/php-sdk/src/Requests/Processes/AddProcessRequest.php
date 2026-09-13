@@ -25,7 +25,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
      * @param  list<array{source: string, target: string, read_only?: bool}>|null  $volumes
      */
     public function __construct(
-        private readonly int $appInstanceId,
+        private readonly AppInstanceProcessTarget|NodeProcessTarget $target,
         private readonly string $name,
         private readonly string $runtime,
         private readonly array $command,
@@ -56,8 +56,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         $body = [
-            'target_type' => 'instance',
-            'target_id' => $this->appInstanceId,
+            ...$this->target->toRequestData(),
             'name' => $this->name,
             'runtime' => $this->runtime,
             'command' => $this->command,

@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 97 public Gateway operations. It preserves typed
+The SDK exposes exactly 103 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -58,7 +58,16 @@ The SDK exposes `RunDoctorRequest` and bounded typed report responses. It sends
 `POST /api/v1/doctor` as JSON. It omits null filters and preserves explicit
 filter values so the Gateway can validate them. It transports received health,
 order, issues, and summary aggregates without applying Doctor policy.
-Doctor accepts the current Gateway family set, including Schedule.
+Doctor accepts the current Gateway family set, including Schedule and Herdr.
+
+## Herdr sessions
+
+The SDK exposes typed list, add, show, restart, remove, and observation-grant
+requests for managed Herdr sessions. Add and list preserve a numeric Node ID.
+Item operations use the numeric session ID. Observation grants send pane,
+terminal, columns, and rows. Item and collection responses are immutable and
+bounded and preserve the request ID. Observation grant URLs stay out of generic
+diagnostics. The Gateway owns session lifecycle, publication, and grant policy.
 
 ## Requirements
 

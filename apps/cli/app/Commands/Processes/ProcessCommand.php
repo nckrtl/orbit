@@ -156,33 +156,6 @@ abstract class ProcessCommand extends GatewayCommand
             .'BEARER[_-]?TOKEN|CREDENTIAL|COOKIE)[A-Z0-9_.-]*';
     }
 
-    protected function appInstanceId(): ?int
-    {
-        $instance = $this->option('instance');
-
-        if (! is_string($instance) || $instance === '') {
-            $this->renderGatewayFailure(
-                'process.target_invalid',
-                'The --instance option is required.',
-            );
-
-            return null;
-        }
-
-        $id = filter_var($instance, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-
-        if (! is_int($id)) {
-            $this->renderGatewayFailure(
-                'process.target_id_invalid',
-                'AppInstance ID must be a positive integer.',
-            );
-
-            return null;
-        }
-
-        return $id;
-    }
-
     /** @return list<string> */
     protected function stringListOption(string $name): array
     {

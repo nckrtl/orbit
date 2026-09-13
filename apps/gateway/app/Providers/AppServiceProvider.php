@@ -18,6 +18,7 @@ use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceCloneCandidateInspector;
@@ -66,9 +67,14 @@ use App\Domain\Doctor\ScheduleStateInspector;
 use App\Domain\Doctor\WorkspaceStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
+use App\Domain\Firewall\RouterLanIngressPublisher;
+use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Herdr\HerdrObserverPublisher;
+use App\Domain\Herdr\HerdrSessionInspector;
+use App\Domain\Herdr\ObservationGrantSigner;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialOperationLock;
@@ -109,10 +115,12 @@ use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
+use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
+use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -158,6 +166,7 @@ use App\Infrastructure\Doctor\NativeWorkspaceStateInspector;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
@@ -169,6 +178,11 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\Herdr\ComposedHerdrObserverPublisher;
+use App\Infrastructure\Herdr\HerdrObserverSitePublisher;
+use App\Infrastructure\Herdr\NativeHerdrSessionInspector;
+use App\Infrastructure\Herdr\OpenSslObservationGrantSigner;
+use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
@@ -301,14 +315,20 @@ final class AppServiceProvider extends ServiceProvider
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
+        RouterLanIngressPublisher::class => NativeNodeRoleFirewallManager::class,
+        RouterLanIngressReconciler::class => NativeRouterLanIngressReconciler::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
+        HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,
+        HerdrSessionInspector::class => NativeHerdrSessionInspector::class,
+        ObservationGrantSigner::class => OpenSslObservationGrantSigner::class,
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
-        PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
+        ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
         RoleStateInspector::class => NativeRoleStateInspector::class,
         ScheduleStateInspector::class => NativeScheduleStateInspector::class,
         ToolInspector::class => NativeToolInspector::class,
@@ -369,6 +389,18 @@ final class AppServiceProvider extends ServiceProvider
             $this->app->singleton(InstallCommand::class, GatewayBoostInstallCommand::class);
         }
 
+        $this->app->singleton(
+            DnsmasqPrivateDnsManager::class,
+            static fn (): DnsmasqPrivateDnsManager => new DnsmasqPrivateDnsManager(
+                processes: app(ProcessRunner::class),
+                renderer: app(AppDevDnsConfigRenderer::class),
+                activateListener: true,
+                checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
+                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                vpnSettings: app(VpnSettings::class),
+            ),
+        );
+        $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));
         $this->app->singleton(CommandDeadline::class);
         $this->app->singleton(
             ToolManagerRegistry::class,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -22,6 +23,7 @@ final readonly class SetClusterRouterAction
         private RoleBaselineConverger $baselines,
         private ClusterRouterOperationLock $operations,
         private ?RouteReconciliationGuard $routes = null,
+        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
@@ -55,6 +57,7 @@ final readonly class SetClusterRouterAction
 
         if ($active instanceof NodeRole && $active->node_id === $node->id) {
             $this->finishOldCleanup($cluster, $active);
+            $this->dnsSelection()->prune(clusterIds: [$clusterId]);
 
             return $cluster->refresh();
         }
@@ -78,12 +81,30 @@ final readonly class SetClusterRouterAction
             throw $exception;
         }
 
-        DB::transaction(static function () use ($active, $candidate): void {
-            $active?->update(['status' => LifecycleStatus::Removing]);
-            $candidate->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
-        });
+        try {
+            $this->dnsSelection()->expand(
+                clusterOverrides: [$clusterId => ['router_node_id' => $node->id]],
+                clusterIds: [$clusterId],
+            );
+        } catch (Throwable $exception) {
+            $candidate->delete();
+
+            throw $exception;
+        }
+
+        try {
+            DB::transaction(static function () use ($active, $candidate): void {
+                $active?->update(['status' => LifecycleStatus::Removing]);
+                $candidate->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
+            });
+        } catch (Throwable $exception) {
+            $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+
+            throw $exception;
+        }
 
         $this->finishOldCleanup($cluster, $candidate);
+        $this->dnsSelection()->prune(clusterIds: [$clusterId]);
 
         return $cluster->refresh();
     }
@@ -131,5 +152,10 @@ final readonly class SetClusterRouterAction
         ]);
 
         throw $exception;
+    }
+
+    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
+    {
+        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
     }
 }

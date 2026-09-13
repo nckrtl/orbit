@@ -37,6 +37,10 @@ The production identity follows fixed names that an operator can inspect.
 | Generated identity | Generated PHP-FPM files below `/etc/orbit/php-fpm/<production-user>/generated/`, including the service-specific `master.ini` | Gateway | Replaced only after the complete candidate validates against the recorded user, service, pool, socket, version, home, source paths, and effective master settings. |
 | Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operating agent | Seeded with Orbit defaults for a new runtime and then preserved byte-for-byte by provisioning, retry, and cleanup. |
 
+Production runtime convergence keeps the shared `/etc/orbit` directory owned by `root:root` with mode `0711`. This mode lets production users traverse to their protected Schedule scripts without letting them list the shared directory. Convergence creates the directory when it is absent and repairs a real `root:root` directory, including mode `0700`. It refuses a symlink, a non-directory, or a directory with different ownership before it changes runtime contents.
+
+The shared-parent repair does not relax its children. In particular, `/etc/orbit/php-fpm` and its protected runtime state remain inaccessible to application users. Convergence preserves sibling contents, generated runtime identity, and local operator tuning.
+
 The generated configuration establishes runtime identity and includes the separate local tuning file. Before activation or an Orbit-owned reload, the Gateway validates the effective configuration and refuses a local or conflicting file that changes the recorded user, service, pool, socket, PHP version, home, or application path. It does not adopt an existing user, service, socket, generated directory, or file whose identity or ownership conflicts with the AppInstance record.
 
 An interrupted publication resumes from the recorded production identity. A failed candidate activation restores the exact generated files and service state captured before publication. It never replaces the local tuning file during recovery.

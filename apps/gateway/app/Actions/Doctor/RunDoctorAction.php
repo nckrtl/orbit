@@ -31,6 +31,7 @@ final readonly class RunDoctorAction
         private ToolDoctorProbe $toolProbe,
         private ProcessDoctorProbe $processProbe,
         private FirewallDoctorProbe $firewallProbe,
+        private HerdrSessionDoctorProbe $herdrProbe,
     ) {}
 
     /** @param list<DoctorFamily> $families */
@@ -120,6 +121,7 @@ final readonly class RunDoctorAction
             DoctorFamily::Tool => $this->toolProbe,
             DoctorFamily::Process => $this->processProbe,
             DoctorFamily::Firewall => $this->firewallProbe,
+            DoctorFamily::Herdr => $this->herdrProbe,
         };
     }
 }

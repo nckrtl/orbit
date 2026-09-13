@@ -97,6 +97,8 @@ The Gateway projects exactly three artifacts that root owns. Their names depend 
 | Oneshot service | Uses the derived user and working directory, stored timeout, and fixed protected-script path. It contains no caller command text. |
 | Persistent timer | Uses the accepted calendar and triggers the oneshot service without overlapping an active execution. It contains no caller command text. |
 
+Schedule installation keeps the shared `/etc/orbit` directory owned by `root:root` with mode `0711`, then keeps `/etc/orbit/schedules` at mode `0755`. The shared mode permits traversal to a known protected script without allowing directory listing. Installation creates a missing shared directory and repairs a real `root:root` directory, including mode `0700`. It refuses a symlink, a non-directory, or a directory with different ownership before it changes Schedule artifacts. The repair preserves protected sibling contents and does not relax their access restrictions.
+
 The caller command appears only in the protected script. It never appears in an SSH, `sudo`, `systemctl`, `journalctl`, `systemd-analyze`, or other infrastructure argument.
 
 A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An AppInstance Schedule can install enabled or disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the AppInstance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
@@ -158,6 +160,8 @@ Gateway Schedule operations return only these stable domain error codes.
 ## Inspect Schedule drift
 
 Doctor checks Schedule as the explicit `schedule` family in its canonical order. It compares stored intent with bounded read-only host observations and never installs, reloads, enables, starts, stops, completes, repairs, adopts, or removes Schedule state.
+
+Doctor checks whether the derived runtime user can traverse from the shared `/etc/orbit` parent to the protected script. Doctor reports `schedule.artifact_permissions_mismatch` when an ancestor blocks access to an otherwise valid script. The check changes no host state and returns no path, user, command, or raw permission diagnostic.
 
 | Doctor issue code | Difference |
 | --- | --- |

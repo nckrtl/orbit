@@ -54,6 +54,36 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toBeLessThan(strpos(haystack: $unit, needle: 'EnvironmentFile='));
 });
 
+it('omits EnvironmentFile for a Node Process without an environment file', function (): void {
+    $process = new Process([
+        'name' => 'herdr-observer',
+        'runtime_config' => [
+            'command' => ['/usr/local/bin/herdr-observer'],
+            'environment_file' => '',
+        ],
+        'working_directory' => '/home/orbit',
+        'restart_policy' => 'never',
+    ]);
+    $process->id = 9;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'beast']),
+        user: 'orbit',
+        checkoutPath: '/home/orbit',
+        environmentFile: '',
+    );
+
+    $renderer = new SystemdProcessRenderer;
+    $unit = $renderer->render($process, $target);
+
+    expect($renderer->unitName($process))
+        ->toBe('orbit-process-9-herdr-observer.service')
+        ->and($unit)
+        ->toContain('X-Orbit-Process-ID=9')
+        ->toContain('User=orbit')
+        ->toContain('WorkingDirectory=/home/orbit')
+        ->not->toContain('EnvironmentFile=');
+});
+
 it('maps common restart policies to valid systemd values', function (string $policy, string $expected): void {
     $process = new Process([
         'name' => 'worker',

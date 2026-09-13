@@ -487,6 +487,8 @@ describe(InstallToolAction::class, function (): void {
             ->toBe('tool.version_probe_failed')
             ->and($exception->status)
             ->toBe(502)
+            ->and($exception->toolId)
+            ->toBe($tool->id)
             ->and($exception->getPrevious())
             ->toBe($probeFailure)
             ->and($tool->status)

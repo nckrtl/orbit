@@ -74,6 +74,7 @@ it('accepts every family and all statuses', function (): void {
         'tool',
         'process',
         'firewall',
+        'herdr',
     ]);
 
     $data = doctor_report_data();
