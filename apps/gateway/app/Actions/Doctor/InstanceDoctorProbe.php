@@ -114,23 +114,25 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                     'sourceIdentityMatches' => InstanceDoctorIssueCode::SourceIdentityMismatch,
                 ];
 
+                $inspectionFailed = false;
                 foreach ($fields as $field => $code) {
+                    if ($observation->{$field} === null) {
+                        $inspectionFailed = true;
+
+                        continue;
+                    }
+
                     if ($observation->{$field} !== false) {
                         continue;
                     }
                     $issues[] = $this->projectionIssue($instance, $code);
                 }
+
+                if ($inspectionFailed) {
+                    $issues[] = $this->inspectionFailedIssue($instance);
+                }
             } catch (DoctorInspectionException) {
-                $issues[] = new DoctorIssueData(
-                    InstanceDoctorIssueCode::InspectionFailed,
-                    DoctorIssueKind::Unverifiable,
-                    'instance',
-                    $instance->id,
-                    $instance->name,
-                    'Instance inspection could not be verified.',
-                    'verifiable',
-                    'unverifiable',
-                );
+                $issues[] = $this->inspectionFailedIssue($instance);
             }
         }
 
@@ -187,6 +189,20 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             'Instance projection does not match managed intent.',
             'matching',
             'mismatch',
+        );
+    }
+
+    private function inspectionFailedIssue(AppInstance $instance): DoctorIssueData
+    {
+        return new DoctorIssueData(
+            InstanceDoctorIssueCode::InspectionFailed,
+            DoctorIssueKind::Unverifiable,
+            'instance',
+            $instance->id,
+            $instance->name,
+            'Instance inspection could not be verified.',
+            'verifiable',
+            'unverifiable',
         );
     }
 }

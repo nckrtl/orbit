@@ -264,6 +264,41 @@ it('reports missing and shared production PHP associations before native project
         ->toBe(3);
 });
 
+it('reports unavailable production observations without hiding established drift', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_production_instance(instance_probe_app(), $node);
+
+    $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
+    {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            return new InstanceInspectionData(
+                true,
+                true,
+                true,
+                true,
+                productionHomeMatches: false,
+                releaseSelectionMatches: true,
+                selectedReleaseRootMatches: true,
+                environmentProjectionMatches: false,
+                phpFpmProjectionMatches: null,
+                caddyProjectionMatches: null,
+            );
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
+        ->toBe([
+            'instance.production_home_mismatch',
+            'instance.environment_projection_mismatch',
+            'instance.inspection_failed',
+        ])
+        ->and($report->status->value)
+        ->toBe('unverifiable')
+        ->and(collect($report->issues)->pluck('resourceId')->unique()->all())
+        ->toBe([$instance->id]);
+});
+
 function instance_probe_node(): Node
 {
     static $number = 60;

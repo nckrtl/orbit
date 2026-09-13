@@ -230,6 +230,14 @@ it('maps each AppInstance source observation without retaining diagnostics', fun
     'source identity mismatch' => ["1\n1\n1\n0\n", new InstanceInspectionData(true, true, true, false)],
 ]);
 
+it('rejects an unavailable marker from the non-nullable development observation', function (): void {
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+
+    expect(fn (): InstanceInspectionData => application_instance_inspector(
+        new AppDevFakeSshExecutor([app_inspector_result("2\n1\n1\n1\n")]),
+    )->inspect($appInstance))->toThrow(DoctorInspectionException::class, '');
+});
+
 it('observes production projections through fixed arguments and protected input', function (): void {
     $secret = 'doctor-production-secret';
     $appInstance = application_production_app_instance(
@@ -280,14 +288,27 @@ it('observes production projections through fixed arguments and protected input'
             base64_encode("APP_KEY=\"{$secret}\"\n"),
             'emit release_selection_matches',
             'emit php_fpm_matches',
+            'loaded_service_matches',
+            'systemctl show --property=ExecStart --value',
+            'systemctl show --property=Environment --value',
+            'process_runtime_matches',
+            'proc_root=/proc',
+            '$proc_root/net/unix',
+            '$proc_root/$main_pid/fd/',
+            'worker_identity_matches',
+            '/^Gid:/',
+            '$proc_root/$worker_pid/root',
             'local_tuning_matches || return 1',
             'chdir|chroot|env\[home\]',
         )
         ->not->toContain(
             $secret,
-            '/usr/sbin/php-fpm',
-            'php-fpm$version',
             ' -t ',
+            'cgi-fcgi',
+            'curl ',
+            'kill ',
+            '/proc/$main_pid/cmdline',
+            '/proc/$main_pid/environ',
             '/var/log/php-fpm.log',
             'systemctl restart',
             'systemctl reload',
@@ -302,6 +323,275 @@ it('observes production projections through fixed arguments and protected input'
         ->and($ssh->connections[0]->commandTimeout)
         ->toBe(30.0);
 });
+
+it('executes loaded service association outcomes from the production program', function (
+    string $systemctl,
+    string $expected,
+): void {
+    $program = application_production_observation_program('loaded_service_matches', $systemctl);
+    $result = application_run(['bash'], $program);
+
+    expect($result->stdout)->toBe("{$expected}\n");
+})->with([
+    'loaded command and environment match' => [
+        <<<'BASH'
+            systemctl() {
+                case "$2" in
+                    --property=ExecStart)
+                        printf '{ path=%s ; argv[]=%s --nodaemonize --fpm-config %s/php-fpm.conf ; }\n' "$executable" "$executable" "$generated_directory"
+                        ;;
+                    --property=Environment) printf '%s\n' "$expected_environment" ;;
+                    *) return 1 ;;
+                esac
+            }
+            BASH,
+        '1',
+    ],
+    'recognizable loaded command mismatches' => [
+        <<<'BASH'
+            systemctl() {
+                case "$2" in
+                    --property=ExecStart) printf '{ path=/usr/sbin/php-fpm8.4 ; argv[]=/usr/sbin/php-fpm8.4 ; }\n' ;;
+                    --property=Environment) printf '%s\n' "$expected_environment" ;;
+                    *) return 1 ;;
+                esac
+            }
+            BASH,
+        '0',
+    ],
+    'unreadable loaded command is unavailable' => [
+        <<<'BASH'
+            systemctl() { return 1; }
+            BASH,
+        '2',
+    ],
+]);
+
+it('executes active service and main PID outcomes from the production program', function (
+    string $condition,
+    string $expected,
+): void {
+    $sandbox = sys_get_temp_dir().'/orbit-doctor-service-'.Str::uuid();
+    $runtime = "{$sandbox}/runtime";
+    $generated = "{$runtime}/generated";
+    $counter = "{$sandbox}/main-pid-count";
+    $files = new Filesystem;
+    $files->makeDirectory($generated, 0o755, true);
+    file_put_contents($counter, '0');
+    $activeState = $condition === 'inactive' ? 'inactive' : 'active';
+    $mainPid = $condition === 'malformed PID' ? 'private-invalid' : '620';
+    $activeResult = $condition === 'unreadable state' ? 'return 1' : "printf '%s\\n' '{$activeState}'";
+    $pidResult = $condition === 'changed PID'
+        ? <<<'BASH'
+            count=$(cat "$counter")
+            count=$((count + 1))
+            printf '%s' "$count" > "$counter"
+            if test "$count" -eq 1; then printf '620\n'; else printf '621\n'; fi
+            BASH
+        : "printf '%s\\n' '{$mainPid}'";
+    $setup = <<<BASH
+        runtime_directory={$runtime}
+        generated_directory={$generated}
+        counter={$counter}
+        exact_file() { return 0; }
+        local_tuning_matches() { return 0; }
+        loaded_service_matches() { return 0; }
+        process_runtime_matches() { return 0; }
+        worker_identity_matches() { return 0; }
+        socket_service_matches() { return 0; }
+        stat() { printf 'root:root:755\n'; }
+        systemctl() {
+            case "\$2" in
+                --property=ActiveState) {$activeResult} ;;
+                --property=User) printf '\n' ;;
+                --property=MainPID) {$pidResult} ;;
+                *) return 1 ;;
+            esac
+        }
+        BASH;
+
+    try {
+        $program = application_production_observation_program('php_fpm_matches', $setup);
+        $result = application_run(['bash'], $program);
+
+        expect($result->stdout)->toBe("{$expected}\n");
+    } finally {
+        $files->deleteDirectory($sandbox);
+    }
+})->with([
+    'active service with stable main PID' => ['matches', '1'],
+    'inactive service is drift' => ['inactive', '0'],
+    'unreadable active state is unavailable' => ['unreadable state', '2'],
+    'malformed main PID is unavailable' => ['malformed PID', '2'],
+    'changed main PID is unavailable' => ['changed PID', '2'],
+]);
+
+it('executes stable master process outcomes from the production program', function (
+    string $condition,
+    string $expected,
+): void {
+    $sandbox = sys_get_temp_dir().'/orbit-doctor-master-'.Str::uuid();
+    $procRoot = "{$sandbox}/proc";
+    $mainPid = 610;
+    $counter = "{$sandbox}/start-count";
+    $files = new Filesystem;
+    $files->makeDirectory("{$procRoot}/{$mainPid}", 0o755, true);
+    file_put_contents("{$procRoot}/{$mainPid}/stat", application_process_stat($mainPid, 1, 8001));
+    file_put_contents("{$procRoot}/{$mainPid}/status", "Uid:\t0\t0\t0\t0\n");
+    symlink($condition === 'executable mismatch' ? '/usr/bin/bash' : '/usr/sbin/php-fpm8.5', "{$procRoot}/{$mainPid}/exe");
+    if ($condition === 'missing status') {
+        unlink("{$procRoot}/{$mainPid}/status");
+    }
+    $stability = '';
+    if ($condition === 'changed start time') {
+        file_put_contents($counter, '0');
+        $stability = <<<BASH
+            counter={$counter}
+            process_start_time() {
+                count=\$(cat "\$counter")
+                count=\$((count + 1))
+                printf '%s' "\$count" > "\$counter"
+                if test "\$count" -eq 1; then printf '8001\n'; else printf '8002\n'; fi
+            }
+            BASH;
+    }
+
+    try {
+        $setup = "proc_root={$procRoot}\nmain_pid={$mainPid}\n{$stability}";
+        $program = application_production_observation_program('process_runtime_matches', $setup);
+        $result = application_run(['bash'], $program);
+
+        expect($result->stdout)->toBe("{$expected}\n");
+    } finally {
+        $files->deleteDirectory($sandbox);
+    }
+})->with([
+    'expected executable root identity and stable start time' => ['matches', '1'],
+    'executable mismatch' => ['executable mismatch', '0'],
+    'missing status is unavailable' => ['missing status', '2'],
+    'changed start time is unavailable' => ['changed start time', '2'],
+]);
+
+it('executes current worker identity outcomes from the production program', function (
+    string $condition,
+    string $expected,
+): void {
+    $sandbox = sys_get_temp_dir().'/orbit-doctor-workers-'.Str::uuid();
+    $procRoot = "{$sandbox}/proc";
+    $mainPid = 410;
+    $workerPid = 411;
+    $identity = posix_getpwuid(posix_geteuid());
+    $groupIdentity = posix_getgrgid(posix_getegid());
+    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
+    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
+        ? $groupIdentity['name']
+        : $user;
+    $files = new Filesystem;
+    $files->makeDirectory("{$procRoot}/{$mainPid}/task/{$mainPid}", 0o755, true);
+    $files->makeDirectory("{$procRoot}/{$workerPid}", 0o755, true);
+    file_put_contents("{$procRoot}/{$mainPid}/task/{$mainPid}/children", $condition === 'idle' ? '' : "{$workerPid}\n");
+
+    if ($condition !== 'idle') {
+        $uid = $condition === 'uid mismatch' ? posix_geteuid() + 1 : posix_geteuid();
+        $gid = $condition === 'gid mismatch' ? posix_getegid() + 1 : posix_getegid();
+        $parent = $condition === 'reparented' ? $mainPid + 1 : $mainPid;
+        $status = "PPid:\t{$parent}\nUid:\t{$uid}\t{$uid}\t{$uid}\t{$uid}\nGid:\t{$gid}\t{$gid}\t{$gid}\t{$gid}\n";
+        file_put_contents("{$procRoot}/{$workerPid}/status", $status);
+        file_put_contents("{$procRoot}/{$workerPid}/stat", application_process_stat($workerPid, $parent, 9001));
+        symlink($condition === 'root mismatch' ? $sandbox : '/', "{$procRoot}/{$workerPid}/root");
+
+        if ($condition === 'missing status') {
+            unlink("{$procRoot}/{$workerPid}/status");
+        }
+    }
+
+    try {
+        $setup = sprintf(
+            "proc_root=%s\nmain_pid=%d\nuser=%s",
+            escapeshellarg($procRoot),
+            $mainPid,
+            escapeshellarg($user),
+        );
+        $program = application_production_observation_program('worker_identity_matches', $setup);
+        $result = application_run(['bash'], $program);
+
+        expect($result->stdout)->toBe("{$expected}\n")
+            ->and($group)->not->toBeEmpty();
+    } finally {
+        $files->deleteDirectory($sandbox);
+    }
+})->with([
+    'idle ondemand pool' => ['idle', '1'],
+    'matching UID GID and root' => ['matches', '1'],
+    'UID mismatch' => ['uid mismatch', '0'],
+    'GID mismatch' => ['gid mismatch', '0'],
+    'process root mismatch' => ['root mismatch', '0'],
+    'disappearing status' => ['missing status', '2'],
+    'reparented worker' => ['reparented', '2'],
+]);
+
+it('executes socket and service association outcomes from the production program', function (
+    string $condition,
+    string $expected,
+): void {
+    $sandbox = sys_get_temp_dir().'/orbit-doctor-socket-'.Str::uuid();
+    $procRoot = "{$sandbox}/proc";
+    $mainPid = 510;
+    $socket = "{$sandbox}/php.sock";
+    $files = new Filesystem;
+    $files->makeDirectory("{$procRoot}/net", 0o755, true);
+    $files->makeDirectory("{$procRoot}/{$mainPid}/fd", 0o755, true);
+    $listener = stream_socket_server("unix://{$socket}", $errorCode, $errorMessage);
+    if ($listener === false) {
+        throw new RuntimeException("Could not create Unix socket: {$errorCode} {$errorMessage}");
+    }
+    chmod($socket, 0o660);
+    $metadata = stat($socket);
+    if (! is_array($metadata)) {
+        throw new RuntimeException('Could not inspect Unix socket fixture.');
+    }
+    $inode = (string) $metadata['ino'];
+    file_put_contents("{$procRoot}/net/unix", "a b c d e f {$inode} {$socket}\n");
+    symlink(
+        $condition === 'mismatch' ? 'socket:[999999]' : "socket:[{$inode}]",
+        "{$procRoot}/{$mainPid}/fd/8",
+    );
+    if ($condition === 'unavailable') {
+        unlink("{$procRoot}/net/unix");
+    }
+    $identity = posix_getpwuid(posix_geteuid());
+    $groupIdentity = posix_getgrgid(posix_getegid());
+    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
+    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
+        ? $groupIdentity['name']
+        : $user;
+
+    try {
+        $setup = sprintf(
+            "proc_root=%s\nmain_pid=%d\nsocket=%s\nuser=%s",
+            escapeshellarg($procRoot),
+            $mainPid,
+            escapeshellarg($socket),
+            escapeshellarg($user),
+        );
+        $program = application_production_observation_program('socket_service_matches', $setup);
+        $program = str_replace(
+            'test "$socket_metadata" = "$user:caddy:660"',
+            'test "$socket_metadata" = "$user:'.addslashes($group).':660"',
+            $program,
+        );
+        $result = application_run(['bash'], $program);
+
+        expect($result->stdout)->toBe("{$expected}\n");
+    } finally {
+        fclose($listener);
+        $files->deleteDirectory($sandbox);
+    }
+})->with([
+    'master owns expected socket inode' => ['matches', '1'],
+    'master owns another socket' => ['mismatch', '0'],
+    'socket table disappears' => ['unavailable', '2'],
+]);
 
 it('maps each production projection without retaining protected diagnostics', function (
     string $remote,
@@ -328,6 +618,24 @@ it('maps each production projection without retaining protected diagnostics', fu
     'PHP-FPM' => ["1\n1\n1\n1\n0\n1\n", 'phpFpmProjectionMatches'],
     'Caddy' => ["1\n1\n1\n1\n1\n0\n", 'caddyProjectionMatches'],
 ]);
+
+it('keeps an unavailable production runtime observation distinct from drift', function (): void {
+    $appInstance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'private-production-value',
+    );
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n1\n1\n1\n2\n1\n")]);
+
+    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+
+    expect($inspection->productionHomeMatches)
+        ->toBeFalse()
+        ->and($inspection->phpFpmProjectionMatches)
+        ->toBeNull()
+        ->and(json_encode($inspection, JSON_THROW_ON_ERROR))
+        ->not->toContain('private-production-value');
+});
 
 it('fails production inspection closed for malformed, failed, truncated, and diagnostic output', function (
     CommandResult $result,
@@ -655,6 +963,52 @@ function application_instance_remote_script(AppInstance $appInstance): string
     application_instance_inspector($ssh)->inspect($appInstance);
 
     return $ssh->commands[0]->input;
+}
+
+function application_production_observation_program(string $observation, string $setup): string
+{
+    $appInstance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'private-production-value',
+    );
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
+    application_instance_inspector($ssh)->inspect($appInstance);
+    $protected = $ssh->commands[0]->protectedInput;
+    if (! $protected instanceof ProtectedInput) {
+        throw new RuntimeException('Expected protected production inspection input.');
+    }
+    $program = stream_get_contents($protected->stream());
+    if (! is_string($program)) {
+        throw new RuntimeException('Expected readable production inspection input.');
+    }
+    $emissions = <<<'BASH'
+        emit home_matches
+        emit release_selection_matches
+        emit selected_root_matches
+        emit environment_matches
+        emit php_fpm_matches
+        emit caddy_matches
+        BASH;
+    $replacement = trim($setup)."\nemit {$observation}";
+    $program = str_replace($emissions, $replacement, $program, $count);
+    if ($count !== 1) {
+        throw new RuntimeException('Could not isolate the production observation.');
+    }
+
+    return $program;
+}
+
+function application_process_stat(int $pid, int $parentPid, int $startTime): string
+{
+    return implode(' ', [
+        (string) $pid,
+        '(php-fpm worker)',
+        'S',
+        (string) $parentPid,
+        ...array_fill(0, 17, '0'),
+        (string) $startTime,
+    ])."\n";
 }
 
 /** @return array{sandbox: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string} */

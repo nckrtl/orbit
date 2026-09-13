@@ -67,7 +67,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             throw new DoctorInspectionException;
         }
 
-        $values = $this->parse($result, 4);
+        $values = $this->parse($result, 4, allowUnavailable: false);
 
         return new InstanceInspectionData(
             checkoutExists: $values[0],
@@ -95,7 +95,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             if ($result->stderr !== '') {
                 throw new DoctorInspectionException;
             }
-            $values = $this->parse($result, 6);
+            $values = $this->parse($result, 6, allowUnavailable: true);
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
@@ -114,8 +114,8 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         );
     }
 
-    /** @return list<bool> */
-    private function parse(CommandResult $result, int $count): array
+    /** @return list<?bool> */
+    private function parse(CommandResult $result, int $count, bool $allowUnavailable): array
     {
         $values = explode("\n", $result->stdout);
         $terminator = array_pop($values);
@@ -125,12 +125,17 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             || $result->truncated
             || $terminator !== ''
             || count($values) !== $count
-            || array_diff($values, ['0', '1']) !== []
+            || array_diff($values, $allowUnavailable ? ['0', '1', '2'] : ['0', '1']) !== []
         ) {
             throw new DoctorInspectionException;
         }
 
-        return array_map(static fn (string $value): bool => $value === '1', $values);
+        return array_map(static fn (string $value): ?bool => match ($value) {
+            '0' => false,
+            '1' => true,
+            '2' => null,
+            default => throw new DoctorInspectionException,
+        }, $values);
     }
 
     private static function remoteScript(): string
@@ -254,9 +259,16 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         return <<<BASH
             set -u
             {$assignments}
+            proc_root=/proc
 
             emit() {
-                if "\$@"; then printf '1\n'; else printf '0\n'; fi
+                "\$@"
+                status=\$?
+                case "\$status" in
+                    0) printf '1\n' ;;
+                    1) printf '0\n' ;;
+                    *) printf '2\n' ;;
+                esac
             }
             exact_file() {
                 path=\$1
@@ -326,6 +338,92 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                     }
                 ' "\$local_tuning"
             }
+            loaded_service_matches() {
+                executable="/usr/sbin/php-fpm\$version"
+                main_configuration="\$generated_directory/php-fpm.conf"
+                expected_environment="PHP_INI_SCAN_DIR=/etc/php/\$version/fpm/conf.d:\$generated_directory"
+                expected_exec_prefix="{ path=\$executable ; argv[]=\$executable --nodaemonize --fpm-config \$main_configuration ; "
+
+                loaded_exec=\$(systemctl show --property=ExecStart --value "\$service" 2>/dev/null) || return 2
+                loaded_environment=\$(systemctl show --property=Environment --value "\$service" 2>/dev/null) || return 2
+
+                if test "\${loaded_exec#"\$expected_exec_prefix"}" = "\$loaded_exec"; then
+                    case "\$loaded_exec" in
+                        "{ path="*" ; argv[]="*) return 1 ;;
+                        *) return 2 ;;
+                    esac
+                fi
+
+                test "\$loaded_environment" = "\$expected_environment"
+            }
+            process_start_time() {
+                sed 's/^[^)]*) //' "\$proc_root/\$1/stat" 2>/dev/null | awk '{ print $20 }'
+            }
+            process_runtime_matches() {
+                executable="/usr/sbin/php-fpm\$version"
+                start_before=\$(process_start_time "\$main_pid") || return 2
+                case "\$start_before" in ''|*[!0-9]*) return 2 ;; esac
+
+                observed_executable=\$(readlink -f -- "\$proc_root/\$main_pid/exe" 2>/dev/null) || return 2
+                test "\$observed_executable" = "\$executable" || return 1
+
+                main_uids=\$(awk '/^Uid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$main_pid/status" 2>/dev/null) || return 2
+                printf '%s\n' "\$main_uids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
+                test "\$main_uids" = 0:0:0:0 || return 1
+
+                start_after=\$(process_start_time "\$main_pid") || return 2
+                case "\$start_after" in ''|*[!0-9]*) return 2 ;; esac
+                test "\$start_after" = "\$start_before" || return 2
+            }
+            worker_identity_matches() {
+                expected_uid=\$(id -u -- "\$user" 2>/dev/null) || return 1
+                expected_gid=\$(id -g -- "\$user" 2>/dev/null) || return 1
+                case "\$expected_uid" in ''|*[!0-9]*) return 2 ;; esac
+                case "\$expected_gid" in ''|*[!0-9]*) return 2 ;; esac
+                children=\$(cat "\$proc_root/\$main_pid/task/\$main_pid/children" 2>/dev/null) || return 2
+                if test -n "\$children" && ! printf '%s\n' "\$children" | grep -Eq '^[0-9]+( [0-9]+)* ?\$'; then
+                    return 2
+                fi
+
+                for worker_pid in \$children; do
+                    worker_start_before=\$(process_start_time "\$worker_pid") || return 2
+                    case "\$worker_start_before" in ''|*[!0-9]*) return 2 ;; esac
+                    worker_parent=\$(awk '/^PPid:/ { print $2 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
+                    worker_uids=\$(awk '/^Uid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
+                    worker_gids=\$(awk '/^Gid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
+                    case "\$worker_parent" in ''|*[!0-9]*) return 2 ;; esac
+                    printf '%s\n' "\$worker_uids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
+                    printf '%s\n' "\$worker_gids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
+                    test "\$worker_parent" = "\$main_pid" || return 2
+                    test "\$worker_uids" = "\$expected_uid:\$expected_uid:\$expected_uid:\$expected_uid" || return 1
+                    test "\$worker_gids" = "\$expected_gid:\$expected_gid:\$expected_gid:\$expected_gid" || return 1
+                    worker_root=\$(readlink -f -- "\$proc_root/\$worker_pid/root" 2>/dev/null) || return 2
+                    test "\$worker_root" = / || return 1
+                    worker_start_after=\$(process_start_time "\$worker_pid") || return 2
+                    case "\$worker_start_after" in ''|*[!0-9]*) return 2 ;; esac
+                    test "\$worker_start_after" = "\$worker_start_before" || return 2
+                done
+            }
+            socket_service_matches() {
+                test -S "\$socket" || return 1
+                socket_metadata=\$(stat -c '%U:%G:%a' -- "\$socket" 2>/dev/null) || return 2
+                test "\$socket_metadata" = "\$user:caddy:660" || return 1
+
+                socket_inodes=\$(awk -v expected="\$socket" '$8 == expected { print $7 }' "\$proc_root/net/unix" 2>/dev/null) || return 2
+                test -n "\$socket_inodes" || return 1
+                socket_count=\$(printf '%s\n' "\$socket_inodes" | wc -l) || return 2
+                test "\$socket_count" -eq 1 || return 2
+                case "\$socket_inodes" in *[!0-9]*) return 2 ;; esac
+
+                for descriptor in "\$proc_root/\$main_pid/fd/"*; do
+                    target=\$(readlink -- "\$descriptor" 2>/dev/null) || return 2
+                    if test "\$target" = "socket:[\$socket_inodes]"; then
+                        return 0
+                    fi
+                done
+
+                return 1
+            }
             php_fpm_matches() {
                 test "\$association" = 1 || return 1
                 if test "\$runtime_expected" = 0; then return 0; fi
@@ -339,14 +437,23 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 exact_file "\$unit_path" "\$unit" root:root 644 || return 1
                 exact_file "\$marker_path" "\$marker" root:root 644 || return 1
                 local_tuning_matches || return 1
-                systemctl is-active --quiet "\$service" 2>/dev/null || return 1
-                test -z "\$(systemctl show --property=User --value "\$service" 2>/dev/null)" || return 1
-                main_pid=\$(systemctl show --property=MainPID --value "\$service" 2>/dev/null) || return 1
-                test "\$main_pid" -gt 1 2>/dev/null || return 1
-                test "\$(readlink -f -- "/proc/\$main_pid/exe" 2>/dev/null)" = "/usr/sbin/php-fpm\$version" || return 1
-                test "\$(awk '/^Uid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "/proc/\$main_pid/status" 2>/dev/null)" = 0:0:0:0 || return 1
-                test -S "\$socket" || return 1
-                test "\$(stat -c '%U:%G:%a' -- "\$socket" 2>/dev/null)" = "\$user:caddy:660"
+                active_state=\$(systemctl show --property=ActiveState --value "\$service" 2>/dev/null) || return 2
+                case "\$active_state" in
+                    active) ;;
+                    inactive|failed|activating|deactivating|reloading) return 1 ;;
+                    *) return 2 ;;
+                esac
+                service_user=\$(systemctl show --property=User --value "\$service" 2>/dev/null) || return 2
+                test -z "\$service_user" || return 1
+                main_pid=\$(systemctl show --property=MainPID --value "\$service" 2>/dev/null) || return 2
+                case "\$main_pid" in ''|*[!0-9]*) return 2 ;; esac
+                test "\$main_pid" -gt 1 || return 2
+                loaded_service_matches || return \$?
+                process_runtime_matches || return \$?
+                worker_identity_matches || return \$?
+                socket_service_matches || return \$?
+                current_main_pid=\$(systemctl show --property=MainPID --value "\$service" 2>/dev/null) || return 2
+                test "\$current_main_pid" = "\$main_pid" || return 2
             }
             caddy_matches() {
                 source=\$(readlink -f -- /etc/caddy/Caddyfile 2>/dev/null) || return 1
