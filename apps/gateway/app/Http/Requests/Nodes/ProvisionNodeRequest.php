@@ -6,6 +6,7 @@ namespace App\Http\Requests\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsParser;
@@ -67,7 +68,15 @@ final class ProvisionNodeRequest extends FormRequest
                 'max:255',
             ],
             'platform' => ['sometimes', 'string', Rule::in(['linux'])],
-            'architecture' => ['nullable', 'string', 'regex:/\A[A-Za-z0-9_.-]{1,64}\z/D'],
+            'architecture' => [
+                'nullable',
+                'string',
+                static function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_string($value) || ! MachineArchitecture::isValid($value)) {
+                        $fail("The {$attribute} field must be a machine architecture name.");
+                    }
+                },
+            ],
             'tld' => [
                 'nullable',
                 'string',

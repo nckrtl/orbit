@@ -6,6 +6,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -47,7 +48,9 @@ describe('node storage settings', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {}
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
         });
         app()->instance(NodeStorageRootPreparer::class, fake_storage_preparer());
         app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver

@@ -12,7 +12,9 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeArchitectureMismatchException;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeProvisioningLock;
@@ -176,7 +178,7 @@ final readonly class ProvisionNodeAction
 
         $identity = new NodeProvisioningIdentity($bootstrapUser, $managedUser);
         $platform = $this->platform($node, $data);
-        $architecture = $this->architecture($node, $data);
+        $architecture = $this->recordedArchitecture($node);
         $previousTld = $node->exists && is_string($node->tld) ? $node->tld : null;
         $previousClusterId = $node->exists ? $node->cluster_id : null;
         $tld = $this->tld($node, $data, $clusterId);
@@ -300,7 +302,8 @@ final readonly class ProvisionNodeAction
                     $node,
                     $identity,
                     $data->expectedSshHostFingerprint,
-                    function () use ($node, $managedUser, $data): void {
+                    function (NodeObservation $observation) use ($node, $managedUser, $data): void {
+                        $this->recordArchitecture($node, $data, $observation);
                         $node->user = $managedUser;
                         $this->toolManagers->converge($node, ToolManagerName::Apt);
                         $this->convergeRoles($node, $data->roles);
@@ -308,12 +311,13 @@ final readonly class ProvisionNodeAction
                     $rolelessOperator,
                 );
             } else {
-                $this->converger->converge(
+                $observation = $this->converger->converge(
                     $node,
                     $identity,
                     $data->expectedSshHostFingerprint,
                     $rolelessOperator,
                 );
+                $this->recordArchitecture($node, $data, $observation);
                 $node->user = $managedUser;
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
                 $this->convergeRoles($node, $data->roles);
@@ -322,6 +326,16 @@ final readonly class ProvisionNodeAction
             $this->handleFailure($node, $exception, $priorActiveState);
 
             throw $exception;
+        } catch (NodeArchitectureMismatchException $exception) {
+            $failure = new NodeProvisioningException(
+                step: 'machine-architecture',
+                errorCode: NodeArchitectureMismatchException::ERROR_CODE,
+                message: $exception->getMessage(),
+                previous: $exception,
+            );
+            $this->handleFailure($node, $failure, $priorActiveState);
+
+            throw $exception->toRefusal();
         } catch (SshHostKeyScanException $exception) {
             $failure = new NodeProvisioningException(
                 step: 'ssh-host-key',
@@ -512,21 +526,30 @@ final readonly class ProvisionNodeAction
         return $platform;
     }
 
-    private function architecture(Node $node, ProvisionNodeData $data): string
+    private function recordedArchitecture(Node $node): ?string
     {
-        $architecture =
-            $node->exists && is_string($node->architecture) && $node->architecture !== ''
-                ? $node->architecture
-                : $data->architecture;
+        return $node->exists && is_string($node->architecture) && $node->architecture !== ''
+            ? $node->architecture
+            : null;
+    }
 
-        if ($architecture === null) {
-            throw new ResourceOperationException(
-                errorCode: 'node.architecture_required',
-                message: "The real architecture is required for node [{$data->name}].",
-            );
+    /**
+     * Record the architecture the bootstrap observed on a Node that has none.
+     *
+     * An existing record wins over the request and the observation. A request
+     * value for a Node without a record must equal the observation.
+     */
+    private function recordArchitecture(Node $node, ProvisionNodeData $data, NodeObservation $observation): void
+    {
+        if ($this->recordedArchitecture($node) !== null) {
+            return;
         }
 
-        return $architecture;
+        if ($data->architecture !== null && $data->architecture !== $observation->architecture) {
+            throw new NodeArchitectureMismatchException($node->name, $data->architecture, $observation->architecture);
+        }
+
+        $node->update(['architecture' => $observation->architecture]);
     }
 
     private function hasAppDevRole(Node $node, ProvisionNodeData $data): bool
