@@ -1,0 +1,7 @@
+{
+  "id": "ORB-311",
+  "uuid": "44879b09-83e0-4ea1-94a1-a610ed0acb26",
+  "title": "Manage Herdr sessions and publish receive-only terminal observation",
+  "flow": "discovery",
+  "incus": false
+}
