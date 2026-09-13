@@ -45,12 +45,7 @@ final readonly class NativeToolInspector implements ToolInspector
                 return new ToolInspectionData(false, null);
             }
 
-            $normalizedVersion = $manager->normalizeVersion($rawVersion);
-            if ($normalizedVersion === null) {
-                throw new ToolInspectionException;
-            }
-
-            return new ToolInspectionData(true, $normalizedVersion);
+            return new ToolInspectionData(true, $manager->normalizeVersion($rawVersion));
         } catch (ToolInspectionException $exception) {
             throw $exception;
         } catch (Throwable) {
