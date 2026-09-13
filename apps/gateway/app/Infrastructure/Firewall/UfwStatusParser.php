@@ -37,6 +37,28 @@ final class UfwStatusParser
         );
     }
 
+    /** @return list<UfwRuleShape> */
+    public function familyShapes(string $output, string $prefix): array
+    {
+        $shapes = [];
+
+        foreach (explode("\n", $output) as $line) {
+            $comment = $this->comment($line);
+
+            if ($comment === null || ! str_starts_with($comment, $prefix)) {
+                continue;
+            }
+
+            $shape = $this->parseLine($line, $comment);
+
+            if ($shape instanceof UfwRuleShape && $shape->family !== 'v6') {
+                $shapes[] = $shape;
+            }
+        }
+
+        return $shapes;
+    }
+
     public function ownership(string $output, UfwRuleShape $expected): UfwRuleOwnership
     {
         return $this->ownerships($output, [$expected])[0];

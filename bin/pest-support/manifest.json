@@ -1,7 +1,7 @@
 {
     "package": "pestphp/pest",
-    "version": "5.1.3",
-    "base": "20a5aacaca4fce9116922f42d2942b3f9f5bbfc6",
+    "version": "5.1.4",
+    "base": "e68976ea9da26e57ce74bf6ac4d638ded9151771",
     "fork": "156e40896aa8cab8795eae9d0d3f751771a856fa",
     "patch_sha256": "8727bff27df87218b0134385b03498326c57a4ed525abb726f373761f859d82f",
     "files": {
@@ -18,8 +18,8 @@
             "patched": null
         },
         "src/Plugins/Tia.php": {
-            "upstream": "ed1bd37d11e930c146add6aaccc723ce53c0d9946c17edda8b87b9e9650b6771",
-            "patched": "4a44c6c204b29eb9a1aec7e8317ada75a92db171629e8d25664770b8f7068864"
+            "upstream": "6c763e6ec7f4b6cd3671300978ac383282fc00ed5a06fea3908f6ff5d6f098c9",
+            "patched": "d24c7c0d5856cbbcbb0185ba22cdad0a7c4594fe023691c74cb16b885ffea648"
         },
         "src/Plugins/Tia/BaselineSync.php": {
             "upstream": "f7d0d25211f64cc435c060988cf5c1067a487fc9148651affb043398991e055b",

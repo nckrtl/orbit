@@ -98,4 +98,39 @@ final readonly class AppDevDnsConfigRenderer
 
         return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
     }
+
+    public function catalog(
+        ?Node $pendingNode = null,
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+        ?Route $additionalRoute = null,
+    ): PrivateDnsAnswerCatalog {
+        return PrivateDnsAnswerCatalog::fromDnsmasqConfiguration(
+            $this->render($pendingNode, $pendingRoute, $unavailableInstance, $additionalRoute),
+        );
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    public function registeredRequesters(): array
+    {
+        $requesters = [];
+
+        Node::query()
+            ->where('status', LifecycleStatus::Active->value)
+            ->whereNotNull('wireguard_ip')
+            ->orderBy('id')
+            ->get()
+            ->each(static function (Node $node) use (&$requesters): void {
+                $address = DnsAddress::normalize((string) $node->wireguard_ip);
+                if ($address === null) {
+                    return;
+                }
+
+                $requesters[$address] = $node->id;
+            });
+
+        return $requesters;
+    }
 }
