@@ -24,6 +24,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
+use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\App;
 use App\Models\AppInstance;
@@ -259,10 +260,45 @@ describe(ProvisionNodeAction::class, function (): void {
             architecture: 'x86_64',
             expectedSshHostFingerprint: 'SHA256:pinned',
         )))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('node.provisioning_busy')->and($exception->status)->toBe(409);
+            expect($exception->errorCode)
+                ->toBe('node.provisioning_busy')
+                ->and($exception->status)
+                ->toBe(409)
+                ->and($exception->getMessage())
+                ->toBe('Node [busy-node] is already changing.');
         });
 
         expect(Node::query()->where('name', 'busy-node')->exists())->toBeFalse();
+    });
+
+    it('rejects provisioning while another lifecycle owner holds the same node name', function (): void {
+        $holder = new NativeNodeProvisioningLock;
+
+        $holder->run('busy-node', function (): void {
+            expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+                name: 'busy-node',
+                publicSshHost: '192.0.2.70',
+                architecture: 'x86_64',
+                expectedSshHostFingerprint: 'SHA256:pinned',
+            )))->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('node.provisioning_busy')->and($exception->status)->toBe(409);
+            });
+
+            expect(Node::query()->where('name', 'busy-node')->exists())->toBeFalse();
+        });
+    });
+
+    it('releases the node lifecycle guard after a provisioning refusal', function (): void {
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'guarded-node',
+            publicSshHost: '192.0.2.70',
+            user: 'Invalid User',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))->toThrow(ResourceOperationException::class, 'The node Linux user name is invalid.');
+
+        expect((new NativeNodeProvisioningLock)->run('guarded-node', static fn (): string => 'released'))
+            ->toBe('released');
     });
 
     it('restores an active node and its gateway peer when reprovisioning fails after replacing its key', function (): void {

@@ -59,12 +59,8 @@ final readonly class ProvisionNodeAction
     {
         try {
             return $this->provisioningLock->run($data->name, fn (): Node => $this->provision($data));
-        } catch (NodeProvisioningLockException) {
-            throw new ResourceOperationException(
-                errorCode: 'node.provisioning_busy',
-                message: "Node [{$data->name}] is already being provisioned.",
-                status: 409,
-            );
+        } catch (NodeProvisioningLockException $exception) {
+            throw $exception->toBusyException();
         }
     }
 

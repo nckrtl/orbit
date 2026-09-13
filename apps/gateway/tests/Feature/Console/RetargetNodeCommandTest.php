@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
@@ -160,6 +162,36 @@ it('explains the node-side recovery when a converged node is unreachable over wi
         ->expectsOutputToContain('/etc/wireguard/orbit.conf')
         ->doesntExpectOutputToContain('sensitive command output')
         ->assertExitCode(1);
+});
+
+it('reports lifecycle contention without changing the node', function (): void {
+    Node::query()->create([
+        'name' => 'app-dev',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.10',
+        'ssh_host_fingerprint' => 'SHA256:pinned',
+    ]);
+    app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock
+    {
+        public function run(string $nodeName, Closure $callback): mixed
+        {
+            throw new NodeProvisioningLockException($nodeName);
+        }
+    });
+
+    $this
+        ->artisan('orbit:node-retarget', [
+            'name' => 'app-dev',
+            'host' => '198.51.100.25',
+        ])
+        ->expectsOutput('Node retarget failed with error [node.provisioning_busy].')
+        ->assertExitCode(1);
+
+    $node = Node::query()->where('name', 'app-dev')->sole();
+    expect($node->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($node->public_ssh_host)
+        ->toBe('192.0.2.10');
 });
 
 it('rejects an out of range ssh port before retargeting', function (): void {

@@ -4,6 +4,14 @@
 recorded public SSH target. The Gateway keeps the node's pinned host key,
 WireGuard address, and every other identity field.
 
+## Shared lifecycle owner
+
+The Gateway gives each Node name one lifecycle owner. Provision, retarget, and removal hold that owner from identity lookup through remote effects and compensation.
+
+A contender for the same name receives `node.provisioning_busy` with HTTP 409 before any remote effect or state write. A retry reads current identity and eligibility after it acquires the owner. A deleted Node fails with the ordinary lookup or `node.not_found` refusal. An ineligible Node fails with its ordinary guard. The owner releases after success or failure, including verification and rollback failures. Independent Node names proceed together.
+
+The owner does not serialize role or settings writers. A held owner expires after 3600 seconds.
+
 ## Two boundaries
 
 Role convergence removes the `orbit:public-ssh-recovery` UFW rule once the
@@ -52,6 +60,7 @@ Each failure names the step that stopped and what the node record looks like aft
 | Code | Step | Node record |
 | --- | --- | --- |
 | `node.public_ssh_host_invalid`, `node.public_ssh_port_invalid` | `validation` | unchanged |
+| `node.provisioning_busy` | lifecycle owner | unchanged |
 | `node.not_active` | `lookup` | unchanged |
 | `node.retarget_requires_vpn` | `wireguard-ssh` | unchanged, still active |
 | `node.ssh_host_key_scan_failed` | `ssh-host-key` | failed |

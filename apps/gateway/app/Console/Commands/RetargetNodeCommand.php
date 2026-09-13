@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Actions\Nodes\RetargetNodeAction;
 use App\Data\Nodes\RetargetNodeData;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Console\Command;
 
 final class RetargetNodeCommand extends Command
@@ -37,6 +38,10 @@ final class RetargetNodeCommand extends Command
             if ($exception->errorCode === 'node.retarget_requires_vpn') {
                 $this->line(RetargetNodeAction::VPN_RECOVERY_HINT);
             }
+
+            return self::FAILURE;
+        } catch (ResourceOperationException $exception) {
+            $this->error("Node retarget failed with error [{$exception->errorCode}].");
 
             return self::FAILURE;
         }

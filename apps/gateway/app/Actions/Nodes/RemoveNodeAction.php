@@ -10,6 +10,8 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeSideResidue;
@@ -32,6 +34,7 @@ final readonly class RemoveNodeAction
         private NodeReachabilityProbe $reachability,
         private RemoveNodeRoleAction $roles,
         private NodeSideResidue $residue,
+        private NodeProvisioningLock $provisioningLock,
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
     ) {}
@@ -42,6 +45,33 @@ final readonly class RemoveNodeAction
         bool $offline = false,
         bool $force = false,
     ): RemoveNodeData {
+        try {
+            return $this->provisioningLock->run(
+                $node->name,
+                fn (): RemoveNodeData => $this->remove($node, $caller, $offline, $force),
+            );
+        } catch (NodeProvisioningLockException $exception) {
+            throw $exception->toBusyException();
+        }
+    }
+
+    private function remove(
+        Node $node,
+        Node $caller,
+        bool $offline,
+        bool $force,
+    ): RemoveNodeData {
+        $current = Node::query()->find($node->id);
+
+        if (! $current instanceof Node) {
+            throw new ResourceOperationException(
+                'node.not_found',
+                "Node [{$node->name}] does not exist.",
+                404,
+            );
+        }
+
+        $node = $current;
         ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertNodeRemovable($node);
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardProtected($node, $caller);

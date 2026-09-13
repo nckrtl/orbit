@@ -11,7 +11,10 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeReachabilityProbe;
+use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleName;
@@ -22,6 +25,7 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
+use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -39,6 +43,133 @@ beforeEach(function (): void {
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
     app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
+});
+
+it('rejects removal contention before remote effects or state writes', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock
+    {
+        public function run(string $nodeName, Closure $callback): mixed
+        {
+            throw new NodeProvisioningLockException($nodeName);
+        }
+    });
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'node.provisioning_busy')
+        ->assertJsonPath('error.message', 'Node [retired] is already changing.');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0)
+        ->and($this->metricsAccess->calls)
+        ->toBe(0);
+});
+
+it('re-reads identity after acquiring the lifecycle guard', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    app()->instance(NodeProvisioningLock::class, new class($target) implements NodeProvisioningLock
+    {
+        public function __construct(private Node $target) {}
+
+        public function run(string $nodeName, Closure $callback): mixed
+        {
+            $this->target->delete();
+
+            return $callback();
+        }
+    });
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('node.not_found')->and($exception->status)->toBe(404);
+        });
+
+    expect($this->peers->removed)->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+});
+
+it('re-reads removal eligibility after acquiring the lifecycle guard', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'app-dev', wireguardIp: '10.44.0.3');
+    $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+    $target->update(['cluster_id' => $cluster->id]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/site.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    app()->instance(NodeProvisioningLock::class, new class($target, $app) implements NodeProvisioningLock
+    {
+        public function __construct(private Node $target, private OrbitApp $app) {}
+
+        public function run(string $nodeName, Closure $callback): mixed
+        {
+            AppInstance::query()->create([
+                'app_id' => $this->app->id,
+                'node_id' => $this->target->id,
+                'name' => 'dev',
+                'checkout_path' => '/srv/orbit/apps/acme/dev',
+                'branch' => 'dev',
+                'starting_commit' => str_repeat('a', 40),
+                'status' => AppInstanceState::Active,
+            ]);
+
+            return $callback();
+        }
+    });
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_app_instances');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+});
+
+it('releases the lifecycle guard after a verification failure', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $this->metricsAccess->failure = new RuntimeException('private Caddy detail');
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'node.grafana_access_revocation_failed');
+
+    expect($target->refresh()->status)->toBe(LifecycleStatus::Active)
+        ->and((new NativeNodeProvisioningLock)->run($target->name, static fn (): string => 'released'))
+        ->toBe('released');
+});
+
+it('allows an independent node name to proceed while another lifecycle guard is held', function (): void {
+    $holder = new NativeNodeProvisioningLock;
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $held = remove_node_record(name: 'held', wireguardIp: '10.44.0.3');
+    $free = remove_node_record(name: 'free', wireguardIp: '10.44.0.4');
+    $caller->accessibleNodes()->attach($free);
+
+    $holder->run($held->name, function () use ($caller, $free): void {
+        app(RemoveNodeAction::class)->execute($free, $caller);
+
+        expect($free->fresh())->toBeNull();
+    });
+
+    expect($held->refresh()->status)->toBe(LifecycleStatus::Active);
 });
 
 it('retries Grafana stream revocation before removing membership', function (): void {
