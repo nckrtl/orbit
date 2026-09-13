@@ -192,7 +192,11 @@ New worktrees may use the previous successful compatible publication while a ref
 
 When publications lag main and no worker is active, the orchestrator queues refresh. This also recovers merges outside its closeout flow and requests left after interruption. A reported failure is an owned recovery task. Cache transport, installation, and publication failures can use prior compatible caches or cold checks.
 
-A nonzero test, formatting, or analysis command is a correctness signal requiring diagnosis and a hold on unrelated feature merges. Later infrastructure failures retain the earlier correctness failure. The failed tool must pass again before its retained failure clears. The orchestrator permits a reviewed repair or revert through that hold and clears it only after verification on main containing the repair.
+A nonzero test, formatting, or analysis command is a correctness signal requiring diagnosis and a hold on unrelated feature merges. Later infrastructure failures retain the earlier correctness failure. An open TIA failure makes recovery run the unfiltered affected-test command with `--fresh` on checked clean main. Maintenance accepts successful recovery only when the resulting graph records that checked commit.
+
+A cached or zero-execution result that leaves an older graph anchor reports `recovery: not_executed` in the project result and retains the original failed commit, tool, and diagnostic log. An executed successful recovery reports `recovery: executed` and clears only that project's TIA failure. Failed or interrupted recovery keeps the preceding successful publication and unresolved signal.
+
+Status and retained command logs distinguish the unresolved correctness failure from the latest recovery result. These records prove native maintenance execution and cache publication only. The orchestrator separately admits a reviewed repair or revert through the merge hold and clears that hold only after verification on main containing the repair.
 
 One maintenance owner covers all five projects. Routine warming uses scripts; failures needing investigation use [maintaining-monorepo](../../.agents/skills/maintaining-monorepo/SKILL.md). The agent diagnoses the exact failed commit, preserves evidence, and performs source repairs in a separate worktree. It returns verification to the orchestrator instead of approving its own change or mutating primary main. Feature development can continue during a correctness hold. Cache freshness alone never holds creation, merge, or cleanup.
 
