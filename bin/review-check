@@ -10,10 +10,33 @@ import time
 
 PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
+AFFECTED = ('composer', 'test:affected')
+BASES = ('origin/main', 'main')
+NO_SELECTION = 'No affected tests found'
 
 
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+
+
+def candidate_paths(root, head):
+    """Return the main merge base and the paths the candidate changes since it; none without a main branch."""
+    for base in BASES:
+        merge_base = subprocess.run(['git', '-C', str(root), 'merge-base', base, head], capture_output=True, text=True)
+        if merge_base.returncode == 0:
+            base_sha = merge_base.stdout.strip()
+            return base_sha, git(root, 'diff', '--name-only', base_sha, head).splitlines()
+    return None, []
+
+
+def selection_warning(project, command, exit_code, log, paths):
+    """Describe an affected-test step that selected nothing for a project the candidate changes."""
+    touched = [path for path in paths if path.startswith(project + '/')]
+    if command != AFFECTED or exit_code != 0 or not touched or NO_SELECTION not in log.read_text(errors='replace'):
+        return None
+    return {'project': project, 'command': list(command), 'log': str(log), 'paths': touched,
+            'message': f'composer test:affected selected no tests although the candidate changes '
+                       f'{len(touched)} path(s) under {project}/'}
 
 
 def main():
@@ -25,8 +48,10 @@ def main():
     reports = common / 'orbit-checks' / head
     reports.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
+    base, paths = candidate_paths(root, head)
     report = {'schema': 1, 'role': 'builder', 'candidate': head, 'tree': git(root, 'rev-parse', 'HEAD^{tree}'),
-              'worktree': str(root), 'started_at': time.time(), 'checks': [], 'passed': False}
+              'worktree': str(root), 'base': base, 'changed_paths': paths, 'started_at': time.time(),
+              'checks': [], 'warnings': [], 'passed': False}
     subprocess.run([str(root / 'bin/tia-cache'), 'seed', '--repository', str(root)], check=False)
     for project in PROJECTS:
         for command in COMMANDS:
@@ -35,9 +60,16 @@ def main():
             with log.open('w') as output:
                 result = subprocess.run(command, cwd=root / project, stdout=output, stderr=subprocess.STDOUT,
                                         env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'})
-            report['checks'].append({'project': project, 'command': list(command), 'exit_code': result.returncode,
-                                     'seconds': round(time.monotonic() - started, 3), 'log': str(log)})
+            check = {'project': project, 'command': list(command), 'exit_code': result.returncode,
+                     'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
+            warning = selection_warning(project, command, result.returncode, log, paths)
+            if warning is not None:
+                check['warning'] = warning['message']
+                report['warnings'].append(warning)
+            report['checks'].append(check)
             print(f'[{project}] {" ".join(command)}: {"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+            if warning is not None:
+                print(f'[{project}] WARNING: {warning["message"]} ({log})', flush=True)
             if result.returncode:
                 print(log.read_text(), flush=True)
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and not git(root, 'status', '--porcelain')
@@ -45,6 +77,9 @@ def main():
     report['finished_at'] = time.time()
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')
+    if report['warnings']:
+        print(f'Selection warnings: {len(report["warnings"])}; the receipt proves no affected tests for those projects.',
+              flush=True)
     print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {head}; receipt: {path}', flush=True)
     if not report['unchanged']:
         print('Candidate changed during checks; approval is not valid.', file=sys.stderr)

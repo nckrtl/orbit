@@ -1,0 +1,17 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$command = $argv[1] ?? '';
+$segments = explode('/', str_replace('\\', '/', getcwd() ?: ''));
+$project = implode('/', array_slice($segments, -2));
+$unselected = array_filter(explode(',', (string) getenv('ORBIT_GATE_UNSELECTED')));
+
+if ($command === 'test:affected') {
+    fwrite(STDOUT, in_array($project, $unselected, true)
+        ? "\n  INFO  No affected tests found.\n\n"
+        : "\n  Tests:    3 passed (9 assertions)\n\n");
+}
+
+exit(0);
