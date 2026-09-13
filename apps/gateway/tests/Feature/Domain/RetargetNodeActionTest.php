@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Actions\Nodes\RetargetNodeAction;
 use App\Data\Nodes\RetargetNodeData;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
@@ -224,6 +228,171 @@ describe(RetargetNodeAction::class, function (): void {
             publicSshHost: '198.51.100.25',
         )))
             ->toThrow(NodeProvisioningException::class, 'Node [missing] does not exist as an active node.');
+    });
+
+    it('rejects retarget contention before remote effects or state writes', function (): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock
+        {
+            public function run(string $nodeName, Closure $callback): mixed
+            {
+                throw new NodeProvisioningLockException($nodeName);
+            }
+        });
+
+        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
+            name: 'app-dev',
+            publicSshHost: '198.51.100.25',
+        )))->toThrow(function (ResourceOperationException $exception) use ($node): void {
+            expect($exception->errorCode)
+                ->toBe('node.provisioning_busy')
+                ->and($exception->status)
+                ->toBe(409)
+                ->and($exception->getMessage())
+                ->toBe('Node [app-dev] is already changing.')
+                ->and($node->refresh()->status)
+                ->toBe(LifecycleStatus::Active)
+                ->and($node->public_ssh_host)
+                ->toBe('192.0.2.10');
+        });
+
+        /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
+        $scanner = app(HostKeyScanner::class);
+        expect($scanner->scans)->toBeEmpty();
+    });
+
+    it('re-reads identity and eligibility after acquiring the lifecycle guard', function (): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        app()->instance(NodeProvisioningLock::class, new class($node) implements NodeProvisioningLock
+        {
+            public function __construct(private Node $node) {}
+
+            public function run(string $nodeName, Closure $callback): mixed
+            {
+                $this->node->update(['status' => LifecycleStatus::Failed]);
+
+                return $callback();
+            }
+        });
+
+        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
+            name: 'app-dev',
+            publicSshHost: '198.51.100.25',
+        )))->toThrow(function (NodeProvisioningException $exception) use ($node): void {
+            expect($exception->errorCode)
+                ->toBe('node.not_active')
+                ->and($node->refresh()->public_ssh_host)
+                ->toBe('192.0.2.10');
+        });
+
+        /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
+        $scanner = app(HostKeyScanner::class);
+        expect($scanner->scans)->toBeEmpty();
+    });
+
+    it('discovers deletion after acquiring the lifecycle guard', function (): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        app()->instance(NodeProvisioningLock::class, new class($node) implements NodeProvisioningLock
+        {
+            public function __construct(private Node $node) {}
+
+            public function run(string $nodeName, Closure $callback): mixed
+            {
+                $this->node->delete();
+
+                return $callback();
+            }
+        });
+
+        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
+            name: 'app-dev',
+            publicSshHost: '198.51.100.25',
+        )))->toThrow(NodeProvisioningException::class, 'Node [app-dev] does not exist as an active node.');
+
+        /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
+        $scanner = app(HostKeyScanner::class);
+        expect($scanner->scans)->toBeEmpty();
+    });
+
+    it('releases the lifecycle guard after a verification failure', function (): void {
+        /** @var HostKeyScanner&object{throws:bool} $scanner */
+        $scanner = app(HostKeyScanner::class);
+        $scanner->throws = true;
+        Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
+            name: 'app-dev',
+            publicSshHost: '198.51.100.25',
+        )))->toThrow(NodeProvisioningException::class);
+
+        expect((new NativeNodeProvisioningLock)->run('app-dev', static fn (): string => 'released'))
+            ->toBe('released');
+    });
+
+    it('rejects retarget while another lifecycle owner holds the same node name', function (): void {
+        $holder = new NativeNodeProvisioningLock;
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $holder->run('app-dev', function () use ($node): void {
+            expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
+                name: 'app-dev',
+                publicSshHost: '198.51.100.25',
+            )))->toThrow(function (ResourceOperationException $exception) use ($node): void {
+                expect($exception->errorCode)
+                    ->toBe('node.provisioning_busy')
+                    ->and($node->refresh()->public_ssh_host)
+                    ->toBe('192.0.2.10');
+            });
+
+            /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
+            $scanner = app(HostKeyScanner::class);
+            expect($scanner->scans)->toBeEmpty();
+        });
+    });
+
+    it('allows an independent node name to proceed while another lifecycle guard is held', function (): void {
+        $holder = new NativeNodeProvisioningLock;
+        Node::query()->create([
+            'name' => 'free-node',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.11',
+            'wireguard_ip' => '10.44.0.4',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $holder->run('held-node', function (): void {
+            $retargeted = app(RetargetNodeAction::class)->execute(new RetargetNodeData(
+                name: 'free-node',
+                publicSshHost: '198.51.100.26',
+            ));
+
+            expect($retargeted->public_ssh_host)->toBe('198.51.100.26');
+        });
     });
 
     it('marks the node failed when host key scanning fails', function (): void {

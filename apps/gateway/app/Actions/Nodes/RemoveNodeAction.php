@@ -10,6 +10,8 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeSideResidue;
@@ -20,6 +22,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Throwable;
 
 final readonly class RemoveNodeAction
@@ -32,6 +35,7 @@ final readonly class RemoveNodeAction
         private NodeReachabilityProbe $reachability,
         private RemoveNodeRoleAction $roles,
         private NodeSideResidue $residue,
+        private NodeProvisioningLock $provisioningLock,
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
     ) {}
@@ -42,6 +46,32 @@ final readonly class RemoveNodeAction
         bool $offline = false,
         bool $force = false,
     ): RemoveNodeData {
+        try {
+            return $this->provisioningLock->run(
+                $node->name,
+                fn (): RemoveNodeData => $this->remove($node, $caller, $offline, $force),
+            );
+        } catch (NodeProvisioningLockException $exception) {
+            throw $exception->toBusyException();
+        }
+    }
+
+    private function remove(
+        Node $node,
+        Node $caller,
+        bool $offline,
+        bool $force,
+    ): RemoveNodeData {
+        try {
+            $node->refresh();
+        } catch (ModelNotFoundException) {
+            throw $this->missing($node);
+        }
+
+        if (! $node->exists) {
+            throw $this->missing($node);
+        }
+
         ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertNodeRemovable($node);
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardProtected($node, $caller);
@@ -292,6 +322,15 @@ final readonly class RemoveNodeAction
     private function conflict(string $errorCode, string $message): ResourceOperationException
     {
         return new ResourceOperationException($errorCode, $message, 409);
+    }
+
+    private function missing(Node $node): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            'node.not_found',
+            "Node [{$node->name}] does not exist.",
+            404,
+        );
     }
 
     private function restoreMetricsSelection(): ?Throwable
