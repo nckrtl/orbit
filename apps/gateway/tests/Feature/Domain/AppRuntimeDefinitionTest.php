@@ -78,6 +78,38 @@ it('accepts complete systemd, Docker, and Schedule definition specifications', f
         ->toBe(1);
 });
 
+it('stores printable Schedule definition calendars without host systemd-analyze', function (string $calendar): void {
+    $created = $this
+        ->postJson(
+            "/api/v1/apps/{$this->orbitApp->id}/schedule-definitions",
+            domain_schedule_definition_payload(spec: [
+                'command' => 'php artisan report',
+                'calendar' => $calendar,
+                'timeout_seconds' => 60,
+            ]),
+        )
+        ->assertCreated()
+        ->assertJsonPath('data.spec.calendar', $calendar);
+
+    $id = $created->json('data.id');
+    $replacement = domain_schedule_definition_payload(spec: [
+        'command' => 'php artisan report',
+        'calendar' => $calendar,
+        'timeout_seconds' => 90,
+    ]);
+    $replacement['name'] = 'replaced';
+
+    $this
+        ->putJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/{$id}", $replacement)
+        ->assertOk()
+        ->assertJsonPath('data.spec.calendar', $calendar);
+
+    expect(ScheduleDefinition::query()->sole()->spec['calendar'])->toBe($calendar);
+})->with([
+    'non-systemd token' => ['not-a-calendar'],
+    'cron fields' => ['* * * * *'],
+]);
+
 it('rejects invalid applicability and runtime specification boundaries', function (
     string $kind,
     array $payload,
@@ -139,6 +171,13 @@ it('rejects invalid applicability and runtime specification boundaries', functio
         domain_schedule_definition_payload(spec: [
             'command' => "php artisan report\nnext",
             'calendar' => 'daily',
+            'timeout_seconds' => 60,
+        ]),
+    ],
+    'missing Schedule calendar' => [
+        'schedule',
+        domain_schedule_definition_payload(spec: [
+            'command' => 'php artisan report',
             'timeout_seconds' => 60,
         ]),
     ],
