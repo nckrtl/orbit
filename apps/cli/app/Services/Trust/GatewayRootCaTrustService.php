@@ -300,12 +300,7 @@ final readonly class GatewayRootCaTrustService
 
             $this->repository->updatePin($expectedProfile, $verifiedProfile->caPath);
         } catch (Throwable $exception) {
-            throw new GatewayRootCaTrustException(
-                errorCode: 'gateway.ca_profile_update_failed',
-                message: 'The root CA was trusted, but the gateway profile could not be updated.',
-                requestId: $requestId,
-                previous: $exception,
-            );
+            throw $this->profilePersistenceFailure($exception, $requestId);
         }
     }
 
@@ -314,12 +309,26 @@ final readonly class GatewayRootCaTrustService
         try {
             $this->repository->add($profile);
         } catch (Throwable $exception) {
-            throw new GatewayRootCaTrustException(
-                errorCode: 'gateway.ca_profile_update_failed',
-                message: 'The root CA was trusted, but the gateway profile could not be updated.',
+            throw $this->profilePersistenceFailure($exception, $requestId);
+        }
+    }
+
+    private function profilePersistenceFailure(Throwable $exception, string $requestId): GatewayRootCaTrustException
+    {
+        if ($exception instanceof GatewayConfigException && $exception->isPrivacyFailure()) {
+            return new GatewayRootCaTrustException(
+                errorCode: GatewayConfigException::CONFIG_NOT_PRIVATE,
+                message: $exception->getMessage(),
                 requestId: $requestId,
                 previous: $exception,
             );
         }
+
+        return new GatewayRootCaTrustException(
+            errorCode: 'gateway.ca_profile_update_failed',
+            message: 'The root CA was trusted, but the gateway profile could not be updated.',
+            requestId: $requestId,
+            previous: $exception,
+        );
     }
 }
