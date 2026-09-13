@@ -250,7 +250,85 @@ describe('environment failures', function (): void {
                 requestId: environment_cli_request_id(),
             ))
             ->not->toContain('environment-secret-sentinel')
+            ->not->toContain('details')
             ->not->toContain('Gateway environment operation failed with HTTP status');
+    });
+
+    it('renders redacted configuration details for an invalid key and drops submitted values', function (): void {
+        MockClient::global([
+            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'env.configuration_invalid',
+                        'message' => 'The complete AppInstance environment configuration is invalid.',
+                        'details' => [
+                            'key' => 'BAD KEY',
+                            'rule' => 'key',
+                            'value' => 'environment-secret-sentinel',
+                        ],
+                    ],
+                ],
+                422,
+                ['X-Orbit-Request-Id' => environment_cli_request_id()],
+            ),
+        ]);
+
+        $exitCode = Artisan::call('env:update', [
+            '--instance' => 'app.com',
+            '--key' => 'BAD KEY',
+            '--value' => 'environment-secret-sentinel',
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(1);
+        expect(trim(Artisan::output()))
+            ->toBe(environment_cli_error_json(
+                code: 'env.configuration_invalid',
+                message: 'The complete AppInstance environment configuration is invalid.',
+                requestId: environment_cli_request_id(),
+                details: ['key' => 'BAD KEY', 'rule' => 'key'],
+            ))
+            ->not->toContain('environment-secret-sentinel');
+    });
+
+    it('renders redacted placeholder-rule details in human output', function (): void {
+        MockClient::global([
+            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'env.configuration_invalid',
+                        'message' => 'The complete AppInstance environment configuration is invalid.',
+                        'details' => [
+                            'key' => 'KEY',
+                            'rule' => 'placeholder',
+                            'placeholder' => '{{instance.hostname}}',
+                            'value' => 'environment-secret-sentinel',
+                        ],
+                    ],
+                ],
+                422,
+                ['X-Orbit-Request-Id' => environment_cli_request_id()],
+            ),
+        ]);
+
+        $exitCode = Artisan::call('env:update', [
+            '--instance' => 'app.com',
+            '--key' => 'KEY',
+            '--value' => 'environment-secret-sentinel',
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(1);
+        expect(trim(Artisan::output()))
+            ->toBe(implode("\n", [
+                'The complete AppInstance environment configuration is invalid.',
+                'key: KEY',
+                'rule: placeholder',
+                'placeholder: {{instance.hostname}}',
+                'Request ID: '.environment_cli_request_id(),
+            ]))
+            ->not->toContain('environment-secret-sentinel');
     });
 
     it('renders the Gateway import-conflict message instead of an HTTP status wrapper', function (): void {
@@ -376,10 +454,12 @@ function environment_cli_result_json(string $operation, ?bool $workloadFileChang
     return json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
+/** @param array<string, string> $details */
 function environment_cli_error_json(
     string $code,
     string $message = 'Command input is invalid.',
     ?string $requestId = null,
+    array $details = [],
 ): string {
     $messages = [
         'env.instance_required' => 'AppInstance ID or Route hostname is required.',
@@ -387,13 +467,18 @@ function environment_cli_error_json(
         'env.value_required' => 'Environment value is required.',
     ];
 
-    return json_encode([
-        'error' => [
-            'code' => $code,
-            'message' => $messages[$code] ?? $message,
-            'request_id' => $requestId,
-        ],
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    $error = [
+        'code' => $code,
+        'message' => $messages[$code] ?? $message,
+    ];
+
+    if ($details !== []) {
+        $error['details'] = $details;
+    }
+
+    $error['request_id'] = $requestId;
+
+    return json_encode(['error' => $error], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
 function environment_cli_request_id(): string
