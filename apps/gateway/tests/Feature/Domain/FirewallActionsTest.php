@@ -98,6 +98,120 @@ it('rejects public recovery SSH denies before persistence or UFW', function (): 
         ->toBeEmpty();
 });
 
+it('rejects an opposite action on the same node source protocol and port before UFW', function (
+    FirewallAction $existing,
+    FirewallAction $conflicting,
+): void {
+    $manager = new FirewallFakeManager([FirewallBackendStatus::Active]);
+    $action = new StoreFirewallRuleAction($manager);
+    $node = firewall_action_node();
+    $action->execute($node, firewall_store_data(action: $existing));
+
+    expect(fn (): array => $action->execute(
+        $node,
+        firewall_store_data(action: $conflicting, name: 'block-web'),
+    ))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('firewall.action_conflict')
+                ->and($exception->status)
+                ->toBe(409);
+        });
+
+    expect($manager->converged)
+        ->toBe(['web'])
+        ->and(FirewallRule::query()->count())
+        ->toBe(1);
+
+    $this->assertDatabaseHas('firewall_rules', [
+        'node_id' => $node->id,
+        'name' => 'web',
+        'action' => $existing->value,
+        'status' => 'active',
+        'failed_step' => null,
+        'error_code' => null,
+    ]);
+})->with([
+    'deny after allow' => [FirewallAction::Allow, FirewallAction::Deny],
+    'allow after deny' => [FirewallAction::Deny, FirewallAction::Allow],
+]);
+
+it('retries the original allow after a rejected deny without flipping it to failed', function (): void {
+    $manager = new FirewallFakeManager([
+        FirewallBackendStatus::Active,
+        FirewallBackendStatus::Active,
+    ]);
+    $action = new StoreFirewallRuleAction($manager);
+    $node = firewall_action_node();
+    $action->execute($node, firewall_store_data());
+
+    expect(fn (): array => $action->execute(
+        $node,
+        firewall_store_data(action: FirewallAction::Deny, name: 'block-web'),
+    ))
+        ->toThrow(ResourceOperationException::class, 'conflicts with [web]');
+
+    $retry = $action->execute($node, firewall_store_data());
+
+    expect($retry['created'])
+        ->toBeFalse()
+        ->and($retry['backend_status'])
+        ->toBe(FirewallBackendStatus::Active)
+        ->and($retry['rule']->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($retry['rule']->error_code)
+        ->toBeNull()
+        ->and($manager->converged)
+        ->toBe(['web', 'web'])
+        ->and(FirewallRule::query()->count())
+        ->toBe(1);
+});
+
+it('accepts another rule when the source protocol port node or action identity differs', function (
+    string $name,
+    FirewallAction $candidateAction,
+    string $source,
+    string $protocol,
+    string $port,
+    bool $otherNode,
+): void {
+    $manager = new FirewallFakeManager([
+        FirewallBackendStatus::Active,
+        FirewallBackendStatus::Active,
+    ]);
+    $store = new StoreFirewallRuleAction($manager);
+    $node = firewall_action_node();
+    $target = $otherNode
+        ? firewall_action_node(
+            name: 'other',
+            publicHost: '192.0.2.21',
+            wireguardIp: '10.44.0.4',
+        )
+        : $node;
+
+    $store->execute($node, firewall_store_data());
+    $result = $store->execute($target, firewall_store_data(
+        action: $candidateAction,
+        port: $port,
+        name: $name,
+        source: $source,
+        protocol: $protocol,
+    ));
+
+    expect($result['created'])
+        ->toBeTrue()
+        ->and($manager->converged)
+        ->toHaveCount(2)
+        ->and(FirewallRule::query()->count())
+        ->toBe(2);
+})->with([
+    'different source' => ['block-web', FirewallAction::Deny, '198.51.100.0/24', 'tcp', '443', false],
+    'different protocol' => ['block-web', FirewallAction::Deny, '192.0.2.0/24', 'udp', '443', false],
+    'different port' => ['block-web', FirewallAction::Deny, '192.0.2.0/24', 'tcp', '8443', false],
+    'different node' => ['block-web', FirewallAction::Deny, '192.0.2.0/24', 'tcp', '443', true],
+    'same action different name' => ['edge-web', FirewallAction::Allow, '192.0.2.0/24', 'tcp', '443', false],
+]);
+
 it('keeps the record when removal cannot run while UFW is inactive and removes it on retry', function (): void {
     $manager = new FirewallFakeManager([], [
         FirewallBackendStatus::Inactive,
@@ -169,12 +283,15 @@ function firewall_action_node(
 function firewall_store_data(
     FirewallAction $action = FirewallAction::Allow,
     string $port = '443',
+    string $name = 'web',
+    string $source = '192.0.2.0/24',
+    string $protocol = 'tcp',
 ): StoreFirewallRuleData {
     return new StoreFirewallRuleData(
-        name: 'web',
+        name: $name,
         action: $action,
-        source: '192.0.2.0/24',
-        protocol: 'tcp',
+        source: $source,
+        protocol: $protocol,
         port: $port,
     );
 }
