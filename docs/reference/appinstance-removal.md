@@ -25,7 +25,9 @@ The two modes differ when development source is dirty or unpublished, or when a 
 | Normal | Refuses dirty source, a HEAD that no current advertised origin branch or tag contains, or a checkout with registered linked worktrees. |
 | Forced | May delete dirty or unpublished source and may accept a complete registered checkout set after every other safety check passes. |
 
-Forced removal does not waive source-layout, repository-identity, ownership, path, containment, symlink, overlap, or linked-worktree inventory checks. Normal preflight reads current advertised origin refs into a temporary object store outside the requested repository. It does not fetch into, prune, refresh the index of, or otherwise change the requested repository. The containing origin ref does not need to match the local branch name.
+Forced removal waives only the dirty-source refusal, the publication refusal, and the registered linked-worktree refusal. It does not waive source-layout, repository-identity, ownership, path, containment, symlink, overlap, or linked-worktree inventory checks. Neither mode requires `HEAD` to descend from the recorded starting commit. The Gateway accepts a checkout whose `HEAD` was reset or rebased below that commit when its directory, Git directory, origin, branch, and worktree inventory still match the record. Normal removal still requires that `HEAD` to be clean and published.
+
+Normal preflight reads current advertised origin refs into a temporary object store outside the requested repository. It does not fetch into, prune, refresh the index of, or otherwise change the requested repository. The containing origin ref does not need to match the local branch name.
 
 Forced removal validates the configured origin identity locally and does not require origin reachability. Orbit does not delete remote branches. Removing a worktree retains its local branch, common repository, and usable siblings. Removing an independent checkout deletes that checkout's owned repository directory.
 
@@ -33,7 +35,20 @@ Forced removal validates the configured origin identity locally and does not req
 
 The Gateway validates the source boundary and active Route before it changes an AppInstance, owned Process, owned Schedule, Route, runtime, Git repository, directory, or database row. A refused source preflight leaves every Process and Schedule record and managed runtime unchanged. A development AppInstance must own its singleton Route. A production AppInstance can be one member of an explicit Cluster Route on distinct active app-prod Nodes for the same App. For development source, the Gateway holds the Node source-operation lock continuously through inspection, Route preflight, and removal acceptance. Source preparation and each retry revalidation acquire the same Node lock.
 
-Preflight compares the recorded checkout with its source layout, App repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, starting commit ancestry, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
+Preflight compares the recorded checkout with its source layout, App repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
+
+The Gateway answers a refused development source preflight with the code that names the failed check, in normal and forced mode alike.
+
+| Code | Refused check |
+| --- | --- |
+| `instance.source_path_mismatch` | The recorded path is not the exact Orbit-owned directory: it lies outside the allowed root, a path segment is a symlink, or the directory is absent. |
+| `instance.source_ownership_mismatch` | The directory or its parent is not owned by the managed Node account. |
+| `instance.source_layout_mismatch` | The Git directory does not match the recorded checkout or worktree layout. |
+| `instance.source_origin_mismatch` | The configured origin does not identify the App repository. |
+| `instance.source_branch_mismatch` | The checked-out branch differs from the recorded branch. |
+| `instance.source_worktrees_mismatch` | The Git worktree inventory does not include the recorded checkout. |
+| `instance.remove_refused` | Normal removal found dirty or unpublished source, or another removal rule refused the request; the message names the rule. |
+| `instance.force_failed` | Forced inspection failed for a reason that no named check covers. |
 
 ### Development source sets
 

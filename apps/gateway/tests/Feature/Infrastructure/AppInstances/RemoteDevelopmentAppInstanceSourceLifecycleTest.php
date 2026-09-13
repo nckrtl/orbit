@@ -278,21 +278,18 @@ it('refuses dirty and unpublished source unless force is explicit', function (st
     expect(file_exists($instance->checkout_path))->toBeFalse();
 })->with(['dirty', 'unpublished']);
 
-it('does not let force waive origin or symlink identity checks', function (string $mutation): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => AppInstanceState::SourceResolved,
-    ]);
+it('names the refused identity check without waiving it in normal or forced removal', function (
+    string $mutation,
+    bool $force,
+    string $code,
+): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $decoy = $this->sandbox.'/decoy';
     $this->files->makeDirectory($decoy, 0o755, true);
     file_put_contents($decoy.'/sentinel', 'keep');
 
-    if ($mutation === 'origin') {
-        orb76_run([
+    match ($mutation) {
+        'origin' => orb76_run([
             'git',
             '-C',
             $instance->checkout_path,
@@ -300,33 +297,39 @@ it('does not let force waive origin or symlink identity checks', function (strin
             'set-url',
             'origin',
             'ssh://git@example.test/wrong.git',
-        ]);
-    } else {
-        $this->files->deleteDirectory($instance->checkout_path);
-        symlink($decoy, $instance->checkout_path);
-    }
+        ]),
+        'symlink' => (function () use ($instance, $decoy): void {
+            $this->files->deleteDirectory($instance->checkout_path);
+            symlink($decoy, $instance->checkout_path);
+        })(),
+        'branch' => orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '-b', 'elsewhere']),
+    };
 
-    expect(fn () => orb178_remove_source($this->removal, $instance, true))
+    expect(fn () => orb178_remove_source($this->removal, $instance, $force))
         ->toThrow(
-            function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('instance.force_failed');
+            function (RuntimeConvergenceException $exception) use ($code, $instance): void {
+                expect($exception->errorCode)
+                    ->toBe($code)
+                    ->and($exception->getMessage())
+                    ->toStartWith("AppInstance [{$instance->name}] source ")
+                    ->not->toContain($instance->checkout_path, 'example.test');
             },
         );
     expect(file_exists($decoy.'/sentinel'))
         ->toBeTrue()
         ->and(file_exists($instance->checkout_path) || is_link($instance->checkout_path))
         ->toBeTrue();
-})->with(['origin', 'symlink']);
+})->with([
+    'normal origin' => ['origin', false, 'instance.source_origin_mismatch'],
+    'forced origin' => ['origin', true, 'instance.source_origin_mismatch'],
+    'normal symlink' => ['symlink', false, 'instance.source_path_mismatch'],
+    'forced symlink' => ['symlink', true, 'instance.source_path_mismatch'],
+    'normal branch' => ['branch', false, 'instance.source_branch_mismatch'],
+    'forced branch' => ['branch', true, 'instance.source_branch_mismatch'],
+]);
 
-it('does not let force remove a checkout with shared Git administration', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => AppInstanceState::SourceResolved,
-    ]);
+it('refuses a checkout with shared Git administration as a layout mismatch in either mode', function (bool $force): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $sharedGitDirectory = $this->sandbox.'/shared.git';
     $this->files->copyDirectory($instance->checkout_path.'/.git', $sharedGitDirectory);
     file_put_contents($instance->checkout_path.'/.git/commondir', "{$sharedGitDirectory}\n");
@@ -339,13 +342,18 @@ it('does not let force remove a checkout with shared Git administration', functi
         '--git-common-dir',
     ])->stdout))
         ->toBe($sharedGitDirectory);
-    expect(fn () => orb178_remove_source($this->removal, $instance, true))
-        ->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb178_remove_source($this->removal, $instance, $force))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_layout_mismatch');
+        });
     expect(is_dir($instance->checkout_path))
         ->toBeTrue()
         ->and(is_dir($sharedGitDirectory))
         ->toBeTrue();
-});
+})->with([
+    'normal removal' => false,
+    'force' => true,
+]);
 
 it('uses current remote publication evidence without changing the checkout index refs or object store', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
@@ -468,7 +476,9 @@ it('returns linked-worktree inventory and refuses deletion with every path and b
     expect($inventory->linkedWorktreePaths)
         ->toBe([$instance->checkout_path, $worktree])
         ->and(fn () => $this->removal->remove($instance, $inventory, true))
-        ->toThrow(RuntimeConvergenceException::class)
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_worktrees_mismatch');
+        })
         ->and(is_dir($instance->checkout_path))
         ->toBeTrue()
         ->and(is_dir($worktree))
@@ -482,6 +492,7 @@ it('returns linked-worktree inventory and refuses deletion with every path and b
 it('refuses a replacement or changed canonical origin between inspection and deletion', function (
     string $mutation,
     bool $force,
+    string $code,
 ): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -510,14 +521,16 @@ it('refuses a replacement or changed canonical origin between inspection and del
     }
 
     expect(fn () => $this->removal->remove($instance, $inventory, $force))
-        ->toThrow(RuntimeConvergenceException::class)
+        ->toThrow(function (RuntimeConvergenceException $exception) use ($code): void {
+            expect($exception->errorCode)->toBe($code);
+        })
         ->and(is_dir($instance->checkout_path))
         ->toBeTrue();
 })->with([
-    'normal replacement' => ['replacement', false],
-    'forced replacement' => ['replacement', true],
-    'normal origin change' => ['origin', false],
-    'forced origin change' => ['origin', true],
+    'normal replacement' => ['replacement', false, 'instance.removal_conflict'],
+    'forced replacement' => ['replacement', true, 'instance.removal_conflict'],
+    'normal origin change' => ['origin', false, 'instance.source_origin_mismatch'],
+    'forced origin change' => ['origin', true, 'instance.source_origin_mismatch'],
 ]);
 
 it('accepts an equivalent supported origin at the destructive boundary', function (): void {
@@ -647,7 +660,9 @@ it('refuses malformed origin ports at the destructive boundary', function (strin
     ]);
 
     expect(fn () => $this->removal->remove($instance, $inventory, $force))
-        ->toThrow(RuntimeConvergenceException::class);
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_origin_mismatch');
+        });
     expect(is_dir($instance->checkout_path))->toBeTrue();
 })->with([
     'normal HTTPS' => ['https://example.test:notaport/acme/site.git', false],
@@ -680,7 +695,9 @@ it('rejects origins with a trailing line feed during inspection', function (stri
     ]);
 
     expect(fn () => $this->removal->inspect($instance, $force))
-        ->toThrow(RuntimeConvergenceException::class);
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_origin_mismatch');
+        });
     expect(is_dir($instance->checkout_path))->toBeTrue();
 })->with([
     'normal HTTPS' => ['https://example.test/acme/site.git', false],
@@ -713,7 +730,9 @@ it('refuses origins with a trailing line feed at the destructive boundary', func
     ]);
 
     expect(fn () => $this->removal->remove($instance, $inventory, $force))
-        ->toThrow(RuntimeConvergenceException::class);
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_origin_mismatch');
+        });
     expect(is_dir($instance->checkout_path))->toBeTrue();
 })->with([
     'normal HTTPS' => ['https://example.test/acme/site.git', false],
@@ -1548,35 +1567,49 @@ it('holds the per-Node source lock for every recorded adapter call', function ()
         ]);
 });
 
-it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.name', 'Orbit Test']);
-    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.email', 'orbit@example.test']);
-    $tree = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD^{tree}'])->stdout);
-    $unrelatedCommit = trim(orb76_run([
-        'git',
-        '-C',
-        $instance->checkout_path,
-        'commit-tree',
-        $tree,
-        '-m',
-        'Unrelated source identity',
-    ])->stdout);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $unrelatedCommit,
-        'status' => AppInstanceState::SourceResolved,
-    ]);
+it('removes a clean checkout whose HEAD no longer descends from the recorded starting commit', function (
+    bool $force,
+    bool $published,
+): void {
+    orb178_advance_remote($this->sandbox, 'dev');
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    orb285_rewind_head($instance, $published);
 
-    expect(fn () => orb178_remove_source($this->removal, $instance, $force))
-        ->toThrow(RuntimeConvergenceException::class);
-    expect(is_dir($instance->checkout_path))->toBeTrue();
+    orb178_remove_source($this->removal, $instance, $force);
+
+    expect(file_exists($instance->checkout_path))->toBeFalse();
 })->with([
-    'normal removal' => false,
-    'force' => true,
+    'normal removal at a published HEAD' => [false, true],
+    'forced removal at a published HEAD' => [true, true],
+    'forced removal at an unpublished HEAD' => [true, false],
 ]);
+
+it('refuses normal removal of an unpublished HEAD that no longer descends from the recorded starting commit', function (): void {
+    orb178_advance_remote($this->sandbox, 'dev');
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    orb285_rewind_head($instance, published: false);
+
+    expect(fn () => orb178_remove_source($this->removal, $instance, false))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.remove_refused');
+        });
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+});
+
+it('finalizes a forced removal whose HEAD no longer descends from the recorded starting commit', function (): void {
+    orb178_advance_remote($this->sandbox, 'dev');
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    orb285_rewind_head($instance, published: false);
+    $member = orb180_record_source($this->removal, $instance, true);
+
+    expect($this->removal->finalize($member))
+        ->toBeString()
+        ->and($member->source_commit)
+        ->not
+        ->toBe($member->starting_commit)
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse();
+});
 
 it('refuses grouping-directory ownership drift before deleting the checkout', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
@@ -1599,7 +1632,9 @@ it('refuses grouping-directory ownership drift before deleting the checkout', fu
     expect(chgrp(dirname($instance->checkout_path), $alternateGroup))->toBeTrue();
 
     expect(fn () => orb178_remove_source($this->removal, $instance, true))
-        ->toThrow(RuntimeConvergenceException::class);
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_ownership_mismatch');
+        });
     expect(is_dir($instance->checkout_path))->toBeTrue();
 });
 
@@ -1959,6 +1994,28 @@ function orb180_replace_ancestry(AppInstance $instance): void
         'Unrelated recorded source',
     ])->stdout);
     orb76_run(['git', '-C', $instance->checkout_path, 'reset', '--hard', $commit]);
+}
+
+function orb285_rewind_head(AppInstance $instance, bool $published): void
+{
+    if ($published) {
+        orb76_run(['git', '-C', $instance->checkout_path, 'reset', '--hard', 'HEAD~1']);
+    } else {
+        orb180_replace_ancestry($instance);
+    }
+
+    expect(orb178_run_allow_failure([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'merge-base',
+        '--is-ancestor',
+        (string) $instance->starting_commit,
+        'HEAD',
+    ])->succeeded())
+        ->toBeFalse()
+        ->and(orb76_run(['git', '-C', $instance->checkout_path, 'status', '--porcelain', '--untracked-files=all'])->stdout)
+        ->toBe('');
 }
 
 function orb180_share_git_directory(AppInstance $instance, string $sandbox): void

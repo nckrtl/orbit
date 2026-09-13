@@ -7,6 +7,7 @@ use App\Data\AppInstances\AppInstanceData;
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
@@ -271,12 +272,24 @@ beforeEach(function (): void {
 
         public ?int $failPrepareFor = null;
 
+        /** @var array<int, string> */
+        public array $inspectionFailures = [];
+
         public function inspect(
             AppInstance $appInstance,
             bool $force,
             bool $inspectContent = true,
         ): AppInstanceSourceInventory {
             $this->record('inspect', $appInstance->id);
+
+            if (isset($this->inspectionFailures[$appInstance->id])) {
+                throw new RuntimeConvergenceException(
+                    'app-instance-source-removal-inspect',
+                    $this->inspectionFailures[$appInstance->id],
+                    "AppInstance [{$appInstance->name}] source origin does not match the App repository.",
+                );
+            }
+
             $paths = $this->linkedPaths[$appInstance->id] ?? $this->livePaths ?? [$appInstance->checkout_path];
             $payload = [
                 'app_instance_id' => $appInstance->id,
@@ -2539,6 +2552,30 @@ it('removes an active AppInstance through every durable checkpoint', function (b
         ])
         ->not->toHaveKeys(['checkout_path', 'source_digest', 'finalization_receipt']);
 })->with([false, true]);
+
+it('answers the refused source identity check with 409 in normal and forced removal', function (bool $force): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $this->removalSource->inspectionFailures[$created->json('data.id')] = 'instance.source_origin_mismatch';
+
+    $this
+        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['force' => $force])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_origin_mismatch')
+        ->assertJsonPath('error.message', 'AppInstance [dev] source origin does not match the App repository.');
+    expect(AppInstanceRemovalMember::query()->count())
+        ->toBe(0)
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and(Route::query()->count())
+        ->toBe(1);
+})->with([
+    'normal removal' => false,
+    'force' => true,
+]);
 
 it('refuses normal checkout cascade with force guidance and reports forced bounded totals', function (): void {
     [$checkout, $first, $second, $paths] = orb182_api_removal_graph($this);
