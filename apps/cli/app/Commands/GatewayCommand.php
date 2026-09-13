@@ -198,9 +198,7 @@ abstract class GatewayCommand extends Command
                 $code,
                 $exception->getMessage(),
                 $exception->requestId(),
-                details: $code === 'validation.failed'
-                    ? GatewayFailureRenderer::fieldDetails($exception->details())
-                    : [],
+                details: GatewayFailureRenderer::safeDetails($code, $exception->details()),
             );
 
             return null;

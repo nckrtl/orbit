@@ -316,6 +316,29 @@ describe('deployment streams', function (): void {
             ->toBeNull();
     });
 
+    it('emits a failed result event in JSON mode without rewriting it as an error envelope', function (): void {
+        $event = deployment_cli_result(
+            1,
+            'failed',
+            failedStep: 'operation',
+            errorCode: 'deployment_config.unavailable',
+        );
+        MockClient::global([
+            DeployAppInstanceRequest::class => deployment_cli_stream_response([$event]),
+        ]);
+
+        $exitCode = Artisan::call('instance:deploy', [
+            'instance' => '17',
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+        $payload = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toBe($event)
+            ->and($payload)->not->toHaveKey('error');
+    });
+
     it('returns failure and identifies the selected release from a failed terminal result', function (): void {
         $mock = MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([

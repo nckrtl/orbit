@@ -281,15 +281,21 @@ return Application::configure(basePath: dirname(__DIR__))
                     $requestId = $request->header('X-Orbit-Request-Id', '');
                 }
 
+                $details = [
+                    'step' => $exception->step,
+                    'outcome' => $exception->outcome->value,
+                ];
+
+                if ($exception->toolId !== null) {
+                    $details['id'] = $exception->toolId;
+                }
+
                 return response()
                     ->json([
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => [
-                                'step' => $exception->step,
-                                'outcome' => $exception->outcome->value,
-                            ],
+                            'details' => $details,
                         ],
                     ], $exception->status)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
@@ -307,7 +313,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => [],
+                            'details' => $exception->details,
                         ],
                     ], $exception->status)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');

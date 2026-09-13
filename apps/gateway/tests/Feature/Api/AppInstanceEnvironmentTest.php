@@ -135,8 +135,46 @@ it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): v
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->putJson("/api/v1/instances/{$this->instance->id}/environment/APP_URL", ['value' => 'https://wrong.test'])
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'env.configuration_invalid');
+        ->assertJsonPath('error.code', 'env.configuration_invalid')
+        ->assertJsonPath('error.details', [
+            'key' => 'APP_URL',
+            'rule' => 'laravel_app_url',
+        ]);
 });
+
+it('returns redacted configuration details for invalid keys and unsupported placeholders', function (
+    string $key,
+    string $value,
+    array $details,
+): void {
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson(
+            '/api/v1/instances/'.$this->instance->id.'/environment/'.rawurlencode($key),
+            ['value' => $value],
+        )
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'env.configuration_invalid')
+        ->assertJsonPath('error.details', $details);
+
+    expect($response->getContent())->not->toContain('environment-secret-sentinel');
+})->with([
+    'invalid key' => [
+        'BAD KEY',
+        'environment-secret-sentinel',
+        ['key' => 'BAD KEY', 'rule' => 'key'],
+    ],
+    'unsupported placeholder' => [
+        'KEY',
+        'environment-secret-sentinel-{{instance.hostname}}',
+        ['key' => 'KEY', 'rule' => 'placeholder', 'placeholder' => '{{instance.hostname}}'],
+    ],
+    'malformed placeholder' => [
+        'KEY',
+        'environment-secret-sentinel-{{app_instance.hostname}',
+        ['key' => 'KEY', 'rule' => 'placeholder'],
+    ],
+]);
 
 it('rejects malformed duplicate unknown and wrongly typed request members before mutation', function (
     string $method,

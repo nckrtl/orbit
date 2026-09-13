@@ -49,6 +49,10 @@ final readonly class AppInstanceEnvironmentRenderer
                 throw new ResourceOperationException(
                     errorCode: 'env.configuration_invalid',
                     message: 'The complete AppInstance environment configuration is invalid.',
+                    details: [
+                        'key' => $key,
+                        'rule' => AppInstanceEnvironmentValidator::RuleFileSize,
+                    ],
                 );
             }
         }

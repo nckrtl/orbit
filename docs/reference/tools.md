@@ -44,6 +44,8 @@ orbit tool:install <package> --manager=<manager> --node=<node-id>
 
 When the selected manager is `uninstalled` or `failed`, the Gateway first provisions or retries that manager in its protected scope. A successful provisioning records the manager as `active` before the Gateway changes Tool intent. A failed provisioning returns `tool.manager_provision_failed`, keeps the bounded failure on the manager, and does not create a Tool row. Repeating the same install command retries the manager from live Node state.
 
+When an install creates a Tool row and then fails, including `tool.version_probe_failed`, the Gateway and CLI include that Tool ID in the error. Activity for the command identifies the Tool and its target Node.
+
 The Gateway rejects Tool mutations with `tool.node_unmanaged` when the Node is a roleless operator client or is otherwise outside Gateway-owned SSH management. Manager installation is independent of the Node's assigned infrastructure roles.
 
 Orbit does not install every registered manager during Node provisioning. A materialized manager remains active after its final Tool is removed, and Orbit exposes no manager-removal command.
@@ -68,7 +70,7 @@ An update uses the verified bottle and keeps the installed Tool callable when no
 
 ## Remove a Tool
 
-Run the removal command with the Tool ID that Orbit returned when it created the managed package intent.
+Run the removal command with the Tool ID from a successful install or from a failed install that retained the Tool.
 
 ```bash
 orbit tool:remove <tool-id>
