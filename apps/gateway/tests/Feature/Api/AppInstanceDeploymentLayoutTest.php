@@ -140,6 +140,7 @@ it('rejects unknown malformed and wrongly typed input before conversion', functi
     'NUL byte' => '{"sqlite_source_path":"storage/app\\u0000.sqlite"}',
     'control character' => '{"sqlite_source_path":"storage/app\\u001f.sqlite"}',
     'malformed' => '{"sqlite_source_path":',
+    'array' => '[]',
 ]);
 
 it('enforces owning-Node access before inventory or environment access', function (): void {
