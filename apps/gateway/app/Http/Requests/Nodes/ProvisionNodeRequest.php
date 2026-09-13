@@ -139,7 +139,7 @@ final class ProvisionNodeRequest extends FormRequest
                 $roles,
             )),
             publicSshPort: is_int($validated['public_ssh_port'] ?? null) ? $validated['public_ssh_port'] : 22,
-            user: is_string($validated['user'] ?? null) ? $validated['user'] : 'root',
+            user: is_string($validated['user'] ?? null) ? $validated['user'] : null,
             orbitUser: is_string($validated['orbit_user'] ?? null) ? $validated['orbit_user'] : null,
             wireguardIp: $this->wireguardIp($validated),
             wireguardEndpointOverride: is_string($validated['wireguard_endpoint_override'] ?? null)

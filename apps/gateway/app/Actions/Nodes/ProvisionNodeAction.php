@@ -71,7 +71,8 @@ final readonly class ProvisionNodeAction
     private function provision(ProvisionNodeData $data): Node
     {
         if (
-            ! LinuxUserName::isValid($data->user)
+            $data->user !== null
+            && ! LinuxUserName::isValid($data->user)
             || $data->orbitUser !== null
             && ! LinuxUserName::isValid($data->orbitUser)
         ) {
@@ -168,7 +169,16 @@ final readonly class ProvisionNodeAction
             );
         }
 
-        $identity = new NodeProvisioningIdentity($data->user, $managedUser);
+        $bootstrapUser = $data->user ?? ($node->exists ? $node->user : 'root');
+
+        if (! LinuxUserName::isValid($bootstrapUser)) {
+            throw new ResourceOperationException(
+                errorCode: 'node.invalid_linux_user',
+                message: 'The node Linux user name is invalid.',
+            );
+        }
+
+        $identity = new NodeProvisioningIdentity($bootstrapUser, $managedUser);
         $platform = $this->platform($node, $data);
         $architecture = $this->architecture($node, $data);
         $previousTld = $node->exists && is_string($node->tld) ? $node->tld : null;

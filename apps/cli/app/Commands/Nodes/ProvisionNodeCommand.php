@@ -18,7 +18,7 @@ final class ProvisionNodeCommand extends GatewayCommand
         {name : Node name}
         {host? : Optional public SSH host}
         {--ssh-port=22 : Public SSH port}
-        {--user=root : Initial SSH user}
+        {--user= : Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node}
         {--orbit-user= : Orbit-managed system user; defaults to orbit for a new node}
         {--platform=linux : Node platform (linux only)}
         {--architecture= : Node machine architecture}
@@ -44,14 +44,12 @@ final class ProvisionNodeCommand extends GatewayCommand
         $name = $this->input->getArgument('name');
         $host = $this->input->getArgument('host');
         $sshPort = $this->option('ssh-port');
-        $user = $this->option('user');
         $roles = $this->input->getOption('role');
 
         if (
             ! is_string($name)
             || ! is_string($host)
             && $host !== null
-            || ! is_string($user)
             || ! is_array($roles)
         ) {
             return $this->renderGatewayFailure(
@@ -167,7 +165,7 @@ final class ProvisionNodeCommand extends GatewayCommand
                 publicSshHost: $host,
                 roles: $roleNames,
                 publicSshPort: (int) $sshPort,
-                user: $user,
+                user: $this->stringOption('user'),
                 orbitUser: $this->stringOption('orbit-user'),
                 clusterId: $clusterId,
                 wireguardIp: is_string($wireguardIp) ? $wireguardIp : null,

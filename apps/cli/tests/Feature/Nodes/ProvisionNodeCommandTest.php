@@ -107,7 +107,6 @@ it('sends node provisioning to the active gateway', function (): void {
             'architecture' => 'x86_64',
             'tld' => '.App-Dev.Orbit',
             'public_ssh_port' => 22,
-            'user' => 'root',
             'roles' => ['app-dev'],
             'cluster_id' => 3,
             'wireguard_ip' => '10.44.0.2',
@@ -116,6 +115,43 @@ it('sends node provisioning to the active gateway', function (): void {
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         ]);
+});
+
+it('omits the bootstrap user when --user is not given', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global([
+        '*/api/v1/nodes' => MockResponse::make([
+            'data' => [
+                'id' => 1,
+                'name' => 'app-prod',
+                'status' => 'active',
+                'public_ssh_host' => '94.237.40.75',
+                'public_ssh_port' => 22,
+                'user' => 'orbit',
+                'tld' => 'prod',
+                'roles' => ['app-prod'],
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 201),
+    ]);
+
+    $this->artisan('node:provision', [
+        'name' => 'app-prod',
+        '--tld' => 'prod',
+    ])->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all())
+        ->toBe([
+            'name' => 'app-prod',
+            'platform' => 'linux',
+            'tld' => 'prod',
+            'public_ssh_port' => 22,
+            'roles' => [],
+        ])
+        ->not->toHaveKey('user');
 });
 
 it('passes bootstrap and managed users to the SDK', function (): void {
