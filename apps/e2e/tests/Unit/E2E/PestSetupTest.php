@@ -6,11 +6,20 @@ use Pest\Plugins\Tia\ChangedFiles;
 use Pest\Plugins\Tia\Storage;
 use Symfony\Component\Process\Process;
 
-/** @return array{project:string,pest:string,script:string,patch:string} */
+/**
+ * @return array{
+ *     root:string,
+ *     project:string,
+ *     pest:string,
+ *     script:string,
+ *     patch:string,
+ *     files:array<string, array{upstream:?string,patched:?string}>
+ * }
+ */
 function pestSetupFixture(bool $upstream = true): array
 {
     $repository = dirname(__DIR__, 5);
-    $root = temporaryPath('orbit-pest-setup-', 6);
+    $root = temporaryPath('orbit pest setup ', 6);
     $project = $root.'/linked worktree/apps/sample';
     $pest = $project.'/vendor/pestphp/pest';
     mkdir($project.'/vendor/composer', 0700, true);
@@ -42,47 +51,248 @@ function pestSetupFixture(bool $upstream = true): array
             '--directory='.$pest,
             '--reverse',
             $patch,
-        ], sys_get_temp_dir())->mustRun();
+        ], DIRECTORY_SEPARATOR)->mustRun();
     }
 
-    return ['project' => $project, 'pest' => $pest, 'script' => $repository.'/bin/pest-setup', 'patch' => $patch];
+    $fixture = [
+        'root' => $root,
+        'project' => $project,
+        'pest' => $pest,
+        'script' => $repository.'/bin/pest-setup',
+        'patch' => $patch,
+        'files' => $manifest['files'],
+    ];
+    expectPestSetupFiles($fixture, $upstream ? 'upstream' : 'patched');
+
+    return $fixture;
 }
 
-/** @param array{project:string,pest:string,script:string,patch:string} $fixture */
-function runPestSetup(array $fixture): Process
+/**
+ * @param  array{pest:string,files:array<string, array{upstream:?string,patched:?string}>}  $fixture
+ */
+function expectPestSetupFiles(array $fixture, string $state): void
 {
-    $process = new Process([PHP_BINARY, $fixture['script']], $fixture['project'], ['COMPOSER_VENDOR_DIR' => false]);
+    foreach ($fixture['files'] as $file => $hashes) {
+        $path = $fixture['pest'].'/'.$file;
+        $actual = is_file($path) ? hash_file('sha256', $path) : null;
+        expect($actual)->toBe($hashes[$state], $file.' does not match the '.$state.' manifest hash.');
+    }
+}
+
+/**
+ * @param  array{project:string,script:string}  $fixture
+ * @param  array<string, string|false>  $environment
+ */
+function runPestSetup(array $fixture, array $environment = []): Process
+{
+    $process = new Process(
+        [PHP_BINARY, $fixture['script']],
+        $fixture['project'],
+        ['COMPOSER_VENDOR_DIR' => false, ...$environment],
+    );
     $process->run();
 
     return $process;
 }
 
-it('installs monorepo support in a linked worktree and permits repeated setup', function (): void {
+function initializePestSetupRepository(string $root): void
+{
+    mkdir($root, 0700, true);
+    foreach ([
+        ['init', '-b', 'main'],
+        ['config', 'user.name', 'Orbit'],
+        ['config', 'user.email', 'orbit@example.test'],
+    ] as $arguments) {
+        new Process(['git', ...$arguments], $root)->mustRun();
+    }
+    file_put_contents($root.'/tracked sentinel.txt', 'tracked');
+    new Process(['git', 'add', '.'], $root)->mustRun();
+    new Process(['git', 'commit', '-m', 'initial'], $root)->mustRun();
+}
+
+/** @return array{PATH:string,ORBIT_PEST_GIT_LOG:string,log:string} */
+function pestSetupGitShim(string $result): array
+{
+    $root = temporaryPath('orbit pest git shim ', 6);
+    mkdir($root, 0700, true);
+    $log = $root.'/arguments.log';
+    $exit = $result === 'failure' ? 19 : 0;
+    file_put_contents($root.'/git', "#!/bin/sh\nprintf 'cwd=%s\\ntmpdir=%s\\n' \"\$PWD\" \"\$TMPDIR\" >> \"\$ORBIT_PEST_GIT_LOG\"\nprintf '%s\\n' \"\$@\" >> \"\$ORBIT_PEST_GIT_LOG\"\nprintf '%s\\n' 'injected {$result}' >&2\nexit {$exit}\n");
+    chmod($root.'/git', 0700);
+
+    return [
+        'PATH' => $root.PATH_SEPARATOR.(getenv('PATH') ?: ''),
+        'ORBIT_PEST_GIT_LOG' => $log,
+        'log' => $log,
+    ];
+}
+
+/** @return array<string, string> */
+function pestSetupTreeSnapshot(string $root): array
+{
+    $snapshot = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+    );
+    foreach ($iterator as $file) {
+        if ($file->isFile()) {
+            $path = $file->getPathname();
+            $snapshot[substr($path, strlen($root) + 1)] = hash_file('sha256', $path);
+        }
+    }
+    ksort($snapshot);
+
+    return $snapshot;
+}
+
+it('applies exact patched files from every temporary-directory Git context', function (string $context): void {
     $fixture = pestSetupFixture();
-    file_put_contents(dirname($fixture['project'], 2).'/.git', 'gitdir: /unused/worktree');
-    file_put_contents($fixture['pest'].'/unrelated.txt', 'keep me');
+    $container = temporaryPath('orbit pest temp context ', 6);
+    $primary = null;
 
-    $first = runPestSetup($fixture);
-    $second = runPestSetup($fixture);
+    if ($context === 'outside Git') {
+        mkdir($container, 0700, true);
+        $temporaryDirectory = $container;
+    } elseif ($context === 'repository root') {
+        initializePestSetupRepository($container);
+        $temporaryDirectory = $container;
+    } elseif ($context === 'checkout subdirectory') {
+        initializePestSetupRepository($container);
+        $temporaryDirectory = $container.'/nested temp directory';
+        mkdir($temporaryDirectory, 0700, true);
+    } else {
+        $primary = $container;
+        initializePestSetupRepository($primary);
+        $linked = $container.' linked worktree';
+        new Process(['git', 'worktree', 'add', '-b', 'feature', $linked], $primary)->mustRun();
+        $temporaryDirectory = $linked.'/nested temp directory';
+        mkdir($temporaryDirectory, 0700, true);
+    }
 
-    expect($first->isSuccessful())->toBeTrue($first->getErrorOutput());
-    expect($second->isSuccessful())->toBeTrue($second->getErrorOutput());
-    expect(file_exists($fixture['pest'].'/src/Plugins/Tia/GitRepository.php'))->toBeTrue();
-    expect(file_exists($fixture['pest'].'/src/Exceptions/TiaRequiresRepositoryRoot.php'))->toBeFalse();
-    expect(file_get_contents($fixture['project'].'/composer.lock'))->toBe('unchanged lock');
-    expect(file_get_contents($fixture['pest'].'/unrelated.txt'))->toBe('keep me');
-    $reverseCheck = new Process([
-        'git',
+    try {
+        $result = runPestSetup($fixture, ['TMPDIR' => $temporaryDirectory]);
+
+        expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
+        expect($result->getWorkingDirectory())->toBe($fixture['project']);
+        expect($result->getEnv()['TMPDIR'])->toBe($temporaryDirectory);
+        expectPestSetupFiles($fixture, 'patched');
+    } finally {
+        if ($primary !== null) {
+            new Process(['git', 'worktree', 'remove', '--force', dirname($temporaryDirectory)], $primary)->mustRun();
+        }
+    }
+})->with([
+    'outside Git' => 'outside Git',
+    'repository root' => 'repository root',
+    'checkout subdirectory' => 'checkout subdirectory',
+    'linked-worktree subdirectory' => 'linked-worktree subdirectory',
+]);
+
+it('changes only the selected Pest package and setup lock', function (): void {
+    $fixture = pestSetupFixture();
+    $neighbor = $fixture['root'].'/apps/neighbor';
+    mkdir($neighbor.'/vendor/pestphp/pest', 0700, true);
+    file_put_contents($neighbor.'/composer.lock', 'neighbor lock');
+    file_put_contents($neighbor.'/vendor/pestphp/pest/neighbor.php', 'neighbor package');
+    file_put_contents($fixture['project'].'/tracked sentinel.txt', 'tracked project sentinel');
+    file_put_contents($fixture['project'].'/untracked sentinel.txt', 'untracked project sentinel');
+    $before = pestSetupTreeSnapshot($fixture['root']);
+
+    $repository = temporaryPath('orbit pest enclosing repository ', 6);
+    initializePestSetupRepository($repository);
+    file_put_contents($repository.'/staged sentinel.txt', 'staged');
+    new Process(['git', 'add', 'staged sentinel.txt'], $repository)->mustRun();
+    file_put_contents($repository.'/untracked sentinel.txt', 'untracked');
+    $head = trim(new Process(['git', 'rev-parse', 'HEAD'], $repository)->mustRun()->getOutput());
+    $index = trim(new Process(['git', 'write-tree'], $repository)->mustRun()->getOutput());
+    $status = new Process(['git', 'status', '--porcelain=v1', '--untracked-files=all'], $repository)->mustRun()->getOutput();
+    $temporaryDirectory = $repository.'/temporary directory';
+    mkdir($temporaryDirectory, 0700, true);
+
+    $result = runPestSetup($fixture, ['TMPDIR' => $temporaryDirectory]);
+
+    expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
+    expectPestSetupFiles($fixture, 'patched');
+    $after = pestSetupTreeSnapshot($fixture['root']);
+    $changed = array_keys(array_diff_assoc($after, $before) + array_diff_assoc($before, $after));
+    $expected = array_map(
+        fn (string $file): string => 'linked worktree/apps/sample/vendor/pestphp/pest/'.$file,
+        array_keys($fixture['files']),
+    );
+    $expected[] = 'linked worktree/apps/sample/vendor/.orbit-pest-setup.lock';
+    sort($changed);
+    sort($expected);
+    expect($changed)->toBe($expected);
+    expect(trim(new Process(['git', 'rev-parse', 'HEAD'], $repository)->mustRun()->getOutput()))->toBe($head);
+    expect(trim(new Process(['git', 'write-tree'], $repository)->mustRun()->getOutput()))->toBe($index);
+    expect(new Process(['git', 'status', '--porcelain=v1', '--untracked-files=all'], $repository)->mustRun()->getOutput())->toBe($status);
+});
+
+it('recovers the retained upstream package after patch execution fails and remains idempotent', function (): void {
+    $fixture = pestSetupFixture();
+    $inode = fileinode($fixture['pest']);
+    file_put_contents($fixture['pest'].'/package sentinel.txt', 'same package');
+    $shim = pestSetupGitShim('failure');
+
+    $failed = runPestSetup($fixture, [
+        'PATH' => $shim['PATH'],
+        'ORBIT_PEST_GIT_LOG' => $shim['log'],
+    ]);
+    expect($failed->getExitCode())->toBe(1);
+    expectPestSetupFiles($fixture, 'upstream');
+
+    $recovered = runPestSetup($fixture);
+    $patched = pestSetupTreeSnapshot($fixture['pest']);
+    $repeated = runPestSetup($fixture);
+
+    expect($recovered->isSuccessful())->toBeTrue($recovered->getErrorOutput());
+    expect($repeated->isSuccessful())->toBeTrue($repeated->getErrorOutput());
+    expect(fileinode($fixture['pest']))->toBe($inode);
+    expect(file_get_contents($fixture['pest'].'/package sentinel.txt'))->toBe('same package');
+    expect(pestSetupTreeSnapshot($fixture['pest']))->toBe($patched);
+    expectPestSetupFiles($fixture, 'patched');
+});
+
+it('reports patch execution failures without classifying upstream files as modified', function (string $result): void {
+    $fixture = pestSetupFixture();
+    $shim = pestSetupGitShim($result);
+    $temporaryDirectory = temporaryPath('orbit pest injected process ', 6);
+    mkdir($temporaryDirectory, 0700, true);
+
+    $process = runPestSetup($fixture, [
+        'PATH' => $shim['PATH'],
+        'ORBIT_PEST_GIT_LOG' => $shim['log'],
+        'TMPDIR' => $temporaryDirectory,
+    ]);
+
+    expect($process->getExitCode())->toBe(1);
+    expect($process->getErrorOutput())->toContain('pinned monorepo patch');
+    expect($process->getErrorOutput())->toContain('retry setup without reinstalling Pest');
+    expect($process->getErrorOutput())->not->toContain('files differ from the pinned');
+    expectPestSetupFiles($fixture, 'upstream');
+    $arguments = file($shim['log'], FILE_IGNORE_NEW_LINES);
+    $checkArguments = [
+        'cwd='.DIRECTORY_SEPARATOR,
+        'tmpdir='.$temporaryDirectory,
         'apply',
         '--unsafe-paths',
         '--directory='.$fixture['pest'],
-        '--reverse',
         '--check',
         $fixture['patch'],
-    ], sys_get_temp_dir());
-    $reverseCheck->run();
-    expect($reverseCheck->isSuccessful())->toBeTrue($reverseCheck->getErrorOutput());
-});
+    ];
+    $applyArguments = [
+        'cwd='.DIRECTORY_SEPARATOR,
+        'tmpdir='.$temporaryDirectory,
+        'apply',
+        '--unsafe-paths',
+        '--directory='.$fixture['pest'],
+        $fixture['patch'],
+    ];
+    expect($arguments)->toBe($result === 'failure' ? $checkArguments : [...$checkArguments, ...$applyArguments]);
+})->with([
+    'nonzero Git process' => 'failure',
+    'exit-zero Git process that applies nothing' => 'no-op',
+]);
 
 it('refuses changed upstream files before changing any package file', function (): void {
     $fixture = pestSetupFixture();
@@ -108,6 +318,23 @@ it('refuses a Pest upgrade until its patch is reviewed', function (): void {
     expect($result->getExitCode())->toBe(1);
     expect($result->getErrorOutput())->toContain('unsupported Pest version');
     expect(file_exists($fixture['pest'].'/src/Plugins/Tia/GitRepository.php'))->toBeFalse();
+});
+
+it('refuses a changed pinned patch checksum from a disposable setup bundle', function (): void {
+    $fixture = pestSetupFixture();
+    $bundle = temporaryPath('orbit pest disposable bundle ', 6);
+    mkdir($bundle.'/pest-support', 0700, true);
+    copy($fixture['script'], $bundle.'/pest-setup');
+    copy(dirname($fixture['patch']).'/manifest.json', $bundle.'/pest-support/manifest.json');
+    copy($fixture['patch'], $bundle.'/pest-support/monorepo.patch');
+    file_put_contents($bundle.'/pest-support/monorepo.patch', "\nchanged checksum", FILE_APPEND);
+    $fixture['script'] = $bundle.'/pest-setup';
+
+    $result = runPestSetup($fixture);
+
+    expect($result->getExitCode())->toBe(1);
+    expect($result->getErrorOutput())->toContain('pinned patch checksum does not match');
+    expectPestSetupFiles($fixture, 'upstream');
 });
 
 it('skips production installations without Pest', function (): void {
