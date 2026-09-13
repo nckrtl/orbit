@@ -118,7 +118,9 @@ Creation and `bin/worktree-remove ORB-217` also resolve an existing branch with 
 
 Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and TIA baselines. Run checks in each project that a change affects.
 
-Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. A modified or unsupported Pest build fails setup. Installations without development dependencies skip Pest setup.
+Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. Installations without development dependencies skip Pest setup.
+
+Pest setup distinguishes patch execution failure from modified package files. After a patch execution failure leaves the verified upstream files unchanged, rerun the same Composer command without reinstalling Pest or deleting test caches. If setup instead reports that Pest files differ from both pinned builds, reinstall the locked Pest distribution before retrying. An unsupported version or changed pinned patch checksum remains an error that requires a reviewed setup update.
 
 Use these commands from the affected project directory.
 
