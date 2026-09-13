@@ -44,7 +44,7 @@ it('lists every accepted family including schedule in doctor help', function ():
 
     expect($families)->toContain('schedule');
     expect(app(Kernel::class)->all()['doctor']->getDefinition()->getOption('family')->getDescription())
-        ->toContain(...$families);
+        ->toBe('Limit checks to node, role, app, instance, workspace, schedule, tool, process, firewall, or herdr');
 
     expect(Artisan::call('help', ['command_name' => 'doctor']))->toBe(Command::SUCCESS);
     expect(Artisan::output())->toContain(...$families);
@@ -89,18 +89,31 @@ it('posts the exact empty request to the doctor endpoint', function (): void {
         ->toBe('{}');
 });
 
-it('forwards the node and repeated families in received order', function (): void {
-    $mock = doctor_cli_mock(doctor_cli_report(healthy: true));
+it('accepts the schedule filter and renders its received canonical position', function (): void {
+    $mock = doctor_cli_mock(doctor_cli_report(
+        healthy: true,
+        nodes: [doctor_cli_node('alpha', [
+            doctor_cli_family(family: 'workspace', status: 'healthy', checked: 1, issues: []),
+            doctor_cli_family(family: 'schedule', status: 'healthy', checked: 2, issues: []),
+            doctor_cli_family(family: 'tool', status: 'healthy', checked: 3, issues: []),
+        ])],
+        summary: ['nodes' => 1, 'families' => 3, 'checks' => 6, 'drift' => 0, 'unverifiable' => 0],
+    ));
 
-    expect(Artisan::call('doctor', [
-        '--node' => '7',
-        '--family' => ['instance', 'workspace'],
-        '--json' => true,
-    ]))
-        ->toBe(Command::SUCCESS);
+    $this
+        ->artisan('doctor', ['--node' => '7', '--family' => ['schedule']])
+        ->expectsTable(
+            ['Node', 'Family', 'Status', 'Checked', 'Finding'],
+            [
+                ['alpha', 'workspace', 'healthy', 1, '—'],
+                ['alpha', 'schedule', 'healthy', 2, '—'],
+                ['alpha', 'tool', 'healthy', 3, '—'],
+            ],
+        )
+        ->assertExitCode(Command::SUCCESS);
 
     expect($mock->getLastPendingRequest()?->body()->all())
-        ->toBe('{"node_id":7,"families":["instance","workspace"]}');
+        ->toBe('{"node_id":7,"families":["schedule"]}');
 });
 
 it('renders rich unhealthy reports in received order', function (): void {

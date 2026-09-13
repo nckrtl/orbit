@@ -58,8 +58,8 @@ An operator uses seven Schedule commands from a machine with an active Gateway p
 
 | Command | Result |
 | --- | --- |
-| `orbit schedule:add --node=NODE` | Add a Schedule for one Node. |
-| `orbit schedule:add --instance=INSTANCE` | Add a Schedule for one AppInstance. Add `--no-start` to install its timer disabled and stopped. |
+| `orbit schedule:add NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Add a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:add NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Add a Schedule for one positive AppInstance ID. Add `--no-start` to install its timer disabled and stopped. |
 | `orbit schedule:list` | List authorized Schedule summaries without command text. |
 | `orbit schedule:show UUID` | Show one authorized Schedule. |
 | `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
@@ -67,7 +67,7 @@ An operator uses seven Schedule commands from a machine with an active Gateway p
 | `orbit schedule:remove UUID` | Remove one Schedule through the Gateway. |
 | `orbit schedule:activate UUID` | Enable and start an installed AppInstance timer without replacing the Schedule. |
 
-`schedule:add` requires exactly one positive Node or AppInstance identity. Target-specific options cannot be combined. The CLI can resolve an ambiguous target through one bounded interactive choice, but `--json` and non-interactive calls never prompt and require an explicit identity.
+`schedule:add` requires exactly one positive Node or AppInstance ID. Both selectors, no selector, a malformed or non-positive ID, and `--node` with the AppInstance-only `--no-start` option fail before the CLI sends an HTTP request. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target.
 
 Human output and `--json` output preserve the Gateway request ID. They show `desired_timer_state` separately from lifecycle `status`, and shared safe errors expose no command, log, credential, or remote execution detail.
 

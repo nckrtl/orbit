@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Commands\GatewayCommand;
+use App\Commands\Schedules\ListSchedulesCommand;
+use App\Commands\Schedules\RunScheduleCommand;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -98,6 +100,13 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'route:target:clear',
         'route:target:set',
         'route:update',
+        'schedule:activate',
+        'schedule:add',
+        'schedule:list',
+        'schedule:logs',
+        'schedule:remove',
+        'schedule:run',
+        'schedule:show',
         'tool:install',
         'tool:list',
         'tool:manager:list',
@@ -116,18 +125,23 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(90);
+    expect($orbitCommands)->toHaveCount(97);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
 });
 
-it('does not register Laravel schedule commands', function (): void {
-    expect(app(Kernel::class)->all())->not->toHaveKeys([
-        'schedule:finish',
-        'schedule:list',
-        'schedule:run',
-    ]);
+it('registers only the Orbit Schedule adapters', function (): void {
+    $commands = app(Kernel::class)->all();
+
+    expect($commands)
+        ->toHaveKeys(['schedule:list', 'schedule:run'])
+        ->not->toHaveKeys([
+            'schedule:finish',
+            'schedule:complete',
+        ]);
+    expect($commands['schedule:list'])->toBeInstanceOf(ListSchedulesCommand::class);
+    expect($commands['schedule:run'])->toBeInstanceOf(RunScheduleCommand::class);
 });
 
 it('keeps the hidden Boost MCP entrypoint available to coding agents', function (): void {
@@ -364,6 +378,23 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'route:target:clear' => [['route'], ['json' => false]],
         'route:target:set' => [['route', 'target'], ['json' => false]],
         'route:update' => [['route'], ['hostname' => null, 'publication' => null, 'json' => false]],
+        'schedule:activate' => [['schedule'], ['json' => false]],
+        'schedule:add' => [[
+            'name',
+        ], [
+            'node' => null,
+            'instance' => null,
+            'calendar' => null,
+            'command' => null,
+            'timeout' => '3600',
+            'no-start' => false,
+            'json' => false,
+        ]],
+        'schedule:list' => [[], ['json' => false]],
+        'schedule:logs' => [['schedule'], ['lines' => '100', 'json' => false]],
+        'schedule:remove' => [['schedule'], ['json' => false]],
+        'schedule:run' => [['schedule'], ['json' => false]],
+        'schedule:show' => [['schedule'], ['json' => false]],
         'tool:install' => [
             ['package'],
             ['node' => null, 'manager' => null, 'constraint' => null, 'json' => false],
@@ -598,6 +629,28 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'route:target:clear' => [['route' => '1'], ...$profileMissing],
         'route:target:set' => [['route' => '1', 'target' => '2'], ...$profileMissing],
         'route:update' => [['route' => '1', '--publication' => 'private'], ...$profileMissing],
+        'schedule:activate' => [[
+            'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ], ...$profileMissing],
+        'schedule:add' => [[
+            'name' => 'daily-report',
+            '--node' => '1',
+            '--calendar' => 'daily',
+            '--command' => 'php artisan report:send',
+        ], ...$profileMissing],
+        'schedule:list' => [[], ...$profileMissing],
+        'schedule:logs' => [[
+            'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ], ...$profileMissing],
+        'schedule:remove' => [[
+            'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ], ...$profileMissing],
+        'schedule:run' => [[
+            'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ], ...$profileMissing],
+        'schedule:show' => [[
+            'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ], ...$profileMissing],
         'tool:install' => [
             ['package' => 'curl', '--node' => '1', '--manager' => 'apt'],
             ...$profileMissing,

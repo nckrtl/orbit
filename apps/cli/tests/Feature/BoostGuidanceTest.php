@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\LaravelZeroGuidelineComposer;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Laravel\Boost\Install\GuidelineComposer;
@@ -218,6 +219,36 @@ it('defines the AppInstance environment command boundary', function (): void {
         ->toContain(
             'Never display values, read or write local files, select a target, resolve a placeholder, refresh an application cache, or restart a process.',
         );
+});
+
+it('defines the complete HTTP-only Schedule operator surface', function (): void {
+    $scheduleCommands = [
+        'schedule:add',
+        'schedule:list',
+        'schedule:show',
+        'schedule:run',
+        'schedule:logs',
+        'schedule:remove',
+        'schedule:activate',
+    ];
+    $commandRules = file_get_contents(base_path('.ai/rules/commands.md'));
+    $developmentSkill = file_get_contents(base_path('.ai/skills/orbit-cli-development/SKILL.md'));
+    $guidance = "{$commandRules}\n{$developmentSkill}";
+    $normalizedGuidance = preg_replace('/\s+/', ' ', $guidance);
+    $visibleCommands = collect(app(Kernel::class)->all())
+        ->reject(static fn ($command): bool => $command->isHidden())
+        ->keys()
+        ->all();
+
+    expect($visibleCommands)->toContain(...$scheduleCommands);
+    expect($normalizedGuidance)
+        ->toBeString()
+        ->toContain(...$scheduleCommands)
+        ->toContain('typed PHP SDK requests')
+        ->toContain('exactly one positive `--node` or `--instance` ID')
+        ->toContain('never discovers or prompts for a target')
+        ->toContain('Completion remains an internal Node-authenticated API and SDK transport')
+        ->not->toContain('schedule:complete` command', 'generic Schedule executor');
 });
 
 it('requires guidance bootstrap before repository edits', function (): void {

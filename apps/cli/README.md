@@ -51,6 +51,17 @@ browsers after a change so they do not reuse an existing connection.
 Doctor only verifies state and never repairs it. Exit status 1 means unhealthy,
 unverifiable, or a transport failure.
 
+## Schedules
+
+Add a Schedule with exactly one positive Node or AppInstance ID:
+
+```bash
+./orbit schedule:add daily-report --node=7 --calendar=daily --command='php report.php'
+./orbit schedule:add hourly-report --instance=12 --calendar=hourly --command='php artisan report:send' --no-start
+```
+
+Use `schedule:list`, `schedule:show UUID`, `schedule:run UUID`, `schedule:logs UUID`, `schedule:remove UUID`, and `schedule:activate UUID` for the remaining operator actions. Add `--json` for machine-readable output. The CLI never prompts for a Schedule target. Schedule completion remains an internal Node-authenticated API and SDK operation.
+
 ## JavaScript processes
 
 ```bash
