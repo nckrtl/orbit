@@ -268,7 +268,7 @@ it('renders unchanged and constraint-blocked update outcomes exactly', function 
     }
 });
 
-it('renders a successful remove of a failed version-probe install', function (): void {
+it('renders a successful remove of a failed version-probe tool', function (string $failedOperation): void {
     MockClient::global([
         RemoveToolRequest::class => MockResponse::make([
             'data' => [
@@ -280,7 +280,7 @@ it('renders a successful remove of a failed version-probe install', function ():
                 'protected' => false,
                 'status' => 'failed',
                 'installed_version' => null,
-                'failed_operation' => 'install',
+                'failed_operation' => $failedOperation,
                 'error_code' => 'tool.version_probe_failed',
                 'outcome' => 'applied',
             ],
@@ -292,7 +292,11 @@ it('renders a successful remove of a failed version-probe install', function ():
         ->expectsOutput('Tool [not-a-formula] removed.')
         ->expectsOutput('Request ID: cccccccc-cccc-4ccc-8ccc-cccccccccccc')
         ->assertSuccessful();
-});
+})->with([
+    'install' => ['install'],
+    'remove' => ['remove'],
+    'update' => ['update'],
+]);
 
 it('renders the exact human remove message and request ID', function (): void {
     MockClient::global([

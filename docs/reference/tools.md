@@ -74,7 +74,7 @@ Run the removal command with the Tool ID that Orbit returned when it created the
 orbit tool:remove <tool-id>
 ```
 
-The Gateway probes the package before removal unless the Tool is a failed install that never recorded a version, including `tool.version_probe_failed`. In that case the Gateway deletes the Tool row without probing a never-installed package. When the package is installed, removal proceeds when accepted under [ADR 0001](../decisions/0001-tool-management.md)'s Tool-removal contract, and the Gateway probes the package again after manager removal. A successful removal deletes the Tool row.
+The Gateway probes the package before removal unless the Tool is a failed row that never recorded a version, including `tool.version_probe_failed` after install, update, or remove. In that case the Gateway deletes the Tool row without probing a never-proven package. When the package is installed, removal proceeds when accepted under [ADR 0001](../decisions/0001-tool-management.md)'s Tool-removal contract, and the Gateway probes the package again after manager removal. A successful removal deletes the Tool row.
 
 APT removes the package without purging its configuration files. Dpkg can therefore retain the package record, configuration files, and last package version after the executable files are gone. The Gateway treats that removed package state as absence and deletes the Tool row. [ADR 0001](../decisions/0001-tool-management.md) defines the package-ownership and exact-removal boundary.
 
@@ -83,7 +83,7 @@ The Gateway returns bounded outcomes for each removal result.
 | Condition | Result | Tool row |
 | --- | --- | --- |
 | The package is already absent, including an APT package with retained configuration files | Removal succeeds without another manager removal | Deleted |
-| A failed install never recorded a version, including `tool.version_probe_failed` | Removal succeeds without probing the package | Deleted |
+| A failed Tool never recorded a version, including `tool.version_probe_failed` after install, update, or remove | Removal succeeds without probing the package | Deleted |
 | The accepted Tool removal succeeds and the second probe reports absence | Removal succeeds | Deleted |
 | The installed-version probe fails or returns unsafe output on an installed or otherwise proven Tool | `tool.version_probe_failed` | Retained as a retryable failure |
 | The manager removal fails or the package remains installed | `tool.remove_failed` | Retained as a retryable failure |
@@ -92,7 +92,7 @@ The Gateway returns bounded outcomes for each removal result.
 
 ## Retry a failed removal
 
-Retry the same `tool:remove` command with the retained Tool ID. The Gateway probes live package state before it plans another mutation. When the earlier removal already removed the package but dpkg retained its configuration, the retry deletes the Tool row without requiring a manual command on the Node.
+Retry the same `tool:remove` command with the retained Tool ID. The Gateway probes live package state before it plans another mutation unless the failed Tool never recorded a version. When the earlier removal already removed the package but dpkg retained its configuration, the retry deletes the Tool row without requiring a manual command on the Node.
 
 ## Check removal with Doctor
 
