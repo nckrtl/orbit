@@ -53,7 +53,9 @@ Each identity or architecture failure names the boundary that stopped the reques
 
 ## Public SSH after provisioning
 
-Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. A later `node:provision` of a roleless Node therefore connects over public SSH again, and [Node retarget](node-retarget.md#two-boundaries) describes the same two boundaries.
+Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](node-retarget.md#two-boundaries) describes the same two boundaries.
+
+A later `node:provision` of a roleless Node therefore connects over public SSH again and republishes the WireGuard peer. The Gateway finalizes that publication over the verified tunnel, because role convergence closes the public path during the same request.
 
 ## Remove a Node
 

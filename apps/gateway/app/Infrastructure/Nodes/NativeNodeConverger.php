@@ -89,8 +89,13 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         $this->wireGuard->convergeRecoverably(
             $node,
             $this->connection($node, $identity->managedUser),
-            function () use ($node, $identity, $hostKey, $wireguardIp, $observation, $completion): void {
+            function (?Closure $finalizeOver = null) use ($node, $identity, $hostKey, $wireguardIp, $observation, $completion): void {
                 $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
+
+                if ($finalizeOver instanceof Closure) {
+                    $finalizeOver($this->connection($node, $identity->managedUser, $wireguardIp, 22));
+                }
+
                 $completion($observation);
             },
             $rolelessOperator,

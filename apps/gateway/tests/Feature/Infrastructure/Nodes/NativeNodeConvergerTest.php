@@ -433,7 +433,9 @@ it('commits recoverable peer publication before activating orbit SSH for active 
             bool $rolelessOperator = false,
         ): void {
             $this->events[] = 'wireguard-publish';
-            $completion();
+            $completion(function (SshConnection $verified): void {
+                $this->events[] = "wireguard-finalize:{$verified->host}:{$verified->port}";
+            });
             $this->events[] = 'wireguard-commit';
         }
     };
@@ -460,6 +462,7 @@ it('commits recoverable peer publication before activating orbit SSH for active 
 
     expect($events)->toBe([
         'wireguard-publish',
+        'wireguard-finalize:10.44.0.2:22',
         'apt:x86_64',
         'wireguard-commit',
     ]);

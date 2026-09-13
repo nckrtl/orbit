@@ -1543,6 +1543,94 @@ it('uses a wg-quick compatible candidate filename', function (): void {
 });
 
 /** @return array{NativeWireGuardPeerConverger, Node, SshConnection, string} */
+it('finalizes a recoverable publication over the connection the completion registers', function (): void {
+    $processes = new class implements ProcessRunner
+    {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            return new CommandResult(0, '', '', 2, false);
+        }
+    };
+    $ssh = new class implements SshExecutor
+    {
+        /** @var list<string> */
+        public array $hosts = [];
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->hosts[] = $connection->host;
+
+            return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
+        }
+    };
+    [$converger, $peer, $public, $orbitHome] = wireguard_peer_harness($processes, $ssh);
+    $peer->update(['wireguard_public_key' => str_repeat(string: 'A', times: 43).'=']);
+    $tunnel = new SshConnection(
+        host: '10.44.0.2',
+        user: 'orbit',
+        port: 22,
+        identityFile: '/tmp/key',
+        knownHostsFile: '/tmp/known_hosts',
+    );
+
+    try {
+        $converger->convergeRecoverably($peer, $public, static function (Closure $finalizeOver) use ($tunnel): void {
+            $finalizeOver($tunnel);
+        });
+
+        expect($ssh->hosts)->toBe(['94.237.40.75', '94.237.40.75', '10.44.0.2']);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('rolls back a recoverable publication over the registered connection when the completion fails', function (): void {
+    $processes = new class implements ProcessRunner
+    {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            return new CommandResult(0, '', '', 2, false);
+        }
+    };
+    $ssh = new class implements SshExecutor
+    {
+        /** @var list<string> */
+        public array $hosts = [];
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->hosts[] = $connection->host;
+
+            return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
+        }
+    };
+    [$converger, $peer, $public, $orbitHome] = wireguard_peer_harness($processes, $ssh);
+    $peer->update(['wireguard_public_key' => str_repeat(string: 'A', times: 43).'=']);
+    $tunnel = new SshConnection(
+        host: '10.44.0.2',
+        user: 'orbit',
+        port: 22,
+        identityFile: '/tmp/key',
+        knownHostsFile: '/tmp/known_hosts',
+    );
+
+    try {
+        expect(fn () => $converger->convergeRecoverably(
+            $peer,
+            $public,
+            static function (Closure $finalizeOver) use ($tunnel): void {
+                $finalizeOver($tunnel);
+
+                throw new RuntimeException('completion failed');
+            },
+        ))->toThrow(RuntimeException::class);
+
+        expect($ssh->hosts)->toBe(['94.237.40.75', '94.237.40.75', '10.44.0.2']);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
 function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Closure $sleep = null): array
 {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();

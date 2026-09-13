@@ -41,13 +41,19 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
         bool $rolelessOperator = false,
     ): void {
         $publicKey = $this->preflightPeerKey($node, $connection, 'recoverable');
+        $finalize = $connection;
 
         try {
             $this->publishPeer($node, $connection, $publicKey, 'retain', $rolelessOperator);
-            $completion();
-            $this->commitPeerTransaction($node, $connection, $publicKey);
+            // The completion may hand back the verified tunnel connection: role
+            // convergence closes the public path that published the peer before
+            // the transaction can be finalized.
+            $completion(static function (SshConnection $verified) use (&$finalize): void {
+                $finalize = $verified;
+            });
+            $this->commitPeerTransaction($node, $finalize, $publicKey);
         } catch (\Throwable $throwable) {
-            $this->rollbackPeerTransaction($node, $connection);
+            $this->rollbackPeerTransaction($node, $finalize);
 
             throw $throwable;
         }
