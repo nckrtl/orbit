@@ -26,6 +26,12 @@ In interactive single-issue mode, inspect only the named issue. If it is no long
 
 Apply the parent and child rules from `creating-issues`. A parent is shaped as an outcome and ordered set of children, never as claimable implementation work; its leaf children carry acceptance.
 
+## Introduce the active issue
+
+Whenever an issue becomes active, orient the user before explaining its gap or asking decisions. Lead with the issue ID and exact title, then give a short plain-language summary of what the ticket delivers and why it matters. Define any Orbit term that a reader needs to understand the summary, and name the immediate use case when the issue provides one. Do not assume the user remembers the queue entry or can infer the ticket from its ID.
+
+In interactive pipeline mode, repeat this introduction for every next issue after refreshing the queue. Keep it concise, but make it self-contained enough that the user can decide the issue without opening Linear.
+
 ## Explain the gap first
 
 Before proposing edits, explain in plain language:
