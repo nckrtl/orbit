@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Process;
 use SensitiveParameter;
 
@@ -15,24 +16,36 @@ final readonly class ProcessTargetResolver
 {
     public function resolve(ProcessTargetType $type, int $id): ProcessTarget
     {
-        return $this->forAdmission(
-            AppInstance::query()
-                ->with('node')
-                ->findOrFail($id),
-        );
+        return match ($type) {
+            ProcessTargetType::AppInstance => $this->forAdmission(
+                AppInstance::query()
+                    ->with('node')
+                    ->findOrFail($id),
+            ),
+            ProcessTargetType::Node => $this->forNodeAdmission(
+                Node::query()->findOrFail($id),
+            ),
+        };
     }
 
     public function forAdmission(AppInstance $instance): ProcessTarget
     {
         $instance->loadMissing('node');
-        $this->ensureActive($instance);
+        $this->ensureActiveInstance($instance);
 
-        return $this->context($instance);
+        return $this->instanceContext($instance);
+    }
+
+    public function forNodeAdmission(Node $node): ProcessTarget
+    {
+        $this->ensureActiveNode($node);
+
+        return $this->nodeContext($node);
     }
 
     public function forProcess(#[SensitiveParameter] Process $process): ProcessTarget
     {
-        return $this->forAdmission($this->owner($process));
+        return $this->forAdmissionOwner($this->owner($process));
     }
 
     public function forInstallation(#[SensitiveParameter] Process $process): ProcessTarget
@@ -41,13 +54,23 @@ final readonly class ProcessTargetResolver
             return $this->forProcess($process);
         }
 
-        return $this->forPreparation($this->owner($process));
+        $owner = $this->owner($process);
+
+        if (! $owner instanceof AppInstance) {
+            throw new ResourceOperationException(
+                errorCode: 'process.target_unsupported',
+                message: 'The Process owner is not a supported AppInstance.',
+                status: 409,
+            );
+        }
+
+        return $this->forPreparation($owner);
     }
 
     public function forPreparation(AppInstance $instance): ProcessTarget
     {
         $instance->loadMissing('node');
-        $this->ensureLinux($instance);
+        $this->ensureLinux($instance->node);
 
         if (
             $instance->node->status !== LifecycleStatus::Active
@@ -60,52 +83,100 @@ final readonly class ProcessTargetResolver
             );
         }
 
-        return $this->context($instance);
+        return $this->instanceContext($instance);
     }
 
     public function forStart(#[SensitiveParameter] Process $process): ProcessTarget
     {
-        return $this->forAdmission($this->owner($process));
+        return $this->forAdmissionOwner($this->owner($process));
     }
 
     public function forInspection(#[SensitiveParameter] Process $process): ProcessTarget
     {
-        return $this->context($this->owner($process));
+        $owner = $this->owner($process);
+
+        return $owner instanceof Node
+            ? $this->nodeContext($owner)
+            : $this->instanceContext($owner);
     }
 
     public function forRemoval(#[SensitiveParameter] Process $process): ProcessTarget
     {
-        $instance = $this->owner($process);
-        $this->ensureLinux($instance);
+        $owner = $this->owner($process);
 
-        if ($instance->node->status !== LifecycleStatus::Active) {
+        if ($owner instanceof Node) {
+            $this->ensureLinux($owner);
+
+            if ($owner->status !== LifecycleStatus::Active) {
+                throw new ResourceOperationException(
+                    errorCode: 'process.target_inactive',
+                    message: "Node [{$owner->name}] is not active.",
+                );
+            }
+
+            return $this->nodeContext($owner);
+        }
+
+        $this->ensureLinux($owner->node);
+
+        if ($owner->node->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException(
                 errorCode: 'process.target_inactive',
-                message: "Node [{$instance->node->name}] is not active.",
+                message: "Node [{$owner->node->name}] is not active.",
             );
         }
 
-        return $this->context($instance);
+        return $this->instanceContext($owner);
     }
 
-    private function owner(#[SensitiveParameter] Process $process): AppInstance
+    private function forAdmissionOwner(AppInstance|Node $owner): ProcessTarget
     {
-        if ($process->owner_type !== AppInstance::class) {
-            throw new ResourceOperationException(
+        return $owner instanceof Node
+            ? $this->forNodeAdmission($owner)
+            : $this->forAdmission($owner);
+    }
+
+    private function owner(#[SensitiveParameter] Process $process): AppInstance|Node
+    {
+        return match ($process->owner_type) {
+            AppInstance::class => AppInstance::query()
+                ->with('node')
+                ->findOrFail($process->owner_id),
+            Node::class => Node::query()->findOrFail($process->owner_id),
+            default => throw new ResourceOperationException(
                 errorCode: 'process.target_unsupported',
-                message: 'The Process owner is not a supported AppInstance.',
+                message: 'The Process owner is not a supported AppInstance or Node.',
                 status: 409,
-            );
-        }
-
-        return AppInstance::query()
-            ->with('node')
-            ->findOrFail($process->owner_id);
+            ),
+        };
     }
 
-    private function context(AppInstance $instance): ProcessTarget
+    private function nodeContext(Node $node): ProcessTarget
     {
-        $this->ensureLinux($instance);
+        $this->ensureLinux($node);
+
+        $user = $node->user;
+        $workingDirectory = "/home/{$user}";
+
+        if (! $this->safeAbsolutePath($workingDirectory)) {
+            $this->nodeUnavailable($node);
+        }
+
+        if (preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user) !== 1) {
+            $this->nodeUnavailable($node);
+        }
+
+        return new ProcessTarget(
+            node: $node,
+            user: $user,
+            checkoutPath: $workingDirectory,
+            environmentFile: '',
+        );
+    }
+
+    private function instanceContext(AppInstance $instance): ProcessTarget
+    {
+        $this->ensureLinux($instance->node);
 
         if ($instance->environment === 'development') {
             $workingDirectory = $instance->checkout_path;
@@ -166,9 +237,9 @@ final readonly class ProcessTargetResolver
         return is_string($hostname) && $hostname !== '' ? $hostname : null;
     }
 
-    private function ensureActive(AppInstance $instance): void
+    private function ensureActiveInstance(AppInstance $instance): void
     {
-        $this->ensureLinux($instance);
+        $this->ensureLinux($instance->node);
 
         if (
             $instance->status === AppInstanceState::Active
@@ -185,16 +256,35 @@ final readonly class ProcessTargetResolver
         );
     }
 
-    private function ensureLinux(AppInstance $instance): void
+    private function ensureActiveNode(Node $node): void
     {
-        if ($instance->node->platform === 'linux') {
+        $this->ensureLinux($node);
+
+        if ($node->status === LifecycleStatus::Active && $this->isManaged($node)) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'process.target_inactive',
+            message: "Node [{$node->name}] is not active.",
+        );
+    }
+
+    private function ensureLinux(Node $node): void
+    {
+        if ($node->platform === 'linux') {
             return;
         }
 
         throw new ResourceOperationException(
             errorCode: 'process.platform_unsupported',
-            message: "Processes are not supported on [{$instance->node->platform}] nodes yet.",
+            message: "Processes are not supported on [{$node->platform}] nodes yet.",
         );
+    }
+
+    private function isManaged(Node $node): bool
+    {
+        return is_string($node->wireguard_ip) && $node->wireguard_ip !== '';
     }
 
     private function safeAbsolutePath(string $path): bool
@@ -214,6 +304,15 @@ final readonly class ProcessTargetResolver
         throw new ResourceOperationException(
             errorCode: 'process.target_unavailable',
             message: "AppInstance [{$instance->name}] has no valid Process placement.",
+            status: 409,
+        );
+    }
+
+    private function nodeUnavailable(Node $node): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'process.target_unavailable',
+            message: "Node [{$node->name}] has no valid Process placement.",
             status: 409,
         );
     }

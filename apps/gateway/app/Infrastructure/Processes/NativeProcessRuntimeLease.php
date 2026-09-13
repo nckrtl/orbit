@@ -7,6 +7,7 @@ namespace App\Infrastructure\Processes;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Process;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
@@ -103,11 +104,11 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
 
     private function key(#[SensitiveParameter] Process $process): string
     {
-        $nodeId = 0;
-
-        if ($process->owner_type === AppInstance::class) {
-            $nodeId = (int) (AppInstance::query()->whereKey($process->owner_id)->value('node_id') ?? 0);
-        }
+        $nodeId = match ($process->owner_type) {
+            AppInstance::class => (int) (AppInstance::query()->whereKey($process->owner_id)->value('node_id') ?? 0),
+            Node::class => $process->owner_id,
+            default => 0,
+        };
 
         return "orbit:process-runtime:{$nodeId}:{$process->id}";
     }

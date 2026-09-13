@@ -21,6 +21,7 @@ it('removes every AppInstance-owned Process in stable order and leaves other own
     $third = orb131_cascade_process($target->id, 'third', LifecycleStatus::Removing);
     $otherInstance = orb131_cascade_process($other->id, 'other', LifecycleStatus::Active);
     $legacy = orb131_cascade_process($target->id, 'legacy', LifecycleStatus::Active, 'App\\Models\\Instance');
+    $nodeOwned = orb131_cascade_process($target->node_id, 'postgres', LifecycleStatus::Active, Node::class);
     $runtime = new Orb131CascadeRuntimeManager;
 
     new CascadeAppInstanceProcessesAction(new RemoveProcessAction($runtime, new ProcessTargetResolver))->execute(
@@ -33,6 +34,7 @@ it('removes every AppInstance-owned Process in stable order and leaves other own
     $this->assertDatabaseMissing('processes', ['id' => $third->id]);
     $this->assertDatabaseHas('processes', ['id' => $otherInstance->id]);
     $this->assertDatabaseHas('processes', ['id' => $legacy->id]);
+    $this->assertDatabaseHas('processes', ['id' => $nodeOwned->id]);
 });
 
 it('retains failed cleanup for retry and repeats only unfinished Process removal', function (): void {

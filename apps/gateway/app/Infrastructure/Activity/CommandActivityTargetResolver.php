@@ -256,7 +256,7 @@ final readonly class CommandActivityTargetResolver
             ->first();
     }
 
-    private function processOwner(Request $request): ?AppInstance
+    private function processOwner(Request $request): Node|AppInstance|null
     {
         $process = $request->route('process');
 
@@ -265,11 +265,11 @@ final readonly class CommandActivityTargetResolver
         }
 
         if ($process instanceof OrbitProcess) {
-            if ($process->owner_type !== AppInstance::class) {
-                return null;
-            }
-
-            return AppInstance::query()->find($process->owner_id);
+            return match ($process->owner_type) {
+                AppInstance::class => AppInstance::query()->find($process->owner_id),
+                Node::class => Node::query()->find($process->owner_id),
+                default => null,
+            };
         }
 
         $targetType = $request->query('target_type');
@@ -278,11 +278,14 @@ final readonly class CommandActivityTargetResolver
             $targetType = $request->input('target_type');
         }
 
-        if ($targetType !== ProcessTargetType::AppInstance->value) {
-            return null;
-        }
+        $type = is_string($targetType) ? ProcessTargetType::tryFrom($targetType) : null;
+        $targetId = $request->integer('target_id');
 
-        return AppInstance::query()->find($request->integer('target_id'));
+        return match ($type) {
+            ProcessTargetType::AppInstance => AppInstance::query()->find($targetId),
+            ProcessTargetType::Node => Node::query()->find($targetId),
+            default => null,
+        };
     }
 
     private function scheduleTarget(Request $request): Node|AppInstance|null

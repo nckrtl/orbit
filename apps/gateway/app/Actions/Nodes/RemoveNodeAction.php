@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Actions\Processes\CascadeNodeProcessesAction;
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Firewall\RouterLanIngressReconciler;
@@ -24,6 +25,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\Node;
+use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Throwable;
 
@@ -42,6 +44,7 @@ final readonly class RemoveNodeAction
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
+        private ?CascadeNodeProcessesAction $nodeProcesses = null,
     ) {}
 
     public function execute(
@@ -81,6 +84,7 @@ final readonly class RemoveNodeAction
         $this->guardProtected($node, $caller);
         $shed = $offline ? $this->shedRoles($node, $force) : null;
         $this->guardRemoval($node);
+        $this->cleanupNodeProcesses($node, forgetRecords: $shed !== null);
         $peerRemoved = false;
         $result = new RemoveNodeData(
             id: $node->id,
@@ -371,6 +375,31 @@ final readonly class RemoveNodeAction
         }
 
         return $shed;
+    }
+
+    private function cleanupNodeProcesses(Node $node, bool $forgetRecords): void
+    {
+        try {
+            if ($forgetRecords) {
+                Process::query()
+                    ->where('owner_type', Node::class)
+                    ->where('owner_id', $node->id)
+                    ->orderBy('id')
+                    ->get()
+                    ->each(fn (Process $process) => $process->delete());
+
+                return;
+            }
+
+            ($this->nodeProcesses ?? app(CascadeNodeProcessesAction::class))->execute($node->id);
+        } catch (Throwable $exception) {
+            throw $this->failure(
+                step: 'process-cleanup',
+                errorCode: 'node.process_cleanup_failed',
+                message: "Could not remove Node-owned Processes on [{$node->name}].",
+                previous: $exception,
+            );
+        }
     }
 
     private function guardRemoval(Node $node): void

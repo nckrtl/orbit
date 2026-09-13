@@ -122,6 +122,73 @@ it('allows bounded inspection but refuses cleanup when the target Node is inacti
     $resolver->forRemoval($process);
 })->throws(ResourceOperationException::class, 'not active');
 
+it('derives Node placement from the managed user home', function (): void {
+    $node = Node::query()->create([
+        'name' => 'beast',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'user' => 'orbit',
+        'public_ssh_host' => '192.0.2.40',
+        'wireguard_ip' => '10.44.0.40',
+    ]);
+
+    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Node, $node->id);
+
+    expect($target->appInstance)
+        ->toBeNull()
+        ->and($target->node->is($node))
+        ->toBeTrue()
+        ->and($target->user)
+        ->toBe('orbit')
+        ->and($target->defaultWorkingDirectory)
+        ->toBe('/home/orbit')
+        ->and($target->environmentFile)
+        ->toBe('')
+        ->and($target->certificateScope)
+        ->toBeNull()
+        ->and($target->productionReleaseLayout)
+        ->toBeFalse();
+});
+
+it('rejects inactive or unmanaged Nodes for admission', function (array $changes): void {
+    $node = Node::query()->create([
+        'name' => 'idle',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'user' => 'orbit',
+        'public_ssh_host' => '192.0.2.41',
+        'wireguard_ip' => '10.44.0.41',
+        ...$changes,
+    ]);
+
+    app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Node, $node->id);
+})->with([
+    'inactive Node' => [['status' => LifecycleStatus::Failed]],
+    'unmanaged Node' => [['wireguard_ip' => null]],
+])->throws(ResourceOperationException::class, 'not active');
+
+it('allows inspection of a Node Process when the Node is inactive', function (): void {
+    $node = Node::query()->create([
+        'name' => 'inspect-node',
+        'status' => LifecycleStatus::Failed,
+        'platform' => 'linux',
+        'user' => 'orbit',
+        'public_ssh_host' => '192.0.2.42',
+        'wireguard_ip' => '10.44.0.42',
+    ]);
+    $process = $node->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(app(ProcessTargetResolver::class)->forInspection($process)->node->id)->toBe($node->id);
+});
+
 it('rejects a legacy Process owner before target resolution', function (): void {
     $instance = process_target_legacy_instance();
     $process = Process::query()->create([
@@ -137,7 +204,7 @@ it('rejects a legacy Process owner before target resolution', function (): void 
     ]);
 
     app(ProcessTargetResolver::class)->forInspection($process);
-})->throws(ResourceOperationException::class, 'not a supported AppInstance');
+})->throws(ResourceOperationException::class, 'not a supported AppInstance or Node');
 
 function process_target_instance(string $environment = 'development', array $attributes = []): AppInstance
 {

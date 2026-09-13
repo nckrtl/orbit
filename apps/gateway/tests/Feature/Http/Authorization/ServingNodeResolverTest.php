@@ -243,6 +243,22 @@ it('resolves the Tool-owning node from a bound Tool and raw node input', functio
         ->toBe([$rawNode->id]);
 });
 
+it('resolves process-owning nodes from bound and raw Node targets', function (): void {
+    $node = resolver_node('node-process-owner');
+    $process = resolver_process($node);
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['process' => $process]),
+        ServingNode::ProcessOwning,
+    )))
+        ->toBe([$node->id])
+        ->and(resolver_node_ids(resolver()->resolve(resolver_request(input: [
+            'target_type' => 'node',
+            'target_id' => $node->id,
+        ]), ServingNode::ProcessOwning)))
+        ->toBe([$node->id]);
+});
+
 it('resolves process-owning nodes from bound and raw instance targets', function (): void {
     $app = resolver_app('process-owner');
     $node = resolver_node('process-node');
@@ -298,7 +314,7 @@ it('rejects a bound legacy Workspace Process owner', function (): void {
         resolver_request(['process' => $process]),
         ServingNode::ProcessOwning,
     );
-})->throws(ResourceOperationException::class, 'not a supported AppInstance');
+})->throws(ResourceOperationException::class, 'not a supported AppInstance or Node');
 
 it('returns no concrete nodes for a collection', function (): void {
     expect(resolver()->resolve(resolver_request(), ServingNode::Collection))->toBeEmpty();
@@ -317,7 +333,7 @@ it('leaves malformed or absent raw identifiers to validation', function (string 
     'missing workspace instance' => ['WorkspaceOwning', []],
     'malformed workspace instance' => ['WorkspaceOwning', ['instance_id' => 0]],
     'missing process target' => ['ProcessOwning', []],
-    'malformed process target type' => ['ProcessOwning', ['target_type' => 'node', 'target_id' => 1]],
+    'malformed process target type' => ['ProcessOwning', ['target_type' => 'cluster', 'target_id' => 1]],
     'legacy process Workspace target' => ['ProcessOwning', ['target_type' => 'workspace', 'target_id' => 1]],
     'missing tool node' => ['ToolOwning', []],
     'malformed tool node' => ['ToolOwning', ['node_id' => 'not-a-number']],
@@ -429,7 +445,7 @@ function resolver_workspace(Instance $instance, string $name): Workspace
     ]);
 }
 
-function resolver_process(AppInstance|Instance|Workspace $owner): Process
+function resolver_process(AppInstance|Instance|Workspace|Node $owner): Process
 {
     return $owner
         ->processes()

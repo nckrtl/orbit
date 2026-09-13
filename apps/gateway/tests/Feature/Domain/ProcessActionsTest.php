@@ -495,7 +495,7 @@ it('rejects legacy Process owners before runtime removal', function (): void {
     ]);
 
     expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
-        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance')
+        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node')
         ->and($this->runtime->removed)
         ->toBeEmpty();
 });

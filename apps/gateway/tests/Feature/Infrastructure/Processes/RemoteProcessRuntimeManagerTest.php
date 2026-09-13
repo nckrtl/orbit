@@ -168,7 +168,7 @@ it('rejects legacy Workspace ownership before systemd convergence', function ():
     $process = runtime_manager_legacy_workspace_process();
 
     expect(fn () => $this->manager->converge($process))
-        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance');
+        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node');
 
     expect($this->ssh->commands)->toBeEmpty();
 });
@@ -1687,7 +1687,7 @@ it('rejects legacy Workspace ownership before runtime cleanup', function (): voi
     $process = runtime_manager_legacy_workspace_process();
 
     expect(fn () => $this->manager->remove($process))
-        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance');
+        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node');
 
     expect($this->ssh->commands)->toBeEmpty();
 });
