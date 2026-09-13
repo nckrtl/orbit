@@ -262,6 +262,31 @@ describe('tool writes', function (): void {
             ->assertJsonPath('data.outcome', 'applied');
         expect(Tool::query()->find($tool->id))->toBeNull();
     });
+
+    it('removes a failed version-probe install without probing', function (): void {
+        $tool = $this->node
+            ->tools()
+            ->create([
+                'tool_manager_id' => $this->managerRecord->id,
+                'package' => 'jq',
+                'status' => ToolStatus::Failed,
+                'installed_version' => null,
+                'failed_operation' => ToolOperation::Install,
+                'error_code' => 'tool.version_probe_failed',
+            ]);
+        $this->toolManager->installedVersions = [new ToolManagerException('installed', 'Probe failed.')];
+
+        $this
+            ->deleteJson('/api/v1/tools/'.$tool->id)
+            ->assertOk()
+            ->assertJsonPath('data.outcome', 'applied')
+            ->assertJsonPath('data.id', $tool->id);
+
+        expect(Tool::query()->find($tool->id))
+            ->toBeNull()
+            ->and($this->toolManager->calls)
+            ->toBeEmpty();
+    });
 });
 
 describe('tool request validation and isolation', function (): void {
