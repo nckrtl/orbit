@@ -25,11 +25,13 @@ Use the saved state to find the managed resolver link, server, and routing domai
 | --- | --- |
 | `sudo cat /etc/wireguard/orbit.dns-link` | Line 1 is the resolver link, line 2 is the Orbit VPN DNS address, and the remaining state is `.`. |
 | `resolvectl status orbit` | The `orbit` link lists the Orbit VPN DNS address and routing domain `~.`. |
-| `sudo grep -E '^(PostUp|PreDown) =' /etc/wireguard/orbit.conf` | `PostUp` selects the DNS server and `~.`; `PreDown` clears the managed DNS server and domains from the `orbit` link. |
+| `sudo grep -E '^(PostUp|PreDown) =' /etc/wireguard/orbit.conf` | `PostUp` selects the DNS server and `~.`. `PreDown` is absent. |
 | `getent ahostsv4 <route-hostname>` | The normal operating-system resolver returns the private Route address. |
 | `dig +noall +answer @<vpn-dns-address> <route-hostname> A` | A direct query returns the same authoritative private answer. |
 | `getent ahostsv4 example.com` | An ordinary name resolves through the same default selection. |
 | `ip route` | Application routes remain independent from DNS server selection. |
+
+Provisioning and repair omit `PreDown` because systemd-resolved removes the link settings when WireGuard deletes the interface. If a managed `PreDown` hook is present, repair accepts it as input and removes it.
 
 An explicit underlay override can use a link other than `orbit`. Read line 1 of `orbit.dns-link`, then run `resolvectl status <link>` for that link.
 
@@ -46,6 +48,8 @@ The command refuses a missing or inactive Node, an operator-owned client with no
 Before the repair, record the commands in [Inspect a peer](#inspect-a-peer), `systemctl is-active wg-quick@orbit`, each role service state, and a fingerprint of `wg show orbit public-key`. Record the same values after the repair. The DNS server, routing domains, managed hooks, and saved DNS state can change. The public-key fingerprint, role services, WireGuard service state, application placement, and `ip route` output stay the same.
 
 The repair holds `/run/lock/orbit-wireguard-peer.lock`, validates a candidate configuration, saves the preceding managed files, publishes the new hooks and DNS state, and then applies the live resolver selection. Running the command again produces the same resolver state.
+
+The repair changes only the managed DNS servers and routing domains on each resolver link. It keeps unrelated per-link settings such as the default-route preference, name resolution over local multicast (LLMNR), Multicast DNS (mDNS), DNS Security Extensions (DNSSEC), DNS over Transport Layer Security (TLS), and negative trust anchors.
 
 Each failure reports one bounded code without remote command output.
 
@@ -66,9 +70,9 @@ Do not delete recovery files, edit `/etc/wireguard/orbit.key`, replace a private
 
 ## Persistence and recovery
 
-The WireGuard `PostUp` and `PreDown` hooks restore and remove the managed live selection when the `orbit` interface starts and stops. Repeated peer convergence writes the same intended hooks and retained DNS state.
+The WireGuard `PostUp` hook restores the managed live selection when the `orbit` interface starts. systemd-resolved removes that link selection when WireGuard deletes the interface, so the managed configuration does not need a `PreDown` hook. Repeated peer convergence writes the same intended `PostUp` hook and retained DNS state.
 
-Before publication, the Gateway saves the live WireGuard configuration, DNS state, service activity, and service enablement. A failed immediate convergence restores that preceding state. A recoverable operation retains its transaction until the caller completes, then either commits the new state or restores the preceding state. A saved state record remains valid when its domain is the root token `.`. Older valid records that list several domains also remain valid inputs for recovery.
+Before publication, the Gateway saves the live WireGuard configuration, DNS state, service activity, and service enablement. A failed immediate convergence restores that preceding state without resetting unrelated resolver-link settings. A recoverable operation retains its transaction until the caller completes, then either commits the new state or restores the preceding state. A saved state record remains valid when its domain is the root token `.`. Older valid records that list several domains also remain valid inputs for recovery.
 
 Do not edit `/etc/wireguard/orbit.key` or the peer private key to repair DNS. Resolve the reported failure and retry the same supported operation. Recovery artifacts under `/etc/wireguard` mean the previous operation did not finish cleanly; preserve them for diagnosis instead of starting an unrelated peer mutation.
 

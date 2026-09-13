@@ -24,6 +24,7 @@ it('repairs live and persisted DNS repeatedly without restarting the tunnel', fu
     $harness = wireguard_peer_dns_repair_harness();
 
     try {
+        $before = $harness->state();
         $first = $harness->repair();
         $second = $harness->repair();
 
@@ -37,11 +38,19 @@ it('repairs live and persisted DNS repeatedly without restarting the tunnel', fu
                 'PrivateKey = stable-private-key',
                 'Address = 10.43.0.7/24',
                 'PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~.',
-                "PreDown = resolvectl dns %i ''; resolvectl domain %i ''",
                 'AllowedIPs = 10.43.0.0/24',
             )
+            ->not->toContain('PreDown =')
             ->and($second['dns'])
             ->toBe("orbit\n10.43.0.53\n.\n")
+            ->and($second['resolver']['orbit'])
+            ->toBe([
+                'dns' => ['10.43.0.53'],
+                'domains' => ['~.'],
+                'unrelated' => $before['resolver']['orbit']['unrelated'],
+            ])
+            ->and($second['resolver']['eth0'])
+            ->toBe($before['resolver']['eth0'])
             ->and($second['private_key'])
             ->toBe('stable-private-key-material')
             ->and($second['artifacts'])
@@ -72,10 +81,38 @@ it('repairs live and persisted DNS repeatedly without restarting the tunnel', fu
     }
 });
 
+it('repairs a hookless managed configuration without adding a PreDown hook', function (): void {
+    $harness = wireguard_peer_dns_repair_harness(hooklessResolverHooks: true);
+
+    try {
+        $before = $harness->state();
+        $result = $harness->repair();
+
+        expect($result['exception'])
+            ->toBeNull($result['exception']?->result?->stderr ?? '')
+            ->and($result['live'])
+            ->toContain('PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~.')
+            ->not->toContain('PreDown =')
+            ->and($result['dns'])
+            ->toBe("orbit\n10.43.0.53\n.\n")
+            ->and($result['resolver']['orbit'])
+            ->toBe([
+                'dns' => ['10.43.0.53'],
+                'domains' => ['~.'],
+                'unrelated' => $before['resolver']['orbit']['unrelated'],
+            ])
+            ->and($result['artifacts'])
+            ->toBe([]);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('preserves suffix-only routing for an explicit underlay DNS override', function (): void {
     $harness = wireguard_peer_dns_repair_harness('192.0.2.53', 'custom.internal');
 
     try {
+        $before = $harness->state();
         $result = $harness->repair();
 
         expect($result['exception'])
@@ -85,13 +122,25 @@ it('preserves suffix-only routing for an explicit underlay DNS override', functi
             ->toContain('PrivateKey = stable-private-key', 'AllowedIPs = 10.43.0.0/24')
             ->and($result['dns'])
             ->toBe("eth0\n192.0.2.53\norbit\ncustom.internal\n")
+            ->and($result['resolver']['orbit'])
+            ->toBe([
+                'dns' => [],
+                'domains' => [],
+                'unrelated' => $before['resolver']['orbit']['unrelated'],
+            ])
+            ->and($result['resolver']['eth0'])
+            ->toBe([
+                'dns' => ['192.0.2.53'],
+                'domains' => ['~orbit', '~custom.internal'],
+                'unrelated' => $before['resolver']['eth0']['unrelated'],
+            ])
             ->and($result['commands'])
             ->toContain(
                 'ip -o route get 192.0.2.53',
-                'resolvectl revert orbit',
                 'resolvectl dns eth0 192.0.2.53',
                 'resolvectl domain eth0 ~orbit ~custom.internal',
             )
+            ->not->toContain('resolvectl revert orbit')
             ->and($result['artifacts'])
             ->toBe([]);
     } finally {
@@ -103,17 +152,24 @@ it('preserves suffix-only routing for an explicit in-VPN DNS override', function
     $harness = wireguard_peer_dns_repair_harness('10.43.0.53', 'custom.internal');
 
     try {
+        $before = $harness->state();
         $result = $harness->repair();
 
         expect($result['exception'])
             ->toBeNull($result['exception']?->result?->stderr ?? '')
             ->and($result['live'])
-            ->toContain(
-                'PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~orbit \\~custom.internal',
-                "PreDown = resolvectl dns %i ''; resolvectl domain %i ''",
-            )
+            ->toContain('PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~orbit \\~custom.internal')
+            ->not->toContain('PreDown =')
             ->and($result['dns'])
             ->toBe("orbit\n10.43.0.53\norbit\ncustom.internal\n")
+            ->and($result['resolver']['orbit'])
+            ->toBe([
+                'dns' => ['10.43.0.53'],
+                'domains' => ['~orbit', '~custom.internal'],
+                'unrelated' => $before['resolver']['orbit']['unrelated'],
+            ])
+            ->and($result['resolver']['eth0'])
+            ->toBe($before['resolver']['eth0'])
             ->and($result['commands'])
             ->toContain(
                 'resolvectl dns orbit 10.43.0.53',
@@ -199,6 +255,8 @@ it('restores the exact preceding DNS state when live apply fails', function (): 
             ->toBe($before['dns'])
             ->and($result['private_key'])
             ->toBe($before['private_key'])
+            ->and($result['resolver'])
+            ->toBe($before['resolver'])
             ->and($result['artifacts'])
             ->toBe([])
             ->and($result['commands'])
@@ -231,14 +289,16 @@ it('restores before applying a changed DNS link when state publication fails', f
             ->toBe($before['dns'])
             ->and($result['private_key'])
             ->toBe($before['private_key'])
+            ->and($result['resolver'])
+            ->toBe($before['resolver'])
             ->and($result['artifacts'])
             ->toBe([])
             ->and($result['commands'])
             ->toContain(
-                'resolvectl revert orbit',
                 'resolvectl dns orbit 10.43.0.53',
                 'resolvectl domain orbit ~orbit',
             )
+            ->not->toContain('resolvectl revert orbit')
             ->not->toContain(
                 'resolvectl dns eth0 192.0.2.53',
                 'resolvectl domain eth0 ~orbit ~custom.internal',
@@ -266,6 +326,10 @@ it('retains explicit recovery state and completes it on retry', function (): voi
             ->toBe($before['live'])
             ->and($failed['dns'])
             ->toBe($before['dns'])
+            ->and($failed['resolver']['orbit']['unrelated'])
+            ->toBe($before['resolver']['orbit']['unrelated'])
+            ->and($failed['resolver']['eth0'])
+            ->toBe($before['resolver']['eth0'])
             ->and($failed['artifacts'])
             ->toContain(
                 '.orbit.conf.rollback',
@@ -282,6 +346,14 @@ it('retains explicit recovery state and completes it on retry', function (): voi
             ->toContain('resolvectl domain %i \\~.')
             ->and($retried['dns'])
             ->toBe("orbit\n10.43.0.53\n.\n")
+            ->and($retried['resolver']['orbit'])
+            ->toBe([
+                'dns' => ['10.43.0.53'],
+                'domains' => ['~.'],
+                'unrelated' => $before['resolver']['orbit']['unrelated'],
+            ])
+            ->and($retried['resolver']['eth0'])
+            ->toBe($before['resolver']['eth0'])
             ->and($retried['artifacts'])
             ->toBe([]);
     } finally {
@@ -292,20 +364,57 @@ it('retains explicit recovery state and completes it on retry', function (): voi
 function wireguard_peer_dns_repair_harness(
     ?string $dnsServerOverride = null,
     ?string $tld = null,
+    bool $hooklessResolverHooks = false,
 ): object {
     $root = sys_get_temp_dir().'/orbit-peer-dns-repair-'.Str::uuid();
     $filesystem = new Filesystem;
     $filesystem->makeDirectory("{$root}/wireguard", 0o700, true);
     $filesystem->makeDirectory("{$root}/bin", 0o700, true);
     $filesystem->makeDirectory("{$root}/state", 0o700, true);
+    $filesystem->makeDirectory("{$root}/state/resolver/orbit", 0o700, true);
+    $filesystem->makeDirectory("{$root}/state/resolver/eth0", 0o700, true);
     $filesystem->makeDirectory("{$root}/lock", 0o700, true);
+
+    wireguard_peer_dns_repair_write_resolver_state(
+        root: $root,
+        link: 'orbit',
+        dns: ['10.43.0.53'],
+        domains: ['~orbit'],
+        unrelated: [
+            'default-route' => 'no',
+            'llmnr' => 'resolve',
+            'mdns' => 'yes',
+            'dnssec' => 'allow-downgrade',
+            'dnsovertls' => 'opportunistic',
+            'nta' => 'corp.example',
+        ],
+    );
+    wireguard_peer_dns_repair_write_resolver_state(
+        root: $root,
+        link: 'eth0',
+        dns: ['198.51.100.53'],
+        domains: ['~underlay.example'],
+        unrelated: [
+            'default-route' => 'yes',
+            'llmnr' => 'yes',
+            'mdns' => 'resolve',
+            'dnssec' => 'yes',
+            'dnsovertls' => 'no',
+            'nta' => 'underlay.example',
+        ],
+    );
 
     $originalLive = <<<'CONF'
         [Interface]
         PrivateKey = stable-private-key
         Address = 10.43.0.7/24
         PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \~orbit
-        PreDown = resolvectl revert %i
+        CONF;
+    if (! $hooklessResolverHooks) {
+        $originalLive .= "\nPreDown = resolvectl revert %i";
+    }
+    $originalLive .= <<<'CONF'
+
 
         [Peer]
         PublicKey = stable-server-key
@@ -355,7 +464,30 @@ function wireguard_peer_dns_repair_harness(
         printf '%s\n' "resolvectl $*" >> "$ORBIT_TEST_ROOT/commands.log"
         if [ -f "$ORBIT_TEST_ROOT/state/apply-failure" ] && [ "$*" = 'domain orbit ~.' ]; then exit 1; fi
         if [ -f "$ORBIT_TEST_ROOT/state/recovery-failure" ] && [ "$*" = 'domain orbit ~orbit' ]; then exit 1; fi
-        exit 0
+
+        operation=$1
+        link=$2
+        shift 2
+        resolver="$ORBIT_TEST_ROOT/state/resolver/$link"
+        [ -d "$resolver" ] || mkdir -p "$resolver"
+        case "$operation" in
+            dns|domain)
+                : > "$resolver/$operation"
+                for value in "$@"; do
+                    if [ -n "$value" ]; then
+                        printf '%s\n' "$value" >> "$resolver/$operation"
+                    fi
+                done
+                ;;
+            revert)
+                : > "$resolver/dns"
+                : > "$resolver/domain"
+                for setting in default-route llmnr mdns dnssec dnsovertls nta; do
+                    printf 'default\n' > "$resolver/$setting"
+                done
+                ;;
+            *) exit 1 ;;
+        esac
         SH);
     wireguard_peer_dns_repair_shim($root, 'chown', <<<'SH'
         exit 0
@@ -513,6 +645,10 @@ function wireguard_peer_dns_repair_harness(
                 'live' => (string) file_get_contents("{$this->root}/wireguard/orbit.conf"),
                 'dns' => (string) file_get_contents("{$this->root}/wireguard/orbit.dns-link"),
                 'private_key' => (string) file_get_contents("{$this->root}/wireguard/orbit.key"),
+                'resolver' => [
+                    'orbit' => $this->resolverLinkState('orbit'),
+                    'eth0' => $this->resolverLinkState('eth0'),
+                ],
                 'commands' => is_file("{$this->root}/commands.log")
                     ? array_values(array_filter(explode("\n", trim((string) file_get_contents("{$this->root}/commands.log")))))
                     : [],
@@ -525,6 +661,29 @@ function wireguard_peer_dns_repair_harness(
                     glob("{$this->root}/wireguard/.orbit*") ?: [],
                 )),
             ];
+        }
+
+        private function resolverLinkState(string $link): array
+        {
+            $root = "{$this->root}/state/resolver/{$link}";
+
+            return [
+                'dns' => $this->resolverValues("{$root}/dns"),
+                'domains' => $this->resolverValues("{$root}/domain"),
+                'unrelated' => array_map(
+                    static fn (string $setting): string => trim((string) file_get_contents("{$root}/{$setting}")),
+                    array_combine(
+                        ['default-route', 'llmnr', 'mdns', 'dnssec', 'dnsovertls', 'nta'],
+                        ['default-route', 'llmnr', 'mdns', 'dnssec', 'dnsovertls', 'nta'],
+                    ),
+                ),
+            ];
+        }
+
+        /** @return list<string> */
+        private function resolverValues(string $path): array
+        {
+            return array_values(array_filter(explode("\n", trim((string) file_get_contents($path)))));
         }
 
         public function failLock(): void
@@ -579,4 +738,25 @@ function wireguard_peer_dns_repair_shim(string $root, string $name, string $body
     $path = "{$root}/bin/{$name}";
     file_put_contents($path, "#!/bin/bash\nset -eu\n{$body}\n");
     chmod($path, 0o700);
+}
+
+/**
+ * @param  list<string>  $dns
+ * @param  list<string>  $domains
+ * @param  array<string, string>  $unrelated
+ */
+function wireguard_peer_dns_repair_write_resolver_state(
+    string $root,
+    string $link,
+    array $dns,
+    array $domains,
+    array $unrelated,
+): void {
+    $resolver = "{$root}/state/resolver/{$link}";
+    file_put_contents("{$resolver}/dns", implode("\n", $dns)."\n");
+    file_put_contents("{$resolver}/domain", implode("\n", $domains)."\n");
+
+    foreach ($unrelated as $setting => $value) {
+        file_put_contents("{$resolver}/{$setting}", "{$value}\n");
+    }
 }

@@ -202,7 +202,8 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
 
                     recovery_failed=0
                     if [[ "$current_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]]; then
-                        resolvectl revert "$current_dns_link" || recovery_failed=1
+                        resolvectl dns "$current_dns_link" '' || recovery_failed=1
+                        resolvectl domain "$current_dns_link" '' || recovery_failed=1
                     fi
                     rm -f -- "$restore_candidate" "$dns_restore_candidate" || recovery_failed=1
                     cp -a --no-dereference -- "$backup" "$restore_candidate" || recovery_failed=1
@@ -277,10 +278,10 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 printf -v dns_server_escaped '%q' "$dns_server"
                 dns_hooks=
                 if [ "$dns_mode" = wireguard ]; then
-                    dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${persistent_domains[*]}"$'\n'"PreDown = resolvectl dns %i ''; resolvectl domain %i ''"$'\n'
+                    dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${persistent_domains[*]}"$'\n'
                 fi
 
-                hook_pattern="~^PostUp = resolvectl dns %i [^;\\r\\n]+; resolvectl domain %i [^\\r\\n]+\\r?\\n^PreDown = (?:resolvectl revert %i|resolvectl dns %i ''; resolvectl domain %i '')\\r?\\n?~m"
+                hook_pattern="~^PostUp = resolvectl dns %i [^;\\r\\n]+; resolvectl domain %i [^\\r\\n]+\\r?\\n(?:^PreDown = (?:resolvectl revert %i|resolvectl dns %i ''; resolvectl domain %i '')\\r?\\n?)?~m"
                 if ! php -r '
                     [$live, $candidate, $mode, $replacement, $pattern] = array_slice($argv, 1);
                     $configuration = file_get_contents($live);
@@ -330,7 +331,8 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
 
                 apply_failed=0
                 if [ "$old_dns_link" != "$dns_link" ]; then
-                    resolvectl revert "$old_dns_link" || apply_failed=1
+                    resolvectl dns "$old_dns_link" '' || apply_failed=1
+                    resolvectl domain "$old_dns_link" '' || apply_failed=1
                 fi
                 resolvectl dns "$dns_link" "$dns_server" || apply_failed=1
                 resolvectl domain "$dns_link" "${resolvectl_domains[@]}" || apply_failed=1
