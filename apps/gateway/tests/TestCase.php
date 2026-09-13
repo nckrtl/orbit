@@ -9,10 +9,36 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Testing\CachedState;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Foundation\Testing\WithCachedConfig;
+use Illuminate\Foundation\Testing\WithCachedRoutes;
+use Tests\Support\TestDatabaseGuard;
 
 abstract class TestCase extends BaseTestCase
 {
+    public function createApplication(): Application
+    {
+        $app = require Application::inferBasePath().'/bootstrap/app.php';
+
+        $this->traitsUsedByTest = class_uses_recursive(static::class);
+
+        if (isset(CachedState::$cachedConfig, $this->traitsUsedByTest[WithCachedConfig::class])) {
+            $this->markConfigCached($app);
+        }
+
+        if (isset(CachedState::$cachedRoutes, $this->traitsUsedByTest[WithCachedRoutes::class])) {
+            $app->booting(fn (): mixed => $this->markRoutesCached($app));
+        }
+
+        TestDatabaseGuard::register($app);
+        $app->make(Kernel::class)->bootstrap();
+
+        return $app;
+    }
+
     protected function fakeRepositoryBranches(string $defaultBranch = 'main'): void
     {
         $this->app->instance(

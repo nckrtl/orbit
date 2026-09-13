@@ -11,5 +11,11 @@ final readonly class InstanceInspectionData
         public bool $repositoryLayoutMatches,
         public bool $originMatches,
         public bool $sourceIdentityMatches,
+        public ?bool $productionHomeMatches = null,
+        public ?bool $releaseSelectionMatches = null,
+        public ?bool $selectedReleaseRootMatches = null,
+        public ?bool $environmentProjectionMatches = null,
+        public ?bool $phpFpmProjectionMatches = null,
+        public ?bool $caddyProjectionMatches = null,
     ) {}
 }

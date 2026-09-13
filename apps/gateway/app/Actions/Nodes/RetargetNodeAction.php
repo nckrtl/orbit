@@ -6,6 +6,8 @@ namespace App\Actions\Nodes;
 
 use App\Data\Nodes\RetargetNodeData;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
@@ -41,6 +43,7 @@ final readonly class RetargetNodeAction
         private SshKeyProvider $sshKeys,
         private SshExecutor $ssh,
         private WireGuardPeerConverger $wireGuard,
+        private NodeProvisioningLock $provisioningLock,
     ) {}
 
     public function execute(RetargetNodeData $data): Node
@@ -65,6 +68,15 @@ final readonly class RetargetNodeAction
             );
         }
 
+        try {
+            return $this->provisioningLock->run($data->name, fn (): Node => $this->retarget($data));
+        } catch (NodeProvisioningLockException $exception) {
+            throw $exception->toBusyException();
+        }
+    }
+
+    private function retarget(RetargetNodeData $data): Node
+    {
         $node = Node::query()->where('name', $data->name)->first();
         if (! $node instanceof Node || $node->status !== LifecycleStatus::Active) {
             throw new NodeProvisioningException(

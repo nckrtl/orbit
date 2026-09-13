@@ -7,6 +7,7 @@ namespace App\Http\Authorization;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Workspaces\LegacyWorkspaceOwner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -223,6 +224,8 @@ final readonly class ServingNodeResolver
         if ($instanceId === null) {
             return [];
         }
+
+        new LegacyWorkspaceOwner()->refuseAppInstance($instanceId);
 
         $instance = Instance::query()->findOrFail($instanceId);
 

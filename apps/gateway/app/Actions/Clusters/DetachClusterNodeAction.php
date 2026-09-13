@@ -10,6 +10,7 @@ use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use Illuminate\Support\Facades\DB;
 
 final readonly class DetachClusterNodeAction
@@ -36,12 +37,24 @@ final readonly class DetachClusterNodeAction
                 );
             }
 
-            if ($lockedNode->roles()->where('role', RoleName::Router)->exists()) {
+            $routerAssignments = $lockedNode
+                ->roles()
+                ->where('role', RoleName::Router)
+                ->lockForUpdate()
+                ->get();
+
+            if ($routerAssignments->contains(
+                static fn (NodeRole $assignment): bool => ! $assignment->neverActivated(),
+            )) {
                 throw new ResourceOperationException(
                     errorCode: 'cluster.router_detach_forbidden',
                     message: 'Clear the Cluster Router before detaching its Node.',
                     status: 409,
                 );
+            }
+
+            foreach ($routerAssignments as $assignment) {
+                $assignment->delete();
             }
 
             if ($lockedNode->roles()->where('role', RoleName::Ingress)->exists()) {

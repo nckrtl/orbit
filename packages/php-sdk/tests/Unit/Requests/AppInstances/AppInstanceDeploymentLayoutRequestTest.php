@@ -43,9 +43,32 @@ describe(AppInstanceDeploymentLayoutRequest::class, function (): void {
             ->toBe(deployment_layout_request_id());
     });
 
+    it('encodes omitted sqlite path as an empty JSON object', function (): void {
+        $mock = new MockClient([
+            AppInstanceDeploymentLayoutRequest::class => MockResponse::make(
+                deployment_layout_envelope(),
+            ),
+        ]);
+        $request = new AppInstanceDeploymentLayoutRequest(17);
+
+        deployment_layout_connector($mock)->send($request);
+        $pending = $mock->getLastPendingRequest();
+
+        expect($request->body()->all())
+            ->toBe([])
+            ->and((string) $request->body())
+            ->toBe('{}')
+            ->and((string) $pending?->createPsrRequest()->getBody())
+            ->toBe('{}')
+            ->and($pending?->headers()->get('Content-Type'))
+            ->toBe('application/json');
+    });
+
     it('preserves omission separately from every supplied string', function (string $path): void {
         expect(new AppInstanceDeploymentLayoutRequest(17)->body()->all())
             ->toBeEmpty()
+            ->and((string) new AppInstanceDeploymentLayoutRequest(17)->body())
+            ->toBe('{}')
             ->and(new AppInstanceDeploymentLayoutRequest(17, $path)->body()->all())
             ->toBe(['sqlite_source_path' => $path]);
     })->with([

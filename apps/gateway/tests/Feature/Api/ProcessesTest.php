@@ -11,6 +11,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Monolog\Formatter\LineFormatter;
@@ -521,6 +522,28 @@ it('redacts secrets from bounded process logs before serialization', function ()
         ->not->toContain('database-secret');
 });
 
+it('returns 502 process.runtime_lock_failed without changing process state', function (): void {
+    $process = processes_api_record($this->instance);
+    $original = $process->fresh()->getRawOriginal();
+    $lock = Cache::lock("orbit:process-runtime:{$this->instance->node_id}:{$process->id}", 60);
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $this
+            ->postJson("/api/v1/processes/{$process->id}/start")
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'process.runtime_lock_failed')
+            ->assertJsonPath('error.details.step', 'lock-runtime');
+
+        expect($process->refresh()->getRawOriginal())
+            ->toBe($original)
+            ->and($this->runtime->started)
+            ->toBeEmpty();
+    } finally {
+        $lock->release();
+    }
+});
+
 it('records a failed runtime action against its process and target node', function (): void {
     $process = processes_api_record($this->instance);
     $this->runtime->startFailure = new ProcessOperationException(
@@ -638,6 +661,9 @@ function processes_api_record(AppInstance $instance): Process
 final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
 {
     /** @var list<int> */
+    public array $started = [];
+
+    /** @var list<int> */
     public array $convergedProcessIds = [];
 
     /** @var list<int> */
@@ -684,6 +710,8 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
         if ($this->startFailure instanceof ProcessOperationException) {
             throw $this->startFailure;
         }
+
+        $this->started[] = $process->id;
     }
 
     public function stop(Process $process): void {}

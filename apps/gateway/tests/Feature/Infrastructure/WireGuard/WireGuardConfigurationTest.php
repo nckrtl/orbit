@@ -47,6 +47,8 @@ it('resolves peer overrides and renders the complete server peer set', function 
             ->toBe('10.0.0.2')
             ->and($vpn->dnsThroughWireGuard)
             ->toBeFalse()
+            ->and($vpn->usesDefaultDnsResolver)
+            ->toBeFalse()
             ->and($vpn->peerAddress)
             ->toBe('10.44.0.2/24')
             ->and($rendered)
@@ -162,11 +164,22 @@ it('rejects unsafe endpoint, DNS, and domain values before rendering peer shell 
         $peer->update(['dns_server_override' => null]);
 
         expect($configuration->forPeer($peer)->dnsThroughWireGuard)
+            ->toBeTrue()
+            ->and($configuration->forPeer($peer)->usesDefaultDnsResolver)
             ->toBeTrue();
 
         $peer->update(['dns_server_override' => '2001:db8::53']);
 
         expect($configuration->forPeer($peer)->dnsThroughWireGuard)
+            ->toBeFalse()
+            ->and($configuration->forPeer($peer)->usesDefaultDnsResolver)
+            ->toBeFalse();
+
+        $peer->update(['dns_server_override' => '10.44.0.53']);
+
+        expect($configuration->forPeer($peer)->dnsThroughWireGuard)
+            ->toBeTrue()
+            ->and($configuration->forPeer($peer)->usesDefaultDnsResolver)
             ->toBeFalse();
 
         $peer->update(['dns_server_override' => '10.0.0.2']);

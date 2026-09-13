@@ -73,7 +73,9 @@ final readonly class SetClusterRouterAction
         try {
             $this->baselines->converge($node, $candidate);
         } catch (Throwable $exception) {
-            $this->fail($candidate, 'converge', $exception);
+            $candidate->delete();
+
+            throw $exception;
         }
 
         DB::transaction(static function () use ($active, $candidate): void {
@@ -97,12 +99,23 @@ final readonly class SetClusterRouterAction
 
         foreach ($obsoleteAssignments as $assignment) {
             try {
-                $this->baselines->remove($assignment->node, $assignment, false);
+                $this->tearDown($assignment);
                 $assignment->delete();
             } catch (Throwable $exception) {
                 $this->fail($assignment, 'remove', $exception);
             }
         }
+    }
+
+    private function tearDown(NodeRole $assignment): void
+    {
+        if ($assignment->neverActivated()) {
+            $this->baselines->removeUnreachable($assignment->node, $assignment);
+
+            return;
+        }
+
+        $this->baselines->remove($assignment->node, $assignment, false);
     }
 
     private function fail(NodeRole $assignment, string $boundary, Throwable $exception): never

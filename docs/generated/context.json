@@ -71,6 +71,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
                 "Effective web root",
@@ -1312,6 +1313,144 @@
             ]
         },
         {
+            "path": "docs/decisions/0063-prefer-active-cluster-tlds-for-generated-routes.md",
+            "title": "ADR 0063: Prefer active Cluster TLDs for generated Routes",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0023",
+                "0063"
+            ]
+        },
+        {
+            "path": "docs/decisions/0064-name-application-endpoints-as-domains.md",
+            "title": "ADR 0064: Name application endpoints as domains",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Legacy Instance",
+                "Node",
+                "Route",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0023",
+                "0044",
+                "0063",
+                "0064"
+            ]
+        },
+        {
+            "path": "docs/decisions/0065-replace-routes-when-domains-change.md",
+            "title": "ADR 0065: Replace Routes when domains change",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0016",
+                "0024",
+                "0028",
+                "0064",
+                "0065"
+            ]
+        },
+        {
+            "path": "docs/decisions/0066-transfer-development-appinstances-between-nodes.md",
+            "title": "ADR 0066: Transfer development AppInstances between Nodes",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0027",
+                "0038",
+                "0044",
+                "0063",
+                "0065",
+                "0066"
+            ]
+        },
+        {
+            "path": "docs/decisions/0067-serve-development-servers-on-the-route-origin.md",
+            "title": "ADR 0067: Serve development servers on the Route origin",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Development-server endpoint",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0023",
+                "0028",
+                "0033",
+                "0067"
+            ]
+        },
+        {
+            "path": "docs/decisions/0068-accept-only-apps-path-node-storage-setting.md",
+            "title": "ADR 0068: Accept only apps.path as the node storage setting path",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0008",
+                "0009",
+                "0068"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1365,7 +1504,8 @@
                 "0025",
                 "0027",
                 "0032",
-                "0046"
+                "0046",
+                "0066"
             ]
         },
         {
@@ -1388,6 +1528,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Development-server endpoint",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -1478,6 +1619,8 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Cluster",
+                "Doctor",
                 "Effective web root",
                 "Gateway",
                 "Node",
@@ -1495,6 +1638,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Route"
@@ -1547,7 +1691,8 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/e2e"
+                "apps/e2e",
+                "apps/gateway"
             ],
             "concepts": [
                 "App",
@@ -1590,6 +1735,22 @@
             ]
         },
         {
+            "path": "docs/reference/node-provisioning.md",
+            "title": "Node provisioning",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Tool",
+                "Tool Manager"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/node-retarget.md",
             "title": "Node retarget",
             "kind": "reference",
@@ -1603,6 +1764,23 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/node-settings.md",
+            "title": "Node settings",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0008",
+                "0009",
+                "0068"
+            ]
+        },
+        {
             "path": "docs/reference/php-runtime.md",
             "title": "PHP runtimes",
             "kind": "reference",
@@ -1610,14 +1788,34 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Cluster",
+                "Development-server endpoint",
+                "Doctor",
                 "Gateway",
                 "Node",
-                "Route"
+                "Route",
+                "Router"
             ],
             "governing_adrs": [
                 "0021",
                 "0034",
                 "0045"
+            ]
+        },
+        {
+            "path": "docs/reference/private-dns.md",
+            "title": "Private DNS",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0061"
             ]
         },
         {
@@ -1649,6 +1847,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Development-server endpoint",
                 "Doctor",
                 "Gateway",
                 "Ingress",
@@ -1668,7 +1867,8 @@
                 "0029",
                 "0030",
                 "0033",
-                "0041"
+                "0041",
+                "0067"
             ]
         },
         {

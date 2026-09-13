@@ -195,6 +195,33 @@ it('returns 409 with both Routes when the requested target belongs to another Ro
         ->toBe($targetRowsBefore);
 });
 
+it('returns 409 with route.target_conflict when creating a Route for an AppInstance that already has one', function (): void {
+    $existing = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $routesBefore = route_api_routes();
+    $targetRowsBefore = route_api_target_rows();
+
+    $this
+        ->postJson('/api/v1/routes', [
+            'app_id' => $this->orbitApp->id,
+            'hostname' => 'unused-host.example.test',
+            'publication' => 'private',
+            'app_instance_id' => $this->target->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_conflict')
+        ->assertJsonPath(
+            'error.message',
+            "AppInstance [{$this->target->id}] is already associated with Route [{$existing->id}].",
+        );
+
+    expect(route_api_routes())
+        ->toBe($routesBefore)
+        ->and(route_api_target_rows())
+        ->toBe($targetRowsBefore)
+        ->and(Route::query()->where('hostname', 'unused-host.example.test')->exists())
+        ->toBeFalse();
+});
+
 it('keeps every Route association unchanged for exact target no-ops', function (): void {
     $targeted = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $targeted->update(['status' => 'active']);
@@ -424,6 +451,37 @@ it('refuses invalid or occupied active explicit hostnames before Route or projec
         ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'occupied.example.test'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.hostname_conflict');
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+});
+
+it('returns 409 instance.source_profile_missing for an explicit hostname change without a recorded profile', function (): void {
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    $this->target->update(['provisioning_step' => 'active']);
+    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing')
+        ->assertJsonPath(
+            'error.message',
+            'The AppInstance has no recorded source profile. Repeat the same creation request with recover_source_profile to inspect the source and store the complete profile.',
+        );
 
     expect($route->fresh(['targets'])->toArray())->toBe($before);
 });

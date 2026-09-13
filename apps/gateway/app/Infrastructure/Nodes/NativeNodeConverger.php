@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
-use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -44,16 +45,19 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint = null,
         bool $rolelessOperator = false,
-    ): void {
-        [$hostKey, $wireguardIp] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
+    ): NodeObservation {
+        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
         $this->wireGuard->converge(
             $node,
             $this->connection($node, $identity->managedUser),
             $rolelessOperator,
         );
         $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
+
+        return $observation;
     }
 
+    /** @param Closure(NodeObservation): void $completion */
     public function convergeRecoverably(
         Node $node,
         NodeProvisioningIdentity $identity,
@@ -61,11 +65,11 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         Closure $completion,
         bool $rolelessOperator = false,
     ): void {
-        [$hostKey, $wireguardIp] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
+        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
 
         if ($node->roles()->exists()) {
             $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
-            $completion();
+            $completion($observation);
 
             return;
         }
@@ -77,7 +81,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 $rolelessOperator,
             );
             $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
-            $completion();
+            $completion($observation);
 
             return;
         }
@@ -85,15 +89,20 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         $this->wireGuard->convergeRecoverably(
             $node,
             $this->connection($node, $identity->managedUser),
-            function () use ($node, $identity, $hostKey, $wireguardIp, $completion): void {
+            function (?Closure $finalizeOver = null) use ($node, $identity, $hostKey, $wireguardIp, $observation, $completion): void {
                 $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
-                $completion();
+
+                if ($finalizeOver instanceof Closure) {
+                    $finalizeOver($this->connection($node, $identity->managedUser, $wireguardIp, 22));
+                }
+
+                $completion($observation);
             },
             $rolelessOperator,
         );
     }
 
-    /** @return array{0: HostKey, 1: string} */
+    /** @return array{0: HostKey, 1: string, 2: NodeObservation} */
     private function prepare(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint): array
     {
         if ($node->platform !== 'linux') {
@@ -154,15 +163,13 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        $verification = $this->ssh->execute(
-            $this->connection(
-                $node,
-                $identity->managedUser,
-                $bootstrapConnection->host,
-                $bootstrapConnection->port,
-            ),
-            new RemoteCommand(['true']),
+        $managedConnection = $this->connection(
+            $node,
+            $identity->managedUser,
+            $bootstrapConnection->host,
+            $bootstrapConnection->port,
         );
+        $verification = $this->ssh->execute($managedConnection, new RemoteCommand(['true']));
 
         if (! $verification->succeeded()) {
             throw new NodeProvisioningException(
@@ -172,6 +179,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 result: $verification,
             );
         }
+
+        $observation = $this->observe($node, $managedConnection);
 
         if (! is_string($node->wireguard_ip)) {
             throw new NodeProvisioningException(
@@ -197,7 +206,24 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             }
         }
 
-        return [$hostKey, $wireguardIp];
+        return [$hostKey, $wireguardIp, $observation];
+    }
+
+    private function observe(Node $node, SshConnection $connection): NodeObservation
+    {
+        $architecture = $this->ssh->execute($connection, new RemoteCommand(['uname', '-m']));
+        $observed = trim($architecture->stdout);
+
+        if (! $architecture->succeeded() || ! MachineArchitecture::isValid($observed)) {
+            throw new NodeProvisioningException(
+                'machine-architecture',
+                'node.architecture_unavailable',
+                "Could not observe the machine architecture of node [{$node->name}].",
+                result: $architecture,
+            );
+        }
+
+        return new NodeObservation($observed);
     }
 
     private function finishWireGuard(
@@ -236,8 +262,10 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
+        // Membership trust only: a Node provisioned without roles stays
+        // reachable over public SSH, and the first role convergence closes it.
         try {
-            $this->firewall->converge($node, RoleName::Vpn, $managedUser);
+            $this->firewall->trustWireGuardMembers($node, $managedUser);
         } catch (FirewallOperationException $exception) {
             throw new NodeProvisioningException(
                 $exception->step,

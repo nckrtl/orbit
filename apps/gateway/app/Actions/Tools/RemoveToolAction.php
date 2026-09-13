@@ -65,6 +65,12 @@ final readonly class RemoveToolAction
             throw $this->failure($tool, 'tool.state_invalid', 409, 'The tool is not in a removable state.');
         }
 
+        if ($this->isUnprovenFailedTool($tool)) {
+            $tool->delete();
+
+            return new ToolActionResult($tool, ToolOutcome::Applied);
+        }
+
         try {
             $installedVersion = $this->installedVersion($tool, $node, $manager);
 
@@ -136,6 +142,13 @@ final readonly class RemoveToolAction
 
             throw $exception;
         }
+    }
+
+    private function isUnprovenFailedTool(Tool $tool): bool
+    {
+        return $tool->status === ToolStatus::Failed
+            && $tool->error_code === 'tool.version_probe_failed'
+            && ($tool->installed_version === null || $tool->installed_version === '');
     }
 
     private function installedVersion(Tool $tool, Node $node, ToolManager $manager): ?string

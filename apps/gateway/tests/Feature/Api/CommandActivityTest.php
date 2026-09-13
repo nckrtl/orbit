@@ -13,6 +13,7 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
@@ -35,6 +36,7 @@ use App\Models\Route;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Str;
+use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
 
@@ -530,6 +532,7 @@ it('records complete SDK role removal input on success and before authentication
     $lifecycle = new CommandActivityNodeRoleLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $lifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $lifecycle);
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
     $deniedRequestId = (string) Str::uuid();
     $successRequestId = (string) Str::uuid();
 

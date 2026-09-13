@@ -128,6 +128,49 @@ describe(RemoveToolAction::class, function (): void {
             ->toBeNull();
     })->with(ToolOperation::cases());
 
+    it('deletes a failed version-probe tool without probing the package', function (ToolOperation $failedOperation): void {
+        [$tool] = removal_tool_fixture(
+            status: ToolStatus::Failed,
+            failedOperation: $failedOperation,
+            installedVersion: null,
+            errorCode: 'tool.version_probe_failed',
+        );
+        [$action, $manager, $lock] = removal_tool_action();
+        $manager->installedVersions = [new ToolManagerException('installed', 'Probe failed.')];
+
+        $result = $action->execute($tool);
+
+        expect($result->outcome)
+            ->toBe(ToolOutcome::Applied)
+            ->and($result->tool->id)
+            ->toBe($tool->id)
+            ->and($manager->calls)
+            ->toBeEmpty()
+            ->and($lock->runs)
+            ->toBe(1)
+            ->and(Tool::query()->find($tool->id))
+            ->toBeNull();
+    })->with(ToolOperation::cases());
+
+    it('still probes a failed tool that recorded a version', function (ToolOperation $failedOperation): void {
+        [$tool] = removal_tool_fixture(
+            status: ToolStatus::Failed,
+            failedOperation: $failedOperation,
+            errorCode: 'tool.version_probe_failed',
+        );
+        [$action, $manager] = removal_tool_action();
+        $manager->installedVersions = [new ToolManagerException('installed', 'Probe failed.')];
+
+        $exception = removal_tool_exception(fn () => $action->execute($tool));
+
+        expect($exception->errorCode)
+            ->toBe('tool.version_probe_failed')
+            ->and($manager->calls)
+            ->toBe(['installedVersion'])
+            ->and(Tool::query()->find($tool->id))
+            ->not->toBeNull();
+    })->with(ToolOperation::cases());
+
     it('retains a bounded failure when the initial installed probe fails', function (): void {
         [$tool] = removal_tool_fixture();
         [$action, $manager] = removal_tool_action();
@@ -335,6 +378,8 @@ function removal_tool_fixture(
     ?ToolOperation $failedOperation = null,
     bool $protected = false,
     ?string $versionConstraint = null,
+    ?string $installedVersion = '2.4.1',
+    ?string $errorCode = null,
 ): array {
     $node = removal_tool_node(fake()->unique()->slug(2), $nodeStatus);
     $manager = removal_tool_manager($node, $managerStatus);
@@ -347,6 +392,8 @@ function removal_tool_fixture(
             failedOperation: $failedOperation,
             protected: $protected,
             versionConstraint: $versionConstraint,
+            installedVersion: $installedVersion,
+            errorCode: $errorCode,
         ),
         $manager,
     ];
@@ -380,6 +427,8 @@ function removal_tool_record(
     ?ToolOperation $failedOperation = null,
     bool $protected = false,
     ?string $versionConstraint = null,
+    ?string $installedVersion = '2.4.1',
+    ?string $errorCode = null,
 ): Tool {
     return $node->tools()->create([
         'tool_manager_id' => $manager->id,
@@ -387,9 +436,9 @@ function removal_tool_record(
         'version_constraint' => $versionConstraint,
         'protected' => $protected,
         'status' => $status,
-        'installed_version' => '2.4.1',
+        'installed_version' => $installedVersion,
         'failed_operation' => $failedOperation,
-        'error_code' => $status === ToolStatus::Failed ? 'tool.previous_failure' : null,
+        'error_code' => $errorCode ?? ($status === ToolStatus::Failed ? 'tool.previous_failure' : null),
     ]);
 }
 

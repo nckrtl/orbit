@@ -670,7 +670,7 @@ final readonly class RemoveAppInstanceAction
         } catch (RuntimeConvergenceException $exception) {
             throw new ResourceOperationException(
                 errorCode: $exception->errorCode,
-                message: "AppInstance [{$appInstance->name}] source removal was refused.",
+                message: $exception->getMessage(),
                 status: 409,
                 previous: $exception,
             );

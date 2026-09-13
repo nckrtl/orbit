@@ -8,6 +8,7 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -23,6 +24,7 @@ use App\Models\NodeRole;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\TestCase;
 
@@ -31,6 +33,7 @@ beforeEach(function (): void {
     $this->roleLifecycle = new NodeRoleApiLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $this->roleLifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $this->roleLifecycle);
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
     $this->reachability = new NodeRoleApiReachabilityFake;
     app()->instance(NodeReachabilityProbe::class, $this->reachability);
 
@@ -445,6 +448,26 @@ it('returns standard validation failures for protected unknown and duplicate ass
     'unknown role' => ['future-role', 'unassigned'],
     'existing role requires explicit convergence' => ['app-dev', 'preassigned'],
 ]);
+
+it('includes the same role enum validation details for add and remove', function (): void {
+    $add = $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'nosuch'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+    $remove = $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/nosuch", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect($add->json('error.details.role'))
+        ->not->toBeEmpty()
+        ->and($remove->json('error.details.role'))
+        ->toBe($add->json('error.details.role'))
+        ->and($this->roleLifecycle->converged)
+        ->toBeEmpty()
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty();
+});
 
 it('always returns the exact preview without mutating when force is absent or false', function (
     array $body,

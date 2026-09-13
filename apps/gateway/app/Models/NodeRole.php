@@ -84,6 +84,15 @@ final class NodeRole extends Model
         ]);
     }
 
+    public function neverActivated(): bool
+    {
+        if ($this->status === LifecycleStatus::Active || $this->status === LifecycleStatus::Removing) {
+            return false;
+        }
+
+        return ! (is_string($this->failed_step) && str_starts_with($this->failed_step, 'remove:'));
+    }
+
     /** @return array<string, class-string|literal-string> */
     protected function casts(): array
     {

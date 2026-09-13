@@ -9,6 +9,7 @@ use Closure;
 
 interface RecoverableNodeConverger
 {
+    /** @param Closure(NodeObservation): void $completion */
     public function convergeRecoverably(
         Node $node,
         NodeProvisioningIdentity $identity,

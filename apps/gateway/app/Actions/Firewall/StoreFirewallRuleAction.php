@@ -25,6 +25,7 @@ final readonly class StoreFirewallRuleAction
     public function execute(Node $node, StoreFirewallRuleData $data): array
     {
         $this->guardRecoverySsh($node, $data);
+        $this->guardActionConflict($node, $data);
         $rule = FirewallRule::query()->firstOrNew([
             'node_id' => $node->id,
             'name' => $data->name,
@@ -115,5 +116,35 @@ final readonly class StoreFirewallRuleAction
             errorCode: 'firewall.public_ssh_deny_forbidden',
             message: "Firewall rule [{$data->name}] would deny the public recovery SSH port.",
         );
+    }
+
+    private function guardActionConflict(Node $node, StoreFirewallRuleData $data): void
+    {
+        $conflict = FirewallRule::query()
+            ->where('node_id', $node->id)
+            ->where('name', '!=', $data->name)
+            ->where('action', $this->oppositeAction($data->action))
+            ->where('source', $data->source)
+            ->where('protocol', $data->protocol)
+            ->where('port', $data->port)
+            ->first();
+
+        if ($conflict === null) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'firewall.action_conflict',
+            message: "Firewall rule [{$data->name}] conflicts with [{$conflict->name}] on the same source, protocol, and port.",
+            status: 409,
+        );
+    }
+
+    private function oppositeAction(FirewallAction $action): FirewallAction
+    {
+        return match ($action) {
+            FirewallAction::Allow => FirewallAction::Deny,
+            FirewallAction::Deny => FirewallAction::Allow,
+        };
     }
 }

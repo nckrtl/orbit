@@ -16,6 +16,12 @@ pest()
     ->locally()
     ->filtered();
 
+$tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
+
+if (is_string($tiaDirectory) && $tiaDirectory !== '') {
+    pest()->tia()->directory($tiaDirectory);
+}
+
 function orb183_production_route_migration(): Migration
 {
     return require base_path(

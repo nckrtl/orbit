@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -47,7 +48,9 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {}
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
         });
         $requestId = (string) Str::uuid();
         $cluster = Cluster::query()->create(['name' => 'development']);
@@ -113,7 +116,9 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {}
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
         });
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
         {
@@ -168,9 +173,11 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->calls++;
                 $this->publicSshHost = $node->public_ssh_host;
+
+                return new NodeObservation('x86_64');
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -217,8 +224,10 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->calls++;
+
+                return new NodeObservation('x86_64');
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -259,9 +268,11 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
                 $node->update(['ssh_host_fingerprint' => $this->observedFingerprint]);
+
+                return new NodeObservation('x86_64');
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -295,7 +306,9 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {}
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
         });
         Node::query()->create([
             'name' => 'existing-dev',
@@ -349,8 +362,10 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->calls++;
+
+                return new NodeObservation('x86_64');
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -387,7 +402,9 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {}
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
         });
         $cluster = Cluster::query()->create([
             'name' => 'development',
@@ -426,8 +443,10 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->calls++;
+
+                return new NodeObservation('x86_64');
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -507,17 +526,64 @@ describe('POST /api/v1/nodes', function (): void {
         expect(Node::query()->where('name', 'mac-dev')->exists())->toBeFalse();
     });
 
-    it('returns a stable error when Linux architecture is missing', function (): void {
+    it('records the observed architecture when the request omits it', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): NodeObservation {
+                return new NodeObservation('aarch64');
+            }
+        });
+
         $this
             ->postJson('/api/v1/nodes', [
                 'name' => 'linux-node',
                 'public_ssh_host' => '192.0.2.60',
                 'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
             ])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.architecture_required');
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.architecture', 'aarch64');
 
-        expect(Node::query()->where('name', 'linux-node')->exists())->toBeFalse();
+        expect(Node::query()->where('name', 'linux-node')->sole()->architecture)->toBe('aarch64');
+    });
+
+    it('refuses an explicit architecture that differs from the observed one', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): NodeObservation {
+                return new NodeObservation('aarch64');
+            }
+        });
+
+        $this
+            ->postJson('/api/v1/nodes', [
+                'name' => 'linux-node',
+                'public_ssh_host' => '192.0.2.60',
+                'architecture' => 'x86_64',
+                'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'node.architecture_mismatch')
+            ->assertJsonPath('error.message', 'Node [linux-node] reports architecture [aarch64], not [x86_64].');
+
+        $node = Node::query()->where('name', 'linux-node')->sole();
+
+        expect($node->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($node->error_code)
+            ->toBe('node.architecture_mismatch')
+            ->and($node->architecture)
+            ->toBeNull();
     });
 
     it('rejects an unsafe WireGuard endpoint override at the API boundary', function (): void {
@@ -586,7 +652,7 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
 
                 throw new NodeProvisioningException(
@@ -642,7 +708,7 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
 
                 throw new NodeProvisioningException('wireguard', 'node.wireguard_failed', 'WireGuard failed.');
@@ -681,7 +747,7 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 throw new SshHostKeyScanException(
                     message: 'ssh-keyscan could not connect to the target',
                     result: new CommandResult(
@@ -749,7 +815,9 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {}
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
         });
 
         $this
@@ -782,8 +850,10 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->calls++;
+
+                return new NodeObservation('x86_64');
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -876,7 +946,7 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 throw new NodeProvisioningException(
                     step: 'base-host',
                     errorCode: 'node.bootstrap_failed',
@@ -930,8 +1000,10 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
+
+                return new NodeObservation('x86_64');
             }
         });
         $common = ['architecture' => 'x86_64', 'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43)];
@@ -943,9 +1015,23 @@ describe('POST /api/v1/nodes', function (): void {
             'user' => 'deployer',
             'orbit_user' => 'nckrtl',
         ] + $common)->assertCreated();
+        Node::query()->create([
+            'name' => 'identity-existing-api',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.95',
+            'wireguard_ip' => '10.44.0.95',
+            'user' => 'nckrtl',
+            'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', 43),
+        ]);
+        $this->postJson('/api/v1/nodes', ['name' => 'identity-existing-api', 'tld' => 'prod'])->assertCreated();
+        $this->postJson('/api/v1/nodes', ['name' => 'identity-existing-api', 'user' => 'root'])->assertCreated();
         expect($identities)->toBe([
             ['root',     'orbit'],
             ['deployer', 'nckrtl'],
+            ['nckrtl',   'nckrtl'],
+            ['root',     'nckrtl'],
         ]);
     });
 
@@ -962,8 +1048,10 @@ describe('POST /api/v1/nodes', function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
+            ): NodeObservation {
                 $this->calls++;
+
+                return new NodeObservation('x86_64');
             }
         });
         foreach (['', ' ', 'bad/name', "bad\nname", '1name', str_repeat('a', 33)] as $invalid) {

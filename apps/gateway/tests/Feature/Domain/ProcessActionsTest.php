@@ -10,7 +10,11 @@ use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
 use App\Data\Processes\AddProcessData;
+use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppProd\AppProdRuntimeConverger;
+use App\Domain\Nodes\NodeRoleDependencySet;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
@@ -21,12 +25,14 @@ use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\Cache;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessActionsFakeRuntimeManager;
@@ -647,6 +653,259 @@ it('lists runtime status and removes only the selected process', function (): vo
         ->toBe(0);
 });
 
+it('does not persist a start outcome after a peer writes a completed stop', function (): void {
+    $process = process_actions_record($this->instance);
+    $peerPersisted = false;
+    $this->runtime->duringStart = function () use ($process, &$peerPersisted): void {
+        $peer = Cache::lock(process_actions_runtime_lock_key($process), 60);
+
+        if ($peer->get()) {
+            $peerPersisted = true;
+            $process->update([
+                'desired_state' => DesiredProcessState::Stopped,
+                'status' => LifecycleStatus::Active,
+            ]);
+            $peer->release();
+        }
+    };
+
+    $started = new StartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($process);
+
+    expect($peerPersisted)
+        ->toBeFalse()
+        ->and($started->desired_state)
+        ->toBe(DesiredProcessState::Running)
+        ->and($process->refresh()->desired_state)
+        ->toBe(DesiredProcessState::Running);
+});
+
+it('does not persist a start outcome while remove still owns the runtime lease', function (): void {
+    $process = process_actions_record($this->instance);
+    $peerPersisted = false;
+    $this->runtime->duringRemove = function () use ($process, &$peerPersisted): void {
+        $peer = Cache::lock(process_actions_runtime_lock_key($process), 60);
+
+        if ($peer->get()) {
+            $peerPersisted = true;
+            $process->update([
+                'desired_state' => DesiredProcessState::Running,
+                'status' => LifecycleStatus::Active,
+            ]);
+            $peer->release();
+        }
+    };
+
+    $removed = new RemoveProcessAction($this->runtime, $this->targets)->execute($process);
+
+    expect($peerPersisted)
+        ->toBeFalse()
+        ->and($removed->exists)
+        ->toBeFalse()
+        ->and(Process::query()->count())
+        ->toBe(0);
+});
+
+it('leaves intent and lifecycle unchanged when a start loses the runtime owner', function (): void {
+    $process = process_actions_record($this->instance);
+    $original = $process->fresh()->getRawOriginal();
+    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
+    expect($lock->get())->toBeTrue();
+
+    try {
+        expect(fn () => new StartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($process))
+            ->toThrow(function (ProcessOperationException $exception): void {
+                expect($exception->errorCode)
+                    ->toBe('process.runtime_lock_failed')
+                    ->and($exception->step)
+                    ->toBe('lock-runtime');
+            });
+
+        expect($process->refresh()->getRawOriginal())
+            ->toBe($original)
+            ->and($this->runtime->started)
+            ->toBeEmpty();
+    } finally {
+        $lock->release();
+    }
+});
+
+it('leaves intent and lifecycle unchanged when a stop loses the runtime owner', function (): void {
+    $process = process_actions_record($this->instance);
+    $process->update(['desired_state' => DesiredProcessState::Running]);
+    $original = $process->fresh()->getRawOriginal();
+    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
+    expect($lock->get())->toBeTrue();
+
+    try {
+        expect(fn () => new StopProcessAction($this->runtime)->execute($process))
+            ->toThrow(ProcessOperationException::class);
+
+        expect($process->refresh()->getRawOriginal())
+            ->toBe($original)
+            ->and($this->runtime->stopped)
+            ->toBeEmpty();
+    } finally {
+        $lock->release();
+    }
+});
+
+it('leaves a removing process unmarked when remove loses the runtime owner', function (): void {
+    $process = process_actions_record($this->instance);
+    $original = $process->fresh()->getRawOriginal();
+    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
+    expect($lock->get())->toBeTrue();
+
+    try {
+        expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
+            ->toThrow(ProcessOperationException::class);
+
+        expect($process->refresh()->getRawOriginal())
+            ->toBe($original)
+            ->and($process->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($this->runtime->removed)
+            ->toBeEmpty()
+            ->and(Process::query()->count())
+            ->toBe(1);
+    } finally {
+        $lock->release();
+    }
+});
+
+it('refreshes the surviving process identity when an identical add retries under the runtime owner', function (): void {
+    $process = process_actions_record($this->instance);
+    $process->update([
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'start',
+        'error_code' => 'process.start_failed',
+    ]);
+    $data = new AddProcessData(
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
+        name: 'queue',
+        runtime: ProcessRuntime::Systemd,
+        command: ['/usr/bin/php', 'artisan', 'queue:work'],
+        image: null,
+        workingDirectory: null,
+        environment: [],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'always',
+        start: false,
+    );
+
+    $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+
+    expect($result['created'])
+        ->toBeFalse()
+        ->and($result['process']->id)
+        ->toBe($process->id)
+        ->and($result['process']->desired_state)
+        ->toBe(DesiredProcessState::Running)
+        ->and($result['process']->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($result['process']->failed_step)
+        ->toBeNull()
+        ->and($result['process']->error_code)
+        ->toBeNull()
+        ->and(Process::query()->count())
+        ->toBe(1);
+});
+
+it('does not rewrite an existing process when an identical add loses the runtime owner', function (): void {
+    $process = process_actions_record($this->instance);
+    $process->update([
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'start',
+        'error_code' => 'process.start_failed',
+    ]);
+    $original = $process->fresh()->getRawOriginal();
+    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
+    expect($lock->get())->toBeTrue();
+
+    try {
+        expect(fn () => new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute(
+            new AddProcessData(
+                targetType: ProcessTargetType::AppInstance,
+                targetId: $this->instance->id,
+                name: 'queue',
+                runtime: ProcessRuntime::Systemd,
+                command: ['/usr/bin/php', 'artisan', 'queue:work'],
+                image: null,
+                workingDirectory: null,
+                environment: [],
+                ports: [],
+                volumes: [],
+                restartPolicy: 'always',
+                start: false,
+            ),
+        ))->toThrow(ProcessOperationException::class);
+
+        expect($process->refresh()->getRawOriginal())
+            ->toBe($original)
+            ->and($this->runtime->converged)
+            ->toBeEmpty();
+    } finally {
+        $lock->release();
+    }
+});
+
+it('does not mark a process failed when role cleanup loses the runtime owner', function (): void {
+    $process = process_actions_record($this->instance);
+    $original = $process->fresh()->getRawOriginal();
+    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $cleaner = new NativeNodeRoleDependentCleaner(
+            processes: $this->runtime,
+            appDev: Mockery::mock(AppDevRuntimeConverger::class),
+            appProd: Mockery::mock(AppProdRuntimeConverger::class),
+        );
+
+        expect(fn () => $cleaner->clean(new NodeRoleDependencySet(
+            instanceIds: [],
+            workspaceIds: [],
+            processIds: [$process->id],
+            summaries: [],
+        )))->toThrow(function (NodeRoleOperationException $exception): void {
+            expect($exception->underlyingErrorCode)->toBe('process.runtime_lock_failed');
+        });
+
+        expect($process->refresh()->getRawOriginal())
+            ->toBe($original)
+            ->and($this->runtime->removed)
+            ->toBeEmpty();
+    } finally {
+        $lock->release();
+    }
+});
+
+it('role cleanup removes runtime artifacts and leaves the process row for the parent', function (): void {
+    $process = process_actions_record($this->instance);
+    $cleaner = new NativeNodeRoleDependentCleaner(
+        processes: $this->runtime,
+        appDev: Mockery::mock(AppDevRuntimeConverger::class),
+        appProd: Mockery::mock(AppProdRuntimeConverger::class),
+    );
+
+    $cleaner->clean(new NodeRoleDependencySet(
+        instanceIds: [],
+        workspaceIds: [],
+        processIds: [$process->id],
+        summaries: [],
+    ));
+
+    expect($this->runtime->removed)
+        ->toBe([$process->id])
+        ->and(Process::query()->whereKey($process->id)->exists())
+        ->toBeTrue()
+        ->and($process->refresh()->status)
+        ->toBe(LifecycleStatus::Active);
+});
+
 it('records stable lifecycle failure state without losing the process definition', function (): void {
     $process = process_actions_record($this->instance);
     $this->runtime->startFailure = new ProcessOperationException(
@@ -680,6 +939,15 @@ it('retains the process definition when runtime removal fails', function (): voi
         ->failed_step->toBe('stop')
         ->error_code->toBe('process.remove_failed')->and(Process::query()->count())->toBe(1);
 });
+
+function process_actions_runtime_lock_key(Process $process): string
+{
+    $nodeId = $process->owner_type === AppInstance::class
+        ? (int) AppInstance::query()->whereKey($process->owner_id)->value('node_id')
+        : 0;
+
+    return "orbit:process-runtime:{$nodeId}:{$process->id}";
+}
 
 function process_actions_record(AppInstance $instance): Process
 {
@@ -738,6 +1006,10 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
 
     public bool $startUnavailable = false;
 
+    public ?Closure $duringStart = null;
+
+    public ?Closure $duringRemove = null;
+
     public function assertCanStart(Process $process): void
     {
         $this->startPreflights[] = ['name' => $process->name, 'exists' => $process->exists];
@@ -769,6 +1041,10 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
 
     public function start(Process $process): void
     {
+        if ($this->duringStart instanceof Closure) {
+            ($this->duringStart)();
+        }
+
         if ($this->startFailure instanceof ProcessOperationException) {
             throw $this->startFailure;
         }
@@ -790,6 +1066,10 @@ final class ProcessActionsFakeRuntimeManager implements ProcessRuntimeManager
 
     public function remove(Process $process): void
     {
+        if ($this->duringRemove instanceof Closure) {
+            ($this->duringRemove)();
+        }
+
         if ($this->removeFailure instanceof ProcessOperationException) {
             throw $this->removeFailure;
         }

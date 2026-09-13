@@ -11,7 +11,8 @@ Treat all remote values and caller-provided connection values as untrusted.
   response bodies. Do not claim that the SDK can scrub caller-owned frames.
 - Treat every submitted or remote environment value as sensitive, regardless
   of its key or whether its text resembles a credential. Keep it only in the
-  intended request body and omit remote content from environment failures.
+  intended request body. Preserve the Gateway's safe error message and
+  redacted details on environment failures.
 - Mark narrow credential-bearing ingress parameters with
   `SensitiveParameter`. Deny serialization and return class-only debug state
   for request and connector objects while preserving the transport payload.

@@ -10,6 +10,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
@@ -51,6 +52,13 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
 
         if ($appInstance->status === AppInstanceState::Active) {
             $this->routes->ensureForAppInstance($appInstance, $data->hostname);
+
+            if ($data->recoverSourceProfile && $appInstance->source_is_laravel === null) {
+                $appInstance = $this->sourceLock->synchronized(
+                    $node->id,
+                    fn (): AppInstance => $this->recoverActiveSourceProfile($appInstance),
+                );
+            }
 
             return ['appInstance' => $appInstance->load('routes.targets'), 'created' => false];
         }
@@ -351,6 +359,36 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
             ...($status instanceof AppInstanceState ? ['status' => $status] : []),
         ]);
         $appInstance->refresh();
+    }
+
+    private function recoverActiveSourceProfile(AppInstance $appInstance): AppInstance
+    {
+        $appInstance->refresh()->loadMissing(['app', 'node']);
+
+        if ($appInstance->source_is_laravel !== null) {
+            return $appInstance;
+        }
+
+        $profile = $this->source->inspectProfile($appInstance);
+        $appInstance->update([
+            'source_is_laravel' => $profile->laravel,
+            ...$this->recoveredRuntime($appInstance, $profile),
+        ]);
+
+        return $appInstance->refresh();
+    }
+
+    /** @return array<string, string> */
+    private function recoveredRuntime(AppInstance $appInstance, DevelopmentSourceProfile $profile): array
+    {
+        if ($appInstance->selected_php_version !== null || ! is_string($profile->phpVersion)) {
+            return [];
+        }
+
+        return [
+            'selected_php_version' => $profile->phpVersion,
+            ...ProductionPhpRuntimeIdentity::forProvisioning($appInstance, $profile->phpVersion)->attributes(),
+        ];
     }
 
     private function assertResolution(AppInstance $appInstance, DevelopmentSourceResolution $resolution): void

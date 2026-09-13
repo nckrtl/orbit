@@ -23,7 +23,7 @@ Both kinds accept the common definition fields below.
 
 A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity.
 
-A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. It uses the Schedule command, calendar, and timeout limits. It does not select a target, host Node, execution identity, or timer state.
+A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. The Gateway accepts `command` and `timeout_seconds` under the same limits as an installed Schedule. For `calendar`, it accepts one nonempty printable ASCII line of at most 255 bytes. It does not run `systemd-analyze calendar` when it creates or replaces a definition, because a definition has no host Node. The target Node's `systemd-analyze calendar` accepts or rejects that stored calendar when Orbit copies the definition into an AppInstance Schedule or when an operator adds a Schedule. The [Schedules](schedules.md) page owns that host check. A definition does not select a target, host Node, execution identity, or timer state.
 
 The API rejects unknown or duplicate members at every definition object and specification boundary. It also rejects a definition UUID that belongs to another App. Collection responses omit command content; an authorized item response returns the complete definition.
 
@@ -33,7 +33,7 @@ Creating, replacing, or deleting a definition changes only App-owned configurati
 
 Production preparation captures the App definitions whose applicability includes `production` before it installs any target runtime. It ignores development-only definitions and candidate-specific Process or Schedule settings. The captured selection belongs to that target and does not change when an App definition is later added, replaced, or removed.
 
-For each captured process definition, Orbit creates a new AppInstance-owned Process with its own ID and target-derived runtime identity. It preserves the supported systemd or Docker specification and installs the Process stopped. For each captured Schedule definition, Orbit creates a new AppInstance-owned Schedule with its own UUID and target-derived host identity. It installs the timer disabled and stopped. A prepared production home does not need a selected release for these stopped installations, and preparation does not execute application code.
+For each captured process definition, Orbit creates a new AppInstance-owned Process with its own ID and target-derived runtime identity. It preserves the supported systemd or Docker specification and installs the Process stopped. For each captured Schedule definition, Orbit creates a new AppInstance-owned Schedule with its own UUID and target-derived host identity. It installs the timer disabled and stopped, and that installation applies the host calendar check. A prepared production home does not need a selected release for these stopped installations, and preparation does not execute application code.
 
 Preparation records completed copies and resumes only unfinished installation after an interruption. A retry uses the target's captured selection instead of reading the App definitions again. It does not rewrite a completed copy, undo a later operator edit, or stop a copy that an operator started. A name conflict or a conflict with a runtime artifact stops preparation without adopting the existing record or artifact. Removing the target later cleans the instantiated copies through the [AppInstance removal lifecycle](appinstance-removal.md) and retains the App definitions.
 
@@ -103,7 +103,7 @@ The two runtimes accept these values.
 | systemd | Process name and absolute executable with argv | Absolute working directory, restart policy, and initial start | The development checkout or the production home's `current` path |
 | Docker | Process name, image, and command argv | Container working directory, environment, published ports, volumes, restart policy, and initial start | `/app` |
 
-A development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the AppInstance Route hostname from that user's certificate projection.
+A development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the AppInstance Route hostname from that user's certificate projection. When the AppInstance has a Route, the unit also receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` so the frontend toolchain publishes assets and hot module replacement on the [development-server endpoint](routes.md#development-server-endpoint).
 
 A production systemd Process runs as the AppInstance's dedicated production user. It reads the persistent environment file in the recorded production home and uses the `current` path as its default working directory. Orbit resolves the recorded Node, user, home, and current release when it performs an operation, independent of Node role co-location or certificate mode.
 
@@ -126,6 +126,12 @@ The CLI exposes these Process operations through the Gateway.
 | `orbit process:remove PROCESS` | Stop and remove the exact owned runtime artifacts, then delete the Process record. |
 
 Adding or starting a Process requires an active, available AppInstance and reachable active Node. Orbit refuses either operation before mutation when that target is unavailable or inactive. Cleanup can use the recorded placement of a failed or removing AppInstance while its Node remains reachable.
+
+The Gateway holds one runtime owner for a Process while it re-reads the record, applies the remote systemd or Docker change, and writes the matching success, failure, or deletion. A competitor that cannot take that owner receives `process.runtime_lock_failed` and leaves desired state, errors, and lifecycle status unchanged. Add, start, and restart also take a bounded AppInstance admission owner first. A competitor waits for at most 30 seconds or the remaining command deadline, then receives `process.operation_busy` before it mutates that AppInstance. The Gateway acquires the AppInstance admission owner before the Process runtime owner and does not take a second nested Process lock.
+
+Node role cleanup uses the same Process runtime owner. It removes exact-owned runtime artifacts and leaves the Process row for the parent removal to delete after recovery. A delayed start or stop that lost the owner cannot rewrite that row after cleanup has finished.
+
+Repeating an identical add refreshes the surviving Process and its desired state. It does not create a second record.
 
 Every runtime mutation rechecks exact Orbit ownership. Systemd replacement uses a validated candidate and restores the previous owned unit when activation fails. Docker replacement retains or restores exact-owned canonical and rollback containers. Orbit does not overwrite, adopt, or delete a colliding unit, container, or recovery artifact.
 

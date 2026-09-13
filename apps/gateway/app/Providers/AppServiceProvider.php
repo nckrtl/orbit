@@ -71,6 +71,7 @@ use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
+use App\Domain\Metrics\MetricsCredentialOperationLock;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
@@ -91,6 +92,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
@@ -103,6 +105,7 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
+use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
@@ -174,6 +177,7 @@ use App\Infrastructure\Metrics\MetricsSshExecutor;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
+use App\Infrastructure\Metrics\NativeMetricsCredentialOperationLock;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
@@ -192,6 +196,7 @@ use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
@@ -216,6 +221,7 @@ use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
+use App\Infrastructure\WireGuard\NativeWireGuardPeerDnsRepairer;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
@@ -317,6 +323,14 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
         $this->app->scoped(
+            MetricsCredentialOperationLock::class,
+            static fn (): MetricsCredentialOperationLock => new NativeMetricsCredentialOperationLock(
+                directory: rtrim(string: (string) config('orbit.home'), characters: '/')
+                    .'/locks/metrics-credentials',
+                deadline: app(CommandDeadline::class),
+            ),
+        );
+        $this->app->scoped(
             ClusterRouterOperationLock::class,
             static fn (): ClusterRouterOperationLock => new NativeClusterRouterOperationLock(
                 directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/cluster-router',
@@ -338,6 +352,7 @@ final class AppServiceProvider extends ServiceProvider
                 deadline: app(CommandDeadline::class),
             ),
         );
+        $this->app->scoped(ProcessRuntimeLease::class, NativeProcessRuntimeLease::class);
         $this->app->scoped(
             DevelopmentProjectionOperationLock::class,
             static fn (): DevelopmentProjectionOperationLock => new NativeDevelopmentProjectionOperationLock(
@@ -486,6 +501,16 @@ final class AppServiceProvider extends ServiceProvider
             ),
         );
         $this->app->alias(NativeWireGuardPeerConverger::class, WireGuardPeerConverger::class);
+        $this->app->singleton(
+            NativeWireGuardPeerDnsRepairer::class,
+            static fn (): NativeWireGuardPeerDnsRepairer => new NativeWireGuardPeerDnsRepairer(
+                configuration: app(VpnConfigurationRepository::class),
+                ssh: app(SshExecutor::class),
+                sshKeys: app(SshKeyProvider::class),
+                knownHosts: app(KnownHostsStore::class),
+            ),
+        );
+        $this->app->alias(NativeWireGuardPeerDnsRepairer::class, WireGuardPeerDnsRepairer::class);
     }
 
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void

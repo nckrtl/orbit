@@ -21,6 +21,8 @@ The Gateway stores one Schedule for exactly one Node or AppInstance target. The 
 
 An identical add retries or returns the same Schedule without changing its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict`. Orbit changes a specification only when the operator removes the Schedule and adds its replacement.
 
+An App Schedule definition stores a calendar without host `systemd-analyze calendar` validation. The [App process and Schedule definitions](app-processes-and-schedules.md) page owns that write contract.
+
 ## Use the Schedule API
 
 An active Gateway peer uses eight endpoints under `/api/v1/schedules`. Every endpoint requires Node access to the Schedule's target Node. The collection contains only Schedules whose target Node the caller may address, and a completion report is accepted only from the Schedule's recorded host Node.

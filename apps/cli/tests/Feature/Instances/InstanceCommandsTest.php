@@ -8,6 +8,7 @@ use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
 use App\Services\Git\NativeGitRegistrationDiscovery;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
@@ -92,6 +93,38 @@ describe('instance:register', function (): void {
             ]);
     });
 
+    it('cancels without a request when the operator declines the ownership transfer', function (): void {
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('instance:register')
+            ->expectsOutput('Source: /work/acme')
+            ->expectsConfirmation('Transfer this source to Orbit ownership?', 'no')
+            ->expectsOutputToContain('Registration was cancelled.')
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    });
+
+    it('registers with --json on an interactive terminal without a prompt or prose', function (): void {
+        $mockClient = MockClient::global([
+            RegisterAppInstanceRequest::class => registration_mock_response(),
+        ]);
+
+        $exitCode = Artisan::call('instance:register', ['--json' => true]);
+        $output = trim(Artisan::output());
+
+        expect($exitCode)->toBe(0);
+        expect($output)
+            ->toBe(registration_json())
+            ->not->toContain("\n", 'Source:', 'Transfer this source to Orbit ownership?');
+        expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(json_decode(registration_json(), associative: true, flags: JSON_THROW_ON_ERROR));
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'source_path' => '/work/acme',
+        ]);
+    });
+
     it('omits inferred creation values when canonical repository lookup can resolve a different App identity', function (): void {
         $this->registrationGit->facts = new GitRegistrationFacts(
             path: '/work/legacy-default',
@@ -146,7 +179,7 @@ describe('instance:register', function (): void {
         ]);
     });
 
-    it('refuses unresolved non interactive input without sending a request', function (): void {
+    it('refuses unresolved App values with one JSON error document without a prompt or request', function (array $parameters): void {
         $facts = $this->registrationGit->facts;
         assert(
             $facts instanceof GitRegistrationFacts,
@@ -164,12 +197,23 @@ describe('instance:register', function (): void {
         );
         $mockClient = MockClient::global();
 
-        $this
-            ->artisan('instance:register', ['--no-interaction' => true, '--json' => true])
-            ->expectsOutputToContain('instance.registration_values_unresolved')
-            ->assertExitCode(1);
+        $exitCode = Artisan::call('instance:register', $parameters);
+        $output = trim(Artisan::output());
+
+        expect($exitCode)->toBe(1);
+        expect($output)->not->toContain("\n", 'Source:', 'Default branch', 'Transfer this source to Orbit ownership?');
+        expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'instance.registration_values_unresolved',
+                'message' => 'Non-interactive registration requires unresolved App values as options.',
+                'request_id' => null,
+            ],
+        ]);
         expect($mockClient->getLastPendingRequest())->toBeNull();
-    });
+    })->with([
+        'JSON on an interactive terminal' => [['--json' => true]],
+        'JSON without interaction' => [['--json' => true, '--no-interaction' => true]],
+    ]);
 
     it('transports include worktrees and omits inferred values for a selected App', function (): void {
         $mockClient = MockClient::global([

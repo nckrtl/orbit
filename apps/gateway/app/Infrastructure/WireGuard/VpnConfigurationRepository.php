@@ -86,6 +86,7 @@ final readonly class VpnConfigurationRepository
             endpoint: $endpoint,
             dnsServer: $dnsServer,
             dnsThroughWireGuard: $subnet->contains($dnsServer),
+            usesDefaultDnsResolver: $peer->dns_server_override === null,
             domain: $domain,
             serverAddress: "{$serverAddress}/{$prefixLength}",
             peerAddress: "{$peerAddress}/{$prefixLength}",

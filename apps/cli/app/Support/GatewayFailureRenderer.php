@@ -8,6 +8,12 @@ use LaravelZero\Framework\Commands\Command;
 
 final class GatewayFailureRenderer
 {
+    private const int MAX_FIELD_MESSAGES = 50;
+
+    private const int MAX_FIELD_LENGTH = 128;
+
+    private const int MAX_MESSAGE_LENGTH = 512;
+
     /**
      * @param  array<string,mixed>  $details
      */
@@ -31,9 +37,81 @@ final class GatewayFailureRenderer
 
         $command->error(self::safeErrorMessage($humanMessage ?? $message));
 
+        foreach (self::fieldDetails($details) as $field => $messages) {
+            foreach (is_string($messages) ? [$messages] : $messages as $fieldMessage) {
+                $command->line("{$field}: {$fieldMessage}");
+            }
+        }
+
         if ($requestId !== null) {
             $command->line("Request ID: {$requestId}");
         }
+    }
+
+    /**
+     * Keeps the details that render safely as field messages: a string field with one
+     * message or a list of messages, each sanitized and bounded like the error message,
+     * in the Gateway's order and capped at a total number of messages.
+     *
+     * @param  array<array-key,mixed>  $details
+     * @return array<string,string|list<string>>
+     */
+    public static function fieldDetails(array $details): array
+    {
+        $fields = [];
+        $remaining = self::MAX_FIELD_MESSAGES;
+
+        foreach ($details as $field => $value) {
+            if ($remaining === 0) {
+                break;
+            }
+
+            $field = is_string($field) ? self::safeText($field, self::MAX_FIELD_LENGTH) : null;
+
+            if ($field === null) {
+                continue;
+            }
+
+            if (is_string($value)) {
+                $fieldMessage = self::safeText($value, self::MAX_MESSAGE_LENGTH);
+
+                if ($fieldMessage === null) {
+                    continue;
+                }
+
+                $fields[$field] = $fieldMessage;
+                $remaining--;
+
+                continue;
+            }
+
+            if (! is_array($value) || ! array_is_list($value)) {
+                continue;
+            }
+
+            $messages = [];
+
+            foreach ($value as $item) {
+                if ($remaining === 0) {
+                    break;
+                }
+
+                $fieldMessage = is_string($item) ? self::safeText($item, self::MAX_MESSAGE_LENGTH) : null;
+
+                if ($fieldMessage === null) {
+                    continue;
+                }
+
+                $messages[] = $fieldMessage;
+                $remaining--;
+            }
+
+            if ($messages !== []) {
+                $fields[$field] = $messages;
+            }
+        }
+
+        return $fields;
     }
 
     /** @param array<string,mixed> $details */
@@ -64,14 +142,22 @@ final class GatewayFailureRenderer
 
     private static function safeErrorMessage(string $message): string
     {
-        $message = preg_replace(pattern: '/[\x00-\x1F\x7F]+/', replacement: ' ', subject: $message);
-        $message = is_string($message) ? trim($message) : '';
+        return self::safeText($message, self::MAX_MESSAGE_LENGTH) ?? 'Gateway request failed.';
+    }
 
-        if ($message === '' || strlen($message) > 512) {
-            return 'Gateway request failed.';
+    /**
+     * Replaces control characters with spaces and trims; an empty or oversized result is null.
+     */
+    private static function safeText(string $text, int $maxLength): ?string
+    {
+        $text = preg_replace(pattern: '/[\x00-\x1F\x7F]+/', replacement: ' ', subject: $text);
+        $text = is_string($text) ? trim($text) : '';
+
+        if ($text === '' || strlen($text) > $maxLength) {
+            return null;
         }
 
-        return $message;
+        return $text;
     }
 
     private static function safeRequestId(?string $requestId): ?string

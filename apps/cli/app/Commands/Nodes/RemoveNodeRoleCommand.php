@@ -7,6 +7,7 @@ namespace App\Commands\Nodes;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
@@ -16,7 +17,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'node:role:remove
-        {node : Numeric node ID}
+        {node : Node ID or name}
         {role : Role name}
         {--force : Confirm destructive role removal and dependent cleanup}
         {--purge-data : Request supported role-owned data cleanup}
@@ -30,12 +31,6 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
-
-        if ($nodeId === null) {
-            return self::FAILURE;
-        }
-
         $role = $this->stringArgument('role', 'Role', 'node_role.role_required');
 
         if ($role === null) {
@@ -45,6 +40,12 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
+
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 
@@ -116,11 +117,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
             );
         } catch (GatewayApiException $exception) {
             if (! $this->isConsentPreview($exception)) {
-                return $this->renderGatewayFailure(
-                    $exception->errorCode() ?? 'gateway.request_failed',
-                    $exception->getMessage(),
-                    $exception->requestId(),
-                );
+                return $this->renderPreviewFailure($exception);
             }
 
             if ($this->option('json') === true || ! $this->input->isInteractive()) {
@@ -147,6 +144,20 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         }
 
         return null;
+    }
+
+    private function renderPreviewFailure(GatewayApiException $exception): int
+    {
+        $code = $exception->errorCode() ?? 'gateway.request_failed';
+
+        return $this->renderGatewayFailure(
+            $code,
+            $exception->getMessage(),
+            $exception->requestId(),
+            details: $code === 'validation.failed'
+                ? GatewayFailureRenderer::fieldDetails($exception->details())
+                : [],
+        );
     }
 
     private function isConsentPreview(GatewayApiException $exception): bool

@@ -49,4 +49,15 @@ describe(NativeNodeProvisioningLock::class, function (): void {
             ->toThrow(RuntimeException::class, 'failure');
         expect($independent->run('node-a', static fn (): string => 'released-again'))->toBe('released-again');
     });
+
+    it('maps contention to the shared busy refusal', function (): void {
+        $exception = (new NodeProvisioningLockException('app-dev'))->toBusyException();
+
+        expect($exception->errorCode)
+            ->toBe('node.provisioning_busy')
+            ->and($exception->status)
+            ->toBe(409)
+            ->and($exception->getMessage())
+            ->toBe('Node [app-dev] is already changing.');
+    });
 });

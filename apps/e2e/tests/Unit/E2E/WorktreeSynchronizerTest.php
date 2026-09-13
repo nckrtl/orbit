@@ -1598,7 +1598,14 @@ describe('WorktreeSynchronizer', function () {
                 ->and($guest->directExecs)
                 ->toBe([]);
 
+            $synchronizer->assertWorkingTreeMatches($target, $worktree, $clean);
+
             file_put_contents($worktree.'/overlay.txt', "dirty\n");
+            expect(fn () => $synchronizer->assertWorkingTreeMatches($target, $worktree, $clean))
+                ->toThrow(
+                    RuntimeException::class,
+                    'The mounted source differs from the last successful readiness record; run topology sync.',
+                );
             $dirty = $synchronizer->syncWorkingTree($target, $worktree);
             $dirtyTree = new GitRepository($worktree)->effectiveTreeHash();
 
@@ -1615,6 +1622,11 @@ describe('WorktreeSynchronizer', function () {
                 ->toBe(['sha' => $sha, 'tree' => $dirtyTree, 'mounted' => true, 'git_pointer_sha256' => $pointer])
                 ->and($guest->pushes)
                 ->toBe([]);
+
+            $synchronizer->assertWorkingTreeMatches($target, $worktree, $dirty);
+            file_put_contents($worktree.'/overlay.txt', "failed overlay\n");
+            expect(fn () => $synchronizer->assertWorkingTreeMatches($target, $worktree, $dirty))
+                ->toThrow(RuntimeException::class, 'mounted source differs');
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }

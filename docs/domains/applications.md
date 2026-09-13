@@ -34,7 +34,7 @@ Use another name for a named source, or use `--branch` when either identity must
 orbit instance:new <app-id> <node-id> feature-one [--branch=release] [--hostname=feature.example.test]
 ```
 
-The Gateway derives placement from the requested identity and selects the branch independently.
+The Gateway derives placement from the requested identity and the Node apps root, and it selects the branch independently. [Node settings](../reference/node-settings.md) owns the `apps.path` contract that supplies that root.
 
 | Creation input | Managed placement | Selected branch |
 | --- | --- | --- |
@@ -67,6 +67,8 @@ orbit instance:register
 The CLI refuses a directory outside a Git checkout or worktree and refuses a credential-bearing origin without displaying it before it asks the Gateway to create an App or AppInstance. The Gateway independently verifies the submitted source on the authenticated caller Node before it changes Git, files, runtime, Routes, or database records.
 
 The Gateway resolves an existing App by the source's canonical repository identity. The [Apps reference](../reference/apps.md#resolve-an-app-during-registration) owns App lookup, inference, confirmation, and missing-App creation.
+
+`--json` makes registration non-interactive. The CLI prints no source summary, asks no question, implies confirmation of the ownership transfer, and writes one JSON document that holds the registration result or one error.
 
 Registration infers AppInstance placement from verified source facts.
 
@@ -129,6 +131,8 @@ An AppInstance created before complete profiles were recorded can have a non-act
 
 To recover that legacy checkpoint, repeat the same creation request with `--recover-source-profile`. The Gateway API and PHP SDK accept the optional boolean field `recover_source_profile`; the CLI omits that field unless the option is present. Recovery still verifies the recorded request identity, source ownership, selected Git branch, and starting commit. It then adopts the currently inspected complete profile, restarts only the incomplete provisioning checkpoint, and continues normal provisioning without replacing the source, AppInstance, placement, or Route.
 
+The same option recovers an active development or production AppInstance whose recorded source profile is missing. The Gateway inspects the recorded source once, stores the complete profile, and returns the unchanged active AppInstance and Route without reprovisioning. An identical retry against an active AppInstance that already has a profile returns that AppInstance without inspecting the source again or changing records.
+
 For a recovered Laravel profile, the option permits Orbit to reconcile the canonical URL through its existing idempotent operation. If a request stops after the remote URL write and before checkpoint persistence, another identical retry safely performs the reconciliation and continues. A complete profile that later drifts remains a refusal even when the recovery option is present.
 
 Orbit records each completed boundary. The same request can continue after a failure without duplicating source or Route records. Database rollback refuses to discard a complete profile while a non-active AppInstance retains the `php-selected` or `url-configured` checkpoint. Orbit returns the active AppInstance with its Route, hostname, and HTTPS URL when every provisioning step owned by Orbit succeeds.
@@ -149,7 +153,7 @@ The Gateway reports a failed source, PHP selection, Laravel URL, runtime, certif
 
 Active state means that Orbit prepared the source, selected any required PHP runtime, aligned Laravel configuration when applicable, and prepared the Route. It does not promise that the application is healthy. Missing dependencies, an application key, or a database can make a new Laravel application return an error, including HTTP 500, without making the AppInstance or Route inactive.
 
-An active AppInstance is terminal for creation retry. The Gateway does not inspect its source profile again, including when `recover_source_profile` is true. The existing removal operation and its source and Route checks remain unchanged.
+An active AppInstance with a recorded source profile is terminal for creation retry. The existing removal operation and its source and Route checks remain unchanged.
 
 The endpoint is available for an agent or operator to inspect and finish application setup. App setup-step configuration and execution belong to a separate contract.
 
@@ -181,6 +185,10 @@ orbit instance:remove <id> --force
 Production removal uses the same command without deleting application content. It retains a shared Route and republishes its surviving production targets, or deletes a final-target Route and releases its hostname. The [AppInstance removal reference](../reference/appinstance-removal.md) describes development source preflight, retained production content, Route cleanup, the `removing` state, bounded progress, refusals, and safe retry.
 
 The removal reference also describes worktree preflight, forced fixed-set cascades, retained branches, ordered cleanup, and transient unavailable traffic.
+
+## Move an AppInstance
+
+Orbit exposes no HTTP route, CLI command, or PHP SDK method that moves an AppInstance to another Node while preserving its ID. [ADR 0066](../decisions/0066-transfer-development-appinstances-between-nodes.md) records the Gateway obligations for that move.
 
 ## Input boundary
 

@@ -63,6 +63,28 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         $this->removeRules($node, $rules, $managedUser);
     }
 
+    public function trustWireGuardMembers(Node $node, string $managedUser): void
+    {
+        $this->convergeRules(
+            $node,
+            [$this->wireguardSshRule($node)],
+            publicConnection: false,
+            enable: false,
+            managedUser: $managedUser,
+        );
+    }
+
+    public function restorePublicSsh(Node $node, string $managedUser): void
+    {
+        $this->convergeRules(
+            $node,
+            [$this->publicSshRule($node)],
+            publicConnection: false,
+            enable: false,
+            managedUser: $managedUser,
+        );
+    }
+
     /** @param non-empty-list<UfwManagedRule> $rules */
     private function removeRules(Node $node, array $rules, string $managedUser): void
     {

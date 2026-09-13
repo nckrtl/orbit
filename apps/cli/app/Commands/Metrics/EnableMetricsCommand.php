@@ -7,10 +7,8 @@ namespace App\Commands\Metrics;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Metrics\EnableMetricsRequest;
-use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
-use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class EnableMetricsCommand extends MetricsCommand
@@ -26,17 +24,6 @@ final class EnableMetricsCommand extends MetricsCommand
         $connector = $this->connector($repository, $factory);
         if ($connector === null) {
             return self::FAILURE;
-        }
-
-        $status = $this->send($connector, new ShowMetricsStatusRequest, MetricsStatusResponse::class);
-        if (! $status instanceof MetricsStatusResponse) {
-            return self::FAILURE;
-        }
-        if ($status->assignment !== null) {
-            return $this->renderGatewayFailure(
-                'metrics.assignment_exists',
-                'Metrics already has a non-terminal assignment.',
-            );
         }
 
         $value = $this->argument('node');

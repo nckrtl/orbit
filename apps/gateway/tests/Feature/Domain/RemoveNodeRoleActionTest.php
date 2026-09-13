@@ -6,12 +6,14 @@ use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdRuntimeConverger;
+use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\NodeSideResidue;
@@ -35,6 +37,7 @@ use App\Models\ToolManagerRecord;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeNodeRoleFirewallManager;
 
 describe(RemoveNodeRoleAction::class, function (): void {
     it('rejects app role removal before mutation when a manager scope is busy', function (): void {
@@ -654,7 +657,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
         $probe = new RemovalReachabilityFake(ExporterDegradationReason::Unreachable);
-        $action = removal_action($inspector, $cleaner, $baseline, reachability: $probe);
+        $firewall = new FakeNodeRoleFirewallManager;
+        $action = removal_action($inspector, $cleaner, $baseline, reachability: $probe, firewall: $firewall);
 
         $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false, offline: true);
 
@@ -662,6 +666,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(1)
             ->and($cleaner->calls)
             ->toBe(0)
+            ->and($firewall->restored)
+            ->toBe([])
             ->and($baseline->events)
             ->toBe(['baseline-unreachable:'.DB::transactionLevel()])
             ->and($removed->degradation)
@@ -767,6 +773,107 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and($removed->retained)
             ->toBe([]);
     });
+
+    it('reopens public SSH after tearing down the last role', function (): void {
+        [$node, $assignment] = removal_role_fixture();
+        $events = [];
+        $baseline = new RemovalBaselineFake;
+        $baseline->events = &$events;
+        $firewall = new FakeNodeRoleFirewallManager;
+        $firewall->events = &$events;
+        $ambientTransactionLevel = DB::transactionLevel();
+
+        removal_action(
+            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
+            new RemovalCleanerFake,
+            $baseline,
+            firewall: $firewall,
+        )->execute($node, RoleName::AppDev, force: true);
+
+        expect($events)
+            ->toBe([
+                "baseline:0:{$ambientTransactionLevel}",
+                "firewall-recovery:{$ambientTransactionLevel}",
+            ])
+            ->and($firewall->restored)
+            ->toBe([$node->id])
+            ->and($firewall->restoredUsers)
+            ->toBe(['orbit'])
+            ->and(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse();
+    });
+
+    it('keeps public SSH closed while another role row remains', function (LifecycleStatus $status): void {
+        [$node, $assignment] = removal_role_fixture();
+        $node->roles()->create([
+            'role' => RoleName::AppProd,
+            'status' => $status,
+            'failed_step' => $status === LifecycleStatus::Failed ? 'converge:baseline' : null,
+            'error_code' => $status === LifecycleStatus::Failed ? 'app-prod.baseline_failed' : null,
+        ]);
+        $firewall = new FakeNodeRoleFirewallManager;
+
+        removal_action(
+            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
+            new RemovalCleanerFake,
+            new RemovalBaselineFake,
+            firewall: $firewall,
+        )->execute($node, RoleName::AppDev, force: true);
+
+        expect($firewall->restored)
+            ->toBe([])
+            ->and(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
+            ->and($node->roles()->where('role', RoleName::AppProd)->exists())
+            ->toBeTrue();
+    })->with([
+        'active' => LifecycleStatus::Active,
+        'provisioning' => LifecycleStatus::Provisioning,
+        'failed' => LifecycleStatus::Failed,
+    ]);
+
+    it('keeps the assignment retryable when public SSH cannot be reopened', function (): void {
+        [$node, $assignment] = removal_role_fixture();
+        $firewall = new FakeNodeRoleFirewallManager;
+        $firewall->restoreFailure = new FirewallOperationException(
+            step: 'host-firewall',
+            errorCode: 'node.firewall_convergence_failed',
+            message: 'UFW is inactive during role-rule convergence.',
+        );
+        $action = removal_action(
+            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
+            new RemovalCleanerFake,
+            new RemovalBaselineFake,
+            firewall: $firewall,
+        );
+
+        expect(fn () => $action->execute($node, RoleName::AppDev, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($node): void {
+                expect($exception->step)
+                    ->toBe('remove:firewall-recovery')
+                    ->and($exception->errorCode)
+                    ->toBe('node_role.remove_failed')
+                    ->and($exception->underlyingErrorCode)
+                    ->toBe('node.firewall_recovery_failed')
+                    ->and($exception->getMessage())
+                    ->toContain("Retry with --offline if node [{$node->name}] is unreachable.");
+            });
+
+        expect($assignment->refresh()->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($assignment->failed_step)
+            ->toBe('remove:firewall-recovery')
+            ->and($assignment->error_code)
+            ->toBe('node.firewall_recovery_failed');
+
+        $firewall->restoreFailure = null;
+        $action->execute($node, RoleName::AppDev, force: true);
+
+        expect($firewall->restored)
+            ->toBe([$node->id, $node->id])
+            ->and(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse();
+    });
 });
 
 function removal_action(
@@ -774,6 +881,7 @@ function removal_action(
     NodeRoleDependentCleaner $cleaner,
     RoleBaselineConverger $baseline,
     ?NodeReachabilityProbe $reachability = null,
+    ?NodeRoleFirewallManager $firewall = null,
 ): RemoveNodeRoleAction {
     return new RemoveNodeRoleAction(
         $inspector,
@@ -783,6 +891,7 @@ function removal_action(
         app(ToolManagerScopeLock::class),
         $reachability ?? new RemovalReachabilityFake(null),
         new NodeSideResidue,
+        $firewall ?? new FakeNodeRoleFirewallManager,
     );
 }
 

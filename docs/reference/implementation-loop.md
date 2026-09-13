@@ -90,9 +90,31 @@ A failed refresh or replacement keeps the complete retained proof topology, capt
 
 ## Local checks
 
-Run `composer test:affected` for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs the project's dedicated guidance configuration with fresh TIA so its contracts execute deterministically, then Rector, Pint formatting and syntax checks, and static analysis; it does not run the full project test configuration. Run `composer docs-lint` when documentation changes. After committing the clean candidate, the Builder runs root `composer check` before implementation handoff. This candidate gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` also use TIA.
+Run `composer test:affected` for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs the project's dedicated guidance configuration with fresh TIA so its contracts execute deterministically. `guidance:check` sets `ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia`, so that fresh run records into the project's `vendor/.orbit-guidance-tia` directory and leaves the affected-test graph that `test:affected` reads in place. The check then runs Rector, Pint formatting and syntax checks, and static analysis; it does not run the full project test configuration. Run `composer docs-lint` when documentation changes.
+
+After committing the clean candidate, the Builder runs root `composer check` before implementation handoff. This candidate gate covers all five projects with test impact analysis (TIA). Root `bin/test` and project `composer test` also use TIA.
 
 Apply this check policy when an issue or retained plan names a generic full suite. The planner maps that wording to TIA development checks and the Builder's candidate gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. Every Pest invocation enables TIA without a path, filter, group, or suite; Pest disables TIA for those partial selections even when `--tia` is present.
+
+### Gateway test databases
+
+The Gateway test bootstrap keeps supported local test commands out of caller databases. It applies the same test values to the process environment and PHP environment and server variables before Laravel loads configuration. It then checks Laravel's effective connection, including a connection URL or cached configuration, before service providers and database refresh hooks run.
+
+| Input | Test behavior |
+| --- | --- |
+| No explicit test database | Uses in-memory SQLite |
+| Inherited `DB_DATABASE`, `DB_URL`, or `DB_CONNECTION` | Replaces the inherited value with the safe test value |
+| `ORBIT_TEST_DATABASE=/tmp/.../orbit-gateway-test-*.sqlite` | Uses the explicitly allocated disposable SQLite file; parallel tests use their worker-specific copies |
+| Any other effective driver, path, URL, or application environment | Exits nonzero before migrations with a database safety refusal |
+
+Allocate a new temporary file for each run that needs a file-backed fixture. Never set `ORBIT_TEST_DATABASE` to a Gateway runtime database, another application's database, or a retained backup.
+
+An unexpected refusal commonly means that Laravel loaded stale cached configuration. Run the recovery commands from `apps/gateway`, then rerun the same supported Composer or Pest command. Do not disable or bypass the test guard.
+
+| Command | Result |
+| --- | --- |
+| `unset APP_CONFIG_CACHE` | Stops selecting a custom cached configuration path in the current shell |
+| `php artisan config:clear` | Removes the default cached configuration |
 
 Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
 
@@ -118,7 +140,9 @@ Creation and `bin/worktree-remove ORB-217` also resolve an existing branch with 
 
 Each feature worker uses one whole-repository worktree. Run Composer and Pest from the affected project directory, such as `apps/gateway` or `packages/php-sdk`. Projects keep separate dependencies, test configurations, and TIA baselines. Run checks in each project that a change affects.
 
-Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. A modified or unsupported Pest build fails setup. Installations without development dependencies skip Pest setup.
+Worktree bootstrap installs all five projects. Their Composer hooks apply the pinned Pest monorepo and consumer-autoloader fixes before generating autoloaders. This also runs on a direct `composer install` or `composer dump-autoload` in a project. Each worktree has its own installed package; setup needs no external local fork or shared vendor symlink. Installations without development dependencies skip Pest setup.
+
+Pest setup distinguishes patch execution failure from modified package files. After a patch execution failure leaves the verified upstream files unchanged, rerun the same Composer command without reinstalling Pest or deleting test caches. If setup instead reports that Pest files differ from both pinned builds, reinstall the locked Pest distribution before retrying. An unsupported version or changed pinned patch checksum remains an error that requires a reviewed setup update.
 
 Use these commands from the affected project directory.
 
@@ -130,13 +154,17 @@ Use these commands from the affected project directory.
 
 TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project for development feedback; acceptance evidence and the Builder candidate gate remain required. A TIA skip or zero selected tests is not new acceptance evidence.
 
-Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Discovery and proof flow selection do not change test-runner setup.
+Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Every `tests/Pest.php` honors `ORBIT_TIA_DIRECTORY`; only the guidance check sets it, so a fresh guidance run never replaces the seeded baseline. Discovery and proof flow selection do not change test-runner setup.
 
 ## Candidate quality gate
 
-The Builder runs root `composer check` in the clean issue worktree at the committed candidate. The command first seeds absent TIA caches, then runs strict Composer validation, project `composer check`, and `composer test:affected` in each project, sequentially. Project quality checks use the project's configured tools, including Rector in dry-run mode. A failure in any project returns directly to the Builder and prevents review dispatch.
+The Builder runs root `composer check` in the clean issue worktree at the committed candidate. The command disables Composer's process timeout, so a cold record of a full project suite completes. It first seeds absent TIA caches, then runs strict Composer validation, project `composer check`, and `composer test:affected` in each project, sequentially. Project quality checks use the project's configured tools, including Rector in dry-run mode. A failure in any project returns directly to the Builder and prevents review dispatch.
 
 The gate writes command logs and `result.json` under the Git common directory at `orbit-checks/<candidate>/review-*/`. The receipt records `role: builder`, the exact candidate and tree, each command, exit code, duration, and log path. It reports success only when every check passes and the candidate remains clean and unchanged. The Builder includes the path in its implementation handoff. The orchestrator validates it before review dispatch, and the reviewer validates the same receipt while assessing the candidate. The reviewer does not repeat the full gate solely to approve. A later candidate needs a new gate and approval.
+
+The receipt proves that each project's `test:affected` step ran TIA against the project's private affected-test graph, which the preceding guidance check leaves in place. Each per-project log shows the executed test count. The receipt also records `base`, the merge base with main, and `changed_paths`, the paths the candidate changes since it.
+
+When `test:affected` reports no affected tests for a project that `changed_paths` touches, the gate still passes but adds a selection warning. The receipt's `warnings` list names the project, its changed paths, and the log. The matching check carries the same `warning`, and the console prints it. A warning means the receipt proves no affected tests for that project. The Builder explains the warning in the handoff or records the project's graph and reruns the gate. The reviewer treats an unexplained warning as missing evidence, not as a passing check.
 
 GitHub's workflow is available only for manual diagnostics and remains disabled in the repository settings. It does not run automatically on pushes or pull requests. Acceptance evidence remains required; TIA selection alone does not establish acceptance. Missing or incompatible caches can cause the candidate gate or root `bin/test` to record a full project suite, but Pest always remains in TIA mode.
 
@@ -192,7 +220,11 @@ New worktrees may use the previous successful compatible publication while a ref
 
 When publications lag main and no worker is active, the orchestrator queues refresh. This also recovers merges outside its closeout flow and requests left after interruption. A reported failure is an owned recovery task. Cache transport, installation, and publication failures can use prior compatible caches or cold checks.
 
-A nonzero test, formatting, or analysis command is a correctness signal requiring diagnosis and a hold on unrelated feature merges. Later infrastructure failures retain the earlier correctness failure. The failed tool must pass again before its retained failure clears. The orchestrator permits a reviewed repair or revert through that hold and clears it only after verification on main containing the repair.
+A nonzero test, formatting, or analysis command is a correctness signal requiring diagnosis and a hold on unrelated feature merges. Later infrastructure failures retain the earlier correctness failure. An open TIA failure makes recovery run the unfiltered affected-test command with `--fresh` on checked clean main. Maintenance accepts successful recovery only when the resulting graph records that checked commit.
+
+A cached or zero-execution result that leaves an older graph anchor reports `recovery: not_executed` in the project result and retains the original failed commit, tool, and diagnostic log. An executed successful recovery reports `recovery: executed` and clears only that project's TIA failure. Failed or interrupted recovery keeps the preceding successful publication and unresolved signal.
+
+Status and retained command logs distinguish the unresolved correctness failure from the latest recovery result. These records prove native maintenance execution and cache publication only. The orchestrator separately admits a reviewed repair or revert through the merge hold and clears that hold only after verification on main containing the repair.
 
 One maintenance owner covers all five projects. Routine warming uses scripts; failures needing investigation use [maintaining-monorepo](../../.agents/skills/maintaining-monorepo/SKILL.md). The agent diagnoses the exact failed commit, preserves evidence, and performs source repairs in a separate worktree. It returns verification to the orchestrator instead of approving its own change or mutating primary main. Feature development can continue during a correctness hold. Cache freshness alone never holds creation, merge, or cleanup.
 

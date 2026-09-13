@@ -6,7 +6,7 @@ This page tells an operator how the Gateway reads, stores, and safely replaces a
 
 The import and update endpoints accept either a positive numeric AppInstance ID or an exact Route hostname in `{instance}`. A selector that matches no AppInstance returns HTTP 404. A Route hostname that has multiple AppInstance targets returns HTTP 409 with `env.target_ambiguous`.
 
-The Gateway accepts an active AppInstance only after its recorded placement is complete and no source migration or Route hostname change is pending. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
+The Gateway accepts an active AppInstance only after its recorded placement is complete and no source migration or Route hostname change is pending. An otherwise eligible AppInstance with no recorded source profile returns HTTP 409 `instance.source_profile_missing` for import, stored update, and synchronization. The message names recovery through the same creation request with `recover_source_profile`. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
 
 ## Use the PHP SDK
 
@@ -22,7 +22,7 @@ The SDK sends one JSON object for each operation and preserves every supplied va
 
 A successful SDK result contains only a positive `app_instance_id`, the expected `operation` token, a boolean `changed`, a `key_count` from 0 through 1,024, and the correlated `request_id`. The SDK rejects missing, wrongly typed, contradictory, extra, or value-bearing result data through a bounded error. Environment values remain available only to the intended HTTP request-body serialization and do not appear in normal request, response, error, exception, or debugging state.
 
-The SDK keeps a valid structured Gateway error code and request ID for an import conflict, unavailable target, failed preflight, unresolved reference, failed synchronization, or unconfirmed synchronization. It omits remote response content from that error boundary.
+The SDK keeps a valid structured Gateway error code, safe message, details, and request ID for an import conflict, unavailable target, failed preflight, unresolved reference, failed synchronization, or unconfirmed synchronization. Environment values remain omitted from that error boundary.
 
 ## Use the CLI
 
@@ -38,7 +38,7 @@ Quote environment values for the shell so Orbit receives the intended string. An
 
 Import or update changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` explicitly to install it in the workload file. Synchronization does not refresh an application cache or restart a service or process, so run those application steps separately when existing application code must use the new configuration.
 
-Human and JSON success output contains the selected AppInstance ID, the operation, whether the owned boundary changed, the total stored key count, and the request ID. Import and update output also states that the workload file is unchanged. Failures use a bounded error code and request ID and omit environment values.
+Human and JSON success output contains the selected AppInstance ID, the operation, whether the owned boundary changed, the total stored key count, and the request ID. Import and update output also states that the workload file is unchanged. Failures use a bounded error code, the Gateway error message, and request ID, and omit environment values.
 
 ## Import an environment file
 
@@ -116,6 +116,12 @@ Concurrent import, update, synchronization, removal, and Route transitions share
 A successful response contains only the AppInstance ID, `operation: sync`, whether the file changed, the total stored key count, and request-ID metadata. An identical protected file returns `changed: false` without replacement. Changed content or protection returns `changed: true` after complete replacement. A retry always rechecks current placement and stored configuration.
 
 Preflight, decryption, rendering, and confirmed writer failures leave the previous file intact. An unconfirmed writer result returns `env.sync_unconfirmed`; the replacement might have completed, so the response does not claim that the previous file remains. Retry the same request to recheck the current file and either accept the matching protected file or install the complete current result.
+
+## Inspect the projection with Doctor
+
+Doctor renders the current stored configuration against the AppInstance's recorded Route and environment, then compares that intent with the workload `.env`. It reports a bounded instance-family finding when the persistent production file is missing, unsafe, or different. It does not expose a key or value in the report, Activity record, error, or diagnostic output.
+
+This comparison checks only Orbit-owned file projection. It does not inspect a framework configuration cache, restart a process, synchronize a pending stored change, or modify the file. A stale application cache is not environment projection drift.
 
 ## Synchronize during a hostname change
 

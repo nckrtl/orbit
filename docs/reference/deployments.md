@@ -185,7 +185,7 @@ For PHP, conversion carries supported local pool tuning into the dedicated runti
 
 The Gateway records each conversion boundary before it continues. A retry resumes file movement, persistent-state placement, runtime publication, or Route projection from the recorded state. It rechecks the retained content and serving association before each effect and reports completion only when `current`, the dedicated runtime, and the Route projection agree.
 
-An unsupported tuning directive, unsafe destination, changed retained file, or changed serving association stops conversion with a bounded conflict. A refusal before the first recorded effect leaves the old workload unchanged. Repeating a completed request only validates and returns the completed layout; it does not replace the retained release or discard later local edits.
+An unsupported tuning directive, unsafe destination, changed retained file, or changed serving association stops conversion with a bounded conflict. A refusal before the first recorded effect leaves the old workload unchanged. Repeating a completed request only validates and returns the completed layout; it does not replace the retained release or discard later local edits. The Gateway answers `deployment_layout.not_convertible` when the AppInstance already uses the release layout without a completed conversion, such as a clone target or a newly provisioned production AppInstance. It gives that answer before it checks the AppInstance's Schedules or Processes, and it changes nothing.
 
 The operating agent must quiesce all application access and checkpoint or close SQLite before relocation so no `-wal`, `-shm`, or `-journal` sidecar remains. Orbit refuses active owned Processes, an observed open database, or one of those source or destination sidecars, but it does not infer maintenance mode, process shutdown, queue handling, schema migration, or another application command.
 
@@ -196,6 +196,14 @@ The effective web root is the AppInstance root override or its App root beneath 
 The Gateway refuses parent traversal, an escaped symbolic link, a selected target outside `releases/`, or an existing owned path with the wrong type or ownership before it publishes the serving projection. A missing `current` link remains a valid prepared layout without silently selecting staged source.
 
 Caddy resolves the root symbolic link to the selected release before it passes a script path to PHP FastCGI Process Manager (PHP-FPM). When `current` selects different code, a request resolves its included PHP files from the newly selected release instead of retaining the previous release's path.
+
+## Inspect release placement with Doctor
+
+Doctor checks each production AppInstance against its recorded home and release layout without changing the AppInstance, its files, or its source. It reports bounded findings for a missing or wrongly owned production home, a broken `current` link, a selected release that is missing or resolves outside `releases/`, and an effective web root that escapes the selected release.
+
+A prepared production home with no `current` link is healthy before its first deployment. Once `current` exists, Doctor requires it to select a retained directory beneath the same production home. These rules apply to standalone and Cluster-scoped AppInstances because the workload Node owns the release placement in both routing shapes.
+
+Doctor accepts a retained release when the configured branch has advanced since that release was prepared or when an explicit rollback selected older code. It does not fetch the branch head, interpret deployment history, make an application request, or treat an HTTP error as release drift.
 
 ## Retain production content
 

@@ -1,0 +1,45 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$command = $argv[1] ?? '';
+$gateway = str_ends_with(str_replace('\\', '/', getcwd() ?: ''), '/apps/gateway');
+
+if ($gateway && $command === 'check' && getenv('ORBIT_GATEWAY_ACTUAL_CHECK') === '1') {
+    $composer = getenv('ORBIT_REAL_COMPOSER');
+    $source = getenv('ORBIT_GATEWAY_SOURCE');
+
+    if (! is_string($composer) || ! is_string($source)) {
+        fwrite(STDERR, "The actual Gateway check fixture is incomplete.\n");
+
+        exit(2);
+    }
+
+    foreach ([
+        'COLLISION_PRINTER',
+        'PARATEST',
+        'PEST_TIA',
+        'PEST_TIA_BASELINED',
+        'PEST_TIA_FILTERED',
+        'PEST_TIA_LOCALLY',
+        'TEST_TOKEN',
+        'UNIQUE_TEST_TOKEN',
+    ] as $name) {
+        putenv($name);
+        unset($_ENV[$name], $_SERVER[$name]);
+    }
+
+    chdir($source);
+    passthru(escapeshellarg($composer).' guidance:check', $exitCode);
+
+    exit($exitCode);
+}
+
+if ($gateway && $command === 'test:affected' && getenv('ORBIT_GATEWAY_GATE_REFUSAL') === '1') {
+    fwrite(STDERR, "Gateway tests refused an unsafe database connection.\n");
+
+    exit(23);
+}
+
+exit(0);

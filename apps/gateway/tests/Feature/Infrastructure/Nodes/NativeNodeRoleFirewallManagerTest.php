@@ -75,6 +75,85 @@ it('trusts WireGuard membership and removes public recovery after VPN convergenc
         ->each->toBe('nckrtl');
 });
 
+it('trusts WireGuard membership and keeps public recovery when a roleless Node joins', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $node = role_firewall_node();
+    $manager->convergeBase($node, 'nckrtl');
+    $ssh->calls = [];
+
+    $manager->trustWireGuardMembers($node, 'nckrtl');
+
+    $arguments = array_map(static fn (array $call): array => $call['command']->arguments, $ssh->calls);
+    $deletions = array_values(array_filter(
+        $arguments,
+        static fn (array $command): bool => ($command[3] ?? null) === 'delete',
+    ));
+
+    expect($ssh->comments())
+        ->toContain('orbit:wireguard-members', 'orbit:public-ssh-recovery')
+        ->and($arguments)
+        ->not->toContain(['sudo', 'ufw', '--force', 'enable'])
+        ->and($deletions)
+        ->toBe([])
+        ->and(array_column($ssh->calls, 'connection'))->each(
+            fn ($connection) => $connection->host->toBe('10.44.0.2'),
+        )->and($ssh->users())
+        ->each->toBe('nckrtl');
+});
+
+it('restores the exact public SSH recovery rule over WireGuard without enabling UFW', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $ssh->seed(['orbit:wireguard-members']);
+
+    role_firewall_manager($ssh)->restorePublicSsh(role_firewall_node(), 'nckrtl');
+
+    expect($ssh->comments())
+        ->toBe(['orbit:wireguard-members', 'orbit:public-ssh-recovery'])
+        ->and($ssh->mutations())
+        ->toBe([[
+            'sudo',
+            'ufw',
+            'allow',
+            'in',
+            'proto',
+            'tcp',
+            'to',
+            'any',
+            'port',
+            '22',
+            'comment',
+            'orbit:public-ssh-recovery',
+        ]])
+        ->and(array_column($ssh->calls, 'connection'))
+        ->each(fn ($connection) => $connection->host->toBe('10.44.0.2'))
+        ->and($ssh->users())
+        ->each->toBe('nckrtl');
+});
+
+it('does not reapply an exact public SSH recovery rule', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $ssh->seed(['orbit:wireguard-members', 'orbit:public-ssh-recovery']);
+
+    role_firewall_manager($ssh)->restorePublicSsh(role_firewall_node(), 'nckrtl');
+
+    expect($ssh->mutations())->toBeEmpty();
+});
+
+it('fails closed without mutation when UFW is inactive during public SSH restoration', function (): void {
+    $ssh = new RoleFirewallSshExecutor(active: false);
+
+    expect(fn () => role_firewall_manager($ssh)->restorePublicSsh(role_firewall_node(), 'nckrtl'))
+        ->toThrow(function (FirewallOperationException $exception): void {
+            expect($exception->step)
+                ->toBe('host-firewall')
+                ->and($exception->errorCode)
+                ->toBe('node.firewall_convergence_failed');
+        });
+
+    expect($ssh->mutations())->toBeEmpty();
+});
+
 it('converges private SSH and each exact role-owned firewall intent', function (RoleName $role, array $comments): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
 

@@ -73,7 +73,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         }
 
         if ($appInstance->status === AppInstanceState::Active && $route->status === RouteStatus::Active) {
-            return $appInstance->load('routes.targets');
+            return $this->recoverActiveSourceProfile($appInstance, $recoverSourceProfile);
         }
 
         if (
@@ -131,6 +131,23 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     private function owner(): DevelopmentProjectionOperationLock
     {
         return $this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class);
+    }
+
+    private function recoverActiveSourceProfile(
+        AppInstance $appInstance,
+        bool $recoverSourceProfile,
+    ): AppInstance {
+        if (! $recoverSourceProfile || $appInstance->source_is_laravel !== null) {
+            return $appInstance->load('routes.targets');
+        }
+
+        $profile = $this->configuration->inspect($appInstance);
+        $appInstance->update([
+            'source_is_laravel' => $profile->laravel,
+            ...($appInstance->selected_php_version === null ? ['selected_php_version' => $profile->phpVersion] : []),
+        ]);
+
+        return $appInstance->refresh()->load('routes.targets');
     }
 
     private function recordProfile(

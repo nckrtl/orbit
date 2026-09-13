@@ -116,6 +116,14 @@ it('does not register hidden Orbit product commands', function (): void {
     ))->toBeTrue();
 });
 
+it('does not register Laravel schedule commands', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKeys([
+        'schedule:finish',
+        'schedule:list',
+        'schedule:run',
+    ]);
+});
+
 it('keeps the hidden Boost MCP entrypoint available to coding agents', function (): void {
     $commands = app(Kernel::class)->all();
     $codexConfig = file_get_contents(base_path('.codex/config.toml'));
@@ -260,7 +268,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name', 'host'],
             [
                 'ssh-port' => '22',
-                'user' => 'root',
+                'user' => null,
                 'orbit-user' => null,
                 'platform' => 'linux',
                 'architecture' => null,

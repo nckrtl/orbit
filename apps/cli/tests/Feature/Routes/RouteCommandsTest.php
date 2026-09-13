@@ -60,6 +60,80 @@ it('creates target and targetless Routes while transporting policy values', func
     expect($mock->getLastRequest()?->body()->all())->toHaveKey('node_id', 4);
 });
 
+it('transports explicit private and public publication intents unchanged', function (string $publication): void {
+    $mock = MockClient::global([
+        CreateRouteRequest::class => route_mock_response(201),
+        UpdateRouteRequest::class => route_mock_response(),
+    ]);
+
+    $this->artisan('route:new', [
+        'app' => '3',
+        'hostname' => 'app.test',
+        '--publication' => $publication,
+        '--cluster' => '5',
+        '--json' => true,
+    ])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'app_id' => 3,
+        'hostname' => 'app.test',
+        'publication' => $publication,
+        'cluster_id' => 5,
+    ]);
+
+    $this->artisan('route:update', ['route' => '11', '--publication' => $publication])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe(['publication' => $publication]);
+})->with(['private', 'public']);
+
+it('refuses a missing publication value before transport', function (
+    string $command,
+    array $arguments,
+): void {
+    $mock = MockClient::global();
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(1);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => 'route.publication_invalid',
+            'message' => 'Publication intent must be a non-empty value.',
+            'request_id' => null,
+        ],
+    ]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+
+    $this
+        ->artisan($command, $arguments)
+        ->expectsOutputToContain('Publication intent must be a non-empty value.')
+        ->doesntExpectOutputToContain('route.publication_invalid')
+        ->assertExitCode(1);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'create without value' => ['route:new', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => null, '--cluster' => '1']],
+    'create with empty value' => ['route:new', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => '', '--cluster' => '1']],
+    'update without value' => ['route:update', ['route' => '11', '--publication' => null]],
+    'update with empty value' => ['route:update', ['route' => '11', '--publication' => '']],
+    'update with hostname and no publication value' => ['route:update', ['route' => '11', '--hostname' => 'next.test', '--publication' => null]],
+]);
+
+it('refuses the reported shell shape of a bare --publication flag', function (string $command): void {
+    $mock = MockClient::global();
+
+    $exitCode = Artisan::call($command);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(1);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['error']['code'] ?? null)
+        ->toBe('route.publication_invalid');
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'route:new' => 'route:new 1 pubtest.orbit --publication --cluster=1 --json',
+    'route:update' => 'route:update 11 --publication --json',
+]);
+
 it('rejects impossible create shapes before transport', function (array $arguments, string $code): void {
     $mock = MockClient::global();
 
@@ -107,6 +181,16 @@ it('rejects impossible create shapes before transport', function (array $argumen
         ],
         'route.id_invalid',
     ],
+    'publication without value' => [
+        [
+            'app' => '3',
+            'hostname' => 'app.test',
+            '--node' => '4',
+            '--publication' => null,
+            '--json' => true,
+        ],
+        'route.publication_invalid',
+    ],
 ]);
 
 it('renders only the first invalid input as one JSON document', function (
@@ -135,6 +219,7 @@ it('renders only the first invalid input as one JSON document', function (
         [
             'app' => 'invalid',
             'hostname' => '',
+            '--publication' => null,
             '--target' => 'invalid',
             '--node' => 'invalid',
             '--cluster' => 'invalid',

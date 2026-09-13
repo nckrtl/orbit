@@ -91,6 +91,50 @@ For Cluster scope, Gateway DNS resolves the same hostname to the Router. Router 
 
 The Router uses the workload Node's configured LAN address. It uses WireGuard only when that LAN address is absent. A configured but unreachable LAN path fails publication and never falls back to WireGuard.
 
+### Development-server endpoint
+
+The development-server endpoint is the reserved path `/__orbit/vite` on the AppInstance Route hostname. A browser loads live frontend assets and the hot-module-replacement WebSocket from `https://<route-hostname>/__orbit/vite` on port 443. Cluster DNS resolves that hostname to the Router, and the application Route continues to serve the document root on the same hostname. [ADR 0067](../decisions/0067-serve-development-servers-on-the-route-origin.md) owns this contract.
+
+Workload Caddy reverse-proxies that path to `127.0.0.1:5173` on the owning Node. Router Caddy forwards the path with the Route hostname as the HTTP `Host` value and TLS server name. HTTPS and WSS terminate with the Route's Orbit certificate-authority certificates. The toolchain process speaks HTTP on loopback and does not present a certificate to the browser.
+
+Two AppInstances that use port 5173 on different Nodes stay isolated because each Caddy site proxies only to its own Node loopback. When the process on that loopback is stopped, Caddy returns a proxy error for that hostname's reserved path and does not select another AppInstance.
+
+An operator configures the frontend toolchain to publish asset and HMR URLs on the reserved path. A development systemd Process receives these environment values from the Route hostname.
+
+| Variable | Value |
+| --- | --- |
+| `ORBIT_DEV_SERVER_ORIGIN` | `https://<route-hostname>/__orbit/vite` |
+| `ORBIT_DEV_SERVER_HOST` | The Route hostname |
+| `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
+| `ORBIT_DEV_SERVER_PORT` | `5173` |
+
+A Vite development server that follows the contract binds loopback port 5173 and publishes the Cluster origin:
+
+```js
+import { defineConfig } from 'vite'
+
+const origin = process.env.ORBIT_DEV_SERVER_ORIGIN
+
+export default defineConfig({
+    server: {
+        host: '127.0.0.1',
+        port: Number(process.env.ORBIT_DEV_SERVER_PORT || 5173),
+        strictPort: true,
+        origin,
+        hmr: origin
+            ? {
+                protocol: 'wss',
+                host: process.env.ORBIT_DEV_SERVER_HOST,
+                clientPort: 443,
+                path: process.env.ORBIT_DEV_SERVER_PATH,
+            }
+            : undefined,
+    },
+})
+```
+
+Laravel's `@vite` directive reads the `public/hot` file. The file must contain `ORBIT_DEV_SERVER_ORIGIN` so the browser requests `/__orbit/vite/@vite/client` on the Route hostname. The [process reference](app-processes-and-schedules.md#add-a-process) describes the injected certificate and origin environment.
+
 ### Private network and publication
 
 Publication exposes the Route only after every required private projection is ready.
@@ -115,7 +159,7 @@ Deploy the shared publication owner by stopping admission of new Gateway mutatio
 
 ### Change an explicit private hostname
 
-The Gateway can change a development or production Route hostname when the Route is active, explicit, private, and has one target. This is the operation that replaces a production clone's preview hostname with its intended private hostname. The AppInstance keeps the same Route record and sole association throughout the transition. The Gateway refuses an invalid or occupied hostname before it changes Route records, environment configuration, runtime projections, or traffic.
+The Gateway can change a development or production Route hostname when the Route is active, explicit, private, and has one target. This is the operation that replaces a production clone's preview hostname with its intended private hostname. The AppInstance keeps the same Route record and sole association throughout the transition. The Gateway refuses an invalid or occupied hostname before it changes Route records, environment configuration, runtime projections, or traffic. When that eligible target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing` and names recovery through the same creation request with `recover_source_profile`. The [applications domain](../domains/applications.md#provision-the-application-endpoint) owns that recovery.
 
 The Gateway prepares the new workload certificate and Caddy site before it prepares the Router certificate, workload firewall policy, and Router Caddy site. For a detected development Laravel source, it aligns `APP_URL` in the environment file and cached configuration without running Composer, Artisan, or application bootstrap. A non-Laravel development source receives no application configuration change.
 

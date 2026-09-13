@@ -8,6 +8,8 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 
 final class RemoveNodeCommand extends GatewayCommand
@@ -32,13 +34,19 @@ final class RemoveNodeCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        if (! $this->confirmed()) {
-            return self::FAILURE;
-        }
-
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $existing = $this->send($connector, new ShowNodeRequest($nodeId), NodeResponse::class);
+
+        if (! $existing instanceof NodeResponse) {
+            return self::FAILURE;
+        }
+
+        if (! $this->confirmed()) {
             return self::FAILURE;
         }
 

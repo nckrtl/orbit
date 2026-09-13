@@ -55,7 +55,10 @@ beforeEach(function (): void {
             }
         }
 
-        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+        public function removeUnreachable(Node $node, NodeRole $assignment): void
+        {
+            $this->calls[] = "removeUnreachable:{$node->id}";
+        }
     };
     app()->instance(RoleBaselineConverger::class, $this->baselines);
     $this->gateway = $this->markAsGateway(cluster_router_api_node('gateway-router-peer', '10.44.0.1'));
@@ -292,30 +295,25 @@ it('removes every obsolete Router after several replacement convergence failures
             "converge:{$third->id}",
             "converge:{$current->id}",
             "remove:{$this->first->id}",
-            "remove:{$this->second->id}",
-            "remove:{$third->id}",
         ]);
 });
 
-it('retains a failed initial Router convergence and resumes an identical set', function (): void {
+it('rolls back a failed initial Router convergence and retries an identical set', function (): void {
     $this->baselines->failConverge = true;
 
     expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
         ->toThrow(RuntimeException::class, 'convergence failed');
 
-    $assignment = $this->first->roles()->where('role', RoleName::Router)->sole();
-    expect($assignment->status)
-        ->toBe(LifecycleStatus::Failed)
-        ->and($assignment->failed_step)
-        ->toBe('converge:baseline')
+    expect($this->first->roles()->where('role', RoleName::Router)->exists())
+        ->toBeFalse()
         ->and($this->cluster->routerAssignment()->exists())
         ->toBeFalse();
 
     $this->baselines->failConverge = false;
     app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
 
-    expect($assignment->refresh()->status)
-        ->toBe(LifecycleStatus::Active)
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->first->id)
         ->and($this->baselines->calls)
         ->toBe([
             "converge:{$this->first->id}",
@@ -332,8 +330,8 @@ it('keeps the active Router when replacement convergence fails', function (): vo
 
     expect($this->cluster->routerAssignment()->sole()->node_id)
         ->toBe($this->first->id)
-        ->and($this->second->roles()->where('role', RoleName::Router)->sole()->status)
-        ->toBe(LifecycleStatus::Failed);
+        ->and($this->second->roles()->where('role', RoleName::Router)->exists())
+        ->toBeFalse();
 });
 
 it('retains failed old Router cleanup with the replacement active and resumes it', function (): void {
@@ -364,7 +362,7 @@ it('preserves cleanup progress and finishes the remainder on an identical set', 
             'cluster_id' => $this->cluster->id,
             'role' => RoleName::Router,
             'status' => LifecycleStatus::Failed,
-            'failed_step' => 'converge:baseline',
+            'failed_step' => 'remove:baseline',
             'error_code' => 'test.failed',
         ]);
     $retained = $unprocessed
@@ -408,7 +406,7 @@ it('preserves cleanup progress and finishes the remainder on an identical set', 
             "remove:{$this->first->id}",
             "remove:{$this->second->id}",
             "remove:{$this->second->id}",
-            "remove:{$unprocessed->id}",
+            "removeUnreachable:{$unprocessed->id}",
         ]);
 
     $this
@@ -443,6 +441,119 @@ it('retains failed Router clear cleanup and removes every retained assignment on
     app(ClearClusterRouterAction::class)->execute($this->cluster);
 
     expect(NodeRole::query()->where('role', RoleName::Router)->exists())->toBeFalse();
+});
+
+it('lets cluster show and detach succeed after a failed initial Router set', function (): void {
+    $this->baselines->failConverge = true;
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
+        ->toThrow(RuntimeException::class, 'convergence failed');
+
+    $this
+        ->getJson("/api/v1/clusters/{$this->cluster->id}")
+        ->assertOk()
+        ->assertJsonPath('data.router', null);
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
+            ['force' => true],
+        )
+        ->assertOk()
+        ->assertJsonPath('data.router', null);
+
+    expect($this->first->refresh()->cluster_id)
+        ->toBeNull()
+        ->and($this->first->roles()->where('role', RoleName::Router)->exists())
+        ->toBeFalse();
+});
+
+it('clears a leftover never-activated Router without live baseline removal', function (): void {
+    $this->baselines->failRemove = true;
+    $this->first
+        ->roles()
+        ->create([
+            'cluster_id' => $this->cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Failed,
+            'failed_step' => 'converge:baseline',
+            'error_code' => 'node.managed_user_unavailable',
+        ]);
+
+    $this
+        ->getJson("/api/v1/clusters/{$this->cluster->id}")
+        ->assertOk()
+        ->assertJsonPath('data.router', null);
+
+    $this
+        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.router', null);
+
+    expect(NodeRole::query()->where('role', RoleName::Router)->exists())
+        ->toBeFalse()
+        ->and($this->baselines->calls)
+        ->toBe(["removeUnreachable:{$this->first->id}"]);
+});
+
+it('detaches a member that only has a leftover never-activated Router assignment', function (): void {
+    $this->first
+        ->roles()
+        ->create([
+            'cluster_id' => $this->cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Failed,
+            'failed_step' => 'converge:baseline',
+            'error_code' => 'node_role.convergence_failed',
+        ]);
+
+    $this
+        ->getJson("/api/v1/clusters/{$this->cluster->id}")
+        ->assertOk()
+        ->assertJsonPath('data.router', null);
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
+            ['force' => true],
+        )
+        ->assertOk()
+        ->assertJsonPath('data.router', null);
+
+    expect($this->first->refresh()->cluster_id)
+        ->toBeNull()
+        ->and($this->first->roles()->where('role', RoleName::Router)->exists())
+        ->toBeFalse()
+        ->and($this->baselines->calls)
+        ->toBe([]);
+});
+
+it('still forbids detaching an active Cluster Router or a failed live removal', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
+            ['force' => true],
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.router_detach_forbidden');
+
+    $this->first->roles()->where('role', RoleName::Router)->update([
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'remove:baseline',
+        'error_code' => 'node_role.remove_failed',
+    ]);
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->cluster->id}/nodes/{$this->first->id}",
+            ['force' => true],
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.router_detach_forbidden');
+
+    expect($this->first->refresh()->cluster_id)->toBe($this->cluster->id);
 });
 
 it('requires an active member Node for Router assignment', function (): void {

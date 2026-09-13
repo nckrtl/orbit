@@ -8,6 +8,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -18,12 +19,12 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Process;
-use Closure;
-use Illuminate\Support\Facades\Cache;
 use SensitiveParameter;
 
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
+    private ProcessRuntimeLease $lease;
+
     private const string DOCKER_INSPECT_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.spec" }}{{ printf "\\n" }}{{ .State.Running }}';
 
     private const string DOCKER_OWNER_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}';
@@ -47,7 +48,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         private KnownHostsStore $knownHosts,
         private SystemdProcessRenderer $systemd,
         private DockerProcessRenderer $docker,
-    ) {}
+        ?ProcessRuntimeLease $lease = null,
+    ) {
+        $this->lease = $lease ?? app(ProcessRuntimeLease::class);
+    }
 
     public function assertCanStart(#[SensitiveParameter] Process $process): void
     {
@@ -57,56 +61,50 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function converge(#[SensitiveParameter] Process $process): void
     {
-        $target = $this->targets->forInstallation($process);
+        $this->lease->run($process, function (Process $fresh): void {
+            $target = $this->targets->forInstallation($fresh);
 
-        if ($process->desired_state === DesiredProcessState::Running) {
-            $this->assertReleaseAvailable($process, $target, 'start', 'process.start_failed');
-        }
+            if ($fresh->desired_state === DesiredProcessState::Running) {
+                $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
+            }
 
-        $this->withRuntimeLock($process, function () use ($process, $target): void {
-            match ($process->runtime) {
-                ProcessRuntime::Systemd => $this->convergeAndActivateSystemd($process, $target),
-                ProcessRuntime::Docker => $this->convergeDocker($process, $target),
+            match ($fresh->runtime) {
+                ProcessRuntime::Systemd => $this->convergeAndActivateSystemd($fresh, $target),
+                ProcessRuntime::Docker => $this->convergeDocker($fresh, $target),
             };
-        }, $target);
+        });
     }
 
     public function start(#[SensitiveParameter] Process $process): void
     {
-        $target = $this->targets->forStart($process);
-        $this->assertReleaseAvailable($process, $target, 'start', 'process.start_failed');
-        $this->withRuntimeLock($process, function () use ($process, $target): void {
-            $this->startUnlocked($process, $target);
-        }, $target);
+        $this->lease->run($process, function (Process $fresh): void {
+            $target = $this->targets->forStart($fresh);
+            $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
+            $this->startUnlocked($fresh, $target);
+        });
     }
 
     public function stop(#[SensitiveParameter] Process $process): void
     {
-        $target = $this->targets->forProcess($process);
-        $this->withRuntimeLock($process, function () use ($process, $target): void {
-            $this->stopUnlocked($process, $target);
-        }, $target);
+        $this->lease->run($process, function (Process $fresh): void {
+            $this->stopUnlocked($fresh, $this->targets->forProcess($fresh));
+        });
     }
 
     public function restart(#[SensitiveParameter] Process $process): void
     {
-        $target = $this->targets->forStart($process);
-        $this->assertReleaseAvailable($process, $target, 'restart', 'process.restart_failed');
-        $this->withRuntimeLock($process, function () use ($process, $target): void {
-            $this->restartUnlocked($process, $target);
-        }, $target);
+        $this->lease->run($process, function (Process $fresh): void {
+            $target = $this->targets->forStart($fresh);
+            $this->assertReleaseAvailable($fresh, $target, 'restart', 'process.restart_failed');
+            $this->restartUnlocked($fresh, $target);
+        });
     }
 
     public function remove(#[SensitiveParameter] Process $process): void
     {
-        $target = $this->targets->forRemoval($process);
-        $this->withRuntimeLock(
-            $process,
-            function () use ($process, $target): void {
-                $this->removeUnlocked($process, $target);
-            },
-            $target,
-        );
+        $this->lease->run($process, function (Process $fresh): void {
+            $this->removeUnlocked($fresh, $this->targets->forRemoval($fresh));
+        });
     }
 
     private function startUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
@@ -350,30 +348,6 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     public function dockerSpecHash(#[SensitiveParameter] Process $process): string
     {
         return $this->docker->specHash($process, $this->targets->forInspection($process));
-    }
-
-    private function withRuntimeLock(
-        #[SensitiveParameter]
-        Process $process,
-        Closure $operation,
-        ?ProcessTarget $target = null,
-    ): void {
-        $target ??= $this->targets->forInspection($process);
-        $lock = Cache::lock("orbit:process-runtime:{$target->node->id}:{$process->id}", 3_600);
-
-        if (! $lock->get()) {
-            throw new ProcessOperationException(
-                step: 'lock-runtime',
-                errorCode: 'process.runtime_lock_failed',
-                message: "Process [{$process->name}] runtime mutation is already active.",
-            );
-        }
-
-        try {
-            $operation();
-        } finally {
-            $lock->release();
-        }
     }
 
     private function convergeAndActivateSystemd(

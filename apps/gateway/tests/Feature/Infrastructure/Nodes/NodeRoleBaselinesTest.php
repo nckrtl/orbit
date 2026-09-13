@@ -904,6 +904,16 @@ function baseline_firewall(array &$events): NodeRoleFirewallManager
         {
             $this->events[] = "firewall:remove:{$role->value}";
         }
+
+        public function restorePublicSsh(Node $node, string $managedUser): void
+        {
+            $this->events[] = 'firewall:restore-public-ssh';
+        }
+
+        public function trustWireGuardMembers(Node $node, string $managedUser): void
+        {
+            $this->events[] = 'firewall:trust-wireguard-members';
+        }
     };
 }
 

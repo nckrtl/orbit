@@ -44,6 +44,10 @@ describe('instance:prepare-deployment request', function (): void {
             ->toBe('https://10.44.0.1/api/v1/instances/17/deployment-layout')
             ->and($mock->getLastRequest()?->body()->all())
             ->toBeEmpty()
+            ->and((string) $mock->getLastRequest()?->body())
+            ->toBe('{}')
+            ->and((string) $mock->getLastPendingRequest()?->createPsrRequest()->getBody())
+            ->toBe('{}')
             ->and($mock->getRecordedResponses())
             ->toHaveCount(1);
     });

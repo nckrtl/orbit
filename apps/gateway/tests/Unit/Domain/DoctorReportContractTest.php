@@ -139,6 +139,8 @@ it('serializes bounded doctor reports and derives status precedence', function (
 it('maps unknown internal issue codes to the family inspection failure', function (): void {
     expect(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Workspace, 'workspace.branch_mismatch'))
         ->toBe(WorkspaceDoctorIssueCode::BranchMismatch)
+        ->and(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Instance, 'instance.php_fpm_projection_mismatch'))
+        ->toBe(InstanceDoctorIssueCode::PhpFpmProjectionMismatch)
         ->and(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Workspace, 'workspace.secret-sentinel'))
         ->toBe(WorkspaceDoctorIssueCode::InspectionFailed);
 });
@@ -221,6 +223,14 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'instance.migration_required',
             'instance.origin_mismatch',
             'instance.source_identity_mismatch',
+            'instance.production_home_mismatch',
+            'instance.release_selection_mismatch',
+            'instance.selected_release_root_mismatch',
+            'instance.environment_projection_mismatch',
+            'instance.php_fpm_association_missing',
+            'instance.php_fpm_association_shared',
+            'instance.php_fpm_projection_mismatch',
+            'instance.caddy_projection_mismatch',
             'instance.inspection_failed',
             'instance.node_unreachable',
         ],

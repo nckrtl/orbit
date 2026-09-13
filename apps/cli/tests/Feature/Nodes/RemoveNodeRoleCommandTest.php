@@ -8,6 +8,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -38,6 +39,8 @@ it('registers the exact node role remove command signature surface', function ()
         ->toBeInstanceOf(SymfonyCommand::class)
         ->and(array_keys($command?->getDefinition()->getArguments() ?? []))
         ->toBe(['node', 'role'])
+        ->and($command?->getDefinition()->getArgument('node')->getDescription())
+        ->toBe('Node ID or name')
         ->and(node_role_remove_command_options($command))
         ->toBe([
             'force' => false,
@@ -57,10 +60,44 @@ it('rejects an invalid node id before connector io', function (string $nodeId): 
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'non-numeric' => 'operator',
     'zero' => '0',
     'negative' => '-1',
 ]);
+
+it('resolves a node name through the node list before removing the role', function (): void {
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [node_role_remove_node_payload(id: 7, name: 'mini')],
+            'meta' => ['request_id' => node_role_remove_request_id()],
+        ]),
+        RemoveNodeRoleRequest::class => MockResponse::make([
+            'data' => removed_node_role_payload(),
+            'meta' => ['request_id' => node_role_remove_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => 'mini', 'role' => 'app-dev', '--force' => true, '--json' => true])
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/nodes/7/roles/app-dev');
+});
+
+it('rejects an unknown node name before the role removal request', function (): void {
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [node_role_remove_node_payload(id: 7, name: 'app-dev')],
+            'meta' => ['request_id' => node_role_remove_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => 'mini', 'role' => 'app-dev', '--force' => true])
+        ->expectsOutputToContain('Node [mini] is not registered.')
+        ->assertExitCode(1);
+
+    $mockClient->assertNotSent(RemoveNodeRoleRequest::class);
+});
 
 it('rejects an empty role before connector io', function (): void {
     $mockClient = MockClient::global();
@@ -146,6 +183,46 @@ it('repeats Ingress removal and supports remove-then-add replacement in human an
         ->toBeInstanceOf(AddNodeRoleRequest::class)
         ->and($mockClient->getLastPendingRequest()?->body()->all())
         ->toBe(['role' => 'ingress', 'converge_existing' => false]);
+});
+
+it('renders unknown role enum validation details from the preview request', function (): void {
+    $expected = json_encode([
+        'error' => [
+            'code' => 'validation.failed',
+            'message' => 'The request data is invalid.',
+            'details' => [
+                'role' => ['The selected role is invalid.'],
+            ],
+            'request_id' => node_role_remove_request_id(),
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    $mockClient = MockClient::global([
+        RemoveNodeRoleRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'validation.failed',
+                    'message' => 'The request data is invalid.',
+                    'details' => [
+                        'role' => ['The selected role is invalid.'],
+                    ],
+                ],
+            ],
+            422,
+            ['X-Orbit-Request-Id' => node_role_remove_request_id()],
+        ),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', [
+            'node' => '7',
+            'role' => 'nosuch',
+            '--json' => true,
+            '--no-interaction' => true,
+        ])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getRecordedResponses())->toHaveCount(1);
 });
 
 it('requires the preview failure in json mode and sends no forced retry', function (): void {
@@ -563,4 +640,28 @@ function removed_node_role_expected_json(): array
 function node_role_remove_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array<string, mixed> */
+function node_role_remove_node_payload(int $id, string $name): array
+{
+    return [
+        'id' => $id,
+        'name' => $name,
+        'status' => 'active',
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => null,
+        'public_ssh_host' => '203.0.113.7',
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.7',
+        'wireguard_public_key' => 'key',
+        'wireguard_endpoint_override' => null,
+        'dns_server_override' => null,
+        'ssh_host_fingerprint' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'roles' => [],
+    ];
 }

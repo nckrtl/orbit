@@ -6,6 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Metrics\MetricsCredentialManager;
+use App\Domain\Metrics\MetricsCredentialOperationLock;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
@@ -35,107 +36,121 @@ final readonly class NativeMetricsCredentialManager implements MetricsCredential
     public function __construct(
         private SettingRepository $settings,
         private MetricsCredentialRuntime $runtime,
+        private MetricsCredentialOperationLock $operations,
     ) {}
 
     public function passwordForConvergence(Node $node): string
     {
-        $scope = $this->scope($node);
-        $password = $this->settings->get($scope, self::ActivePasswordKey);
+        return $this->operations->run($node->id, function () use ($node): string {
+            $scope = $this->scope($node);
+            $password = $this->settings->get($scope, self::ActivePasswordKey);
 
-        if (is_string($password) && $password !== '') {
+            if (is_string($password) && $password !== '') {
+                return $password;
+            }
+
+            $password = Str::random(self::PasswordLength);
+            $this->settings->put(
+                $scope,
+                self::ActivePasswordKey,
+                $password,
+                SettingValueProtection::Secret,
+            );
+
             return $password;
-        }
-
-        $password = Str::random(self::PasswordLength);
-        $this->settings->put(
-            $scope,
-            self::ActivePasswordKey,
-            $password,
-            SettingValueProtection::Secret,
-        );
-
-        return $password;
+        });
     }
 
     public function verifyActive(Node $node): void
     {
-        $password = $this->activePassword($node);
+        $this->operations->run($node->id, function () use ($node): void {
+            $password = $this->activePassword($node);
 
-        if (! $this->runtime->verify($node, $password)) {
-            throw new ResourceOperationException(
-                'metrics.credentials_unverified',
-                'Grafana rejected the active credential.',
-                502,
-            );
-        }
+            if (! $this->runtime->verify($node, $password)) {
+                throw new ResourceOperationException(
+                    'metrics.credentials_unverified',
+                    'Grafana rejected the active credential.',
+                    502,
+                );
+            }
+        });
     }
 
     public function purge(Node $node): void
     {
-        $scope = $this->scope($node);
+        $this->operations->run($node->id, function () use ($node): void {
+            $scope = $this->scope($node);
 
-        DB::transaction(function () use ($scope): void {
-            $this->settings->delete($scope, self::ActivePasswordKey);
-            $this->settings->delete($scope, self::PendingPasswordKey);
+            DB::transaction(function () use ($scope): void {
+                $this->settings->delete($scope, self::ActivePasswordKey);
+                $this->settings->delete($scope, self::PendingPasswordKey);
+            });
         });
     }
 
     public function credentials(): MetricsCredentialsData
     {
         $node = $this->assignedNode();
-        $password = $this->activePassword($node);
 
-        if (! $this->runtime->verify($node, $password)) {
-            throw new ResourceOperationException(
-                'metrics.credentials_unverified',
-                'Grafana rejected the active credential.',
-                502,
-            );
-        }
+        return $this->operations->run($node->id, function () use ($node): MetricsCredentialsData {
+            $password = $this->activePassword($node);
 
-        return $this->data($password);
+            if (! $this->runtime->verify($node, $password)) {
+                throw new ResourceOperationException(
+                    'metrics.credentials_unverified',
+                    'Grafana rejected the active credential.',
+                    502,
+                );
+            }
+
+            return $this->data($password);
+        });
     }
 
     public function reset(): MetricsCredentialsData
     {
         $node = $this->assignedNode();
-        $scope = $this->scope($node);
-        $pending = $this->settings->get($scope, self::PendingPasswordKey);
-        $isRetry = is_string($pending) && $pending !== '';
 
-        if (! $isRetry) {
-            $pending = Str::random(self::PasswordLength);
-            $this->settings->put(
-                $scope,
-                self::PendingPasswordKey,
-                $pending,
-                SettingValueProtection::Secret,
-            );
-        }
+        return $this->operations->run($node->id, function () use ($node): MetricsCredentialsData {
+            $scope = $this->scope($node);
+            $active = $this->activePassword($node);
+            $pending = $this->settings->get($scope, self::PendingPasswordKey);
+            $isRetry = is_string($pending) && $pending !== '';
 
-        if (! $isRetry || ! $this->runtime->verify($node, $pending)) {
-            $this->runtime->apply($node, $this->activePassword($node), $pending);
-
-            if (! $this->runtime->verify($node, $pending)) {
-                throw new ResourceOperationException(
-                    'metrics.credentials_reset_unverified',
-                    'Grafana did not verify the pending credential.',
-                    502,
+            if (! $isRetry) {
+                $pending = Str::random(self::PasswordLength);
+                $this->settings->put(
+                    $scope,
+                    self::PendingPasswordKey,
+                    $pending,
+                    SettingValueProtection::Secret,
                 );
             }
-        }
 
-        DB::transaction(function () use ($scope, $pending): void {
-            $this->settings->put(
-                $scope,
-                self::ActivePasswordKey,
-                $pending,
-                SettingValueProtection::Secret,
-            );
-            $this->settings->delete($scope, self::PendingPasswordKey);
+            if (! $isRetry || ! $this->runtime->verify($node, $pending)) {
+                $this->runtime->apply($node, $active, $pending);
+
+                if (! $this->runtime->verify($node, $pending)) {
+                    throw new ResourceOperationException(
+                        'metrics.credentials_reset_unverified',
+                        'Grafana did not verify the pending credential.',
+                        502,
+                    );
+                }
+            }
+
+            DB::transaction(function () use ($scope, $pending): void {
+                $this->settings->put(
+                    $scope,
+                    self::ActivePasswordKey,
+                    $pending,
+                    SettingValueProtection::Secret,
+                );
+                $this->settings->delete($scope, self::PendingPasswordKey);
+            });
+
+            return $this->data($pending);
         });
-
-        return $this->data($pending);
     }
 
     private function assignedNode(): Node

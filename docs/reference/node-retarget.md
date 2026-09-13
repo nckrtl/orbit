@@ -4,11 +4,17 @@
 recorded public SSH target. The Gateway keeps the node's pinned host key,
 WireGuard address, and every other identity field.
 
+## Shared lifecycle owner
+
+The Gateway gives each Node name one lifecycle owner. Provision, retarget, and removal hold that owner from identity lookup through remote effects and compensation.
+
+A contender for the same name receives `node.provisioning_busy` with HTTP 409 before any remote effect or state write. A retry reads current identity and eligibility after it acquires the owner. A deleted Node fails with the ordinary lookup or `node.not_found` refusal. An ineligible Node fails with its ordinary guard. The owner releases after success or failure, including verification and rollback failures. Independent Node names proceed together.
+
+The owner does not serialize role or settings writers. A held owner expires after 3600 seconds.
+
 ## Two boundaries
 
-Role convergence removes the `orbit:public-ssh-recovery` UFW rule once the
-`orbit:vpn-ssh` rule exists. After that, the Gateway can reach the node only
-over WireGuard. The retarget selects its path from stored state:
+Role convergence removes the `orbit:public-ssh-recovery` UFW rule once the `orbit:wireguard-members` rule exists. After that, the Gateway can reach the node only over WireGuard. Removing the last role row restores the `orbit:public-ssh-recovery` rule over WireGuard before the Gateway deletes that row, and [Node removal](node-provisioning.md#remove-a-node) restores it before the Gateway removes the WireGuard peer. Removing a role while another role row remains keeps public SSH closed. When that restore fails, the Gateway leaves the role assignment failed at step `remove:firewall-recovery` with `node.firewall_recovery_failed`, and a retry repeats the removal. The retarget selects its path from stored state:
 
 | Node state | Path | Steps |
 | --- | --- | --- |
@@ -52,6 +58,7 @@ Each failure names the step that stopped and what the node record looks like aft
 | Code | Step | Node record |
 | --- | --- | --- |
 | `node.public_ssh_host_invalid`, `node.public_ssh_port_invalid` | `validation` | unchanged |
+| `node.provisioning_busy` | lifecycle owner | unchanged |
 | `node.not_active` | `lookup` | unchanged |
 | `node.retarget_requires_vpn` | `wireguard-ssh` | unchanged, still active |
 | `node.ssh_host_key_scan_failed` | `ssh-host-key` | failed |

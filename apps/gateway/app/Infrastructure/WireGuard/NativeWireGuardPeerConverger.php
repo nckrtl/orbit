@@ -41,13 +41,19 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
         bool $rolelessOperator = false,
     ): void {
         $publicKey = $this->preflightPeerKey($node, $connection, 'recoverable');
+        $finalize = $connection;
 
         try {
             $this->publishPeer($node, $connection, $publicKey, 'retain', $rolelessOperator);
-            $completion();
-            $this->commitPeerTransaction($node, $connection, $publicKey);
+            // The completion may hand back the verified tunnel connection: role
+            // convergence closes the public path that published the peer before
+            // the transaction can be finalized.
+            $completion(static function (SshConnection $verified) use (&$finalize): void {
+                $finalize = $verified;
+            });
+            $this->commitPeerTransaction($node, $finalize, $publicKey);
         } catch (\Throwable $throwable) {
-            $this->rollbackPeerTransaction($node, $connection);
+            $this->rollbackPeerTransaction($node, $finalize);
 
             throw $throwable;
         }
@@ -143,6 +149,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 'transactionMode' => $transactionMode,
                 'dnsMode' => $dnsMode,
                 'operatorDns' => $rolelessOperator ? $gatewayWireGuardAddress : '',
+                'dnsPolicy' => $vpn->usesDefaultDnsResolver ? 'default' : 'split',
             ],
         );
         $peerResult = $this->ssh->execute($connection, $peerCommand);
@@ -254,6 +261,66 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 dns_state_candidate=/etc/wireguard/.orbit.dns-link.candidate
                 transaction_candidate=/etc/wireguard/.orbit.peer-transaction.candidate
 
+                read_resolver_setting() {
+                    local output
+                    output=$(resolvectl "$1" orbit) || return 1
+                    output=${output#*:}
+                    output=${output#"${output%%[![:space:]]*}"}
+                    printf '%s' "$output"
+                }
+                capture_resolver_state() {
+                    resolver_default_route=$(read_resolver_setting default-route) || return 1
+                    resolver_llmnr=$(read_resolver_setting llmnr) || return 1
+                    resolver_mdns=$(read_resolver_setting mdns) || return 1
+                    resolver_dnssec=$(read_resolver_setting dnssec) || return 1
+                    resolver_dnsovertls=$(read_resolver_setting dnsovertls) || return 1
+                    case "$resolver_default_route" in yes|no) ;; *) return 1 ;; esac
+                    case "$resolver_llmnr" in yes|no|resolve) ;; *) return 1 ;; esac
+                    case "$resolver_mdns" in yes|no|resolve) ;; *) return 1 ;; esac
+                    case "$resolver_dnssec" in yes|no|allow-downgrade) ;; *) return 1 ;; esac
+                    case "$resolver_dnsovertls" in yes|no|opportunistic) ;; *) return 1 ;; esac
+                    resolver_nta=()
+                    resolver_nta_output=$(resolvectl nta orbit) || return 1
+                    resolver_nta_output=${resolver_nta_output#*:}
+                    while IFS= read -r resolver_nta_domain; do
+                        resolver_nta_domain=${resolver_nta_domain#"${resolver_nta_domain%%[![:space:]]*}"}
+                        if [ -n "$resolver_nta_domain" ]; then
+                            resolver_nta+=("$resolver_nta_domain")
+                        fi
+                    done <<< "$resolver_nta_output"
+                }
+                apply_resolver_state() {
+                    resolvectl default-route orbit "$resolver_default_route" || return 1
+                    resolvectl llmnr orbit "$resolver_llmnr" || return 1
+                    resolvectl mdns orbit "$resolver_mdns" || return 1
+                    resolvectl dnssec orbit "$resolver_dnssec" || return 1
+                    resolvectl dnsovertls orbit "$resolver_dnsovertls" || return 1
+                    if [ "${#resolver_nta[@]}" -eq 0 ]; then
+                        resolvectl nta orbit '' || return 1
+                    else
+                        resolvectl nta orbit "${resolver_nta[@]}" || return 1
+                    fi
+                }
+                publish_restart_configuration() {
+                    rm -f -- "$restore_candidate" || return 1
+                    if [ "$live_present" = 1 ]; then
+                        cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
+                        sed -i "/^PreDown = resolvectl revert %i\\r\\{0,1\\}$/d" "$restore_candidate" || return 1
+                        mv -fT -- "$restore_candidate" "$live" || return 1
+                    else
+                        rm -f -- "$live" || return 1
+                    fi
+                }
+                restore_exact_configuration() {
+                    rm -f -- "$restore_candidate" || return 1
+                    if [ "$live_present" = 1 ]; then
+                        cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
+                        mv -fT -- "$restore_candidate" "$live" || return 1
+                    else
+                        rm -f -- "$live" || return 1
+                    fi
+                }
+
                 if [ ! -f "$transaction" ]; then
                     exit 0
                 fi
@@ -276,6 +343,32 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     0:0|0:1|1:0|1:1) ;;
                     *) exit 1 ;;
                 esac
+
+                resolver_snapshot=${transaction_state[4]:-}
+                if [ "$resolver_snapshot" = resolver-v1 ]; then
+                    resolver_default_route=${transaction_state[5]:-}
+                    resolver_llmnr=${transaction_state[6]:-}
+                    resolver_mdns=${transaction_state[7]:-}
+                    resolver_dnssec=${transaction_state[8]:-}
+                    resolver_dnsovertls=${transaction_state[9]:-}
+                    resolver_nta_count=${transaction_state[10]:-}
+                    if [[ ! "$resolver_nta_count" =~ ^[0-9]+$ ]] \
+                        || [ "$resolver_nta_count" -gt 256 ] \
+                        || [ "${#transaction_state[@]}" -ne "$((11 + resolver_nta_count))" ]; then
+                        exit 1
+                    fi
+                    resolver_nta=("${transaction_state[@]:11:resolver_nta_count}")
+                    case "$resolver_default_route" in yes|no) ;; *) exit 1 ;; esac
+                    case "$resolver_llmnr" in yes|no|resolve) ;; *) exit 1 ;; esac
+                    case "$resolver_mdns" in yes|no|resolve) ;; *) exit 1 ;; esac
+                    case "$resolver_dnssec" in yes|no|allow-downgrade) ;; *) exit 1 ;; esac
+                    case "$resolver_dnsovertls" in yes|no|opportunistic) ;; *) exit 1 ;; esac
+                elif [ -z "$resolver_snapshot" ] && [ "$active_state" = active ]; then
+                    capture_resolver_state
+                    resolver_snapshot=resolver-v1
+                elif [ "$resolver_snapshot" != resolver-none ]; then
+                    exit 1
+                fi
                 if [ "$live_present" = 1 ] && [ ! -f "$backup" ]; then
                     exit 1
                 fi
@@ -315,30 +408,11 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     current_dns_link=${current_dns_state[0]:-}
                 fi
 
-                if [[ "$current_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]]; then
-                    resolvectl revert "$current_dns_link"
-                fi
-
-                if [ -n "$old_dns_link" ]; then
-                    resolvectl dns "$old_dns_link" "$old_dns_server"
-                    old_resolvectl_domains=()
-                    for old_dns_domain in "${old_dns_domains[@]}"; do
-                        old_resolvectl_domains+=("~$old_dns_domain")
-                    done
-                    resolvectl domain "$old_dns_link" "${old_resolvectl_domains[@]}"
-                fi
-
                 if [ "$active_state" = inactive ] && [ "$live_present" = 0 ]; then
                     systemctl stop wg-quick@orbit
                 fi
 
-                rm -f -- "$restore_candidate"
-                if [ "$live_present" = 1 ]; then
-                    cp -a --no-dereference -- "$backup" "$restore_candidate"
-                    mv -fT -- "$restore_candidate" "$live"
-                else
-                    rm -f -- "$live"
-                fi
+                publish_restart_configuration
 
                 rm -f -- "$dns_restore_candidate"
                 if [ "$dns_state_present" = 1 ]; then
@@ -357,10 +431,32 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     enabled-runtime) systemctl enable --runtime wg-quick@orbit ;;
                 esac
 
+                service_failed=0
                 if [ "$active_state" = active ]; then
-                    systemctl restart wg-quick@orbit
+                    systemctl restart wg-quick@orbit || service_failed=1
                 elif [ "$live_present" = 1 ]; then
-                    systemctl stop wg-quick@orbit
+                    systemctl stop wg-quick@orbit || service_failed=1
+                fi
+                restore_exact_configuration
+                if [ "$service_failed" -ne 0 ]; then
+                    exit 1
+                fi
+
+                if [[ "$current_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]]; then
+                    resolvectl dns "$current_dns_link" ''
+                    resolvectl domain "$current_dns_link" ''
+                fi
+
+                if [ -n "$old_dns_link" ]; then
+                    resolvectl dns "$old_dns_link" "$old_dns_server"
+                    old_resolvectl_domains=()
+                    for old_dns_domain in "${old_dns_domains[@]}"; do
+                        old_resolvectl_domains+=("~$old_dns_domain")
+                    done
+                    resolvectl domain "$old_dns_link" "${old_resolvectl_domains[@]}"
+                fi
+                if [ "$resolver_snapshot" = resolver-v1 ]; then
+                    apply_resolver_state
                 fi
 
                 case "$enabled_state" in
@@ -389,7 +485,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     }
 
     /**
-     * @param  array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string}  $dns
+     * @param  array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string, dnsPolicy: string}  $dns
      */
     private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns): RemoteCommand
     {
@@ -398,6 +494,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
             'transactionMode' => $transactionMode,
             'dnsMode' => $dnsMode,
             'operatorDns' => $operatorDns,
+            'dnsPolicy' => $dnsPolicy,
         ] = $dns;
         $cleanup = $transactionMode === 'retain'
             ? 'trap - EXIT'
@@ -428,6 +525,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 $dnsMode,
                 $operatorDns,
                 $transactionMode,
+                $dnsPolicy,
             ],
             input: str_replace(
                 '__FINALIZE__',
@@ -444,6 +542,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     dns_mode=$9
                     operator_dns=${10}
                     transaction_mode=${11}
+                    dns_policy=${12}
                     exec 9>/run/lock/orbit-wireguard-peer.lock
                     flock -w 30 9
                     private_key=$(cat /etc/wireguard/orbit.key)
@@ -457,6 +556,66 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     transaction_candidate=/etc/wireguard/.orbit.peer-transaction.candidate
                     restore_candidate=/etc/wireguard/.orbit.conf.restore
                     dns_restore_candidate=/etc/wireguard/.orbit.dns-link.restore
+
+                    read_resolver_setting() {
+                        local output
+                        output=$(resolvectl "$1" orbit) || return 1
+                        output=${output#*:}
+                        output=${output#"${output%%[![:space:]]*}"}
+                        printf '%s' "$output"
+                    }
+                    capture_resolver_state() {
+                        resolver_default_route=$(read_resolver_setting default-route) || return 1
+                        resolver_llmnr=$(read_resolver_setting llmnr) || return 1
+                        resolver_mdns=$(read_resolver_setting mdns) || return 1
+                        resolver_dnssec=$(read_resolver_setting dnssec) || return 1
+                        resolver_dnsovertls=$(read_resolver_setting dnsovertls) || return 1
+                        case "$resolver_default_route" in yes|no) ;; *) return 1 ;; esac
+                        case "$resolver_llmnr" in yes|no|resolve) ;; *) return 1 ;; esac
+                        case "$resolver_mdns" in yes|no|resolve) ;; *) return 1 ;; esac
+                        case "$resolver_dnssec" in yes|no|allow-downgrade) ;; *) return 1 ;; esac
+                        case "$resolver_dnsovertls" in yes|no|opportunistic) ;; *) return 1 ;; esac
+                        resolver_nta=()
+                        resolver_nta_output=$(resolvectl nta orbit) || return 1
+                        resolver_nta_output=${resolver_nta_output#*:}
+                        while IFS= read -r resolver_nta_domain; do
+                            resolver_nta_domain=${resolver_nta_domain#"${resolver_nta_domain%%[![:space:]]*}"}
+                            if [ -n "$resolver_nta_domain" ]; then
+                                resolver_nta+=("$resolver_nta_domain")
+                            fi
+                        done <<< "$resolver_nta_output"
+                    }
+                    apply_resolver_state() {
+                        resolvectl default-route orbit "$resolver_default_route" || return 1
+                        resolvectl llmnr orbit "$resolver_llmnr" || return 1
+                        resolvectl mdns orbit "$resolver_mdns" || return 1
+                        resolvectl dnssec orbit "$resolver_dnssec" || return 1
+                        resolvectl dnsovertls orbit "$resolver_dnsovertls" || return 1
+                        if [ "${#resolver_nta[@]}" -eq 0 ]; then
+                            resolvectl nta orbit '' || return 1
+                        else
+                            resolvectl nta orbit "${resolver_nta[@]}" || return 1
+                        fi
+                    }
+                    publish_restart_configuration() {
+                        rm -f -- "$restore_candidate" || return 1
+                        if [ "$live_present" -eq 1 ]; then
+                            cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
+                            sed -i "/^PreDown = resolvectl revert %i\\r\\{0,1\\}$/d" "$restore_candidate" || return 1
+                            mv -fT -- "$restore_candidate" "$live" || return 1
+                        else
+                            rm -f -- "$live" || return 1
+                        fi
+                    }
+                    restore_exact_configuration() {
+                        rm -f -- "$restore_candidate" || return 1
+                        if [ "$live_present" -eq 1 ]; then
+                            cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
+                            mv -fT -- "$restore_candidate" "$live" || return 1
+                        else
+                            rm -f -- "$live" || return 1
+                        fi
+                    }
                     live_present=0
                     dns_state_present=0
                     published=0
@@ -471,6 +630,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
 
                     case "$dns_mode:$transaction_mode" in
                         operator:retain|operator:finalize|wireguard:retain|wireguard:finalize|underlay:retain|underlay:finalize) ;;
+                        *) exit 43 ;;
+                    esac
+                    case "$dns_policy" in
+                        default|split) ;;
                         *) exit 43 ;;
                     esac
                     if [ -e "$backup" ] || [ -L "$backup" ] \
@@ -498,6 +661,18 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         *) exit 43 ;;
                     esac
 
+                    resolver_snapshot=resolver-none
+                    resolver_default_route=
+                    resolver_llmnr=
+                    resolver_mdns=
+                    resolver_dnssec=
+                    resolver_dnsovertls=
+                    resolver_nta=()
+                    if [ "$active_state" = active ]; then
+                        capture_resolver_state || exit 43
+                        resolver_snapshot=resolver-v1
+                    fi
+
                     if [ -f "$live" ]; then
                         live_present=1
                         cp -a --no-dereference -- "$live" "$backup"
@@ -506,16 +681,25 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         dns_state_present=1
                         cp -a --no-dereference -- "$dns_state" "$dns_state_backup"
                     fi
-                    printf '%s\n%s\n%s\n%s\n' \
-                        "$active_state" "$enabled_state" "$live_present" "$dns_state_present" > "$transaction_candidate"
+                    printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+                        "$active_state" "$enabled_state" "$live_present" "$dns_state_present" \
+                        "$resolver_snapshot" "$resolver_default_route" "$resolver_llmnr" "$resolver_mdns" \
+                        "$resolver_dnssec" "$resolver_dnsovertls" "${#resolver_nta[@]}" > "$transaction_candidate"
+                    if [ "${#resolver_nta[@]}" -gt 0 ]; then
+                        printf '%s\n' "${resolver_nta[@]}" >> "$transaction_candidate"
+                    fi
                     chmod 0600 "$transaction_candidate"
                     mv -fT -- "$transaction_candidate" "$transaction"
                     printf -v dns_server_escaped '%q' "$dns_server"
                     printf -v operator_dns_escaped '%q' "$operator_dns"
 
-                    dns_domains=("$domain")
-                    if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
-                        dns_domains+=("$app_dev_tld")
+                    if [ "$dns_policy" = default ]; then
+                        dns_domains=(".")
+                    else
+                        dns_domains=("$domain")
+                        if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
+                            dns_domains+=("$app_dev_tld")
+                        fi
                     fi
                     dns_domains_escaped=()
                     for dns_domain in "${dns_domains[@]}"; do
@@ -523,9 +707,12 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         dns_domains_escaped+=("$dns_domain_escaped")
                     done
 
+                    # No PreDown hook: the wg-quick AppArmor profile on Ubuntu 26.04 denies the
+                    # RevertLink call, and systemd-resolved drops the link configuration when
+                    # wg-quick deletes the interface.
                     dns_hooks=
                     if [ "$dns_mode" = wireguard ]; then
-                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"$'\n'"PreDown = resolvectl revert %i"
+                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"
                     fi
                     operator_dns_line=
                     if [ -n "$operator_dns" ]; then
@@ -600,19 +787,22 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         if [ "$active_state" = inactive ] && [ "$live_present" = 0 ]; then
                             systemctl stop wg-quick@orbit || return 1
                         fi
-                        rm -f -- "$restore_candidate" || return 1
-                        if [ "$live_present" -eq 1 ]; then
-                            cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
-                            mv -fT -- "$restore_candidate" "$live" || return 1
-                        else
-                            rm -f -- "$live" || return 1
-                        fi
+                        publish_restart_configuration || return 1
                         restore_dns_state || return 1
                         restore_enabled_state || return 1
+                        service_failed=0
                         if [ "$active_state" = active ]; then
-                            systemctl restart wg-quick@orbit || return 1
+                            systemctl restart wg-quick@orbit || service_failed=1
                         elif [ "$live_present" = 1 ]; then
-                            systemctl stop wg-quick@orbit || return 1
+                            systemctl stop wg-quick@orbit || service_failed=1
+                        fi
+                        restore_exact_configuration || return 1
+                        if [ "$service_failed" -ne 0 ]; then
+                            return 1
+                        fi
+                        restore_dns || return 1
+                        if [ "$resolver_snapshot" = resolver-v1 ]; then
+                            apply_resolver_state || return 1
                         fi
                         case "$enabled_state" in
                             masked) systemctl mask wg-quick@orbit || return 1 ;;
@@ -623,7 +813,8 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     dns_link=
                     restore_dns() {
                         if [[ "$dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]]; then
-                            resolvectl revert "$dns_link" || return 1
+                            resolvectl dns "$dns_link" '' || return 1
+                            resolvectl domain "$dns_link" '' || return 1
                         fi
                         if [ -n "$old_dns_link" ]; then
                             resolvectl dns "$old_dns_link" "$old_dns_server" || return 1
@@ -638,7 +829,6 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         if [ "$transaction_mode" = retain ]; then
                             return 0
                         fi
-                        restore_dns || return 1
                         restore_previous || return 1
                     }
                     if ! mv -f -- "$candidate" "$live"; then
@@ -664,6 +854,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         exit 1
                     fi
                     if ! systemctl restart wg-quick@orbit; then
+                        restore_after_failure || exit 1
+                        exit 1
+                    fi
+                    if [ "$resolver_snapshot" = resolver-v1 ] && ! apply_resolver_state; then
                         restore_after_failure || exit 1
                         exit 1
                     fi
@@ -696,9 +890,12 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     fi
 
                     if [ "$dns_mode" != operator ]; then
-                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ] && ! resolvectl revert "$old_dns_link"; then
-                            restore_after_failure || exit 1
-                            exit 1
+                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ]; then
+                            if ! resolvectl dns "$old_dns_link" '' \
+                                || ! resolvectl domain "$old_dns_link" ''; then
+                                restore_after_failure || exit 1
+                                exit 1
+                            fi
                         fi
                         if ! printf '%s\n' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"; then
                             restore_after_failure || exit 1

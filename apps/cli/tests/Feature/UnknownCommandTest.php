@@ -38,4 +38,17 @@ describe('unknown command', function (): void {
 
         expect($status)->toBe(0);
     });
+
+    it('rejects Laravel schedule commands as undefined', function (string $command): void {
+        [$status, $output] = run_orbit($command);
+
+        expect($status)
+            ->toBe(1)
+            ->and(trim($output))
+            ->toBe(sprintf(
+                'Command "%s" is not defined. Run "orbit list" to see available commands.',
+                $command,
+            ))
+            ->not->toContain('scheduled tasks');
+    })->with(['schedule:list', 'schedule:run', 'schedule:finish']);
 });
