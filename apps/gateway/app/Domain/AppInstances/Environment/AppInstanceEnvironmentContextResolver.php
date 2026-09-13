@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances\Environment;
 
+use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteProvenance;
@@ -29,10 +30,13 @@ final readonly class AppInstanceEnvironmentContextResolver
             $instance->status !== AppInstanceState::Active
             || $instance->migration_required
             || $instance->provisioning_step !== 'active'
-            || ! is_bool($sourceIsLaravel)
             || ! in_array($instance->environment, ['development', 'production'], true)
         ) {
             $this->conflict();
+        }
+
+        if (! is_bool($sourceIsLaravel)) {
+            new AppInstanceSourceProfileGuard()->refuseMissing();
         }
 
         $node = Node::query()->findOrFail($instance->node_id);

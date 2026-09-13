@@ -6,7 +6,7 @@ This page tells an operator how the Gateway reads, stores, and safely replaces a
 
 The import and update endpoints accept either a positive numeric AppInstance ID or an exact Route hostname in `{instance}`. A selector that matches no AppInstance returns HTTP 404. A Route hostname that has multiple AppInstance targets returns HTTP 409 with `env.target_ambiguous`.
 
-The Gateway accepts an active AppInstance only after its recorded placement is complete and no source migration or Route hostname change is pending. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
+The Gateway accepts an active AppInstance only after its recorded placement is complete and no source migration or Route hostname change is pending. An otherwise eligible AppInstance with no recorded source profile returns HTTP 409 `instance.source_profile_missing` for import, stored update, and synchronization. The message names recovery through the same creation request with `recover_source_profile`. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
 
 ## Use the PHP SDK
 
