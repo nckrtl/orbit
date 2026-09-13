@@ -1715,6 +1715,19 @@
             ]
         },
         {
+            "path": "docs/reference/node-provisioning.md",
+            "title": "Node provisioning",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/node-retarget.md",
             "title": "Node retarget",
             "kind": "reference",

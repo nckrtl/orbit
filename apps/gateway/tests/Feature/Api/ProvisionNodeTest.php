@@ -943,9 +943,23 @@ describe('POST /api/v1/nodes', function (): void {
             'user' => 'deployer',
             'orbit_user' => 'nckrtl',
         ] + $common)->assertCreated();
+        Node::query()->create([
+            'name' => 'identity-existing-api',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.95',
+            'wireguard_ip' => '10.44.0.95',
+            'user' => 'nckrtl',
+            'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', 43),
+        ]);
+        $this->postJson('/api/v1/nodes', ['name' => 'identity-existing-api', 'tld' => 'prod'])->assertCreated();
+        $this->postJson('/api/v1/nodes', ['name' => 'identity-existing-api', 'user' => 'root'])->assertCreated();
         expect($identities)->toBe([
             ['root',     'orbit'],
             ['deployer', 'nckrtl'],
+            ['nckrtl',   'nckrtl'],
+            ['root',     'nckrtl'],
         ]);
     });
 

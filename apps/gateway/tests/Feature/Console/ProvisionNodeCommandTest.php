@@ -7,6 +7,7 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Cluster;
@@ -162,4 +163,59 @@ it('passes explicit console user identities', function (): void {
         '--host-key-fingerprint' => 'SHA256:pinned',
     ])->assertExitCode(0);
     expect($identity?->bootstrapUser)->toBe('deployer')->and($identity?->managedUser)->toBe('nckrtl');
+});
+
+it('bootstraps as root for a new node and as the managed user for an existing node', function (): void {
+    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+    app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
+    {
+        public function converge(?Node $pendingNode = null): void {}
+    });
+    $identities = [];
+    app()->instance(NodeConverger::class, new class($identities) implements NodeConverger
+    {
+        public function __construct(
+            private array &$identities,
+        ) {}
+
+        public function converge(
+            Node $node,
+            NodeProvisioningIdentity $identity,
+            ?string $expectedSshHostFingerprint = null,
+            bool $rolelessOperator = false,
+        ): void {
+            $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
+        }
+    });
+    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+    {
+        public function converge(Node $node, NodeRole $assignment): void {}
+
+        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    });
+    Node::query()->create([
+        'name' => 'console-existing',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.97',
+        'wireguard_ip' => '10.44.0.97',
+        'user' => 'nckrtl',
+        'ssh_host_fingerprint' => 'SHA256:pinned',
+    ]);
+
+    $this->artisan('orbit:node-provision', [
+        'name' => 'console-new',
+        'host' => '192.0.2.96',
+        '--architecture' => 'x86_64',
+        '--host-key-fingerprint' => 'SHA256:pinned',
+    ])->assertExitCode(0);
+    $this->artisan('orbit:node-provision', [
+        'name' => 'console-existing',
+        'host' => '192.0.2.97',
+    ])->assertExitCode(0);
+
+    expect($identities)->toBe([['root', 'orbit'], ['nckrtl', 'nckrtl']]);
 });

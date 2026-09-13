@@ -2197,7 +2197,63 @@ describe(ProvisionNodeAction::class, function (): void {
             architecture: 'x86_64',
             expectedSshHostFingerprint: 'SHA256:pinned',
         ));
-        expect($identities)->toBe([['root', 'orbit'], ['nckrtl', 'nckrtl'], ['root', 'nckrtl']]);
+        $action->execute(new ProvisionNodeData(
+            name: 'identity-existing',
+            publicSshHost: '192.0.2.82',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+            user: 'root',
+        ));
+        expect($identities)->toBe([
+            ['root', 'orbit'],
+            ['nckrtl', 'nckrtl'],
+            ['nckrtl', 'nckrtl'],
+            ['root', 'nckrtl'],
+        ]);
+    });
+
+    it('bootstraps an existing Node through its recorded managed user when changing settings', function (): void {
+        $identities = [];
+        app()->instance(NodeConverger::class, new class($identities) implements NodeConverger
+        {
+            public function __construct(
+                private array &$identities,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {
+                $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
+            }
+        });
+        $existing = Node::query()->create([
+            'name' => 'app-prod',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.83',
+            'wireguard_ip' => '10.44.0.83',
+            'user' => 'orbit',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+            tld: 'prod',
+        ));
+
+        expect($identities)
+            ->toBe([['orbit', 'orbit']])
+            ->and($node->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($node->user)
+            ->toBe('orbit')
+            ->and($node->tld)
+            ->toBe('prod');
     });
 });
 

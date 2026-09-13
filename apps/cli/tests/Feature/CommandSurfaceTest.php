@@ -268,7 +268,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name', 'host'],
             [
                 'ssh-port' => '22',
-                'user' => 'root',
+                'user' => null,
                 'orbit-user' => null,
                 'platform' => 'linux',
                 'architecture' => null,
