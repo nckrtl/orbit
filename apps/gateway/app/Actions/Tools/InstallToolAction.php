@@ -229,6 +229,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 previous: $exception,
+                toolId: $tool->id,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -237,6 +238,7 @@ final readonly class InstallToolAction
                 errorCode: 'tool.version_probe_failed',
                 data: $data,
                 manager: $managerName,
+                toolId: $tool->id,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -253,6 +255,7 @@ final readonly class InstallToolAction
                 errorCode: 'tool.version_probe_failed',
                 data: $data,
                 manager: $managerName,
+                toolId: $tool->id,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -286,7 +289,7 @@ final readonly class InstallToolAction
         }
 
         try {
-            $this->verifyCandidate($manager, $node, $data, $managerName);
+            $this->verifyCandidate($manager, $node, $data, $managerName, $tool->id);
 
             try {
                 $manager->install($node, $data->package);
@@ -296,12 +299,14 @@ final readonly class InstallToolAction
                     data: $data,
                     manager: $managerName,
                     previous: $exception,
+                    toolId: $tool->id,
                 );
             } catch (Throwable) {
                 throw $this->managerFailure(
                     errorCode: 'tool.install_failed',
                     data: $data,
                     manager: $managerName,
+                    toolId: $tool->id,
                 );
             }
 
@@ -313,12 +318,14 @@ final readonly class InstallToolAction
                     data: $data,
                     manager: $managerName,
                     previous: $exception,
+                    toolId: $tool->id,
                 );
             } catch (Throwable) {
                 throw $this->managerFailure(
                     errorCode: 'tool.version_probe_failed',
                     data: $data,
                     manager: $managerName,
+                    toolId: $tool->id,
                 );
             }
 
@@ -327,6 +334,7 @@ final readonly class InstallToolAction
                     errorCode: 'tool.version_probe_failed',
                     data: $data,
                     manager: $managerName,
+                    toolId: $tool->id,
                 );
             }
 
@@ -341,6 +349,7 @@ final readonly class InstallToolAction
                         data: $data,
                         manager: $managerName,
                         message: 'The installed version cannot be verified.',
+                        toolId: $tool->id,
                     );
                 }
 
@@ -352,6 +361,7 @@ final readonly class InstallToolAction
                         data: $data,
                         manager: $managerName,
                         message: 'The installed version does not satisfy the constraint.',
+                        toolId: $tool->id,
                     );
                 }
             }
@@ -377,6 +387,7 @@ final readonly class InstallToolAction
                 errorCode: 'tool.install_failed',
                 data: $data,
                 manager: $managerName,
+                toolId: $tool->id,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -388,6 +399,7 @@ final readonly class InstallToolAction
         Node $node,
         InstallToolData $data,
         ToolManagerName $managerName,
+        int $toolId,
     ): void {
         if ($data->versionConstraint === null) {
             return;
@@ -402,6 +414,7 @@ final readonly class InstallToolAction
                 manager: $managerName,
                 outcome: ToolOutcome::CandidateVersionUnavailable,
                 previous: $exception,
+                toolId: $toolId,
             );
         } catch (Throwable) {
             throw $this->managerFailure(
@@ -409,6 +422,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 outcome: ToolOutcome::CandidateVersionUnavailable,
+                toolId: $toolId,
             );
         }
 
@@ -420,6 +434,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 message: 'The manager did not provide a candidate version.',
+                toolId: $toolId,
             );
         }
 
@@ -433,6 +448,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 message: 'The manager returned an unparseable candidate version.',
+                toolId: $toolId,
             );
         }
 
@@ -444,6 +460,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 message: 'The candidate version does not satisfy the constraint.',
+                toolId: $toolId,
             );
         }
     }
@@ -469,6 +486,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 message: 'The installed version cannot be verified.',
+                toolId: $tool->id,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure, $version);
             throw $failure;
@@ -482,6 +500,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 message: 'The installed version does not satisfy the constraint.',
+                toolId: $tool->id,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure, $version);
             throw $failure;
@@ -501,6 +520,7 @@ final readonly class InstallToolAction
             data: $data,
             manager: $manager,
             message: 'The stored tool constraint cannot be changed.',
+            toolId: $tool->id,
         );
     }
 
@@ -511,7 +531,7 @@ final readonly class InstallToolAction
         }
 
         if ($tool->protected) {
-            throw $this->stateFailure($data, $manager);
+            throw $this->stateFailure($data, $manager, $tool);
         }
 
         if ($tool->status === ToolStatus::Installed) {
@@ -525,10 +545,10 @@ final readonly class InstallToolAction
             return;
         }
 
-        throw $this->stateFailure($data, $manager);
+        throw $this->stateFailure($data, $manager, $tool);
     }
 
-    private function stateFailure(InstallToolData $data, ToolManagerName $manager): ToolOperationException
+    private function stateFailure(InstallToolData $data, ToolManagerName $manager, Tool $tool): ToolOperationException
     {
         return $this->failure(
             errorCode: 'tool.state_invalid',
@@ -537,6 +557,7 @@ final readonly class InstallToolAction
             data: $data,
             manager: $manager,
             message: 'The tool is not in a retryable install state.',
+            toolId: $tool->id,
         );
     }
 
@@ -587,6 +608,7 @@ final readonly class InstallToolAction
         ToolManagerName $manager,
         ToolOutcome $outcome = ToolOutcome::ManagerFailed,
         ?ToolManagerException $previous = null,
+        ?int $toolId = null,
     ): ToolOperationException {
         return $this->failure(
             errorCode: $errorCode,
@@ -596,6 +618,7 @@ final readonly class InstallToolAction
             manager: $manager,
             message: 'The tool manager operation failed.',
             previous: $previous,
+            toolId: $toolId,
         );
     }
 
@@ -607,6 +630,7 @@ final readonly class InstallToolAction
         string $message,
         ?ToolManagerName $manager = null,
         ?ToolManagerException $previous = null,
+        ?int $toolId = null,
     ): ToolOperationException {
         return new ToolOperationException(
             step: ToolOperation::Install->value,
@@ -619,6 +643,7 @@ final readonly class InstallToolAction
             versionConstraint: $data->versionConstraint,
             message: $message,
             previous: $previous,
+            toolId: $toolId,
         );
     }
 }

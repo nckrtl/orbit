@@ -392,6 +392,7 @@ describe('tool request validation and isolation', function (): void {
             'tool.state_invalid',
             'manager_failed',
             'update',
+            $tool->id,
         );
         assert_tools_api_error(
             $this->deleteJson('/api/v1/tools/'.$tool->id),
@@ -399,6 +400,7 @@ describe('tool request validation and isolation', function (): void {
             'tool.state_invalid',
             'manager_failed',
             'remove',
+            $tool->id,
         );
     });
 });
@@ -491,15 +493,17 @@ describe('tool lifecycle failure contracts', function (): void {
         $this->toolManager->installedVersions = [null];
         $this->toolManager->candidateVersions = [$candidate];
 
+        $response = $this->postJson('/api/v1/tools', tools_api_payload($this->node));
+        $tool = Tool::query()->sole();
+
         assert_tools_api_error(
-            $this->postJson('/api/v1/tools', tools_api_payload($this->node)),
+            $response,
             $status,
             $code,
             $outcome,
             'install',
+            $tool->id,
         );
-
-        $tool = Tool::query()->sole();
 
         expect($tool->status)
             ->toBe(ToolStatus::Failed)
@@ -534,15 +538,17 @@ describe('tool lifecycle failure contracts', function (): void {
             $this->toolManager->failures['install'] = [$installFailure];
         }
 
+        $response = $this->postJson('/api/v1/tools', tools_api_payload($this->node));
+        $tool = Tool::query()->sole();
+
         assert_tools_api_error(
-            $this->postJson('/api/v1/tools', tools_api_payload($this->node)),
+            $response,
             $status,
             $code,
             'manager_failed',
             'install',
+            $tool->id,
         );
-
-        $tool = Tool::query()->sole();
 
         expect($tool->status)
             ->toBe(ToolStatus::Failed)
@@ -592,6 +598,7 @@ describe('tool lifecycle failure contracts', function (): void {
             $code,
             'manager_failed',
             'update',
+            $tool->id,
         );
 
         $tool->refresh();
@@ -624,6 +631,7 @@ describe('tool lifecycle failure contracts', function (): void {
             'tool.protected',
             'manager_failed',
             'remove',
+            $tool->id,
         );
 
         $this->assertModelExists($tool);
@@ -675,7 +683,10 @@ function assert_tools_api_error(
     string $code,
     string $outcome,
     string $step,
+    ?int $toolId = null,
 ): void {
+    $details = ['step', 'outcome'];
+
     $response
         ->assertStatus($status)
         ->assertHeader('X-Orbit-Request-Id')
@@ -683,10 +694,15 @@ function assert_tools_api_error(
         ->assertJsonPath('error.details.step', $step)
         ->assertJsonPath('error.details.outcome', $outcome);
 
+    if ($toolId !== null) {
+        $details[] = 'id';
+        $response->assertJsonPath('error.details.id', $toolId);
+    }
+
     expect(array_keys($response->json()))
         ->toBe(['error'])
         ->and(array_keys($response->json('error')))
         ->toBe(['code', 'message', 'details'])
         ->and(array_keys($response->json('error.details')))
-        ->toBe(['step', 'outcome']);
+        ->toBe($details);
 }
