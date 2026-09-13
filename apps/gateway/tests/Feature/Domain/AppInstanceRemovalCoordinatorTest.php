@@ -425,6 +425,31 @@ it('keeps normal refusal semantics when checkout inventory inspection fails', fu
         ->toBe(0);
 });
 
+it('answers the identity check that inspection refused in normal and forced removal', function (bool $force): void {
+    [$checkout] = orb182_coordinator_graph();
+    $this->orb181Inspector->inspectionFailureIds = [$checkout->id];
+    $this->orb181Inspector->inspectionFailureCode = 'instance.source_origin_mismatch';
+
+    expect(fn () => $this->orb181Coordinator->execute($checkout, $force))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('instance.source_origin_mismatch')
+                ->and($exception->status)
+                ->toBe(409)
+                ->and($exception->getMessage())
+                ->toBe('Source inspection failed.');
+        });
+    expect($this->orb181Inspector->calls)
+        ->toBe(['inspect:'.$checkout->id.':'.($force ? 'force' : 'normal')])
+        ->and(AppInstanceRemovalMember::query()->count())
+        ->toBe(0)
+        ->and($this->orb181Finalizer->calls)
+        ->toBeEmpty();
+})->with([
+    'normal removal' => false,
+    'force' => true,
+]);
+
 it('refuses an unregistered checkout member before accepting either mode', function (bool $force): void {
     [$checkout, $first] = orb182_coordinator_graph();
     $unknown = '/srv/orbit/apps/acme/unregistered';
@@ -900,6 +925,8 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
     /** @var list<int> */
     public array $inspectionFailureIds = [];
 
+    public ?string $inspectionFailureCode = null;
+
     /** @var array<int, string> */
     public array $observedCommits = [];
 
@@ -913,7 +940,7 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
         if (in_array($appInstance->id, $this->inspectionFailureIds, true)) {
             throw new RuntimeConvergenceException(
                 'app-instance-source-removal-inspect',
-                $force ? 'instance.force_failed' : 'instance.remove_refused',
+                $this->inspectionFailureCode ?? ($force ? 'instance.force_failed' : 'instance.remove_refused'),
                 'Source inspection failed.',
             );
         }
