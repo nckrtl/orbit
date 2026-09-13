@@ -75,6 +75,7 @@ final readonly class HomebrewToolManager implements ToolManager
             expected_origin=https://github.com/Homebrew/brew
             expected_revision=__ORBIT_HOMEBREW_REVISION__
             expected_version='__ORBIT_HOMEBREW_VERSION__'
+            expected_tag=${expected_version#Homebrew }
 
             passwd_entry=$(getent passwd -- "$managed_user")
             test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
@@ -142,6 +143,11 @@ final readonly class HomebrewToolManager implements ToolManager
             test -L "$prefix/bin/brew"
             test "$(readlink "$prefix/bin/brew")" = ../Homebrew/bin/brew
             test "$(stat -c %U:%G "$prefix/bin/brew")" = "$managed_user:$managed_group"
+            if ! git -C "$repository" show-ref --verify --quiet "refs/tags/$expected_tag"; then
+                sudo -u "$managed_user" -H git -C "$repository" fetch --filter=blob:none origin tag "$expected_tag"
+                sudo -u "$managed_user" -H rm -rf -- "$repository/.git/describe-cache"
+            fi
+            test "$(git -C "$repository" rev-parse --verify "$expected_tag^{commit}")" = "$expected_revision"
             test "$(sudo -u "$managed_user" -H env \
                 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ENV_HINTS=1 \
                 PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin \
