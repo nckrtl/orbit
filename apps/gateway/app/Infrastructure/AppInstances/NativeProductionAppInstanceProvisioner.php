@@ -52,6 +52,13 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         if ($appInstance->status === AppInstanceState::Active) {
             $this->routes->ensureForAppInstance($appInstance, $data->hostname);
 
+            if ($data->recoverSourceProfile && $appInstance->source_is_laravel === null) {
+                $appInstance = $this->sourceLock->synchronized(
+                    $node->id,
+                    fn (): AppInstance => $this->recoverActiveSourceProfile($appInstance),
+                );
+            }
+
             return ['appInstance' => $appInstance->load('routes.targets'), 'created' => false];
         }
 
@@ -351,6 +358,23 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
             ...($status instanceof AppInstanceState ? ['status' => $status] : []),
         ]);
         $appInstance->refresh();
+    }
+
+    private function recoverActiveSourceProfile(AppInstance $appInstance): AppInstance
+    {
+        $appInstance->refresh()->loadMissing(['app', 'node']);
+
+        if ($appInstance->source_is_laravel !== null) {
+            return $appInstance;
+        }
+
+        $profile = $this->source->inspectProfile($appInstance);
+        $appInstance->update([
+            'selected_php_version' => $profile->phpVersion,
+            'source_is_laravel' => $profile->laravel,
+        ]);
+
+        return $appInstance->refresh();
     }
 
     private function assertResolution(AppInstance $appInstance, DevelopmentSourceResolution $resolution): void

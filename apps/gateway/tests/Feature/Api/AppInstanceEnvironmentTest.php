@@ -237,6 +237,44 @@ it('enforces peer and owning-Node access before reading configuration or using S
         ->toBe(1);
 });
 
+it('returns 409 instance.source_profile_missing for env operations without a recorded profile', function (
+    string $method,
+    string $suffix,
+    string $body,
+): void {
+    $this->instance->update(['source_is_laravel' => null]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            $method,
+            "/api/v1/instances/{$this->instance->id}/environment/{$suffix}",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: $body,
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing')
+        ->assertJsonPath(
+            'error.message',
+            'The AppInstance has no recorded source profile. Repeat the same creation request with recover_source_profile to inspect the source and store the complete profile.',
+        );
+
+    expect(AppInstanceEnvironmentValue::query()->count())
+        ->toBe(0)
+        ->and($this->access->preflights)
+        ->toBe(0)
+        ->and($this->access->reads)
+        ->toBe(0)
+        ->and($this->access->writePreflights)
+        ->toBe(0)
+        ->and($this->access->writes)
+        ->toBe([]);
+})->with([
+    'import' => ['POST', 'import', '{}'],
+    'sync' => ['POST', 'sync', '{}'],
+    'update' => ['PUT', 'FLAG', '{"value":"on"}'],
+]);
+
 it('requires an active complete owner while keeping stored updates offline', function (): void {
     $this->instance->node->update(['status' => LifecycleStatus::Failed]);
 
