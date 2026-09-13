@@ -17,10 +17,6 @@ final readonly class RouteRemovalGuard
 {
     public function assertAppRemovable(OrbitApp $app): void
     {
-        if ($app->routes()->where('status', RouteStatus::Active)->exists()) {
-            new RouteReconciliationGuard()->refuse();
-        }
-
         if ($app->routes()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.has_routes',
@@ -32,10 +28,6 @@ final readonly class RouteRemovalGuard
 
     public function assertClusterRemovable(Cluster $cluster): void
     {
-        if ($cluster->routes()->where('status', RouteStatus::Active)->exists()) {
-            new RouteReconciliationGuard()->refuse();
-        }
-
         if ($cluster->routes()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'cluster.has_routes',

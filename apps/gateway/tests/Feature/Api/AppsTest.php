@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Infrastructure\Processes\CommandResult;
@@ -16,6 +19,7 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -452,6 +456,77 @@ describe('app lifecycle', function (): void {
             ->toBeNull()
             ->and(AppInstance::query()->count())
             ->toBe(1);
+    });
+
+    it('refuses removal for owned AppInstances before owned Routes whatever the Route status', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+        $node = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+        ]);
+        $app = OrbitApp::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $instance = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => 'dev',
+            'checkout_path' => '/srv/orbit/apps/acme/dev',
+            'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::Active,
+        ]);
+        $route = Route::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'hostname' => 'acme.dev.orbit',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+        ]);
+        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+
+        $this
+            ->deleteJson("/api/v1/apps/{$app->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'app.has_app_instances');
+
+        $routed = OrbitApp::query()->create([
+            'name' => 'Routed',
+            'slug' => 'routed',
+            'repository_url' => 'https://github.com/acme/routed.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        Route::query()->create([
+            'app_id' => $routed->id,
+            'node_id' => $node->id,
+            'hostname' => 'routed.dev.orbit',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+        ]);
+
+        $this
+            ->deleteJson("/api/v1/apps/{$routed->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'app.has_routes');
+
+        expect($app->fresh())
+            ->not
+            ->toBeNull()
+            ->and($routed->fresh())
+            ->not
+            ->toBeNull()
+            ->and($route->refresh()->status)
+            ->toBe(RouteStatus::Active)
+            ->and(Route::query()->count())
+            ->toBe(2);
     });
 });
 

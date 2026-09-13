@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
@@ -71,6 +78,62 @@ describe('Cluster lifecycle', function (): void {
             ->assertJsonPath('data.id', $clusterId);
 
         expect(Cluster::query()->find($clusterId))->toBeNull();
+    });
+
+    it('refuses removal for member Nodes before owned Routes whatever the Route status', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'routing']);
+        $member = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'wireguard_ip' => '10.44.0.10',
+        ]);
+        $app = OrbitApp::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://example.test/acme.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $instance = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $member->id,
+            'name' => 'dev',
+            'checkout_path' => '/srv/orbit/apps/acme/dev',
+            'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::Active,
+        ]);
+        $route = Route::query()->create([
+            'app_id' => $app->id,
+            'cluster_id' => $cluster->id,
+            'hostname' => 'acme.example.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+        ]);
+        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+
+        $this
+            ->deleteJson("/api/v1/clusters/{$cluster->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'cluster.not_empty');
+
+        $member->update(['cluster_id' => null]);
+
+        $this
+            ->deleteJson("/api/v1/clusters/{$cluster->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'cluster.has_routes');
+
+        expect($cluster->fresh())
+            ->not
+            ->toBeNull()
+            ->and($route->refresh()->status)
+            ->toBe(RouteStatus::Active)
+            ->and($route->cluster_id)
+            ->toBe($cluster->id);
     });
 
     it('rejects duplicate names, duplicate non-null TLDs, and malformed TLDs without mutation', function (): void {

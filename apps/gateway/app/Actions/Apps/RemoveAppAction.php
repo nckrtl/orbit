@@ -16,8 +16,6 @@ final readonly class RemoveAppAction
 
     public function execute(OrbitApp $app): OrbitApp
     {
-        ($this->routes ?? app(RouteRemovalGuard::class))->assertAppRemovable($app);
-
         if ($app->appInstances()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.has_app_instances',
@@ -25,6 +23,8 @@ final readonly class RemoveAppAction
                 status: 409,
             );
         }
+
+        ($this->routes ?? app(RouteRemovalGuard::class))->assertAppRemovable($app);
 
         if ($app->instances()->exists()) {
             throw new ResourceOperationException(
