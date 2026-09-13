@@ -8,6 +8,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceMismatch;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
@@ -17,6 +18,7 @@ use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -27,6 +29,26 @@ use InvalidArgumentException;
 
 final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements DevelopmentAppInstanceSourceFinalizer, DevelopmentAppInstanceSourceRemoval
 {
+    /**
+     * Exit statuses that the guest inspection and removal scripts use to name the identity check they refused.
+     *
+     * @var array<int, AppInstanceSourceMismatch>
+     */
+    private const array ScriptMismatches = [
+        10 => AppInstanceSourceMismatch::Path,
+        11 => AppInstanceSourceMismatch::Ownership,
+        12 => AppInstanceSourceMismatch::Layout,
+        13 => AppInstanceSourceMismatch::Origin,
+        14 => AppInstanceSourceMismatch::Branch,
+        15 => AppInstanceSourceMismatch::Worktrees,
+    ];
+
+    /** Exit status of the guest removal script when normal removal found dirty or unpublished source. */
+    private const int UnsafeContentStatus = 20;
+
+    /** Exit status of the guest removal script when the source changed between inspection and deletion. */
+    private const int ChangedSourceStatus = 21;
+
     public function __construct(
         private AppDevSshExecutor $ssh,
         private ManagedUserAccountResolver $accounts,
@@ -61,7 +83,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             group: $context['group'],
             layout: $appInstance->source_layout,
             expectedBranch: $context['branch'],
-            startingCommit: $context['startingCommit'],
             expectedRepositoryIdentity: $context['repositoryIdentity'],
             force: $force,
             inspectContent: $inspectContent,
@@ -80,14 +101,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         string $group,
         string $layout,
         ?string $expectedBranch,
-        string $startingCommit,
         string $expectedRepositoryIdentity,
         bool $force,
         bool $inspectContent = true,
         array $quarantineMappings = [],
     ): AppInstanceSourceInventory {
-        $result = $this->ssh->execute(
-            $appInstance->node,
+        $result = $this->executeRefusable(
+            $appInstance,
             new RemoteCommand(
                 arguments: [
                     'bash',
@@ -99,13 +119,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $group,
                     $layout,
                     $expectedBranch ?? '',
-                    $startingCommit,
                     $inspectContent && ! $force ? '1' : '0',
                 ],
                 input: self::inspectionScript(),
             ),
             step: 'app-instance-source-removal-inspect',
-            errorCode: $this->failureCode($force),
+            force: $force,
         );
 
         $values = preg_split('/\R/', trim($result->stdout));
@@ -127,12 +146,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         if (
             ! $checkout instanceof StoragePath
             || ! $commonPath instanceof StoragePath
-            || $checkout->value !== $logicalCheckout
-            || $layout === AppInstanceSourceLayout::Checkout->value
-            && $commonPath->value !== $logicalCheckout.'/.git'
-            || $layout === AppInstanceSourceLayout::Worktree->value
-            && $commonPath->value === $logicalCheckout.'/.git'
-            || $branch !== $expectedBranch
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1
             || ! in_array($dirty, ['', '0', '1'], true)
             || preg_match('/\A[0-9]+:[0-9]+\z/D', $sourceIdentity) !== 1
@@ -140,14 +153,28 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             $this->invalidEvidence($appInstance, $force);
         }
 
+        if (
+            $checkout->value !== $logicalCheckout
+            || $layout === AppInstanceSourceLayout::Checkout->value
+            && $commonPath->value !== $logicalCheckout.'/.git'
+            || $layout === AppInstanceSourceLayout::Worktree->value
+            && $commonPath->value === $logicalCheckout.'/.git'
+        ) {
+            $this->mismatch($appInstance, AppInstanceSourceMismatch::Layout);
+        }
+
+        if ($branch !== $expectedBranch) {
+            $this->mismatch($appInstance, AppInstanceSourceMismatch::Branch);
+        }
+
         try {
             $repositoryIdentity = GitRepositoryIdentity::derive($origin);
         } catch (InvalidArgumentException) {
-            $this->invalidEvidence($appInstance, $force);
+            $this->mismatch($appInstance, AppInstanceSourceMismatch::Origin);
         }
 
         if ($repositoryIdentity !== $expectedRepositoryIdentity) {
-            $this->invalidEvidence($appInstance, $force);
+            $this->mismatch($appInstance, AppInstanceSourceMismatch::Origin);
         }
 
         if ($inspectContent && ! $force && $dirty !== '0') {
@@ -220,16 +247,19 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             || $inventory->checkoutPath !== $appInstance->checkout_path
             || $inventory->root !== $context['root']->value
             || $inventory->branch !== $context['branch']
-            || $inventory->linkedWorktreePaths !== [$appInstance->checkout_path]
         ) {
             $this->invalidEvidence($appInstance, $force);
+        }
+
+        if ($inventory->linkedWorktreePaths !== [$appInstance->checkout_path]) {
+            $this->mismatch($appInstance, AppInstanceSourceMismatch::Worktrees, 'app-instance-source-remove');
         }
 
         $groupingDirectory = $this->boundaries
             ->appInstanceGroupingDirectory($appInstance, $context['root'])
             ->value;
-        $this->ssh->execute(
-            $appInstance->node,
+        $this->executeRefusable(
+            $appInstance,
             new RemoteCommand(
                 arguments: [
                     'bash',
@@ -241,7 +271,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $context['user'],
                     $context['group'],
                     $inventory->branch ?? '',
-                    $context['startingCommit'],
                     $inventory->startingCommit,
                     $inventory->sourceIdentity,
                     $inventory->repositoryIdentity,
@@ -250,7 +279,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 input: self::releaseEmptyGroupingDirectoryFunction().self::removalScript(),
             ),
             step: 'app-instance-source-remove',
-            errorCode: $this->failureCode($force),
+            force: $force,
         );
     }
 
@@ -377,7 +406,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                         (string) $member->common_repository_path,
                         $member->source_layout,
                         $member->branch ?? '',
-                        (string) $member->starting_commit,
                         $member->app_instance_removal_id,
                         (string) $member->id,
                         $member->source_digest,
@@ -450,7 +478,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             group: $context['group'],
             layout: $member->source_layout,
             expectedBranch: $member->branch,
-            startingCommit: (string) $member->starting_commit,
             expectedRepositoryIdentity: (string) $member->repository_identity,
             force: (bool) $removal->force,
             quarantineMappings: $this->quarantineMappings($member, $context['root'], $expectation),
@@ -825,7 +852,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         );
     }
 
-    /** @return array{root: StoragePath, user: string, group: string, branch: ?string, startingCommit: string, repositoryIdentity: string} */
+    /** @return array{root: StoragePath, user: string, group: string, branch: ?string, repositoryIdentity: string} */
     private function context(AppInstance $appInstance): array
     {
         $appInstance->loadMissing(['app', 'node']);
@@ -843,9 +870,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         }
 
         $branch = $appInstance->getAttribute('branch');
-        $startingCommit = $appInstance->starting_commit;
 
-        if ($branch !== null && ! is_string($branch) || ! is_string($startingCommit)) {
+        if ($branch !== null && ! is_string($branch) || ! is_string($appInstance->starting_commit)) {
             $this->invalidEvidence($appInstance, false);
         }
 
@@ -862,7 +888,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             'user' => $account->user,
             'group' => $account->group,
             'branch' => $branch,
-            'startingCommit' => $startingCommit,
             'repositoryIdentity' => $repositoryIdentity,
         ];
     }
@@ -904,7 +929,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         sort($paths, SORT_STRING);
 
         if (! in_array($expectedCheckout, $paths, true)) {
-            $this->invalidEvidence($appInstance, $force);
+            $this->mismatch($appInstance, AppInstanceSourceMismatch::Worktrees);
         }
 
         return $paths;
@@ -939,10 +964,72 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         return $decoded;
     }
 
-    private function unsafeContent(AppInstance $appInstance): never
+    /**
+     * Run a guest script that refuses with a named exit status, and translate that status into its error code.
+     */
+    private function executeRefusable(
+        AppInstance $appInstance,
+        RemoteCommand $command,
+        string $step,
+        bool $force,
+    ): CommandResult {
+        try {
+            return $this->ssh->execute(
+                $appInstance->node,
+                $command,
+                step: $step,
+                errorCode: $this->failureCode($force),
+            );
+        } catch (RuntimeConvergenceException $exception) {
+            $this->refuse($appInstance, $force, $exception);
+        }
+    }
+
+    private function refuse(AppInstance $appInstance, bool $force, RuntimeConvergenceException $exception): never
     {
+        if (
+            $exception->errorCode !== $this->failureCode($force)
+            || ! $exception->result instanceof CommandResult
+        ) {
+            throw $exception;
+        }
+
+        $status = $exception->result->exitCode;
+        $mismatch = self::ScriptMismatches[$status] ?? null;
+
+        if ($mismatch instanceof AppInstanceSourceMismatch) {
+            $this->mismatch($appInstance, $mismatch, $exception->step);
+        }
+
+        match ($status) {
+            self::UnsafeContentStatus => $this->unsafeContent($appInstance, $exception->step),
+            self::ChangedSourceStatus => throw new RuntimeConvergenceException(
+                step: $exception->step,
+                errorCode: 'instance.removal_conflict',
+                message: "AppInstance [{$appInstance->name}] source changed after inspection.",
+            ),
+            default => throw $exception,
+        };
+    }
+
+    private function mismatch(
+        AppInstance $appInstance,
+        AppInstanceSourceMismatch $mismatch,
+        string $step = 'app-instance-source-removal-inspect',
+    ): never {
         throw new RuntimeConvergenceException(
-            step: 'app-instance-source-removal-inspect',
+            step: $step,
+            errorCode: $mismatch->value,
+            message: $mismatch->describe($appInstance->name),
+        );
+    }
+
+    private function unsafeContent(
+        AppInstance $appInstance,
+        string $step = 'app-instance-source-removal-inspect',
+    ): never {
+        throw new RuntimeConvergenceException(
+            step: $step,
             errorCode: 'instance.remove_refused',
             message: "AppInstance [{$appInstance->name}] has dirty or unpublished source.",
         );
@@ -1374,11 +1461,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             common_repository=$3
             layout=$4
             branch=$5
-            starting_commit=$6
-            operation=$7
-            member=$8
-            digest=$9
-            shift 9
+            operation=$6
+            member=$7
+            digest=$8
+            shift 8
             receipt=$1
             force=$2
             managed_user=$3
@@ -1468,7 +1554,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             current_branch=$(git -C "$physical" symbolic-ref --quiet --short HEAD || true)
             test "$current_branch" = "$branch"
             test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$source_commit"
-            git -C "$physical" merge-base --is-ancestor "$starting_commit" HEAD
             origin_with_marker=$(git -C "$physical" remote get-url origin && printf x)
             origin=${origin_with_marker%x}
             case "$origin" in
@@ -1585,10 +1670,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             managed_group=$4
             layout=$5
             expected_branch=$6
-            expected_starting_commit=$7
-            inspect_content=$8
+            inspect_content=$7
             export GIT_OPTIONAL_LOCKS=0
-            case "$checkout" in "$root"/*) ;; *) exit 1 ;; esac
+            failure=10
+            trap 'exit "$failure"' ERR
+            case "$checkout" in "$root"/*) ;; *) exit "$failure" ;; esac
             current=$root
             relative=${checkout#"$root"/}
             old_ifs=$IFS
@@ -1602,8 +1688,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             IFS=$old_ifs
             test -d "$checkout"
             test "$(realpath -e "$checkout")" = "$checkout"
+            failure=11
             test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             test "$(stat -c '%U:%G' "$(dirname "$checkout")")" = "$managed_user:$managed_group"
+            failure=12
             top=$(git -C "$checkout" rev-parse --show-toplevel)
             git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
             common=$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)
@@ -1622,18 +1710,20 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     test -d "$common"
                     test ! -L "$common"
                     ;;
-                *) exit 1 ;;
+                *) exit "$failure" ;;
             esac
+            commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
+            failure=13
             origin_with_marker=$(git -C "$checkout" remote get-url origin && printf x)
             origin=${origin_with_marker%x}
             case "$origin" in
                 *$'\n') origin=${origin%$'\n'} ;;
-                *) exit 1 ;;
+                *) exit "$failure" ;;
             esac
+            failure=14
             branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
-            commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
             test "$branch" = "$expected_branch"
-            git -C "$checkout" merge-base --is-ancestor "$expected_starting_commit" HEAD
+            failure=1
             dirty=
             if [ "$inspect_content" = 1 ]; then
                 dirty=0
@@ -1687,15 +1777,16 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             managed_user=$4
             managed_group=$5
             expected_branch=$6
-            expected_starting_commit=$7
-            expected_commit=$8
-            expected_source_identity=$9
-            shift 9
+            expected_commit=$7
+            expected_source_identity=$8
+            shift 8
             expected_repository_identity=$1
             force=$2
             export GIT_OPTIONAL_LOCKS=0
+            failure=10
+            trap 'exit "$failure"' ERR
             test "$grouping_directory" = "$(dirname "$checkout")"
-            case "$checkout" in "$root"/*) ;; *) exit 1 ;; esac
+            case "$checkout" in "$root"/*) ;; *) exit "$failure" ;; esac
             current=$root
             relative=${checkout#"$root"/}
             old_ifs=$IFS
@@ -1709,26 +1800,31 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             IFS=$old_ifs
             test -d "$checkout"
             test "$(realpath -e "$checkout")" = "$checkout"
-            test "$(stat -c '%d:%i' "$checkout")" = "$expected_source_identity"
-            test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             test -d "$grouping_directory"
             test ! -L "$grouping_directory"
             test "$(realpath -e "$grouping_directory")" = "$grouping_directory"
+            failure=21
+            test "$(stat -c '%d:%i' "$checkout")" = "$expected_source_identity"
+            failure=11
+            test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             test "$(stat -c '%U:%G' "$grouping_directory")" = "$managed_user:$managed_group"
+            failure=12
             test -d "$checkout/.git"
             test ! -L "$checkout/.git"
             test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
             test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
             test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
+            failure=14
             current_branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
             test "$current_branch" = "$expected_branch"
+            failure=21
             test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$expected_commit"
-            git -C "$checkout" merge-base --is-ancestor "$expected_starting_commit" HEAD
+            failure=13
             origin_with_marker=$(git -C "$checkout" remote get-url origin && printf x)
             origin=${origin_with_marker%x}
             case "$origin" in
                 *$'\n') origin=${origin%$'\n'} ;;
-                *) exit 1 ;;
+                *) exit "$failure" ;;
             esac
             repository_identity=$(printf '%s' "$origin" | php -r '
                 $repository = stream_get_contents(STDIN);
@@ -1784,6 +1880,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 fwrite(STDOUT, strtolower($host)."/".rtrim($path, "/"));
             ')
             test "$repository_identity" = "$expected_repository_identity"
+            failure=15
             linked_count=0
             while IFS= read -r -d '' field; do
                 case "$field" in
@@ -1796,7 +1893,9 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             done < <(git -C "$checkout" worktree list --porcelain -z)
             test "$linked_count" = 1
             if [ "$force" != 1 ]; then
+                failure=20
                 test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
+                failure=1
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT
                 git init --bare --quiet "$scratch/repository.git"
@@ -1814,10 +1913,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     done < <(git --git-dir="$scratch/repository.git" for-each-ref \
                         --format='%(refname)' refs/remotes/origin refs/tags)
                 fi
+                failure=20
                 test "$published" = 1
+                failure=1
                 rm -rf -- "$scratch"
                 trap - EXIT
             fi
+            failure=1
             rm -rf -- "$checkout"
             release_empty_grouping_directory "$grouping_directory"
             BASH;
