@@ -6,6 +6,7 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteHostname;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -18,6 +19,7 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +27,7 @@ final readonly class CreateRouteAction
 {
     public function __construct(
         private RouteStateResolver $state,
+        private RouteAssociationGuard $associations,
     ) {}
 
     /** @return array{route: Route, created: bool} */
@@ -174,6 +177,10 @@ final readonly class CreateRouteAction
                 $generationBasisNodeId,
                 $appInstance,
             ): Route {
+                if ($appInstance instanceof AppInstance) {
+                    $this->associations->assertTargetUnassociated($appInstance);
+                }
+
                 $route = Route::query()->create([
                     'app_id' => $appId,
                     'node_id' => $nodeId,
@@ -201,12 +208,7 @@ final readonly class CreateRouteAction
 
             return $route;
         } catch (QueryException $exception) {
-            throw new ResourceOperationException(
-                errorCode: 'route.hostname_conflict',
-                message: "Route hostname [{$hostname}] is already owned.",
-                status: 409,
-                previous: $exception,
-            );
+            throw $this->conflictFromCreateFailure($hostname, $appInstance, $exception);
         }
     }
 
@@ -279,5 +281,36 @@ final readonly class CreateRouteAction
                 status: 409,
             );
         }
+    }
+
+    private function conflictFromCreateFailure(
+        string $hostname,
+        ?AppInstance $appInstance,
+        QueryException $exception,
+    ): ResourceOperationException {
+        if (
+            $appInstance instanceof AppInstance
+            && ! Route::query()->where('hostname', $hostname)->exists()
+        ) {
+            $association = RouteTarget::query()
+                ->where('app_instance_id', $appInstance->id)
+                ->first();
+
+            if ($association instanceof RouteTarget) {
+                return new ResourceOperationException(
+                    errorCode: 'route.target_conflict',
+                    message: "AppInstance [{$appInstance->id}] is already associated with Route [{$association->route_id}].",
+                    status: 409,
+                    previous: $exception,
+                );
+            }
+        }
+
+        return new ResourceOperationException(
+            errorCode: 'route.hostname_conflict',
+            message: "Route hostname [{$hostname}] is already owned.",
+            status: 409,
+            previous: $exception,
+        );
     }
 }
