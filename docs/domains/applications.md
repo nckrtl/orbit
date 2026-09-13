@@ -68,6 +68,8 @@ The CLI refuses a directory outside a Git checkout or worktree and refuses a cre
 
 The Gateway resolves an existing App by the source's canonical repository identity. The [Apps reference](../reference/apps.md#resolve-an-app-during-registration) owns App lookup, inference, confirmation, and missing-App creation.
 
+`--json` makes registration non-interactive. The CLI prints no source summary, asks no question, implies confirmation of the ownership transfer, and writes one JSON document that holds the registration result or one error.
+
 Registration infers AppInstance placement from verified source facts.
 
 | Verified source | AppInstance identity | Managed placement |
