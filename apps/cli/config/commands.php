@@ -84,9 +84,6 @@ return [
         SummaryCommand::class,
         DumpCompletionCommand::class,
         HelpCommand::class,
-        ScheduleRunCommand::class,
-        ScheduleListCommand::class,
-        ScheduleFinishCommand::class,
         VendorPublishCommand::class,
         StubPublishCommand::class,
         AddSkillCommand::class,
@@ -121,5 +118,8 @@ return [
         RenameCommand::class,
         TestCommand::class,
         TestMakeCommand::class,
+        ScheduleFinishCommand::class,
+        ScheduleListCommand::class,
+        ScheduleRunCommand::class,
     ],
 ];
