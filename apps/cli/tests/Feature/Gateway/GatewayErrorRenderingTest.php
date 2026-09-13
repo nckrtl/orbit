@@ -517,7 +517,7 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'node role list id' => [
         'node:role:list',
-        ['node' => 'validation-secret'],
+        ['node' => '0'],
         'node.id_invalid',
         'Node ID must be a positive integer.',
     ],
@@ -535,7 +535,7 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'node role remove id' => [
         'node:role:remove',
-        ['node' => 'validation-secret', 'role' => 'app-dev', '--force' => true],
+        ['node' => '0', 'role' => 'app-dev', '--force' => true],
         'node.id_invalid',
         'Node ID must be a positive integer.',
     ],
