@@ -94,6 +94,26 @@ Run `composer test:affected` for the affected behavior and failure modes, then r
 
 Apply this check policy when an issue or retained plan names a generic full suite. The planner maps that wording to TIA development checks and the Builder's candidate gate, notes the policy correction, and returns it to the orchestrator for issue text alignment. Product acceptance outcomes stay required. Every Pest invocation enables TIA without a path, filter, group, or suite; Pest disables TIA for those partial selections even when `--tia` is present.
 
+### Gateway test databases
+
+The Gateway test bootstrap keeps supported local test commands out of caller databases. It applies the same test values to the process environment and PHP environment and server variables before Laravel loads configuration. It then checks Laravel's effective connection, including a connection URL or cached configuration, before service providers and database refresh hooks run.
+
+| Input | Test behavior |
+| --- | --- |
+| No explicit test database | Uses in-memory SQLite |
+| Inherited `DB_DATABASE`, `DB_URL`, or `DB_CONNECTION` | Replaces the inherited value with the safe test value |
+| `ORBIT_TEST_DATABASE=/tmp/.../orbit-gateway-test-*.sqlite` | Uses the explicitly allocated disposable SQLite file; parallel tests use their worker-specific copies |
+| Any other effective driver, path, URL, or application environment | Exits nonzero before migrations with a database safety refusal |
+
+Allocate a new temporary file for each run that needs a file-backed fixture. Never set `ORBIT_TEST_DATABASE` to a Gateway runtime database, another application's database, or a retained backup.
+
+An unexpected refusal commonly means that Laravel loaded stale cached configuration. Run the recovery commands from `apps/gateway`, then rerun the same supported Composer or Pest command. Do not disable or bypass the test guard.
+
+| Command | Result |
+| --- | --- |
+| `unset APP_CONFIG_CACHE` | Stops selecting a custom cached configuration path in the current shell |
+| `php artisan config:clear` | Removes the default cached configuration |
+
 Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
 
 Every project runs analysis at level 6. The configured paths keep the existing analysis scopes. Tests remain covered by Pint and Pest.
