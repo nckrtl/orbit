@@ -557,7 +557,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     (string) $member->source_identity,
                     $groupingDirectory,
                 ],
-                    input: self::releaseEmptyGroupingDirectoryFunction().self::receiptCleanupScript(),
+                input: self::releaseEmptyGroupingDirectoryFunction().self::receiptCleanupScript(),
             ),
             step: 'app-instance-source-finalization',
             errorCode: 'instance.removal_incomplete',
