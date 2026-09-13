@@ -59,13 +59,15 @@ Deploy and rollback return a closeable stream of typed phase, output, and result
 
 The caller closes the stream when it stops before the terminal result. Closing the stream also closes the HTTP response so the Gateway can observe cancellation. The SDK does not retry the HTTP request or replay stream events. Deploy and rollback keep the connector's TLS verification and redirect policy and use bounded transport timeouts that cover the Gateway's accepted operation deadline.
 
-Request validation and Node-access authorization finish before a deployment stream opens. A refusal uses the ordinary JSON error envelope. After admission, each newline-delimited JSON (NDJSON) line is one event with a maximum encoded size of 32 KiB. Every event contains `type`, a monotonically increasing `sequence`, and the request's `request_id`.
+Request validation and Node-access authorization finish before a deployment stream opens. A refusal at that boundary uses the ordinary JSON error envelope. After admission, each newline-delimited JSON (NDJSON) line is one event with a maximum encoded size of 32 KiB. Every event contains `type`, a monotonically increasing `sequence`, and the request's `request_id`.
 
 | Event type | Fields |
 | --- | --- |
 | `phase` | `phase` identifies `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` is present only for a named `before_activation` or `after_activation` step. Other phase events omit it. |
 | `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes so arbitrary application output remains valid NDJSON. |
 | `result` | `status` is `succeeded` or `failed`. `failed_step`, `error_code`, and `selected_release` are nullable. This event is the final line. |
+
+A succeeded result includes `selected_release` and sets `failed_step` and `error_code` to null. A failed result includes `failed_step` and `error_code`; `selected_release` is null when no release remains selected.
 
 ## Use deployment commands
 
@@ -75,8 +77,8 @@ The CLI sends each deployment operation through the typed PHP SDK. It does not r
 | --- | --- |
 | `orbit instance:deployment-config INSTANCE` | Shows the complete configured branch and ordered steps. Add `--json` to return the same configuration and its `request_id` as one JSON object. |
 | `orbit instance:deployment-config INSTANCE --file=PATH` | Reads one complete JSON configuration from `PATH` and replaces the stored branch and steps. Add `--json` to return the stored configuration and its `request_id` as one JSON object. |
-| `orbit instance:deploy INSTANCE` | Starts an explicit deployment and renders phase, output, and result events as they arrive. |
-| `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. |
+| `orbit instance:deploy INSTANCE` | Starts an explicit deployment and renders phase, output, and result events as they arrive. Add `--json` to write those same events as newline-delimited JSON (NDJSON), including a failed `result`. |
+| `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. Add `--json` to write those same events as NDJSON, including a failed `result`. |
 | `orbit instance:releases INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
 
 The deployment configuration file uses the same `branch` and `steps` fields as the deployment API. It is a complete replacement, not a partial update.
@@ -97,7 +99,19 @@ The deployment configuration file uses the same `branch` and `steps` fields as t
 
 Human deploy and rollback output names each phase and named step. It labels standard output and standard error separately and escapes control bytes so application output cannot become terminal control input. Output appears while the step is still running. The final output includes the request ID and the selected release when the Gateway reports one.
 
-Add `--json` to deploy or rollback to write newline-delimited JSON (NDJSON) without prompts, progress decoration, or other prose. The CLI writes each validated event as one compact line using the event fields in the table above. An `output` line keeps `data_base64`, so arbitrary application bytes remain valid JSON. A refusal before the stream opens or an invalid stream uses the shared safe JSON error envelope as one line and preserves the request ID when available.
+Add `--json` to deploy or rollback to write newline-delimited JSON (NDJSON) without prompts, progress decoration, or other prose. The CLI writes each validated event as one compact line using the event fields in the table above. An `output` line keeps `data_base64`, so arbitrary application bytes remain valid JSON.
+
+The JSON contract for these commands is that event stream. The CLI writes the terminal `result` event when `status` is `succeeded` and when `status` is `failed`. A failed `result` keeps `type`, `sequence`, `request_id`, `status`, `failed_step`, `error_code`, and `selected_release`. The CLI does not rewrite that event as `{"error":{"code","message","request_id"}}`. A development AppInstance that cannot supply deployment configuration therefore ends `--json` with a failed `result` whose `error_code` is `deployment_config.unavailable`.
+
+The CLI uses the shared safe JSON error envelope as one line, and preserves the request ID when available, only for these outcomes.
+
+| Outcome | JSON document |
+| --- | --- |
+| The stream ends with a `result` event | The validated NDJSON events, including a failed `result`. |
+| The Gateway or CLI refuses the command before the stream opens | One object with `error.code`, `error.message`, and `error.request_id`. |
+| The stream is malformed, truncated, or ends without a result | The validated events already written, then one error-envelope line. |
+
+`instance:deployment-config`, `instance:releases`, and `instance:prepare-deployment` write one JSON object and use that error envelope on failure.
 
 The command exit status identifies whether the streamed operation completed successfully.
 
@@ -108,7 +122,7 @@ The command exit status identifies whether the streamed operation completed succ
 | The stream is malformed, truncated, or ends without a result. | Nonzero. The command never infers success from earlier events. |
 | The operator presses Ctrl-C. | Nonzero. The operating system terminates the CLI and closes its HTTP connection immediately. The CLI does not submit another deployment or rollback request. |
 
-A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
+A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. An unavailable deployment configuration, including a development AppInstance, is such a failed result. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
 
 Before each phase event, the Gateway uses a bounded 250 millisecond probe that flushes one JSON-safe whitespace byte every 10 milliseconds. The whitespace and event form one valid NDJSON line, and every byte counts toward the 32 KiB line limit.
 
