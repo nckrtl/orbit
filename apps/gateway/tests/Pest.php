@@ -2,14 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class)->in('Feature');
+uses(TestCase::class, RefreshDatabase::class)
+    ->beforeEach(function (): void {
+        app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
+    })
+    ->in('Feature');
 
 pest()
     ->tia()

@@ -8,11 +8,13 @@ use App\Data\Clusters\UpdateClusterData;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final readonly class UpdateClusterAction
 {
@@ -20,6 +22,7 @@ final readonly class UpdateClusterAction
         private ActiveTldScopeGuard $tldScope,
         private ClusterRouterOperationLock $routerOperations,
         private ?RouteMutationReconciler $routes = null,
+        private ?RouterLanIngressReconciler $lanIngress = null,
     ) {}
 
     public function execute(Cluster $cluster, UpdateClusterData $data): Cluster
@@ -36,56 +39,85 @@ final readonly class UpdateClusterAction
 
     private function update(int $clusterId, UpdateClusterData $data): Cluster
     {
-        /**
-         * @var Cluster $updated
-         */
-        $updated = DB::transaction(function () use ($clusterId, $data): Cluster {
-            $locked = Cluster::query()->lockForUpdate()->findOrFail($clusterId);
-            $proposedTld = $data->tldProvided ? $data->tld : $locked->tld;
-            $proposedState = $data->state ?? $locked->state;
+        $current = Cluster::query()->findOrFail($clusterId);
+        $stateChanging = $data->stateProvided
+            && $data->state instanceof ClusterState
+            && $data->state !== $current->state;
 
-            $this->tldScope->assertClusterTldAvailable($locked, $proposedTld, $proposedState);
+        if ($stateChanging) {
+            $this->lanIngress()->expand(
+                clusterOverrides: [$clusterId => ['state' => $data->state]],
+                clusterIds: [$clusterId],
+            );
+        }
 
-            if ($proposedState === ClusterState::Active && $proposedTld !== null) {
-                $hasActiveRouter = $locked
-                    ->routerAssignment()
-                    ->whereHas('node', static fn ($query) => $query->where('status', LifecycleStatus::Active))
-                    ->exists();
+        try {
+            /**
+             * @var Cluster $updated
+             */
+            $updated = DB::transaction(function () use ($clusterId, $data): Cluster {
+                $locked = Cluster::query()->lockForUpdate()->findOrFail($clusterId);
+                $proposedTld = $data->tldProvided ? $data->tld : $locked->tld;
+                $proposedState = $data->state ?? $locked->state;
 
-                if (! $hasActiveRouter) {
-                    throw new ResourceOperationException(
-                        errorCode: 'cluster.router_required',
-                        message: "Cluster [{$locked->name}] requires one active Router.",
-                        status: 409,
-                    );
+                $this->tldScope->assertClusterTldAvailable($locked, $proposedTld, $proposedState);
+
+                if ($proposedState === ClusterState::Active && $proposedTld !== null) {
+                    $hasActiveRouter = $locked
+                        ->routerAssignment()
+                        ->whereHas('node', static fn ($query) => $query->where('status', LifecycleStatus::Active))
+                        ->exists();
+
+                    if (! $hasActiveRouter) {
+                        throw new ResourceOperationException(
+                            errorCode: 'cluster.router_required',
+                            message: "Cluster [{$locked->name}] requires one active Router.",
+                            status: 409,
+                        );
+                    }
                 }
+
+                $updates = [];
+
+                if ($data->nameProvided) {
+                    $updates['name'] = $data->name;
+                }
+
+                if ($data->tldProvided) {
+                    $updates['tld'] = $data->tld;
+                }
+
+                if ($data->stateProvided) {
+                    $updates['state'] = $data->state;
+                }
+
+                if ($proposedTld !== $locked->tld || $proposedState !== $locked->state) {
+                    ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(clusterOverrides: [
+                        $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
+                    ]);
+                }
+
+                $locked->update($updates);
+
+                return $locked->refresh();
+            });
+        } catch (Throwable $exception) {
+            if ($stateChanging) {
+                $this->lanIngress()->prune(clusterIds: [$clusterId]);
             }
 
-            $updates = [];
+            throw $exception;
+        }
 
-            if ($data->nameProvided) {
-                $updates['name'] = $data->name;
-            }
-
-            if ($data->tldProvided) {
-                $updates['tld'] = $data->tld;
-            }
-
-            if ($data->stateProvided) {
-                $updates['state'] = $data->state;
-            }
-
-            if ($proposedTld !== $locked->tld || $proposedState !== $locked->state) {
-                ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(clusterOverrides: [
-                    $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
-                ]);
-            }
-
-            $locked->update($updates);
-
-            return $locked->refresh();
-        });
+        if ($stateChanging) {
+            $this->lanIngress()->prune(clusterIds: [$clusterId]);
+        }
 
         return $updated;
+    }
+
+    private function lanIngress(): RouterLanIngressReconciler
+    {
+        return $this->lanIngress ?? app(RouterLanIngressReconciler::class);
     }
 }

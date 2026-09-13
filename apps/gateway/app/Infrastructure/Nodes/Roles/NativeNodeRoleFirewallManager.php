@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Firewall\RouterLanIngressPolicy;
+use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
@@ -21,7 +23,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
-final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallManager
+final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallManager, RouterLanIngressPublisher
 {
     public function __construct(
         private SshExecutor $ssh,
@@ -50,17 +52,46 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         $this->convergeRules($node, $rules, publicConnection: false, enable: false, managedUser: $managedUser);
         $this->removeRules($node, [$this->publicSshRule($node)], $managedUser);
         $this->removeRules($node, $this->catalog->retiredForRole($node, $role), $managedUser);
+
+        if ($role !== RoleName::Router) {
+            return;
+        }
+
+        $this->reconcileRouterLanIngress(
+            $node,
+            $this->catalog->routerLanIngress($node),
+            $managedUser,
+            expand: true,
+            prune: true,
+            recovering: false,
+        );
     }
 
     public function remove(Node $node, RoleName $role, string $managedUser): void
     {
         $rules = $this->roleRules($node, $role);
 
-        if ($rules === []) {
+        if ($rules !== []) {
+            $this->removeRules($node, $rules, $managedUser);
+        }
+
+        if ($role === RoleName::Router) {
+            $this->reconcileRouterLanIngress($node, [], $managedUser, expand: false, prune: true, recovering: false);
+        }
+    }
+
+    public function expandRouterLanIngress(Node $router, array $desired, string $managedUser): void
+    {
+        if ($desired === []) {
             return;
         }
 
-        $this->removeRules($node, $rules, $managedUser);
+        $this->reconcileRouterLanIngress($router, $desired, $managedUser, expand: true, prune: false, recovering: false);
+    }
+
+    public function pruneRouterLanIngress(Node $router, array $desired, string $managedUser): void
+    {
+        $this->reconcileRouterLanIngress($router, $desired, $managedUser, expand: false, prune: true, recovering: false);
     }
 
     public function trustWireGuardMembers(Node $node, string $managedUser): void
@@ -329,14 +360,253 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             $this->catalog->forNode($node),
         );
 
+        $policy = new RouterLanIngressPolicy;
+
         return array_values(array_filter(
             $this->catalog->forRole($node, $role),
             static fn (UfwManagedRule $rule): bool => ! in_array(
                 $rule->shape->comment,
                 $baselineComments,
                 strict: true,
-            ),
+            ) && ! $policy->ownsComment($rule->shape->comment),
         ));
+    }
+
+    /**
+     * @param  list<UfwManagedRule>  $desired
+     */
+    private function reconcileRouterLanIngress(
+        Node $node,
+        array $desired,
+        string $managedUser,
+        bool $expand,
+        bool $prune,
+        bool $recovering,
+    ): void {
+        if (! $expand && ! $prune) {
+            return;
+        }
+
+        [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
+
+        if ($inactive) {
+            $this->fail($node, 'UFW is inactive during Router LAN ingress reconciliation.', $status);
+        }
+
+        $snapshot = $this->familyRules($status->stdout);
+        $desiredByComment = [];
+
+        foreach ($desired as $rule) {
+            $desiredByComment[$rule->shape->comment] = $rule;
+        }
+
+        $toAdd = [];
+        $toReplace = [];
+        $toRemove = [];
+
+        foreach ($desiredByComment as $comment => $rule) {
+            $ownership = $this->statusParser->ownership($status->stdout, $rule->shape);
+
+            if ($ownership === UfwRuleOwnership::Missing) {
+                $toAdd[] = $rule;
+            }
+
+            if ($ownership === UfwRuleOwnership::Drift) {
+                $toReplace[] = $rule;
+            }
+        }
+
+        foreach ($snapshot as $observed) {
+            if (array_key_exists($observed->shape->comment, $desiredByComment)) {
+                continue;
+            }
+
+            $toRemove[] = $observed;
+        }
+
+        $mutating = ($expand && ($toAdd !== [] || $toReplace !== []))
+            || ($prune && $toRemove !== []);
+
+        if (! $mutating) {
+            return;
+        }
+
+        try {
+            if ($expand) {
+                foreach ($toAdd as $rule) {
+                    $this->apply($node, $rule, publicConnection: false, managedUser: $managedUser);
+                }
+
+                if ($toReplace !== []) {
+                    $this->deleteOwnedComments(
+                        $node,
+                        array_map(static fn (UfwManagedRule $rule): string => $rule->shape->comment, $toReplace),
+                        $managedUser,
+                    );
+                }
+
+                foreach ($toReplace as $rule) {
+                    $this->apply($node, $rule, publicConnection: false, managedUser: $managedUser);
+                }
+            }
+
+            if ($prune && $toRemove !== []) {
+                $this->deleteOwnedComments(
+                    $node,
+                    array_map(static fn (UfwManagedRule $rule): string => $rule->shape->comment, $toRemove),
+                    $managedUser,
+                );
+            }
+
+            $this->assertFamily($node, $desired, $expand, $prune, $managedUser);
+        } catch (FirewallOperationException $exception) {
+            if ($recovering) {
+                throw $exception;
+            }
+
+            $this->restoreFamily($node, $snapshot, $managedUser, $exception);
+        }
+    }
+
+    /** @param non-empty-list<string> $comments */
+    private function deleteOwnedComments(Node $node, array $comments, string $managedUser): void
+    {
+        [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
+
+        if ($inactive) {
+            $this->fail($node, 'UFW is inactive during Router LAN ingress removal.', $status);
+        }
+
+        $numbers = [];
+
+        foreach ($comments as $comment) {
+            array_push($numbers, ...$this->ruleNumbers($status->stdout, $comment));
+        }
+
+        rsort($numbers, SORT_NUMERIC);
+
+        foreach ($numbers as $number) {
+            $result = $this->execute(
+                $node,
+                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
+                publicConnection: false,
+                managedUser: $managedUser,
+            );
+
+            if (! $result->succeeded()) {
+                $this->fail($node, "Could not delete owned UFW rule [{$number}].", $result);
+            }
+        }
+    }
+
+    /**
+     * @param  list<UfwManagedRule>  $desired
+     */
+    private function assertFamily(
+        Node $node,
+        array $desired,
+        bool $expand,
+        bool $prune,
+        string $managedUser,
+    ): void {
+        [$verification, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
+
+        if ($inactive) {
+            $this->fail($node, 'UFW became inactive after Router LAN ingress reconciliation.', $verification);
+        }
+
+        if ($expand) {
+            foreach ($desired as $rule) {
+                if ($this->statusParser->ownership($verification->stdout, $rule->shape) === UfwRuleOwnership::Exact) {
+                    continue;
+                }
+
+                $this->drift($node, $rule, $verification);
+            }
+        }
+
+        if (! $prune) {
+            return;
+        }
+
+        $desiredComments = array_map(
+            static fn (UfwManagedRule $rule): string => $rule->shape->comment,
+            $desired,
+        );
+
+        foreach ($this->familyRules($verification->stdout) as $observed) {
+            if (in_array($observed->shape->comment, $desiredComments, strict: true)) {
+                continue;
+            }
+
+            $this->drift($node, $observed, $verification);
+        }
+    }
+
+    /**
+     * @param  list<UfwManagedRule>  $snapshot
+     */
+    private function restoreFamily(
+        Node $node,
+        array $snapshot,
+        string $managedUser,
+        FirewallOperationException $exception,
+    ): never {
+        try {
+            $this->reconcileRouterLanIngress(
+                $node,
+                $snapshot,
+                $managedUser,
+                expand: true,
+                prune: true,
+                recovering: true,
+            );
+        } catch (FirewallOperationException $recovery) {
+            throw new FirewallOperationException(
+                step: 'host-firewall',
+                errorCode: 'router.lan_ingress_recovery_failed',
+                message: "Could not restore the preceding Router LAN ingress policy on node [{$node->name}].",
+                result: $recovery->result,
+                previous: $recovery,
+            );
+        }
+
+        throw $exception;
+    }
+
+    /** @return list<UfwManagedRule> */
+    private function familyRules(string $output): array
+    {
+        $rules = [];
+
+        foreach ($this->statusParser->familyShapes($output, RouterLanIngressPolicy::CommentPrefix) as $shape) {
+            $sourceNodeId = $this->sourceNodeId($shape->comment);
+
+            if ($sourceNodeId === null) {
+                continue;
+            }
+
+            $rules[] = $this->catalog->routerLanIngressRule($shape->source, $shape->destination, $sourceNodeId);
+        }
+
+        return $rules;
+    }
+
+    private function sourceNodeId(string $comment): ?int
+    {
+        $prefix = RouterLanIngressPolicy::CommentPrefix.':';
+
+        if (! str_starts_with($comment, $prefix)) {
+            return null;
+        }
+
+        $suffix = substr($comment, strlen($prefix));
+
+        if (preg_match('/\A[1-9][0-9]*\z/D', $suffix) !== 1) {
+            return null;
+        }
+
+        return (int) $suffix;
     }
 
     /**
