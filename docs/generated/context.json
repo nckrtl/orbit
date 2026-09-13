@@ -1356,6 +1356,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0065-replace-routes-when-domains-change.md",
+            "title": "ADR 0065: Replace Routes when domains change",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0016",
+                "0024",
+                "0028",
+                "0064",
+                "0065"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
