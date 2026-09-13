@@ -90,7 +90,7 @@ This section tells an operator how to see which Cluster Router address a request
 
 The Gateway returns the Router's configured LAN address to an active, LAN-configured WireGuard member of the same active Cluster. It returns the Router's WireGuard address to every other permitted requester, including a member without a LAN address, a member of another Cluster, and a source it cannot identify as an active registered WireGuard Node.
 
-The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route hostname. Node-scoped Routes, `gateway.orbit`, and `metrics.orbit` keep their established addresses.
+The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route hostname. Node-scoped Routes, `gateway.orbit`, `metrics.orbit`, and Herdr observer hostnames of the form `{session}.herdr.{node}.{tld}` keep their established addresses. [Herdr sessions](herdr-sessions.md) owns observer publication.
 
 | Observation | Meaning |
 | --- | --- |

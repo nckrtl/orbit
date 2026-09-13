@@ -16,6 +16,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Authorization\ServingNodeResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\HerdrSession;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -316,6 +317,32 @@ it('rejects a bound legacy Workspace Process owner', function (): void {
     );
 })->throws(ResourceOperationException::class, 'not a supported AppInstance or Node');
 
+it('resolves herdr-session-owning nodes from bound sessions and raw node IDs', function (): void {
+    $node = resolver_node('herdr-owner');
+    $session = HerdrSession::query()->create([
+        'node_id' => $node->id,
+        'session' => 'commander-tasks',
+        'user' => 'orbit',
+        'observer_port' => 7411,
+        'observer_hostname' => 'commander-tasks.herdr.herdr-owner.orbit',
+        'observer_status' => 'pending',
+        'status' => LifecycleStatus::Provisioning,
+        'publish_observer' => false,
+    ]);
+    $rawNode = resolver_node('raw-herdr-owner');
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['session' => $session]),
+        ServingNode::HerdrSessionOwning,
+    )))
+        ->toBe([$node->id])
+        ->and(resolver_node_ids(resolver()->resolve(
+            resolver_request(input: ['node_id' => $rawNode->id]),
+            ServingNode::HerdrSessionOwning,
+        )))
+        ->toBe([$rawNode->id]);
+});
+
 it('returns no concrete nodes for a collection', function (): void {
     expect(resolver()->resolve(resolver_request(), ServingNode::Collection))->toBeEmpty();
 });
@@ -337,6 +364,8 @@ it('leaves malformed or absent raw identifiers to validation', function (string 
     'legacy process Workspace target' => ['ProcessOwning', ['target_type' => 'workspace', 'target_id' => 1]],
     'missing tool node' => ['ToolOwning', []],
     'malformed tool node' => ['ToolOwning', ['node_id' => 'not-a-number']],
+    'missing herdr node' => ['HerdrSessionOwning', []],
+    'malformed herdr node' => ['HerdrSessionOwning', ['node_id' => 'not-a-number']],
 ]);
 
 it('throws for syntactically valid missing raw identifiers', function (string $scopeName, array $input): void {
@@ -350,6 +379,7 @@ it('throws for syntactically valid missing raw identifiers', function (string $s
     'workspace instance' => ['WorkspaceOwning', ['instance_id' => 999_999]],
     'process instance' => ['ProcessOwning', ['target_type' => 'instance', 'target_id' => 999_999]],
     'tool node' => ['ToolOwning', ['node_id' => 999_999]],
+    'herdr node' => ['HerdrSessionOwning', ['node_id' => 999_999]],
 ])->throws(ModelNotFoundException::class);
 
 function resolver(): ServingNodeResolver

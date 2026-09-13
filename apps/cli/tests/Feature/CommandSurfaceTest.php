@@ -51,6 +51,12 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'gateway:status',
         'gateway:trust',
         'gateway:use',
+        'herdr:observe',
+        'herdr:session:add',
+        'herdr:session:list',
+        'herdr:session:remove',
+        'herdr:session:restart',
+        'herdr:session:show',
         'instance:clone',
         'instance:deploy',
         'instance:deployment-config',
@@ -110,7 +116,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(84);
+    expect($orbitCommands)->toHaveCount(90);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -215,6 +221,31 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'gateway:status' => [[], ['json' => false]],
         'gateway:trust' => [[], ['accept-ca-change' => false, 'json' => false]],
         'gateway:use' => [['name'], ['json' => false]],
+        'herdr:observe' => [
+            ['session'],
+            [
+                'node' => null,
+                'pane' => null,
+                'terminal' => null,
+                'cols' => null,
+                'rows' => null,
+                'json' => false,
+            ],
+        ],
+        'herdr:session:add' => [
+            ['session'],
+            ['node' => null, 'user' => null, 'publish-observer' => false, 'json' => false],
+        ],
+        'herdr:session:list' => [[], ['node' => null, 'json' => false]],
+        'herdr:session:remove' => [
+            ['session'],
+            ['node' => null, 'accept-termination' => false, 'json' => false],
+        ],
+        'herdr:session:restart' => [
+            ['session'],
+            ['node' => null, 'handoff' => false, 'json' => false],
+        ],
+        'herdr:session:show' => [['session'], ['node' => null, 'json' => false]],
         'instance:clone' => [
             ['candidate', 'node', 'name'],
             ['preview-name' => null, 'branch' => null, 'sqlite-source-path' => null, 'json' => false],
@@ -497,6 +528,25 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'gateway.profile_not_found',
             'message' => 'Gateway profile does not exist.',
         ],
+        'herdr:observe' => [
+            [
+                'session' => 'commander-tasks',
+                '--node' => '1',
+                '--pane' => 'w1:p1',
+                '--terminal' => 'term-abc',
+                '--cols' => '120',
+                '--rows' => '40',
+            ],
+            ...$profileMissing,
+        ],
+        'herdr:session:add' => [
+            ['session' => 'commander-tasks', '--node' => '1', '--user' => 'nckrtl'],
+            ...$profileMissing,
+        ],
+        'herdr:session:list' => [['--node' => '1'], ...$profileMissing],
+        'herdr:session:remove' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
+        'herdr:session:restart' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
+        'herdr:session:show' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
         'instance:clone' => [
             ['candidate' => '1', 'node' => '2', 'name' => 'web', '--preview-name' => 'web'],
             ...$profileMissing,

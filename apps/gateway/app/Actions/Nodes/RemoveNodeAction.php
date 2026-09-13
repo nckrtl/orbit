@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Actions\Herdr\CascadeNodeHerdrSessionsAction;
 use App\Actions\Processes\CascadeNodeProcessesAction;
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
@@ -45,6 +46,7 @@ final readonly class RemoveNodeAction
         private ?ScheduleTargetUseGuard $schedules = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?CascadeNodeProcessesAction $nodeProcesses = null,
+        private ?CascadeNodeHerdrSessionsAction $herdrSessions = null,
     ) {}
 
     public function execute(
@@ -84,6 +86,7 @@ final readonly class RemoveNodeAction
         $this->guardProtected($node, $caller);
         $shed = $offline ? $this->shedRoles($node, $force) : null;
         $this->guardRemoval($node);
+        $this->cleanupHerdrSessions($node, forgetRecords: $shed !== null);
         $this->cleanupNodeProcesses($node, forgetRecords: $shed !== null);
         $peerRemoved = false;
         $result = new RemoveNodeData(
@@ -375,6 +378,21 @@ final readonly class RemoveNodeAction
         }
 
         return $shed;
+    }
+
+    private function cleanupHerdrSessions(Node $node, bool $forgetRecords): void
+    {
+        try {
+            ($this->herdrSessions ?? app(CascadeNodeHerdrSessionsAction::class))
+                ->execute($node, $forgetRecords);
+        } catch (Throwable $exception) {
+            throw $this->failure(
+                step: 'herdr-cleanup',
+                errorCode: 'node.herdr_cleanup_failed',
+                message: "Could not remove Herdr sessions on [{$node->name}].",
+                previous: $exception,
+            );
+        }
     }
 
     private function cleanupNodeProcesses(Node $node, bool $forgetRecords): void

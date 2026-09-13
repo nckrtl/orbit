@@ -111,7 +111,7 @@ A production systemd Process runs as the AppInstance's dedicated production user
 
 A prepared production home without `current` accepts a stopped Process installation for either runtime. An initial start requested by `process:add` and a later `process:start` both fail before the Process record or runtime changes until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
 
-A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an AppInstance environment file or receive development-server certificate or origin values. Adding or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database or a receive-only Herdr observer uses this target:
+A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an AppInstance environment file or receive development-server certificate or origin values. Adding or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. A named Herdr session also uses a Node Process; [Herdr sessions](herdr-sessions.md) owns that integration:
 
 ```bash
 orbit process:add postgres \

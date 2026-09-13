@@ -72,6 +72,9 @@ use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Herdr\HerdrObserverPublisher;
+use App\Domain\Herdr\HerdrSessionInspector;
+use App\Domain\Herdr\ObservationGrantSigner;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialOperationLock;
@@ -175,6 +178,11 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\Herdr\ComposedHerdrObserverPublisher;
+use App\Infrastructure\Herdr\HerdrObserverSitePublisher;
+use App\Infrastructure\Herdr\NativeHerdrSessionInspector;
+use App\Infrastructure\Herdr\OpenSslObservationGrantSigner;
+use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
@@ -311,6 +319,10 @@ final class AppServiceProvider extends ServiceProvider
         RouterLanIngressReconciler::class => NativeRouterLanIngressReconciler::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
+        HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,
+        HerdrSessionInspector::class => NativeHerdrSessionInspector::class,
+        ObservationGrantSigner::class => OpenSslObservationGrantSigner::class,
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,

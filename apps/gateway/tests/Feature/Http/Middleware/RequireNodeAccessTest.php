@@ -408,7 +408,7 @@ it('leaves malformed or absent raw process input to validation', function (strin
         ->assertJsonPath('error.code', 'validation.failed');
 })->with([
     'absent input' => [''],
-    'malformed type' => ['?target_type=node&target_id=1'],
+    'malformed type' => ['?target_type=cluster&target_id=1'],
     'malformed id' => ['?target_type=instance&target_id=not-a-number'],
 ]);
 

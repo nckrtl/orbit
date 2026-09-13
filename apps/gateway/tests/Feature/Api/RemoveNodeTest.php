@@ -8,6 +8,8 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Herdr\HerdrObserverPublisher;
+use App\Domain\Herdr\HerdrSessionInspector;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -36,11 +38,14 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
+use App\Models\HerdrSession;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Schedule;
+use Tests\Support\FakeHerdrObserverPublisher;
+use Tests\Support\FakeHerdrSessionInspector;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
 
@@ -337,6 +342,47 @@ it('retires Metrics exporter state before removing network projections', functio
         ->assertOk();
 
     expect($this->peers->removed)->toBe([$target->id]);
+});
+
+it('retracts Herdr observers before removing Node-owned Processes', function (): void {
+    $runtime = new RemoveNodeFakeProcessRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $observers = new FakeHerdrObserverPublisher;
+    app()->instance(HerdrObserverPublisher::class, $observers);
+    app()->instance(HerdrSessionInspector::class, new FakeHerdrSessionInspector);
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $process = $target->processes()->create([
+        'name' => 'herdr-commander-tasks',
+        'runtime' => 'systemd',
+        'working_directory' => '/home/orbit',
+        'runtime_config' => ['command' => ['herdr'], 'environment_file' => ''],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'running',
+        'status' => LifecycleStatus::Active,
+    ]);
+    HerdrSession::query()->create([
+        'node_id' => $target->id,
+        'session' => 'commander-tasks',
+        'user' => 'orbit',
+        'process_id' => $process->id,
+        'observer_port' => 7411,
+        'observer_hostname' => 'commander-tasks.herdr.retired.orbit',
+        'observer_status' => 'published',
+        'status' => LifecycleStatus::Active,
+        'publish_observer' => true,
+    ]);
+
+    app(RemoveNodeAction::class)->execute($target, $caller);
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and($observers->retracted)
+        ->toBe(['commander-tasks'])
+        ->and($runtime->removed)
+        ->toBe([$process->id]);
+    $this->assertDatabaseMissing('herdr_sessions', ['session' => 'commander-tasks']);
 });
 
 it('removes Node-owned Processes before deleting the Node', function (): void {
