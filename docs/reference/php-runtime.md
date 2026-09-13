@@ -18,6 +18,8 @@ Orbit's code-owned AppInstance candidate set is PHP 8.5 followed by PHP 8.4. The
 
 Both failures happen before runtime or DNS publication. At its first provisioning checkpoint, the Gateway stores the selected version together with the Laravel classification as one complete source profile. A development retry at a retained checkpoint requires both values to match before Laravel URL configuration or runtime and Route projection. A changed development profile returns `app-dev.source_evidence_changed`. Production source changes after successful provisioning are operator-owned and an identical creation retry does not inspect them.
 
+A creation retry with `recover_source_profile` inspects the recorded source once, and only when the active AppInstance has no recorded profile. It stores the Laravel classification and keeps a recorded PHP version. When no PHP version is recorded, it stores the inspected version together with the dedicated production runtime identity derived from it, or refuses with `app-prod.php_runtime_identity_invalid` before it writes.
+
 The Gateway does not infer missing Laravel evidence for a legacy retained checkpoint. An ordinary retry fails closed. The explicit recovery contract, including URL-reconciliation consent, rollback refusal, active-state behavior, and unchanged removal boundaries, is described in [Applications](../domains/applications.md#provision-the-application-endpoint).
 
 AppInstance input, persisted AppInstance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
