@@ -165,7 +165,14 @@ it('rejects an existing gateway configuration directory readable by other users'
     $repository = new GatewayConfigRepository($this->configPath);
 
     expect(fn () => $repository->add(new GatewayProfile('test', 'https://10.70.0.1', null)))
-        ->toThrow(GatewayConfigException::class, 'Orbit gateway configuration directory is not private.');
+        ->toThrow(function (GatewayConfigException $exception): void {
+            expect($exception->getMessage())
+                ->toBe('Orbit gateway configuration directory is not private.')
+                ->and($exception->errorCode)
+                ->toBe(GatewayConfigException::CONFIG_NOT_PRIVATE)
+                ->and($exception->isPrivacyFailure())
+                ->toBeTrue();
+        });
 });
 
 it('rejects a gateway configuration lock readable by other users', function (): void {

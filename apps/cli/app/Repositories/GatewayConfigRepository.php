@@ -122,7 +122,10 @@ final readonly class GatewayConfigRepository
         }
 
         if (is_link($this->path)) {
-            throw new GatewayConfigException('Orbit gateway configuration is not private.');
+            throw new GatewayConfigException(
+                'Orbit gateway configuration is not private.',
+                errorCode: GatewayConfigException::CONFIG_NOT_PRIVATE,
+            );
         }
 
         $permissions = fileperms($this->path);
@@ -136,7 +139,10 @@ final readonly class GatewayConfigRepository
             || ! is_int($effectiveUserId)
             || $owner !== $effectiveUserId
         ) {
-            throw new GatewayConfigException('Orbit gateway configuration is not private.');
+            throw new GatewayConfigException(
+                'Orbit gateway configuration is not private.',
+                errorCode: GatewayConfigException::CONFIG_NOT_PRIVATE,
+            );
         }
 
         $size = filesize($this->path);

@@ -67,7 +67,10 @@ final readonly class GatewayConfigLock
             || ! is_int($effectiveUserId)
             || $owner !== $effectiveUserId
         ) {
-            throw new GatewayConfigException('Orbit gateway configuration directory is not private.');
+            throw new GatewayConfigException(
+                'Orbit gateway configuration directory is not private.',
+                errorCode: GatewayConfigException::CONFIG_NOT_PRIVATE,
+            );
         }
 
         return $directory;
@@ -170,7 +173,10 @@ final readonly class GatewayConfigLock
         ) {
             fclose($lock);
 
-            throw new GatewayConfigException('Orbit gateway configuration lock is not private.');
+            throw new GatewayConfigException(
+                'Orbit gateway configuration lock is not private.',
+                errorCode: GatewayConfigException::CONFIG_NOT_PRIVATE,
+            );
         }
     }
 }

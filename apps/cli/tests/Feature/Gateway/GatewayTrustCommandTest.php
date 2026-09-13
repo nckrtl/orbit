@@ -769,6 +769,44 @@ it('bounds unexpected local trust-store errors', function (): void {
         ->assertExitCode(1);
 });
 
+it('surfaces a typed privacy error when the orbit home directory is not private', function (): void {
+    $target = $this->trustStore.'/orbit-gateway-ca-7c27512b7c3eb57c.crt';
+    mkdir(directory: dirname($target), permissions: 0o755, recursive: true);
+    file_put_contents($target, $this->certificate);
+    MockClient::global([
+        FetchRootCaCertificateRequest::class => MockResponse::make([
+            'data' => [
+                'root_ca' => $this->certificate,
+                'sha256' => $this->fingerprint,
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ]),
+    ]);
+    Process::fake();
+    Process::preventStrayProcesses();
+    chmod(filename: $this->orbitHome, permissions: 0o755);
+    $expected = json_encode([
+        'error' => [
+            'code' => 'gateway.config_not_private',
+            'message' => 'Orbit gateway configuration directory is not private.',
+            'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    try {
+        $exitCode = Artisan::call('gateway:trust', ['--json' => true]);
+        $output = trim(Artisan::output());
+
+        expect($exitCode)->toBe(1);
+        expect($output)
+            ->toBe($expected)
+            ->not->toContain('gateway.ca_profile_update_failed')
+            ->not->toContain('BEGIN CERTIFICATE');
+    } finally {
+        chmod(filename: $this->orbitHome, permissions: 0o700);
+    }
+});
+
 it('fails clearly when no gateway profile is active', function (): void {
     $emptyHome = sys_get_temp_dir().'/orbit-cli-trust-empty-'.Str::uuid();
     app()->instance(GatewayConfigRepository::class, new GatewayConfigRepository($emptyHome.'/config.json'));
