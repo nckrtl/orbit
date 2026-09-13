@@ -169,7 +169,7 @@ it('retries the original allow after a rejected deny without flipping it to fail
 
 it('accepts another rule when the source protocol port node or action identity differs', function (
     string $name,
-    FirewallAction $action,
+    FirewallAction $candidateAction,
     string $source,
     string $protocol,
     string $port,
@@ -179,7 +179,7 @@ it('accepts another rule when the source protocol port node or action identity d
         FirewallBackendStatus::Active,
         FirewallBackendStatus::Active,
     ]);
-    $action = new StoreFirewallRuleAction($manager);
+    $store = new StoreFirewallRuleAction($manager);
     $node = firewall_action_node();
     $target = $otherNode
         ? firewall_action_node(
@@ -189,9 +189,9 @@ it('accepts another rule when the source protocol port node or action identity d
         )
         : $node;
 
-    $action->execute($node, firewall_store_data());
-    $result = $action->execute($target, firewall_store_data(
-        action: $action,
+    $store->execute($node, firewall_store_data());
+    $result = $store->execute($target, firewall_store_data(
+        action: $candidateAction,
         port: $port,
         name: $name,
         source: $source,
