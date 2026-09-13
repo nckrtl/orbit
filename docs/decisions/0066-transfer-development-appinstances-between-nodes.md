@@ -56,4 +56,4 @@ Orbit can create, register, and remove an AppInstance but cannot move its manage
 - Components: apps/gateway
 - ADRs: extends [ADR 0027](0027-adopt-local-git-sources-into-appinstance-ownership.md), [ADR 0038](0038-cascade-appinstance-removal-through-processes-and-schedules.md), [ADR 0044](0044-own-appinstance-environment-configuration-in-orbit.md), [ADR 0063](0063-prefer-active-cluster-tlds-for-generated-routes.md), and [ADR 0065](0065-replace-routes-when-domains-change.md)
 - Detail: [Applications](../domains/applications.md)
-- Verify: `composer docs-lint`; CLI command-surface tests omit instance:transfer; Gateway API routes omit an AppInstance transfer endpoint
+- Verify: `composer docs-lint`; CommandSurfaceTest omits instance:transfer; Gateway routes omit an AppInstance transfer endpoint
