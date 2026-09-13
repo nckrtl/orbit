@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Commands\Clusters;
 
 use App\Commands\GatewayCommand;
+use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Clusters\ShowClusterRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterNodeResponse;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 
@@ -18,6 +20,13 @@ abstract class ClusterCommand extends GatewayCommand
     protected function nodeId(): ?int
     {
         return $this->positiveId('node', 'Node', 'node.id_invalid');
+    }
+
+    protected function existingCluster(GatewayConnector $connector, int $clusterId): ?ClusterResponse
+    {
+        $cluster = $this->send($connector, new ShowClusterRequest($clusterId), ClusterResponse::class);
+
+        return $cluster instanceof ClusterResponse ? $cluster : null;
     }
 
     protected function validTld(string $tld): bool

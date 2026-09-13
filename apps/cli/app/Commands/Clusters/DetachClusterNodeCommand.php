@@ -33,13 +33,15 @@ final class DetachClusterNodeCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        if (! $this->confirmed('Node detachment')) {
-            return self::FAILURE;
-        }
-
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $existing = $this->existingCluster($connector, $clusterId);
+
+        if ($existing === null || ! $this->confirmed('Node detachment')) {
             return self::FAILURE;
         }
 

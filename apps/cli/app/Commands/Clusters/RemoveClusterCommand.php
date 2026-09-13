@@ -24,13 +24,19 @@ final class RemoveClusterCommand extends ClusterCommand
     {
         $clusterId = $this->clusterId();
 
-        if ($clusterId === null || ! $this->confirmed('removal')) {
+        if ($clusterId === null) {
             return self::FAILURE;
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $existing = $this->existingCluster($connector, $clusterId);
+
+        if ($existing === null || ! $this->confirmed('removal')) {
             return self::FAILURE;
         }
 

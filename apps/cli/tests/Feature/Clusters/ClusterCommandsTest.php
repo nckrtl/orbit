@@ -16,6 +16,7 @@ use Orbit\Sdk\Requests\Clusters\RemoveClusterRequest;
 use Orbit\Sdk\Requests\Clusters\SetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ShowClusterRequest;
 use Orbit\Sdk\Requests\Clusters\UpdateClusterRequest;
+use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -108,7 +109,7 @@ it('updates only supplied Cluster fields and treats an empty TLD as unset', func
 });
 
 it('removes a Cluster only after force confirmation', function (): void {
-    $mockClient = cluster_cli_mock(RemoveClusterRequest::class, cluster_cli_gateway_data());
+    $mockClient = cluster_cli_confirmed_mock(RemoveClusterRequest::class, cluster_cli_gateway_data());
 
     $this
         ->artisan('cluster:remove', ['cluster' => '3', '--force' => true])
@@ -116,7 +117,9 @@ it('removes a Cluster only after force confirmation', function (): void {
         ->expectsOutput('Request ID: '.cluster_cli_request_id())
         ->assertExitCode(0);
 
-    expect($mockClient->getLastRequest())->toBeInstanceOf(RemoveClusterRequest::class);
+    expect($mockClient->getLastRequest())->toBeInstanceOf(RemoveClusterRequest::class)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(2);
 });
 
 it('attaches a Node and sets the Router through bodyless PUT requests', function (
@@ -144,14 +147,16 @@ it('detaches a Node and clears the Router with confirmed force payloads', functi
     string $requestClass,
     array $arguments,
 ): void {
-    $mockClient = cluster_cli_mock($requestClass, cluster_cli_gateway_data());
+    $mockClient = cluster_cli_confirmed_mock($requestClass, cluster_cli_gateway_data());
 
     $this->artisan($command, [...$arguments, '--force' => true])->assertExitCode(0);
 
     expect($mockClient->getLastRequest())
         ->toBeInstanceOf($requestClass)
         ->and($mockClient->getLastRequest()?->body()->all())
-        ->toBe(['force' => true]);
+        ->toBe(['force' => true])
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(2);
 })->with([
     'detach' => ['cluster:node:detach', DetachClusterNodeRequest::class, ['cluster' => '3', 'node' => '2']],
     'Router clear' => ['cluster:router:clear', ClearClusterRouterRequest::class, ['cluster' => '3']],
@@ -232,24 +237,132 @@ it('rejects malformed TLD and state values before any HTTP request', function (
     ],
 ]);
 
-it('rejects an empty update and destructive commands without confirmation before HTTP', function (
-    string $command,
-    array $arguments,
-    string $message,
-): void {
+it('rejects an empty update before HTTP', function (): void {
     $mockClient = MockClient::global();
 
     $this
-        ->artisan($command, [...$arguments, '--no-interaction' => true])
-        ->expectsOutputToContain($message)
+        ->artisan('cluster:update', ['cluster' => '3', '--no-interaction' => true])
+        ->expectsOutputToContain('Provide at least one Cluster update option')
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
+});
+
+it('fails as not-found for a missing Cluster without force', function (string $command, array $arguments): void {
+    $mockClient = cluster_cli_missing_show_mock();
+    $expected = json_encode(cluster_cli_missing_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $this
+        ->artisan($command, [...$arguments, '--json' => true])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowClusterRequest::class)
+        ->and($mockClient->getLastPendingRequest()?->getUrl())
+        ->toBe('https://10.44.0.1/api/v1/clusters/999999')
+        ->and($mockClient->getLastPendingRequest()?->getMethod())
+        ->toBe(Method::GET)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(1);
 })->with([
-    'empty update' => ['cluster:update', ['cluster' => '3'], 'Provide at least one Cluster update option'],
-    'remove confirmation' => ['cluster:remove', ['cluster' => '3'], 'Use --force'],
-    'detach confirmation' => ['cluster:node:detach', ['cluster' => '3', 'node' => '2'], 'Use --force'],
-    'clear confirmation' => ['cluster:router:clear', ['cluster' => '3'], 'Use --force'],
+    'remove' => ['cluster:remove', ['cluster' => '999999']],
+    'detach' => ['cluster:node:detach', ['cluster' => '999999', 'node' => '2']],
+    'clear' => ['cluster:router:clear', ['cluster' => '999999']],
+]);
+
+it('fails as not-found for a missing Cluster with force', function (string $command, array $arguments): void {
+    $mockClient = cluster_cli_missing_show_mock();
+    $expected = json_encode(cluster_cli_missing_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $this
+        ->artisan($command, [...$arguments, '--force' => true, '--json' => true])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowClusterRequest::class)
+        ->and($mockClient->getLastPendingRequest()?->getMethod())
+        ->toBe(Method::GET)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(1);
+})->with([
+    'remove' => ['cluster:remove', ['cluster' => '999999']],
+    'detach' => ['cluster:node:detach', ['cluster' => '999999', 'node' => '2']],
+    'clear' => ['cluster:router:clear', ['cluster' => '999999']],
+]);
+
+it('requires force only after an existing Cluster is resolved', function (
+    string $command,
+    array $arguments,
+    string $operation,
+): void {
+    $mockClient = cluster_cli_show_mock();
+    $expected = json_encode([
+        'error' => [
+            'code' => 'cluster.confirmation_required',
+            'message' => "Use --force to confirm Cluster {$operation}.",
+            'request_id' => null,
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $this
+        ->artisan($command, [...$arguments, '--json' => true])
+        ->expectsOutput($expected)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowClusterRequest::class)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(1);
+})->with([
+    'remove' => ['cluster:remove', ['cluster' => '3'], 'removal'],
+    'detach' => ['cluster:node:detach', ['cluster' => '3', 'node' => '2'], 'Node detachment'],
+    'clear' => ['cluster:router:clear', ['cluster' => '3'], 'Router clearing'],
+]);
+
+it('requires human confirmation only after an existing Cluster is resolved', function (
+    string $command,
+    array $arguments,
+): void {
+    $mockClient = cluster_cli_show_mock();
+
+    $this
+        ->artisan($command, [...$arguments, '--no-interaction' => true])
+        ->expectsOutputToContain('Use --force')
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ShowClusterRequest::class)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(1);
+})->with([
+    'remove' => ['cluster:remove', ['cluster' => '3']],
+    'detach' => ['cluster:node:detach', ['cluster' => '3', 'node' => '2']],
+    'clear' => ['cluster:router:clear', ['cluster' => '3']],
+]);
+
+it('accepts explicit confirmation after resolving an existing Cluster', function (
+    string $command,
+    string $requestClass,
+    array $arguments,
+    string $operation,
+): void {
+    $mockClient = cluster_cli_confirmed_mock($requestClass, cluster_cli_gateway_data());
+
+    $this
+        ->artisan($command, $arguments)
+        ->expectsConfirmation("Confirm Cluster {$operation}?", 'yes')
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf($requestClass)
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(2);
+})->with([
+    'remove' => ['cluster:remove', RemoveClusterRequest::class, ['cluster' => '3'], 'removal'],
+    'detach' => ['cluster:node:detach', DetachClusterNodeRequest::class, ['cluster' => '3', 'node' => '2'], 'Node detachment'],
+    'clear' => ['cluster:router:clear', ClearClusterRouterRequest::class, ['cluster' => '3'], 'Router clearing'],
 ]);
 
 /** @param class-string $requestClass */
@@ -261,6 +374,66 @@ function cluster_cli_mock(string $requestClass, mixed $data, int $status = 200):
             'meta' => ['request_id' => cluster_cli_request_id()],
         ], $status),
     ]);
+}
+
+/** @param class-string $requestClass */
+function cluster_cli_confirmed_mock(string $requestClass, mixed $data, int $status = 200): MockClient
+{
+    return MockClient::global([
+        ShowClusterRequest::class => MockResponse::make([
+            'data' => $data,
+            'meta' => ['request_id' => cluster_cli_request_id()],
+        ]),
+        $requestClass => MockResponse::make([
+            'data' => $data,
+            'meta' => ['request_id' => cluster_cli_request_id()],
+        ], $status),
+    ]);
+}
+
+function cluster_cli_show_mock(): MockClient
+{
+    return MockClient::global([
+        ShowClusterRequest::class => MockResponse::make([
+            'data' => cluster_cli_gateway_data(),
+            'meta' => ['request_id' => cluster_cli_request_id()],
+        ]),
+    ]);
+}
+
+function cluster_cli_missing_show_mock(): MockClient
+{
+    return MockClient::global([
+        ShowClusterRequest::class => MockResponse::make(
+            cluster_cli_missing_payload(),
+            404,
+            ['X-Orbit-Request-Id' => cluster_cli_request_id()],
+        ),
+    ]);
+}
+
+/** @return array{error: array{code: string, message: string, details: array<never, never>}} */
+function cluster_cli_missing_payload(): array
+{
+    return [
+        'error' => [
+            'code' => 'http.404',
+            'message' => 'Resource not found.',
+            'details' => [],
+        ],
+    ];
+}
+
+/** @return array{error: array{code: string, message: string, request_id: string}} */
+function cluster_cli_missing_json(): array
+{
+    return [
+        'error' => [
+            'code' => 'http.404',
+            'message' => 'Resource not found.',
+            'request_id' => cluster_cli_request_id(),
+        ],
+    ];
 }
 
 /** @param array<string, mixed> $overrides
