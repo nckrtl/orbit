@@ -1,0 +1,8 @@
+{
+  "id": "ORB-292",
+  "title": "tool:remove cannot clear failed install rows (version_probe_failed)",
+  "url": "https://linear.app/nckrtl/issue/ORB-292/toolremove-cannot-clear-failed-install-rows-version-probe-failed",
+  "status": "In Progress",
+  "labels": ["apps/gateway", "apps/cli", "Bug"],
+  "flow": "discovery"
+}
