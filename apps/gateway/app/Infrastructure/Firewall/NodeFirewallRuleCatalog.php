@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Firewall;
 
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Metrics\MetricsFootprint;
@@ -34,7 +37,8 @@ final readonly class NodeFirewallRuleCatalog
                 $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
             ],
             RoleName::Vpn => [],
-            RoleName::Router, RoleName::Ingress, RoleName::AppDev => [],
+            RoleName::Router => $this->routerLanIngress($node),
+            RoleName::Ingress, RoleName::AppDev => [],
             RoleName::AppProd => $this->appProdSites->requiresPublicFirewall($node)
                 ? [
                     $this->rule('orbit:app-prod-http', '80'),
@@ -73,6 +77,92 @@ final readonly class NodeFirewallRuleCatalog
             $this->rule('orbit:app-dev-direct-http', '80'),
             $this->rule('orbit:app-dev-direct-https', '443'),
         ];
+    }
+
+    /**
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState}>  $clusterOverrides
+     * @return list<UfwManagedRule>
+     */
+    public function routerLanIngress(
+        Node $node,
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
+    ): array {
+        $policy = new RouterLanIngressPolicy;
+        $router = $nodeOverrides === []
+            ? $node
+            : $this->withNodeOverrides($node, $nodeOverrides[$node->id] ?? []);
+        $destination = is_string($router->lan_ip) ? $router->lan_ip : null;
+
+        if ($destination === null || filter_var($destination, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return [];
+        }
+
+        return array_map(
+            fn (Node $source): UfwManagedRule => $this->routerLanIngressRule(
+                (string) $source->lan_ip,
+                $destination,
+                $source->id,
+            ),
+            $policy->eligibleSources($node, $nodeOverrides, $clusterOverrides),
+        );
+    }
+
+    public function routerLanIngressRule(string $source, string $destination, int $sourceNodeId): UfwManagedRule
+    {
+        $comment = new RouterLanIngressPolicy()->commentFor($sourceNodeId);
+
+        return new UfwManagedRule(
+            new UfwRuleShape(
+                comment: $comment,
+                action: 'allow',
+                direction: 'in',
+                source: $source,
+                destination: $destination,
+                port: '443',
+                protocol: 'tcp',
+                inInterface: null,
+                outInterface: null,
+                family: 'v4',
+            ),
+            [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'proto',
+                'tcp',
+                'from',
+                $source,
+                'to',
+                $destination,
+                'port',
+                '443',
+                'comment',
+                $comment,
+            ],
+        );
+    }
+
+    /**
+     * @param  array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}  $override
+     */
+    private function withNodeOverrides(Node $node, array $override): Node
+    {
+        if ($override === []) {
+            return $node;
+        }
+
+        $clone = clone $node;
+
+        foreach (['cluster_id', 'lan_ip', 'status', 'wireguard_ip', 'wireguard_public_key'] as $attribute) {
+            if (array_key_exists($attribute, $override)) {
+                $clone->setAttribute($attribute, $override[$attribute]);
+            }
+        }
+
+        return $clone;
     }
 
     private function wireguardMemberTrust(Node $node): UfwManagedRule

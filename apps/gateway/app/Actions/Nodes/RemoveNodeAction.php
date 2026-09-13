@@ -6,6 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -40,6 +41,7 @@ final readonly class RemoveNodeAction
         private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
+        private ?RouterLanIngressReconciler $lanIngress = null,
     ) {}
 
     public function execute(
@@ -153,6 +155,8 @@ final readonly class RemoveNodeAction
             }
         }
 
+        $lanClusterId = $node->cluster_id;
+
         if ($node->wireguard_public_key !== null) {
             try {
                 $this->peers->remove($node);
@@ -169,6 +173,48 @@ final readonly class RemoveNodeAction
                     step: 'wireguard-projection',
                     errorCode: 'node.wireguard_projection_failed',
                     message: "Could not remove the WireGuard peer for node [{$node->name}].",
+                    previous: $exception,
+                );
+            }
+        }
+
+        if (is_int($lanClusterId)) {
+            try {
+                ($this->lanIngress ?? app(RouterLanIngressReconciler::class))->prune(
+                    nodeOverrides: [$node->id => ['status' => LifecycleStatus::Removing]],
+                    clusterIds: [$lanClusterId],
+                );
+            } catch (Throwable $exception) {
+                $node->update(['status' => LifecycleStatus::Active]);
+                $rollbackFailure = null;
+
+                if ($peerRemoved) {
+                    try {
+                        $this->peers->restore($node);
+                    } catch (Throwable $rollbackException) {
+                        $rollbackFailure = $rollbackException;
+                    }
+                }
+
+                $metricsRollbackFailure = $this->restoreMetricsSelection();
+
+                if ($rollbackFailure instanceof Throwable) {
+                    throw $this->failure(
+                        step: 'wireguard-rollback',
+                        errorCode: 'node.removal_rollback_failed',
+                        message: "Could not restore the WireGuard peer for node [{$node->name}].",
+                        previous: $rollbackFailure,
+                    );
+                }
+
+                if ($metricsRollbackFailure instanceof Throwable) {
+                    throw $this->metricsRollbackFailure($node, $metricsRollbackFailure);
+                }
+
+                throw $this->failure(
+                    step: 'router-lan-ingress',
+                    errorCode: 'router.lan_ingress_failed',
+                    message: "Could not revoke Router LAN ingress for node [{$node->name}].",
                     previous: $exception,
                 );
             }

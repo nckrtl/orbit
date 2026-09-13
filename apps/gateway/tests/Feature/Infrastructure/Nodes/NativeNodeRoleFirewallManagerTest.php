@@ -7,6 +7,7 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -334,6 +335,130 @@ it('fails closed without mutation when an owned comment has drifted', function (
     expect($ssh->mutations())->toBeEmpty();
 });
 
+it('does not publish Router LAN ingress when converging a non-Router role', function (): void {
+    [$router, $eligible] = router_lan_topology();
+    $ssh = new RoleFirewallSshExecutor;
+
+    role_firewall_manager($ssh)->converge($router, RoleName::AppProd, 'orbit');
+
+    expect($ssh->comments())
+        ->toContain('orbit:wireguard-members')
+        ->not->toContain('orbit:router-lan-https:'.$eligible->id);
+});
+
+it('removes Router LAN ingress when the Router role is cleared', function (): void {
+    [$router, $eligible] = router_lan_topology();
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $comment = 'orbit:router-lan-https:'.$eligible->id;
+
+    $manager->converge($router, RoleName::Router, 'orbit');
+    $manager->remove($router, RoleName::Router, 'orbit');
+
+    expect($ssh->comments())->not->toContain($comment);
+});
+
+it('publishes Router LAN ingress from eligible members and leaves WireGuard trust unchanged', function (): void {
+    [$router, $eligible] = router_lan_topology();
+    $ssh = new RoleFirewallSshExecutor;
+    $comment = 'orbit:router-lan-https:'.$eligible->id;
+
+    role_firewall_manager($ssh)->converge($router, RoleName::Router, 'orbit');
+
+    expect($ssh->comments())
+        ->toContain('orbit:wireguard-members', $comment)
+        ->not->toContain('orbit:public-ssh-recovery', 'orbit:metrics-grafana-upstream')
+        ->and($ssh->mutations())
+        ->toContain([
+            'sudo',
+            'ufw',
+            'allow',
+            'in',
+            'proto',
+            'tcp',
+            'from',
+            '10.20.0.11',
+            'to',
+            '10.20.0.10',
+            'port',
+            '443',
+            'comment',
+            $comment,
+        ]);
+});
+
+it('replaces a drifted Router LAN source without duplicating the owned comment', function (): void {
+    [$router, $eligible] = router_lan_topology();
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $catalog = new NodeFirewallRuleCatalog;
+    $comment = 'orbit:router-lan-https:'.$eligible->id;
+
+    $manager->expandRouterLanIngress($router, [
+        $catalog->routerLanIngressRule('10.20.0.99', '10.20.0.10', $eligible->id),
+    ], 'orbit');
+    $manager->expandRouterLanIngress($router, $catalog->routerLanIngress($router), 'orbit');
+
+    expect($ssh->comments())
+        ->toBe([$comment])
+        ->and($ssh->mutations())
+        ->toContain([
+            'sudo',
+            'ufw',
+            'allow',
+            'in',
+            'proto',
+            'tcp',
+            'from',
+            '10.20.0.11',
+            'to',
+            '10.20.0.10',
+            'port',
+            '443',
+            'comment',
+            $comment,
+        ]);
+});
+
+it('replaces drifted Router LAN ingress and prunes obsolete members', function (): void {
+    [$router, $eligible] = router_lan_topology();
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $catalog = new NodeFirewallRuleCatalog;
+    $obsoleteComment = 'orbit:router-lan-https:999';
+    $manager->expandRouterLanIngress($router, [
+        ...$catalog->routerLanIngress($router),
+        $catalog->routerLanIngressRule('10.20.0.99', '10.20.0.10', 999),
+    ], 'orbit');
+    $desired = $catalog->routerLanIngress($router);
+
+    $manager->expandRouterLanIngress($router, $desired, 'orbit');
+    $manager->pruneRouterLanIngress($router, $desired, 'orbit');
+
+    expect($ssh->comments())
+        ->toContain('orbit:router-lan-https:'.$eligible->id)
+        ->not->toContain($obsoleteComment);
+});
+
+it('restores the preceding Router LAN policy when publication fails', function (): void {
+    [$router, $eligible] = router_lan_topology();
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $desired = new NodeFirewallRuleCatalog()->routerLanIngress($router);
+    $comment = 'orbit:router-lan-https:'.$eligible->id;
+    $ssh->failApplyComment = $comment;
+
+    expect(fn () => $manager->expandRouterLanIngress($router, $desired, 'orbit'))
+        ->toThrow(function (FirewallOperationException $exception) use ($comment): void {
+            expect($exception->errorCode)
+                ->toBe('node.firewall_convergence_failed')
+                ->and($exception->getMessage())
+                ->toContain($comment);
+        });
+
+    expect($ssh->comments())->not->toContain($comment);
+});
+
 it('rejects missing WireGuard addresses before firewall mutation', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $node = role_firewall_node();
@@ -428,8 +553,10 @@ final class RoleFirewallSshExecutor implements SshExecutor
 
     public bool $operatorWebRulesPresent = true;
 
-    /** @var list<array{comment: string, family: string}> */
+    /** @var list<array{comment: string, family: string, source: string, destination: string, port: string}> */
     private array $rules = [];
+
+    public ?string $failApplyComment = null;
 
     public function __construct(
         private bool $active = true,
@@ -454,7 +581,18 @@ final class RoleFirewallSshExecutor implements SshExecutor
             $comment = is_int($commentIndex) ? $arguments[$commentIndex + 1] ?? null : null;
 
             if (is_string($comment)) {
-                $this->add($comment);
+                if ($this->failApplyComment === $comment) {
+                    return new CommandResult(1, '', 'apply failed', 1, false);
+                }
+
+                $fromIndex = array_search('from', $arguments, strict: true);
+                $toIndex = array_search('to', $arguments, strict: true);
+                $portIndex = array_search('port', $arguments, strict: true);
+                $this->add($comment, [
+                    'source' => is_int($fromIndex) ? (string) ($arguments[$fromIndex + 1] ?? 'any') : 'any',
+                    'destination' => is_int($toIndex) ? (string) ($arguments[$toIndex + 1] ?? 'any') : 'any',
+                    'port' => is_int($portIndex) ? (string) ($arguments[$portIndex + 1] ?? 'any') : 'any',
+                ]);
             }
         }
 
@@ -512,7 +650,8 @@ final class RoleFirewallSshExecutor implements SshExecutor
         ));
     }
 
-    private function add(string $comment): void
+    /** @param array{source?: string, destination?: string, port?: string} $shape */
+    private function add(string $comment, array $shape = []): void
     {
         $families = in_array(
             $comment,
@@ -530,7 +669,13 @@ final class RoleFirewallSshExecutor implements SshExecutor
             : ['v4'];
 
         foreach ($families as $family) {
-            $this->rules[] = ['comment' => $comment, 'family' => $family];
+            $this->rules[] = [
+                'comment' => $comment,
+                'family' => $family,
+                'source' => $shape['source'] ?? 'any',
+                'destination' => $shape['destination'] ?? 'any',
+                'port' => $shape['port'] ?? 'any',
+            ];
         }
     }
 
@@ -544,7 +689,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
 
         foreach ($this->rules as $offset => $rule) {
             $number = $offset + 2;
-            $lines[] = $this->line($number, $rule['comment'], $rule['family']);
+            $lines[] = $this->line($number, $rule);
         }
 
         if ($this->operatorWebRulesPresent) {
@@ -559,13 +704,19 @@ final class RoleFirewallSshExecutor implements SshExecutor
         return implode("\n", $lines)."\n";
     }
 
-    private function line(int $number, string $comment, string $family): string
+    /** @param array{comment: string, family: string, source: string, destination: string, port: string} $rule */
+    private function line(int $number, array $rule): string
     {
-        $v6 = $family === 'v6' ? ' (v6)' : '';
+        $comment = $rule['comment'];
+        $v6 = $rule['family'] === 'v6' ? ' (v6)' : '';
+
+        if (str_starts_with($comment, 'orbit:router-lan-https:')) {
+            return "[ {$number}] {$rule['destination']} 443/tcp ALLOW IN {$rule['source']} # {$comment}";
+        }
 
         return match ($comment) {
             'orbit:public-ssh-recovery' => "[ {$number}] 22/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
-            'orbit:wireguard-members' => "[ {$number}] 10.44.0.2 on orbit ALLOW IN Anywhere # {$comment}",
+            'orbit:wireguard-members' => '[ '.$number.'] '.($rule['destination'] === 'any' ? '10.44.0.2' : $rule['destination']).' on orbit ALLOW IN Anywhere # '.$comment,
             'orbit:vpn-ssh' => "[ {$number}] 10.44.0.2 22/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-http' => "[ {$number}] 10.44.0.2 80/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-https' => "[ {$number}] 10.44.0.2 443/tcp on orbit ALLOW IN Anywhere # {$comment}",
