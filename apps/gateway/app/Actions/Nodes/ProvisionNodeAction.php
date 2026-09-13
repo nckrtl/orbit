@@ -556,14 +556,14 @@ final readonly class ProvisionNodeAction
 
     private function syncRouterLanIngress(Node $node): void
     {
-        $clusterIds = array_values(array_filter([$node->cluster_id], is_int(...)));
+        $clusterId = $node->cluster_id;
 
-        if ($clusterIds === []) {
+        if (! is_int($clusterId)) {
             return;
         }
 
-        $this->lanIngress()->expand(clusterIds: $clusterIds);
-        $this->lanIngress()->prune(clusterIds: $clusterIds);
+        $this->lanIngress()->expand(clusterIds: [$clusterId]);
+        $this->lanIngress()->prune(clusterIds: [$clusterId]);
     }
 
     /**

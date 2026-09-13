@@ -125,8 +125,7 @@ final readonly class RouterLanIngressPolicy
             ->with(['node.cluster'])
             ->orderBy('id')
             ->get()
-            ->map(static fn (NodeRole $assignment): ?Node => $assignment->node)
-            ->filter(static fn (?Node $node): bool => $node instanceof Node)
+            ->map(static fn (NodeRole $assignment): Node => $assignment->node)
             ->unique('id')
             ->values();
     }
@@ -203,7 +202,7 @@ final readonly class RouterLanIngressPolicy
      */
     private function overrideFor(Node $node, array $nodeOverrides): array
     {
-        return is_int($node->id) ? ($nodeOverrides[$node->id] ?? []) : [];
+        return $nodeOverrides[$node->id] ?? [];
     }
 
     /**

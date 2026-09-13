@@ -90,7 +90,7 @@ final readonly class NodeFirewallRuleCatalog
         array $clusterOverrides = [],
     ): array {
         $policy = new RouterLanIngressPolicy;
-        $router = $nodeOverrides === [] || ! is_int($node->id)
+        $router = $nodeOverrides === []
             ? $node
             : $this->withNodeOverrides($node, $nodeOverrides[$node->id] ?? []);
         $destination = is_string($router->lan_ip) ? $router->lan_ip : null;
