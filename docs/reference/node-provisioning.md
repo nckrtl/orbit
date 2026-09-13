@@ -54,7 +54,7 @@ The online removal runs these steps in order and reports success only after the 
 
 The Gateway skips the public SSH step for a Node without a WireGuard peer, because provisioning closes public SSH only after the peer exists.
 
-`--offline` is for a Node the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps the ordinary contract, so the flag never bypasses a guard on a reachable machine. For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, and Orbit UFW rules and the Metrics exporter stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
+`--offline` is for a Node the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps the ordinary guards, so the flag never bypasses a guard on a reachable machine. The flag also skips the public SSH recovery step when the Node answers, so omit it for a reachable Node. For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, and Orbit UFW rules and the Metrics exporter stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
 
 A failed step rolls the Gateway back and keeps the Node record active. Each failure names the step that stopped and the state the Gateway leaves behind.
 
