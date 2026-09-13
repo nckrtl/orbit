@@ -2177,6 +2177,32 @@ it('treats active creation evidence as terminal when development HEAD advances',
         ->toBe(['inspect-prepared:active']);
 });
 
+it('leaves an active AppInstance row unchanged when a creation retry is refused with route.retry_conflict', function (): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $before = AppInstance::query()->sole()->getAttributes();
+    $routeBefore = Route::query()->sole()->getAttributes();
+    $this->travelTo(now()->addMinute());
+
+    $this
+        ->postJson('/api/v1/instances', [...$payload, 'hostname' => 'x.orbit'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.retry_conflict');
+
+    expect(AppInstance::query()->sole()->getAttributes())
+        ->toBe($before)
+        ->and($before['failed_step'])
+        ->toBeNull()
+        ->and($before['error_code'])
+        ->toBeNull()
+        ->and(Route::query()->sole()->getAttributes())
+        ->toBe($routeBefore);
+});
+
 it('rejects repository execution and unsupported transport keys', function (): void {
     $this
         ->postJson('/api/v1/instances', [

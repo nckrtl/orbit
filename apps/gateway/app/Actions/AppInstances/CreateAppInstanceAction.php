@@ -328,9 +328,19 @@ final readonly class CreateAppInstanceAction
         return new ResourceOperationException($errorCode, $message, 409);
     }
 
+    /**
+     * Records failure evidence on a non-active AppInstance and its non-active
+     * Route. An active AppInstance is terminal for creation retry, so a refused
+     * retry leaves its row untouched.
+     */
     private function recordFailure(AppInstance $appInstance, Throwable $exception): void
     {
         $appInstance->refresh();
+
+        if ($appInstance->status === AppInstanceState::Active) {
+            return;
+        }
+
         $step = property_exists($exception, 'step') && is_string($exception->step)
             ? $exception->step
             : match ($appInstance->status) {
