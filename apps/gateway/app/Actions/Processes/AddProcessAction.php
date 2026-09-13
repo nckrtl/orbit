@@ -8,6 +8,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -20,14 +21,18 @@ use SensitiveParameter;
 
 final readonly class AddProcessAction
 {
+    private ProcessRuntimeLease $lease;
+
     private ProcessSpecification $specifications;
 
     public function __construct(
         private ProcessTargetResolver $targets,
         private ProcessRuntimeManager $runtime,
         private ProcessAdmissionLock $admissions,
+        ?ProcessRuntimeLease $lease = null,
         ?ProcessSpecification $specifications = null,
     ) {
+        $this->lease = $lease ?? app(ProcessRuntimeLease::class);
         $this->specifications = $specifications ?? new ProcessSpecification;
     }
 
@@ -45,7 +50,7 @@ final readonly class AddProcessAction
     /** @return array{process: Process, created: bool} */
     private function executeOwned(#[SensitiveParameter] AddProcessData $data): array
     {
-        /** @var array{process: Process, created: bool} $admission */
+        /** @var array{process: Process, created: bool, attributes: array<string, mixed>} $admission */
         $admission = DB::transaction(function () use ($data): array {
             $instance = AppInstance::query()
                 ->with('node')
@@ -82,35 +87,57 @@ final readonly class AddProcessAction
                 $this->runtime->assertCanStart($process);
             }
 
-            $process->fill([
+            if ($created) {
+                $process->fill([
+                    'status' => LifecycleStatus::Provisioning,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ])->save();
+            }
+
+            return ['process' => $process, 'created' => $created, 'attributes' => $attributes];
+        });
+
+        return $this->lease->run($admission['process'], function (Process $fresh) use ($admission): array {
+            if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
+                throw new ResourceOperationException(
+                    errorCode: 'process.name_taken',
+                    message: "Process [{$fresh->name}] already exists with different configuration.",
+                    status: 409,
+                );
+            }
+
+            if ($fresh->desired_state === DesiredProcessState::Running) {
+                $this->runtime->assertCanStart($fresh);
+            }
+
+            $fresh->fill([
+                ...$admission['attributes'],
+                'desired_state' => $fresh->desired_state,
                 'status' => LifecycleStatus::Provisioning,
                 'failed_step' => null,
                 'error_code' => null,
             ])->save();
 
-            return ['process' => $process, 'created' => $created];
-        });
+            try {
+                $this->runtime->converge($fresh);
+            } catch (ProcessOperationException $exception) {
+                $fresh->update([
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => $exception->step,
+                    'error_code' => $exception->errorCode,
+                ]);
 
-        $process = $admission['process'];
+                throw $exception;
+            }
 
-        try {
-            $this->runtime->converge($process);
-        } catch (ProcessOperationException $exception) {
-            $process->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => $exception->step,
-                'error_code' => $exception->errorCode,
+            $fresh->update([
+                'status' => LifecycleStatus::Active,
+                'failed_step' => null,
+                'error_code' => null,
             ]);
 
-            throw $exception;
-        }
-
-        $process->update([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-
-        return ['process' => $process->refresh(), 'created' => $admission['created']];
+            return ['process' => $fresh->refresh(), 'created' => $admission['created']];
+        });
     }
 }

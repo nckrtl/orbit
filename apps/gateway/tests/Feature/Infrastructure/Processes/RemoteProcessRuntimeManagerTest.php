@@ -2,14 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeRoleDependencySet;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -1450,6 +1455,44 @@ it('serializes lifecycle mutations with runtime convergence', function (string $
         $lock->release();
     }
 })->with(['start', 'stop', 'restart', 'remove']);
+
+it('shares the process runtime owner with role-dependent cleanup', function (): void {
+    $process = runtime_manager_docker_process($this->instance);
+    $lock = Cache::lock(
+        "orbit:process-runtime:{$this->instance->node_id}:{$process->id}",
+        60,
+    );
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $cleaner = new NativeNodeRoleDependentCleaner(
+            processes: $this->manager,
+            appDev: Mockery::mock(AppDevRuntimeConverger::class),
+            appProd: Mockery::mock(AppProdRuntimeConverger::class),
+        );
+
+        expect(fn () => $cleaner->clean(new NodeRoleDependencySet(
+            instanceIds: [],
+            workspaceIds: [],
+            processIds: [$process->id],
+            summaries: [],
+        )))->toThrow(function (NodeRoleOperationException $exception): void {
+            expect($exception->underlyingErrorCode)
+                ->toBe('process.runtime_lock_failed')
+                ->and($exception->step)
+                ->toBe('process-runtime');
+        });
+
+        expect($this->ssh->commands)
+            ->toBeEmpty()
+            ->and($process->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($process->refresh()->error_code)
+            ->toBeNull();
+    } finally {
+        $lock->release();
+    }
+});
 
 it('rechecks exact systemd ownership before lifecycle operations', function (string $operation): void {
     $process = runtime_manager_systemd_process($this->instance);
