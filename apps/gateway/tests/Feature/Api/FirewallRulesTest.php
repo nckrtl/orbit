@@ -105,6 +105,53 @@ it('returns 422 before persistence when a deny intersects public recovery SSH', 
     expect(FirewallRule::query()->count())->toBe(0);
 });
 
+it('returns 409 before UFW when allow and deny share a node source protocol and port', function (): void {
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
+            'name' => 'private-web',
+            'source' => 'any',
+            'protocol' => 'tcp',
+            'port' => '443',
+        ])
+        ->assertCreated();
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/deny", [
+            'name' => 'block-web',
+            'source' => 'any',
+            'protocol' => 'tcp',
+            'port' => '443',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'firewall.action_conflict');
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
+            'name' => 'private-web',
+            'source' => 'any',
+            'protocol' => 'tcp',
+            'port' => '443',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.error_code', null);
+
+    $this->assertDatabaseHas('firewall_rules', [
+        'node_id' => $this->node->id,
+        'name' => 'private-web',
+        'action' => 'allow',
+        'status' => 'active',
+        'failed_step' => null,
+        'error_code' => null,
+    ]);
+    $this->assertDatabaseMissing('firewall_rules', [
+        'node_id' => $this->node->id,
+        'name' => 'block-web',
+    ]);
+
+    expect($this->firewall->converged)->toBe(['private-web', 'private-web']);
+});
+
 it('lists stable named intent and removes only the selected node rule', function (): void {
     $this->firewall->convergence = [FirewallBackendStatus::Active];
     $this
