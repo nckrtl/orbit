@@ -73,17 +73,51 @@ describe(HomebrewToolManager::class, function (): void {
                 'apt-get install --yes --no-install-recommends --no-remove -- build-essential procps curl file git ca-certificates',
             )
             ->toContain('https://github.com/Homebrew/brew')
-            ->toContain('2b3683acbeac84c27669195235785694b72e253e')
-            ->toContain("expected_version='Homebrew 6.0.6'")
+            ->toContain('d79ef822ab8136e393ed5f86e2b56afc68d04874')
+            ->toContain("expected_version='Homebrew 7.0.0'")
             ->toContain('status --porcelain=v1 --untracked-files=all')
             ->toContain('HOMEBREW_NO_AUTO_UPDATE=1')
             ->toContain('"$prefix/bin/brew" config >/dev/null')
             ->not->toContain('install.sh');
     });
 
+    it('upgrades an Orbit-owned Homebrew prefix to the pinned revision before verification', function (): void {
+        [$manager, $ssh] = homebrew_tool_manager([homebrew_result()]);
+
+        $manager->materialize(homebrew_tool_node(role: null));
+
+        $program = $ssh->commands[0]->input;
+        $upgradeGate = strpos($program, 'current_revision=$(git -C "$repository" rev-parse HEAD)');
+        $originCheck = strpos($program, 'remote get-url origin');
+        $cleanTree = strpos($program, 'status --porcelain=v1 --untracked-files=all');
+        $fetch = strpos($program, 'fetch --filter=blob:none origin "$expected_revision"');
+        $checkout = is_int($fetch)
+            ? strpos($program, '-c advice.detachedHead=false checkout --detach "$expected_revision"', $fetch)
+            : false;
+        $verifyVersion = strpos($program, '"$prefix/bin/brew" --version');
+
+        expect($program)->toContain('[ "$current_revision" != "$expected_revision" ]');
+        expect($upgradeGate)->toBeInt();
+        expect($originCheck)->toBeInt()->toBeGreaterThan($upgradeGate);
+        expect($cleanTree)->toBeInt()->toBeGreaterThan($upgradeGate);
+        expect($fetch)->toBeInt()->toBeGreaterThan($originCheck)->toBeGreaterThan($cleanTree);
+        expect($checkout)->toBeInt()->toBeGreaterThan($fetch);
+        expect($verifyVersion)->toBeInt()->toBeGreaterThan($checkout);
+
+        $script = tempnam(sys_get_temp_dir(), 'orbit-homebrew-');
+        file_put_contents($script, $program);
+
+        try {
+            exec('bash -n '.escapeshellarg($script).' 2>&1', $syntaxOutput, $syntaxStatus);
+            expect($syntaxStatus)->toBe(0);
+        } finally {
+            unlink($script);
+        }
+    });
+
     it('uses fixed Core-only forced-bottle argv for the complete lifecycle', function (): void {
         [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("Homebrew 6.0.6\n"),
+            homebrew_result("Homebrew 7.0.0\n"),
             homebrew_result("x86_64\n"),
             homebrew_result(homebrew_formula()),
             homebrew_result("herdr 0.8.2\n"),
@@ -97,7 +131,7 @@ describe(HomebrewToolManager::class, function (): void {
         ]);
         $node = homebrew_tool_node();
 
-        expect($manager->managerVersion($node))->toBe('Homebrew 6.0.6');
+        expect($manager->managerVersion($node))->toBe('Homebrew 7.0.0');
         expect($manager->candidateVersion($node, 'herdr', ToolOperation::Install))->toBe('0.9.0');
         expect($manager->installedVersion($node, 'herdr'))->toBe('0.8.2');
         $manager->install($node, 'herdr');
@@ -194,6 +228,19 @@ describe(HomebrewToolManager::class, function (): void {
         expect($nodeSsh->arguments())->toBeEmpty();
         expect($packageSsh->arguments())->toBeEmpty();
     });
+
+    it('rejects a Homebrew manager version that is not the pinned release', function (string $version): void {
+        [$manager] = homebrew_tool_manager([
+            homebrew_result($version."\n"),
+        ]);
+
+        expect(fn () => $manager->managerVersion(homebrew_tool_node()))
+            ->toThrow(ToolManagerException::class, 'unsupported version');
+    })->with([
+        'previous Orbit pin' => ['Homebrew 6.0.6'],
+        'newer patch' => ['Homebrew 7.0.1'],
+        'unrelated tool' => ['Homebrew 5.0.0'],
+    ]);
 
     it('returns bounded sanitized failures for probes and mutations', function (): void {
         [$manager] = homebrew_tool_manager([

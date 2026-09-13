@@ -54,7 +54,7 @@ Orbit does not install every registered manager during Node provisioning. A mate
 
 The `brew` manager accepts one unqualified lowercase formula name from Homebrew Core. Before an install or update, the Gateway resolves the canonical Core formula and requires a stable version with a Linux bottle for the Node architecture and published SHA-256 metadata. Homebrew verifies that bottle while installing it with source builds disabled.
 
-The Gateway provisions Homebrew in `/home/linuxbrew/.linuxbrew` on first use. It can recognize an existing Homebrew installation in that scope only when the installation has the expected ownership, upstream origin, pinned version, and clean revision. A conflict or an unverifiable installation leaves the manager in retryable `failed` state. Orbit does not adopt formulae that were already installed without matching Tool intent.
+The Gateway provisions Homebrew in `/home/linuxbrew/.linuxbrew` on first use. When that prefix already exists with Orbit ownership, the official Homebrew origin, and a clean working tree, the Gateway fetches the pinned revision and checks it out detached before the same verification a fresh install uses. The Gateway leaves a foreign, conflicted, or unverifiable installation unchanged and keeps the manager in retryable `failed` state. Orbit does not adopt formulae that were already installed without matching Tool intent.
 
 Homebrew input has these limits.
 
