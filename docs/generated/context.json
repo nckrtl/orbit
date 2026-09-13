@@ -1379,6 +1379,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0066-transfer-development-appinstances-between-nodes.md",
+            "title": "ADR 0066: Transfer development AppInstances between Nodes",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0027",
+                "0038",
+                "0044",
+                "0063",
+                "0065",
+                "0066"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
