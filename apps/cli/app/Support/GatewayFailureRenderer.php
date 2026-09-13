@@ -56,7 +56,14 @@ final class GatewayFailureRenderer
 
         $command->error(self::safeErrorMessage($humanMessage ?? $message));
 
-        foreach (self::fieldDetails($details) as $field => $messages) {
+        $humanDetails = $details;
+        $id = $humanDetails['id'] ?? null;
+
+        if (is_int($id) && $id > 0) {
+            $humanDetails['id'] = (string) $id;
+        }
+
+        foreach (self::fieldDetails($humanDetails) as $field => $messages) {
             foreach (is_string($messages) ? [$messages] : $messages as $fieldMessage) {
                 $command->line("{$field}: {$fieldMessage}");
             }
@@ -99,13 +106,6 @@ final class GatewayFailureRenderer
                 }
 
                 $fields[$field] = $fieldMessage;
-                $remaining--;
-
-                continue;
-            }
-
-            if (is_int($value) && $value > 0) {
-                $fields[$field] = (string) $value;
                 $remaining--;
 
                 continue;
