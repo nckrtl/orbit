@@ -25,14 +25,14 @@ function pestSetupFixture(bool $upstream = true): array
     mkdir($project.'/vendor/composer', 0700, true);
     file_put_contents($project.'/composer.json', '{}');
     file_put_contents($project.'/composer.lock', 'unchanged lock');
-    file_put_contents($project.'/vendor/composer/installed.json', json_encode([
-        'packages' => [['name' => 'pestphp/pest', 'version' => 'v5.1.3']],
-    ], JSON_THROW_ON_ERROR));
     $manifest = json_decode(
         file_get_contents($repository.'/bin/pest-support/manifest.json'),
         true,
         flags: JSON_THROW_ON_ERROR,
     );
+    file_put_contents($project.'/vendor/composer/installed.json', json_encode([
+        'packages' => [['name' => 'pestphp/pest', 'version' => 'v'.$manifest['version']]],
+    ], JSON_THROW_ON_ERROR));
     foreach ($manifest['files'] as $file => $hashes) {
         if ($hashes['patched'] === null) {
             continue;
