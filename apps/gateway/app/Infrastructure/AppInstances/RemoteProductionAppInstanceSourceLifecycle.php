@@ -264,6 +264,29 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
     public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile
     {
         $appInstance->loadMissing(['app', 'node']);
+        [, $home] = $this->identity($appInstance);
+
+        return $this->inspectSource($appInstance, "{$home}/releases/initial");
+    }
+
+    public function inspectRecordedProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    {
+        $appInstance->loadMissing(['app', 'node']);
+        [, $home] = $this->identity($appInstance);
+        $source = $appInstance->checkout_path;
+
+        if (
+            $source !== $home
+            && preg_match('#\A'.preg_quote("{$home}/releases/", '#').'(?!\.\.?\z)[^/]+\z#D', $source) !== 1
+        ) {
+            throw $this->failure('production-source-classification', 'app-prod.source_metadata_unsafe');
+        }
+
+        return $this->inspectSource($appInstance, $source);
+    }
+
+    private function inspectSource(AppInstance $appInstance, string $source): DevelopmentSourceProfile
+    {
         [$user, $home] = $this->identity($appInstance);
         $root = $appInstance->root ?? $appInstance->app->root;
 
@@ -274,12 +297,12 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         $result = $this->ssh->execute(
             $appInstance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $home, $user, $root],
+                arguments: ['bash', '-seu', '--', $home, $user, $root, $source],
                 input: <<<'BASH'
                     home=$1
                     user=$2
                     relative_root=$3
-                    release="$home/releases/initial"
+                    release=$4
                     composer="$release/composer.json"
                     artisan="$release/artisan"
                     candidate="$release/$relative_root"

@@ -73,7 +73,11 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         }
 
         if ($appInstance->status === AppInstanceState::Active && $route->status === RouteStatus::Active) {
-            return $appInstance->load('routes.targets');
+            if ($recoverSourceProfile && $appInstance->source_is_laravel === null) {
+                $this->recordRecoveredProfile($appInstance, $this->configuration->inspect($appInstance));
+            }
+
+            return $appInstance->refresh()->load('routes.targets');
         }
 
         if (
@@ -143,6 +147,16 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
             'provisioning_step' => 'php-selected',
             'failed_step' => null,
             'error_code' => null,
+        ]);
+    }
+
+    private function recordRecoveredProfile(
+        AppInstance $appInstance,
+        DevelopmentSourceProfile $profile,
+    ): void {
+        $appInstance->update([
+            'source_is_laravel' => $profile->laravel,
+            ...($appInstance->selected_php_version === null ? ['selected_php_version' => $profile->phpVersion] : []),
         ]);
     }
 

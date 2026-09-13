@@ -321,6 +321,11 @@ final class Orb217DeploymentSourceLifecycle implements ProductionAppInstanceSour
         throw new LogicException('Not used by this test fake.');
     }
 
+    public function inspectRecordedProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    {
+        throw new LogicException('Not used by this test fake.');
+    }
+
     public function prepareCaddyAccess(AppInstance $appInstance): void
     {
         $this->caddyPreparations++;

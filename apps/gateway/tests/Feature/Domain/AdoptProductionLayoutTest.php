@@ -443,6 +443,11 @@ final class Orb217DomainSourceLifecycle implements ProductionAppInstanceSourceLi
         throw new LogicException('Not used by this test fake.');
     }
 
+    public function inspectRecordedProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    {
+        throw new LogicException('Not used by this test fake.');
+    }
+
     public function prepareCaddyAccess(AppInstance $appInstance): void
     {
         if ($this->events instanceof Orb217DomainEvents) {

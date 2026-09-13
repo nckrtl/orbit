@@ -466,6 +466,47 @@ it('updates an active explicit private development hostname through convergence'
     expect($this->target->refresh()->status)->toBe(AppInstanceState::Active);
 });
 
+it('refuses an explicit private hostname change until the target source profile is recovered', function (): void {
+    $this->target->update(['source_is_laravel' => null, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        hostname: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing')
+        ->assertJsonPath(
+            'error.message',
+            'AppInstance [main] has no recorded source profile. '
+            .'Repeat its creation request with recover_source_profile to record one.',
+        );
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+
+    $this->target->update(['source_is_laravel' => false]);
+    app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(cleanup: true));
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->assertOk()
+        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.hostname_change_target', null);
+});
+
 it('keeps database cutover failures bounded through the Route update API', function (): void {
     $route = route_api_active_development_route($this->orbitApp, $this->target);
     app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(rollback: true));

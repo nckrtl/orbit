@@ -52,7 +52,14 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         if ($appInstance->status === AppInstanceState::Active) {
             $this->routes->ensureForAppInstance($appInstance, $data->hostname);
 
-            return ['appInstance' => $appInstance->load('routes.targets'), 'created' => false];
+            if ($data->recoverSourceProfile && $appInstance->source_is_laravel === null) {
+                $this->sourceLock->synchronized(
+                    $node->id,
+                    fn () => $this->recordRecoveredProfile($appInstance),
+                );
+            }
+
+            return ['appInstance' => $appInstance->refresh()->load('routes.targets'), 'created' => false];
         }
 
         $result = $this->sourceLock->synchronized(
@@ -276,6 +283,15 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         }
 
         return $appInstance->refresh()->load('routes.targets');
+    }
+
+    private function recordRecoveredProfile(AppInstance $appInstance): void
+    {
+        $profile = $this->source->inspectRecordedProfile($appInstance);
+        $appInstance->update([
+            'source_is_laravel' => $profile->laravel,
+            ...($appInstance->selected_php_version === null ? ['selected_php_version' => $profile->phpVersion] : []),
+        ]);
     }
 
     private function completePublication(int $appInstanceId, int $routeId): void

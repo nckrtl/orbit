@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstancePhpVersionCatalog;
 use App\Domain\AppInstances\ComposerSourceClassifier;
 use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
@@ -280,6 +281,56 @@ it('propagates every source safety enumeration failure before treating its outpu
             'unexpected_group=$(sudo find',
         );
 });
+
+it('inspects the recorded production source when recovering a missing profile', function (string $checkoutPath): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, "NONE\n", '', 1, false),
+        new CommandResult(0, "NONE\n", '', 1, false),
+    ]);
+    $instance->update(['checkout_path' => $checkoutPath]);
+
+    $profile = $source->inspectRecordedProfile($instance);
+    $source->inspectProfile($instance);
+
+    expect($ssh->commands[0]->arguments)
+        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public', $checkoutPath])
+        ->and($ssh->commands[0]->input)
+        ->toContain('release=$4', 'composer="$release/composer.json"', 'artisan="$release/artisan"')
+        ->and($ssh->commands[1]->arguments)
+        ->toBe(['bash', '-seu', '--', '/home/orbit-app-1', 'orbit-app-1', 'public', '/home/orbit-app-1/releases/initial'])
+        ->and($ssh->commands[1]->input)
+        ->toBe($ssh->commands[0]->input)
+        ->and($profile->phpVersion)
+        ->toBeNull()
+        ->and($profile->laravel)
+        ->toBeFalse();
+})->with([
+    'flat production home' => '/home/orbit-app-1',
+    'selected release' => '/home/orbit-app-1/releases/20260913120000',
+]);
+
+it('refuses to inspect a recorded production source outside the home or its releases', function (
+    string $checkoutPath,
+): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([]);
+    $instance->update(['checkout_path' => $checkoutPath]);
+
+    expect(fn () => $source->inspectRecordedProfile($instance))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('app-prod.source_metadata_unsafe')
+                ->and($exception->step)
+                ->toBe('production-source-classification');
+        });
+
+    expect($ssh->commands)->toBe([]);
+})->with([
+    'foreign path' => '/srv/other',
+    'parent traversal' => '/home/orbit-app-1/releases/..',
+    'nested release path' => '/home/orbit-app-1/releases/a/b',
+    'empty release name' => '/home/orbit-app-1/releases/',
+    'home prefix without separator' => '/home/orbit-app-1-other',
+]);
 
 /**
  * @param  list<CommandResult>  $results

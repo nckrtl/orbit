@@ -265,6 +265,67 @@ it('requires an active complete owner while keeping stored updates offline', fun
         ->assertJsonPath('error.code', 'env.owner_unavailable');
 });
 
+it('refuses environment operations for an active AppInstance without a source profile until it is recovered', function (): void {
+    $this->instance->update(['source_is_laravel' => null]);
+    $importUrl = "/api/v1/instances/{$this->instance->id}/environment/import";
+    $syncUrl = "/api/v1/instances/{$this->instance->id}/environment/sync";
+    $updateUrl = "/api/v1/instances/{$this->instance->id}/environment/KEY";
+    $message = 'AppInstance [default] has no recorded source profile. '
+        .'Repeat its creation request with recover_source_profile to record one.';
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $importUrl, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing')
+        ->assertJsonPath('error.message', $message);
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $syncUrl, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing')
+        ->assertJsonPath('error.message', $message);
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson($updateUrl, ['value' => 'value'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_profile_missing')
+        ->assertJsonPath('error.message', $message);
+
+    expect(AppInstanceEnvironmentValue::query()->count())
+        ->toBe(0)
+        ->and($this->access->reads)
+        ->toBe(0)
+        ->and($this->access->writePreflights)
+        ->toBe(0)
+        ->and($this->access->writes)
+        ->toBe([]);
+
+    $this->instance->update(['source_is_laravel' => false]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $importUrl, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk()
+        ->assertJsonPath('data.key_count', 1);
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson($updateUrl, ['value' => 'other'])
+        ->assertOk()
+        ->assertJsonPath('data.changed', true);
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $syncUrl, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk()
+        ->assertJsonPath('data.changed', true)
+        ->assertJsonPath('data.key_count', 1);
+
+    expect($this->access->reads)
+        ->toBe(1)
+        ->and($this->access->writes)
+        ->toBe(["KEY=\"other\"\n"]);
+});
+
 it('synchronizes by the existing selector with a narrow value-free result', function (): void {
     $this->instance
         ->environmentValues()

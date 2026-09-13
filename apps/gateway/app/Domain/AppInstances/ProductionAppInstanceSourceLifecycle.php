@@ -16,5 +16,7 @@ interface ProductionAppInstanceSourceLifecycle
 
     public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile;
 
+    public function inspectRecordedProfile(AppInstance $appInstance): DevelopmentSourceProfile;
+
     public function prepareCaddyAccess(AppInstance $appInstance): void;
 }

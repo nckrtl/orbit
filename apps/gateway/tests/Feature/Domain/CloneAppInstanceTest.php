@@ -514,6 +514,13 @@ final class Orb198ProductionSource implements ProductionAppInstanceSourceLifecyc
         return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
     }
 
+    public function inspectRecordedProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    {
+        $this->calls[] = 'recorded-profile';
+
+        return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
+    }
+
     public function prepareCaddyAccess(AppInstance $appInstance): void
     {
         $this->calls[] = 'caddy-access';

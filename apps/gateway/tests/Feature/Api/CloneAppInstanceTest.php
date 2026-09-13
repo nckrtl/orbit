@@ -360,6 +360,11 @@ final class Orb198ApiProductionSource implements ProductionAppInstanceSourceLife
         return new DevelopmentSourceProfile(null, false);
     }
 
+    public function inspectRecordedProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    {
+        return new DevelopmentSourceProfile(null, false);
+    }
+
     public function prepareCaddyAccess(AppInstance $appInstance): void {}
 }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
@@ -193,10 +194,11 @@ final readonly class ConvergeRouteAction
             || $route->publication !== RoutePublication::Private
             || $target->status !== AppInstanceState::Active
             || ! in_array($target->environment, ['development', 'production'], true)
-            || $target->source_is_laravel === null
         ) {
             app(RouteReconciliationGuard::class)->refuse();
         }
+
+        app(AppInstanceSourceProfileGuard::class)->assertRecorded($target);
 
         return $target;
     }

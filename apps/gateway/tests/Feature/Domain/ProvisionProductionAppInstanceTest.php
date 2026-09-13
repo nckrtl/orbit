@@ -76,6 +76,13 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile('8.5', false);
         }
 
+        public function inspectRecordedProfile(AppInstance $appInstance): DevelopmentSourceProfile
+        {
+            $this->record('recorded-profile');
+
+            return new DevelopmentSourceProfile('8.5', false);
+        }
+
         public function prepareCaddyAccess(AppInstance $appInstance): void
         {
             $this->record('access');
