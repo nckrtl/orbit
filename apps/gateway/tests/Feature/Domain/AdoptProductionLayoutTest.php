@@ -176,6 +176,56 @@ it('holds Process admission and refuses layout conversion while a Schedule uses 
         ->and(AppInstanceDeploymentLayout::query()->count())->toBe(0);
 });
 
+it('answers not_convertible for an AppInstance that already uses the release layout before its Schedule and Process guards', function (
+    bool $ownsSchedule,
+    bool $ownsActiveProcess,
+): void {
+    $releasePath = "{$this->instance->production_home}/releases/initial";
+    $this->instance->update(['checkout_path' => $releasePath]);
+
+    if ($ownsSchedule) {
+        Schedule::query()->create([
+            'target_type' => AppInstance::class,
+            'target_id' => $this->instance->id,
+            'host_node_id' => $this->instance->node_id,
+            'name' => 'prune',
+            'calendar' => 'daily',
+            'command' => 'true',
+            'timeout_seconds' => 3600,
+            'desired_timer_state' => DesiredTimerState::Enabled,
+            'status' => LifecycleStatus::Active,
+        ]);
+    }
+
+    if ($ownsActiveProcess) {
+        Process::query()->create([
+            'owner_type' => AppInstance::class,
+            'owner_id' => $this->instance->id,
+            'name' => 'queue',
+            'runtime' => 'systemd',
+            'working_directory' => '.',
+            'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'queue:work']],
+            'desired_state' => 'running',
+            'status' => 'active',
+        ]);
+    }
+
+    expect(fn () => app(AdoptProductionLayoutAction::class)->execute(
+        $this->instance->refresh(),
+        new PrepareAppInstanceDeploymentLayoutData('database.sqlite'),
+    ))->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'deployment_layout.not_convertible');
+
+    expect($this->processLock->runs)->toBe(1)
+        ->and($this->converter->calls)->toBe([])
+        ->and(AppInstanceDeploymentLayout::query()->count())->toBe(0)
+        ->and($this->instance->refresh()->checkout_path)->toBe($releasePath);
+})->with([
+    'no owned Schedule or Process' => [false, false],
+    'an owned Schedule' => [true, false],
+    'an active owned Process' => [false, true],
+    'an owned Schedule and an active owned Process' => [true, true],
+]);
+
 it('rechecks owned Processes and open-file quiescence before a retried SQLite placement', function (): void {
     $this->converter->failOnce = 'persistent';
     $action = app(AdoptProductionLayoutAction::class);
