@@ -765,6 +765,8 @@ it('translates base firewall failures to node provisioning failures', function (
         public function converge(Node $node, RoleName $role, string $managedUser): void {}
 
         public function remove(Node $node, RoleName $role, string $managedUser): void {}
+
+        public function restorePublicSsh(Node $node, string $managedUser): void {}
     };
     $converger = base_node_converger(new BaseNodeSshExecutor, firewall: $firewall);
 

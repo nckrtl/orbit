@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleRemovalOutcome;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -42,6 +43,7 @@ final readonly class RemoveNodeRoleAction
         private ToolManagerScopeLock $managerScope,
         private NodeReachabilityProbe $reachability,
         private NodeSideResidue $residue,
+        private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
     ) {}
 
@@ -219,6 +221,34 @@ final readonly class RemoveNodeRoleAction
                 $this->offlineHint($this->baselineFailure($node, $role, $exception), $node),
             );
         }
+
+        if (! $this->isLastRole($node, $assignment)) {
+            return;
+        }
+
+        try {
+            $this->firewall->restorePublicSsh($node, $node->user);
+        } catch (Throwable $exception) {
+            $this->failRemoval(
+                $assignment,
+                $this->offlineHint($this->recoveryFailure($node, $role, $exception), $node),
+            );
+        }
+    }
+
+    /**
+     * Whether this assignment is the node's only role row.
+     *
+     * Any other row counts, including a provisioning or failed one, so public
+     * SSH stays closed while another role convergence can still be retried.
+     * That matches the path the retarget selects from stored state.
+     */
+    private function isLastRole(Node $node, NodeRole $assignment): bool
+    {
+        return NodeRole::query()
+            ->where('node_id', $node->id)
+            ->whereKeyNot($assignment->id)
+            ->doesntExist();
     }
 
     /**
@@ -438,6 +468,18 @@ final readonly class RemoveNodeRoleAction
             errorCode: 'node_role.remove_failed',
             underlyingErrorCode: 'node_role.remove_unknown',
             message: "Role [{$role->value}] baseline removal failed on node [{$node->name}].",
+            previous: $exception,
+        );
+    }
+
+    private function recoveryFailure(Node $node, RoleName $role, Throwable $exception): NodeRoleOperationException
+    {
+        return new NodeRoleOperationException(
+            step: 'firewall-recovery',
+            errorCode: 'node_role.remove_failed',
+            underlyingErrorCode: 'node.firewall_recovery_failed',
+            message: "Could not reopen public SSH on node [{$node->name}] after removing its last role [{$role->value}].",
+            result: $exception instanceof FirewallOperationException ? $exception->result : null,
             previous: $exception,
         );
     }

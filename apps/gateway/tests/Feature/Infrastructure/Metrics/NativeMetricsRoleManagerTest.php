@@ -8,12 +8,14 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Models\Node;
+use Tests\Support\FakeNodeRoleFirewallManager;
 
 it('fails closed before removal when Metrics assignments drift', function (): void {
     foreach (['metrics-a', 'metrics-b'] as $name) {
@@ -148,4 +150,5 @@ function metricsRoleManagerStubBaselines(): void
         Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
     );
     app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing());
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
 }

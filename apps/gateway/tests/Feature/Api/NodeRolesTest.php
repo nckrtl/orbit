@@ -8,6 +8,7 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -23,6 +24,7 @@ use App\Models\NodeRole;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\TestCase;
 
@@ -31,6 +33,7 @@ beforeEach(function (): void {
     $this->roleLifecycle = new NodeRoleApiLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $this->roleLifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $this->roleLifecycle);
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
     $this->reachability = new NodeRoleApiReachabilityFake;
     app()->instance(NodeReachabilityProbe::class, $this->reachability);
 

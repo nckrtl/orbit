@@ -14,6 +14,7 @@ use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRemovalException;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteRemovalGuard;
@@ -36,6 +37,7 @@ final readonly class RemoveNodeAction
         private RemoveNodeRoleAction $roles,
         private NodeSideResidue $residue,
         private NodeProvisioningLock $provisioningLock,
+        private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
     ) {}
@@ -125,6 +127,30 @@ final readonly class RemoveNodeAction
                 message: "Could not retire Metrics exporter state for node [{$node->name}].",
                 previous: $exception,
             );
+        }
+
+        // Public SSH is reopened while the tunnel still exists, so the machine
+        // stays reachable for `node:provision` or recovery after it leaves.
+        // A node without a peer never had its public path closed, and an
+        // offline removal cannot change the machine at all.
+        if (! $offline && $node->wireguard_public_key !== null) {
+            try {
+                $this->firewall->restorePublicSsh($node, $node->user);
+            } catch (Throwable $exception) {
+                $node->update(['status' => LifecycleStatus::Active]);
+                $rollbackFailure = $this->restoreMetricsSelection();
+
+                if ($rollbackFailure instanceof Throwable) {
+                    throw $this->metricsRollbackFailure($node, $rollbackFailure);
+                }
+
+                throw $this->failure(
+                    step: 'firewall-recovery',
+                    errorCode: 'node.firewall_recovery_failed',
+                    message: "Could not reopen public SSH on node [{$node->name}] before removing its WireGuard peer.",
+                    previous: $exception,
+                );
+            }
         }
 
         if ($node->wireguard_public_key !== null) {

@@ -6,6 +6,7 @@ use App\Actions\Nodes\RemoveNodeAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -17,6 +18,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
@@ -35,11 +37,14 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Schedule;
+use Tests\Support\FakeNodeRoleFirewallManager;
 
 beforeEach(function (): void {
     $this->dns = new RemoveNodeFakeDnsManager;
     $this->peers = new RemoveNodeFakePeerProjection;
     $this->metricsAccess = new RemoveNodeFakeMetricsAccessRevoker;
+    $this->firewall = new FakeNodeRoleFirewallManager;
+    app()->instance(NodeRoleFirewallManager::class, $this->firewall);
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
     app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
@@ -411,6 +416,66 @@ it('removes only the target WireGuard peer before reconciling DNS', function ():
         ->toBeNull();
 });
 
+it('reopens public SSH over WireGuard before removing the WireGuard peer', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    $peersRemovedAtRestore = null;
+    $this->firewall->onRestore = function () use (&$peersRemovedAtRestore): void {
+        $peersRemovedAtRestore = $this->peers->removed;
+    };
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true)
+        ->assertJsonPath('data.wireguard_peer_removed', true);
+
+    expect($this->firewall->restored)
+        ->toBe([$target->id])
+        ->and($this->firewall->restoredUsers)
+        ->toBe(['orbit'])
+        ->and($peersRemovedAtRestore)
+        ->toBe([])
+        ->and($this->peers->removed)
+        ->toBe([$target->id])
+        ->and($target->fresh())
+        ->toBeNull();
+});
+
+it('refuses removal and keeps the WireGuard peer when public SSH cannot be reopened', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    $this->firewall->restoreFailure = new FirewallOperationException(
+        step: 'host-firewall',
+        errorCode: 'node.firewall_convergence_failed',
+        message: 'private firewall detail',
+    );
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('retire')->once();
+    $metrics->shouldReceive('reconcile')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'node.firewall_recovery_failed')
+        ->assertJsonPath('error.details.step', 'firewall-recovery')
+        ->assertJsonMissing(['private firewall detail']);
+
+    expect($target->fresh()?->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+});
+
 it('returns 502 and retains active state when WireGuard projection fails', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
@@ -544,7 +609,9 @@ it('removes a roleless node without resources and returns the stable projection 
     expect($target->fresh())
         ->toBeNull()
         ->and($this->dns->convergences)
-        ->toBe(1);
+        ->toBe(1)
+        ->and($this->firewall->restored)
+        ->toBe([]);
 
     $activity = Activity::query()->where('command', 'node:remove')->sole();
 
@@ -711,7 +778,9 @@ it('removes an unreachable node holding a role in one command', function (): voi
         ->and(Instance::query()->where('node_id', $target->id)->exists())
         ->toBeFalse()
         ->and($this->peers->removed)
-        ->toBe([$target->id]);
+        ->toBe([$target->id])
+        ->and($this->firewall->restored)
+        ->toBe([]);
 });
 
 it('refuses an unreachable node without the offline claim and names the flag', function (): void {
