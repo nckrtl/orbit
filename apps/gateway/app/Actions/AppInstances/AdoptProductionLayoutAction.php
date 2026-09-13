@@ -149,7 +149,6 @@ final readonly class AdoptProductionLayoutAction
         PrepareAppInstanceDeploymentLayoutData $data,
     ): AppInstanceDeploymentLayout {
         $appInstance = $this->activeProductionInstance($appInstanceId);
-        ($this->scheduleTargets ?? app(ScheduleTargetUseGuard::class))->assertAppInstanceStable($appInstance);
 
         if ($appInstance->usesProductionReleaseLayout()) {
             throw $this->conflict('deployment_layout.not_convertible', 'The AppInstance already uses a release layout.');
@@ -159,6 +158,7 @@ final readonly class AdoptProductionLayoutAction
             throw $this->conflict('deployment_layout.placement_invalid', 'The production source placement is not convertible.');
         }
 
+        ($this->scheduleTargets ?? app(ScheduleTargetUseGuard::class))->assertAppInstanceStable($appInstance);
         $context = $this->contexts->resolve($appInstance, requireActiveNode: true);
         $snapshot = $this->environmentStore->synchronizationSnapshot($context);
         $expectedEnvironment = $this->environmentRenderer->render($context, $snapshot->values());
