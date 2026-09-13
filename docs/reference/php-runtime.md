@@ -106,7 +106,7 @@ Production sites add an immutable cache header for Vite build output:
 header @vite Cache-Control "public, max-age=31536000, immutable"
 ```
 
-Laravel's Vite plugin fingerprints every file under `public/build/assets`, so browsers can keep them for a year. The `file` matcher limits the header to assets that exist on disk. A request for a removed fingerprint falls through to Laravel's front controller without the header, so a 404 is never cached as immutable. Development sites set no caching header. `php_fastcgi`, `encode zstd gzip`, and `file_server` keep Caddy defaults; Orbit renders no `try_files`, and the `php_fastcgi` default tries `{path}`, then `{path}/index.php`, then `index.php`.
+Laravel's Vite plugin fingerprints every file under `public/build/assets`, so browsers can keep them for a year. The `file` matcher limits the header to assets that exist on disk. A request for a removed fingerprint falls through to Laravel's front controller without the header, so a 404 is never cached as immutable. Development sites set no caching header. Workload Caddy reverse-proxies `/__orbit/vite` to `127.0.0.1:5173` for live assets, as the [development-server endpoint](routes.md#development-server-endpoint) describes. `php_fastcgi`, `encode zstd gzip`, and `file_server` keep Caddy defaults; Orbit renders no `try_files`, and the `php_fastcgi` default tries `{path}`, then `{path}/index.php`, then `index.php`.
 
 ## Inspect production runtime with Doctor
 

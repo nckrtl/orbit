@@ -44,6 +44,7 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toContain('Restart=on-failure')
         ->not->toContain('VITE_DEV_SERVER_CERT')
         ->not->toContain('VITE_DEV_SERVER_KEY')
+        ->not->toContain('ORBIT_DEV_SERVER_ORIGIN')
         ->not->toContain('/bin/bash')
         ->not->toContain('sh -c');
 
@@ -115,7 +116,8 @@ it('pins derived instance and workspace Vite TLS paths after the app environment
             "ExecStart=\"/usr/bin/env\" \"VITE_DEV_SERVER_CERT=/srv/orbit home/.orbit/certificates/{$scope}/current/cert.pem\" \"VITE_DEV_SERVER_KEY=/srv/orbit home/.orbit/certificates/{$scope}/current/key.pem\" \"/usr/bin/npm\" \"run\" \"dev\"",
         )
         ->not->toContain('/bad/cert.pem')
-        ->not->toContain('/bad/key.pem');
+        ->not->toContain('/bad/key.pem')
+        ->not->toContain('ORBIT_DEV_SERVER_ORIGIN');
 })->with([
     'instance' => ['instance-3'],
     'workspace' => ['workspace-4'],
@@ -187,4 +189,42 @@ it('rejects a non-absolute executable from persisted runtime configuration', fun
 
     expect(fn () => new SystemdProcessRenderer()->render($process, $target))
         ->toThrow(InvalidArgumentException::class, 'absolute executable');
+});
+
+it('pins the Route development-server origin after the app environment file', function (): void {
+    $process = new Process([
+        'name' => 'vite',
+        'runtime_config' => [
+            'command' => ['/usr/bin/npm', 'run', 'dev'],
+            'environment_file' => '/tmp/.env',
+        ],
+        'working_directory' => '/tmp',
+        'restart_policy' => 'never',
+    ]);
+    $process->id = 11;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'dev']),
+        user: 'orbit',
+        checkoutPath: '/tmp',
+        certificateScope: 'app-instance-6',
+        routeHostname: 'tasks.commander.test',
+    );
+
+    $unit = new SystemdProcessRenderer()->render(
+        $process,
+        $target,
+        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+    );
+
+    expect($unit)
+        ->toContain('Environment=ORBIT_DEV_SERVER_ORIGIN=https://tasks.commander.test/__orbit/vite')
+        ->toContain('Environment=ORBIT_DEV_SERVER_HOST=tasks.commander.test')
+        ->toContain('Environment=ORBIT_DEV_SERVER_PATH=/__orbit/vite')
+        ->toContain('Environment=ORBIT_DEV_SERVER_PORT=5173')
+        ->toContain(
+            'Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/app-instance-6/current/cert.pem',
+        )
+        ->toContain(
+            '"ORBIT_DEV_SERVER_ORIGIN=https://tasks.commander.test/__orbit/vite"',
+        );
 });

@@ -71,6 +71,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
                 "Effective web root",
@@ -1406,6 +1407,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0067-serve-development-servers-on-the-route-origin.md",
+            "title": "ADR 0067: Serve development servers on the Route origin",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Development-server endpoint",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0023",
+                "0028",
+                "0033",
+                "0067"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1482,6 +1508,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Development-server endpoint",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -1709,6 +1736,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Development-server endpoint",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -1750,6 +1778,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Development-server endpoint",
                 "Doctor",
                 "Gateway",
                 "Ingress",
@@ -1769,7 +1798,8 @@
                 "0029",
                 "0030",
                 "0033",
-                "0041"
+                "0041",
+                "0067"
             ]
         },
         {

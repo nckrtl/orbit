@@ -19,6 +19,7 @@ final readonly class ProcessTarget
         public ?AppInstance $appInstance = null,
         public string $environmentFile = '',
         public bool $productionReleaseLayout = false,
+        public ?string $routeHostname = null,
     ) {
         $this->defaultWorkingDirectory = $checkoutPath;
     }

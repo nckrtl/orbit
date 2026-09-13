@@ -12,6 +12,7 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use AppInstance.
 - **Workspace** — A Git worktree owned by a legacy Instance. AppInstance creation does not use or change Workspace source.
 - **Route** — An App-owned hostname with stored provenance and one Node or active Cluster scope. A generated Route follows its target Node. See [Routes](reference/routes.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md).
+- **Development-server endpoint** — The reserved path `/__orbit/vite` on an AppInstance Route hostname that carries live frontend assets and hot module replacement through Cluster HTTPS to the owning Node. See [Routes](reference/routes.md#development-server-endpoint).
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
