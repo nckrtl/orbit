@@ -217,7 +217,8 @@ it('pins the host and converges only base node identity and connectivity', funct
     $ssh = new BaseNodeSshExecutor;
     $baseNodes = [];
     $firewallRoles = [];
-    $firewall = base_firewall_spy($baseNodes, $firewallRoles);
+    $trustedNodes = [];
+    $firewall = base_firewall_spy($baseNodes, $firewallRoles, $trustedNodes);
     $wireGuard = new class implements WireGuardPeerConverger
     {
         public bool $converged = false;
@@ -251,7 +252,9 @@ it('pins the host and converges only base node identity and connectivity', funct
         ->and($baseNodes)
         ->toBe([$node->id])
         ->and($firewallRoles)
-        ->toBe([RoleName::Vpn])
+        ->toBe([])
+        ->and($trustedNodes)
+        ->toBe([$node->id])
         ->and($wireGuard->converged)
         ->toBeTrue()
         ->and($observation->architecture)
@@ -373,6 +376,7 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
     };
     $baseFirewallNodes = [];
     $firewallRoles = [];
+    $trustedNodes = [];
     $converger = new NativeNodeConverger(
         hostKeys: $scanner,
         knownHosts: base_test_known_hosts(),
@@ -380,7 +384,7 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
         wireGuard: $wireGuard,
-        firewall: base_firewall_spy($baseFirewallNodes, $firewallRoles),
+        firewall: base_firewall_spy($baseFirewallNodes, $firewallRoles, $trustedNodes),
     );
 
     $completed = false;
@@ -392,7 +396,8 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
     expect($scans)->toBe(['10.44.0.2:22']);
     expect($wireGuardConnections)->toBe([]);
     expect($baseFirewallNodes)->toBe([]);
-    expect($firewallRoles)->toBe([RoleName::Vpn]);
+    expect($firewallRoles)->toBe([]);
+    expect($trustedNodes)->toBe([$node->id]);
     expect($completed)->toBeTrue();
     expect(array_map(
         static fn (array $call): string => "{$call['connection']->host}:{$call['connection']->port}",
@@ -428,7 +433,9 @@ it('commits recoverable peer publication before activating orbit SSH for active 
             bool $rolelessOperator = false,
         ): void {
             $this->events[] = 'wireguard-publish';
-            $completion();
+            $completion(function (SshConnection $verified): void {
+                $this->events[] = "wireguard-finalize:{$verified->host}:{$verified->port}";
+            });
             $this->events[] = 'wireguard-commit';
         }
     };
@@ -455,6 +462,7 @@ it('commits recoverable peer publication before activating orbit SSH for active 
 
     expect($events)->toBe([
         'wireguard-publish',
+        'wireguard-finalize:10.44.0.2:22',
         'apt:x86_64',
         'wireguard-commit',
     ]);
@@ -766,6 +774,8 @@ it('translates base firewall failures to node provisioning failures', function (
 
         public function remove(Node $node, RoleName $role, string $managedUser): void {}
 
+        public function trustWireGuardMembers(Node $node, string $managedUser): void {}
+
         public function restorePublicSsh(Node $node, string $managedUser): void {}
     };
     $converger = base_node_converger(new BaseNodeSshExecutor, firewall: $firewall);
@@ -1054,7 +1064,7 @@ final class BaseNodeSshExecutor implements SshExecutor
  * @param  list<int>|null  $baseNodes
  * @param  list<RoleName>|null  $roles
  */
-function base_firewall_spy(?array &$baseNodes = null, ?array &$roles = null): NodeRoleFirewallManager
+function base_firewall_spy(?array &$baseNodes = null, ?array &$roles = null, ?array &$trusted = null): NodeRoleFirewallManager
 {
     $firewall = Mockery::mock(NodeRoleFirewallManager::class);
     $firewall
@@ -1069,6 +1079,13 @@ function base_firewall_spy(?array &$baseNodes = null, ?array &$roles = null): No
         ->andReturnUsing(static function (Node $node, RoleName $role) use (&$roles): void {
             if (is_array($roles)) {
                 $roles[] = $role;
+            }
+        });
+    $firewall
+        ->shouldReceive('trustWireGuardMembers')
+        ->andReturnUsing(static function (Node $node) use (&$trusted): void {
+            if (is_array($trusted)) {
+                $trusted[] = $node->id;
             }
         });
 

@@ -51,6 +51,12 @@ Each identity or architecture failure names the boundary that stopped the reques
 | `node.architecture_unavailable` | The Gateway could not read a machine architecture from the Node as the managed user. |
 | `node.architecture_mismatch` | The request names an architecture that differs from the observed one for a Node without a record. The Gateway records no architecture and converges no role. |
 
+## Public SSH after provisioning
+
+Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](node-retarget.md#two-boundaries) describes the same two boundaries.
+
+A later `node:provision` of a roleless Node therefore connects over public SSH again and republishes the WireGuard peer. The Gateway finalizes that publication over the verified tunnel, because role convergence closes the public path during the same request.
+
 ## Remove a Node
 
 `orbit node:remove <node> [--offline] [--force]` deletes a Node record and its Gateway-side projections, and leaves the machine reachable over its recorded public SSH target so an operator can provision it again or reach it for recovery. The Gateway refuses the request while the Node still owns AppInstances, instances, Orbit firewall rules, or roles, and it never removes a Node with the Gateway or VPN role or the Node that sends the request.
@@ -66,7 +72,7 @@ The online removal runs these steps in order and reports success only after the 
 | DNS | The Gateway converges its private DNS records. |
 | Record | The Gateway deletes the Node record. |
 
-The Gateway skips the public SSH step for a Node without a WireGuard peer, because provisioning closes public SSH only after the peer exists.
+The Gateway skips the public SSH step for a Node without a WireGuard peer, because public SSH closes only after the peer exists.
 
 `--offline` is for a Node the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps the ordinary guards, so the flag never bypasses a guard on a reachable machine. The flag also skips the public SSH recovery step when the Node answers, so omit it for a reachable Node.
 

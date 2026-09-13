@@ -75,6 +75,33 @@ it('trusts WireGuard membership and removes public recovery after VPN convergenc
         ->each->toBe('nckrtl');
 });
 
+it('trusts WireGuard membership and keeps public recovery when a roleless Node joins', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $node = role_firewall_node();
+    $manager->convergeBase($node, 'nckrtl');
+    $ssh->calls = [];
+
+    $manager->trustWireGuardMembers($node, 'nckrtl');
+
+    $arguments = array_map(static fn (array $call): array => $call['command']->arguments, $ssh->calls);
+    $deletions = array_values(array_filter(
+        $arguments,
+        static fn (array $command): bool => ($command[3] ?? null) === 'delete',
+    ));
+
+    expect($ssh->comments())
+        ->toContain('orbit:wireguard-members', 'orbit:public-ssh-recovery')
+        ->and($arguments)
+        ->not->toContain(['sudo', 'ufw', '--force', 'enable'])
+        ->and($deletions)
+        ->toBe([])
+        ->and(array_column($ssh->calls, 'connection'))->each(
+            fn ($connection) => $connection->host->toBe('10.44.0.2'),
+        )->and($ssh->users())
+        ->each->toBe('nckrtl');
+});
+
 it('restores the exact public SSH recovery rule over WireGuard without enabling UFW', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $ssh->seed(['orbit:wireguard-members']);

@@ -12,7 +12,6 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
-use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -90,8 +89,13 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         $this->wireGuard->convergeRecoverably(
             $node,
             $this->connection($node, $identity->managedUser),
-            function () use ($node, $identity, $hostKey, $wireguardIp, $observation, $completion): void {
+            function (?Closure $finalizeOver = null) use ($node, $identity, $hostKey, $wireguardIp, $observation, $completion): void {
                 $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
+
+                if ($finalizeOver instanceof Closure) {
+                    $finalizeOver($this->connection($node, $identity->managedUser, $wireguardIp, 22));
+                }
+
                 $completion($observation);
             },
             $rolelessOperator,
@@ -258,8 +262,10 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
+        // Membership trust only: a Node provisioned without roles stays
+        // reachable over public SSH, and the first role convergence closes it.
         try {
-            $this->firewall->converge($node, RoleName::Vpn, $managedUser);
+            $this->firewall->trustWireGuardMembers($node, $managedUser);
         } catch (FirewallOperationException $exception) {
             throw new NodeProvisioningException(
                 $exception->step,

@@ -32,6 +32,8 @@ final class FakeNodeRoleFirewallManager implements NodeRoleFirewallManager
 
     public function remove(Node $node, RoleName $role, string $managedUser): void {}
 
+    public function trustWireGuardMembers(Node $node, string $managedUser): void {}
+
     public function restorePublicSsh(Node $node, string $managedUser): void
     {
         $this->restored[] = $node->id;
