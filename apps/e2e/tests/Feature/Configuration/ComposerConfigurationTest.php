@@ -101,7 +101,7 @@ describe('Composer configuration', function (): void {
             ->and($composer['scripts']['test:fresh'])
             ->toBe('vendor/bin/pest --parallel --tia --fresh --compact')
             ->and($composer['scripts']['guidance:check'])
-            ->toBe('vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact');
+            ->toBe('ORBIT_TIA_DIRECTORY=.pest/guidance vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact');
         expect($composer['scripts'])->not->toHaveKey('test:scenario-cold');
         expect($composer['scripts']['scenario:cold'])
             ->toBe([

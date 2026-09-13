@@ -3,3 +3,4 @@
 __pycache__/
 /.e2e/
 /.loop/
+.pest/
