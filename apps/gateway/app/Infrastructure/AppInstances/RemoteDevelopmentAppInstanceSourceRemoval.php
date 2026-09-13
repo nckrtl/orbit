@@ -247,9 +247,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             || $inventory->checkoutPath !== $appInstance->checkout_path
             || $inventory->root !== $context['root']->value
             || $inventory->branch !== $context['branch']
-            || $inventory->linkedWorktreePaths !== [$appInstance->checkout_path]
         ) {
             $this->invalidEvidence($appInstance, $force);
+        }
+
+        if ($inventory->linkedWorktreePaths !== [$appInstance->checkout_path]) {
+            $this->mismatch($appInstance, AppInstanceSourceMismatch::Worktrees, 'app-instance-source-remove');
         }
 
         $groupingDirectory = $this->boundaries
