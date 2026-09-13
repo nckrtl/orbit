@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\SetClusterRouterAction;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -20,6 +22,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 
 beforeEach(function (): void {
     $this->baselines = new class implements RoleBaselineConverger
@@ -72,6 +75,46 @@ beforeEach(function (): void {
             'status' => LifecycleStatus::Active,
         ]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+});
+
+it('reconciles Router DNS selection before a new Router assignment becomes authoritative', function (): void {
+    $dns = cluster_router_dns_reconciler();
+    $dns->onExpand = function (): void {
+        expect($this->cluster->routerAssignment()->exists())->toBeFalse();
+    };
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")
+        ->assertOk();
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->first->id)
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand', 'prune'])
+        ->and($dns->events[0]['clusterOverrides'][$this->cluster->id]['router_node_id'])
+        ->toBe($this->first->id);
+});
+
+it('keeps the previous Router when DNS selection expansion fails', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    $dns = cluster_router_dns_reconciler();
+    $dns->events = [];
+    $dns->expandFailure = new RuntimeConvergenceException(
+        step: 'private-dns',
+        errorCode: 'app-dev.dns_config_failed',
+        message: 'DNS selection failed.',
+    );
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertServerError();
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->first->id)
+        ->and(NodeRole::query()->where('role', RoleName::Router)->where('node_id', $this->second->id)->exists())
+        ->toBeFalse()
+        ->and(array_column($dns->events, 'phase'))
+        ->toBe(['expand']);
 });
 
 it('sets a Router beside an application role and rejects generic Router mutation', function (): void {
@@ -556,6 +599,21 @@ it('still forbids detaching an active Cluster Router or a failed live removal', 
     expect($this->first->refresh()->cluster_id)->toBe($this->cluster->id);
 });
 
+it('does not publish DNS selection for a refused Router assignment', function (): void {
+    $outside = cluster_router_api_node('outside-dns', '10.44.0.8');
+    $dns = cluster_router_dns_reconciler();
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$outside->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.router_node_invalid');
+
+    expect($dns->events)
+        ->toBeEmpty()
+        ->and($this->cluster->routerAssignment()->exists())
+        ->toBeFalse();
+});
+
 it('requires an active member Node for Router assignment', function (): void {
     $outside = cluster_router_api_node('outside', '10.44.0.4');
 
@@ -618,6 +676,14 @@ it('clears an optional Router while a TLD-less Cluster remains active', function
         ->and($this->cluster->routerAssignment()->exists())
         ->toBeFalse();
 });
+
+function cluster_router_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
+{
+    $dns = app(ClusterRouterDnsSelectionReconciler::class);
+    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
+
+    return $dns;
+}
 
 function cluster_router_api_node(string $name, string $wireguardIp, ?Cluster $cluster = null): Node
 {

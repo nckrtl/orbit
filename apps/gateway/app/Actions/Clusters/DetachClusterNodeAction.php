@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\RoleName;
@@ -21,6 +22,7 @@ final readonly class DetachClusterNodeAction
         private ActiveTldScopeGuard $tldScope,
         private ?RouteMutationReconciler $routes = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
+        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
@@ -29,6 +31,17 @@ final readonly class DetachClusterNodeAction
             nodeOverrides: [$node->id => ['cluster_id' => null]],
             clusterIds: [$cluster->id],
         );
+
+        try {
+            $this->dnsSelection()->expand(
+                nodeOverrides: [$node->id => ['cluster_id' => null]],
+                clusterIds: [$cluster->id],
+            );
+        } catch (Throwable $exception) {
+            $this->lanIngress()->prune(clusterIds: [$cluster->id]);
+
+            throw $exception;
+        }
 
         try {
             /**
@@ -85,11 +98,16 @@ final readonly class DetachClusterNodeAction
                 return $lockedCluster->refresh();
             });
         } catch (Throwable $exception) {
+            $this->dnsSelection()->prune(clusterIds: [$cluster->id]);
             $this->lanIngress()->prune(clusterIds: [$cluster->id]);
 
             throw $exception;
         }
 
+        $this->dnsSelection()->prune(
+            nodeOverrides: [$node->id => ['cluster_id' => null]],
+            clusterIds: [$cluster->id],
+        );
         $this->lanIngress()->prune(
             nodeOverrides: [$node->id => ['cluster_id' => null]],
             clusterIds: [$cluster->id],
@@ -101,5 +119,10 @@ final readonly class DetachClusterNodeAction
     private function lanIngress(): RouterLanIngressReconciler
     {
         return $this->lanIngress ?? app(RouterLanIngressReconciler::class);
+    }
+
+    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
+    {
+        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
     }
 }

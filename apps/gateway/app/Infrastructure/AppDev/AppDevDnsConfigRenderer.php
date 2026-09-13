@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\AppDev\ClusterRouterDnsSelection;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\AppInstance;
@@ -15,13 +17,20 @@ final readonly class AppDevDnsConfigRenderer
 {
     public function __construct(
         private AppDevSiteRepository $sites,
+        private ClusterRouterDnsSelection $selection = new ClusterRouterDnsSelection,
     ) {}
 
+    /**
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     */
     public function render(
         ?Node $pendingNode = null,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
         ?Route $additionalRoute = null,
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
     ): string {
         $nodes = Node::query()
             ->where(static function (Builder $q) use ($pendingNode): void {
@@ -40,11 +49,18 @@ final readonly class AppDevDnsConfigRenderer
             )->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value]))
             ->whereNotNull('wireguard_ip')
             ->whereNotNull('tld')
-            ->get()
-            ->flatMap(static fn (Node $n): array => [
-                "address=/.{$n->tld}/{$n->wireguard_ip}",
-                "local=/{$n->tld}/",
-            ]);
+            ->get();
+        $clusterTlds = $this->selection->clusterTlds($nodeOverrides, $clusterOverrides);
+        $nodes = $nodes
+            ->flatMap(static function (Node $n) use ($clusterTlds): array {
+                $records = ["local=/{$n->tld}/"];
+
+                if (! in_array(rtrim(strtolower((string) $n->tld), '.'), $clusterTlds, true)) {
+                    $records[] = "address=/.{$n->tld}/{$n->wireguard_ip}";
+                }
+
+                return $records;
+            });
         $records = $nodes
             ->toBase()
             ->merge($this->sites
@@ -96,17 +112,52 @@ final readonly class AppDevDnsConfigRenderer
             }
         }
 
+        foreach ($this->selection->clusterTldRecords($nodeOverrides, $clusterOverrides) as $record) {
+            $records->push($record);
+        }
+
         return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
     }
 
+    /**
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     */
     public function catalog(
         ?Node $pendingNode = null,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
         ?Route $additionalRoute = null,
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
     ): PrivateDnsAnswerCatalog {
-        return PrivateDnsAnswerCatalog::fromDnsmasqConfiguration(
-            $this->render($pendingNode, $pendingRoute, $unavailableInstance, $additionalRoute),
+        $catalog = PrivateDnsAnswerCatalog::fromDnsmasqConfiguration(
+            $this->render(
+                $pendingNode,
+                $pendingRoute,
+                $unavailableInstance,
+                $additionalRoute,
+                $nodeOverrides,
+                $clusterOverrides,
+            ),
+        );
+        $answers = $this->selection->answers($nodeOverrides, $clusterOverrides, $additionalRoute);
+        $overrides = $catalog->overrides;
+
+        foreach ($answers['overrides'] as $cacheKey => $requesterOverrides) {
+            $overrides[$cacheKey] = [
+                ...($overrides[$cacheKey] ?? []),
+                ...$requesterOverrides,
+            ];
+        }
+
+        return new PrivateDnsAnswerCatalog(
+            exact: $catalog->exact,
+            suffixes: [
+                ...$catalog->suffixes,
+                ...$answers['suffixes'],
+            ],
+            overrides: $overrides,
         );
     }
 
