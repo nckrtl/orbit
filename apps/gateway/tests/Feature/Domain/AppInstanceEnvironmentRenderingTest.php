@@ -13,7 +13,7 @@ it('resolves each selected owner from one stored expression while retaining lite
     $values = [
         'APP_ENV' => '{{app_instance.environment}}',
         'APP_KEY' => 'base64:literal-key',
-        'APP_URL' => 'https://{{app_instance.hostname}}/path',
+        'APP_URL' => 'https://{{app_instance.domain}}/path',
     ];
 
     $development = Dotenv::parse($renderer->render(
@@ -85,7 +85,7 @@ it('refuses an unavailable stored reference without returning rendered values', 
     }
 });
 
-function rendering_environment_context(string $hostname, string $environment): AppInstanceEnvironmentContext
+function rendering_environment_context(string $domain, string $environment): AppInstanceEnvironmentContext
 {
     return new AppInstanceEnvironmentContext(
         appInstanceId: 1,
@@ -96,7 +96,7 @@ function rendering_environment_context(string $hostname, string $environment): A
         executionUser: 'orbit',
         laravel: true,
         routeId: 1,
-        routeHostname: $hostname,
+        routeDomain: $domain,
         nodeStatus: 'active',
         node: new Node,
     );

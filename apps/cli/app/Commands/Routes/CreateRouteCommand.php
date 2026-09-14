@@ -14,7 +14,7 @@ final class CreateRouteCommand extends RouteCommand
     #[\Override]
     protected $signature = 'route:create
         {app : Numeric App ID}
-        {hostname : Route hostname}
+        {domain : Route domain}
         {--publication=private : Publication intent}
         {--target= : Numeric AppInstance target ID}
         {--node= : Numeric Node scope ID for a targetless Route}
@@ -31,8 +31,8 @@ final class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $hostname = $this->stringArgument('hostname', 'Route hostname', 'route.hostname_required');
-        if ($hostname === null) {
+        $domain = $this->stringArgument('domain', 'Route domain', 'route.domain_required');
+        if ($domain === null) {
             return self::FAILURE;
         }
 
@@ -77,7 +77,7 @@ final class CreateRouteCommand extends RouteCommand
             $connector,
             new CreateRouteRequest(
                 appId: $appId,
-                hostname: $hostname,
+                domain: $domain,
                 publication: $publication,
                 appInstanceId: $targetId,
                 nodeId: $nodeId,
@@ -87,7 +87,7 @@ final class CreateRouteCommand extends RouteCommand
         );
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->hostname}] created.")
+            ? $this->renderRoute($route, "Route [{$route->domain}] created.")
             : self::FAILURE;
     }
 }

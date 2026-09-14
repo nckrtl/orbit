@@ -187,7 +187,7 @@ final readonly class ServingNodeResolver
             $instances = AppInstance::query()->whereKey($numeric)->limit(2)->get();
         } else {
             $instances = AppInstance::query()
-                ->whereHas('routes', static fn ($query) => $query->where('hostname', $target))
+                ->whereHas('routes', static fn ($query) => $query->where('domain', $target))
                 ->orderBy('id')
                 ->limit(2)
                 ->get();

@@ -462,11 +462,11 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
     ]);
     expect($recorded('POST', '/api/v1/routes', [
         'app_id' => $app->id,
-        'hostname' => 'lifecycle.example.test',
+        'domain' => 'lifecycle.example.test',
         'publication' => 'private',
         'node_id' => $node->id,
     ]))->toBe('route:create');
-    $route = Route::query()->where('hostname', 'lifecycle.example.test')->sole();
+    $route = Route::query()->where('domain', 'lifecycle.example.test')->sole();
     expect($recorded('DELETE', "/api/v1/routes/{$route->id}/target"))->toBe('route:target:unset');
     expect($recorded('DELETE', "/api/v1/routes/{$route->id}"))->toBe('route:destroy');
 });
@@ -1659,7 +1659,7 @@ function command_activity_environment_fixture(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $owner->id,
-        'hostname' => 'environment-activity.example.test',
+        'domain' => 'environment-activity.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

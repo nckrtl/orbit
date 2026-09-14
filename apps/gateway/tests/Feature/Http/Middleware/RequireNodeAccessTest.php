@@ -447,7 +447,7 @@ function middleware_instance(OrbitApp $app, Node $node, string $name): Instance
         'name' => $name,
         'environment' => 'testing',
         'checkout_path' => '/srv/'.$name,
-        'hostname' => $name.'.example.test',
+        'domain' => $name.'.example.test',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
     ]);

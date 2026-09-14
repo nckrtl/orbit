@@ -18,7 +18,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {node : Numeric node ID}
         {name : AppInstance name; default is reserved for the default development source}
         {--root= : Optional relative web-root override}
-        {--hostname= : Optional explicit Route hostname}
+        {--domain= : Optional explicit Route domain}
         {--branch= : Optional explicit source branch}
         {--recover-source-profile : Adopt complete source evidence for a legacy incomplete checkpoint}
         {--json : Return machine-readable JSON}';
@@ -66,7 +66,7 @@ HELP;
                 nodeId: $nodeId,
                 name: $name,
                 root: $this->stringOption('root'),
-                hostname: $this->stringOption('hostname'),
+                domain: $this->stringOption('domain'),
                 branch: $this->stringOption('branch'),
                 recoverSourceProfile: $this->option('recover-source-profile') === true ? true : null,
             ),
@@ -94,7 +94,7 @@ HELP;
         $this->line('Branch override: '.($instance->branchOverride ?? '-'));
         $this->line('Migration required: '.($instance->migrationRequired ? 'yes' : 'no'));
         if ($instance->url !== null) {
-            $this->line('Route hostname: '.($instance->hostname ?? '-'));
+            $this->line('Route domain: '.($instance->domain ?? '-'));
             $this->line("URL: {$instance->url}");
         }
         $this->line("Request ID: {$instance->requestId}");

@@ -7,7 +7,7 @@ namespace App\Domain\Routes;
 use App\Models\AppInstance;
 use App\Models\Route;
 
-interface RouteHostnameProjector
+interface RouteDomainProjector
 {
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void;
 

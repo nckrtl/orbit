@@ -15,7 +15,7 @@ abstract class DatabaseAttachmentCommand extends DatabaseCommand
         if (! is_string($selector) || $selector === '') {
             $this->renderGatewayFailure(
                 'database.instance_required',
-                'AppInstance ID or Route hostname is required.',
+                'AppInstance ID or Route domain is required.',
             );
 
             return null;

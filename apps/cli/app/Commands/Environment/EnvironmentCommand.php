@@ -16,7 +16,7 @@ abstract class EnvironmentCommand extends GatewayCommand
         if (! is_string($selector) || $selector === '') {
             $this->renderGatewayFailure(
                 'env.instance_required',
-                'AppInstance ID or Route hostname is required.',
+                'AppInstance ID or Route domain is required.',
             );
 
             return null;

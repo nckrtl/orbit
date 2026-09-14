@@ -15,6 +15,6 @@ final readonly class RegisterAppInstanceData
         public ?string $defaultBranch,
         public ?string $instanceName,
         public ?string $root,
-        public ?string $hostname,
+        public ?string $domain,
     ) {}
 }

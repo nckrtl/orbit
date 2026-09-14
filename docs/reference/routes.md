@@ -1,6 +1,6 @@
 # Routes
 
-A Route gives an App instance a hostname and directs private traffic to it. This page explains hostname selection, traffic setup, and supported changes. Each active App instance has exactly one Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires.
+A Route gives an App instance a domain and directs private traffic to it. This page explains domain selection, traffic setup, and supported changes. Each active App instance has exactly one authoritative Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires. A domain change creates a replacement Route under [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
 
 ## Route record
 
@@ -10,32 +10,33 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | --- | --- |
 | App | The stable owner of the Route and every allowed target. |
 | Routing scope | Exactly one Node or one active Cluster. Active Cluster membership selects Cluster scope even when the Cluster has no TLD. |
-| Hostname | One normalized hostname that no other Route owns. |
-| Hostname source | Always `generated` or `explicit`. This value never changes, and Orbit does not infer it from the hostname. |
+| Domain | One immutable normalized domain that no other Route owns. |
+| Domain source | Always `generated` or `explicit`. This value never changes, and Orbit does not infer it from the domain. |
+| Replacement | Optional `replaces_route_id`, `replaced_by_route_id`, and `replacement_step` that expose a reserved, activating, retiring, or failed replacement pair. |
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
 | Publication intent | The requested publication state, retained even when the Route has no target. |
-| Status | Pending during setup, then active once the private traffic path is ready. Failure details identify the step to retry. |
+| Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
 | Configured target | The API, PHP SDK, and CLI accept zero or one App instance target. Generated and development Routes permit at most one target. |
 
-Creating the same explicit Route again with identical App, hostname, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route.
+Creating the same explicit Route again with identical App, domain, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route.
 
-## Select a hostname and scope
+## Select a domain and scope
 
-Supply a hostname when creating an App instance to request an explicit Route. Otherwise, Orbit generates one from the Node or Cluster top-level domain (TLD). If neither can supply a name, creation stops before source or runtime changes. App instance responses derive the hostname and URL from the Route.
+Supply a domain when creating an App instance to request an explicit Route. Otherwise, Orbit generates one from the Node or Cluster top-level domain (TLD). If neither can supply a name, creation stops before source or runtime changes. App instance responses derive the domain and URL from the authoritative Route.
 
-A generated hostname combines the instance name, App name, and Node TLD. If the Node has no TLD, Orbit uses its active Cluster's TLD. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines the `default` name.
+A generated domain combines the instance name, App name, and Node TLD. If the Node has no TLD, Orbit uses its active Cluster's TLD. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines the `default` name.
 
-| App instance name | Generated hostname with effective TLD `test` |
+| App instance name | Generated domain with effective TLD `test` |
 | --- | --- |
 | `default` | `<app>.test` |
 | Any other name | `<instance>.<app>.test` |
 
 An explicit source branch changes neither placement nor generated Route identity. For example, `instance:create <app> <node> default --branch=release` still generates `<app>.test`.
 
-An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. A standalone app-prod Node can remain valid without a TLD when production creation supplies an explicit Route hostname.
+An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. A standalone app-prod Node can remain valid without a TLD when production creation supplies an explicit Route domain.
 
-Cluster membership determines routing, independently of the hostname. A Node in an active Cluster uses Cluster routing, even if the name uses a Node TLD or the Cluster has no TLD. Other Nodes route directly. A Cluster with Routes needs exactly one active Router.
+Cluster membership determines routing, independently of the domain. A Node in an active Cluster uses Cluster routing, even if the name uses a Node TLD or the Cluster has no TLD. Other Nodes route directly. A Cluster with Routes needs exactly one active Router.
 
 ## Route operations
 
@@ -43,10 +44,10 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 
 | Operation | Result |
 | --- | --- |
-| Create | Store an explicit Route with its App, hostname, publication intent, optional single target, and either the target-derived scope or one supplied scope when no target is present. |
+| Create | Store an explicit Route with its App, domain, publication intent, optional single target, and either the target-derived scope or one supplied scope when no target is present. |
 | List | Return the Routes visible to the caller in stable order. |
 | Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, and target. |
-| Update | Change an explicit Route hostname or mutable publication intent without changing its App, provenance, generation basis, or scope. |
+| Update | Change an explicit Route domain by reserving a replacement Route, or change mutable publication intent on the same Route without changing its App, provenance, generation basis, or scope. |
 | Target set | Add or replace the one App instance target when the change does not detach an active App instance from its sole Route. |
 | Target unset | Remove the target only when that does not leave an active App instance without a Route, unless the same operation removes that App instance. |
 | Destroy | Delete the Route and only its Route-owned target rows when no active App instance depends on it. |
@@ -77,36 +78,36 @@ The Gateway prepares the initial private Route before it marks the Route and App
 
 ### Node scope
 
-For Node routing, Gateway Domain Name System (DNS) records point the hostname at the workload Node. Its Caddy service terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the App instance's web root through its runtime.
+For Node routing, Gateway Domain Name System (DNS) records point the domain at the workload Node. Its Caddy service terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the App instance's web root through its runtime.
 
 ### Cluster scope
 
-For Cluster routing, Gateway DNS points the Route hostname and Cluster TLD at the Router. [ADR 0062](/decisions/0062-select-cluster-router-dns-addresses-from-lan-intent) defines which Router address each requester receives.
+For Cluster routing, Gateway DNS points the Route domain and Cluster TLD at the Router. [ADR 0062](/decisions/0062-select-cluster-router-dns-addresses-from-lan-intent) defines which Router address each requester receives.
 
-An active LAN-configured WireGuard member of that active Cluster receives the Router's configured LAN address for the Cluster TLD and for each exact Cluster-scoped Route, including a Route hostname outside the Cluster TLD. Other permitted requesters receive the Router's WireGuard address.
+An active LAN-configured WireGuard member of that active Cluster receives the Router's configured LAN address for the Cluster TLD and for each exact Cluster-scoped Route, including a Route domain outside the Cluster TLD. Other permitted requesters receive the Router's WireGuard address.
 
 The Gateway identifies the requester from the registered WireGuard source that delivered the query. A shared LAN subnet or an identity in the DNS message does not change the selected address.
 
 [Private DNS](/reference/private-dns#cluster-router-addresses) owns how an operator inspects that selection, removes incorrect LAN intent, and recognizes an unreachable configured LAN path.
 
-Router Caddy preserves the hostname as the HTTP `Host` value and Transport Layer Security (TLS) server name when it forwards Orbit-CA HTTPS to the workload Node. Orbit issues separate private keys to the Router and workload Node. When both roles share one Node, the composed Caddy service sends the request to the local runtime without proxying to its own HTTPS listener.
+Router Caddy preserves the domain as the HTTP `Host` value and Transport Layer Security (TLS) server name when it forwards Orbit-CA HTTPS to the workload Node. Orbit issues separate private keys to the Router and workload Node. When both roles share one Node, the composed Caddy service sends the request to the local runtime without proxying to its own HTTPS listener.
 
 The Router uses the workload Node's configured LAN address. It uses WireGuard only when that LAN address is absent. A configured but unreachable LAN path fails publication and never falls back to WireGuard.
 
 ### Development-server endpoint
 
-The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) over the Route's HTTPS hostname on port 443. Cluster DNS points that hostname at the Router. The application serves its web root on the same hostname. See [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin).
+The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) over the Route's HTTPS domain on port 443. Cluster DNS points that domain at the Router. The application serves its web root on the same domain. See [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin).
 
-Workload Caddy reverse-proxies that path to `127.0.0.1:5173` on the owning Node. Router Caddy forwards the path with the Route hostname as the HTTP `Host` value and TLS server name. HTTPS and WSS terminate with the Route's Orbit certificate-authority certificates. The toolchain process speaks HTTP on loopback and does not present a certificate to the browser.
+Workload Caddy reverse-proxies that path to `127.0.0.1:5173` on the owning Node. Router Caddy forwards the path with the Route domain as the HTTP `Host` value and TLS server name. HTTPS and WSS terminate with the Route's Orbit certificate-authority certificates. The toolchain process speaks HTTP on loopback and does not present a certificate to the browser.
 
-Two App instances that use port 5173 on different Nodes stay isolated because each Caddy site proxies only to its own Node loopback. When the process on that loopback is stopped, Caddy returns a proxy error for that hostname's reserved path and does not select another App instance.
+Two App instances that use port 5173 on different Nodes stay isolated because each Caddy site proxies only to its own Node loopback. When the process on that loopback is stopped, Caddy returns a proxy error for that domain's reserved path and does not select another App instance.
 
-An operator configures the frontend toolchain to publish asset and HMR URLs on the reserved path. A development systemd Process receives these environment values from the Route hostname.
+An operator configures the frontend toolchain to publish asset and HMR URLs on the reserved path. A development systemd Process receives these environment values from the Route domain.
 
 | Variable | Value |
 | --- | --- |
-| `ORBIT_DEV_SERVER_ORIGIN` | `https://<route-hostname>/__orbit/vite` |
-| `ORBIT_DEV_SERVER_HOST` | The Route hostname |
+| `ORBIT_DEV_SERVER_ORIGIN` | `https://<route-domain>/__orbit/vite` |
+| `ORBIT_DEV_SERVER_HOST` | The Route domain |
 | `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
 | `ORBIT_DEV_SERVER_PORT` | `5173` |
 
@@ -135,7 +136,7 @@ export default defineConfig({
 })
 ```
 
-Laravel's `@vite` directive reads the `public/hot` file. The file must contain `ORBIT_DEV_SERVER_ORIGIN` so the browser requests `/__orbit/vite/@vite/client` on the Route hostname. The [process reference](/reference/app-processes-and-schedules#add-a-process) describes the injected certificate and origin environment.
+Laravel's `@vite` directive reads the `public/hot` file. The file must contain `ORBIT_DEV_SERVER_ORIGIN` so the browser requests `/__orbit/vite/@vite/client` on the Route domain. The [process reference](/reference/app-processes-and-schedules#add-a-process) describes the injected certificate and origin environment.
 
 ### Private network and publication
 
@@ -159,31 +160,37 @@ Deploy the shared publication owner by stopping admission of new Gateway mutatio
 
 ## Change an existing Route
 
-### Change an explicit private hostname
+### Change an explicit private domain
 
-The Gateway can change a development or production Route hostname when the Route is active, explicit, private, and has one target. This is the operation that replaces a production clone's preview hostname with its intended private hostname. The App instance keeps the same Route record and sole association throughout the transition. The Gateway refuses an invalid or occupied hostname before it changes Route records, environment configuration, runtime projections, or traffic. When that eligible target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing` and names recovery through the same creation request with `recover_source_profile`. The [applications domain](/domains/applications#provision-the-application-endpoint) owns that recovery.
+The Gateway can change a development or production Route domain when the Route is active, explicit, and private. A shared production Route keeps its complete ordered target pool on one replacement. This is the operation that replaces a production clone's preview domain with its intended private domain.
 
-The Gateway prepares the new workload certificate and Caddy site before it prepares the Router certificate, workload firewall policy, and Router Caddy site. For a detected development Laravel source, it aligns `APP_URL` in the environment file and cached configuration without running Composer, Artisan, or application bootstrap. A non-Laravel development source receives no application configuration change.
+The Gateway reserves a unique pending replacement Route for the same App and complete target set while the existing Route stays the sole authoritative `active` Route. It refuses an invalid, occupied, or conflicting domain before it changes Route records, environment configuration, runtime projections, or traffic.
 
-For production, the Gateway checks the saved environment location and renders stored settings for the proposed hostname. It resolves `{{app_instance.hostname}}`, preserves other values and literal application keys, and replaces only the home's `.env`. It runs no Composer, Artisan, framework, cache, deployment, or restart commands. Add required cache or process commands to a separate deployment step. A stale cached URL or HTTP error does not block a valid infrastructure change. See [App instance environment variables](/reference/environment-variables#synchronize-during-a-hostname-change).
+When an eligible target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing` and names recovery through the same creation request with `recover_source_profile`. The [applications domain](/domains/applications#provision-the-application-endpoint) owns that recovery.
 
-Private DNS publication is the traffic cutover. The Gateway publishes the new exact owner only after it verifies every required projection. It then records the new Route hostname, normalizes the serving projections, and removes the old Caddy, certificate, and DNS state. The old hostname remains authoritative until the new hostname is ready, and cleanup starts only after the new hostname is authoritative.
+The Gateway prepares the replacement workload certificate and Caddy site before it prepares the Router certificate, workload firewall policy, and Router Caddy site. For a detected development Laravel source, it aligns `APP_URL` in the environment file and cached configuration without running Composer, Artisan, or application bootstrap. A non-Laravel development source receives no application configuration change.
+
+For production, the Gateway checks the saved environment location and renders stored settings for the candidate Route. It resolves `{{app_instance.domain}}`, preserves other values and literal application keys, and replaces only the home's `.env`. It runs no Composer, Artisan, framework, cache, deployment, or restart commands. Add required cache or process commands to a separate deployment step. A stale cached URL or HTTP error does not block a valid infrastructure change. See [App instance environment variables](/reference/environment-variables#synchronize-during-a-domain-change).
+
+Cutover is one database transition. The Gateway publishes the replacement domain in private DNS only after it verifies every required projection, then marks the replacement `activating` and the old Route `retiring`. App instance output derives only the replacement domain. Route inspection exposes both records and their relationship. Cleanup then removes old projections, deletes the retiring Route, and marks the replacement `active`.
 
 ### Resume or refuse a change
 
-During a change, the Route reports the requested hostname, direction, saved checkpoint, `failed_step`, and `error_code`. Retry with the same hostname to verify completed work and resume the first incomplete step. A different hostname returns a conflict and leaves the operation intact.
+During a change, Route inspection reports both records, `replacement_step`, `failed_step`, and `error_code`. Retry with the same domain to verify completed work and resume the first incomplete step. A different domain returns `route.domain_change_conflict` and changes neither record.
 
-A failure before database cutover rolls back to the previous Route and application configuration. Rollback first restores authoritative DNS, then serving configuration and certificates, and finally the prior development Laravel URL or production environment file. A rollback interruption keeps its checkpoint and failure visible so the same request can resume restoration. A cleanup failure leaves the new hostname and matching production environment authoritative and resumes cleanup without reverting the completed cutover.
+A failure before cutover leaves the old Route authoritative. Successful cleanup of replacement projections deletes the replacement. Incomplete cleanup retains an inspectable `failed` replacement. Only the identical request recovers that replacement.
 
-The reconciliation guard still returns `route.reconciliation_required` for generated Route hostname changes, multi-target Route hostname changes, and active Route publication or target changes. It also refuses Node WireGuard, LAN, TLD, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation, deactivation, or TLD changes and Router replacement or clearing.
+A failure after cutover keeps the replacement authoritative. Retry continues forward until the replacement is `active`, every old projection is removed, the retiring Route is deleted, and its domain becomes available.
 
-Deployment, code rollback, clone finalization, App instance removal, environment import, stored environment updates, environment synchronization, and a hostname transition share the target App instance's bounded operation owner. A competitor waits or returns `env.operation_busy` before mutation. The hostname transition also holds the shared private projection owner through its Caddy and DNS work. It does not change source, the selected production release, SQLite data, or local PHP tuning.
+The reconciliation guard still returns `route.reconciliation_required` for generated Route domain changes that must go through replacement reservation, and for active Route publication or target changes. It also refuses Node WireGuard, LAN, TLD, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation, deactivation, or TLD changes and Router replacement or clearing.
+
+Deployment, code rollback, clone finalization, App instance removal, environment import, stored environment updates, environment synchronization, and a domain replacement share the target App instance's bounded operation owner. A competitor waits or returns `env.operation_busy` before mutation. The domain replacement also holds the shared private projection owner through its Caddy and DNS work. It does not change source, the selected production release, SQLite data, or local PHP tuning.
 
 Route and App instance removal keep their coordinated removal contract. Setting the existing target or clearing an already empty Route succeeds without creating, deleting, or reassigning a Route association. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
 
-App instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted App instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its hostname before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [App instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
+App instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted App instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its domain before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [App instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
 
-During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed hostnames with one operation-local index of all Route hostname owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. Full reconciliation of an existing active Route is a separate contract.
+During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. Full reconciliation of an existing active Route is a separate contract.
 
 ### Router transition ownership
 
@@ -211,6 +218,6 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 ## Compatibility and limits
 
-Route operations do not change leftover Legacy Instance hostname or certificate fields, Workspace hostnames, App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
+Route operations do not change leftover Legacy Instance domain or certificate fields, Workspace domains, App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects private Routes and changes a development or production Route hostname when the Route is active, explicit, private, and has one target. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal. It does not implement generated or multi-target hostname changes, other later Route reconciliation or removal, public Ingress, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.
+This contract projects private Routes and changes a development or production Route domain by reserving a replacement Route when the current Route is active, explicit, and private. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal. It does not implement generated domain changes outside replacement reservation, other later Route reconciliation or removal, public Ingress, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.

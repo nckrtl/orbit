@@ -7,7 +7,7 @@ namespace App\Actions\Routes;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteAssociationGuard;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -33,12 +33,12 @@ final readonly class CreateRouteAction
     /** @return array{route: Route, created: bool} */
     public function execute(CreateRouteData $data): array
     {
-        $hostname = RouteHostname::validate($data->hostname);
+        $domain = RouteDomain::validate($data->domain);
 
-        return $this->persistExplicit($data, $hostname);
+        return $this->persistExplicit($data, $domain);
     }
 
-    public function ensureForAppInstance(AppInstance $appInstance, ?string $hostname): Route
+    public function ensureForAppInstance(AppInstance $appInstance, ?string $domain): Route
     {
         $appInstance->refresh()->loadMissing(['app', 'node']);
 
@@ -64,13 +64,13 @@ final readonly class CreateRouteAction
             ->first();
 
         if ($existing instanceof Route) {
-            $expectedProvenance = $hostname === null ? RouteProvenance::Generated : RouteProvenance::Explicit;
-            $normalized = $hostname === null ? null : RouteHostname::validate($hostname);
+            $expectedProvenance = $domain === null ? RouteProvenance::Generated : RouteProvenance::Explicit;
+            $normalized = $domain === null ? null : RouteDomain::validate($domain);
 
             if (
                 $existing->provenance !== $expectedProvenance
                 || $normalized !== null
-                && $existing->hostname !== $normalized
+                && $existing->domain !== $normalized
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'route.retry_conflict',
@@ -88,18 +88,18 @@ final readonly class CreateRouteAction
             $this->state->assertRouter($placement->clusterId);
         }
 
-        $provenance = $hostname === null ? RouteProvenance::Generated : RouteProvenance::Explicit;
-        $resolvedHostname = $hostname === null
-            ? $this->state->generatedHostname(
+        $provenance = $domain === null ? RouteProvenance::Generated : RouteProvenance::Explicit;
+        $resolvedHostname = $domain === null
+            ? $this->state->generatedDomain(
                 $appInstance->app->slug,
                 $appInstance->name,
                 $placement->effectiveTld,
             )
-            : RouteHostname::validate($hostname);
+            : RouteDomain::validate($domain);
 
         return $this->create(
             appId: $appInstance->app_id,
-            hostname: $resolvedHostname,
+            domain: $resolvedHostname,
             publication: RoutePublication::Private,
             provenance: $provenance,
             nodeId: $placement->nodeId,
@@ -110,7 +110,7 @@ final readonly class CreateRouteAction
     }
 
     /** @return array{route: Route, created: bool} */
-    private function persistExplicit(CreateRouteData $data, string $hostname): array
+    private function persistExplicit(CreateRouteData $data, string $domain): array
     {
         OrbitApp::query()->findOrFail($data->appId);
         $target = $data->appInstanceId === null
@@ -132,7 +132,7 @@ final readonly class CreateRouteAction
             $this->state->assertRouter($clusterId);
         }
 
-        $existing = Route::query()->where('hostname', $hostname)->first();
+        $existing = Route::query()->where('domain', $domain)->first();
 
         if ($existing instanceof Route) {
             $this->assertIdenticalRetry($existing, $data, $nodeId, $clusterId, $target);
@@ -143,7 +143,7 @@ final readonly class CreateRouteAction
         return [
             'route' => $this->create(
                 appId: $data->appId,
-                hostname: $hostname,
+                domain: $domain,
                 publication: $data->publication,
                 provenance: RouteProvenance::Explicit,
                 nodeId: $nodeId,
@@ -157,7 +157,7 @@ final readonly class CreateRouteAction
 
     private function create(
         int $appId,
-        string $hostname,
+        string $domain,
         RoutePublication $publication,
         RouteProvenance $provenance,
         ?int $nodeId,
@@ -169,7 +169,7 @@ final readonly class CreateRouteAction
             /** @var Route $route */
             $route = DB::transaction(function () use (
                 $appId,
-                $hostname,
+                $domain,
                 $publication,
                 $provenance,
                 $nodeId,
@@ -186,7 +186,7 @@ final readonly class CreateRouteAction
                     'node_id' => $nodeId,
                     'cluster_id' => $clusterId,
                     'generation_basis_node_id' => $generationBasisNodeId,
-                    'hostname' => $hostname,
+                    'domain' => $domain,
                     'provenance' => $provenance,
                     'publication' => $publication,
                     'status' => RouteStatus::Pending,
@@ -208,7 +208,7 @@ final readonly class CreateRouteAction
 
             return $route;
         } catch (QueryException $exception) {
-            throw $this->conflictFromCreateFailure($hostname, $appInstance, $exception);
+            throw $this->conflictFromCreateFailure($domain, $appInstance, $exception);
         }
     }
 
@@ -277,20 +277,20 @@ final readonly class CreateRouteAction
         ) {
             throw new ResourceOperationException(
                 errorCode: 'route.retry_conflict',
-                message: 'The Route hostname already exists with conflicting intent.',
+                message: 'The Route domain already exists with conflicting intent.',
                 status: 409,
             );
         }
     }
 
     private function conflictFromCreateFailure(
-        string $hostname,
+        string $domain,
         ?AppInstance $appInstance,
         QueryException $exception,
     ): ResourceOperationException {
         if (
             $appInstance instanceof AppInstance
-            && ! Route::query()->where('hostname', $hostname)->exists()
+            && ! Route::query()->where('domain', $domain)->exists()
         ) {
             $association = RouteTarget::query()
                 ->where('app_instance_id', $appInstance->id)
@@ -307,8 +307,8 @@ final readonly class CreateRouteAction
         }
 
         return new ResourceOperationException(
-            errorCode: 'route.hostname_conflict',
-            message: "Route hostname [{$hostname}] is already owned.",
+            errorCode: 'route.domain_conflict',
+            message: "Route domain [{$domain}] is already owned.",
             status: 409,
             previous: $exception,
         );

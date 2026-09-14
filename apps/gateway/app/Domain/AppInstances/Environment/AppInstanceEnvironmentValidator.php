@@ -26,7 +26,7 @@ final readonly class AppInstanceEnvironmentValidator
 
     public const string RuleLaravelAppUrl = 'laravel_app_url';
 
-    private const string HostnamePlaceholder = '{{app_instance.hostname}}';
+    private const string DomainPlaceholder = '{{app_instance.domain}}';
 
     private const string EnvironmentPlaceholder = '{{app_instance.environment}}';
 
@@ -53,7 +53,7 @@ final readonly class AppInstanceEnvironmentValidator
             }
 
             $expanded = str_replace(
-                [self::HostnamePlaceholder, self::EnvironmentPlaceholder],
+                [self::DomainPlaceholder, self::EnvironmentPlaceholder],
                 [str_repeat('h', 253), 'development'],
                 $value,
             );

@@ -274,7 +274,7 @@ it('runs Router mutation and removal guards against state created while waiting'
         $route = Route::query()->create([
             'app_id' => $app->id,
             'cluster_id' => $this->cluster->id,
-            'hostname' => 'acme.example.test',
+            'domain' => 'acme.example.test',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
         ]);

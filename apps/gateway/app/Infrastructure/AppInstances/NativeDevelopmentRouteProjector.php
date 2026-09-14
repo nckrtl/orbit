@@ -6,7 +6,7 @@ namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
-use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -17,7 +17,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
 
-final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, RouteHostnameProjector
+final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, RouteDomainProjector
 {
     public function __construct(
         private RemoteAppDevPhpFpmManager $php,
@@ -65,7 +65,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
     {
-        $this->certificates->convergeAppInstanceHostnameChange($appInstance, $candidate->hostname);
+        $this->certificates->convergeAppInstanceHostnameChange($appInstance, $candidate->domain);
     }
 
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
@@ -232,7 +232,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
                     '-connect',
                     "{$address}:443",
                     '-servername',
-                    $route->hostname,
+                    $route->domain,
                     '-verify_return_error',
                 ],
                 input: '',

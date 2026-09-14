@@ -25,7 +25,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--default-branch= : Confirmed App default branch}
         {--name= : Optional non-default AppInstance name}
         {--root= : Confirmed App root or existing-App root override}
-        {--hostname= : Optional explicit Route hostname}
+        {--domain= : Optional explicit Route domain}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -77,7 +77,7 @@ final class RegisterInstanceCommand extends GatewayCommand
                 defaultBranch: $values['defaultBranch'],
                 instanceName: $this->stringOption('name'),
                 root: $values['root'],
-                hostname: $this->stringOption('hostname'),
+                domain: $this->stringOption('domain'),
             ),
             AppInstanceRegistrationResponse::class,
         );
@@ -100,7 +100,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
         $this->line('Git state: '.($instance->detached ? 'detached' : $instance->selectedBranch ?? '-'));
         $this->line('Commit: '.($instance->startingCommit ?? '-'));
-        $this->line('Route hostname: '.($instance->hostname ?? '-'));
+        $this->line('Route domain: '.($instance->domain ?? '-'));
         $this->line("Registered sources: {$response->completedCount}/{$response->sourceCount}");
         $this->line("Request ID: {$response->requestId}");
 

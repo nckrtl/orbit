@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string $checkout_path
  * @property string|null $checkout_path_origin
  * @property string|null $php_version
- * @property string $hostname
+ * @property string $domain
  * @property LifecycleStatus $status
  * @property string|null $failed_step
  * @property string|null $error_code
@@ -38,7 +38,7 @@ final class Workspace extends Model
         'checkout_path',
         'checkout_path_origin',
         'php_version',
-        'hostname',
+        'domain',
         'status',
         'failed_step',
         'error_code',

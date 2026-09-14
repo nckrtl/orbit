@@ -9,7 +9,9 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\Route;
@@ -100,9 +102,9 @@ final readonly class SetRouteTargetAction
 
                 if ($locked->provenance === RouteProvenance::Generated) {
                     $attributes['generation_basis_node_id'] = $target->node_id;
-                    $attributes['hostname'] = $target->migration_required
-                        ? $locked->hostname
-                        : $this->state->generatedHostname(
+                    $attributes['domain'] = $target->migration_required
+                        ? $locked->domain
+                        : $this->state->generatedDomain(
                             $target->app->slug,
                             $target->name,
                             $placement->effectiveTld,
@@ -113,6 +115,33 @@ final readonly class SetRouteTargetAction
                 $this->associations->assertTargetsDetachable($locked);
                 app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
 
+                $nextDomain = $attributes['domain'] ?? $locked->domain;
+
+                if ($nextDomain !== $locked->domain) {
+                    $replacement = Route::query()->create([
+                        'app_id' => $locked->app_id,
+                        'node_id' => $attributes['node_id'],
+                        'cluster_id' => $attributes['cluster_id'],
+                        'generation_basis_node_id' => $attributes['generation_basis_node_id'] ?? null,
+                        'domain' => $nextDomain,
+                        'provenance' => $locked->provenance,
+                        'publication' => $locked->publication,
+                        'status' => RouteStatus::Pending,
+                        'replaces_route_id' => $locked->id,
+                        'replacement_step' => RouteReplacementStep::Reserved,
+                    ]);
+                    $replacement->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+                    $locked->targets()->delete();
+                    $locked->delete();
+                    $replacement->update([
+                        'replaces_route_id' => null,
+                        'replacement_step' => null,
+                    ]);
+
+                    return $replacement->refresh()->load('targets');
+                }
+
+                unset($attributes['domain']);
                 $locked->update($attributes);
                 $locked->targets()->delete();
                 $locked->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);

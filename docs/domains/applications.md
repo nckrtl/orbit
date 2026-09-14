@@ -31,7 +31,7 @@ orbit instance:create <app-id> <node-id> default
 Use another name for a named source, or use `--branch` when either identity must select a different existing remote branch:
 
 ```text
-orbit instance:create <app-id> <node-id> feature-one [--branch=release] [--hostname=feature.example.test]
+orbit instance:create <app-id> <node-id> feature-one [--branch=release] [--domain=feature.example.test]
 ```
 
 The instance name and Node's [apps root](/reference/node-settings) determine the checkout path. Branch selection is separate.
@@ -54,7 +54,7 @@ Source preparation moves through three durable states:
 reserved -> checkout_prepared -> source_resolved
 ```
 
-A retry must match the recorded App, Node, source layout, root, path, repository, branch override, selected branch, and hostname input. Orbit also verifies the commit recorded before activation, then resumes the next incomplete step. After activation, development can advance `HEAD` without changing the recorded starting commit. Adding, removing, or changing the branch override returns `instance.placement_conflict` before any changes.
+A retry must match the recorded App, Node, source layout, root, path, repository, branch override, selected branch, and domain input. Orbit also verifies the commit recorded before activation, then resumes the next incomplete step. After activation, development can advance `HEAD` without changing the recorded starting commit. Adding, removing, or changing the branch override returns `instance.placement_conflict` before any changes.
 
 ## Register an existing development source
 
@@ -107,13 +107,13 @@ Orbit owns later release preparation, activation, and explicit code rollback. Th
 
 An App instance can require manual migration when its stored name follows the earlier branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until an operator runs `instance:register` from its recorded source. List and show responses return `migration_required: true`, Doctor reports the same bounded condition, and the existing Route continues to serve the same source path.
 
-Registration verifies the recorded source, moves it to the managed `default` placement, and updates its identity and runtime while it preserves the Route hostname. Before it publishes the new record, Orbit stores the original App instance state and Route intent as durable recovery evidence. An identical retry resumes the same migration even after process interruption. A failed migration keeps the old record, path, runtime, Route, and original Laravel URL configuration authoritative. Database rollback refuses to discard registration or source-cleanup evidence while the related operation is incomplete.
+Registration verifies the recorded source, moves it to the managed `default` placement, and updates its identity and runtime while it preserves the Route domain. Before it publishes the new record, Orbit stores the original App instance state and Route intent as durable recovery evidence. An identical retry resumes the same migration even after process interruption. A failed migration keeps the old record, path, runtime, Route, and original Laravel URL configuration authoritative. Database rollback refuses to discard registration or source-cleanup evidence while the related operation is incomplete.
 
 An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing App instance, source, and Route.
 
 ## Provision the application endpoint
 
-Before source or runtime changes, the Gateway resolves the Route hostname. The optional `--hostname` value requests an explicit hostname for the caller's primary source and takes precedence over its generated name. Other members of an included worktree set use their generated Route names. Without an explicit primary hostname, the Gateway uses the Node or Cluster naming basis described in the [Route reference](/reference/routes). The request fails before source or runtime mutation when neither basis can produce a hostname.
+Before source or runtime changes, the Gateway resolves the Route domain. The optional `--domain` value requests an explicit domain for the caller's primary source and takes precedence over its generated name. Other members of an included worktree set use their generated Route names. Without an explicit primary domain, the Gateway uses the Node or Cluster naming basis described in the [Route reference](/reference/routes). The request fails before source or runtime mutation when neither basis can produce a domain.
 
 After creating or adopting source, the Gateway identifies its type and selects any required [PHP runtime](/reference/php-runtime). It connects the App instance to one Route and prepares certificates, Caddy, firewall rules, and private Domain Name System (DNS) records. Supported development sources also receive Laravel configuration. Cluster development Routes include Router setup.
 
@@ -127,7 +127,7 @@ The same option recovers an active development or production App instance whose 
 
 For a recovered Laravel profile, the option permits Orbit to reconcile the canonical URL through its existing idempotent operation. If a request stops after the remote URL write and before checkpoint persistence, another identical retry safely performs the reconciliation and continues. A complete profile that later drifts remains a refusal even when the recovery option is present.
 
-Orbit records each completed step so retries do not duplicate source or Routes. Database rollback preserves complete profiles at non-active `php-selected` or `url-configured` checkpoints. Once every Orbit setup step succeeds, the response returns the active App instance, Route, hostname, and HTTPS URL.
+Orbit records each completed step so retries do not duplicate source or Routes. Database rollback preserves complete profiles at non-active `php-selected` or `url-configured` checkpoints. Once every Orbit setup step succeeds, the response returns the active App instance, Route, domain, and HTTPS URL.
 
 ## Configure a Laravel URL
 
@@ -135,7 +135,7 @@ Orbit detects Laravel only when the source has both a regular, non-symlink `arti
 
 Detection and URL configuration do not run Composer, Artisan, installed application code, or application bootstrap. Framework detection does not install dependencies or infer setup commands.
 
-Orbit sets Laravel's canonical application URL to `https://<route-hostname>`. When `.env` exists, Orbit changes only `APP_URL` and preserves every unrelated byte. When `.env` is missing and an environment template exists, Orbit preserves the template's installation inputs and adds or replaces `APP_URL`. Orbit also replaces a static cached `app.url` without changing unrelated cached configuration. A symlinked, malformed, duplicate, or otherwise unsafe configuration file stops provisioning before publication.
+Orbit sets Laravel's canonical application URL to `https://<route-domain>`. When `.env` exists, Orbit changes only `APP_URL` and preserves every unrelated byte. When `.env` is missing and an environment template exists, Orbit preserves the template's installation inputs and adds or replaces `APP_URL`. Orbit also replaces a static cached `app.url` without changing unrelated cached configuration. A symlinked, malformed, duplicate, or otherwise unsafe configuration file stops provisioning before publication.
 
 After activation, an operator can explicitly import the recorded `.env` or update one encrypted Gateway-owned value without changing the workload file. The [App instance environment-variable reference](/reference/environment-variables) describes the API, selectors, replacement behavior, limits, placeholders, encryption recovery, and stored-only effects.
 
@@ -172,7 +172,7 @@ Use forced removal only when you intend to lose dirty or unpublished work:
 orbit instance:destroy <id> --force
 ```
 
-Production removal uses the same command without deleting application content. It retains a shared Route and republishes its surviving production targets, or deletes a final-target Route and releases its hostname. The [App instance removal reference](/reference/appinstance-removal) describes development source preflight, retained production content, Route cleanup, the `removing` state, bounded progress, refusals, and safe retry.
+Production removal uses the same command without deleting application content. It retains a shared Route and republishes its surviving production targets, or deletes a final-target Route and releases its domain. The [App instance removal reference](/reference/appinstance-removal) describes development source preflight, retained production content, Route cleanup, the `removing` state, bounded progress, refusals, and safe retry.
 
 The removal reference also describes worktree preflight, forced fixed-set cascades, retained branches, ordered cleanup, and transient unavailable traffic.
 

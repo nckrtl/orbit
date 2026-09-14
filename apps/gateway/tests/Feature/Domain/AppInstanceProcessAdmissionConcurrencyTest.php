@@ -215,7 +215,7 @@ function orb131_process_admission_instance(): AppInstance
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'admission.example.test',
+        'domain' => 'admission.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

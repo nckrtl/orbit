@@ -36,7 +36,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $clone_candidate_commit
  * @property string|null $clone_requested_branch
  * @property string|null $clone_preview_name
- * @property string|null $clone_preview_hostname
+ * @property string|null $clone_preview_domain
  * @property string|null $clone_sqlite_source_path
  * @property Carbon|null $clone_completed_at
  * @property string|null $registration_original_path
@@ -54,7 +54,7 @@ use Illuminate\Support\Carbon;
  * @property list<string>|null $registration_worktree_paths
  * @property string|null $registration_relocation_state
  * @property string|null $registration_authoritative_path
- * @property string|null $registration_route_hostname
+ * @property string|null $registration_route_domain
  * @property string|null $registration_route_provenance
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
@@ -116,7 +116,7 @@ final class AppInstance extends Model
         'clone_candidate_commit',
         'clone_requested_branch',
         'clone_preview_name',
-        'clone_preview_hostname',
+        'clone_preview_domain',
         'clone_sqlite_source_path',
         'clone_completed_at',
         'registration_original_path',
@@ -134,7 +134,7 @@ final class AppInstance extends Model
         'registration_worktree_paths',
         'registration_relocation_state',
         'registration_authoritative_path',
-        'registration_route_hostname',
+        'registration_route_domain',
         'registration_route_provenance',
         'registration_source_device',
         'registration_source_inode',
@@ -172,6 +172,15 @@ final class AppInstance extends Model
     public function routes(): BelongsToMany
     {
         return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
+    }
+
+    public function authoritativeRoute(): ?Route
+    {
+        $this->loadMissing('routes');
+
+        return $this->routes->first(
+            static fn (Route $route): bool => $route->isAuthoritative(),
+        );
     }
 
     /** @return HasMany<AppInstanceDeployStep, $this> */

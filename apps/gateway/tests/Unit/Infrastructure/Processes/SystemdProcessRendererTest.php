@@ -237,7 +237,7 @@ it('pins the Route development-server origin after the app environment file', fu
         user: 'orbit',
         checkoutPath: '/tmp',
         certificateScope: 'app-instance-6',
-        routeHostname: 'tasks.commander.test',
+        routeDomain: 'tasks.commander.test',
     );
 
     $unit = new SystemdProcessRenderer()->render(

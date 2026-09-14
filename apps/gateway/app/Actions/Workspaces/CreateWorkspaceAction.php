@@ -93,12 +93,12 @@ final readonly class CreateWorkspaceAction
                 'Workspace checkout path is not allowed.',
             );
         }
-        $hostname = "{$data->name}.{$instance->hostname}";
+        $domain = "{$data->name}.{$instance->domain}";
 
-        if (filter_var($hostname, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
+        if (filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
             throw new ResourceOperationException(
-                errorCode: 'workspace.hostname_invalid',
-                message: "Derived hostname [{$hostname}] is invalid.",
+                errorCode: 'workspace.domain_invalid',
+                message: "Derived domain [{$domain}] is invalid.",
             );
         }
 
@@ -122,14 +122,14 @@ final readonly class CreateWorkspaceAction
             $this->ensureCheckoutPathAvailable->execute($instance, $workspace, $checkoutPath);
         }
         $collision = Workspace::query()
-            ->where('hostname', $hostname)
+            ->where('domain', $domain)
             ->when($workspace->exists, static fn ($query) => $query->whereKeyNot($workspace->id))
             ->exists();
 
         if ($collision) {
             throw new ResourceOperationException(
-                errorCode: 'workspace.hostname_taken',
-                message: "Hostname [{$hostname}] is already in use.",
+                errorCode: 'workspace.domain_taken',
+                message: "Domain [{$domain}] is already in use.",
                 status: 409,
             );
         }
@@ -139,7 +139,7 @@ final readonly class CreateWorkspaceAction
             'checkout_path' => $checkoutPath,
             'checkout_path_origin' => $origin,
             'php_version' => $data->phpVersion,
-            'hostname' => $hostname,
+            'domain' => $domain,
             'status' => LifecycleStatus::Provisioning,
             'failed_step' => null,
             'error_code' => null,

@@ -29,7 +29,7 @@ final readonly class AppInstanceResponse
         public bool $detached,
         public string $status,
         public ?RouteResponse $route,
-        public ?string $hostname,
+        public ?string $domain,
         public ?string $url,
         public ?AppInstanceRemovalProgressResponse $removal,
         /** @var list<DeploymentStepResponse> */
@@ -63,7 +63,7 @@ final readonly class AppInstanceResponse
             detached: ($data['detached'] ?? null) === true,
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             route: self::route($data['route'] ?? null, $requestId),
-            hostname: is_string($data['hostname'] ?? null) ? $data['hostname'] : null,
+            domain: is_string($data['domain'] ?? null) ? $data['domain'] : null,
             url: is_string($data['url'] ?? null) ? $data['url'] : null,
             removal: self::removal($data['removal'] ?? null),
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
@@ -93,7 +93,7 @@ final readonly class AppInstanceResponse
             'detached' => $this->detached,
             'status' => $this->status,
             'route' => $this->route?->toArray(),
-            'hostname' => $this->hostname,
+            'domain' => $this->domain,
             'url' => $this->url,
             'removal' => $this->removal?->toArray(),
             'deploy_steps' => array_map(

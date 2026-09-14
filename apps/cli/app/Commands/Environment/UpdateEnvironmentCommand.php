@@ -13,7 +13,7 @@ final class UpdateEnvironmentCommand extends EnvironmentCommand
 {
     #[\Override]
     protected $signature = 'env:update
-        {--instance= : Positive AppInstance ID or exact Route hostname}
+        {--instance= : Positive AppInstance ID or exact Route domain}
         {--key= : Environment key to add or replace in stored configuration}
         {--value= : Exact string value; quote empty, multiline, or placeholder values for the shell}
         {--json : Return machine-readable JSON}';

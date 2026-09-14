@@ -27,7 +27,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     public function convergeInstance(Instance $instance): void
     {
         $instance->loadMissing('node');
-        $this->converge($instance->node, "instance-{$instance->id}", $instance->hostname);
+        $this->converge($instance->node, "instance-{$instance->id}", $instance->domain);
     }
 
     public function removeInstance(Instance $instance): void
@@ -42,7 +42,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         $this->converge(
             $workspace->instance->node,
             "workspace-{$workspace->id}",
-            $workspace->hostname,
+            $workspace->domain,
         );
     }
 
@@ -55,27 +55,27 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     public function convergeAppInstance(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
-        $this->converge($appInstance->node, "app-instance-{$appInstance->id}", $route->hostname);
+        $this->converge($appInstance->node, "app-instance-{$appInstance->id}", $route->domain);
     }
 
     public function convergeRouteRouter(Route $route, Node $router): void
     {
-        $this->converge($router, "route-{$route->id}-router", $route->hostname);
+        $this->converge($router, "route-{$route->id}-router", $route->domain);
     }
 
-    public function convergeAppInstanceHostnameChange(AppInstance $appInstance, string $hostname): void
+    public function convergeAppInstanceHostnameChange(AppInstance $appInstance, string $domain): void
     {
         $appInstance->loadMissing('node');
         $this->converge(
             $appInstance->node,
             "app-instance-{$appInstance->id}-hostname-change",
-            $hostname,
+            $domain,
         );
     }
 
     public function convergeRouteRouterHostnameChange(Route $route, Node $router): void
     {
-        $this->converge($router, "route-{$route->id}-router-hostname-change", $route->hostname);
+        $this->converge($router, "route-{$route->id}-router-hostname-change", $route->domain);
     }
 
     public function appInstanceCertificateExists(AppInstance $appInstance): bool
@@ -135,7 +135,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         }
     }
 
-    private function converge(Node $node, string $scope, string $hostname): void
+    private function converge(Node $node, string $scope, string $domain): void
     {
         $account = $this->accounts->resolve($node);
         $version = bin2hex(random_bytes(8));
@@ -149,7 +149,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     '-seu',
                     '--',
                     $scope,
-                    $hostname,
+                    $domain,
                     $version,
                     $rootHash,
                     $account->user,
@@ -158,7 +158,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                 ],
                 input: <<<'BASH'
                     scope=$1
-                    hostname=$2
+                    domain=$2
                     version=$3
                     expected_root_hash=$4
                     managed_user=$5
@@ -193,7 +193,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                         openssl verify -CAfile "$current/root.pem" "$current/cert.pem" >/dev/null && \
                         openssl x509 -in "$current/cert.pem" -noout -checkend 2592000 >/dev/null && \
                         [ "$validity_seconds" -ge 34214400 ] && [ "$validity_seconds" -le 34387200 ] && \
-                        openssl x509 -in "$current/cert.pem" -noout -checkhost "$hostname" >/dev/null && \
+                        openssl x509 -in "$current/cert.pem" -noout -checkhost "$domain" >/dev/null && \
                         openssl pkey -in "$current/key.pem" -text_pub -noout 2>/dev/null | \
                             grep -Eq '^(RSA )?Public-Key: \(2048 bit\)' && \
                         [ "$(certificate_extension basicConstraints)" = \
@@ -203,7 +203,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                         [ "$(certificate_extension extendedKeyUsage)" = \
                             'X509v3 Extended Key Usage: TLS Web Server Authentication' ] && \
                         [ "$(certificate_extension subjectAltName)" = \
-                            "X509v3 Subject Alternative Name: DNS:$hostname" ] && \
+                            "X509v3 Subject Alternative Name: DNS:$domain" ] && \
                         [ "$(openssl pkey -in "$current/key.pem" -pubout 2>/dev/null)" = \
                             "$(openssl x509 -in "$current/cert.pem" -pubkey -noout 2>/dev/null)" ] && \
                         [ "$(openssl x509 -in "$current/cert.pem" -fingerprint -sha256 -noout)" = \
@@ -229,7 +229,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     install -d -m 0700 -- "$candidate"
                     openssl genrsa -out "$candidate/key.pem" 2048
                     chmod 0600 "$candidate/key.pem"
-                    openssl req -new -key "$candidate/key.pem" -subj "/CN=$hostname" -out "$candidate/request.pem"
+                    openssl req -new -key "$candidate/key.pem" -subj "/CN=$domain" -out "$candidate/request.pem"
                     cat "$candidate/request.pem"
                     BASH,
             ),
@@ -241,11 +241,11 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             return;
         }
 
-        $certificate = $this->signer->sign($hostname, $request->stdout);
+        $certificate = $this->signer->sign($domain, $request->stdout);
         $this->publish(
             node: $node,
             scope: $scope,
-            hostname: $hostname,
+            domain: $domain,
             version: $version,
             certificate: $certificate,
             rootCertificate: $rootCertificate,
@@ -257,7 +257,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     private function publish(
         Node $node,
         string $scope,
-        string $hostname,
+        string $domain,
         string $version,
         string $certificate,
         string $rootCertificate,
@@ -273,7 +273,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     $this->publishScript(),
                     '--',
                     $scope,
-                    $hostname,
+                    $domain,
                     $version,
                     $rootHash,
                     (string) strlen($certificate),
@@ -292,7 +292,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     {
         return <<<'BASH'
             scope=$1
-            hostname=$2
+            domain=$2
             version=$3
             expected_root_hash=$4
             certificate_length=$5
@@ -312,7 +312,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                 grep -Eq '^(RSA )?Public-Key: \(2048 bit\)'
             openssl verify -CAfile "$candidate/root.pem" "$candidate/cert.pem"
             test "$(sha256sum "$candidate/root.pem" | cut -d ' ' -f 1)" = "$expected_root_hash"
-            openssl x509 -in "$candidate/cert.pem" -noout -checkhost "$hostname"
+            openssl x509 -in "$candidate/cert.pem" -noout -checkhost "$domain"
             test "$(openssl pkey -in "$candidate/key.pem" -pubout 2>/dev/null)" = \
                 "$(openssl x509 -in "$candidate/cert.pem" -pubkey -noout 2>/dev/null)"
 

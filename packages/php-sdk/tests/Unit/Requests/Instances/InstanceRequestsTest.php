@@ -41,11 +41,11 @@ describe('AppInstance requests', function (): void {
             ->toBeInstanceOf(AppInstanceResponse::class)
             ->and($response->requestId)
             ->toBe(instance_request_id())
-            ->and($response->hostname)
+            ->and($response->domain)
             ->toBe('orbit-docs.test')
             ->and($response->url)
             ->toBe('https://orbit-docs.test')
-            ->and($response->route?->hostname)
+            ->and($response->route?->domain)
             ->toBe('orbit-docs.test');
     });
 
@@ -92,12 +92,12 @@ describe('AppInstance requests', function (): void {
         ]);
     });
 
-    it('transports an optional Route hostname and preserves omission', function (): void {
+    it('transports an optional Route domain and preserves omission', function (): void {
         $explicit = new CreateAppInstanceRequest(
             appId: 3,
             nodeId: 4,
             name: 'main',
-            hostname: 'Preview.Example.Test',
+            domain: 'Preview.Example.Test',
         );
         $generated = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main');
 
@@ -106,9 +106,56 @@ describe('AppInstance requests', function (): void {
                 'app_id' => 3,
                 'node_id' => 4,
                 'name' => 'main',
-                'hostname' => 'Preview.Example.Test',
+                'domain' => 'Preview.Example.Test',
             ])
+            ->and($explicit->body()->all())
+            ->not->toHaveKey('hostname')
             ->and($generated->body()->all())
+            ->not->toHaveKey('domain')
+            ->not->toHaveKey('hostname');
+    });
+
+    it('transports an optional registration Route domain and preserves omission', function (): void {
+        $explicit = new RegisterAppInstanceRequest(
+            sourcePath: '/work/orbit-docs',
+            domain: 'Preview.Example.Test',
+        );
+
+        expect($explicit->body()->all())
+            ->toBe([
+                'source_path' => '/work/orbit-docs',
+                'domain' => 'Preview.Example.Test',
+            ])
+            ->and($explicit->body()->all())
+            ->not->toHaveKey('hostname')
+            ->and(new RegisterAppInstanceRequest('/work/orbit-docs')->body()->all())
+            ->not->toHaveKey('domain')
+            ->not->toHaveKey('hostname');
+    });
+
+    it('does not treat leftover hostname fields as AppInstance domain aliases', function (): void {
+        $payload = instance_gateway_data();
+        unset($payload['domain']);
+        $payload['hostname'] = 'alias.test';
+        $route = $payload['route'] ?? [];
+
+        if (! is_array($route)) {
+            $this->fail('Expected a Route payload.');
+        }
+
+        unset($route['domain']);
+        $route['hostname'] = 'alias.test';
+        $payload['route'] = $route;
+
+        $response = AppInstanceResponse::fromGatewayData($payload, instance_request_id());
+
+        expect($response->domain)
+            ->toBeNull()
+            ->and($response->route?->domain)
+            ->toBe('')
+            ->and($response->toArray())
+            ->not->toHaveKey('hostname')
+            ->and($response->route?->toArray() ?? [])
             ->not->toHaveKey('hostname');
     });
 
@@ -375,7 +422,7 @@ function instance_gateway_data(): array
         'detached' => false,
         'status' => 'active',
         'route' => instance_gateway_route_data(),
-        'hostname' => 'orbit-docs.test',
+        'domain' => 'orbit-docs.test',
         'url' => 'https://orbit-docs.test',
         'removal' => null,
         'deploy_steps' => [],
@@ -430,16 +477,15 @@ function instance_gateway_route_data(): array
         'node_id' => 4,
         'cluster_id' => null,
         'generation_basis_node_id' => 4,
-        'hostname' => 'orbit-docs.test',
+        'domain' => 'orbit-docs.test',
         'provenance' => 'generated',
         'publication' => 'private',
         'status' => 'active',
         'failed_step' => null,
         'error_code' => null,
-        'hostname_change_previous' => null,
-        'hostname_change_target' => null,
-        'hostname_change_direction' => null,
-        'hostname_change_step' => null,
+        'replaces_route_id' => null,
+        'replaced_by_route_id' => null,
+        'replacement_step' => null,
         'target' => ['id' => 10, 'app_instance_id' => 7, 'position' => 0],
     ];
 }

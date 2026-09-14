@@ -8,7 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 it('accepts bounded keys values and the closed placeholder vocabulary', function (): void {
     app(AppInstanceEnvironmentValidator::class)->validate([
         '_EMPTY' => '',
-        'HOST' => 'prefix-{{app_instance.hostname}}',
+        'HOST' => 'prefix-{{app_instance.domain}}',
         'ENVIRONMENT' => '{{app_instance.environment}}',
         'UNICODE' => 'hallo-wereld',
     ]);
@@ -34,6 +34,7 @@ it('rejects invalid keys values and placeholder expressions', function (array $v
     'value beyond 65536 bytes' => [['KEY' => str_repeat('v', 65_537)], ['key' => 'KEY', 'rule' => 'value']],
     'unknown placeholder' => [['KEY' => '{{app_instance.url}}'], ['key' => 'KEY', 'rule' => 'placeholder', 'placeholder' => '{{app_instance.url}}']],
     'legacy placeholder' => [['KEY' => '{{instance.hostname}}'], ['key' => 'KEY', 'rule' => 'placeholder', 'placeholder' => '{{instance.hostname}}']],
+    'retired hostname placeholder' => [['KEY' => '{{app_instance.hostname}}'], ['key' => 'KEY', 'rule' => 'placeholder', 'placeholder' => '{{app_instance.hostname}}']],
     'malformed placeholder' => [['KEY' => '{{app_instance.hostname}'], ['key' => 'KEY', 'rule' => 'placeholder']],
 ]);
 

@@ -35,7 +35,7 @@ final class AppInstanceData extends Data
         public bool $detached,
         public string $status,
         public ?RouteData $route,
-        public ?string $hostname,
+        public ?string $domain,
         public ?string $url,
         public ?AppInstanceRemovalData $removal,
         /** @var list<DeploymentStepData> */
@@ -45,7 +45,7 @@ final class AppInstanceData extends Data
     public static function fromModel(AppInstance $appInstance): self
     {
         $appInstance->loadMissing(['app', 'routes.targets', 'deploySteps']);
-        $route = $appInstance->routes->first();
+        $route = $appInstance->authoritativeRoute() ?? $appInstance->routes->first();
         $removal = AppInstanceRemoval::query()
             ->with('members')
             ->whereHas('members', static fn ($query) => $query
@@ -73,8 +73,8 @@ final class AppInstanceData extends Data
             detached: $appInstance->registration_detached,
             status: $appInstance->status->value,
             route: $route instanceof Route ? RouteData::fromModel($route) : null,
-            hostname: $route?->hostname,
-            url: $route instanceof Route ? "https://{$route->hostname}" : null,
+            domain: $route?->domain,
+            url: $route instanceof Route ? "https://{$route->domain}" : null,
             removal: $removal instanceof AppInstanceRemoval
                 ? AppInstanceRemovalData::fromModel($removal)
                 : null,

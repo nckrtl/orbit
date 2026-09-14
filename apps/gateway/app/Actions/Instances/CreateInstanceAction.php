@@ -46,26 +46,26 @@ final readonly class CreateInstanceAction
 
         $role = $this->resolveAppRole($node, $data);
         $this->ensureProductionSourceIdentity($instance, $app, $data, $role);
-        $hostname = $role === RoleName::AppProd
+        $domain = $role === RoleName::AppProd
             ? $this->productionHostname($data, $app, $node)
             : $this->developmentHostname($data, $app, $node);
 
-        if (filter_var($hostname, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
+        if (filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
             throw new ResourceOperationException(
-                errorCode: 'instance.hostname_invalid',
-                message: "Derived hostname [{$hostname}] is invalid.",
+                errorCode: 'instance.domain_invalid',
+                message: "Derived domain [{$domain}] is invalid.",
             );
         }
 
         $collision = Instance::query()
-            ->where('hostname', $hostname)
+            ->where('domain', $domain)
             ->when($instance->exists, static fn ($query) => $query->whereKeyNot($instance->id))
             ->exists();
 
         if ($collision) {
             throw new ResourceOperationException(
-                errorCode: 'instance.hostname_taken',
-                message: "Hostname [{$hostname}] is already in use.",
+                errorCode: 'instance.domain_taken',
+                message: "Domain [{$domain}] is already in use.",
                 status: 409,
             );
         }
@@ -93,7 +93,7 @@ final readonly class CreateInstanceAction
             'checkout_path' => $checkoutPath,
             'document_root' => $data->documentRoot,
             'php_version' => $data->phpVersion,
-            'hostname' => $hostname,
+            'domain' => $domain,
             'certificate_mode' => $role === RoleName::AppProd ? CertificateMode::Acme : CertificateMode::OrbitCa,
             'status' => LifecycleStatus::Provisioning,
             'failed_step' => null,
@@ -178,7 +178,7 @@ final readonly class CreateInstanceAction
         $role = $roles->first();
 
         if (! $role instanceof RoleName) {
-            $errorCode = $data->hostname === null ? 'instance.node_not_app_dev' : 'instance.node_not_app_host';
+            $errorCode = $data->domain === null ? 'instance.node_not_app_dev' : 'instance.node_not_app_host';
 
             throw new ResourceOperationException(
                 errorCode: $errorCode,
@@ -198,24 +198,24 @@ final readonly class CreateInstanceAction
             );
         }
 
-        $hostname = "{$app->slug}.{$node->tld}";
+        $domain = "{$app->slug}.{$node->tld}";
 
-        if ($data->hostname !== null && $data->hostname !== $hostname) {
+        if ($data->domain !== null && $data->domain !== $domain) {
             throw new ResourceOperationException(
-                errorCode: 'instance.hostname_unsupported',
-                message: "An app-dev hostname must be [{$hostname}].",
+                errorCode: 'instance.domain_unsupported',
+                message: "An app-dev domain must be [{$domain}].",
             );
         }
 
-        return $hostname;
+        return $domain;
     }
 
     private function productionHostname(CreateInstanceData $data, OrbitApp $app, Node $node): string
     {
-        if ($data->hostname === null) {
+        if ($data->domain === null) {
             throw new ResourceOperationException(
-                errorCode: 'instance.hostname_required',
-                message: "A public hostname is required for app-prod node [{$node->name}].",
+                errorCode: 'instance.domain_required',
+                message: "A public domain is required for app-prod node [{$node->name}].",
             );
         }
 
@@ -230,7 +230,7 @@ final readonly class CreateInstanceAction
             );
         }
 
-        return $data->hostname;
+        return $data->domain;
     }
 
     private function ensureProductionSourceIdentity(

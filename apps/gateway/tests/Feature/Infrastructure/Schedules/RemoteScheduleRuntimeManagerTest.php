@@ -261,7 +261,7 @@ final class ScheduleRuntimeFakeKnownHosts implements KnownHostsStore
 
 final class ScheduleRuntimeFakeCertificates implements LeafCertificateSigner
 {
-    public function sign(string $hostname, string $certificateRequest): string
+    public function sign(string $domain, string $certificateRequest): string
     {
         throw new LogicException('Signing is not part of Schedule runtime tests.');
     }
@@ -274,7 +274,7 @@ final class ScheduleRuntimeFakeCertificates implements LeafCertificateSigner
 
 final class ScheduleRuntimeFailingCertificates implements LeafCertificateSigner
 {
-    public function sign(string $hostname, string $certificateRequest): string
+    public function sign(string $domain, string $certificateRequest): string
     {
         throw new LogicException('Signing is not part of Schedule runtime tests.');
     }

@@ -80,7 +80,7 @@ it('runs ownership and scope guards through destructive action entry points', fu
     Route::query()->create([
         'app_id' => $routed->id,
         'node_id' => $this->node->id,
-        'hostname' => 'routed.dev.test',
+        'domain' => 'routed.dev.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
     ]);

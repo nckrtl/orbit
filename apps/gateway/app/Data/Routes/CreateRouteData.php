@@ -10,7 +10,7 @@ final readonly class CreateRouteData
 {
     public function __construct(
         public int $appId,
-        public string $hostname,
+        public string $domain,
         public RoutePublication $publication,
         public ?int $appInstanceId,
         public ?int $nodeId,

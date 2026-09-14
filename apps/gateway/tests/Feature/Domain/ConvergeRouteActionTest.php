@@ -8,37 +8,38 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
-use App\Domain\Routes\RouteHostnameChangeDirection;
-use App\Domain\Routes\RouteHostnameChangeStep;
-use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
-    $this->events = new RouteHostnameChangeEvents;
-    $this->projector = new RouteHostnameChangeProjectorFake($this->events);
-    $this->configuration = new RouteHostnameChangeConfiguratorFake($this->events);
-    $this->environment = new RouteHostnameChangeEnvironmentFake($this->events);
-    app()->instance(RouteHostnameProjector::class, $this->projector);
+    $this->events = new RouteDomainChangeEvents;
+    $this->projector = new RouteDomainChangeProjectorFake($this->events);
+    $this->configuration = new RouteDomainChangeConfiguratorFake($this->events);
+    $this->environment = new RouteDomainChangeEnvironmentFake($this->events);
+    app()->instance(RouteDomainProjector::class, $this->projector);
     app()->instance(DevelopmentAppInstanceConfigurator::class, $this->configuration);
     app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, $this->environment);
     app()->instance(
         DevelopmentProjectionOperationLock::class,
-        new RouteHostnameChangeOwnerFake($this->events),
+        new RouteDomainChangeOwnerFake($this->events),
     );
 });
 
 it('prepares every projection and Laravel URL before DNS then cuts over and cleans up', function (): void {
-    $route = route_hostname_change_route(laravel: true);
+    $route = route_domain_change_route(laravel: true);
 
     $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
@@ -54,31 +55,27 @@ it('prepares every projection and Laravel URL before DNS then cuts over and clea
             'url:https://next.example.test',
             'dns-publication',
             'cleanup',
+            'url:https://next.example.test',
+            'workload-verify',
         ])
-        ->and($updated->only([
-            'hostname',
-            'status',
-            'failed_step',
-            'error_code',
-            'hostname_change_previous',
-            'hostname_change_target',
-            'hostname_change_direction',
-            'hostname_change_step',
-        ]))
-        ->toBe([
-            'hostname' => 'next.example.test',
-            'status' => RouteStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-            'hostname_change_previous' => null,
-            'hostname_change_target' => null,
-            'hostname_change_direction' => null,
-            'hostname_change_step' => null,
-        ]);
+        ->and($updated->domain)
+        ->toBe('next.example.test')
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->replaces_route_id)
+        ->toBeNull()
+        ->and($updated->replaced_by_route_id)
+        ->toBeNull()
+        ->and($updated->replacement_step)
+        ->toBeNull()
+        ->and($updated->id)
+        ->not->toBe($route->id)
+        ->and(Route::query()->find($route->id))
+        ->toBeNull();
 });
 
 it('does not configure Laravel for a source profile classified as non-Laravel', function (): void {
-    $route = route_hostname_change_route(laravel: false);
+    $route = route_domain_change_route(laravel: false);
 
     app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
@@ -86,7 +83,7 @@ it('does not configure Laravel for a source profile classified as non-Laravel', 
 });
 
 it('synchronizes the production candidate environment before DNS and preserves the Route target', function (): void {
-    $route = route_hostname_change_route(laravel: true, environment: 'production');
+    $route = route_domain_change_route(laravel: true, environment: 'production');
     $targetId = $route->targets->sole()->app_instance_id;
 
     $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
@@ -103,8 +100,10 @@ it('synchronizes the production candidate environment before DNS and preserves t
             'environment:candidate',
             'dns-publication',
             'cleanup',
+            'environment:candidate',
+            'workload-verify',
         ])
-        ->and($updated->hostname)
+        ->and($updated->domain)
         ->toBe('next.example.test')
         ->and($updated->targets)
         ->toHaveCount(1)
@@ -112,79 +111,44 @@ it('synchronizes the production candidate environment before DNS and preserves t
         ->toBe($targetId);
 });
 
-it('restores the previous production environment after a pre-publication failure', function (): void {
-    $route = route_hostname_change_route(laravel: true, environment: 'production');
-    $this->environment->failures['candidate'] = 1;
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(ResourceOperationException::class, 'Injected environment candidate failure.');
-
-    expect($this->events->values)
-        ->toContain('environment:previous')
-        ->and($route->refresh()->hostname)
-        ->toBe('old.example.test')
-        ->and($route->failed_step)
-        ->toBe('environment-synchronization')
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::RolledBack);
-});
-
-it('keeps interrupted production environment restoration bounded and resumes the identical retry', function (): void {
-    $route = route_hostname_change_route(laravel: true, environment: 'production');
-    $this->projector->failures['workload-caddy'] = 1;
-    $this->environment->failures['previous'] = 1;
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(ResourceOperationException::class, 'Injected environment previous failure.');
-
-    expect($route->refresh()->hostname_change_direction)
-        ->toBe(RouteHostnameChangeDirection::Rollback)
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::RollbackCertificates)
-        ->and($route->failed_step)
-        ->toBe('rollback-environment');
+it('replaces a shared production Route while preserving the ordered target pool', function (): void {
+    $route = route_domain_change_shared_production_route();
+    $expected = $route->targets()->orderBy('position')->pluck('app_instance_id')->all();
+    expect($expected)->toHaveCount(2);
 
     $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
-    expect($updated->hostname)
+    expect($updated->domain)
         ->toBe('next.example.test')
-        ->and($updated->hostname_change_target)
+        ->and($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe($expected)
+        ->and($updated->id)
+        ->not->toBe($route->id)
+        ->and(Route::query()->find($route->id))
         ->toBeNull()
-        ->and(array_count_values($this->events->values)['environment:previous'])
+        ->and(array_count_values($this->events->values)['workload-certificate'])
         ->toBe(2);
 });
 
-it('records each forward boundary failure and completes rollback to the old authoritative state', function (
+it('leaves the old Route authoritative and removes the replacement after a pre-cutover failure', function (
     string $failure,
-    string $failedStep,
 ): void {
-    $route = route_hostname_change_route(laravel: true);
+    $route = route_domain_change_route(laravel: true);
     $this->projector->failures[$failure] = 1;
 
     expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
         ->toThrow(ResourceOperationException::class, "Injected {$failure} failure.");
 
-    expect($route
-        ->refresh()
-        ->only([
-            'hostname',
-            'status',
-            'failed_step',
-            'error_code',
-            'hostname_change_previous',
-            'hostname_change_target',
-            'hostname_change_direction',
-            'hostname_change_step',
-        ]))->toBe([
-            'hostname' => 'old.example.test',
-            'status' => RouteStatus::Active,
-            'failed_step' => $failedStep,
-            'error_code' => "route.test_{$failure}",
-            'hostname_change_previous' => 'old.example.test',
-            'hostname_change_target' => 'next.example.test',
-            'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
-            'hostname_change_step' => RouteHostnameChangeStep::RolledBack,
-        ]);
+    expect($route->refresh()->domain)
+        ->toBe('old.example.test')
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->replaced_by_route_id)
+        ->toBeNull()
+        ->and(Route::query()->where('domain', 'next.example.test')->exists())
+        ->toBeFalse()
+        ->and($this->events->values)
+        ->toContain('rollback-certificates', 'rollback-caddy', 'rollback-dns');
 })->with([
     'workload certificate' => ['workload-certificate', 'workload-certificate'],
     'workload Caddy' => ['workload-caddy', 'workload-caddy'],
@@ -195,29 +159,90 @@ it('records each forward boundary failure and completes rollback to the old auth
     'DNS publication' => ['dns-publication', 'dns-publication'],
 ]);
 
-it('records Laravel URL failure and restores the old URL during rollback', function (): void {
-    $route = route_hostname_change_route(laravel: true);
+it('records Laravel URL failure, restores the old URL, and removes the replacement', function (): void {
+    $route = route_domain_change_route(laravel: true);
     $this->configuration->failures = 1;
 
     expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
         ->toThrow(ResourceOperationException::class, 'Injected Laravel URL failure.');
 
-    expect($route->refresh()->failed_step)
-        ->toBe('laravel-url')
-        ->and($route->error_code)
-        ->toBe('route.test_laravel_url')
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::RolledBack)
+    expect($route->refresh()->domain)
+        ->toBe('old.example.test')
+        ->and($route->replaced_by_route_id)
+        ->toBeNull()
         ->and($this->events->values)
-        ->toContain('url:https://old.example.test');
+        ->toContain('url:https://old.example.test')
+        ->and(Route::query()->where('domain', 'next.example.test')->exists())
+        ->toBeFalse();
 });
 
-it('records database cutover failure and rolls authoritative DNS back before serving projections', function (): void {
-    $route = route_hostname_change_route(laravel: false);
+it('retains an inspectable failed replacement when pre-cutover cleanup is incomplete', function (): void {
+    $route = route_domain_change_route(laravel: false);
+    $this->projector->failures = [
+        'workload-caddy' => 1,
+        'rollback-caddy' => 1,
+    ];
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected workload-caddy failure.');
+
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
+
+    expect($route->refresh()->domain)
+        ->toBe('old.example.test')
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->replaced_by_route_id)
+        ->toBe($replacement->id)
+        ->and($replacement->status)
+        ->toBe(RouteStatus::Failed)
+        ->and($replacement->replaces_route_id)
+        ->toBe($route->id)
+        ->and($replacement->failed_step)
+        ->toBe('workload-caddy');
+});
+
+it('recovers only the identical failed replacement and refuses a conflicting domain', function (): void {
+    $route = route_domain_change_route(laravel: false);
+    $this->projector->failures = [
+        'workload-certificate' => 1,
+        'rollback-certificates' => 1,
+    ];
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class);
+
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
+    $before = $replacement->fresh()->getAttributes();
+    $oldBefore = $route->refresh()->getAttributes();
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'other.example.test'))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.domain_change_conflict');
+        });
+
+    expect($replacement->fresh()->getAttributes())
+        ->toBe($before)
+        ->and($route->fresh()->getAttributes())
+        ->toBe($oldBefore);
+
+    $this->projector->failures = [];
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
+
+    expect($updated->domain)
+        ->toBe('next.example.test')
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and(Route::query()->find($route->id))
+        ->toBeNull();
+});
+
+it('records database cutover failure without making the replacement authoritative', function (): void {
+    $route = route_domain_change_route(laravel: false);
     DB::unprepared(<<<'SQL'
-        CREATE TRIGGER route_hostname_change_cutover_failure
-        BEFORE UPDATE OF hostname ON routes
-        WHEN NEW.hostname = 'next.example.test'
+        CREATE TRIGGER route_domain_change_cutover_failure
+        BEFORE UPDATE OF status ON routes
+        WHEN NEW.status = 'activating' AND NEW.domain = 'next.example.test'
         BEGIN
             SELECT RAISE(ABORT, 'Injected database cutover failure.');
         END
@@ -226,282 +251,71 @@ it('records database cutover failure and rolls authoritative DNS back before ser
     expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
         ->toThrow(QueryException::class);
 
-    expect($route->refresh()->hostname)
+    expect($route->refresh()->domain)
         ->toBe('old.example.test')
-        ->and($route->failed_step)
-        ->toBe('database-cutover')
-        ->and($route->error_code)
-        ->toBe('route.hostname_change_failed')
-        ->and(array_slice($this->events->values, -3))
-        ->toBe(['rollback-dns', 'rollback-caddy', 'rollback-certificates']);
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($this->events->values)
+        ->toContain('rollback-dns', 'rollback-caddy', 'rollback-certificates');
 });
 
-it('repairs completed forward projections before resuming after the durable checkpoint', function (): void {
-    $route = route_hostname_change_route(laravel: false);
-    $route->update([
-        'hostname_change_previous' => 'old.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::RouterCertificate,
-    ]);
-
-    app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
-
-    expect($this->events->values)->toBe([
-        'owner',
-        'workload-certificate',
-        'workload-caddy',
-        'router-certificate',
-        'firewall-policy',
-        'workload-verify',
-        'router-caddy',
-        'dns-publication',
-        'cleanup',
-    ]);
-});
-
-it('records the exact completed forward projection that fails revalidation', function (): void {
-    $route = route_hostname_change_route(laravel: false);
-    $route->update([
-        'hostname_change_previous' => 'old.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::RouterCertificate,
-    ]);
-    $this->projector->failures['workload-certificate'] = 1;
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(ResourceOperationException::class, 'Injected workload-certificate failure.');
-
-    expect($route->refresh()->failed_step)
-        ->toBe('workload-certificate')
-        ->and($route->error_code)
-        ->toBe('route.test_workload-certificate')
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::RolledBack);
-});
-
-it('records each rollback boundary failure and resumes at its first unfinished step', function (
-    string $failure,
-    RouteHostnameChangeStep $checkpoint,
-    string $errorCode,
-    array $completed,
-): void {
-    $route = route_hostname_change_route(laravel: true);
-    $this->projector->failures['workload-caddy'] = 1;
-
-    if ($failure === 'rollback-laravel-url') {
-        $this->configuration->failures = 1;
-    } else {
-        $this->projector->failures[$failure] = 1;
-    }
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(ResourceOperationException::class);
-
-    expect($route->refresh()->hostname_change_direction)
-        ->toBe(RouteHostnameChangeDirection::Rollback)
-        ->and($route->hostname_change_step)
-        ->toBe($checkpoint)
-        ->and($route->failed_step)
-        ->toBe($failure)
-        ->and($route->error_code)
-        ->toBe($errorCode);
-
-    app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
-
-    $counts = array_count_values($this->events->values);
-
-    foreach ($completed as $event) {
-        expect($counts[$event])->toBe(2);
-    }
-
-    expect($route->refresh()->hostname)
-        ->toBe('next.example.test')
-        ->and($route->hostname_change_target)
-        ->toBeNull();
-})->with([
-    'DNS restoration' => [
-        'rollback-dns',
-        RouteHostnameChangeStep::RollbackPending,
-        'route.test_rollback-dns',
-        [],
-    ],
-    'Caddy restoration' => [
-        'rollback-caddy',
-        RouteHostnameChangeStep::RollbackDns,
-        'route.test_rollback-caddy',
-        ['rollback-dns'],
-    ],
-    'certificate restoration' => [
-        'rollback-certificates',
-        RouteHostnameChangeStep::RollbackCaddy,
-        'route.test_rollback-certificates',
-        ['rollback-dns', 'rollback-caddy'],
-    ],
-    'Laravel URL restoration' => [
-        'rollback-laravel-url',
-        RouteHostnameChangeStep::RollbackCertificates,
-        'route.test_laravel_url',
-        ['rollback-dns', 'rollback-caddy', 'rollback-certificates'],
-    ],
-]);
-
-it('keeps interrupted rollback visible and resumes it before retrying the same change', function (): void {
-    $route = route_hostname_change_route(laravel: true);
-    $this->projector->failures = ['workload-caddy' => 1, 'rollback-caddy' => 1];
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(ResourceOperationException::class, 'Injected rollback-caddy failure.');
-
-    expect($route->refresh()->hostname_change_direction)
-        ->toBe(RouteHostnameChangeDirection::Rollback)
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::RollbackDns)
-        ->and($route->failed_step)
-        ->toBe('rollback-caddy')
-        ->and($route->error_code)
-        ->toBe('route.test_rollback-caddy');
-
-    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
-
-    expect($updated->hostname)
-        ->toBe('next.example.test')
-        ->and($updated->hostname_change_target)
-        ->toBeNull()
-        ->and(array_count_values($this->events->values)['rollback-dns'])
-        ->toBe(2);
-});
-
-it('refuses a conflicting retry without changing durable rollback evidence', function (): void {
-    $route = route_hostname_change_route(laravel: false);
-    $this->projector->failures['workload-certificate'] = 1;
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(ResourceOperationException::class);
-    $before = $route->refresh()->getAttributes();
-    $eventCount = count($this->events->values);
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'other.example.test'))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('route.hostname_change_conflict');
-        });
-
-    expect($route->fresh()->getAttributes())
-        ->toBe($before)
-        ->and(count($this->events->values))
-        ->toBe($eventCount + 1);
-});
-
-it('keeps the new hostname authoritative when cleanup fails and retries cleanup only', function (): void {
-    $route = route_hostname_change_route(laravel: false);
+it('exposes activating and retiring Routes through one cutover transition', function (): void {
+    $route = route_domain_change_route(laravel: false);
     $this->projector->failures['cleanup'] = 1;
 
     expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
         ->toThrow(ResourceOperationException::class, 'Injected cleanup failure.');
 
-    expect($route->refresh()->hostname)
-        ->toBe('next.example.test')
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::DatabaseCutover)
-        ->and($route->failed_step)
-        ->toBe('cleanup');
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
+
+    expect($replacement->status)
+        ->toBe(RouteStatus::Activating)
+        ->and($replacement->replacement_step)
+        ->toBe(RouteReplacementStep::DatabaseCutover)
+        ->and($replacement->failed_step)
+        ->toBe('cleanup')
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Retiring)
+        ->and($route->domain)
+        ->toBe('old.example.test')
+        ->and($replacement->replaces_route_id)
+        ->toBe($route->id)
+        ->and($route->replaced_by_route_id)
+        ->toBe($replacement->id);
+});
+
+it('keeps the replacement authoritative when cleanup fails and retries cleanup only', function (): void {
+    $route = route_domain_change_route(laravel: false);
+    $this->projector->failures['cleanup'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected cleanup failure.');
+
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
     $eventCount = count($this->events->values);
 
     $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
-    expect(array_slice($this->events->values, $eventCount))
-        ->toBe(['owner', 'firewall-policy', 'cleanup', 'workload-verify'])
-        ->and($updated->hostname_change_target)
-        ->toBeNull();
-});
-
-it('repairs completed non-projector evidence before retrying cleanup after database cutover', function (): void {
-    $route = route_hostname_change_route(laravel: true);
-    $route->update([
-        'hostname' => 'next.example.test',
-        'hostname_change_previous' => 'old.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
-        'failed_step' => 'cleanup',
-        'error_code' => 'route.test_cleanup',
-    ]);
-
-    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
-
-    expect($this->events->values)
-        ->toBe([
-            'owner',
-            'firewall-policy',
-            'url:https://next.example.test',
-            'cleanup',
-            'workload-verify',
-        ])
-        ->and($updated->hostname)
+    expect($updated->id)
+        ->toBe($replacement->id)
+        ->and($updated->domain)
         ->toBe('next.example.test')
-        ->and($updated->hostname_change_target)
-        ->toBeNull();
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->replaces_route_id)
+        ->toBeNull()
+        ->and(Route::query()->find($route->id))
+        ->toBeNull()
+        ->and(array_slice($this->events->values, $eventCount))
+        ->toBe(['owner', 'cleanup', 'workload-verify']);
 });
 
-it('revalidates the production candidate environment before retrying cleanup after cutover', function (): void {
-    $route = route_hostname_change_route(laravel: true, environment: 'production');
-    $route->update([
-        'hostname' => 'next.example.test',
-        'hostname_change_previous' => 'old.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
-        'failed_step' => 'cleanup',
-        'error_code' => 'route.test_cleanup',
-    ]);
-
-    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
-
-    expect($this->events->values)
-        ->toBe([
-            'owner',
-            'firewall-policy',
-            'environment:candidate',
-            'cleanup',
-            'workload-verify',
-        ])
-        ->and($updated->hostname_change_target)
-        ->toBeNull();
-});
-
-it('keeps database cutover authoritative when completed cleanup evidence cannot be repaired', function (): void {
-    $route = route_hostname_change_route(laravel: true);
-    $route->update([
-        'hostname' => 'next.example.test',
-        'hostname_change_previous' => 'old.example.test',
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
-        'failed_step' => 'cleanup',
-        'error_code' => 'route.test_cleanup',
-    ]);
-    $this->configuration->failures = 1;
-
-    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
-        ->toThrow(ResourceOperationException::class, 'Injected Laravel URL failure.');
-
-    expect($route->refresh()->hostname)
-        ->toBe('next.example.test')
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::DatabaseCutover)
-        ->and($route->failed_step)
-        ->toBe('cleanup')
-        ->and($route->error_code)
-        ->toBe('route.test_laravel_url');
-});
-
-it('records cleanup failure when clearing the durable operation fields fails', function (): void {
-    $route = route_hostname_change_route(laravel: false);
+it('records cleanup failure when deleting the retiring Route fails', function (): void {
+    $route = route_domain_change_route(laravel: false);
     DB::unprepared(<<<'SQL'
-        CREATE TRIGGER route_hostname_change_cleanup_failure
-        BEFORE UPDATE OF hostname_change_target ON routes
-        WHEN OLD.hostname_change_step = 'database-cutover' AND NEW.hostname_change_target IS NULL
+        CREATE TRIGGER route_domain_change_cleanup_failure
+        BEFORE DELETE ON routes
+        WHEN OLD.status = 'retiring'
         BEGIN
             SELECT RAISE(ABORT, 'Injected cleanup persistence failure.');
         END
@@ -510,19 +324,19 @@ it('records cleanup failure when clearing the durable operation fields fails', f
     expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
         ->toThrow(QueryException::class);
 
-    expect($route->refresh()->hostname)
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
+
+    expect($replacement->status)
+        ->toBe(RouteStatus::Activating)
+        ->and($replacement->domain)
         ->toBe('next.example.test')
-        ->and($route->hostname_change_target)
-        ->toBe('next.example.test')
-        ->and($route->hostname_change_step)
-        ->toBe(RouteHostnameChangeStep::DatabaseCutover)
-        ->and($route->failed_step)
+        ->and($replacement->failed_step)
         ->toBe('cleanup')
-        ->and($route->error_code)
-        ->toBe('route.hostname_change_failed');
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Retiring);
 });
 
-function route_hostname_change_route(bool $laravel, string $environment = 'development'): Route
+function route_domain_change_route(bool $laravel, string $environment = 'development'): Route
 {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
@@ -559,7 +373,7 @@ function route_hostname_change_route(bool $laravel, string $environment = 'devel
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'old.example.test',
+        'domain' => 'old.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
@@ -570,27 +384,84 @@ function route_hostname_change_route(bool $laravel, string $environment = 'devel
     return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']);
 }
 
-final class RouteHostnameChangeEnvironmentFake implements AppInstanceRouteEnvironmentSynchronizer
+function route_domain_change_shared_production_route(): Route
+{
+    $app = OrbitApp::query()->create([
+        'name' => 'Shared',
+        'slug' => 'shared',
+        'repository_url' => 'https://example.test/shared.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $cluster = Cluster::query()->create(['name' => 'shared', 'state' => 'active']);
+    $instances = collect(['one', 'two'])->map(function (string $name) use ($app, $cluster): AppInstance {
+        $suffix = $name === 'one' ? '71' : '72';
+        $node = Node::query()->create([
+            'name' => "shared-{$name}",
+            'cluster_id' => $cluster->id,
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => "192.0.2.{$suffix}",
+            'wireguard_ip' => "10.44.0.{$suffix}",
+            'user' => 'orbit',
+        ]);
+        $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+
+        return AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => $name,
+            'environment' => 'production',
+            'checkout_path' => "/var/www/shared/{$name}",
+            'production_home' => "/var/www/shared/{$name}",
+            'production_user' => 'orbit-shared',
+            'branch' => 'main',
+            'starting_commit' => str_repeat('a', 40),
+            'selected_php_version' => '8.5',
+            'source_is_laravel' => false,
+            'provisioning_step' => 'active',
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+    });
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'domain' => 'old.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $route->targets()->create(['app_instance_id' => $instances[0]->id, 'position' => 0]);
+    $route->targets()->create(['app_instance_id' => $instances[1]->id, 'position' => 1]);
+    $route->update(['status' => 'active']);
+    $instances[0]->update(['status' => AppInstanceState::Active]);
+    $instances[1]->update(['status' => AppInstanceState::Active]);
+
+    return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster']);
+}
+
+final class RouteDomainChangeEnvironmentFake implements AppInstanceRouteEnvironmentSynchronizer
 {
     /** @var array<string, int> */
     public array $failures = [];
 
     public function __construct(
-        private readonly RouteHostnameChangeEvents $events,
+        private readonly RouteDomainChangeEvents $events,
     ) {}
 
-    public function synchronizeRouteHostname(
+    public function synchronizeRouteDomain(
         AppInstance $instance,
-        AppInstanceEnvironmentRouteHostname $hostname,
+        AppInstanceEnvironmentRouteDomain $domain,
     ): AppInstanceEnvironmentResult {
-        $this->events->values[] = "environment:{$hostname->value}";
+        $this->events->values[] = "environment:{$domain->value}";
 
-        if (($this->failures[$hostname->value] ?? 0) > 0) {
-            $this->failures[$hostname->value]--;
+        if (($this->failures[$domain->value] ?? 0) > 0) {
+            $this->failures[$domain->value]--;
 
             throw new ResourceOperationException(
-                errorCode: "route.test_environment_{$hostname->value}",
-                message: "Injected environment {$hostname->value} failure.",
+                errorCode: "route.test_environment_{$domain->value}",
+                message: "Injected environment {$domain->value} failure.",
             );
         }
 
@@ -598,19 +469,19 @@ final class RouteHostnameChangeEnvironmentFake implements AppInstanceRouteEnviro
     }
 }
 
-final class RouteHostnameChangeEvents
+final class RouteDomainChangeEvents
 {
     /** @var list<string> */
     public array $values = [];
 }
 
-final class RouteHostnameChangeProjectorFake implements RouteHostnameProjector
+final class RouteDomainChangeProjectorFake implements RouteDomainProjector
 {
     /** @var array<string, int> */
     public array $failures = [];
 
     public function __construct(
-        private readonly RouteHostnameChangeEvents $events,
+        private readonly RouteDomainChangeEvents $events,
     ) {}
 
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
@@ -685,12 +556,12 @@ final class RouteHostnameChangeProjectorFake implements RouteHostnameProjector
     }
 }
 
-final class RouteHostnameChangeConfiguratorFake implements DevelopmentAppInstanceConfigurator
+final class RouteDomainChangeConfiguratorFake implements DevelopmentAppInstanceConfigurator
 {
     public int $failures = 0;
 
     public function __construct(
-        private RouteHostnameChangeEvents $events,
+        private RouteDomainChangeEvents $events,
     ) {}
 
     public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
@@ -715,10 +586,10 @@ final class RouteHostnameChangeConfiguratorFake implements DevelopmentAppInstanc
     }
 }
 
-final readonly class RouteHostnameChangeOwnerFake implements DevelopmentProjectionOperationLock
+final readonly class RouteDomainChangeOwnerFake implements DevelopmentProjectionOperationLock
 {
     public function __construct(
-        private RouteHostnameChangeEvents $events,
+        private RouteDomainChangeEvents $events,
     ) {}
 
     public function run(Closure $operation): mixed

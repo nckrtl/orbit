@@ -22,8 +22,8 @@ Use the saved state to find the managed resolver link, server, and routing domai
 | `sudo cat /etc/wireguard/orbit.dns-link` | Line 1 is the resolver link, line 2 is the Orbit VPN DNS address, and the remaining state is `.`. |
 | `resolvectl status orbit` | The `orbit` link lists the Orbit VPN DNS address and routing domain `~.`. |
 | `sudo grep -E '^(PostUp|PreDown) =' /etc/wireguard/orbit.conf` | `PostUp` selects the DNS server and `~.`. `PreDown` is absent. |
-| `getent ahostsv4 <route-hostname>` | The normal operating-system resolver returns the private Route address. |
-| `dig +noall +answer @<vpn-dns-address> <route-hostname> A` | A direct query returns the same authoritative private answer. |
+| `getent ahostsv4 <route-domain>` | The normal operating-system resolver returns the private Route address. |
+| `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query returns the same authoritative private answer. |
 | `getent ahostsv4 example.com` | An ordinary name resolves through the same default selection. |
 | `ip route` | Application routes remain independent from DNS server selection. |
 
@@ -88,11 +88,11 @@ The requester's registered Node and local area network (LAN) settings determine 
 
 The Gateway returns the Router's configured LAN address to an active, LAN-configured WireGuard member of the same active Cluster. It returns the Router's WireGuard address to every other permitted requester, including a member without a LAN address, a member of another Cluster, and a source it cannot identify as an active registered WireGuard Node.
 
-The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route hostname. Node-scoped Routes, `gateway.orbit`, `metrics.orbit`, and Herdr observer hostnames of the form `{session}.herdr.{node}.{tld}` keep their established addresses. [Herdr sessions](/reference/herdr-sessions) owns observer publication.
+The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route domain. Node-scoped Routes, `gateway.orbit`, `metrics.orbit`, and Herdr observer hostnames of the form `{session}.herdr.{node}.{tld}` keep their established addresses. [Herdr sessions](/reference/herdr-sessions) owns observer publication.
 
 | Observation | Meaning |
 | --- | --- |
-| `overrides` contains `node:<id>` for the Route hostname or Cluster TLD | That registered Node receives the Router LAN address. |
+| `overrides` contains `node:<id>` for the Route domain or Cluster TLD | That registered Node receives the Router LAN address. |
 | The name appears only under `records` or `suffixes` | The published default is the Router WireGuard address. |
 | The query source is absent from `requesters` | The Gateway treats the source as unidentified and returns the WireGuard default. |
 
@@ -103,8 +103,8 @@ Inspect the published catalog and the live listener on the Gateway, then query f
 | `sudo cat /var/lib/orbit/private-dns/catalog.json` | `requesters` maps each registered WireGuard address to a Node id. `records` and `suffixes` hold WireGuard defaults. `overrides` lists LAN answers by `node:<id>`. |
 | `systemctl is-active orbit-private-dns.service` | The requester-aware listener is active on the Gateway WireGuard DNS address. |
 | `ss -ulpn sport = :53` and `ss -tlpn sport = :53` | `orbit-private-dns` owns the WireGuard address on UDP and TCP port 53. dnsmasq owns `127.0.0.55:53`. |
-| `dig +noall +answer @<vpn-dns-address> <route-hostname> A` | A direct query from that Node returns the address selected for its registered WireGuard source. |
-| `dig +tcp +noall +answer @<vpn-dns-address> <route-hostname> A` | The TCP query returns the same selected address. |
+| `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query from that Node returns the address selected for its registered WireGuard source. |
+| `dig +tcp +noall +answer @<vpn-dns-address> <route-domain> A` | The TCP query returns the same selected address. |
 
 Remove incorrect LAN intent through the Node's existing provision operation by omitting or replacing `lan_ip`, then retry that operation. The Gateway republishes affected selection before the new Node, Cluster, Router, or Route state becomes authoritative. The live listener rereads the published catalog without a manual restart. A publication or listener-activation failure restores the previous working DNS files and services or retains explicit recovery state, and a refused Cluster or Router transition remains refused.
 

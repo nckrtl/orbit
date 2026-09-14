@@ -21,7 +21,7 @@ it('rejects invalid addresses and CIDR prefixes', function (string $source): voi
     'blank' => [''],
     'missing address' => ['/24'],
     'whitespace' => [' 192.0.2.1'],
-    'hostname' => ['example.test'],
+    'domain' => ['example.test'],
     'IPv4 prefix too large' => ['192.0.2.1/33'],
     'IPv6 prefix too large' => ['2001:db8::1/129'],
     'invalid IPv4 octet' => ['192.0.2.999/24'],

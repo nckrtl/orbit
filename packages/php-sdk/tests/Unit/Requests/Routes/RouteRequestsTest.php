@@ -17,7 +17,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 it('transports explicit Route creation values without applying Gateway policy', function (): void {
-    $request = new CreateRouteRequest(3, 'Odd_Value', 'future-policy', appInstanceId: 7);
+    $request = new CreateRouteRequest(3, domain: 'Odd_Value', publication: 'future-policy', appInstanceId: 7);
 
     expect($request->getMethod())
         ->toBe(Method::POST)
@@ -26,7 +26,7 @@ it('transports explicit Route creation values without applying Gateway policy', 
         ->and($request->body()->all())
         ->toBe([
             'app_id' => 3,
-            'hostname' => 'Odd_Value',
+            'domain' => 'Odd_Value',
             'publication' => 'future-policy',
             'app_instance_id' => 7,
         ]);
@@ -98,7 +98,7 @@ it('normalizes malformed Route error codes to null', function (mixed $errorCode)
 ]);
 
 it('defines the exact update, target, clear, and remove transports', function (): void {
-    $update = new UpdateRouteRequest(11, hostname: 'next.test', publication: 'public');
+    $update = new UpdateRouteRequest(11, domain: 'next.test', publication: 'public');
     $set = new SetRouteTargetRequest(11, 8);
     $clear = new UnsetRouteTargetRequest(11);
     $remove = new DestroyRouteRequest(11);
@@ -108,7 +108,7 @@ it('defines the exact update, target, clear, and remove transports', function ()
         ->and($update->resolveEndpoint())
         ->toBe('/api/v1/routes/11')
         ->and($update->body()->all())
-        ->toBe(['hostname' => 'next.test', 'publication' => 'public'])
+        ->toBe(['domain' => 'next.test', 'publication' => 'public'])
         ->and($set->getMethod())
         ->toBe(Method::PUT)
         ->and($set->resolveEndpoint())
@@ -123,6 +123,33 @@ it('defines the exact update, target, clear, and remove transports', function ()
         ->toBe(Method::DELETE)
         ->and($remove->resolveEndpoint())
         ->toBe('/api/v1/routes/11');
+});
+
+it('does not treat leftover hostname fields as Route domain aliases', function (): void {
+    $payload = route_data();
+    unset($payload['domain'], $payload['replaces_route_id'], $payload['replaced_by_route_id'], $payload['replacement_step']);
+    $payload['hostname'] = 'alias.test';
+    $payload['hostname_change_previous'] = 'alias.test';
+    $payload['hostname_change_target'] = 'next.test';
+    $payload['hostname_change_direction'] = 'rollback';
+    $payload['hostname_change_step'] = 'rollback-caddy';
+
+    $response = RouteResponse::fromGatewayData($payload, route_request_id());
+
+    expect($response->domain)
+        ->toBe('')
+        ->and($response->replacesRouteId)
+        ->toBeNull()
+        ->and($response->replacedByRouteId)
+        ->toBeNull()
+        ->and($response->replacementStep)
+        ->toBeNull()
+        ->and($response->toArray())
+        ->not->toHaveKey('hostname')
+        ->not->toHaveKey('hostname_change_previous')
+        ->not->toHaveKey('hostname_change_target')
+        ->not->toHaveKey('hostname_change_direction')
+        ->not->toHaveKey('hostname_change_step');
 });
 
 it('does not keep replaced Route request class names', function (string $class): void {
@@ -147,16 +174,15 @@ function route_data(): array
         'node_id' => 4,
         'cluster_id' => null,
         'generation_basis_node_id' => null,
-        'hostname' => 'app.test',
+        'domain' => 'app.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,
-        'hostname_change_previous' => 'app.test',
-        'hostname_change_target' => 'next.test',
-        'hostname_change_direction' => 'rollback',
-        'hostname_change_step' => 'rollback-caddy',
+        'replaces_route_id' => 10,
+        'replaced_by_route_id' => 12,
+        'replacement_step' => 'router-caddy',
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
     ];
 }

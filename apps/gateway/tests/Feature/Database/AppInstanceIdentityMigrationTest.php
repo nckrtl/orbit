@@ -205,7 +205,7 @@ function app_instance_identity_legacy_graph(): array
         'node_id' => $node->id,
         'cluster_id' => null,
         'generation_basis_node_id' => $node->id,
-        'hostname' => 'legacy.test',
+        'domain' => 'legacy.test',
         'provenance' => 'generated',
         'publication' => 'private',
         'status' => 'pending',

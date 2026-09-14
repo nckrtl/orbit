@@ -30,7 +30,7 @@ final class UnsetRouteTargetCommand extends RouteCommand
         $route = $this->send($connector, new UnsetRouteTargetRequest($id), RouteResponse::class);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->hostname}] target cleared.")
+            ? $this->renderRoute($route, "Route [{$route->domain}] target cleared.")
             : self::FAILURE;
     }
 }

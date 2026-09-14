@@ -56,7 +56,7 @@ it('derives production serving paths through current and resolves PHP roots afte
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'release-layout.example.test',
+        'domain' => 'release-layout.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
@@ -76,7 +76,7 @@ it('derives production serving paths through current and resolves PHP roots afte
             checkoutPath: '/home/orbit/site',
             documentRoot: 'public',
             phpVersion: '8.5',
-            hostname: 'development.test',
+            domain: 'development.test',
         ),
     ]));
 
@@ -129,7 +129,7 @@ it('keeps an existing flat production checkout on its recorded serving path', fu
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'flat-production.example.test',
+        'domain' => 'flat-production.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,

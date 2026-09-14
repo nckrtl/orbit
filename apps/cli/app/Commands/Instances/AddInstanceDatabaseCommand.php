@@ -15,7 +15,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
     #[\Override]
     protected $signature = 'instance:database:add
         {slug : Database connection slug}
-        {--instance= : Positive AppInstance ID or exact Route hostname}
+        {--instance= : Positive AppInstance ID or exact Route domain}
         {--prefix= : Environment key prefix; defaults to DB}
         {--json : Return machine-readable JSON}';
 

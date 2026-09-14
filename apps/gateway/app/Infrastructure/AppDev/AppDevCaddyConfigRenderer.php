@@ -25,12 +25,12 @@ final readonly class AppDevCaddyConfigRenderer
 
         return
             $sites
-                ->sortBy('hostname')
+                ->sortBy('domain')
                 ->map(function (AppDevSite $site): string {
                     $handler = $this->handler($site);
 
                     return <<<CADDY
-                        https://{$site->hostname} {
+                        https://{$site->domain} {
                             bind 0.0.0.0
                             tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
                             {$handler}
@@ -58,9 +58,9 @@ final readonly class AppDevCaddyConfigRenderer
 
             return <<<CADDY
                 reverse_proxy {$upstreams} {
-                    header_up Host {$site->hostname}
+                    header_up Host {$site->domain}
                     transport http {
-                        tls_server_name {$site->hostname}
+                        tls_server_name {$site->domain}
                     }
                 }
                 CADDY;

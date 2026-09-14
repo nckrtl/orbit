@@ -61,7 +61,7 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line('Branch override: '.($instance->branchOverride ?? '-'));
         $this->line('Migration required: '.($instance->migrationRequired ? 'yes' : 'no'));
         $this->line('Starting commit: '.($instance->startingCommit ?? '-'));
-        $this->line('Route hostname: '.($instance->hostname ?? '-'));
+        $this->line('Route domain: '.($instance->domain ?? '-'));
         $this->line('URL: '.($instance->url ?? '-'));
         $this->line('Deploy steps:');
 

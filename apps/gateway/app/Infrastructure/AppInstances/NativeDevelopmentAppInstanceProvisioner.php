@@ -27,9 +27,9 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         private ?DevelopmentProjectionOperationLock $projectionOwner = null,
     ) {}
 
-    public function reserve(AppInstance $appInstance, ?string $hostname): void
+    public function reserve(AppInstance $appInstance, ?string $domain): void
     {
-        $route = $this->routes->ensureForAppInstance($appInstance, $hostname);
+        $route = $this->routes->ensureForAppInstance($appInstance, $domain);
 
         if ($route->status === RouteStatus::Failed) {
             $route->update(['status' => RouteStatus::Pending, 'failed_step' => null, 'error_code' => null]);
@@ -38,10 +38,10 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
 
     public function complete(
         AppInstance $appInstance,
-        ?string $hostname,
+        ?string $domain,
         bool $recoverSourceProfile = false,
     ): AppInstance {
-        $route = $this->routes->ensureForAppInstance($appInstance, $hostname);
+        $route = $this->routes->ensureForAppInstance($appInstance, $domain);
 
         return $this->owner()->run(
             fn (): AppInstance => $this->completeOwned(
@@ -102,7 +102,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
 
         if ($appInstance->provisioning_step === 'php-selected') {
             if ($profile->laravel) {
-                $this->configuration->configureLaravelUrl($appInstance, "https://{$route->hostname}");
+                $this->configuration->configureLaravelUrl($appInstance, "https://{$route->domain}");
             }
 
             $appInstance->update(['provisioning_step' => 'url-configured']);

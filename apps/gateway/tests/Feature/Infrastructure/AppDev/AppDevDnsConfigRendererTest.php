@@ -28,11 +28,11 @@ it('projects a Cluster-scoped Route to the Router WireGuard address', function (
     $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
 
     expect($configuration)
-        ->toContain("host-record={$route->hostname},10.44.0.20")
+        ->toContain("host-record={$route->domain},10.44.0.20")
         ->not
-        ->toContain("host-record={$route->hostname},10.44.0.10")
+        ->toContain("host-record={$route->domain},10.44.0.10")
         ->not
-        ->toContain("host-record={$route->hostname},192.168.10.20");
+        ->toContain("host-record={$route->domain},192.168.10.20");
 });
 
 it('projects a Node-scoped Route to the workload WireGuard address', function (): void {
@@ -66,7 +66,7 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'solo.app.test',
+        'domain' => 'solo.app.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -140,7 +140,7 @@ it('builds a requester catalog from the same records the renderer publishes', fu
     $configuration = $renderer->render();
     $catalog = $renderer->catalog();
 
-    expect($catalog->exact[$route->hostname])
+    expect($catalog->exact[$route->domain])
         ->toBe('10.44.0.20')
         ->and($catalog->suffixes)
         ->toHaveKey('cluster-app.test')
@@ -208,7 +208,7 @@ function orb258_cluster_route(): Route
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'app.cluster.test',
+        'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

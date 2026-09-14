@@ -101,7 +101,7 @@ describe('AppInstance environment requests', function (): void {
         'multiline' => ["first line\nsecond line"],
         'false string' => ['false'],
         'zero string' => ['0'],
-        'placeholder' => ['prefix-{{app_instance.hostname}}-{{app_instance.environment}}'],
+        'placeholder' => ['prefix-{{app_instance.domain}}-{{app_instance.environment}}'],
     ]);
 
     it('keeps an arbitrary submitted value only in intended body serialization', function (): void {

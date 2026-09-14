@@ -19,7 +19,7 @@ use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -75,9 +75,9 @@ final readonly class CloneAppInstanceAction
                 [$candidate->id],
                 function () use ($candidate, $data, $node, $branch): array {
                     $source = $this->candidates->inspect($candidate, $branch);
-                    [$hostname, $placement] = $this->preflight($candidate, $node, $data);
+                    [$domain, $placement] = $this->preflight($candidate, $node, $data);
 
-                    return [$this->reserve($candidate, $node, $data, $source, $hostname, $placement), $source];
+                    return [$this->reserve($candidate, $node, $data, $source, $domain, $placement), $source];
                 },
             );
             $created = true;
@@ -159,17 +159,17 @@ final readonly class CloneAppInstanceAction
             throw $this->conflict('route.tld_required', 'A clone preview requires the destination Node TLD.');
         }
 
-        $hostname = RouteHostname::validate("{$data->previewName}.{$node->tld}");
+        $domain = RouteDomain::validate("{$data->previewName}.{$node->tld}");
 
-        if (Route::query()->where('hostname', $hostname)->exists()) {
-            throw $this->conflict('route.hostname_conflict', "Route hostname [{$hostname}] is already owned.");
+        if (Route::query()->where('domain', $domain)->exists()) {
+            throw $this->conflict('route.domain_conflict', "Route domain [{$domain}] is already owned.");
         }
 
         if (AppInstance::query()->where('app_id', $candidate->app_id)->where('name', $data->name)->exists()) {
             throw $this->conflict('instance.placement_conflict', 'The target AppInstance name is already owned.');
         }
 
-        return [$hostname, $placement];
+        return [$domain, $placement];
     }
 
     private function assertPlacement(AppInstance $candidate, Node $node): RoutePlacement
@@ -207,7 +207,7 @@ final readonly class CloneAppInstanceAction
         Node $node,
         CloneAppInstanceData $data,
         CloneCandidateSource $source,
-        string $hostname,
+        string $domain,
         RoutePlacement $placement,
     ): AppInstance {
         $user = "orbit-app-{$candidate->app_id}";
@@ -220,15 +220,15 @@ final readonly class CloneAppInstanceAction
                 $node,
                 $data,
                 $source,
-                $hostname,
+                $domain,
                 $placement,
                 $user,
                 $home,
             ): AppInstance {
-                if (Route::query()->where('hostname', $hostname)->lockForUpdate()->exists()) {
+                if (Route::query()->where('domain', $domain)->lockForUpdate()->exists()) {
                     throw $this->conflict(
-                        'route.hostname_conflict',
-                        "Route hostname [{$hostname}] is already owned.",
+                        'route.domain_conflict',
+                        "Route domain [{$domain}] is already owned.",
                     );
                 }
 
@@ -248,7 +248,7 @@ final readonly class CloneAppInstanceAction
                     'clone_candidate_commit' => $source->commit,
                     'clone_requested_branch' => $data->branch,
                     'clone_preview_name' => $data->previewName,
-                    'clone_preview_hostname' => $hostname,
+                    'clone_preview_domain' => $domain,
                     'clone_sqlite_source_path' => $data->sqliteSourcePath,
                     'provisioning_step' => 'clone-reserved',
                     'status' => AppInstanceState::Reserved,
@@ -258,7 +258,7 @@ final readonly class CloneAppInstanceAction
                     'node_id' => $placement->nodeId,
                     'cluster_id' => $placement->clusterId,
                     'generation_basis_node_id' => null,
-                    'hostname' => $hostname,
+                    'domain' => $domain,
                     'provenance' => RouteProvenance::Explicit,
                     'publication' => RoutePublication::Private,
                     'status' => RouteStatus::Pending,
@@ -432,7 +432,7 @@ final readonly class CloneAppInstanceAction
         $route = $routes->sole();
 
         if (
-            $route->hostname !== $target->clone_preview_hostname
+            $route->domain !== $target->clone_preview_domain
             || $route->provenance !== RouteProvenance::Explicit
             || $route->publication !== RoutePublication::Private
             || $route->node_id !== $placement->nodeId
@@ -562,7 +562,7 @@ final readonly class CloneAppInstanceAction
                     || $lockedRoute->status !== RouteStatus::Pending
                     || $lockedRoute->targets->count() !== 1
                     || $lockedRoute->targets->sole()->app_instance_id !== $lockedTarget->id
-                    || $lockedRoute->hostname !== $lockedTarget->clone_preview_hostname
+                    || $lockedRoute->domain !== $lockedTarget->clone_preview_domain
                     || $lockedRoute->node_id !== $placement->nodeId
                     || $lockedRoute->cluster_id !== $placement->clusterId
                 ) {

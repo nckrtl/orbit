@@ -13,7 +13,7 @@ final readonly class AppDevSite
         public string $checkoutPath,
         public string $documentRoot,
         public ?string $phpVersion,
-        public string $hostname,
+        public string $domain,
         public ?string $upstreamAddress = null,
         /** @var list<string> */
         public array $upstreamAddresses = [],

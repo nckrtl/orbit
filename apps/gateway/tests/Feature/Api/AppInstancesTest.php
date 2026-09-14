@@ -38,7 +38,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
-use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -547,7 +547,7 @@ function seed_active_production_app_instance(
     OrbitApp $app,
     Node $node,
     string $name,
-    ?string $hostname = null,
+    ?string $domain = null,
     ?string $root = null,
     ?string $branchOverride = null,
     bool $flatHome = false,
@@ -575,13 +575,13 @@ function seed_active_production_app_instance(
         'provisioning_step' => 'active',
         'status' => AppInstanceState::Active,
     ]);
-    $resolvedHostname = $hostname ?? "{$name}.{$app->slug}.{$node->tld}";
-    $generated = $hostname === null;
+    $resolvedHostname = $domain ?? "{$name}.{$app->slug}.{$node->tld}";
+    $generated = $domain === null;
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $generated ? $node->id : null,
-        'hostname' => $resolvedHostname,
+        'domain' => $resolvedHostname,
         'provenance' => $generated ? RouteProvenance::Generated : RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -626,7 +626,7 @@ it('bounds AppInstance response relationship queries for one and several visible
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'generation_basis_node_id' => $this->node->id,
-        'hostname' => 'first.acme.test',
+        'domain' => 'first.acme.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
@@ -669,7 +669,7 @@ it('bounds AppInstance response relationship queries for one and several visible
         'app_id' => $this->orbitApp->id,
         'node_id' => $secondVisibleNode->id,
         'generation_basis_node_id' => $secondVisibleNode->id,
-        'hostname' => 'second.acme.test',
+        'domain' => 'second.acme.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
@@ -704,7 +704,7 @@ it('bounds AppInstance response relationship queries for one and several visible
         'app_id' => $inaccessibleApp->id,
         'node_id' => $inaccessibleNode->id,
         'generation_basis_node_id' => $inaccessibleNode->id,
-        'hostname' => 'hidden.inaccessible.test',
+        'domain' => 'hidden.inaccessible.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
@@ -741,7 +741,7 @@ it('loads missing response relations for a single AppInstance DTO caller', funct
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'generation_basis_node_id' => $this->node->id,
-        'hostname' => 'single.acme.test',
+        'domain' => 'single.acme.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
@@ -835,7 +835,7 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
             'node_id' => $this->node->id,
             'cluster_id' => null,
             'generation_basis_node_id' => $this->node->id,
-            'hostname' => 'dev.acme.test',
+            'domain' => 'dev.acme.test',
             'provenance' => 'generated',
             'publication' => 'private',
             'status' => 'active',
@@ -880,13 +880,13 @@ it('returns a completed historical production AppInstance without fetching or ov
         'node_id' => $node->id,
         'name' => 'stable',
         'branch' => 'release',
-        'hostname' => 'www.example.test',
+        'domain' => 'www.example.test',
     ];
     [$instance] = seed_active_production_app_instance(
         $this->orbitApp,
         $node,
         'stable',
-        hostname: 'www.example.test',
+        domain: 'www.example.test',
         branchOverride: 'release',
     );
     $before = $instance->getAttributes();
@@ -898,7 +898,7 @@ it('returns a completed historical production AppInstance without fetching or ov
         ->assertJsonPath('data.id', $instance->id)
         ->assertJsonPath('data.selected_branch', 'release')
         ->assertJsonPath('data.branch_override', 'release')
-        ->assertJsonPath('data.hostname', 'www.example.test');
+        ->assertJsonPath('data.domain', 'www.example.test');
 
     expect($instance->refresh()->getAttributes())
         ->toBe($before)
@@ -919,7 +919,7 @@ it('returns a completed historical production AppInstance without fetching or ov
         ->assertJsonPath('error.code', 'instance.placement_conflict');
 
     $this
-        ->postJson('/api/v1/instances', [...$payload, 'hostname' => 'changed.example.test'])
+        ->postJson('/api/v1/instances', [...$payload, 'domain' => 'changed.example.test'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.retry_conflict');
 
@@ -939,7 +939,7 @@ it('refuses new production placement when the standalone Node has no TLD', funct
             'app_id' => $this->orbitApp->id,
             'node_id' => $node->id,
             'name' => 'explicit-host',
-            'hostname' => 'www.example.test',
+            'domain' => 'www.example.test',
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.candidate_required');
@@ -1296,7 +1296,7 @@ it('recovers a missing source profile on an active AppInstance without reprovisi
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
-        'hostname' => 'dev.example.test',
+        'domain' => 'dev.example.test',
     ];
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
     $instance = AppInstance::query()->sole();
@@ -1325,14 +1325,14 @@ it('recovers a missing source profile on an active AppInstance without reprovisi
         ->assertJsonPath('data.id', $instance->id)
         ->assertJsonPath('data.status', 'active')
         ->assertJsonPath('data.route.id', $route->id)
-        ->assertJsonPath('data.route.hostname', $route->hostname);
+        ->assertJsonPath('data.route.domain', $route->domain);
 
     expect($instance->refresh()->only(array_keys($identity)))
         ->toBe($identity)
         ->and($instance->only(['selected_php_version', 'source_is_laravel']))
         ->toBe(['selected_php_version' => $expectedPhpVersion, 'source_is_laravel' => true])
-        ->and($instance->routes()->sole()->only(['id', 'hostname', 'status']))
-        ->toBe($route->only(['id', 'hostname', 'status']))
+        ->and($instance->routes()->sole()->only(['id', 'domain', 'status']))
+        ->toBe($route->only(['id', 'domain', 'status']))
         ->and($this->configuration->inspections)
         ->toBe(1)
         ->and($this->configuration->configurations)
@@ -1382,13 +1382,13 @@ it('recovers a missing source profile on an active production AppInstance withou
         'app_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'stable',
-        'hostname' => 'www.example.test',
+        'domain' => 'www.example.test',
     ];
     [$instance, $route] = seed_active_production_app_instance(
         $this->orbitApp,
         $node,
         'stable',
-        hostname: 'www.example.test',
+        domain: 'www.example.test',
         flatHome: $flatHome,
     );
     $instance->update([
@@ -1469,13 +1469,13 @@ it('refuses production source profile recovery before writing when the runtime i
         'app_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'stable',
-        'hostname' => 'www.example.test',
+        'domain' => 'www.example.test',
     ];
     [$instance] = seed_active_production_app_instance(
         $this->orbitApp,
         $node,
         'stable',
-        hostname: 'www.example.test',
+        domain: 'www.example.test',
     );
     $instance->update([
         'source_is_laravel' => null,
@@ -1511,13 +1511,13 @@ it('leaves an active production AppInstance unchanged when source profile recove
         'app_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'stable',
-        'hostname' => 'www.example.test',
+        'domain' => 'www.example.test',
     ];
     [$instance] = seed_active_production_app_instance(
         $this->orbitApp,
         $node,
         'stable',
-        hostname: 'www.example.test',
+        domain: 'www.example.test',
     );
     $before = $instance->getAttributes();
     $routeBefore = Route::query()->sole()->getAttributes();
@@ -1542,12 +1542,12 @@ it('leaves an active production AppInstance unchanged when source profile recove
         ->toBe([]);
 });
 
-it('accepts environment and hostname operations after recovering an active source profile', function (): void {
+it('accepts environment and domain operations after recovering an active source profile', function (): void {
     $payload = [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
-        'hostname' => 'dev.example.test',
+        'domain' => 'dev.example.test',
     ];
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
     $instance = AppInstance::query()->sole();
@@ -1585,7 +1585,7 @@ it('accepts environment and hostname operations after recovering an active sourc
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.source_profile_missing');
     $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.source_profile_missing');
 
@@ -1618,20 +1618,20 @@ it('accepts environment and hostname operations after recovering an active sourc
         ->assertOk()
         ->assertJsonPath('data.operation', 'sync');
 
-    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector = Mockery::mock(RouteDomainProjector::class);
     foreach ([
         'prepareWorkloadCertificate',
         'prepareWorkloadCaddy',
         'prepareRouterCertificate',
         'prepareFirewallPolicy',
-        'verifyWorkload',
         'prepareRouterCaddy',
         'publishDns',
         'cleanup',
     ] as $method) {
         $projector->shouldReceive($method)->once();
     }
-    app()->instance(RouteHostnameProjector::class, $projector);
+    $projector->shouldReceive('verifyWorkload')->twice();
+    app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
@@ -1648,9 +1648,9 @@ it('accepts environment and hostname operations after recovering an active sourc
     );
 
     $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
         ->assertOk()
-        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.domain', 'next.example.test')
         ->assertJsonPath('data.status', 'active');
 });
 
@@ -1670,7 +1670,7 @@ it('keeps explicit branch selection separate from default identity and Route ide
         ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/default')
         ->assertJsonPath('data.selected_branch', 'release')
         ->assertJsonPath('data.branch_override', 'release')
-        ->assertJsonPath('data.hostname', 'acme.test');
+        ->assertJsonPath('data.domain', 'acme.test');
 });
 
 it('retains explicit override intent when it equals the App default branch', function (): void {
@@ -1776,7 +1776,7 @@ it('creates explicit Routes during provisioning and preserves exact retry identi
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'default',
-        'hostname' => 'Preview.Example.Test',
+        'domain' => 'Preview.Example.Test',
     ];
 
     $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
@@ -1784,7 +1784,7 @@ it('creates explicit Routes during provisioning and preserves exact retry identi
 
     expect($route->getAttributes())
         ->toMatchArray([
-            'hostname' => 'preview.example.test',
+            'domain' => 'preview.example.test',
             'provenance' => 'explicit',
             'generation_basis_node_id' => null,
             'status' => 'active',
@@ -1826,7 +1826,7 @@ it('refuses unavailable generated naming before source mutation and completes on
     $this->node->update(['tld' => 'test']);
     $this->postJson('/api/v1/instances', $payload)->assertOk();
 
-    expect(Route::query()->sole()->hostname)->toBe('dev.acme.test');
+    expect(Route::query()->sole()->domain)->toBe('dev.acme.test');
 });
 
 it('uses Node TLD before active Cluster fallback while Cluster membership selects scope', function (): void {
@@ -1851,7 +1851,7 @@ it('uses Node TLD before active Cluster fallback while Cluster membership select
         'name' => 'default',
     ])->assertCreated();
 
-    expect(Route::query()->sole()->hostname)
+    expect(Route::query()->sole()->domain)
         ->toBe('acme.test')
         ->and(Route::query()->sole()->cluster_id)
         ->toBe($cluster->id);
@@ -1869,7 +1869,7 @@ it('uses Node TLD before active Cluster fallback while Cluster membership select
         'name' => 'feature',
     ])->assertCreated();
 
-    expect(Route::query()->sole()->hostname)
+    expect(Route::query()->sole()->domain)
         ->toBe('feature.acme.cluster.test')
         ->and(Route::query()->sole()->cluster_id)
         ->toBe($cluster->id);
@@ -1945,12 +1945,12 @@ it('refuses Cluster activation that would change an active AppInstance Route', f
         ->toBe($before)
         ->and($cluster->refresh()->state)
         ->toBe(ClusterState::Inactive)
-        ->and(Route::query()->sole()->only(['status', 'node_id', 'cluster_id', 'hostname']))
+        ->and(Route::query()->sole()->only(['status', 'node_id', 'cluster_id', 'domain']))
         ->toBe([
             'status' => RouteStatus::Active,
             'node_id' => $this->node->id,
             'cluster_id' => null,
-            'hostname' => 'dev.acme.test',
+            'domain' => 'dev.acme.test',
         ])
         ->and($firstRouter->roles()->where('role', RoleName::Router)->sole()->status)
         ->toBe(LifecycleStatus::Active)
@@ -2065,7 +2065,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
         nodeId: $this->node->id,
         name: 'dev',
         root: null,
-        hostname: null,
+        domain: null,
         branch: null,
     );
     $native = app(DevelopmentAppInstanceProvisioner::class);
@@ -2077,14 +2077,14 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
             private readonly DevelopmentAppInstanceProvisioner $native,
         ) {}
 
-        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        public function reserve(AppInstance $appInstance, ?string $domain): void
         {
-            $this->native->reserve($appInstance, $hostname);
+            $this->native->reserve($appInstance, $domain);
         }
 
         public function complete(
             AppInstance $appInstance,
-            ?string $hostname,
+            ?string $domain,
             bool $recoverSourceProfile = false,
         ): AppInstance {
             $this->completions++;
@@ -2093,7 +2093,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
                 throw new ResourceOperationException('instance.first_attempt_failed', 'The first attempt failed.');
             }
 
-            return $this->native->complete($appInstance, $hostname, $recoverSourceProfile);
+            return $this->native->complete($appInstance, $domain, $recoverSourceProfile);
         }
     };
     app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
@@ -2151,14 +2151,14 @@ it('persists unexpected provisioning failures before releasing the lease', funct
             private readonly DevelopmentAppInstanceProvisioner $native,
         ) {}
 
-        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        public function reserve(AppInstance $appInstance, ?string $domain): void
         {
-            $this->native->reserve($appInstance, $hostname);
+            $this->native->reserve($appInstance, $domain);
         }
 
         public function complete(
             AppInstance $appInstance,
-            ?string $hostname,
+            ?string $domain,
             bool $recoverSourceProfile = false,
         ): AppInstance {
             throw new LogicException('Unexpected provisioning failure.');
@@ -2170,7 +2170,7 @@ it('persists unexpected provisioning failures before releasing the lease', funct
         nodeId: $this->node->id,
         name: 'dev',
         root: null,
-        hostname: null,
+        domain: null,
         branch: null,
     )))
         ->toThrow(LogicException::class, 'Unexpected provisioning failure.');
@@ -2194,14 +2194,14 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
     {
         public int $reservations = 0;
 
-        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        public function reserve(AppInstance $appInstance, ?string $domain): void
         {
             $this->reservations++;
         }
 
         public function complete(
             AppInstance $appInstance,
-            ?string $hostname,
+            ?string $domain,
             bool $recoverSourceProfile = false,
         ): AppInstance {
             return $appInstance;
@@ -2221,7 +2221,7 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
         nodeId: $this->node->id,
         name: 'dev',
         root: null,
-        hostname: null,
+        domain: null,
         branch: null,
     )))
         ->toThrow(RuntimeException::class, 'Lease acquisition failed.');
@@ -2270,7 +2270,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
             private readonly AppDevSourceOperationLock $lock,
         ) {}
 
-        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        public function reserve(AppInstance $appInstance, ?string $domain): void
         {
             $this->reservedWhileHeld = $this->lock->held;
 
@@ -2279,7 +2279,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
 
         public function complete(
             AppInstance $appInstance,
-            ?string $hostname,
+            ?string $domain,
             bool $recoverSourceProfile = false,
         ): AppInstance {
             return $appInstance;
@@ -2293,7 +2293,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
         nodeId: $this->node->id,
         name: 'dev',
         root: null,
-        hostname: 'dev.example.test',
+        domain: 'dev.example.test',
         branch: null,
     )))
         ->toThrow(ResourceOperationException::class, 'The hostname is unavailable.');
@@ -2377,7 +2377,7 @@ it('does not treat leftover Instance or Workspace checkouts as AppInstance overl
         'checkout_path' => $owner === 'instance'
             ? '/srv/orbit/apps/acme'
             : '/srv/orbit/legacy/acme',
-        'hostname' => 'legacy.example.test',
+        'domain' => 'legacy.example.test',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
     ]);
@@ -2388,7 +2388,7 @@ it('does not treat leftover Instance or Workspace checkouts as AppInstance overl
             'name' => 'dev',
             'branch' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
-            'hostname' => 'dev.example.test',
+            'domain' => 'dev.example.test',
             'status' => LifecycleStatus::Active,
         ]);
     }
@@ -2587,7 +2587,7 @@ it('leaves an active AppInstance row unchanged when a creation retry is refused 
     $this->travelTo(now()->addMinute());
 
     $this
-        ->postJson('/api/v1/instances', [...$payload, 'hostname' => 'x.orbit'])
+        ->postJson('/api/v1/instances', [...$payload, 'domain' => 'x.orbit'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.retry_conflict');
 
@@ -2634,7 +2634,7 @@ it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint d
         'name' => 'legacy',
         'environment' => 'development',
         'checkout_path' => '/srv/orbit/legacy/acme',
-        'hostname' => 'legacy.example.test',
+        'domain' => 'legacy.example.test',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
     ]);
@@ -2643,7 +2643,7 @@ it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint d
         'name' => 'workspace',
         'branch' => 'workspace',
         'checkout_path' => '/srv/orbit/workspaces/acme/workspace',
-        'hostname' => 'workspace.example.test',
+        'domain' => 'workspace.example.test',
         'status' => LifecycleStatus::Active,
     ]);
 
@@ -2884,7 +2884,7 @@ it('removes one target from a public clustered production Route and reports reta
     $route = Route::query()->create([
         'app_id' => $this->orbitApp->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'production.example.test',
+        'domain' => 'production.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
@@ -3235,7 +3235,7 @@ function orb182_api_removal_graph(TestCase $test): array
             'app_id' => $test->orbitApp->id,
             'node_id' => $test->node->id,
             'generation_basis_node_id' => $test->node->id,
-            'hostname' => "{$name}.acme.test",
+            'domain' => "{$name}.acme.test",
             'provenance' => RouteProvenance::Generated,
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,

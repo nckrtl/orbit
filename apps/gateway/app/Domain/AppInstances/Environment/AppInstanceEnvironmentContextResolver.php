@@ -6,7 +6,6 @@ namespace App\Domain\AppInstances\Environment;
 
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -64,10 +63,10 @@ final readonly class AppInstanceEnvironmentContextResolver
         $route = $routes->sole();
 
         if (
-            $route->status !== RouteStatus::Active
-            || $route->hostname_change_target !== null
-            || $route->hostname_change_direction !== null
-            || $route->hostname_change_step !== null
+            ! $route->isAuthoritative()
+            || $route->replaced_by_route_id !== null
+            || $route->replaces_route_id !== null
+            || $route->replacement_step !== null
         ) {
             $this->conflict();
         }
@@ -83,7 +82,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
             routeId: $route->id,
-            routeHostname: $route->hostname,
+            routeDomain: $route->domain,
             nodeStatus: $node->status->value,
             node: $node,
         );
@@ -138,10 +137,10 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         if (
             $route->status !== RouteStatus::Pending
-            || $route->hostname !== $instance->clone_preview_hostname
-            || $route->hostname_change_target !== null
-            || $route->hostname_change_direction !== null
-            || $route->hostname_change_step !== null
+            || $route->domain !== $instance->clone_preview_domain
+            || $route->replaced_by_route_id !== null
+            || $route->replaces_route_id !== null
+            || $route->replacement_step !== null
         ) {
             $this->conflict();
         }
@@ -157,7 +156,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
             routeId: $route->id,
-            routeHostname: $route->hostname,
+            routeDomain: $route->domain,
             nodeStatus: $node->status->value,
             node: $node,
         );
@@ -165,7 +164,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
     public function resolveForRouteTransition(
         AppInstance $instance,
-        AppInstanceEnvironmentRouteHostname $hostname,
+        AppInstanceEnvironmentRouteDomain $domain,
         bool $requireActiveNode,
         bool $lockRoute = false,
     ): AppInstanceEnvironmentContext {
@@ -199,29 +198,30 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routes = $routeQuery->get();
 
-        if ($routes->count() !== 1) {
+        if ($routes->count() < 1 || $routes->count() > 2) {
             $this->conflict();
         }
 
-        $route = $routes->sole();
-        $direction = $hostname === AppInstanceEnvironmentRouteHostname::Candidate
-            ? RouteHostnameChangeDirection::Forward
-            : RouteHostnameChangeDirection::Rollback;
-        $routeHostname = $hostname === AppInstanceEnvironmentRouteHostname::Candidate
-            ? $route->hostname_change_target
-            : $route->hostname_change_previous;
+        $authoritative = $routes->first(
+            static fn (Route $route): bool => $route->isAuthoritative(),
+        );
+        $candidate = $routes->first(
+            static fn (Route $route): bool => $route->replaces_route_id !== null
+                || $route->status === RouteStatus::Pending
+                || $route->status === RouteStatus::Failed,
+        ) ?? $authoritative;
+
+        if (! $authoritative instanceof Route || ! $candidate instanceof Route) {
+            $this->conflict();
+        }
+
+        $route = $domain === AppInstanceEnvironmentRouteDomain::Candidate ? $candidate : $authoritative;
+        $routeDomain = $route->domain;
 
         if (
-            $route->status !== RouteStatus::Active
-            || $route->provenance !== RouteProvenance::Explicit
-            || $route->publication !== RoutePublication::Private
-            || $route->hostname_change_direction !== $direction
-            || $route->hostname_change_step === null
-            || ! is_string($route->hostname_change_previous)
-            || ! is_string($route->hostname_change_target)
-            || ! is_string($routeHostname)
-            || $routeHostname === ''
-            || $route->targets()->count() !== 1
+            $authoritative->provenance !== RouteProvenance::Explicit
+            || $authoritative->publication !== RoutePublication::Private
+            || $routeDomain === ''
         ) {
             $this->conflict();
         }
@@ -237,10 +237,10 @@ final readonly class AppInstanceEnvironmentContextResolver
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
             routeId: $route->id,
-            routeHostname: $routeHostname,
+            routeDomain: $routeDomain,
             nodeStatus: $node->status->value,
             node: $node,
-            routeHostnameSource: $hostname,
+            routeDomainSource: $domain,
         );
     }
 

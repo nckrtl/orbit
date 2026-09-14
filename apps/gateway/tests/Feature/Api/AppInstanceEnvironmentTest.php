@@ -82,9 +82,9 @@ it('updates missing existing and identical values without contacting the workloa
         ->toBe('env:update');
 });
 
-it('imports by exact Route hostname and applies conflict and replacement semantics', function (): void {
+it('imports by exact Route domain and applies conflict and replacement semantics', function (): void {
     $this->access->contents = "APP_KEY=synthetic-key\nNEW=value\n";
-    $url = "/api/v1/instances/{$this->route->hostname}/environment/import";
+    $url = "/api/v1/instances/{$this->route->domain}/environment/import";
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
@@ -134,7 +134,7 @@ it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): v
     expect($this->instance->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)
         ->toBe('base64:synthetic')
         ->and($this->instance->environmentValues()->where('env_key', 'APP_URL')->sole()->env_value)
-        ->toBe('https://{{app_instance.hostname}}');
+        ->toBe('https://{{app_instance.domain}}');
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
@@ -173,6 +173,11 @@ it('returns redacted configuration details for invalid keys and unsupported plac
         'KEY',
         'environment-secret-sentinel-{{instance.hostname}}',
         ['key' => 'KEY', 'rule' => 'placeholder', 'placeholder' => '{{instance.hostname}}'],
+    ],
+    'retired hostname placeholder' => [
+        'KEY',
+        'environment-secret-sentinel-{{app_instance.hostname}}',
+        ['key' => 'KEY', 'rule' => 'placeholder', 'placeholder' => '{{app_instance.hostname}}'],
     ],
     'malformed placeholder' => [
         'KEY',
@@ -221,17 +226,17 @@ it('returns 404 for an unknown selector and 409 for an ambiguous Route target', 
         ->putJson('/api/v1/instances/999999/environment/KEY', ['value' => 'value'])
         ->assertNotFound();
 
-    [$hostname] = ambiguous_environment_target($this->caller);
+    [$domain] = ambiguous_environment_target($this->caller);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->putJson("/api/v1/instances/{$hostname}/environment/KEY", ['value' => 'value'])
+        ->putJson("/api/v1/instances/{$domain}/environment/KEY", ['value' => 'value'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'env.target_ambiguous');
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->getJson("/api/v1/instances/{$this->route->hostname}")
+        ->getJson("/api/v1/instances/{$this->route->domain}")
         ->assertNotFound();
 });
 
@@ -351,10 +356,10 @@ it('synchronizes by the existing selector with a narrow value-free result', func
         ->environmentValues()
         ->createMany([
             ['env_key' => 'Z_LITERAL', 'env_value' => 'local-$VALUE'],
-            ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.hostname}}'],
+            ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.domain}}'],
             ['env_key' => 'APP_KEY', 'env_value' => 'base64:stored-key'],
         ]);
-    $url = "/api/v1/instances/{$this->route->hostname}/environment/sync";
+    $url = "/api/v1/instances/{$this->route->domain}/environment/sync";
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
@@ -551,7 +556,7 @@ function environment_api_fixture(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'environment-api.test',
+        'domain' => 'environment-api.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -577,7 +582,7 @@ function ambiguous_environment_target(Node $caller): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'shared-environment.test',
+        'domain' => 'shared-environment.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -611,7 +616,7 @@ function ambiguous_environment_target(Node $caller): array
     $route->update(['status' => RouteStatus::Active]);
     AppInstance::query()->where('app_id', $app->id)->update(['status' => 'active']);
 
-    return [$route->hostname];
+    return [$route->domain];
 }
 
 final class EnvironmentApiAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight

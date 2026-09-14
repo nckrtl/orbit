@@ -36,7 +36,7 @@ final readonly class UpdateAppInstanceEnvironmentAction
             if (
                 $context->laravel
                 && $key === 'APP_URL'
-                && $value !== 'https://{{app_instance.hostname}}'
+                && $value !== 'https://{{app_instance.domain}}'
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'env.configuration_invalid',

@@ -230,15 +230,15 @@ it('renders isolated pools and private Caddy listeners for every active AppInsta
         )->and(
             $caddy,
         )->toContain(
-            "https://{$route->hostname}",
+            "https://{$route->domain}",
             'bind 0.0.0.0',
             "php_fastcgi unix//run/php/orbit-app-instance-{$appInstance->id}.sock",
             "tls /etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current/cert.pem",
         )
         ->not->toContain(
             ':80',
-            $instance->hostname === $route->hostname ? 'unused' : "https://{$instance->hostname}",
-            "https://{$workspace->hostname}",
+            $instance->domain === $route->domain ? 'unused' : "https://{$instance->domain}",
+            "https://{$workspace->domain}",
             'php_fastcgi unix//run/php/orbit-instance-1.sock',
         );
 
@@ -270,7 +270,7 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
         'name' => 'unrelated',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/unrelated',
-        'hostname' => 'legacy-unrelated.app-dev.orbit',
+        'domain' => 'legacy-unrelated.app-dev.orbit',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
     ]);
@@ -279,7 +279,7 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
         'name' => 'failed',
         'branch' => 'failed',
         'checkout_path' => '/home/orbit/.orbit/worktrees/acme/failed',
-        'hostname' => 'failed.acme.app-dev.orbit',
+        'domain' => 'failed.acme.app-dev.orbit',
         'status' => LifecycleStatus::Failed,
     ]);
     $sites = new AppDevSiteRepository;
@@ -304,7 +304,7 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
 
     $siteIdentity = static fn (AppDevSite $site): array => [
         $site->scope,
-        $site->hostname,
+        $site->domain,
         $site->phpVersion,
         $site->nodeAddress,
     ];
@@ -320,10 +320,10 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
         ->toBe([])
         ->and($globalDns)
         ->toContain(
-            "host-record={$route->hostname},{$node->wireguard_ip}",
-            "host-record={$unrelatedRoute->hostname},{$unrelatedNode->wireguard_ip}",
+            "host-record={$route->domain},{$node->wireguard_ip}",
+            "host-record={$unrelatedRoute->domain},{$unrelatedNode->wireguard_ip}",
         )
-        ->not->toContain($instance->hostname, $workspace->hostname);
+        ->not->toContain($instance->domain, $workspace->domain);
 });
 
 it('uses only generated instance paths and registered Git worktrees for source removal', function (): void {
@@ -546,7 +546,7 @@ it('preserves and restores Caddy ACLs on managed-home traversal ancestors', func
         'name' => 'second',
         'branch' => 'second',
         'checkout_path' => '/home/orbit/.orbit/worktrees/acme/second',
-        'hostname' => 'second.acme.app-dev.orbit',
+        'domain' => 'second.acme.app-dev.orbit',
         'status' => LifecycleStatus::Active,
     ]);
     [$manager, $ssh] = source_manager();
@@ -1479,7 +1479,7 @@ it('releases a shared custom traversal ACL only after the last workspace is remo
         'name' => 'second',
         'branch' => 'second',
         'checkout_path' => '/home/orbit/projects/second',
-        'hostname' => 'second.acme.app-dev.orbit',
+        'domain' => 'second.acme.app-dev.orbit',
         'status' => LifecycleStatus::Active,
     ]);
     [$manager, $ssh] = source_manager();
@@ -1532,7 +1532,7 @@ it('locks instance removal before calculating shared traversal releases and muta
                 'name' => 'concurrent',
                 'environment' => 'development',
                 'checkout_path' => '/home/orbit/projects/team/other',
-                'hostname' => 'concurrent.acme.app-dev.orbit',
+                'domain' => 'concurrent.acme.app-dev.orbit',
                 'certificate_mode' => CertificateMode::OrbitCa,
                 'status' => LifecycleStatus::Provisioning,
             ]);
@@ -1589,7 +1589,7 @@ it('locks workspace removal before calculating shared traversal releases and mut
                 'name' => 'concurrent',
                 'branch' => 'concurrent',
                 'checkout_path' => '/home/orbit/projects/concurrent',
-                'hostname' => 'concurrent.acme.app-dev.orbit',
+                'domain' => 'concurrent.acme.app-dev.orbit',
                 'status' => LifecycleStatus::Provisioning,
             ]);
 
@@ -2031,12 +2031,12 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
     ]);
     $signer = new class implements LeafCertificateSigner
     {
-        /** @var list<array{hostname: string, csr: string}> */
+        /** @var list<array{domain: string, csr: string}> */
         public array $calls = [];
 
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
-            $this->calls[] = ['hostname' => $hostname, 'csr' => $certificateRequest];
+            $this->calls[] = ['domain' => $domain, 'csr' => $certificateRequest];
 
             return "LEAF CERTIFICATE\n";
         }
@@ -2069,7 +2069,7 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
         ->and($ssh->commands[0]->arguments)
         ->toContain(hash(algo: 'sha256', data: "ROOT CERTIFICATE\n"))
         ->and($signer->calls)
-        ->toBe([['hostname' => 'acme.app-dev.orbit', 'csr' => 'CSR FROM TARGET']])
+        ->toBe([['domain' => 'acme.app-dev.orbit', 'csr' => 'CSR FROM TARGET']])
         ->and($ssh->commands[1]->input)
         ->toBe("LEAF CERTIFICATE\nROOT CERTIFICATE\n")
         ->and($ssh->commands[1]->arguments[2])
@@ -2103,7 +2103,7 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
     ]);
     $signer = new class implements LeafCertificateSigner
     {
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
             return "LEAF CERTIFICATE\n";
         }
@@ -2175,7 +2175,7 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
     $rootCertificate = create_app_dev_certificate_reuse_fixture(
         root: $root,
         scope: "instance-{$instance->id}",
-        hostname: $instance->hostname,
+        domain: $instance->domain,
         keyUsage: $keyUsage,
         keyAlgorithm: $keyAlgorithm,
     );
@@ -2187,7 +2187,7 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
             private readonly string $rootCertificate,
         ) {}
 
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
             return "unused\n";
         }
@@ -2323,8 +2323,8 @@ it('retains exact DNS records for active and pending Routes on different Routers
 
     expect($configuration)
         ->toContain(
-            "host-record={$firstRoute->hostname},10.44.0.32",
-            "host-record={$secondRoute->hostname},10.44.0.42",
+            "host-record={$firstRoute->domain},10.44.0.32",
+            "host-record={$secondRoute->domain},10.44.0.42",
         )
         ->and($processes->invocations)
         ->toHaveCount(1)
@@ -2891,7 +2891,7 @@ function app_dev_runtime_models(
         'checkout_path' => "{$account->home}/apps/acme",
         'document_root' => 'public',
         'php_version' => $instancePhp,
-        'hostname' => 'acme.app-dev.orbit',
+        'domain' => 'acme.app-dev.orbit',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
     ]);
@@ -2900,7 +2900,7 @@ function app_dev_runtime_models(
         'name' => 'feature',
         'branch' => 'feature',
         'checkout_path' => "{$account->home}/.orbit/worktrees/acme/feature",
-        'hostname' => 'feature.acme.app-dev.orbit',
+        'domain' => 'feature.acme.app-dev.orbit',
         'status' => LifecycleStatus::Active,
     ]);
     $gateway = Node::query()->create([
@@ -2932,12 +2932,12 @@ function app_dev_supported_app_instance(
     ]);
 }
 
-function app_dev_supported_route(AppInstance $appInstance, string $hostname): Route
+function app_dev_supported_route(AppInstance $appInstance, string $domain): Route
 {
     $route = Route::query()->create([
         'app_id' => $appInstance->app_id,
         'node_id' => $appInstance->node_id,
-        'hostname' => $hostname,
+        'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -3015,7 +3015,7 @@ function orb173_dns_projection_route(
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => "{$name}.app.test",
+        'domain' => "{$name}.app.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -3216,7 +3216,7 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
 function create_app_dev_certificate_reuse_fixture(
     string $root,
     string $scope,
-    string $hostname,
+    string $domain,
     string $keyUsage,
     string $keyAlgorithm,
 ): string {
@@ -3267,7 +3267,7 @@ function create_app_dev_certificate_reuse_fixture(
             '-out',
             "{$current}/request.pem",
             '-subj',
-            "/CN={$hostname}",
+            "/CN={$domain}",
         ],
     ];
 
@@ -3280,7 +3280,7 @@ function create_app_dev_certificate_reuse_fixture(
         'basicConstraints=critical,CA:FALSE',
         "keyUsage=critical,{$keyUsage}",
         'extendedKeyUsage=serverAuth',
-        "subjectAltName=DNS:{$hostname}",
+        "subjectAltName=DNS:{$domain}",
     ]));
     $signed = $processes->run(new ProcessInvocation([
         $openssl,

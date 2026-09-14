@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Routes;
 
 use App\Data\Routes\UpdateRouteData;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RoutePublication;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
@@ -18,10 +18,10 @@ final class UpdateRouteRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        $hostname = $this->input('hostname');
+        $domain = $this->input('domain');
 
-        if (is_string($hostname)) {
-            $this->merge(['hostname' => RouteHostname::normalize($hostname)]);
+        if (is_string($domain)) {
+            $this->merge(['domain' => RouteDomain::normalize($domain)]);
         }
     }
 
@@ -29,7 +29,7 @@ final class UpdateRouteRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'hostname' => ['sometimes', 'required', 'string', 'max:253'],
+            'domain' => ['sometimes', 'required', 'string', 'max:253'],
             'publication' => ['sometimes', 'required', Rule::enum(RoutePublication::class)],
         ];
     }
@@ -38,7 +38,7 @@ final class UpdateRouteRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['hostname', 'publication']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['domain', 'publication']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -48,14 +48,14 @@ final class UpdateRouteRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            if (! $this->exists('hostname') && ! $this->exists('publication')) {
+            if (! $this->exists('domain') && ! $this->exists('publication')) {
                 $validator->errors()->add('body', 'Provide at least one Route update.');
             }
 
-            $hostname = $this->input('hostname');
+            $domain = $this->input('domain');
 
-            if (is_string($hostname) && ! RouteHostname::isValid($hostname)) {
-                $validator->errors()->add('hostname', 'The Route hostname is invalid.');
+            if (is_string($domain) && ! RouteDomain::isValid($domain)) {
+                $validator->errors()->add('domain', 'The Route domain is invalid.');
             }
         }];
     }
@@ -66,8 +66,8 @@ final class UpdateRouteRequest extends FormRequest
         $validated = $this->validated();
 
         return new UpdateRouteData(
-            hostnameProvided: array_key_exists('hostname', $validated),
-            hostname: is_string($validated['hostname'] ?? null) ? $validated['hostname'] : null,
+            domainProvided: array_key_exists('domain', $validated),
+            domain: is_string($validated['domain'] ?? null) ? $validated['domain'] : null,
             publicationProvided: array_key_exists('publication', $validated),
             publication: is_string($validated['publication'] ?? null)
                 ? RoutePublication::from($validated['publication'])

@@ -31,7 +31,7 @@ it('stores apps, instances, workspaces, and their process ownership', function (
         'name' => 'dev',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
-        'hostname' => 'orbit.test',
+        'domain' => 'orbit.test',
         'certificate_mode' => CertificateMode::OrbitCa,
     ]);
     $workspace = Workspace::query()->create([
@@ -39,7 +39,7 @@ it('stores apps, instances, workspaces, and their process ownership', function (
         'name' => 'feature',
         'branch' => 'feature/test',
         'checkout_path' => '/home/orbit/.orbit/worktrees/orbit/feature',
-        'hostname' => 'feature.orbit.test',
+        'domain' => 'feature.orbit.test',
     ]);
     $process = $workspace
         ->processes()
@@ -78,7 +78,7 @@ it('enforces at most one app instance on each node', function (): void {
         'name' => 'first',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
-        'hostname' => 'orbit.test',
+        'domain' => 'orbit.test',
         'certificate_mode' => CertificateMode::OrbitCa,
     ]);
 
@@ -88,7 +88,7 @@ it('enforces at most one app instance on each node', function (): void {
         'name' => 'second',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
-        'hostname' => 'other.test',
+        'domain' => 'other.test',
         'certificate_mode' => CertificateMode::OrbitCa,
     ]))
         ->toThrow(QueryException::class);

@@ -27,7 +27,7 @@ final class RegisterAppInstanceRequest extends GatewayRequest implements HasBody
         private readonly ?string $defaultBranch = null,
         private readonly ?string $instanceName = null,
         private readonly ?string $root = null,
-        private readonly ?string $hostname = null,
+        private readonly ?string $domain = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -59,7 +59,7 @@ final class RegisterAppInstanceRequest extends GatewayRequest implements HasBody
             'default_branch' => $this->defaultBranch,
             'instance_name' => $this->instanceName,
             'root' => $this->root,
-            'hostname' => $this->hostname,
+            'domain' => $this->domain,
         ] as $key => $value) {
             if ($value === null) {
                 continue;

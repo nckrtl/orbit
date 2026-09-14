@@ -367,7 +367,7 @@ function writer_environment_context(string $path): AppInstanceEnvironmentContext
         executionUser: (string) posix_getpwuid(posix_geteuid())['name'],
         laravel: false,
         routeId: 1,
-        routeHostname: 'example.test',
+        routeDomain: 'example.test',
         nodeStatus: 'active',
         node: $node,
     );

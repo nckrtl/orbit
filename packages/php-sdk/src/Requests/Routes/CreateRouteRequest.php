@@ -20,7 +20,7 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly int $appId,
-        private readonly string $hostname,
+        private readonly string $domain,
         private readonly string $publication,
         private readonly ?int $appInstanceId = null,
         private readonly ?int $nodeId = null,
@@ -43,7 +43,7 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
         return array_filter(
             [
                 'app_id' => $this->appId,
-                'hostname' => $this->hostname,
+                'domain' => $this->domain,
                 'publication' => $this->publication,
                 'app_instance_id' => $this->appInstanceId,
                 'node_id' => $this->nodeId,
