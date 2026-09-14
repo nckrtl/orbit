@@ -397,7 +397,7 @@ final readonly class RecordCommandActivity
             return $schedule;
         }
 
-        if ($request->route()?->getName() !== 'schedule:add') {
+        if ($request->route()?->getName() !== 'schedule:create') {
             return null;
         }
 
@@ -558,7 +558,7 @@ final readonly class RecordCommandActivity
             return $count <= 1000 ? ['lines' => $count] : [];
         }
 
-        if ($command !== 'schedule:add') {
+        if ($command !== 'schedule:create') {
             return [];
         }
 

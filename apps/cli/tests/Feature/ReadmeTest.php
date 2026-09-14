@@ -40,7 +40,7 @@ it('documents the doctor verification boundary', function (): void {
 it('documents JavaScript processes through the managed Vite+ entry point', function (): void {
     $readme = file_get_contents(base_path('README.md'));
     $viteProcess = <<<'MARKDOWN'
-        ./orbit process:add vite \
+        ./orbit process:create vite \
             --instance=12 \
             --runtime=systemd \
             --command=/usr/local/bin/vp \

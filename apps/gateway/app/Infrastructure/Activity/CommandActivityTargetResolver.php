@@ -278,7 +278,7 @@ final readonly class CommandActivityTargetResolver
     {
         $process = $request->route('process');
 
-        if (! $process instanceof OrbitProcess && $request->route()?->getName() === 'process:add') {
+        if (! $process instanceof OrbitProcess && $request->route()?->getName() === 'process:create') {
             $process = $this->createdProcess($request);
         }
 
@@ -322,7 +322,7 @@ final readonly class CommandActivityTargetResolver
             };
         }
 
-        if ($request->route()?->getName() !== 'schedule:add') {
+        if ($request->route()?->getName() !== 'schedule:create') {
             return null;
         }
 

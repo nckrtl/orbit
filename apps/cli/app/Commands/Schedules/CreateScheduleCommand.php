@@ -6,15 +6,15 @@ namespace App\Commands\Schedules;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Schedules\AddScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\AppInstanceScheduleTarget;
+use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 
-final class AddScheduleCommand extends ScheduleCommand
+final class CreateScheduleCommand extends ScheduleCommand
 {
     #[\Override]
-    protected $signature = 'schedule:add
+    protected $signature = 'schedule:create
         {name : Schedule name}
         {--node= : Positive Node ID}
         {--instance= : Positive AppInstance ID}
@@ -25,7 +25,7 @@ final class AddScheduleCommand extends ScheduleCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Add one Node or AppInstance Schedule through the Gateway.';
+    protected $description = 'Create one Node or AppInstance Schedule through the Gateway.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -85,7 +85,7 @@ final class AddScheduleCommand extends ScheduleCommand
 
         $schedule = $this->send(
             $connector,
-            new AddScheduleRequest(
+            new CreateScheduleRequest(
                 target: $target,
                 name: $name,
                 calendar: $calendar,
