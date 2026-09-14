@@ -11,6 +11,10 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
+/**
+ * Creates a development AppInstance or retries a completed production AppInstance.
+ * New production placement uses {@see CloneAppInstanceRequest}.
+ */
 final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
