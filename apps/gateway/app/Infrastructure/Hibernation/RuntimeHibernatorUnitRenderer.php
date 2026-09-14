@@ -33,6 +33,7 @@ final readonly class RuntimeHibernatorUnitRenderer
         string $artisan,
         string $orbitHome,
         string $workingDirectory,
+        string $user,
     ): string {
         return implode("\n", [
             '[Unit]',
@@ -42,7 +43,7 @@ final readonly class RuntimeHibernatorUnitRenderer
             '',
             '[Service]',
             'Type=oneshot',
-            'User=root',
+            'User='.$user,
             'WorkingDirectory='.$this->escapeDirectivePath($workingDirectory),
             'Environment=ORBIT_HOME='.$this->escapeDirectivePath($orbitHome),
             'ExecStart='.implode(' ', array_map($this->quoteArgument(...), [
