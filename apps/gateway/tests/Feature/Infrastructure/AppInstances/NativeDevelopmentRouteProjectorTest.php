@@ -70,7 +70,11 @@ it('uses one local workload site when Router and workload roles share a Node', f
             ->toContain('reverse_proxy 127.0.0.1:5173')
             ->toContain('forward_auth')
             ->toContain('/api/v1/runtime-activations/app-instance/'.$appInstance->id)
-            ->toContain('tls_trust_pool file /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+            ->toContain('handle @orbit_asleep')
+            ->toContain('root /dev/shm/orbit/hibernation')
+            ->toContain('try_files /app-instance-'.$appInstance->id.'.awake')
+            ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+            ->not->toContain('tls_trust_pool')
             ->not->toContain("orbit-certificates/app-instance-{$appInstance->id}/current/root.pem")
             ->not->toContain('reverse_proxy https://')->and($arguments)->toContain("app-instance-{$appInstance->id}")
             ->not->toContain("route-{$route->id}-router", 'ufw', 's_client')->and($processes->invocations)->toHaveCount(

@@ -91,7 +91,6 @@ final readonly class AppDevCaddyConfigRenderer
 
         $id = $matches[1];
         $key = RuntimeHibernation::key((int) $id);
-        $awake = RuntimeHibernation::awakePath($key);
         $log = RuntimeHibernation::accessLogPath($key);
         $host = parse_url($this->gatewayOrigin, PHP_URL_HOST);
 
@@ -101,17 +100,24 @@ final readonly class AppDevCaddyConfigRenderer
 
         $uri = '/api/v1/runtime-activations/app-instance/'.$id;
         $root = self::ORBIT_ROOT_CA_PATH;
+        $markers = RuntimeHibernation::MarkerDirectory;
+        $marker = '/'.$key.'.awake';
 
         return <<<CADDY
             @orbit_asleep {
-                not file {$awake}
+                not file {
+                    root {$markers}
+                    try_files {$marker}
+                }
             }
-            forward_auth @orbit_asleep {$this->gatewayOrigin} {
-                uri {$uri}
-                header_up Host {$host}
-                transport http {
-                    tls_trust_pool file {$root}
-                    tls_server_name {$host}
+            handle @orbit_asleep {
+                forward_auth {$this->gatewayOrigin} {
+                    uri {$uri}
+                    header_up Host {$host}
+                    transport http {
+                        tls_trusted_ca_certs {$root}
+                        tls_server_name {$host}
+                    }
                 }
             }
             log {
