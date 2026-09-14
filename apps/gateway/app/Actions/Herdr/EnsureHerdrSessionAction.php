@@ -28,6 +28,7 @@ use Throwable;
 final readonly class EnsureHerdrSessionAction
 {
     public function __construct(
+        private RequireHerdrToolAction $requireTool,
         private ProcessTargetResolver $targets,
         private AddProcessAction $addProcess,
         private StartProcessAction $startProcess,
@@ -42,6 +43,7 @@ final readonly class EnsureHerdrSessionAction
     public function execute(AddHerdrSessionData $data): array
     {
         $node = $this->targets->forNodeAdmission(Node::query()->findOrFail($data->nodeId))->node;
+        $this->requireTool->execute($node);
 
         if ($data->user !== $node->user) {
             throw new ResourceOperationException(

@@ -10,10 +10,13 @@ use App\Domain\Herdr\ObservationGrantValidator;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolStatus;
 use App\Models\HerdrObservationNonce;
 use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Tool;
 use Tests\Support\FakeHerdrObserverPublisher;
 use Tests\Support\FakeHerdrSessionInspector;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -37,6 +40,7 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.8',
     ]);
     $this->node = $this->markAsGateway($node);
+    $this->herdrTool = herdr_sessions_install_tool($this->node);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
 });
 
@@ -86,6 +90,168 @@ it('creates a named Herdr session on a managed Node with a private observer', fu
         'command' => 'herdr:session:create',
         'status' => 'succeeded',
     ]);
+});
+
+it('returns 409 without runtime changes when Herdr Tool intent is missing', function (): void {
+    $this->herdrTool->delete();
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.tool_not_installed');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->convergedProcessIds)
+        ->toBeEmpty()
+        ->and($this->observers->published)
+        ->toBeEmpty();
+});
+
+it('returns 409 without runtime changes when Herdr Tool intent has failed', function (): void {
+    $this->herdrTool->update([
+        'status' => ToolStatus::Failed,
+        'error_code' => 'tool.install_failed',
+    ]);
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.tool_not_installed');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->convergedProcessIds)
+        ->toBeEmpty();
+});
+
+it('returns 409 without runtime changes when the managed brew prerequisite is inactive', function (): void {
+    $this->herdrTool->manager()->update(['status' => LifecycleStatus::Failed]);
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.tool_not_installed');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->convergedProcessIds)
+        ->toBeEmpty();
+});
+
+it('returns 409 without runtime changes when Herdr is managed outside Homebrew', function (): void {
+    $this->herdrTool->manager()->update(['name' => ToolManagerName::Apt]);
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.tool_not_installed');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->convergedProcessIds)
+        ->toBeEmpty();
+});
+
+it('returns 409 when Herdr Tool intent belongs to another Node', function (): void {
+    $this->herdrTool->delete();
+    $other = Node::query()->create([
+        'name' => 'other',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.21',
+        'public_ssh_port' => 22,
+        'user' => 'nckrtl',
+        'wireguard_ip' => '10.44.0.9',
+    ]);
+    herdr_sessions_install_tool($other);
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.tool_not_installed');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->convergedProcessIds)
+        ->toBeEmpty();
+});
+
+it('lists a managed session when Herdr Tool intent is no longer installed', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $this->herdrTool->delete();
+
+    $this->getJson('/api/v1/herdr/sessions?node_id='.$this->node->id)
+        ->assertOk()
+        ->assertJsonPath('data.0.session', 'commander-tasks');
+});
+
+it('shows a managed session when Herdr Tool intent is no longer installed', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+    $this->herdrTool->delete();
+
+    $this->getJson('/api/v1/herdr/sessions/'.$session->id)
+        ->assertOk()
+        ->assertJsonPath('data.session', 'commander-tasks');
+});
+
+it('destroys a managed session when Herdr Tool intent is no longer installed', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+    $this->herdrTool->delete();
+
+    $this->deleteJson('/api/v1/herdr/sessions/'.$session->id)->assertOk();
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(0);
 });
 
 it('ensures an identical session without restarting a compatible running server', function (): void {
@@ -320,6 +486,7 @@ it('rejects expired, wrong-node, and pane-mismatch grants', function (): void {
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.9',
     ]);
+    herdr_sessions_install_tool($other);
     $this->postJson('/api/v1/herdr/sessions', [
         'node_id' => $other->id,
         'session' => 'reviewer-tasks',
@@ -421,6 +588,57 @@ it('restarts with Herdr handoff when requested and supported', function (): void
     expect($this->inspector->handoffs)->toBe(1);
 });
 
+it('returns 409 without restarting when managed Herdr Tool intent is no longer installed', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+    $this->herdrTool->update(['status' => ToolStatus::Failed]);
+    $this->observers->published = [];
+    $before = $session->getAttributes();
+
+    $this->postJson('/api/v1/herdr/sessions/'.$session->id.'/restart')
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.tool_not_installed');
+
+    expect($this->runtime->restarted)
+        ->toBeEmpty()
+        ->and($this->observers->published)
+        ->toBeEmpty()
+        ->and($session->refresh()->getAttributes())
+        ->toBe($before);
+});
+
+it('returns 409 without a grant when managed Herdr Tool intent is no longer installed', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+    $this->herdrTool->update(['status' => ToolStatus::Failed]);
+    $before = $session->getAttributes();
+
+    $this->postJson('/api/v1/herdr/sessions/'.$session->id.'/observation-grants', [
+        'pane' => 'w1:p1',
+        'terminal' => 'term-abc',
+        'cols' => 120,
+        'rows' => 40,
+        'origin' => 'https://tasks.commander.test',
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.tool_not_installed');
+
+    expect(HerdrObservationNonce::query()->count())
+        ->toBe(0)
+        ->and($session->refresh()->getAttributes())
+        ->toBe($before);
+});
+
 it('returns 422 without republishing when the Herdr protocol drifts during restart', function (): void {
     $this->postJson('/api/v1/herdr/sessions', [
         'node_id' => $this->node->id,
@@ -456,6 +674,7 @@ it('lets Commander observe panes on two Nodes without SSH or input capability', 
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.10',
     ]);
+    herdr_sessions_install_tool($second);
 
     foreach (['beast' => $this->node, 'workhorse' => $second] as $name => $node) {
         $this->postJson('/api/v1/herdr/sessions', [
@@ -488,3 +707,18 @@ it('lets Commander observe panes on two Nodes without SSH or input capability', 
         ->and($urls->implode(' '))
         ->not->toContain('input');
 });
+
+function herdr_sessions_install_tool(Node $node): Tool
+{
+    $manager = $node->toolManagers()->create([
+        'name' => ToolManagerName::Brew,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    return $node->tools()->create([
+        'tool_manager_id' => $manager->id,
+        'package' => 'herdr',
+        'status' => ToolStatus::Installed,
+        'installed_version' => '0.9.0',
+    ]);
+}

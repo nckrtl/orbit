@@ -6,18 +6,21 @@ Orbit owns Process lifecycle, private DNS, Caddy, Orbit certificate authority (C
 
 ## Create a session
 
-The operator first enables the optional Herdr command extension, then names one session on one managed Node and records the Unix identity that must own the Herdr server and socket.
+The operator first installs Herdr as a managed Homebrew Tool on the target Node. The operator then enables the optional Herdr command extension on the local client, names one session, and records the Unix identity that must own the Herdr server and socket.
 
 ```bash
+orbit tool:install herdr --node=<node-id> --manager=brew
 orbit extension:enable herdr
 orbit herdr:session:create commander-tasks --node=beast --user=nckrtl --publish-observer
 ```
 
-The Gateway composes one node-targeted systemd Process for the headless Herdr server, publishes a private receive-only observer when `--publish-observer` is set, and stores the session identity. The Process runs as the Node's managed runtime user. The `--user` value must match that recorded user; the Gateway refuses a mismatch before it creates a Process.
+The Gateway requires installed `herdr` Tool intent under the active Homebrew manager on that exact Node. It checks the same prerequisite before session creation, restart, and observation-grant issuance. The Gateway returns `herdr.tool_not_installed` before runtime work when that Tool record is missing, failed, changing, or assigned to another Node. It returns the same error when the Homebrew manager is inactive. Session reads and destruction remain available for diagnosis and cleanup.
+
+After that check, the Gateway composes one node-targeted systemd Process for the headless Herdr server, publishes a private receive-only observer when `--publish-observer` is set, and stores the session identity. The Process runs as the Node's managed runtime user. The `--user` value must match that recorded user; the Gateway refuses a mismatch before it creates a Process.
 
 Observer publication requires a successful session snapshot with Herdr observe protocol 22. The Gateway repeats this capability check before it issues each grant. Inspection failure or protocol drift fails closed and produces no observation grant.
 
-The CLI hides every `herdr:*` command and refuses its execution while the extension is disabled. Extension state is local to the operator machine. Trusted services can use the authenticated Gateway API without enabling the CLI extension.
+The CLI hides every `herdr:*` command and refuses its execution while the extension is disabled. Extension state is local to the operator machine and only composes that client's command surface. Gateway Herdr routes are always registered. Trusted services can use the authenticated Gateway API without enabling the CLI extension, but the Gateway still enforces the target Node Tool prerequisite.
 
 Repeating an identical create returns the same session. The Gateway does not replace or restart a compatible running Herdr server. A changed user, Process specification, or observer listen address with the same Node and session name returns `herdr.session_conflict` and leaves the running server in place.
 
@@ -132,6 +135,7 @@ The Gateway returns these Herdr-specific codes.
 | `herdr.session_conflict` | The named session exists with a different specification. |
 | `herdr.session_in_use` | Removal refused because live panes exist. |
 | `herdr.node_unavailable` | The Node is inactive, unmanaged, or unreachable for mutation. |
+| `herdr.tool_not_installed` | The target Node has no installed managed `herdr` Tool under its active Homebrew manager. |
 | `herdr.grant_invalid` | The grant request is missing a required pane, terminal, viewport bound, or HTTPS browser origin. |
 | `herdr.inspection_failed` | Orbit could not verify the Herdr session before observer publication or grant issuance. |
 | `herdr.observer_unsupported` | The installed Herdr observe protocol is not 22. |

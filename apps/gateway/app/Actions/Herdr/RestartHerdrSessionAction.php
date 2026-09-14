@@ -17,6 +17,7 @@ use Throwable;
 final readonly class RestartHerdrSessionAction
 {
     public function __construct(
+        private RequireHerdrToolAction $requireTool,
         private HerdrSessionInspector $inspector,
         private RestartProcessAction $restartProcess,
         private HerdrObserverPublisher $observers,
@@ -26,6 +27,7 @@ final readonly class RestartHerdrSessionAction
     public function execute(HerdrSession $session, bool $handoff): HerdrSession
     {
         $session->loadMissing('node', 'process');
+        $this->requireTool->execute($session->node);
 
         if ($session->process === null) {
             throw new ResourceOperationException(
