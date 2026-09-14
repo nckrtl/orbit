@@ -184,6 +184,7 @@ describe('activity access and redaction', function (): void {
             requestId: '44444444-4444-4444-8444-444444444444',
             command: 'instance:show',
             status: 'succeeded',
+            properties: [],
         );
         $legacy->update([
             'subject_type' => Instance::class,
@@ -193,6 +194,7 @@ describe('activity access and redaction', function (): void {
             requestId: '55555555-5555-4555-8555-555555555555',
             command: 'workspace:new',
             status: 'succeeded',
+            properties: [],
         );
         $workspace->update([
             'subject_type' => Workspace::class,

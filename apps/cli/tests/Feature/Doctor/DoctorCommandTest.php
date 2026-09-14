@@ -42,12 +42,16 @@ it('lists every accepted family including schedule in doctor help', function ():
         DoctorFamily::cases(),
     );
 
-    expect($families)->toContain('schedule', 'database_connection');
+    expect($families)
+        ->toContain('schedule', 'database_connection')
+        ->not->toContain('workspace');
     expect(app(Kernel::class)->all()['doctor']->getDefinition()->getOption('family')->getDescription())
         ->toBe('Limit checks to node, role, app, instance, schedule, tool, process, firewall, herdr, or database_connection');
 
     expect(Artisan::call('help', ['command_name' => 'doctor']))->toBe(Command::SUCCESS);
-    expect(Artisan::output())->toContain(...$families);
+    expect(Artisan::output())
+        ->toContain(...$families)
+        ->not->toContain('workspace');
 });
 
 it('rejects invalid node options through the exact json envelope before HTTP', function (mixed $node): void {

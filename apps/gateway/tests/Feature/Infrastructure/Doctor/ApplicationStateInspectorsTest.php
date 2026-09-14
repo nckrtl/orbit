@@ -43,7 +43,7 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
     $app = application_inspector_app();
     $node = application_inspector_node();
     $appInstance = application_app_instance($app, $node);
-    application_app_instance($app, application_inspector_node());
+    application_app_instance($app, application_inspector_node(), 'other-node');
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
 
     $inspection = application_app_inspector($ssh)->inspect($app, $node);
@@ -950,19 +950,19 @@ function application_inspector_app(): App
     return App::query()->create([
         'name' => "Project {$number}",
         'slug' => "project-{$number}",
-        'repository_url' => "https://github.com/acme/project-{$number}.git",
+        'repository_url' => "https://git.example.test/acme/project-{$number}.git",
     ]);
 }
 
-function application_app_instance(App $app, Node $node): AppInstance
+function application_app_instance(App $app, Node $node, string $name = 'development'): AppInstance
 {
     $app->update(['default_branch' => 'main', 'root' => 'public']);
 
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'name' => 'development',
-        'checkout_path' => "/srv/users/nckrtl/apps/{$app->slug}/development",
+        'name' => $name,
+        'checkout_path' => "/srv/users/nckrtl/apps/{$app->slug}/{$name}",
         'branch' => 'development',
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::Active,
