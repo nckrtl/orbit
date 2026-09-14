@@ -7,7 +7,7 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Cluster** — An optional group of Nodes that share routing. It has a name and may have a development top-level domain (TLD), such as `test`. See [Routes](/reference/routes).
 - **App** — An application record with one Git repository, a default branch, and a web root. App instances share these defaults. See [Apps](/reference/apps).
 - **Repository identity** — The Git host and path, without a trailing `.git`. Equivalent SSH and HTTPS URLs identify the same repository and belong to one App. See [Apps](/reference/apps#keep-one-repository-owner).
-- **App instance** — One managed copy of an App on a Node. Development uses a Git checkout or worktree; production uses releases. Each active App instance has one Route. See [Applications](/domains/applications).
+- **App instance** — One managed copy of an App on a Node. Development uses a checkout or worktree. New production instances require a candidate. Each active instance has one Route. See [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) and [Applications](/domains/applications).
 - **Web root** — The directory served by an App instance, with a relative path inherited from the App or overridden per instance. Production resolves it inside the selected release. See [Production release layout](/reference/deployments).
 - **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use App instance.
 - **Workspace** — A Git worktree owned by a legacy Instance. App instance creation does not use or change Workspace source.

@@ -542,6 +542,59 @@ function create_app_prod_node(string $name, ?string $tld = 'test'): Node
     return $node->refresh();
 }
 
+/** @return array{AppInstance, Route} */
+function seed_active_production_app_instance(
+    OrbitApp $app,
+    Node $node,
+    string $name,
+    ?string $hostname = null,
+    ?string $root = null,
+    ?string $branchOverride = null,
+    bool $flatHome = false,
+): array {
+    $user = "orbit-app-{$app->id}";
+    $home = "/home/{$user}";
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => $name,
+        'environment' => 'production',
+        'source_layout' => AppInstanceSourceLayout::Checkout->value,
+        'checkout_path' => $flatHome ? $home : "{$home}/releases/initial",
+        'production_user' => $user,
+        'production_home' => $home,
+        'root' => $root,
+        'branch' => $branchOverride ?? $app->default_branch,
+        'branch_override' => $branchOverride,
+        'starting_commit' => str_repeat('b', 40),
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => false,
+        'production_php_service' => "orbit-{$user}-php8.5-fpm.service",
+        'production_php_pool' => "orbit-{$user}",
+        'production_php_socket' => "/run/php/{$user}.sock",
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
+    ]);
+    $resolvedHostname = $hostname ?? "{$name}.{$app->slug}.{$node->tld}";
+    $generated = $hostname === null;
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'generation_basis_node_id' => $generated ? $node->id : null,
+        'hostname' => $resolvedHostname,
+        'provenance' => $generated ? RouteProvenance::Generated : RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create([
+        'app_instance_id' => $instance->id,
+        'position' => 0,
+    ]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return [$instance->refresh(), $route->refresh()];
+}
+
 it('bounds AppInstance response relationship queries for one and several visible rows', function (): void {
     $secondVisibleNode = Node::query()->create([
         'name' => 'second-visible-node',
@@ -793,43 +846,34 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe(AppInstance::query()->sole()->id);
 });
 
-it('creates an active standalone production AppInstance with stable placement and source evidence', function (): void {
+it('refuses new production placement with a candidate-required error before mutation', function (): void {
     $node = create_app_prod_node('app-prod');
 
-    $response = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $node->id,
-        'name' => 'release-name',
-        'root' => 'public',
-    ]);
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $node->id,
+            'name' => 'release-name',
+            'root' => 'public',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.candidate_required')
+        ->assertJsonPath(
+            'error.message',
+            'New production AppInstances require a candidate. Use instance:clone.',
+        );
 
-    $user = "orbit-app-{$this->orbitApp->id}";
-    $home = "/home/{$user}";
-    $response
-        ->assertCreated()
-        ->assertJsonPath('data.environment', 'production')
-        ->assertJsonPath('data.production_user', $user)
-        ->assertJsonPath('data.production_home', $home)
-        ->assertJsonPath('data.checkout_path', "{$home}/releases/initial")
-        ->assertJsonPath('data.root', 'public')
-        ->assertJsonPath('data.effective_root', "{$home}/current/public")
-        ->assertJsonPath('data.selected_branch', 'main')
-        ->assertJsonPath('data.branch_override', null)
-        ->assertJsonPath('data.starting_commit', str_repeat('b', 40))
-        ->assertJsonPath('data.status', 'active')
-        ->assertJsonPath('data.route.publication', 'private')
-        ->assertJsonPath('data.route.node_id', $node->id)
-        ->assertJsonPath('data.hostname', 'release-name.acme.app-prod.test');
-
-    expect($this->productionSource->calls)
-        ->toBe(['user', 'source:new', 'resolve', 'profile', 'access'])
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->productionSource->calls)
+        ->toBe([])
         ->and($this->productionProjection->calls)
-        ->toBe(['runtime', 'certificate', 'firewall', 'route'])
-        ->and(AppInstance::query()->sole()->only(['production_user', 'production_home']))
-        ->toBe(['production_user' => $user, 'production_home' => $home]);
+        ->toBe([]);
 });
 
-it('preserves explicit production branch input and treats an active retry as terminal', function (): void {
+it('returns a completed historical production AppInstance without fetching or overwriting it', function (): void {
     $node = create_app_prod_node('app-prod');
     $payload = [
         'app_id' => $this->orbitApp->id,
@@ -838,22 +882,29 @@ it('preserves explicit production branch input and treats an active retry as ter
         'branch' => 'release',
         'hostname' => 'www.example.test',
     ];
-
-    $this
-        ->postJson('/api/v1/instances', $payload)
-        ->assertCreated()
-        ->assertJsonPath('data.selected_branch', 'release')
-        ->assertJsonPath('data.branch_override', 'release')
-        ->assertJsonPath('data.hostname', 'www.example.test');
-    $this->productionSource->calls = [];
-    $this->productionProjection->calls = [];
+    [$instance] = seed_active_production_app_instance(
+        $this->orbitApp,
+        $node,
+        'stable',
+        hostname: 'www.example.test',
+        branchOverride: 'release',
+    );
+    $before = $instance->getAttributes();
+    $routeBefore = Route::query()->sole()->getAttributes();
 
     $this
         ->postJson('/api/v1/instances', $payload)
         ->assertOk()
-        ->assertJsonPath('data.id', AppInstance::query()->sole()->id);
+        ->assertJsonPath('data.id', $instance->id)
+        ->assertJsonPath('data.selected_branch', 'release')
+        ->assertJsonPath('data.branch_override', 'release')
+        ->assertJsonPath('data.hostname', 'www.example.test');
 
-    expect($this->productionSource->calls)
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and(Route::query()->sole()->getAttributes())
+        ->toBe($routeBefore)
+        ->and($this->productionSource->calls)
         ->toBe([])
         ->and($this->productionProjection->calls)
         ->toBe([])
@@ -872,13 +923,15 @@ it('preserves explicit production branch input and treats an active retry as ter
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.retry_conflict');
 
-    expect($this->productionSource->calls)
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and($this->productionSource->calls)
         ->toBe([])
         ->and($this->productionProjection->calls)
         ->toBe([]);
 });
 
-it('uses an explicit production hostname when the standalone Node has no TLD', function (): void {
+it('refuses new production placement when the standalone Node has no TLD', function (): void {
     $node = create_app_prod_node('explicit-host-prod', null);
 
     $this
@@ -888,12 +941,18 @@ it('uses an explicit production hostname when the standalone Node has no TLD', f
             'name' => 'explicit-host',
             'hostname' => 'www.example.test',
         ])
-        ->assertCreated()
-        ->assertJsonPath('data.hostname', 'www.example.test')
-        ->assertJsonPath('data.route.node_id', $node->id);
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.candidate_required');
+
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->productionSource->calls)
+        ->toBe([]);
 });
 
-it('refuses unavailable production placement and hostname bases before records or remote work', function (): void {
+it('refuses new production placement before records or remote work', function (): void {
     $clustered = create_app_prod_node('clustered-prod');
     $cluster = Cluster::query()->create(['name' => 'production', 'state' => ClusterState::Active]);
     $clustered->update(['cluster_id' => $cluster->id]);
@@ -905,7 +964,7 @@ it('refuses unavailable production placement and hostname bases before records o
             'name' => 'clustered',
         ])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.cluster_production_unavailable');
+        ->assertJsonPath('error.code', 'instance.candidate_required');
 
     $withoutTld = create_app_prod_node('no-tld-prod', null);
     $this
@@ -915,7 +974,7 @@ it('refuses unavailable production placement and hostname bases before records o
             'name' => 'no-hostname',
         ])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'route.tld_required');
+        ->assertJsonPath('error.code', 'instance.candidate_required');
 
     expect(AppInstance::query()->count())
         ->toBe(0)
@@ -927,50 +986,33 @@ it('refuses unavailable production placement and hostname bases before records o
         ->toBe([]);
 });
 
-it('retains detected Laravel production source as inactive without a Route', function (): void {
+it('refuses Laravel production creation before reserving an inactive AppInstance', function (): void {
     $node = create_app_prod_node('laravel-prod');
     $this->productionSource->laravel = true;
-    $payload = [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $node->id,
-        'name' => 'laravel',
-    ];
 
     $this
-        ->postJson('/api/v1/instances', $payload)
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'app-prod.laravel_activation_unavailable');
-    $instance = AppInstance::query()->sole();
-
-    expect($instance->only(['status', 'provisioning_step', 'source_is_laravel']))
-        ->toBe([
-            'status' => AppInstanceState::SourceResolved,
-            'provisioning_step' => 'source-classified',
-            'source_is_laravel' => true,
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $node->id,
+            'name' => 'laravel',
         ])
-        ->and(Route::query()->count())
-        ->toBe(0);
-
-    $this->productionSource->calls = [];
-    $this
-        ->postJson('/api/v1/instances', $payload)
         ->assertConflict()
-        ->assertJsonPath('error.code', 'app-prod.laravel_activation_unavailable');
+        ->assertJsonPath('error.code', 'instance.candidate_required');
 
-    expect($this->productionSource->calls)
-        ->toBe([])
-        ->and(AppInstance::query()->count())
-        ->toBe(1)
+    expect(AppInstance::query()->count())
+        ->toBe(0)
         ->and(Route::query()->count())
-        ->toBe(0);
+        ->toBe(0)
+        ->and($this->productionSource->calls)
+        ->toBe([])
+        ->and($this->productionProjection->calls)
+        ->toBe([]);
 });
 
-it('keeps production identity stable across slug changes and enforces one placement per App and Node', function (): void {
+it('keeps production identity stable across slug changes and refuses another direct production create', function (): void {
     $firstNode = create_app_prod_node('first-prod');
     $secondNode = create_app_prod_node('second-prod');
-    $payload = ['app_id' => $this->orbitApp->id, 'node_id' => $firstNode->id, 'name' => 'first'];
-    $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $first = AppInstance::query()->sole();
+    [$first] = seed_active_production_app_instance($this->orbitApp, $firstNode, 'first');
     $identity = $first->only(['production_user', 'production_home', 'checkout_path']);
     $this->orbitApp->update(['slug' => 'renamed']);
 
@@ -980,29 +1022,31 @@ it('keeps production identity stable across slug changes and enforces one placem
         ->assertJsonPath('data.production_user', $identity['production_user'])
         ->assertJsonPath('data.production_home', $identity['production_home']);
     $this
-        ->postJson('/api/v1/instances', [...$payload, 'name' => 'second'])
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $firstNode->id,
+            'name' => 'second',
+        ])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.production_placement_conflict');
-    $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $secondNode->id,
-        'name' => 'second',
-    ])->assertCreated();
+        ->assertJsonPath('error.code', 'instance.candidate_required');
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $secondNode->id,
+            'name' => 'second',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.candidate_required');
 
     expect(AppInstance::query()->count())
-        ->toBe(2)
+        ->toBe(1)
         ->and(AppInstance::query()->findOrFail($first->id)->only(array_keys($identity)))
         ->toBe($identity);
 });
 
-it('removes a newly created production AppInstance through retained-content removal', function (): void {
+it('removes an existing production AppInstance through retained-content removal', function (): void {
     $node = create_app_prod_node('removal-prod');
-    $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $node->id,
-        'name' => 'production',
-    ])->assertCreated();
-    $instance = AppInstance::query()->sole();
+    [$instance] = seed_active_production_app_instance($this->orbitApp, $node, 'production');
     $home = $instance->production_home;
 
     $this
@@ -1022,25 +1066,21 @@ it('removes a newly created production AppInstance through retained-content remo
         ->toBe(["route:{$instance->id}", "runtime:{$instance->id}"]);
 });
 
-it('creates and removes a production AppInstance through inactive Cluster Node scope', function (): void {
+it('shows and removes an existing production AppInstance through inactive Cluster Node scope', function (): void {
     $node = create_app_prod_node('inactive-removal-prod');
     $cluster = Cluster::query()->create([
         'name' => 'inactive-production-removal',
         'state' => ClusterState::Inactive,
     ]);
     $node->update(['cluster_id' => $cluster->id]);
+    [$instance] = seed_active_production_app_instance($this->orbitApp, $node, 'production');
 
     $this
-        ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
-            'node_id' => $node->id,
-            'name' => 'production',
-        ])
-        ->assertCreated()
+        ->getJson("/api/v1/instances/{$instance->id}")
+        ->assertOk()
         ->assertJsonPath('data.status', 'active')
         ->assertJsonPath('data.route.node_id', $node->id)
         ->assertJsonPath('data.route.cluster_id', null);
-    $instance = AppInstance::query()->sole();
 
     $this
         ->deleteJson("/api/v1/instances/{$instance->id}")
@@ -1053,14 +1093,9 @@ it('creates and removes a production AppInstance through inactive Cluster Node s
         ->toBe(0);
 });
 
-it('retries newly created production removal without recreating its deleted Route', function (): void {
+it('retries existing production removal without recreating its deleted Route', function (): void {
     $node = create_app_prod_node('removal-retry-prod');
-    $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $node->id,
-        'name' => 'production-retry',
-    ])->assertCreated();
-    $instance = AppInstance::query()->sole();
+    [$instance] = seed_active_production_app_instance($this->orbitApp, $node, 'production-retry');
     $this->removalProjector->fail = 'runtime';
 
     $this
@@ -1349,9 +1384,13 @@ it('recovers a missing source profile on an active production AppInstance withou
         'name' => 'stable',
         'hostname' => 'www.example.test',
     ];
-    $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $instance = AppInstance::query()->sole();
-    $route = Route::query()->sole();
+    [$instance, $route] = seed_active_production_app_instance(
+        $this->orbitApp,
+        $node,
+        'stable',
+        hostname: 'www.example.test',
+        flatHome: $flatHome,
+    );
     $instance->update([
         'source_is_laravel' => null,
         'selected_php_version' => $recordedPhpVersion,
@@ -1360,7 +1399,6 @@ it('recovers a missing source profile on an active production AppInstance withou
             'production_php_pool' => null,
             'production_php_socket' => null,
         ] : []),
-        ...($flatHome ? ['checkout_path' => $instance->production_home] : []),
     ]);
     $identity = $instance->refresh()->only([
         'id',
@@ -1433,8 +1471,12 @@ it('refuses production source profile recovery before writing when the runtime i
         'name' => 'stable',
         'hostname' => 'www.example.test',
     ];
-    $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $instance = AppInstance::query()->sole();
+    [$instance] = seed_active_production_app_instance(
+        $this->orbitApp,
+        $node,
+        'stable',
+        hostname: 'www.example.test',
+    );
     $instance->update([
         'source_is_laravel' => null,
         'selected_php_version' => null,
@@ -1471,8 +1513,12 @@ it('leaves an active production AppInstance unchanged when source profile recove
         'name' => 'stable',
         'hostname' => 'www.example.test',
     ];
-    $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $instance = AppInstance::query()->sole();
+    [$instance] = seed_active_production_app_instance(
+        $this->orbitApp,
+        $node,
+        'stable',
+        hostname: 'www.example.test',
+    );
     $before = $instance->getAttributes();
     $routeBefore = Route::query()->sole()->getAttributes();
     $this->productionSource->phpVersion = '8.4';
@@ -1483,7 +1529,7 @@ it('leaves an active production AppInstance unchanged when source profile recove
     $this
         ->postJson('/api/v1/instances', [...$payload, 'recover_source_profile' => true])
         ->assertOk()
-        ->assertJsonPath('data.id', $created->json('data.id'))
+        ->assertJsonPath('data.id', $instance->id)
         ->assertJsonPath('data.status', 'active');
 
     expect($instance->refresh()->getAttributes())

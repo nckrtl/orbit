@@ -186,6 +186,27 @@ it('prepares an independent production target and activates its explicit private
         ->and($this->lock->owners)->toContain([$this->candidate->id], [$this->candidate->id, $target->id]);
 });
 
+it('prepares a production target from an eligible production candidate', function (): void {
+    $user = "orbit-app-{$this->orbitApp->id}";
+    $this->candidate->update([
+        'environment' => 'production',
+        'production_user' => $user,
+        'production_home' => "/home/{$user}",
+        'checkout_path' => "/home/{$user}/releases/20260914000000",
+        'deployment_branch' => 'main',
+    ]);
+
+    $result = $this->action->execute($this->candidate->refresh(), $this->data);
+    $target = $result['appInstance'];
+
+    expect($result['created'])->toBeTrue()
+        ->and($target->status)->toBe(AppInstanceState::Active)
+        ->and($target->clone_candidate_id)->toBe($this->candidate->id)
+        ->and($target->environment)->toBe('production')
+        ->and($this->candidate->refresh()->status)->toBe(AppInstanceState::Active)
+        ->and($this->candidate->environment)->toBe('production');
+});
+
 it('prepares a Cluster-scoped preview with the production Node TLD', function (): void {
     $cluster = Cluster::query()->create([
         'name' => 'clone-cluster',

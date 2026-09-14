@@ -90,6 +90,7 @@
             "governing_adrs": [
                 "0004",
                 "0011",
+                "0047",
                 "0056"
             ]
         },
@@ -1688,7 +1689,6 @@
                 "Legacy Instance",
                 "Node",
                 "Process",
-                "Repository identity",
                 "Route",
                 "Router",
                 "Web root",

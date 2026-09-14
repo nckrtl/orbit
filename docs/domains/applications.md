@@ -36,78 +36,23 @@ orbit instance:create <app-id> <node-id> feature-one [--branch=release] [--hostn
 
 The instance name and Node's [apps root](/reference/node-settings) determine the checkout path. Branch selection is separate.
 
-| Creation input | Managed placement | Selected branch |
-| --- | --- | --- |
-| `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The App `default_branch` |
-| Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
-| Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
+| Creation input | Managed placement | Selected b…1171 tokens truncated… App instances, Routes, and managed paths; conflicting input preserves the accepted registration.
 
-`instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory, without a Workspace or shared worktree metadata.
+## Create a production App instance
 
-The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route.
-
-Orbit records the branch-selection intent, selected branch, and starting commit before it provisions the application endpoint.
-
-Source preparation moves through three durable states:
+The Gateway refuses new production placement on `instance:create` with `instance.candidate_required` before it changes a user, home, source, environment, or Route. The CLI reports that error and directs the caller to `instance:clone`. Clone from an eligible development or production candidate, as [App instance cloning](/reference/appinstance-cloning) describes.
 
 ```text
-reserved -> checkout_prepared -> source_resolved
+orbit instance:clone CANDIDATE NODE NAME --preview-name=shop.com
 ```
-
-A retry must match the recorded App, Node, source layout, root, path, repository, branch override, selected branch, and hostname input. Orbit also verifies the commit recorded before activation, then resumes the next incomplete step. After activation, development can advance `HEAD` without changing the recorded starting commit. Adding, removing, or changing the branch override returns `instance.placement_conflict` before any changes.
-
-## Register an existing development source
-
-Run registration from an independent Git checkout or a linked worktree on the caller's app-dev Node:
-
-```text
-orbit instance:register
-```
-
-The CLI rejects directories outside a Git checkout or worktree. It also rejects origins containing credentials without displaying them or contacting the Gateway. The Gateway verifies the source on the authenticated caller's Node before changing Git, files, runtime, Routes, or records.
-
-The Gateway resolves an existing App by the source's canonical repository identity. The [Apps reference](/reference/apps#resolve-an-app-during-registration) owns App lookup, inference, confirmation, and missing-App creation.
-
-`--json` confirms the ownership transfer and disables prompts and the source summary. The CLI returns one JSON document containing the result or an error.
-
-Registration infers App instance placement from verified source facts.
-
-| Verified source | App instance identity | Managed placement |
-| --- | --- | --- |
-| Top-level directory matches the App slug and the checked-out branch matches `default_branch` | `default` | `<node-apps-root>/<app-slug>/default` |
-| Any other accepted checkout or worktree | The Git top-level directory name | `<node-apps-root>/<app-slug>/<instance-name>` |
-
-An explicit valid value can fill an unresolved or optional value. It cannot replace conflicting verified source identity. Registration infers `public` as the web root only when Laravel detection is unambiguous.
-
-Orbit records `checkout` for an independent repository and `worktree` for a linked worktree. It moves the complete source to the managed path. HEAD, branch or detached state, index, dirty and untracked files, refs, commits, and unrelated settings stay intact. A source already at the correct path stays there.
-
-Registration adopts only the caller's source by default. After moving a shared checkout, Orbit repairs links so other worktrees remain usable and unregistered. Use `--include-worktrees` to adopt the checkout and all linked worktrees together. Before moving anything, the Gateway checks each source's Git identity, metadata ownership and permissions, instance name, and destination. It also checks for overlap with managed App instances, legacy Instances, and Workspaces. If any check fails, nothing moves.
-
-For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress binds original cleanup to the verified source directory identity and keeps one verified authoritative copy after interruption. An identical retry revalidates the canonical authoritative path, repository identity, checkout or worktree layout, and provisioning safety without requiring an unchanged source digest. After relocation, the CLI can retry from the managed primary source path while Orbit retains the original primary and complete requested set. It resumes the same App, App instances, Routes, and managed paths; conflicting input preserves the accepted registration.
-
-## Create a standalone production App instance
-
-Select one active standalone Node with an active app-prod role. The same command creates a production placement when the selected Node carries that role:
-
-```text
-orbit instance:create <app-id> <app-prod-node-id> primary [--branch=release] [--root=public] [--hostname=app.example.test]
-```
-
-The Gateway creates a dedicated system user and `/home/<app-user>` home. It stages the initial source in `releases/` before preparing the runtime or Route. Persistent files live at the home root. Without an explicit branch, production uses the App's `default_branch`, even if a branch matches the instance name. An explicit branch must exist.
-
-The response returns the user, home, absolute web root through the future `current` link, initial branch, starting commit, nullable branch override, and Route. See [Production release layout](/reference/deployments) for paths and source selection.
 
 A given App can have one production App instance per app-prod Node. The same App can use another app-prod Node, where it receives an independent user home and runtime. The recorded user and home do not change when the App slug changes.
 
-Production uses the same `reserved`, `checkout_prepared`, and `source_resolved` checkpoints. Creation stages a release but leaves `current` absent until the first deployment. The Gateway records the source profile before preparing the runtime. Plain PHP gets a dedicated PHP-FPM service, pool, socket, and OPcache for the production user; version packages are shared. Non-PHP source gets no PHP runtime. Laravel production creation stops at the saved source checkpoint. Orbit does not support completing this path, changing Laravel files, or publishing its Route.
+### Keep existing production App instances
 
-Production creation requires an explicit Route hostname or a TLD from the standalone Node. A Node in an active Cluster is outside this creation path. Both refusals happen before production source or runtime mutation.
+When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it.
 
-A standalone Node cannot accept a private production App instance while it still serves a provisioning or active legacy public production Instance. The Gateway returns `instance.legacy_production_conflict` with HTTP 409 before it reserves an App instance or changes a Route, source checkout, runtime, certificate, or firewall. Mark or remove the legacy Instance through its existing lifecycle, then repeat the production creation request.
-
-An identical retry resumes only incomplete Orbit-owned preparation, including its recorded production PHP service association. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, local PHP-FPM tuning, or other operator content.
-
-An existing active production App instance can remain on its recorded flat source and shared PHP runtime. The operator explicitly converts that placement with `orbit instance:prepare-deployment`; the [production release-layout reference](/reference/deployments#convert-an-existing-production-home) describes its preflight, retained content, optional SQLite move, dedicated runtime, and retry boundary. Conversion does not require a candidate and does not run an application deployment.
+When an existing active production App instance still uses a recorded flat source and shared PHP runtime, the operator converts that placement with `orbit instance:prepare-deployment`. The [production release-layout reference](/reference/deployments#convert-an-existing-production-home) describes its preflight, retained content, optional SQLite move, dedicated runtime, and retry boundary. Conversion does not require a candidate and does not run an application deployment.
 
 Orbit owns later release preparation, activation, and explicit code rollback. The operating agent configures application steps and owns compatibility and recovery decisions. The [PHP runtime reference](/reference/php-runtime#production-cache-boundary) defines the separate cache boundary.
 
