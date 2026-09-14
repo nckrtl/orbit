@@ -75,7 +75,6 @@ final class UpdateScheduleCommand extends ScheduleCommand
         }
 
         $appId = $this->appIdOption();
-        $environments = $this->definitionEnvironments(required: true, errorCode: 'schedule.option_invalid');
 
         if ($appId === false) {
             return self::FAILURE;
@@ -88,7 +87,9 @@ final class UpdateScheduleCommand extends ScheduleCommand
             );
         }
 
-        if ($environments === false || $environments === null) {
+        $environments = $this->definitionEnvironments(errorCode: 'schedule.option_invalid');
+
+        if ($environments === false) {
             return self::FAILURE;
         }
 

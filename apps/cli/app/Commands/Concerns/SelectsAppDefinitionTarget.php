@@ -30,23 +30,13 @@ trait SelectsAppDefinitionTarget
         return $id;
     }
 
-    /** @return list<string>|false|null */
-    protected function definitionEnvironments(bool $required, string $errorCode): array|false|null
+    /** @return list<string>|false */
+    protected function definitionEnvironments(string $errorCode): array|false
     {
         $value = $this->stringOption('for');
 
         if ($value === null) {
-            if ($required) {
-                $this->renderGatewayFailure($errorCode, 'The --for option is required with --app.');
-
-                return false;
-            }
-
-            return null;
-        }
-
-        if (! $required) {
-            $this->renderGatewayFailure($errorCode, 'The --for option requires --app.');
+            $this->renderGatewayFailure($errorCode, 'The --for option is required with --app.');
 
             return false;
         }

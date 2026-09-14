@@ -411,6 +411,99 @@ it('applies explicit selector validation before HTTP in every output and interac
     return $datasets;
 });
 
+it('renders one exact json envelope for App-target schedule refusals', function (
+    string $command,
+    array $arguments,
+    string $code,
+    string $message,
+): void {
+    $mock = MockClient::global();
+    $expectedPayload = [
+        'error' => [
+            'code' => $code,
+            'message' => $message,
+            'request_id' => null,
+        ],
+    ];
+    $expected = json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(Command::FAILURE);
+    expect($output)->toBe($expected);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe($expectedPayload);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'update missing target' => [
+        'schedule:update',
+        [
+            'name' => 'daily',
+            '--calendar' => 'daily',
+            '--command' => 'x',
+        ],
+        'schedule.target_required',
+        'The --app option is required.',
+    ],
+    'create app with instance' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => '7',
+            '--instance' => '7',
+            '--for' => 'production',
+        ]),
+        'schedule.target_conflict',
+        'Use only one of --app, --node, or --instance.',
+    ],
+    'create app with node' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => '7',
+            '--node' => '3',
+            '--for' => 'production',
+        ]),
+        'schedule.target_conflict',
+        'Use only one of --app, --node, or --instance.',
+    ],
+    'create for without app' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--node' => '3',
+            '--for' => 'production',
+        ]),
+        'schedule.option_invalid',
+        'The --for option requires --app.',
+    ],
+    'create app without for' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => '7',
+        ]),
+        'schedule.option_invalid',
+        'The --for option is required with --app.',
+    ],
+    'create invalid app without for' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => 'abc',
+        ]),
+        'app.id_invalid',
+        'App ID must be a positive integer.',
+    ],
+    'update app without for' => [
+        'schedule:update',
+        [
+            'name' => 'daily',
+            '--app' => '7',
+            '--calendar' => 'daily',
+            '--command' => 'x',
+        ],
+        'schedule.option_invalid',
+        'The --for option is required with --app.',
+    ],
+]);
+
 it('rejects malformed Schedule UUIDs and log bounds before HTTP', function (
     string $command,
     array $arguments,

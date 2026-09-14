@@ -181,9 +181,21 @@ final class CreateScheduleCommand extends ScheduleCommand
         }
 
         $appId = $this->appIdOption();
-        $environments = $this->definitionEnvironments(required: true, errorCode: 'schedule.option_invalid');
 
-        if ($appId === false || $appId === null || $environments === false || $environments === null) {
+        if ($appId === false) {
+            return self::FAILURE;
+        }
+
+        if ($appId === null) {
+            return $this->renderGatewayFailure(
+                'schedule.target_required',
+                'The --app option is required.',
+            );
+        }
+
+        $environments = $this->definitionEnvironments(errorCode: 'schedule.option_invalid');
+
+        if ($environments === false) {
             return self::FAILURE;
         }
 

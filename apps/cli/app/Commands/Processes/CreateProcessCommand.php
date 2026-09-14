@@ -244,9 +244,21 @@ final class CreateProcessCommand extends TargetedProcessCommand
         }
 
         $appId = $this->appIdOption();
-        $environments = $this->definitionEnvironments(required: true, errorCode: 'process.option_invalid');
 
-        if ($appId === false || $appId === null || $environments === false || $environments === null) {
+        if ($appId === false) {
+            return self::FAILURE;
+        }
+
+        if ($appId === null) {
+            return $this->renderGatewayFailure(
+                'process.target_invalid',
+                'The --app option is required.',
+            );
+        }
+
+        $environments = $this->definitionEnvironments(errorCode: 'process.option_invalid');
+
+        if ($environments === false) {
             return self::FAILURE;
         }
 

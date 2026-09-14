@@ -982,6 +982,100 @@ it('rejects invalid local process input before making a gateway request', functi
     ],
 ]);
 
+it('renders one exact json envelope for App-target process refusals', function (
+    string $command,
+    array $arguments,
+    string $code,
+    string $message,
+): void {
+    $mock = MockClient::global();
+    $expectedPayload = [
+        'error' => [
+            'code' => $code,
+            'message' => $message,
+            'request_id' => null,
+        ],
+    ];
+    $expected = json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(1);
+    expect($output)->toBe($expected);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe($expectedPayload);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'update missing target' => [
+        'process:update',
+        ['name' => 'worker'],
+        'process.target_invalid',
+        'The --app option is required.',
+    ],
+    'create app with instance' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--instance' => '7',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.target_invalid',
+        'Use only one of --app, --instance, or --node.',
+    ],
+    'create app with node' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--node' => '4',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.target_invalid',
+        'Use only one of --app, --instance, or --node.',
+    ],
+    'create for without app' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--instance' => '7',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.option_invalid',
+        'The --for option requires --app.',
+    ],
+    'create app without for' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.option_invalid',
+        'The --for option is required with --app.',
+    ],
+    'create invalid app without for' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => 'abc',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'app.id_invalid',
+        'App ID must be a positive integer.',
+    ],
+    'update app without for' => [
+        'process:update',
+        ['name' => 'worker', '--app' => '7'],
+        'process.option_invalid',
+        'The --for option is required with --app.',
+    ],
+]);
+
 it('exposes AppInstance and Node selectors on targeted process commands', function (): void {
     $commands = Artisan::all();
 

@@ -106,7 +106,6 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $appId = $this->appIdOption();
-        $environments = $this->definitionEnvironments(required: true, errorCode: 'process.option_invalid');
 
         if ($appId === false) {
             return self::FAILURE;
@@ -119,7 +118,9 @@ final class UpdateProcessCommand extends ProcessCommand
             );
         }
 
-        if ($environments === false || $environments === null) {
+        $environments = $this->definitionEnvironments(errorCode: 'process.option_invalid');
+
+        if ($environments === false) {
             return self::FAILURE;
         }
 
