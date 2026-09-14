@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Route;
 use SensitiveParameter;
 
 final readonly class ProcessTargetResolver
@@ -234,8 +235,10 @@ final readonly class ProcessTargetResolver
         }
 
         $instance->loadMissing('routes');
-        $domain = $instance->authoritativeRoute()?->domain
-            ?? $instance->routes->sortBy('id')->first()?->domain;
+        $authoritative = $instance->authoritativeRoute();
+        $domain = $authoritative instanceof Route
+            ? $authoritative->domain
+            : $instance->routes->sortBy('id')->first()?->domain;
 
         return is_string($domain) && $domain !== '' ? $domain : null;
     }

@@ -8,12 +8,12 @@ use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Route;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateRouteAction
@@ -115,34 +115,14 @@ final readonly class UpdateRouteAction
 
             $changed = array_filter(
                 $attributes,
-                static function (mixed $value, string $key) use ($locked): bool {
-                    $current = $locked->getAttribute($key);
-
-                    return
-                        ($current instanceof \BackedEnum ? $current->value : $current)
-                        !== ($value instanceof \BackedEnum ? $value->value : $value);
-                },
-                ARRAY_FILTER_USE_BOTH,
+                static fn (RoutePublication $value): bool => $locked->publication !== $value,
             );
 
             if ($changed !== []) {
                 $this->reconciliation->assertRouteMutable($locked);
             }
 
-            try {
-                $locked->update($attributes);
-            } catch (QueryException $exception) {
-                if (! array_key_exists('domain', $changed)) {
-                    throw $exception;
-                }
-
-                throw new ResourceOperationException(
-                    errorCode: 'route.domain_conflict',
-                    message: 'The Route domain is already owned.',
-                    status: 409,
-                    previous: $exception,
-                );
-            }
+            $locked->update($attributes);
 
             return $locked->refresh()->load('targets');
         });

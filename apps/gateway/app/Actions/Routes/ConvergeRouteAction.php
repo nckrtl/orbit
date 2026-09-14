@@ -282,7 +282,6 @@ final readonly class ConvergeRouteAction
             ! $statusAllowed
             || $route->provenance !== RouteProvenance::Explicit
             || $route->publication !== RoutePublication::Private
-            || $environments === []
             || array_diff($environments, ['development', 'production']) !== []
             || (count($targets) > 1 && $environments !== ['production'])
         ) {
