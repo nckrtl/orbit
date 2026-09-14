@@ -386,7 +386,7 @@ describe('repository guidance bootstrap', function (): void {
                 'The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
-                'Doctor accepts the current Gateway family set, including Schedule and Herdr.',
+                'Doctor accepts the current Gateway family set, including Schedule, Herdr, and Database connection.',
                 'The SDK exposes typed list, add, show, restart, remove, and observation-grant requests for managed Herdr sessions.',
                 'Observation grant URLs stay out of generic diagnostics.',
                 "Create and replace requests send the caller's exact JSON document to the Gateway.",
