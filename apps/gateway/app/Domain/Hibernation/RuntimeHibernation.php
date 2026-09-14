@@ -18,6 +18,10 @@ final readonly class RuntimeHibernation
 
     public const int DefaultWakeTimeoutSeconds = 60;
 
+    public const int DefaultDependencyIdleSeconds = 604_800;
+
+    public const int DefaultColdWakeTimeoutSeconds = 1_800;
+
     public const string ActivationType = 'app-instance';
 
     public static function key(int $appInstanceId): string
@@ -50,5 +54,12 @@ final readonly class RuntimeHibernation
         self::parseAppInstanceId($key);
 
         return self::AccessLogDirectory.'/'.$key.'.log';
+    }
+
+    public static function coldPath(string $key): string
+    {
+        self::parseAppInstanceId($key);
+
+        return self::AccessLogDirectory.'/'.$key.'.cold';
     }
 }

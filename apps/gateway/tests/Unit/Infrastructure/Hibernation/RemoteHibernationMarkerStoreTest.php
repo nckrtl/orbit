@@ -64,6 +64,36 @@ it('uses the later of the access log and awake marker as last activity', functio
         ]);
 });
 
+it('writes the durable cold marker under the access-log directory', function (): void {
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+    ]);
+    $store = new RemoteHibernationMarkerStore(
+        ssh: $ssh,
+        keys: new HibernationFakeSshKeyProvider,
+        knownHosts: new HibernationFakeKnownHostsStore,
+    );
+
+    $store->markCold(hibernation_marker_node(), RuntimeHibernation::key(6));
+
+    expect($ssh->commands[0]->arguments)
+        ->toBe([
+            'sudo',
+            'bash',
+            '-seu',
+            '--',
+            RuntimeHibernation::MarkerDirectory,
+            RuntimeHibernation::AccessLogDirectory,
+        ])
+        ->and(array_map(static fn ($command): array => $command->arguments, array_slice($ssh->commands, 1)))
+        ->toBe([
+            ['sudo', 'touch', '--', RuntimeHibernation::coldPath('app-instance-6')],
+            ['sudo', 'chmod', '0644', '--', RuntimeHibernation::coldPath('app-instance-6')],
+        ]);
+});
+
 it('treats a present awake marker as awake and a missing marker as asleep', function (): void {
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "200\n", '', 1, false),
