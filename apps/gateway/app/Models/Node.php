@@ -40,6 +40,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property-read Collection<int, HerdrSession> $herdrSessions
  * @property-read Collection<int, Schedule> $schedules
  * @property-read Collection<int, Schedule> $hostedSchedules
+ * @property-read Collection<int, DatabaseConnection> $databaseConnections
  */
 final class Node extends Model
 {
@@ -120,6 +121,12 @@ final class Node extends Model
     public function herdrSessions(): HasMany
     {
         return $this->hasMany(HerdrSession::class);
+    }
+
+    /** @return HasMany<DatabaseConnection, $this> */
+    public function databaseConnections(): HasMany
+    {
+        return $this->hasMany(DatabaseConnection::class);
     }
 
     /** @return HasMany<Route, $this> */

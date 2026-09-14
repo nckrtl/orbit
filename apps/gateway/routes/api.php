@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\AppInstancesController;
 use App\Http\Controllers\Api\AppRuntimeDefinitionsController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
+use App\Http\Controllers\Api\DatabaseConnectionsController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
@@ -274,6 +275,19 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:restart');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:remove');
+        Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
+            ->name('database-connection:list');
+        Route::post('database-connections', [DatabaseConnectionsController::class, 'store'])
+            ->name('database-connection:add');
+        Route::get('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'show'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database-connection:show');
+        Route::patch('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'update'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database-connection:update');
+        Route::delete('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'destroy'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database-connection:remove');
         Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
             ->name('herdr:session:list');
         Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])

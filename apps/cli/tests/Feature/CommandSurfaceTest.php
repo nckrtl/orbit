@@ -40,6 +40,11 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'cluster:router:set',
         'cluster:show',
         'cluster:update',
+        'database:add',
+        'database:list',
+        'database:remove',
+        'database:show',
+        'database:update',
         'dns:resolve',
         'doctor',
         'env:import',
@@ -125,7 +130,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(97);
+    expect($orbitCommands)->toHaveCount(102);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -215,6 +220,37 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'cluster:update' => [
             ['cluster'],
             ['name' => null, 'tld' => null, 'state' => null, 'json' => false],
+        ],
+        'database:add' => [
+            ['slug'],
+            [
+                'driver' => null,
+                'node' => null,
+                'host' => null,
+                'port' => null,
+                'database' => null,
+                'path' => null,
+                'username' => null,
+                'password' => null,
+                'json' => false,
+            ],
+        ],
+        'database:list' => [[], ['json' => false]],
+        'database:remove' => [['slug'], ['force' => false, 'json' => false]],
+        'database:show' => [['slug'], ['json' => false]],
+        'database:update' => [
+            ['slug'],
+            [
+                'driver' => null,
+                'node' => null,
+                'host' => null,
+                'port' => null,
+                'database' => null,
+                'path' => null,
+                'username' => null,
+                'password' => null,
+                'json' => false,
+            ],
         ],
         'dns:resolve' => [['tld', 'target'], ['reset' => false, 'json' => false]],
         'doctor' => [[], ['node' => null, 'family' => [], 'json' => false]],
@@ -531,6 +567,18 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'cluster:router:set' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
         'cluster:show' => [['cluster' => '1'], ...$profileMissing],
         'cluster:update' => [['cluster' => '1', '--state' => 'inactive'], ...$profileMissing],
+        'database:add' => [[
+            'slug' => 'app',
+            '--driver' => 'mysql',
+            '--host' => 'db.example.test',
+            '--database' => 'app',
+            '--username' => 'app',
+            '--password' => 'secret',
+        ], ...$profileMissing],
+        'database:list' => [[], ...$profileMissing],
+        'database:remove' => [['slug' => 'app', '--force' => true], ...$profileMissing],
+        'database:show' => [['slug' => 'app'], ...$profileMissing],
+        'database:update' => [['slug' => 'app', '--host' => 'db.example.test'], ...$profileMissing],
         'dns:resolve' => [
             ['tld' => '.validation-secret', 'target' => '127.0.0.1'],
             'code' => 'dns.tld_invalid',

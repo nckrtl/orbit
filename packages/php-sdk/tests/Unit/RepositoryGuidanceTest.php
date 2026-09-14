@@ -9,6 +9,11 @@ use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\RemoveDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
@@ -165,7 +170,14 @@ describe('repository guidance bootstrap', function (): void {
             RemoveHerdrSessionRequest::class,
             IssueObservationGrantRequest::class,
         ];
-        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests);
+        $databaseRequests = [
+            ListDatabaseConnectionsRequest::class,
+            ShowDatabaseConnectionRequest::class,
+            AddDatabaseConnectionRequest::class,
+            UpdateDatabaseConnectionRequest::class,
+            RemoveDatabaseConnectionRequest::class,
+        ];
+        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -287,14 +299,21 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($herdrRequests))
             ->toEqualCanonicalizing($herdrRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\DatabaseConnections\\'),
+        )))
+            ->toHaveCount(count($databaseRequests))
+            ->toEqualCanonicalizing($databaseRequests);
     });
 
-    it('documents the 103-operation SDK surface including Herdr session transport', function (): void {
+    it('documents the 108-operation SDK surface including Database connection transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 103 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 108 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -304,6 +323,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
             ->toContain('- Herdr: session list, add, show, restart, remove, and observation-grant.')
+            ->toContain('- Database connection: list, show, add, update, and remove.')
             ->toContain(
                 '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
             )
@@ -313,7 +333,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution,',
-            )->toContain('Docker Swarm, Compose, image-building, generic stream, database,')
+            )->toContain('Docker Swarm, Compose, image-building, generic stream, database query,')
             ->not->toContain('or deploy surfaces')
             ->not->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution, Docker Swarm, role add/remove, Compose',
@@ -343,6 +363,9 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 'Keep Herdr transport limited to a numeric Node ID, a numeric session ID for item operations, explicit session name and Unix user on add, optional observer publication and restart handoff flags, optional removal termination acceptance, and pane, terminal, columns, and rows for observation grants.',
+            )
+            ->toContain(
+                'Keep Database connection transport limited to slug identity, driver, optional Node ID, host, port, database name, sqlite path, username, and password.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -352,7 +375,8 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 103 public Gateway operations.',
+                'The SDK exposes exactly 108 public Gateway operations.',
+                'The SDK exposes typed list, show, add, update, and remove requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
                 'Doctor accepts the current Gateway family set, including Schedule and Herdr.',

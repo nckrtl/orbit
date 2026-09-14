@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 103 concrete public Gateway API operations:
+The SDK models exactly 108 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -17,6 +17,7 @@ The SDK models exactly 103 concrete public Gateway API operations:
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Herdr: session list, add, show, restart, remove, and observation-grant.
+- Database connection: list, show, add, update, and remove.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
 The four abstract request bases are implementation details, not extra Gateway
@@ -76,6 +77,11 @@ operations. Keep the public API typed and small.
   Preserve omitted optional flags as explicit `false`. Observation grant URLs
   stay out of generic diagnostics. The Gateway owns session lifecycle,
   publication, trust, and grant policy.
+- Keep Database connection transport limited to slug identity, driver, optional
+  Node ID, host, port, database name, sqlite path, username, and password.
+  Preserve omitted optional fields as absence. Item and collection responses
+  omit the password and expose `has_password`. The Gateway owns validation,
+  encryption, and persistence.
 - Accept only the current Doctor family tokens: node, role, app, instance,
   workspace, schedule, tool, process, firewall, and herdr. Keep Doctor verify-only and
   policy-free.
@@ -83,7 +89,7 @@ operations. Keep the public API typed and small.
   granular permissions, presets, wildcards, permission editing, or legacy
   grant/revoke compatibility.
 - Do not restore the retired Agent, generic executor, direct SSH execution,
-  Docker Swarm, Compose, image-building, generic stream, database,
+  Docker Swarm, Compose, image-building, generic stream, database query,
   or proxy surfaces.
 - Coordinate contract changes with Gateway and CLI owners. Do not implement
   Gateway policy or CLI presentation in this repository.
