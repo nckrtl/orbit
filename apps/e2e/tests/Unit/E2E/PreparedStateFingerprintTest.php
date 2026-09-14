@@ -215,6 +215,7 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/cli/app/Commands/Clusters/ListClustersCommand.php',
                 'apps/cli/app/Commands/Clusters/SetClusterRouterCommand.php',
                 'apps/cli/app/Commands/Clusters/UpdateClusterCommand.php',
+                'apps/cli/app/Commands/Instances/CreateDeployStepCommand.php',
                 'apps/cli/app/Commands/Instances/CreateInstanceCommand.php',
                 'apps/cli/app/Commands/Instances/ListInstancesCommand.php',
                 'apps/cli/app/Commands/Environment/ImportEnvironmentCommand.php',
@@ -232,7 +233,14 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/gateway/app/Actions/Instances/CreateInstanceAction.php',
                 'apps/gateway/app/Actions/Instances/ListInstancesAction.php',
                 'apps/gateway/app/Actions/AppInstances/CreateAppInstanceAction.php',
+                'apps/gateway/app/Actions/AppInstances/CreateAppInstanceDeployStepAction.php',
                 'apps/gateway/app/Actions/AppInstances/ImportAppInstanceEnvironmentAction.php',
+                'apps/gateway/app/Data/AppInstances/DeploymentStepData.php',
+                'apps/gateway/app/Domain/AppInstances/Deployment/AppInstanceDeployStepStore.php',
+                'apps/gateway/app/Http/Controllers/Api/AppInstanceDeployStepsController.php',
+                'apps/gateway/app/Http/Requests/AppInstances/StoreAppInstanceDeployStepRequest.php',
+                'apps/gateway/app/Models/AppInstanceDeployStep.php',
+                'apps/gateway/database/migrations/2026_09_14_180000_store_deploy_steps_as_named_records.php',
                 'apps/gateway/app/Actions/AppInstances/SynchronizeAppInstanceEnvironmentAction.php',
                 'apps/gateway/app/Actions/Workspaces/CreateWorkspaceAction.php',
                 'apps/gateway/app/Actions/Workspaces/ListWorkspacesAction.php',
@@ -273,6 +281,8 @@ describe('PreparedStateFingerprint', function (): void {
                 'packages/php-sdk/src/Requests/Clusters/ListClustersRequest.php',
                 'packages/php-sdk/src/Requests/Clusters/SetClusterRouterRequest.php',
                 'packages/php-sdk/src/Requests/Clusters/UpdateClusterRequest.php',
+                'packages/php-sdk/src/Requests/Deployments/CreateInstanceDeployStepRequest.php',
+                'packages/php-sdk/src/Responses/Deployments/DeploymentStepResponse.php',
                 'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
                 'packages/php-sdk/src/Requests/Environment/ImportAppInstanceEnvironmentRequest.php',
                 'packages/php-sdk/src/Requests/Environment/SynchronizeAppInstanceEnvironmentRequest.php',
@@ -308,6 +318,22 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/e2e/resources/guest/verify-topology.sh',
                 'apps/e2e/resources/guest/receive-source.sh',
             );
+
+        foreach ([
+            'apps/cli/app/Commands/Instances/DeploymentConfigCommand.php',
+            'apps/cli/app/Commands/Instances/PrepareDeploymentCommand.php',
+            'apps/gateway/app/Actions/AppInstances/ShowAppInstanceDeploymentConfigAction.php',
+            'apps/gateway/app/Actions/AppInstances/UpdateAppInstanceDeploymentConfigAction.php',
+            'apps/gateway/app/Http/Controllers/Api/AppInstanceDeploymentConfigsController.php',
+            'apps/gateway/app/Http/Controllers/Api/AppInstanceDeploymentLayoutsController.php',
+            'apps/gateway/app/Http/Requests/AppInstances/PrepareAppInstanceDeploymentLayoutRequest.php',
+            'apps/gateway/app/Http/Requests/AppInstances/UpdateAppInstanceDeploymentConfigRequest.php',
+            'packages/php-sdk/src/Requests/AppInstances/AppInstanceDeploymentLayoutRequest.php',
+            'packages/php-sdk/src/Requests/Deployments/ShowAppInstanceDeploymentConfigRequest.php',
+            'packages/php-sdk/src/Requests/Deployments/UpdateAppInstanceDeploymentConfigRequest.php',
+        ] as $retiredSurface) {
+            expect($paths)->not->toContain($retiredSurface);
+        }
 
         foreach ($paths as $selector) {
             expect($selector)->not->toMatch('/[*?\[]/');
