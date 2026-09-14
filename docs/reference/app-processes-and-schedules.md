@@ -21,7 +21,7 @@ Both kinds accept the common definition fields below.
 | `environments` | A nonempty array of unique `development` or `production` values. |
 | `spec` | The complete specification for the selected definition kind. |
 
-A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity.
+A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, keep-alive, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity.
 
 A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. The Gateway accepts `command` and `timeout_seconds` under the same limits as an installed Schedule. For `calendar`, it accepts one nonempty printable ASCII line of at most 255 bytes. It does not run `systemd-analyze calendar` when it creates or updates a definition, because a definition has no host Node. The target Node's `systemd-analyze calendar` accepts or rejects that stored calendar when Orbit copies the definition into an AppInstance Schedule or when an operator creates a Schedule. The [Schedules](schedules.md) page owns that host check. A definition does not select a target, host Node, execution identity, or timer state.
 
@@ -43,7 +43,7 @@ The process and schedule families select App-owned definitions with `--app`. `AP
 
 | Command | Result |
 | --- | --- |
-| `orbit process:create NAME --app=APP --for=ENV[,ENV] ...` | Record a process definition on the App with the runtime, command, image, working-directory, environment, port, volume, and restart options of an AppInstance target. |
+| `orbit process:create NAME --app=APP --for=ENV[,ENV] ...` | Record a process definition on the App with the runtime, command, image, working-directory, environment, port, volume, restart, and keep-alive options of an AppInstance target. |
 | `orbit process:list --app=APP` | List the App's process definitions. |
 | `orbit process:show NAME --app=APP` | Show one process definition by name. |
 | `orbit process:update NAME --app=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
@@ -66,7 +66,8 @@ orbit process:create queue \
   --command=/usr/bin/php \
   --command=artisan \
   --command=queue:work \
-  --restart=on-failure
+  --restart=on-failure \
+  --keep-alive
 
 orbit schedule:create hourly-report \
   --app=1 \
@@ -94,10 +95,10 @@ The two runtimes accept these values.
 
 | Runtime | Required values | Optional values | Default working directory |
 | --- | --- | --- | --- |
-| systemd | Process name and absolute executable with argv | Absolute working directory, restart policy, and initial start | The AppInstance development checkout, the production home's `current` path, or `/home/{user}` on a Node target |
-| Docker | Process name, image, and command argv | Container working directory, environment, published ports, volumes, restart policy, and initial start | `/app` |
+| systemd | Process name and absolute executable with argv | Absolute working directory, restart policy, keep-alive, and initial start | The AppInstance development checkout, the production home's `current` path, or `/home/{user}` on a Node target |
+| Docker | Process name, image, and command argv | Container working directory, environment, published ports, volumes, restart policy, keep-alive, and initial start | `/app` |
 
-A development systemd Process on a Node with the active `app-dev` role installs without host-boot start intent. The Gateway starts it with `systemctl start` and does not `systemctl enable` the unit. After host reboot the Process stays down until `process:start` or the next HTTP wake. The [hibernation page](app-dev-runtime-hibernation.md) states idle halt and wake.
+A development systemd Process on a Node with the active `app-dev` role installs without host-boot start intent. The Gateway starts it with `systemctl start` and does not `systemctl enable` the unit. After host reboot the Process stays down until `process:start` or the next HTTP wake. `--keep-alive` stores `keep_alive=true` and does not change restart policy. The [hibernation page](app-dev-runtime-hibernation.md) states idle halt, keep-alive exemption, wake, and Doctor reporting.
 
 A development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the AppInstance Route hostname from that user's certificate projection. When the AppInstance has a Route, the unit also receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` so the frontend toolchain publishes assets and hot module replacement on the [development-server endpoint](routes.md#development-server-endpoint).
 
@@ -159,7 +160,7 @@ Systemd units use `orbit-process-{id}-{name}.service` and Docker containers use 
 
 ## Inspect and remove owned state
 
-Doctor reads each recorded AppInstance Process and Node Process on the selected Node and compares its desired state with the bounded systemd or Docker status. It reports an absent runtime, state mismatch, failed inspection, or unreachable Node without changing the Process, AppInstance, Node, or machine.
+Doctor reads each recorded AppInstance Process and Node Process on the selected Node and compares its desired state with the bounded systemd or Docker status. It reports an absent runtime, state mismatch, failed inspection, or unreachable Node without changing the Process, AppInstance, Node, or machine. The [hibernation page](app-dev-runtime-hibernation.md) states when a sleeping non-keep-alive Process is not a state mismatch.
 
 ### Removal order
 
