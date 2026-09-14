@@ -189,6 +189,38 @@ it('routes project JavaScript process guidance through Vite+', function (): void
         ->not->toMatch('/\b(?:npm|npx|pnpm|pnpx|yarn|yarnpkg|bun|bunx)\s+(?:ci|install|run|exec|add|remove|update)\b/');
 });
 
+it('resolves CLI design and terminal guidance to the canonical root resources', function (): void {
+    $repositoryRoot = dirname(base_path(), 2);
+    $canonicalPaths = [
+        $repositoryRoot.'/docs/reference/cli-ux.md',
+        $repositoryRoot.'/.agents/skills/designing-cli-commands/SKILL.md',
+        $repositoryRoot.'/.agents/skills/verifying-cli-output/SKILL.md',
+    ];
+    $guidancePaths = [
+        'AGENTS.md',
+        'README.md',
+        '.ai/rules/commands.md',
+        '.ai/skills/command-designer/SKILL.md',
+        '.agents/skills/command-designer/SKILL.md',
+    ];
+
+    foreach ($canonicalPaths as $canonicalPath) {
+        expect($canonicalPath)->toBeReadableFile();
+    }
+
+    foreach ($guidancePaths as $guidancePath) {
+        $path = base_path($guidancePath);
+        $contents = (string) file_get_contents($path);
+        preg_match_all('/\]\(([^)#]+\.md)(?:#[^)]*)?\)/', $contents, $matches);
+        $resolvedLinks = array_map(
+            static fn (string $target): string|false => realpath(dirname($path).'/'.$target),
+            $matches[1],
+        );
+
+        expect($resolvedLinks)->toContain(...$canonicalPaths);
+    }
+});
+
 it('defines the durable node access command contract', function (): void {
     $commandRules = file_get_contents(base_path('.ai/rules/commands.md'));
     $normalizedCommandRules = is_string($commandRules)

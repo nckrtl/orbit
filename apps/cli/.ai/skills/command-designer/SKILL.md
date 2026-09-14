@@ -5,31 +5,22 @@ description: Design or change Orbit CLI commands and their user-facing contract.
 
 # Command Designer
 
-Keep the command surface as small as the requested operation permits.
+Use the repository [designing-cli-commands skill](../../../../../.agents/skills/designing-cli-commands/SKILL.md)
+and [CLI design standard](../../../../../docs/reference/cli-ux.md) for interaction
+and rendering. Use [verifying-cli-output](../../../../../.agents/skills/verifying-cli-output/SKILL.md)
+to prove terminal behavior. Keep these rules in the root standard.
 
-## Boundaries
+Current command references, accepted ADRs, and project rules govern the product
+contract. Preserve command-specific JSON and NDJSON shapes, request IDs,
+explicit-only targeting, and existing consent and override option meanings.
+Machine output never grants consent. Do not turn a force override into generic
+confirmation or wrap every response in a new universal envelope.
 
-- Keep the CLI stateless except for `~/.orbit/config.json`.
-- Send every remote action through `nckrtl/orbit-php-sdk` as an HTTP call.
-- Never execute infrastructure commands or SSH from the CLI.
-- Do not add commands, arguments, options, output formats, or abstractions for possible future use.
+Keep the public surface as small as the requested operation permits. Store only
+explicit local state under `$ORBIT_HOME`. Remote operations use typed
+`nckrtl/orbit-php-sdk` HTTP calls; never add SSH or infrastructure execution.
+Explicit local OS actions remain governed by their command contracts.
 
-## Command Contract
-
-Define only the contract elements that the command needs:
-
-- stable argument and option names;
-- concise human-readable success and error output;
-- `--json` output when machine-readable use is required;
-- explicit exit behavior when callers must distinguish outcomes.
-
-Keep human output and JSON output deterministic. Do not expose SDK or transport details unless they help the user resolve an error.
-
-- `--json` selects machine output and never grants destructive consent.
-- Destructive commands require interactive confirmation or explicit `--force` before the one remote request.
-- JSON responses use one top-level `success` or `error` key. Error objects contain exactly `code`, `message`, and `request_id`.
-- Orbit-handled failures exit with `1`; successful commands exit with `0`.
-
-## Verification
-
-Test observable command behavior instead of internal method calls. Cover each required input, output, side effect, and exit outcome. Run the relevant existing Composer scripts, then run `composer check` before completion.
+Test observable input, output, side effects, and exits. Follow the current
+role's checks and evidence requirements; these skills do not change delivery
+authority or authorize unrelated product changes.

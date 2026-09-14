@@ -5,8 +5,15 @@ paths:
 
 # Commands
 
+## Use the shared CLI design standard
+
+Use [the root standard](../../../../docs/reference/cli-ux.md) for interaction and
+rendering, [designing-cli-commands](../../../../.agents/skills/designing-cli-commands/SKILL.md)
+for design and audit, and [verifying-cli-output](../../../../.agents/skills/verifying-cli-output/SKILL.md)
+for terminal evidence. Preserve the current product contracts below.
+
 ## Keep operator commands thin and HTTP-only
-Normal commands validate explicit input, send typed orbit-php-sdk HTTP requests to the gateway, and render deterministic human and JSON output. Do not add SSH, remote sudo, infrastructure mutation, an Agent, hidden transport, or a generic executor. Privileged local changes are limited to explicit visible `gateway:trust` and `dns:resolve` operations.
+Normal commands validate explicit input, send typed orbit-php-sdk HTTP requests to the gateway, and render deterministic human and JSON output. Do not add SSH, remote sudo, infrastructure mutation, an Agent, hidden transport, or a generic executor. Privileged local changes are limited to explicit visible `gateway:add`, `gateway:trust`, and `dns:resolve` operations.
 
 ## Keep AppInstance environment values on the Gateway boundary
 
