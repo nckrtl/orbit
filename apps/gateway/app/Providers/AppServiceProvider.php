@@ -251,7 +251,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceSqliteSeeder::class => RemoteAppInstanceSqliteSeeder::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
-        AppDevTldConverger::class => NativeAppDevTldConverger::class;
+        AppDevTldConverger::class => NativeAppDevTldConverger::class,
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         DevelopmentAppInstanceSourceLifecycle::class => RemoteDevelopmentAppInstanceSourceLifecycle::class,
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
