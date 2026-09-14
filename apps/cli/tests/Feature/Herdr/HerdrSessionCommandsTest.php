@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\LocalExtensionState;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Herdr\AdoptHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\DestroyHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
@@ -53,6 +54,33 @@ it('adds a named Herdr session through the active gateway', function (): void {
 
     expect($mock->getLastRequest())
         ->toBeInstanceOf(CreateHerdrSessionRequest::class)
+        ->and($mock->getLastRequest()?->body()->all())
+        ->toBe([
+            'node_id' => 4,
+            'session' => 'commander-tasks',
+            'user' => 'nckrtl',
+            'publish_observer' => true,
+        ]);
+});
+
+it('adopts an existing Herdr session for observation through the active gateway', function (): void {
+    $mock = MockClient::global([
+        ListNodesRequest::class => herdr_cli_nodes_response(),
+        AdoptHerdrSessionRequest::class => herdr_cli_session_response(201),
+    ]);
+
+    $this
+        ->artisan('herdr:session:adopt', [
+            'session' => 'commander-tasks',
+            '--node' => 'beast',
+            '--user' => 'nckrtl',
+            '--publish-observer' => true,
+            '--json' => true,
+        ])
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest())
+        ->toBeInstanceOf(AdoptHerdrSessionRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe([
             'node_id' => 4,
@@ -277,6 +305,7 @@ function herdr_cli_session_payload(): array
         'session' => 'commander-tasks',
         'user' => 'nckrtl',
         'process_id' => 481,
+        'management' => 'managed',
         'observer_url' => 'wss://commander-tasks.herdr.beast.orbit',
         'status' => 'active',
         'herdr_version' => '0.9.0',

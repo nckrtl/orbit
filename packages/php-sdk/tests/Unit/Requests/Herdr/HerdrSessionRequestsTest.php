@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Herdr\AdoptHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\DestroyHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
@@ -75,6 +76,49 @@ it('preserves an explicit false observer publication flag', function (): void {
         'user' => 'nckrtl',
         'publish_observer' => false,
     ]);
+});
+
+it('adopts an existing Herdr session without changing its external lifecycle', function (): void {
+    $mock = new MockClient([
+        AdoptHerdrSessionRequest::class => MockResponse::make([
+            'data' => [...herdr_session_gateway_data(), 'management' => 'external', 'process_id' => null],
+            'meta' => ['request_id' => herdr_request_id()],
+        ], 201),
+    ]);
+    $request = new AdoptHerdrSessionRequest(
+        nodeId: 4,
+        session: 'commander-tasks',
+        user: 'nckrtl',
+        publishObserver: true,
+    );
+    $response = herdr_connector($mock)->send($request)->dto();
+
+    expect($request->getMethod())
+        ->toBe(Method::POST)
+        ->and($request->resolveEndpoint())
+        ->toBe('/api/v1/herdr/sessions/adopt')
+        ->and($request->body()->all())
+        ->toBe([
+            'node_id' => 4,
+            'session' => 'commander-tasks',
+            'user' => 'nckrtl',
+            'publish_observer' => true,
+        ])
+        ->and($response)
+        ->toBeInstanceOf(HerdrSessionResponse::class)
+        ->and($response->management)
+        ->toBe('external')
+        ->and($response->processId)
+        ->toBeNull();
+});
+
+it('bounds an unknown Herdr session management mode', function (): void {
+    $response = HerdrSessionResponse::fromGatewayData(
+        [...herdr_session_gateway_data(), 'management' => 'untrusted'],
+        herdr_request_id(),
+    );
+
+    expect($response->management)->toBe('');
 });
 
 it('lists Herdr sessions for one Node', function (): void {
@@ -221,6 +265,7 @@ function herdr_session_gateway_data(): array
         'session' => 'commander-tasks',
         'user' => 'nckrtl',
         'process_id' => 481,
+        'management' => 'managed',
         'observer_url' => 'wss://commander-tasks.herdr.beast.orbit',
         'status' => 'active',
         'herdr_version' => '0.9.0',

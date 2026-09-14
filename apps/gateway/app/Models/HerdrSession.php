@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Herdr\HerdrSessionManagement;
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $session
  * @property string $user
  * @property int|null $process_id
+ * @property HerdrSessionManagement $management
  * @property int $observer_port
  * @property string $observer_hostname
  * @property string|null $observer_url
@@ -38,6 +40,7 @@ final class HerdrSession extends Model
         'session',
         'user',
         'process_id',
+        'management',
         'observer_port',
         'observer_hostname',
         'observer_url',
@@ -69,6 +72,7 @@ final class HerdrSession extends Model
     {
         return [
             'observer_port' => 'integer',
+            'management' => HerdrSessionManagement::class,
             'protocol' => 'integer',
             'handoff_supported' => 'boolean',
             'publish_observer' => 'boolean',

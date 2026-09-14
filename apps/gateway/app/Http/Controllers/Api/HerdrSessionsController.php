@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Herdr\AdoptHerdrSessionAction;
 use App\Actions\Herdr\EnsureHerdrSessionAction;
 use App\Actions\Herdr\IssueObservationGrantAction;
 use App\Actions\Herdr\ListHerdrSessionsAction;
@@ -47,6 +48,25 @@ final class HerdrSessionsController extends Controller
     public function store(
         StoreHerdrSessionRequest $request,
         EnsureHerdrSessionAction $action,
+        HerdrSessionHealth $health,
+    ): JsonResponse {
+        $result = $action->execute($request->payload());
+
+        return response()->json(
+            [
+                'data' => HerdrSessionData::fromModel(
+                    $result['session'],
+                    $health->inspect($result['session']),
+                )->toArray(),
+                'meta' => $this->meta($request),
+            ],
+            $result['created'] ? 201 : 200,
+        );
+    }
+
+    public function adopt(
+        StoreHerdrSessionRequest $request,
+        AdoptHerdrSessionAction $action,
         HerdrSessionHealth $health,
     ): JsonResponse {
         $result = $action->execute($request->payload());

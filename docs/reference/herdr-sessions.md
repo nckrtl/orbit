@@ -1,8 +1,8 @@
 # Herdr sessions
 
-This page tells an operator how Orbit manages a named Herdr session on a managed Node and how Commander requests a private receive-only observation grant for one recorded pane.
+This page tells an operator how Orbit manages or observes a named Herdr session on a managed Node and how Commander requests a private receive-only observation grant for one recorded pane.
 
-Orbit owns Process lifecycle, private DNS, Caddy, Orbit certificate authority (CA) Transport Layer Security (TLS), WireGuard publication, the receive-only WebSocket adapter, and short-lived observation grants. Herdr owns terminal rendering and the local snapshot and terminal-observation commands that the adapter consumes.
+Orbit owns Process lifecycle only for managed sessions. For adopted sessions, the service lifecycle stays external. Orbit owns private DNS, Caddy, Orbit certificate authority (CA) Transport Layer Security (TLS), WireGuard publication, the receive-only WebSocket adapter, and short-lived observation grants in both modes. Herdr owns terminal rendering and the local snapshot and terminal-observation commands that the adapter consumes.
 
 ## Create a session
 
@@ -24,6 +24,18 @@ The CLI hides every `herdr:*` command and refuses its execution while the extens
 
 Repeating an identical create returns the same session. The Gateway does not replace or restart a compatible running Herdr server. A changed user, Process specification, or observer listen address with the same Node and session name returns `herdr.session_conflict` and leaves the running server in place.
 
+## Adopt an existing session
+
+Use adoption when the named Herdr server already runs under a service that Orbit does not own. Adoption inspects the live socket, records external lifecycle ownership, and can publish the same receive-only observer. It never creates a Process or starts, stops, or restarts the existing service.
+
+```bash
+orbit herdr:session:adopt commander-tasks --node=beast --user=nckrtl --publish-observer
+```
+
+The exact Node must still carry installed managed Herdr Tool intent. The live server must expose protocol 22 before Orbit publishes an observer. When inspection finds an older protocol, Orbit retains the external session with `herdr.observer_unsupported` but does not publish it. Upgrade that service through its own controlled lifecycle, then repeat the adoption command.
+
+Create and adopt cannot replace each other. A managed session and an externally managed session with the same Node and name conflict. Removing an adopted session retracts Orbit's observer and record only; it leaves the external service and all panes running. Orbit refuses restart for an adopted session with `herdr.session_external`.
+
 ## Stored identity
 
 The API and PHP software development kit (SDK) return this identity for each session.
@@ -34,11 +46,12 @@ The API and PHP software development kit (SDK) return this identity for each ses
 | `session` | Named Herdr session |
 | `user` | Recorded Unix identity that owns the server and socket |
 | `process_id` | Node-targeted Process ID |
+| `management` | `managed` when Orbit owns the Process, or `external` for observation-only adoption |
 | `observer_url` | Private `wss://` URL when publication succeeded |
 | `status` | Session lifecycle status |
 | `herdr_version` | Observed Herdr version, or null when inspection cannot read it |
 | `protocol` | Observed Herdr observe protocol number, or null when inspection cannot read it |
-| `health.process` | Distinct Process health |
+| `health.process` | Distinct Process health, or `external` when service health remains outside Orbit |
 | `health.listener` | Distinct observer publication and listen health |
 | `health.session` | Distinct Herdr-session identity health |
 
@@ -71,10 +84,11 @@ The CLI sends each operation through the Gateway.
 | `orbit extension:enable herdr` | Enable and reveal the local Herdr CLI extension. |
 | `orbit extension:disable herdr` | Disable and hide the local Herdr CLI extension. |
 | `orbit herdr:session:create NAME --node=ID-or-name --user=USER [--publish-observer]` | Create or ensure one named session on a managed Node. |
+| `orbit herdr:session:adopt NAME --node=ID-or-name --user=USER [--publish-observer]` | Register an existing session for observation without taking over its service. |
 | `orbit herdr:session:list --node=ID-or-name` | List sessions on one Node with identity and health. |
 | `orbit herdr:session:show NAME --node=ID-or-name` | Show one session. |
 | `orbit herdr:session:restart NAME --node=ID-or-name [--handoff]` | Restart the server explicitly, using Herdr live handoff when the operator asks and Herdr reports support. |
-| `orbit herdr:session:destroy NAME --node=ID-or-name [--accept-termination]` | Destroy the session, Process, and private observer. |
+| `orbit herdr:session:destroy NAME --node=ID-or-name [--accept-termination]` | Remove the Orbit record and observer; also destroy the Process only for a managed session. |
 | `orbit herdr:observe NAME --node=ID-or-name --pane=PANE --terminal=TERMINAL --cols=COLS --rows=ROWS --origin=HTTPS-ORIGIN` | Issue one short-lived receive-only grant. |
 
 `--node` accepts a positive Node ID or the registered Node name. Every command also accepts `--json`.
@@ -87,8 +101,9 @@ The Gateway keeps a compatible running Herdr server in place unless the operator
 | --- | --- |
 | Tool install or update of the Herdr package | Changes package files only. It does not start, stop, or restart a managed session. |
 | Ordinary session ensure or Doctor inspection | Leaves a compatible running server in place. |
+| External session adoption | Inspects and publishes only. It does not create or control a Process. |
 | `herdr:session:restart --handoff` | The current Herdr command contract reports no supported handoff, so the Gateway restarts the owned Process. |
-| Removal | Inspects live panes first. The Gateway refuses `herdr.session_in_use` while any pane is live unless the operator passes `--accept-termination`. |
+| Removal | For managed sessions, inspects live panes first and requires `--accept-termination` while a pane is live. For adopted sessions, retracts only Orbit state and never terminates the external service. |
 | Observer publication failure | Records listener health. It does not destroy or restart the Herdr session. |
 | Node removal | The Gateway refuses `node:remove` while the Node owns a Herdr session. [Node provisioning](node-provisioning.md#remove-a-node) owns that guard. |
 | Offline decommissioning of an unreachable Node | Deletes those session and Process records without remote cleanup. |
@@ -99,7 +114,7 @@ Doctor inspects Herdr as the explicit `herdr` family. It reports Process, listen
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
-| `herdr.process_unhealthy` | Drift | The owned Process is missing or does not match its desired runtime state. |
+| `herdr.process_unhealthy` | Drift | A managed session's owned Process is missing or does not match its desired runtime state. External sessions do not claim Process health. |
 | `herdr.listener_unhealthy` | Drift | The private observer is unpublished or failed while the session remains. |
 | `herdr.session_unhealthy` | Drift | Herdr identity, protocol, or session status does not match the stored session. |
 | `herdr.inspection_failed` | Unverifiable | Doctor could not complete a required Herdr inspection. |
@@ -117,13 +132,14 @@ Authorized callers use these resources.
 | --- | --- |
 | `GET /api/v1/herdr/sessions?node_id=ID` | List sessions on one Node. |
 | `POST /api/v1/herdr/sessions` | Create or ensure one session. |
+| `POST /api/v1/herdr/sessions/adopt` | Adopt one existing session for observation. |
 | `GET /api/v1/herdr/sessions/{session}` | Show one session. |
 | `POST /api/v1/herdr/sessions/{session}/restart` | Restart one session. |
 | `DELETE /api/v1/herdr/sessions/{session}` | Remove one session. |
 | `POST /api/v1/herdr/sessions/{session}/observation-grants` | Issue one observation grant. |
 | `GET /.well-known/jwks.json` | Publish the Orbit observe signing keys. |
 
-Create accepts `node_id`, `session`, `user`, and `publish_observer`. Restart accepts `handoff`. Destroy accepts `accept_termination`. A grant accepts `pane`, `terminal`, `cols`, `rows`, and `origin`.
+Create and adopt accept `node_id`, `session`, `user`, and `publish_observer`. Restart accepts `handoff`. Destroy accepts `accept_termination`. A grant accepts `pane`, `terminal`, `cols`, `rows`, and `origin`.
 
 ## Failure codes
 
@@ -133,6 +149,7 @@ The Gateway returns these Herdr-specific codes.
 | --- | --- |
 | `herdr.user_mismatch` | `--user` does not match the Node's managed runtime user. |
 | `herdr.session_conflict` | The named session exists with a different specification. |
+| `herdr.session_external` | Orbit refused a restart because the session's service lifecycle is external. |
 | `herdr.session_in_use` | Removal refused because live panes exist. |
 | `herdr.node_unavailable` | The Node is inactive, unmanaged, or unreachable for mutation. |
 | `herdr.tool_not_installed` | The target Node has no installed managed `herdr` Tool under its active Homebrew manager. |

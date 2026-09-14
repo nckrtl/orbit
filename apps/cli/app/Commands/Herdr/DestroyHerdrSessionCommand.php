@@ -19,7 +19,7 @@ final class DestroyHerdrSessionCommand extends HerdrSessionCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Destroy one named Herdr session, its Process, and its private observer.';
+    protected $description = 'Remove one Herdr session from Orbit and destroy its Process only when Orbit manages it.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -69,7 +69,7 @@ final class DestroyHerdrSessionCommand extends HerdrSessionCommand
             return self::SUCCESS;
         }
 
-        $this->info("Herdr session [{$response->session}] on [{$response->node}] was removed.");
+        $this->info("Herdr session [{$response->session}] on [{$response->node}] was removed from Orbit.");
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

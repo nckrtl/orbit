@@ -326,6 +326,8 @@ Route::prefix('v1')->group(function (): void {
             ->name('herdr:session:list');
         Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])
             ->name('herdr:session:create');
+        Route::post('herdr/sessions/adopt', [HerdrSessionsController::class, 'adopt'])
+            ->name('herdr:session:adopt');
         Route::get('herdr/sessions/{session}', [HerdrSessionsController::class, 'show'])
             ->whereNumber('session')
             ->name('herdr:session:show');

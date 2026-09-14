@@ -19,6 +19,7 @@ final readonly class HerdrSessionResponse
         public string $session,
         public string $user,
         public ?int $processId,
+        public string $management,
         public ?string $observerUrl,
         public string $status,
         public ?string $herdrVersion,
@@ -43,6 +44,7 @@ final readonly class HerdrSessionResponse
             session: is_string($data['session'] ?? null) ? $data['session'] : '',
             user: is_string($data['user'] ?? null) ? $data['user'] : '',
             processId: is_int($data['process_id'] ?? null) ? $data['process_id'] : null,
+            management: self::management($data['management'] ?? null),
             observerUrl: is_string($data['observer_url'] ?? null) ? $data['observer_url'] : null,
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             herdrVersion: is_string($data['herdr_version'] ?? null) ? $data['herdr_version'] : null,
@@ -66,6 +68,7 @@ final readonly class HerdrSessionResponse
             'session' => $this->session,
             'user' => $this->user,
             'process_id' => $this->processId,
+            'management' => $this->management,
             'observer_url' => $this->observerUrl,
             'status' => $this->status,
             'herdr_version' => $this->herdrVersion,
@@ -89,5 +92,12 @@ final readonly class HerdrSessionResponse
             'listener' => is_string($health['listener'] ?? null) ? $health['listener'] : '',
             'session' => is_string($health['session'] ?? null) ? $health['session'] : '',
         ];
+    }
+
+    private static function management(mixed $value): string
+    {
+        return is_string($value) && in_array($value, ['managed', 'external'], true)
+            ? $value
+            : '';
     }
 }
