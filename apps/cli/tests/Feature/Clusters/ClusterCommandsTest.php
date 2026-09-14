@@ -7,14 +7,14 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Clusters\AttachClusterNodeRequest;
-use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
+use Orbit\Sdk\Requests\Clusters\AddClusterNodeRequest;
 use Orbit\Sdk\Requests\Clusters\CreateClusterRequest;
-use Orbit\Sdk\Requests\Clusters\DetachClusterNodeRequest;
+use Orbit\Sdk\Requests\Clusters\DestroyClusterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
-use Orbit\Sdk\Requests\Clusters\RemoveClusterRequest;
+use Orbit\Sdk\Requests\Clusters\RemoveClusterNodeRequest;
 use Orbit\Sdk\Requests\Clusters\SetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ShowClusterRequest;
+use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\UpdateClusterRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -41,7 +41,7 @@ it('creates a Cluster through the exact typed request and renders JSON', functio
     $mockClient = cluster_cli_mock(CreateClusterRequest::class, cluster_cli_gateway_data(), status: 201);
 
     $this
-        ->artisan('cluster:new', [
+        ->artisan('cluster:create', [
             'name' => 'development',
             '--tld' => ' Beast ',
             '--json' => true,
@@ -109,15 +109,15 @@ it('updates only supplied Cluster fields and treats an empty TLD as unset', func
 });
 
 it('removes a Cluster only after force confirmation', function (): void {
-    $mockClient = cluster_cli_confirmed_mock(RemoveClusterRequest::class, cluster_cli_gateway_data());
+    $mockClient = cluster_cli_confirmed_mock(DestroyClusterRequest::class, cluster_cli_gateway_data());
 
     $this
-        ->artisan('cluster:remove', ['cluster' => '3', '--force' => true])
+        ->artisan('cluster:destroy', ['cluster' => '3', '--force' => true])
         ->expectsOutput('Cluster [development] removed.')
         ->expectsOutput('Request ID: '.cluster_cli_request_id())
         ->assertExitCode(0);
 
-    expect($mockClient->getLastRequest())->toBeInstanceOf(RemoveClusterRequest::class)
+    expect($mockClient->getLastRequest())->toBeInstanceOf(DestroyClusterRequest::class)
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(2);
 });
@@ -138,7 +138,7 @@ it('attaches a Node and sets the Router through bodyless PUT requests', function
         ->and($request?->resolveEndpoint())
         ->toBe($endpoint);
 })->with([
-    'attach' => ['cluster:node:attach', AttachClusterNodeRequest::class, '/api/v1/clusters/3/nodes/2'],
+    'attach' => ['cluster:node:add', AddClusterNodeRequest::class, '/api/v1/clusters/3/nodes/2'],
     'Router set' => ['cluster:router:set', SetClusterRouterRequest::class, '/api/v1/clusters/3/router/2'],
 ]);
 
@@ -158,8 +158,8 @@ it('detaches a Node and clears the Router with confirmed force payloads', functi
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(2);
 })->with([
-    'detach' => ['cluster:node:detach', DetachClusterNodeRequest::class, ['cluster' => '3', 'node' => '2']],
-    'Router clear' => ['cluster:router:clear', ClearClusterRouterRequest::class, ['cluster' => '3']],
+    'detach' => ['cluster:node:remove', RemoveClusterNodeRequest::class, ['cluster' => '3', 'node' => '2']],
+    'Router clear' => ['cluster:router:unset', UnsetClusterRouterRequest::class, ['cluster' => '3']],
 ]);
 
 it('rejects invalid IDs before any HTTP request', function (string $command, array $arguments): void {
@@ -174,14 +174,14 @@ it('rejects invalid IDs before any HTTP request', function (string $command, arr
 })->with([
     'show Cluster' => ['cluster:show', ['cluster' => '0']],
     'update Cluster' => ['cluster:update', ['cluster' => 'not-an-id', '--state' => 'active']],
-    'remove Cluster' => ['cluster:remove', ['cluster' => '-1', '--force' => true]],
-    'attach Cluster' => ['cluster:node:attach', ['cluster' => '0', 'node' => '2']],
-    'attach Node' => ['cluster:node:attach', ['cluster' => '3', 'node' => '0']],
-    'detach Cluster' => ['cluster:node:detach', ['cluster' => '0', 'node' => '2', '--force' => true]],
-    'detach Node' => ['cluster:node:detach', ['cluster' => '3', 'node' => '0', '--force' => true]],
+    'remove Cluster' => ['cluster:destroy', ['cluster' => '-1', '--force' => true]],
+    'attach Cluster' => ['cluster:node:add', ['cluster' => '0', 'node' => '2']],
+    'attach Node' => ['cluster:node:add', ['cluster' => '3', 'node' => '0']],
+    'detach Cluster' => ['cluster:node:remove', ['cluster' => '0', 'node' => '2', '--force' => true]],
+    'detach Node' => ['cluster:node:remove', ['cluster' => '3', 'node' => '0', '--force' => true]],
     'set Router Cluster' => ['cluster:router:set', ['cluster' => '0', 'node' => '2']],
     'set Router Node' => ['cluster:router:set', ['cluster' => '3', 'node' => '0']],
-    'clear Router' => ['cluster:router:clear', ['cluster' => '0', '--force' => true]],
+    'clear Router' => ['cluster:router:unset', ['cluster' => '0', '--force' => true]],
 ]);
 
 it('renders only the first invalid ID as one JSON document', function (string $command, array $arguments): void {
@@ -201,8 +201,8 @@ it('renders only the first invalid ID as one JSON document', function (string $c
     expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expected);
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'attach' => ['cluster:node:attach', ['cluster' => 'invalid', 'node' => 'invalid']],
-    'detach' => ['cluster:node:detach', ['cluster' => 'invalid', 'node' => 'invalid']],
+    'attach' => ['cluster:node:add', ['cluster' => 'invalid', 'node' => 'invalid']],
+    'detach' => ['cluster:node:remove', ['cluster' => 'invalid', 'node' => 'invalid']],
     'set Router' => ['cluster:router:set', ['cluster' => 'invalid', 'node' => 'invalid']],
 ]);
 
@@ -221,7 +221,7 @@ it('rejects malformed TLD and state values before any HTTP request', function (
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'new malformed TLD' => [
-        'cluster:new',
+        'cluster:create',
         ['name' => 'development', '--tld' => 'dev.orbit'],
         'TLD must be one DNS label',
     ],
@@ -266,9 +266,9 @@ it('fails as not-found for a missing Cluster without force', function (string $c
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
 })->with([
-    'remove' => ['cluster:remove', ['cluster' => '999999']],
-    'detach' => ['cluster:node:detach', ['cluster' => '999999', 'node' => '2']],
-    'clear' => ['cluster:router:clear', ['cluster' => '999999']],
+    'remove' => ['cluster:destroy', ['cluster' => '999999']],
+    'detach' => ['cluster:node:remove', ['cluster' => '999999', 'node' => '2']],
+    'clear' => ['cluster:router:unset', ['cluster' => '999999']],
 ]);
 
 it('fails as not-found for a missing Cluster with force', function (string $command, array $arguments): void {
@@ -287,9 +287,9 @@ it('fails as not-found for a missing Cluster with force', function (string $comm
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
 })->with([
-    'remove' => ['cluster:remove', ['cluster' => '999999']],
-    'detach' => ['cluster:node:detach', ['cluster' => '999999', 'node' => '2']],
-    'clear' => ['cluster:router:clear', ['cluster' => '999999']],
+    'remove' => ['cluster:destroy', ['cluster' => '999999']],
+    'detach' => ['cluster:node:remove', ['cluster' => '999999', 'node' => '2']],
+    'clear' => ['cluster:router:unset', ['cluster' => '999999']],
 ]);
 
 it('requires force only after an existing Cluster is resolved', function (
@@ -316,9 +316,9 @@ it('requires force only after an existing Cluster is resolved', function (
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
 })->with([
-    'remove' => ['cluster:remove', ['cluster' => '3'], 'removal'],
-    'detach' => ['cluster:node:detach', ['cluster' => '3', 'node' => '2'], 'Node detachment'],
-    'clear' => ['cluster:router:clear', ['cluster' => '3'], 'Router clearing'],
+    'remove' => ['cluster:destroy', ['cluster' => '3'], 'removal'],
+    'detach' => ['cluster:node:remove', ['cluster' => '3', 'node' => '2'], 'Node detachment'],
+    'clear' => ['cluster:router:unset', ['cluster' => '3'], 'Router clearing'],
 ]);
 
 it('requires human confirmation only after an existing Cluster is resolved', function (
@@ -337,9 +337,9 @@ it('requires human confirmation only after an existing Cluster is resolved', fun
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
 })->with([
-    'remove' => ['cluster:remove', ['cluster' => '3']],
-    'detach' => ['cluster:node:detach', ['cluster' => '3', 'node' => '2']],
-    'clear' => ['cluster:router:clear', ['cluster' => '3']],
+    'remove' => ['cluster:destroy', ['cluster' => '3']],
+    'detach' => ['cluster:node:remove', ['cluster' => '3', 'node' => '2']],
+    'clear' => ['cluster:router:unset', ['cluster' => '3']],
 ]);
 
 it('accepts explicit confirmation after resolving an existing Cluster', function (
@@ -360,9 +360,9 @@ it('accepts explicit confirmation after resolving an existing Cluster', function
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(2);
 })->with([
-    'remove' => ['cluster:remove', RemoveClusterRequest::class, ['cluster' => '3'], 'removal'],
-    'detach' => ['cluster:node:detach', DetachClusterNodeRequest::class, ['cluster' => '3', 'node' => '2'], 'Node detachment'],
-    'clear' => ['cluster:router:clear', ClearClusterRouterRequest::class, ['cluster' => '3'], 'Router clearing'],
+    'remove' => ['cluster:destroy', DestroyClusterRequest::class, ['cluster' => '3'], 'removal'],
+    'detach' => ['cluster:node:remove', RemoveClusterNodeRequest::class, ['cluster' => '3', 'node' => '2'], 'Node detachment'],
+    'clear' => ['cluster:router:unset', UnsetClusterRouterRequest::class, ['cluster' => '3'], 'Router clearing'],
 ]);
 
 /** @param class-string $requestClass */

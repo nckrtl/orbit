@@ -9,7 +9,7 @@ use Orbit\Sdk\Responses\Routes\RouteResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-final class RemoveRouteRequest extends GatewayRequest
+final class DestroyRouteRequest extends GatewayRequest
 {
     #[\Override]
     protected Method $method = Method::DELETE;

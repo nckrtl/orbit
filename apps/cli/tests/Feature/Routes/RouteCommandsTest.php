@@ -7,12 +7,12 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Routes\ClearRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
+use Orbit\Sdk\Requests\Routes\DestroyRouteRequest;
 use Orbit\Sdk\Requests\Routes\ListRoutesRequest;
-use Orbit\Sdk\Requests\Routes\RemoveRouteRequest;
 use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\ShowRouteRequest;
+use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -36,7 +36,7 @@ afterEach(function (): void {
 it('creates target and targetless Routes while transporting policy values', function (): void {
     $mock = MockClient::global([CreateRouteRequest::class => route_mock_response(201)]);
 
-    $this->artisan('route:new', [
+    $this->artisan('route:create', [
         'app' => '3',
         'hostname' => 'Odd_Value',
         '--publication' => 'future-policy',
@@ -51,7 +51,7 @@ it('creates target and targetless Routes while transporting policy values', func
         'app_instance_id' => 7,
     ]);
 
-    $this->artisan('route:new', [
+    $this->artisan('route:create', [
         'app' => '3',
         'hostname' => 'node.test',
         '--node' => '4',
@@ -66,7 +66,7 @@ it('transports explicit private and public publication intents unchanged', funct
         UpdateRouteRequest::class => route_mock_response(),
     ]);
 
-    $this->artisan('route:new', [
+    $this->artisan('route:create', [
         'app' => '3',
         'hostname' => 'app.test',
         '--publication' => $publication,
@@ -112,8 +112,8 @@ it('refuses a missing publication value before transport', function (
         ->assertExitCode(1);
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'create without value' => ['route:new', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => null, '--cluster' => '1']],
-    'create with empty value' => ['route:new', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => '', '--cluster' => '1']],
+    'create without value' => ['route:create', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => null, '--cluster' => '1']],
+    'create with empty value' => ['route:create', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => '', '--cluster' => '1']],
     'update without value' => ['route:update', ['route' => '11', '--publication' => null]],
     'update with empty value' => ['route:update', ['route' => '11', '--publication' => '']],
     'update with hostname and no publication value' => ['route:update', ['route' => '11', '--hostname' => 'next.test', '--publication' => null]],
@@ -130,7 +130,7 @@ it('refuses the reported shell shape of a bare --publication flag', function (st
         ->toBe('route.publication_invalid');
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'route:new' => 'route:new 1 pubtest.orbit --publication --cluster=1 --json',
+    'route:create' => 'route:create 1 pubtest.orbit --publication --cluster=1 --json',
     'route:update' => 'route:update 11 --publication --json',
 ]);
 
@@ -138,7 +138,7 @@ it('rejects impossible create shapes before transport', function (array $argumen
     $mock = MockClient::global();
 
     $this
-        ->artisan('route:new', $arguments)
+        ->artisan('route:create', $arguments)
         ->expectsOutputToContain($code)
         ->assertExitCode(1);
 
@@ -215,7 +215,7 @@ it('renders only the first invalid input as one JSON document', function (
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
     'create Route' => [
-        'route:new',
+        'route:create',
         [
             'app' => 'invalid',
             'hostname' => '',
@@ -244,8 +244,8 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
         ShowRouteRequest::class => route_mock_response(),
         UpdateRouteRequest::class => route_mock_response(),
         SetRouteTargetRequest::class => route_mock_response(),
-        ClearRouteTargetRequest::class => route_mock_response(),
-        RemoveRouteRequest::class => route_mock_response(),
+        UnsetRouteTargetRequest::class => route_mock_response(),
+        DestroyRouteRequest::class => route_mock_response(),
     ]);
 
     $this->artisan('route:list', ['--json' => true])->assertExitCode(0);
@@ -254,8 +254,8 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
     expect($mock->getLastRequest()?->body()->all())->toBe(['hostname' => 'next.test']);
     $this->artisan('route:target:set', ['route' => '11', 'target' => '8'])->assertExitCode(0);
     expect($mock->getLastRequest()?->body()->all())->toBe(['app_instance_id' => 8]);
-    $this->artisan('route:target:clear', ['route' => '11'])->assertExitCode(0);
-    $this->artisan('route:remove', ['route' => '11'])->assertExitCode(0);
+    $this->artisan('route:target:unset', ['route' => '11'])->assertExitCode(0);
+    $this->artisan('route:destroy', ['route' => '11'])->assertExitCode(0);
 });
 
 it('rejects an empty update and invalid IDs before transport', function (): void {

@@ -6,8 +6,10 @@ use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Node;
+use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 
 beforeEach(function (): void {
@@ -19,11 +21,15 @@ beforeEach(function (): void {
 });
 
 it('attaches one active Node to one Cluster and exposes membership in both resources', function (): void {
+    $requestId = (string) Str::uuid();
     $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
         ->putJson("/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}")
         ->assertOk()
         ->assertJsonPath('data.id', $this->firstCluster->id)
         ->assertJsonPath('data.nodes.0.id', $this->node->id);
+    expect(Activity::query()->where('request_id', $requestId)->sole()->command)
+        ->toBe('cluster:node:add');
 
     $this
         ->getJson("/api/v1/nodes/{$this->node->id}")
@@ -90,7 +96,9 @@ it('requires explicit consent to detach a Node and preserves membership on refus
 
     expect($this->node->refresh()->cluster_id)->toBe($this->firstCluster->id);
 
+    $requestId = (string) Str::uuid();
     $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
         ->deleteJson(
             "/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}",
             ['force' => true],
@@ -98,7 +106,10 @@ it('requires explicit consent to detach a Node and preserves membership on refus
         ->assertOk()
         ->assertJsonPath('data.nodes', []);
 
-    expect($this->node->refresh()->cluster_id)->toBeNull();
+    expect($this->node->refresh()->cluster_id)
+        ->toBeNull()
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
+        ->toBe('cluster:node:remove');
 });
 
 it('reconciles Router DNS selection before detach becomes authoritative', function (): void {

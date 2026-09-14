@@ -15,6 +15,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -22,6 +23,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 
 beforeEach(function (): void {
@@ -195,11 +197,16 @@ it('returns 409 before Router validation or mutation while the Cluster owner is 
         ->toBeEmpty();
 
     app()->instance(ClusterRouterOperationLock::class, new ClusterRouterApiOperationLock);
+    $requestId = (string) Str::uuid();
     $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
         ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
         ->assertOk();
 
-    expect($candidate->fresh())->toBeNull();
+    expect($candidate->fresh())
+        ->toBeNull()
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
+        ->toBe('cluster:router:unset');
 });
 
 it('reloads Router assignments after waiting before a replacement', function (): void {

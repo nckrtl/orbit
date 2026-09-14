@@ -9,7 +9,7 @@ use Orbit\Sdk\Responses\Apps\AppResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-final class RemoveAppRequest extends GatewayRequest
+final class DestroyAppRequest extends GatewayRequest
 {
     #[\Override]
     protected Method $method = Method::DELETE;

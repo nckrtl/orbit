@@ -1,14 +1,15 @@
 <?php
 
 declare(strict_types=1);
+
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
+use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
@@ -288,7 +289,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ListAppInstanceReleasesRequest::class)
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
-            ->toContain(ClearClusterRouterRequest::class);
+            ->toContain(UnsetClusterRouterRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,
@@ -319,7 +320,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($publicContract)
             ->toContain('The SDK models exactly 110 concrete public Gateway API operations:')
             ->toContain(
-                '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
+                '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
@@ -386,7 +387,7 @@ describe('repository guidance bootstrap', function (): void {
                 'The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
-                'Doctor accepts the current Gateway family set, including Schedule and Herdr.',
+                'Doctor accepts the current Gateway family set, including Schedule, Herdr, and Database connection.',
                 'The SDK exposes typed list, add, show, restart, remove, and observation-grant requests for managed Herdr sessions.',
                 'Observation grant URLs stay out of generic diagnostics.',
                 "Create and replace requests send the caller's exact JSON document to the Gateway.",

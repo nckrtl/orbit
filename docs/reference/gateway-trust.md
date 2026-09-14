@@ -1,6 +1,6 @@
 # Gateway trust
 
-This page tells an operator how the CLI pins a Gateway root certificate, when it changes the operating-system trust store, and how to recover if the local Gateway profile changes during the command.
+This page tells an operator how the CLI registers, selects, and removes Gateway profiles, and how it pins a Gateway root certificate. It also covers operating-system trust-store changes and recovery when a local profile changes during a trust command.
 
 ## Trust sequence
 
@@ -26,6 +26,23 @@ Operating-system trust and the local profile file are separate stores. The opera
 ## Registration and replacement
 
 `gateway:add` owns profile registration and explicit same-name replacement. It completes certificate verification and operating-system trust before it publishes the supplied profile, and `--use` selects that profile after registration. The existing-profile guard used by `gateway:trust` does not change this replacement behavior.
+
+`gateway:use` selects an existing profile as the active Gateway. It does not change certificate pins or the operating-system trust store.
+
+## Profile removal
+
+`gateway:remove` removes a named Gateway profile from the CLI configuration. The CLI deletes that profile entry and, when the profile records a pinned certificate path and that file exists, deletes the pinned certificate file. The command does not change the operating-system trust store.
+
+The CLI refuses the active profile and leaves the configuration unchanged. With `--force`, the CLI removes the active profile and clears the active selection. An unknown name exits with `gateway.profile_not_found`. An active profile without `--force` exits with `gateway.profile_active`.
+
+Human output names the removed profile. `--json` returns the removed profile name.
+
+The remove options change whether the active profile may be deleted, or the output format.
+
+| Option | Behavior |
+| --- | --- |
+| `--force` | Removes the active profile and clears the active selection. Without this option the CLI refuses the active profile. |
+| `--json` | Emits one structured success or error object. Success includes the removed profile name. |
 
 ## Options
 

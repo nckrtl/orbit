@@ -1,6 +1,6 @@
 # Database connections
 
-This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, add, and remove behave. [ADR 0069](../decisions/0069-allow-node-process-targets.md) owns Node Process targets for shared Docker database servers, and [ADR 0070](../decisions/0070-keep-the-database-role-as-a-docker-baseline.md) owns the `database` role as a Docker baseline; this page owns the connection registry.
+This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, add, remove, and Doctor inspection behave. [ADR 0069](../decisions/0069-allow-node-process-targets.md) owns Node Process targets for shared Docker database servers, and [ADR 0070](../decisions/0070-keep-the-database-role-as-a-docker-baseline.md) owns the `database` role as a Docker baseline; this page owns the connection registry.
 
 A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start, stop, or query a database.
 
@@ -138,3 +138,24 @@ The Gateway exposes add and remove on the AppInstance.
 | `DELETE` | `/api/v1/instances/{instance}/database-connections/{slug}` | Remove the connection and clear the prefixed stored keys |
 
 The `{instance}` selector is a positive AppInstance ID or an exact Route hostname, as [AppInstance environment variables](environment-variables.md) describes. The optional JSON body accepts `prefix`. Omission uses `DB`. Access uses the AppInstance owning Node.
+
+## Inspect attachments with Doctor
+
+Doctor inspects database connections as the explicit `database_connection` family. It compares Gateway registry records and AppInstance attachment mappings with stored AppInstance environment keys. It does not write stored environment, start a database, or change a Node.
+
+| Code | Kind | Meaning |
+| --- | --- | --- |
+| `database_connection.missing` | Drift | An attachment names a registry connection that is not present. |
+| `database_connection.unhealthy` | Drift | A registry connection is missing required fields or names a Node that is gone. |
+| `database_connection.env_mismatch` | Drift | An attachment's stored keys are missing, leftover, or different from the attach projection. |
+| `database_connection.inspection_failed` | Unverifiable | Doctor could not read the registry password or stored environment. |
+
+```bash
+orbit doctor --node=<node-id> --family=database_connection
+```
+
+Responses, activity records, errors, and debug output omit environment values and the password.
+
+## Restore stored environment
+
+Run `orbit database:attach SLUG --instance=SELECTOR` with the same prefix. The Gateway re-projects stored keys from the registry using the same attach rules, including same-node Docker host `127.0.0.1` and the published host port, sqlite path keys, and leftover host or port removal on prefix reuse. Doctor does not write those keys. The workload `.env` stays unchanged until the operator runs `orbit env:sync`.
