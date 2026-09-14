@@ -404,7 +404,6 @@ function orb219_remote_deployment(array $results): array
         'production_home' => '/home/orbit-app-1',
         'root' => 'public',
         'branch' => 'main',
-        'deployment_steps' => [],
         'provisioning_step' => 'active',
         'status' => 'active',
     ]);

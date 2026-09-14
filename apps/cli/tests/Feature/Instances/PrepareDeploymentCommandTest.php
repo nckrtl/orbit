@@ -203,6 +203,7 @@ function prepare_deployment_payload(): array
         'hostname' => 'app.example.test',
         'url' => 'https://app.example.test',
         'removal' => null,
+        'deploy_steps' => [],
     ];
 }
 

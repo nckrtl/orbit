@@ -49,6 +49,7 @@ describe(AppInstanceResponse::class, function (): void {
             'hostname' => null,
             'url' => null,
             'removal' => null,
+            'deploy_steps' => [],
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ]);
     });

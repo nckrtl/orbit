@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\AppInstances\AppInstanceState;
-use App\Models\Casts\DeploymentStepsCast;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,7 +30,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $root
  * @property string|null $branch
  * @property string|null $deployment_branch
- * @property list<array<string, mixed>> $deployment_steps
  * @property string|null $branch_override
  * @property bool $migration_required
  * @property int|null $clone_candidate_id
@@ -74,6 +72,7 @@ use Illuminate\Support\Carbon;
  * @property-read Node $node
  * @property-read Collection<int, RouteTarget> $routeTargets
  * @property-read Collection<int, Route> $routes
+ * @property-read Collection<int, AppInstanceDeployStep> $deploySteps
  * @property-read Collection<int, AppInstanceEnvironmentValue> $environmentValues
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes
@@ -83,10 +82,6 @@ use Illuminate\Support\Carbon;
  */
 final class AppInstance extends Model
 {
-    /** @var list<string> */
-    #[\Override]
-    protected $hidden = ['deployment_steps'];
-
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
@@ -116,7 +111,6 @@ final class AppInstance extends Model
         'root',
         'branch',
         'deployment_branch',
-        'deployment_steps',
         'branch_override',
         'migration_required',
         'clone_candidate_id',
@@ -179,6 +173,12 @@ final class AppInstance extends Model
     public function routes(): BelongsToMany
     {
         return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
+    }
+
+    /** @return HasMany<AppInstanceDeployStep, $this> */
+    public function deploySteps(): HasMany
+    {
+        return $this->hasMany(AppInstanceDeployStep::class);
     }
 
     /** @return HasMany<AppInstanceEnvironmentValue, $this> */
@@ -257,7 +257,6 @@ final class AppInstance extends Model
             'registration_completed_at' => 'immutable_datetime',
             'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
-            'deployment_steps' => DeploymentStepsCast::class,
             'status' => AppInstanceState::class,
         ];
     }

@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Support\Facades\Event;
@@ -53,7 +51,7 @@ it('returns legacy configuration and atomically replaces the complete normalized
         ->deployment_branch->toBe('release/next')
         ->branch->toBe('main')
         ->branch_override->toBe('main')
-        ->and($stored->deployment_steps)->toBe($response->json('data.steps'))
+        ->and(normalized_deploy_steps($stored))->toBe($response->json('data.steps'))
         ->and($stored->toArray())->not->toHaveKey('deployment_steps');
 
     $this
@@ -65,14 +63,18 @@ it('returns legacy configuration and atomically replaces the complete normalized
 });
 
 it('rejects malformed duplicate unknown and wrongly typed input without mutation', function (string $body): void {
-    $before = $this->instance->only(['deployment_branch', 'deployment_steps']);
+    $before = [
+        'deployment_branch' => $this->instance->deployment_branch,
+        'steps' => normalized_deploy_steps($this->instance),
+    ];
     $response = $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->call('PUT', $this->url, server: ['CONTENT_TYPE' => 'application/json'], content: $body);
 
     $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     expect($response->getContent())->not->toContain('secret-command-sentinel')
-        ->and($this->instance->fresh()->only(['deployment_branch', 'deployment_steps']))->toBe($before);
+        ->and($this->instance->fresh()->deployment_branch)->toBe($before['deployment_branch'])
+        ->and(normalized_deploy_steps($this->instance->fresh()))->toBe($before['steps']);
 })->with([
     'malformed' => '{"branch":"main","steps":',
     'not object' => '[]',
@@ -185,7 +187,7 @@ it('keeps commands out of Activity and generic diagnostics', function (): void {
             ->and(json_encode(Activity::query()->latest('id')->firstOrFail()->properties?->toArray()))
             ->not->toContain($sentinel)
             ->and($this->instance->fresh()->deployment_branch)->toBe('main')
-            ->and($this->instance->fresh()->deployment_steps)->toBe([
+            ->and(normalized_deploy_steps($this->instance->fresh()))->toBe([
                 [
                     'name' => 'secret-step',
                     'phase' => 'before_activation',
@@ -197,46 +199,3 @@ it('keeps commands out of Activity and generic diagnostics', function (): void {
         Event::forget('eloquent.updating: '.AppInstance::class);
     }
 });
-
-/** @return array{Node, Node, OrbitApp, AppInstance} */
-function deployment_api_fixture(): array
-{
-    $caller = Node::query()->create([
-        'name' => 'deployment-gateway-peer',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.140',
-        'wireguard_ip' => '10.44.0.140',
-        'user' => 'orbit',
-    ]);
-    $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    $owner = Node::query()->create([
-        'name' => 'deployment-owner',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.141',
-        'wireguard_ip' => '10.44.0.141',
-        'user' => 'orbit',
-    ]);
-    $app = OrbitApp::query()->create([
-        'name' => 'Deployment API',
-        'slug' => 'deployment-api',
-        'repository_url' => 'https://example.test/deployment-api.git',
-        'default_branch' => 'main',
-        'root' => 'public',
-    ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $owner->id,
-        'name' => 'production',
-        'environment' => 'production',
-        'checkout_path' => '/home/deployment-api/releases/initial',
-        'production_user' => 'deployment-api',
-        'production_home' => '/home/deployment-api',
-        'branch' => 'main',
-        'branch_override' => 'main',
-        'status' => 'source_resolved',
-    ]);
-
-    return [$caller, $owner, $app, $instance->fresh()];
-}

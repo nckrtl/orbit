@@ -272,7 +272,7 @@ describe('instance:clone help and execution boundary', function (): void {
                 'Clean application state on the target only',
                 'node:add --tld',
                 'env:update and env:sync',
-                'instance:deployment-config and instance:deploy',
+                'instance:deploy-step:create and deploy with instance:deploy',
             )
             ->and($commands['node:add']->getDefinition()->getOption('tld')->getDescription())
             ->toContain('required for production clone preview hostnames');
@@ -342,6 +342,7 @@ function clone_cli_payload(): array
         'hostname' => 'shop.com.prod.orbit',
         'url' => 'https://shop.com.prod.orbit',
         'removal' => null,
+        'deploy_steps' => [],
     ];
 }
 

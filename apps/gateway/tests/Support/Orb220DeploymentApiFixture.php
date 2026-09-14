@@ -76,24 +76,24 @@ final readonly class Orb220DeploymentApiFixture
             'root' => 'public',
             'branch' => 'main',
             'branch_override' => 'main',
-            'deployment_steps' => $steps ?? [
-                [
-                    'name' => 'prepare',
-                    'phase' => 'before_activation',
-                    'command' => 'prepare-command',
-                    'timeout_seconds' => 30,
-                ],
-                [
-                    'name' => 'finish',
-                    'phase' => 'after_activation',
-                    'command' => 'finish-command',
-                    'timeout_seconds' => 30,
-                ],
-            ],
             'selected_php_version' => '8.5',
             'source_is_laravel' => true,
             'provisioning_step' => 'active',
             'status' => 'active',
+        ]);
+        store_deploy_steps($instance, $steps ?? [
+            [
+                'name' => 'prepare',
+                'phase' => 'before_activation',
+                'command' => 'prepare-command',
+                'timeout_seconds' => 30,
+            ],
+            [
+                'name' => 'finish',
+                'phase' => 'after_activation',
+                'command' => 'finish-command',
+                'timeout_seconds' => 30,
+            ],
         ]);
         $deployment = new Orb220ProductionDeployment;
         $connection = new Orb220StreamConnection;

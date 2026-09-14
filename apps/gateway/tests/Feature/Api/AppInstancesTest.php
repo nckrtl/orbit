@@ -3133,6 +3133,30 @@ it('rejects the removed compatibility key', function (): void {
     expect(AppInstance::query()->sole()->status)->toBe(AppInstanceState::Active);
 });
 
+it('updates the production deployment branch without changing deploy steps', function (): void {
+    [$caller, , , $instance] = deployment_api_fixture();
+    store_deploy_steps($instance, [
+        ['name' => 'migrate', 'phase' => 'before_activation', 'command' => 'migrate', 'timeout_seconds' => 30],
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->patchJson("/api/v1/instances/{$instance->id}", ['branch' => 'release/next'])
+        ->assertOk()
+        ->assertJsonPath('data.deploy_steps.0.name', 'migrate');
+
+    expect($instance->fresh()->deployment_branch)->toBe('release/next')
+        ->and(normalized_deploy_steps($instance->fresh()))->toHaveCount(1);
+
+    $instance->update(['environment' => 'development']);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->patchJson("/api/v1/instances/{$instance->id}", ['branch' => 'other'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'deployment_config.unavailable');
+});
+
 /**
  * @return array{AppInstance, AppInstance, AppInstance, list<string>}
  */

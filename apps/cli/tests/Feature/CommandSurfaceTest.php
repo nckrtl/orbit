@@ -65,6 +65,10 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:database:add',
         'instance:database:remove',
         'instance:deploy',
+        'instance:deploy-step:create',
+        'instance:deploy-step:destroy',
+        'instance:deploy-step:list',
+        'instance:deploy-step:update',
         'instance:deployment-config',
         'instance:destroy',
         'instance:list',
@@ -73,6 +77,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:release:list',
         'instance:rollback',
         'instance:show',
+        'instance:update',
         'metrics:credentials',
         'metrics:disable',
         'metrics:enable',
@@ -154,7 +159,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(107);
+    expect($orbitCommands)->toHaveCount(112);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -374,6 +379,30 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
         ],
         'instance:deploy' => [['instance'], ['json' => false]],
+        'instance:deploy-step:create' => [
+            ['instance', 'name'],
+            [
+                'command' => null,
+                'phase' => 'before_activation',
+                'timeout' => null,
+                'before' => null,
+                'after' => null,
+                'json' => false,
+            ],
+        ],
+        'instance:deploy-step:destroy' => [['instance', 'name'], ['json' => false]],
+        'instance:deploy-step:list' => [['instance'], ['json' => false]],
+        'instance:deploy-step:update' => [
+            ['instance', 'name'],
+            [
+                'command' => null,
+                'phase' => null,
+                'timeout' => null,
+                'before' => null,
+                'after' => null,
+                'json' => false,
+            ],
+        ],
         'instance:deployment-config' => [['instance'], ['file' => null, 'json' => false]],
         'instance:destroy' => [['instance'], ['force' => false, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
@@ -399,6 +428,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:release:list' => [['instance'], ['json' => false]],
         'instance:rollback' => [['instance'], ['release' => null, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
+        'instance:update' => [['instance'], ['branch' => null, 'json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],
         'metrics:enable' => [['node'], ['json' => false]],
@@ -721,6 +751,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--force' => true,
         ], ...$profileMissing],
         'instance:deploy' => [['instance' => '1'], ...$profileMissing],
+        'instance:deploy-step:create' => [['instance' => '1', 'name' => 'migrate', '--command' => 'true'], ...$profileMissing],
+        'instance:deploy-step:destroy' => [['instance' => '1', 'name' => 'migrate'], ...$profileMissing],
+        'instance:deploy-step:list' => [['instance' => '1'], ...$profileMissing],
+        'instance:deploy-step:update' => [['instance' => '1', 'name' => 'migrate', '--command' => 'true'], ...$profileMissing],
         'instance:deployment-config' => [['instance' => '1'], ...$profileMissing],
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
@@ -733,6 +767,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:release:list' => [['instance' => '1'], ...$profileMissing],
         'instance:rollback' => [['instance' => '1', '--release' => 'release-a'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
+        'instance:update' => [['instance' => '1', '--branch' => 'main'], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],
         'metrics:disable' => [['--force' => true], ...$profileMissing],
         'metrics:enable' => [['node' => '1'], ...$profileMissing],

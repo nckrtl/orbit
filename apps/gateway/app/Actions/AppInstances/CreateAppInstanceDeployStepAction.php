@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\AppInstances;
 
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
-use App\Domain\AppInstances\Deployment\DeploymentConfig;
+use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Models\AppInstance;
-use Illuminate\Support\Facades\DB;
 
-final readonly class UpdateAppInstanceDeploymentConfigAction
+final readonly class CreateAppInstanceDeployStepAction
 {
     public function __construct(
         private AppInstanceDeploymentConfigResolver $resolver,
@@ -20,16 +19,15 @@ final readonly class UpdateAppInstanceDeploymentConfigAction
 
     public function execute(
         AppInstance $instance,
-        #[\SensitiveParameter]
-        DeploymentConfig $config,
-    ): DeploymentConfig {
-        return $this->operations->run([$instance->id], fn (): DeploymentConfig => DB::transaction(function () use ($instance, $config): DeploymentConfig {
+        DeploymentStep $step,
+        ?string $before,
+        ?string $after,
+    ): DeploymentStep {
+        return $this->operations->run([$instance->id], function () use ($instance, $step, $before, $after): DeploymentStep {
             $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
-            $locked->update(['deployment_branch' => $config->branch]);
-            $this->steps->replaceAll($locked, $config->steps);
 
-            return $this->resolver->resolve($locked->refresh());
-        }));
+            return $this->steps->create($locked, $step, $before, $after);
+        });
     }
 }

@@ -9,6 +9,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 
 final class ShowInstanceCommand extends GatewayCommand
 {
@@ -62,6 +63,15 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line('Starting commit: '.($instance->startingCommit ?? '-'));
         $this->line('Route hostname: '.($instance->hostname ?? '-'));
         $this->line('URL: '.($instance->url ?? '-'));
+        $this->line('Deploy steps:');
+
+        if ($instance->deploySteps === []) {
+            $this->line('- none');
+        }
+
+        foreach ($instance->deploySteps as $step) {
+            $this->renderDeployStep($step);
+        }
 
         if ($instance->removal !== null) {
             $this->line('Removal mode: '.($instance->removal->force ? 'forced' : 'normal'));
@@ -77,5 +87,13 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line("Request ID: {$instance->requestId}");
 
         return self::SUCCESS;
+    }
+
+    private function renderDeployStep(DeploymentStepResponse $step): void
+    {
+        $this->line('- Name: '.$step->name);
+        $this->line('  Phase: '.$step->phase);
+        $this->line("  Timeout: {$step->timeoutSeconds} seconds");
+        $this->line('  Command: '.$step->command);
     }
 }

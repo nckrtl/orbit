@@ -495,6 +495,17 @@ final readonly class RecordCommandActivity
             return [];
         }
 
+        if (
+            in_array($command, [
+                'instance:deploy-step:create',
+                'instance:deploy-step:update',
+                'instance:deploy-step:destroy',
+                'instance:update',
+            ], true)
+        ) {
+            return [];
+        }
+
         if ($command === 'instance:deploy') {
             return [];
         }

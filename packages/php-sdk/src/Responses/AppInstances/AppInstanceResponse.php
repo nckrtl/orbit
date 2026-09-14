@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\AppInstances;
 
+use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
@@ -31,6 +32,8 @@ final readonly class AppInstanceResponse
         public ?string $hostname,
         public ?string $url,
         public ?AppInstanceRemovalProgressResponse $removal,
+        /** @var list<DeploymentStepResponse> */
+        public array $deploySteps,
         public string $requestId,
     ) {}
 
@@ -63,11 +66,12 @@ final readonly class AppInstanceResponse
             hostname: is_string($data['hostname'] ?? null) ? $data['hostname'] : null,
             url: is_string($data['url'] ?? null) ? $data['url'] : null,
             removal: self::removal($data['removal'] ?? null),
+            deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
             requestId: $requestId,
         );
     }
 
-    /** @return array<string, bool|int|string|null|array<string, mixed>> */
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         return [
@@ -92,6 +96,10 @@ final readonly class AppInstanceResponse
             'hostname' => $this->hostname,
             'url' => $this->url,
             'removal' => $this->removal?->toArray(),
+            'deploy_steps' => array_map(
+                static fn (DeploymentStepResponse $step): array => $step->toArray(),
+                $this->deploySteps,
+            ),
             'request_id' => $this->requestId,
         ];
     }
@@ -113,6 +121,37 @@ final readonly class AppInstanceResponse
         }
 
         return RouteResponse::fromGatewayData($route, $requestId);
+    }
+
+    /** @return list<DeploymentStepResponse> */
+    private static function parseDeploySteps(#[SensitiveParameter] mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return [];
+        }
+
+        $steps = [];
+
+        foreach ($value as $step) {
+            if (
+                ! is_array($step)
+                || ! is_string($step['name'] ?? null)
+                || ! is_string($step['phase'] ?? null)
+                || ! is_string($step['command'] ?? null)
+                || ! is_int($step['timeout_seconds'] ?? null)
+            ) {
+                continue;
+            }
+
+            $steps[] = new DeploymentStepResponse(
+                $step['name'],
+                $step['phase'],
+                $step['command'],
+                $step['timeout_seconds'],
+            );
+        }
+
+        return $steps;
     }
 
     private static function removal(#[SensitiveParameter] mixed $value): ?AppInstanceRemovalProgressResponse

@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
 use App\Models\AppInstanceDeploymentLayout;
+use App\Models\AppInstanceDeployStep;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
@@ -63,6 +64,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         NodeAccess::class,
         Activity::class,
         AppInstanceDeploymentLayout::class,
+        AppInstanceDeployStep::class,
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         HerdrObservationNonce::class,

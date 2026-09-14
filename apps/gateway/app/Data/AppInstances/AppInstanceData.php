@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\AppInstances;
 
 use App\Data\Routes\RouteData;
+use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Route;
@@ -37,11 +38,13 @@ final class AppInstanceData extends Data
         public ?string $hostname,
         public ?string $url,
         public ?AppInstanceRemovalData $removal,
+        /** @var list<DeploymentStepData> */
+        public array $deploySteps = [],
     ) {}
 
     public static function fromModel(AppInstance $appInstance): self
     {
-        $appInstance->loadMissing(['app', 'routes.targets']);
+        $appInstance->loadMissing(['app', 'routes.targets', 'deploySteps']);
         $route = $appInstance->routes->first();
         $removal = AppInstanceRemoval::query()
             ->with('members')
@@ -75,6 +78,10 @@ final class AppInstanceData extends Data
             removal: $removal instanceof AppInstanceRemoval
                 ? AppInstanceRemovalData::fromModel($removal)
                 : null,
+            deploySteps: array_map(
+                DeploymentStepData::fromDomain(...),
+                app(AppInstanceDeployStepStore::class)->ordered($appInstance),
+            ),
         );
     }
 }

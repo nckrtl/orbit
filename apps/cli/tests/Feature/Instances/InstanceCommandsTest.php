@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
@@ -580,6 +581,23 @@ describe('instance:list', function (): void {
     });
 });
 
+describe('instance:update', function (): void {
+    it('updates the deployment branch without sending steps', function (): void {
+        $mock = MockClient::global([
+            UpdateAppInstanceRequest::class => instance_mock_response(),
+        ]);
+
+        $this
+            ->artisan('instance:update', ['instance' => '5', '--branch' => 'release/next', '--json' => true])
+            ->expectsOutput(instance_json())
+            ->assertExitCode(0);
+
+        expect($mock->getLastRequest())
+            ->toBeInstanceOf(UpdateAppInstanceRequest::class)
+            ->and($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release/next']);
+    });
+});
+
 describe('instance:show', function (): void {
     it('shows an AppInstance as JSON', function (): void {
         MockClient::global([ShowAppInstanceRequest::class => instance_mock_response()]);
@@ -608,6 +626,27 @@ describe('instance:show', function (): void {
             ->expectsOutput('Starting commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
             ->expectsOutput('Route hostname: dev.orbit.test')
             ->expectsOutput('URL: https://dev.orbit.test')
+            ->expectsOutput('Deploy steps:')
+            ->expectsOutput('- none')
+            ->assertExitCode(0);
+    });
+
+    it('prints deploy steps in phase and placement order', function (): void {
+        $payload = instance_payload();
+        $payload['deploy_steps'] = [[
+            'name' => 'migrate',
+            'phase' => 'before_activation',
+            'command' => 'php artisan migrate --force',
+            'timeout_seconds' => 300,
+        ]];
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
+
+        $this
+            ->artisan('instance:show', ['instance' => '5'])
+            ->expectsOutput('Deploy steps:')
+            ->expectsOutput('- Name: migrate')
+            ->expectsOutput('  Phase: before_activation')
+            ->expectsOutput('  Timeout: 300 seconds')
             ->assertExitCode(0);
     });
 
@@ -724,6 +763,7 @@ it('rejects invalid Instance IDs before making an API request', function (string
 })->with([
     'show zero' => ['instance:show', '0'],
     'destroy negative' => ['instance:destroy', '-1'],
+    'update zero' => ['instance:update', '0'],
 ]);
 
 it('does not register replaced instance lifecycle names', function (): void {
@@ -773,6 +813,7 @@ function instance_payload(?array $removal = null): array
         'hostname' => 'dev.orbit.test',
         'url' => 'https://dev.orbit.test',
         'removal' => $removal,
+        'deploy_steps' => [],
     ];
 }
 
