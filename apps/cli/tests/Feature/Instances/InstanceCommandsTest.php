@@ -253,7 +253,13 @@ describe('instance:register', function (): void {
             '--json' => true,
             '--no-interaction' => true,
         ], ['interactive' => false]))->toBe(1);
-        expect(trim($tester->getDisplay()))->toContain('The "--hostname" option does not exist.');
+        expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.invalid',
+                'message' => 'The "--hostname" option does not exist.',
+                'request_id' => null,
+            ],
+        ]);
         expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 });
@@ -416,7 +422,13 @@ describe('instance:create', function (): void {
             '--hostname' => 'Odd_Value',
             '--json' => true,
         ], ['interactive' => false]))->toBe(1);
-        expect(trim($tester->getDisplay()))->toContain('The "--hostname" option does not exist.');
+        expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.invalid',
+                'message' => 'The "--hostname" option does not exist.',
+                'request_id' => null,
+            ],
+        ]);
         expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 

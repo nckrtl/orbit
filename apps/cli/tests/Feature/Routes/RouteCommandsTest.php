@@ -274,7 +274,13 @@ it('rejects the removed hostname argument and option', function (string $command
     $tester = new CommandTester(app(Kernel::class)->all()[$command]);
 
     expect($tester->execute($arguments, ['interactive' => false]))->toBe(1);
-    expect(trim($tester->getDisplay()))->toContain($message);
+    expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => 'input.invalid',
+            'message' => $message,
+            'request_id' => null,
+        ],
+    ]);
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
     'create hostname argument' => [
