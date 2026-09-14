@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
-use App\Http\Controllers\Api\AppInstanceDeploymentConfigsController;
-use App\Http\Controllers\Api\AppInstanceDeploymentLayoutsController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
 use App\Http\Controllers\Api\AppInstanceDeployStepsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
@@ -187,14 +185,6 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:destroy');
         Route::get(
-            'instances/{instance}/deployment-config',
-            [AppInstanceDeploymentConfigsController::class, 'show'],
-        )->name('instance:deployment-config:show');
-        Route::put(
-            'instances/{instance}/deployment-config',
-            [AppInstanceDeploymentConfigsController::class, 'update'],
-        )->name('instance:deployment-config:update');
-        Route::get(
             'instances/{instance}/deploy-steps',
             [AppInstanceDeployStepsController::class, 'index'],
         )->name('instance:deploy-step:list');
@@ -210,10 +200,6 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/deploy-steps/{step}',
             [AppInstanceDeployStepsController::class, 'destroy'],
         )->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')->name('instance:deploy-step:destroy');
-        Route::post(
-            'instances/{instance}/deployment-layout',
-            [AppInstanceDeploymentLayoutsController::class, 'store'],
-        )->name('instance:deployment-layout:prepare');
         Route::post(
             'instances/{instance}/deploy',
             [AppInstanceDeploymentsController::class, 'store'],

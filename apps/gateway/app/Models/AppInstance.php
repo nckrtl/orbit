@@ -78,7 +78,6 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppInstanceRemovalMember|null $removalMember
- * @property-read AppInstanceDeploymentLayout|null $deploymentLayout
  */
 final class AppInstance extends Model
 {
@@ -209,12 +208,6 @@ final class AppInstance extends Model
     public function removalMember(): HasOne
     {
         return $this->hasOne(AppInstanceRemovalMember::class)->whereNull('row_deleted_at');
-    }
-
-    /** @return HasOne<AppInstanceDeploymentLayout, $this> */
-    public function deploymentLayout(): HasOne
-    {
-        return $this->hasOne(AppInstanceDeploymentLayout::class);
     }
 
     public function effectiveRoot(): ?string

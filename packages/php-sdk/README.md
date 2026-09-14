@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 111 public Gateway operations. It preserves typed
+The SDK exposes exactly 108 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -42,8 +42,7 @@ assert($response instanceof ToolResponse);
 
 ## AppInstance deployment and environment
 
-The SDK exposes typed deployment-layout preparation for one AppInstance and an
-optional explicit SQLite source path. The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations. Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed. Configuration commands and application output stay out of generic diagnostics.
+The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations. Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed. Configuration commands and application output stay out of generic diagnostics.
 
 The SDK exposes typed import, update, and synchronization requests for
 AppInstance environment configuration. Import preserves omission and explicit

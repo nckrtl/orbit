@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\DeploymentLayout\ProductionPhpRuntimeAdopter;
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
@@ -15,7 +14,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use Illuminate\Support\Collection;
 
-final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpRuntimeAdopter, ProductionPhpRuntimeManager
+final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpRuntimeManager
 {
     public function __construct(
         private ProductionPhpRuntimeConfigRenderer $renderer,
@@ -29,11 +28,6 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
     public function converge(AppInstance $appInstance): void
     {
         $this->convergeWithTuning($appInstance, null);
-    }
-
-    public function adopt(AppInstance $appInstance, string $initialLocalTuning): void
-    {
-        $this->convergeWithTuning($appInstance, $initialLocalTuning);
     }
 
     private function convergeWithTuning(AppInstance $appInstance, ?string $initialLocalTuning): void

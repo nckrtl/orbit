@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\UpdateAppInstanceDeploymentConfigAction;
+use App\Actions\AppInstances\CreateAppInstanceDeployStepAction;
+use App\Actions\AppInstances\UpdateAppInstanceAction;
 use App\Domain\AppInstances\Deployment\DeploymentConfig;
 use App\Domain\AppInstances\Deployment\DeploymentPhase;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
@@ -155,17 +156,27 @@ it('updates only stored deployment intent without changing source evidence or cu
     file_put_contents($sandbox.'/current', 'unchanged');
 
     try {
-        $config = new DeploymentConfig('release/next', [
+        app(UpdateAppInstanceAction::class)->execute($first, 'release/next');
+        app(CreateAppInstanceDeployStepAction::class)->execute(
+            $first->fresh(),
             new DeploymentStep('migrate', DeploymentPhase::BeforeActivation, 'php artisan migrate'),
-        ]);
-
-        app(UpdateAppInstanceDeploymentConfigAction::class)->execute($first, $config);
+            null,
+            null,
+        );
         $app->update(['default_branch' => 'future-default']);
 
         expect($first->fresh())
             ->deployment_branch->toBe('release/next')
             ->branch->toBe('main')
             ->branch_override->toBe('main')
+            ->and(normalized_deploy_steps($first->fresh()))->toBe([
+                [
+                    'name' => 'migrate',
+                    'phase' => 'before_activation',
+                    'command' => 'php artisan migrate',
+                    'timeout_seconds' => 300,
+                ],
+            ])
             ->and($second->fresh())
             ->deployment_branch->toBe('stable')
             ->branch->toBe('stable')

@@ -106,10 +106,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:deploy-step:destroy',
         'instance:deploy-step:list',
         'instance:deploy-step:update',
-        'instance:deployment-config',
         'instance:destroy',
         'instance:list',
-        'instance:prepare-deployment',
         'instance:register',
         'instance:release:list',
         'instance:rollback',
@@ -257,7 +255,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(108);
+    expect($orbitCommands)->toHaveCount(106);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -357,6 +355,8 @@ it('does not expose replaced instance lifecycle names', function (): void {
         'instance:remove',
         'instance:releases',
         'instance:php',
+        'instance:deployment-config',
+        'instance:prepare-deployment',
     ]);
 });
 
@@ -369,6 +369,21 @@ it('does not expose retired Workspace command names', function (): void {
         'workspace:show',
     ]);
 });
+
+it('rejects retired deployment document and layout commands as unknown', function (string $command): void {
+    $output = new BufferedOutput;
+    $status = app(Kernel::class)->handle(new StringInput($command), $output);
+
+    expect(collect(app(Kernel::class)->all())->keys()->all())
+        ->not->toContain($command)
+        ->and($status)
+        ->toBe(Command::FAILURE)
+        ->and(trim($output->fetch()))
+        ->toContain(sprintf('Command "%s" is not defined.', $command));
+})->with([
+    'instance:deployment-config',
+    'instance:prepare-deployment',
+]);
 
 it('does not expose replaced definition command names', function (): void {
     expect(app(Kernel::class)->all())->not->toHaveKeys([
@@ -581,13 +596,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'instance:deployment-config' => [['instance'], ['file' => null, 'json' => false]],
         'instance:destroy' => [['instance'], ['force' => false, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
-        'instance:prepare-deployment' => [
-            ['instance'],
-            ['sqlite-source-path' => null, 'json' => false],
-        ],
         'instance:register' => [
             [],
             [
@@ -925,10 +935,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:deploy-step:destroy' => [['instance' => '1', 'name' => 'migrate'], ...$profileMissing],
         'instance:deploy-step:list' => [['instance' => '1'], ...$profileMissing],
         'instance:deploy-step:update' => [['instance' => '1', 'name' => 'migrate', '--command' => 'true'], ...$profileMissing],
-        'instance:deployment-config' => [['instance' => '1'], ...$profileMissing],
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
-        'instance:prepare-deployment' => [['instance' => '1'], ...$profileMissing],
         'instance:register' => [
             ['--app' => '1', '--no-interaction' => true, '--path' => '/tmp/orbit-command-surface-not-git'],
             'code' => 'instance.source_invalid',

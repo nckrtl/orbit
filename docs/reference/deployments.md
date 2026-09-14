@@ -1,6 +1,6 @@
 # Production release layout
 
-This page tells an operator how a production App instance stores named deploy steps and changes its deployment branch. It describes how that App instance separates replaceable code from persistent environment configuration and optional SQLite data. It covers deployment of the recorded branch, rollback of retained code, and conversion of an existing flat production home. [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) owns the production release and serving-layout boundary. [ADR 0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) owns deploy-step records and the branch update.
+This page tells an operator how a production App instance stores named deploy steps and changes its deployment branch. It describes how that App instance separates replaceable code from persistent environment configuration and optional SQLite data. It covers deployment of the recorded branch and rollback of retained code. Cloning produces each production App instance, and the first deployment produces the release layout. [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) owns the production release and serving-layout boundary. [ADR 0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) owns deploy-step records and the branch update.
 
 ## Read the production home
 
@@ -30,7 +30,7 @@ Each record uses these fields.
 | `command` | string | Nonempty UTF-8 command of at most 16 KiB with no NUL byte. The operating agent owns this command. |
 | `timeout_seconds` | integer | Timeout from 1 through 900 seconds. Create defaults to 300 seconds. |
 
-The Gateway places an unplaced step at the end of its phase. Placement names one existing step in the same phase with `before` or `after`. The two placement fields are exclusive. A production App instance may own at most 32 steps. The sum of timeouts, including defaulted values, cannot exceed 3,600 seconds. The Gateway enforces those limits on every create, update, destroy, and document replacement.
+The Gateway places an unplaced step at the end of its phase. Placement names one existing step in the same phase with `before` or `after`. The two placement fields are exclusive. A production App instance may own at most 32 steps. The sum of timeouts, including defaulted values, cannot exceed 3,600 seconds. The Gateway enforces those limits on every create, update, and destroy.
 
 The Gateway refuses a duplicate name, a placement that names an unknown step or a step in another phase, a thirty-third step, a timeout over 900 seconds, or a total over 3,600 seconds, and it stores no change. The Gateway uses the App instance's current Node-access authorization for every deploy-step request and refuses a non-production App instance. Authorized reads return commands, but the Gateway keeps command text out of Activity records, validation errors, and generic diagnostics.
 
@@ -53,17 +53,6 @@ The Gateway stores the deployment branch on the production App instance. The Gat
 
 The Gateway refuses a development App instance with a bounded conflict before it stores a branch. The same Node-access authorization as deploy-step mutations applies.
 
-## Replace the complete configuration
-
-The Gateway also serves one document that reads and atomically replaces the same branch and step records. The Gateway does not start a deployment when it reads or replaces this document.
-
-| Request | Result |
-| --- | --- |
-| `GET /api/v1/instances/{instance}/deployment-config` | Returns the recorded `branch` and the step records as ordered `steps`. An existing production App instance with no stored steps returns an empty array and keeps its recorded branch. |
-| `PUT /api/v1/instances/{instance}/deployment-config` | Atomically replaces the branch and the complete step set from the document. The request does not fetch source, run a command, or change `current`. |
-
-The document uses the same field contracts as the deploy-step records and the branch update. A document write is visible to `instance:deploy-step:list`. A step write is visible to this document. The Gateway rejects malformed JSON, duplicate or unknown members, duplicate step names, wrong types, and values outside the step-count and timeout limits before it changes either field.
-
 ## Use the deployment API
 
 An authorized client starts a deployment or code rollback synchronously and can inspect the retained releases before or after an interrupted request.
@@ -76,7 +65,7 @@ An authorized client starts a deployment or code rollback synchronously and can 
 
 ## Use the PHP SDK
 
-The PHP software development kit (SDK) exposes typed create, list, update, and destroy operations for deploy steps on these same routes. It also exposes an App instance update for the branch, document read and replace, deploy, rollback, and retained-release list. Deploy-step, branch, document, and retained-release operations keep the ordinary JSON request, envelope, error, and response transport. A step create or document replacement omits `timeout_seconds` when the caller does not supply it. A deployment sends an empty JSON object. A rollback sends only `release`. List and show reads remain bodyless.
+The PHP software development kit (SDK) exposes typed create, list, update, and destroy operations for deploy steps on these same routes. It also exposes an App instance update for the branch, deploy, rollback, and retained-release list. Deploy-step, branch, and retained-release operations keep the ordinary JSON request, envelope, error, and response transport. A step create omits `timeout_seconds` when the caller does not supply it. A deployment sends an empty JSON object. A rollback sends only `release`. List and show reads remain bodyless.
 
 Deploy and rollback return a closeable stream of typed phase, output, and result events. The SDK reads newline-delimited JSON (NDJSON) as the caller advances the stream and handles lines split across arbitrary HTTP chunks. Before it yields an event, it validates the event fields, encoded and decoded limits, continuous sequence, matching request identity, and base64 output encoding. It reports success only when one successful result is the final event, and it rejects malformed or truncated streams without reporting success.
 
@@ -104,27 +93,9 @@ The CLI sends each deployment operation through the typed PHP SDK. It does not r
 | `orbit instance:deploy-step:destroy INSTANCE NAME` | Removes the named step. Add `--json` to return the destroyed step and its `request_id`. |
 | `orbit instance:update INSTANCE --branch=BRANCH` | Changes the deployment branch without changing steps. Add `--json` to return the App instance and its `request_id`. |
 | `orbit instance:show INSTANCE` | Shows the App instance and prints its deploy steps in phase and placement order. Add `--json` to include those steps in the App instance object. |
-| `orbit instance:deployment-config INSTANCE` | Shows the recorded branch and ordered steps from the same records. Add `--json` to return the same configuration and its `request_id` as one JSON object. |
-| `orbit instance:deployment-config INSTANCE --file=PATH` | Reads one complete JSON configuration from `PATH` and replaces the stored branch and steps. Add `--json` to return the stored configuration and its `request_id` as one JSON object. |
 | `orbit instance:deploy INSTANCE` | Starts an explicit deployment and renders phase, output, and result events as they arrive. Add `--json` to write those same events as newline-delimited JSON (NDJSON), including a failed `result`. |
 | `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. Add `--json` to write those same events as NDJSON, including a failed `result`. |
 | `orbit instance:release:list INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
-
-The deployment configuration file uses the same `branch` and `steps` fields as the document API. It replaces the complete record set, not one step.
-
-```json
-{
-    "branch": "main",
-    "steps": [
-        {
-            "name": "migrate",
-            "phase": "before_activation",
-            "command": "php artisan migrate --force",
-            "timeout_seconds": 300
-        }
-    ]
-}
-```
 
 Human deploy and rollback output names each phase and named step. It labels standard output and standard error separately and escapes control bytes so application output cannot become terminal control input. Output appears while the step is still running. The final output includes the request ID and the selected release when the Gateway reports one.
 
@@ -140,7 +111,7 @@ The CLI uses the shared safe JSON error envelope as one line, and preserves the 
 | The Gateway or CLI refuses the command before the stream opens | One object with `error.code`, `error.message`, and `error.request_id`. |
 | The stream is malformed, truncated, or ends without a result | The validated events already written, then one error-envelope line. |
 
-`instance:deploy-step:create`, `instance:deploy-step:list`, `instance:deploy-step:update`, `instance:deploy-step:destroy`, `instance:update`, `instance:show`, `instance:deployment-config`, `instance:release:list`, and `instance:prepare-deployment` write one JSON object and use that error envelope on failure.
+`instance:deploy-step:create`, `instance:deploy-step:list`, `instance:deploy-step:update`, `instance:deploy-step:destroy`, `instance:update`, `instance:show`, and `instance:release:list` write one JSON object and use that error envelope on failure.
 
 The command exit status identifies whether the streamed operation completed successfully.
 
@@ -196,41 +167,11 @@ Code rollback does not fetch Git, synchronize environment values, run deployment
 
 ## Exclude competing mutations
 
-Deployment and code rollback share one operation owner for the same production App instance. That owner also covers deploy-step create, update, and destroy, the branch update, and the configuration document replacement. It further covers deployment-layout conversion, App instance removal, environment import, stored environment updates, environment synchronization, and Route hostname changes. A competing request waits within the bounded operation deadline or receives a busy refusal before it can mutate that instance. An interrupted deployment releases the owner only after it has stopped its active application command.
+Deployment and code rollback share one operation owner for the same production App instance. That owner also covers deploy-step create, update, and destroy, and the branch update. It further covers App instance removal, environment import, stored environment updates, environment synchronization, and Route hostname changes. A competing request waits within the bounded operation deadline or receives a busy refusal before it can mutate that instance. An interrupted deployment releases the owner only after it has stopped its active application command.
 
-## Convert an existing production home
+## Produce the release layout
 
-Use explicit conversion for an existing production App instance that still serves code directly from its production home:
-
-```text
-orbit instance:prepare-deployment <instance-id>
-```
-
-The command sends `POST /api/v1/instances/{instance}/deployment-layout` through the Gateway. Use `--sqlite-source-path=PATH` only when one existing SQLite database must move to the persistent `database.sqlite` destination. The path is an explicit source selection; Orbit does not infer a database from application configuration.
-
-The Gateway completes every preflight check before it moves a file, publishes a runtime, or changes serving state.
-
-| Boundary | Required state |
-| --- | --- |
-| App instance | The record identifies one active production placement with complete source and runtime identity. |
-| Source | The production home has a safe owned Git checkout that can move intact into one retained release. |
-| Environment | The local `.env` has already been imported into Gateway-owned configuration, and its parsed values agree with the stored values. See [App instance environment variables](/reference/environment-variables#import-an-environment-file). |
-| Destinations | `releases/`, `current`, `.env`, the optional `database.sqlite`, and conversion-owned temporary paths have no unsafe type, ownership, link, or content conflict. |
-| PHP runtime | Existing local pool tuning can be represented in the dedicated runtime's `local.conf`, and the effective dedicated identity remains the recorded user, home, version, pool, service, socket, and document root. |
-| Serving | The recorded Route, Caddy projection, PHP socket, and source path still identify this App instance. |
-| SQLite | The selected file is safe, no owned application Process is active, no process has the file open, and no SQLite sidecar remains beside the source or destination. |
-
-Every entry below the production home must belong to the production user and group. The document root must contain no symbolic link. For example, a Laravel operator must remove or relocate `public/storage` before conversion. A selected SQLite source must be outside the document root; move it outside the served tree and update the application configuration before conversion.
-
-Conversion moves the existing checkout into one retained release and selects that same content through `current`. It does not fetch, reset, clean, or check out Git. It preserves tracked and ignored files, executable modes, and repository state. It keeps `.env` at the production-home path and links the retained release to it. When SQLite is selected, it moves those exact database bytes to `database.sqlite`; it does not change the schema or rewrite a stored environment value.
-
-For PHP, conversion carries supported local pool tuning into the dedicated runtime's `local.conf`, validates the complete effective identity, and switches only this App instance's Caddy upstream to its dedicated socket. It does not restart, reload, or reset another production user's shared or dedicated PHP service.
-
-The Gateway records each conversion boundary before it continues. A retry resumes file movement, persistent-state placement, runtime publication, or Route projection from the recorded state. It rechecks the retained content and serving association before each effect and reports completion only when `current`, the dedicated runtime, and the Route projection agree.
-
-An unsupported tuning directive, unsafe destination, changed retained file, or changed serving association stops conversion with a bounded conflict. A refusal before the first recorded effect leaves the old workload unchanged. Repeating a completed request only validates and returns the completed layout; it does not replace the retained release or discard later local edits. The Gateway answers `deployment_layout.not_convertible` when the App instance already uses the release layout without a completed conversion, such as a clone target or a newly provisioned production App instance. It gives that answer before it checks the App instance's Schedules or Processes, and it changes nothing.
-
-The operating agent must quiesce all application access and checkpoint or close SQLite before relocation so no `-wal`, `-shm`, or `-journal` sidecar remains. Orbit refuses active owned Processes, an observed open database, or one of those source or destination sidecars, but it does not infer maintenance mode, process shutdown, queue handling, schema migration, or another application command.
+Cloning is the only way the Gateway creates a production App instance. The clone result is a prepared home with no selected `current` release. The first explicit deployment fetches the configured branch, synchronizes stored environment values, runs recorded deploy steps, and selects that release. See [App instance cloning](/reference/appinstance-cloning).
 
 ## Resolve the serving path
 
@@ -252,4 +193,4 @@ Doctor accepts a retained release when the configured branch has advanced since 
 
 App instance removal clears the owned `current` serving link and its Caddy, certificate, Route, and runtime projections. It retains `releases/`, `.env`, an existing `database.sqlite`, and `/etc/orbit/php-fpm/<production-user>/local.conf` for operator recovery.
 
-Orbit does not remove old releases automatically. Orbit owns explicit release preparation, activation, conversion, and code rollback, while the operating agent owns configured application steps and recovery decisions. Converting an existing flat production home and executing a deployment remain separate operations.
+Orbit does not remove old releases automatically. Orbit owns explicit release preparation, activation, and code rollback, while the operating agent owns configured application steps and recovery decisions.

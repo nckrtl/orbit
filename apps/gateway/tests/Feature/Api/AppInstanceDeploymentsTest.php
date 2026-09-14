@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\Node;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\Orb220DeploymentApiFixture;
 
 beforeEach(function (): void {
@@ -75,6 +76,32 @@ it('returns JSON for missing models and denied Node access before opening a stre
         ->assertHeaderMissing('X-Accel-Buffering');
 
     expect($this->fixture->deployment->invocations)->toBe(0);
+});
+
+it('answers retired deployment-config and deployment-layout paths as not found without mutation', function (): void {
+    $before = [
+        'deployment_branch' => $this->fixture->instance->deployment_branch,
+        'steps' => normalized_deploy_steps($this->fixture->instance),
+    ];
+
+    foreach ([
+        ['GET', "/api/v1/instances/{$this->fixture->instance->id}/deployment-config", ''],
+        ['PUT', "/api/v1/instances/{$this->fixture->instance->id}/deployment-config", '{"branch":"release","steps":[]}'],
+        ['POST', "/api/v1/instances/{$this->fixture->instance->id}/deployment-layout", '{}'],
+    ] as [$method, $url, $body]) {
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+            ->call($method, $url, server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+            ], content: $body)
+            ->assertNotFound();
+    }
+
+    expect(Schema::hasTable('app_instance_deployment_layouts'))->toBeFalse()
+        ->and($this->fixture->instance->fresh()->deployment_branch)->toBe($before['deployment_branch'])
+        ->and(normalized_deploy_steps($this->fixture->instance->fresh()))->toBe($before['steps'])
+        ->and($this->fixture->deployment->invocations)->toBe(0);
 });
 
 it('returns only retained names and the nullable current selection', function (): void {
