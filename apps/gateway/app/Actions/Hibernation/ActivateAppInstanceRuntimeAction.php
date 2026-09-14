@@ -55,12 +55,7 @@ final readonly class ActivateAppInstanceRuntimeAction
                 $this->readiness->waitUntilReady($instance, $running);
                 $this->markers->markAwake($instance->node, RuntimeHibernation::key($instanceId));
             });
-        } catch (ProcessOperationException $exception) {
-            throw new HibernationException(
-                errorCode: $exception->errorCode,
-                message: $exception->getMessage(),
-            );
-        } catch (ResourceOperationException $exception) {
+        } catch (ProcessOperationException|ResourceOperationException $exception) {
             throw new HibernationException(
                 errorCode: $exception->errorCode,
                 message: $exception->getMessage(),

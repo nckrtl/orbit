@@ -42,13 +42,7 @@ final class RuntimeActivationsController extends Controller
             }
 
             return $pages->failed($exception->getMessage());
-        } catch (ProcessOperationException $exception) {
-            if (in_array($exception->errorCode, ['process.operation_busy', 'process.runtime_lock_failed'], true)) {
-                return $pages->progress();
-            }
-
-            return $pages->failed($exception->getMessage());
-        } catch (ResourceOperationException $exception) {
+        } catch (ProcessOperationException|ResourceOperationException $exception) {
             if (in_array($exception->errorCode, ['process.operation_busy', 'process.runtime_lock_failed'], true)) {
                 return $pages->progress();
             }

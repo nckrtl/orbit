@@ -3463,8 +3463,6 @@ it('removes only the app development Caddy fragment through an atomic preserved 
             'destination="$candidate/fragments/$fragment_name"',
             'destination="$candidate/fragments/00-unmanaged.caddy"',
             'cp --preserve=mode,ownership -- "$fragment" "$destination"',
-            'install -d -o root -g caddy -m 0755 -- /dev/shm/orbit/hibernation',
-            'install -d -o root -g caddy -m 2775 -- /data/caddy/orbit/hibernation',
             'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
             'mv -fT -- "$candidate_link" "$live_caddyfile"',
             'mv -fT -- "$rollback_link" "$live_caddyfile"',

@@ -37,11 +37,11 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
             $this->waitUntilObservedRunning($process, $deadline);
         }
 
-        $instance->loadMissing('node');
+        $node = $instance->node;
 
         foreach ($processes as $process) {
             if ($this->needsDevelopmentServer($process)) {
-                $this->waitUntilDevelopmentServerListens($instance->node, $deadline);
+                $this->waitUntilDevelopmentServerListens($node, $deadline);
 
                 return;
             }
@@ -113,13 +113,7 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
             return false;
         }
 
-        foreach ($command as $part) {
-            if (is_string($part) && str_contains(strtolower($part), 'vite')) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($command, fn ($part) => is_string($part) && str_contains(strtolower($part), 'vite'));
     }
 
     private function connection(Node $node, float $timeout): SshConnection
