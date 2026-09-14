@@ -38,21 +38,26 @@ describe('deployment requests', function (): void {
     });
 
     it('carries no deployment-config or deployment-layout request', function (): void {
-        $requestFiles = collect(new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator(dirname(__DIR__, 3).'/src/Requests'),
-        ))->filter(
-            static fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'php',
-        )->map(
-            static fn (SplFileInfo $file): string => $file->getPathname(),
+        $paths = [];
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator(dirname(__DIR__, 4).'/src/Requests'),
         );
 
-        expect($requestFiles->implode("\n"))
+        foreach ($files as $file) {
+            if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $paths[] = $file->getPathname();
+        }
+
+        expect(implode("\n", $paths))
             ->not->toContain('DeploymentConfig')
             ->not->toContain('DeploymentLayout')
-            ->and($requestFiles->values()->all())
-            ->not->toContain(dirname(__DIR__, 3).'/src/Requests/Deployments/ShowAppInstanceDeploymentConfigRequest.php')
-            ->not->toContain(dirname(__DIR__, 3).'/src/Requests/Deployments/UpdateAppInstanceDeploymentConfigRequest.php')
-            ->not->toContain(dirname(__DIR__, 3).'/src/Requests/AppInstances/AppInstanceDeploymentLayoutRequest.php');
+            ->and($paths)
+            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/Deployments/ShowAppInstanceDeploymentConfigRequest.php')
+            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/Deployments/UpdateAppInstanceDeploymentConfigRequest.php')
+            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/AppInstances/AppInstanceDeploymentLayoutRequest.php');
     });
 
     it('preserves deployment payload omission and explicit values', function (): void {
