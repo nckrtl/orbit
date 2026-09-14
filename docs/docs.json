@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "luma",
+  "theme": "mint",
   "name": "Orbit",
   "description": "Orbit turns the machines you already own into an always-on development network. Your agent provisions, routes, and repairs it.",
   "colors": {

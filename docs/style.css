@@ -2,6 +2,7 @@
 
 :root {
   --orbit-font-code: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --orbit-ink: #000000;
   --orbit-text-primary: #20231f;
   --orbit-text-secondary: #51534d;
   --orbit-text-muted: #62645e;
@@ -12,6 +13,7 @@
 }
 
 .dark {
+  --orbit-ink: #ffffff;
   --orbit-text-primary: #f4f2ec;
   --orbit-text-secondary: #b3b3ba;
   --orbit-text-muted: #8e8e98;
@@ -22,22 +24,39 @@
 }
 
 body {
-  letter-spacing: -0.018em;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   text-wrap: pretty;
 }
 
+/* Headings: Space Grotesk medium with the tight tracking the website uses. */
 h1,
 h2,
 h3,
 h4 {
   font-weight: 500;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 
-h1 {
-  letter-spacing: -0.035em;
-  line-height: 1.08;
+#page-title {
+  font-size: 36px;
+  line-height: 40px;
+  letter-spacing: -0.025em;
+  text-align: start;
+}
+
+#content h2 {
+  font-size: 24px;
+  line-height: 32px;
+  margin-top: 36px;
+  margin-bottom: 18px;
+}
+
+#content h3 {
+  font-size: 18px;
+  line-height: 28px;
+  margin-top: 28px;
+  margin-bottom: 12px;
 }
 
 code,
@@ -53,19 +72,22 @@ pre * {
   display: none;
 }
 
-/* Eyebrows, sidebar group titles, and tab labels follow the website's uppercase mono labels. */
+/* Sidebar group headings: the body font, sentence case, pure white or black depending on the theme. */
 #sidebar h5,
-#sidebar-group-header,
+#sidebar-content h5,
 .sidebar-group-header,
-#navbar .eyebrow,
-#content-area .eyebrow,
-[data-eyebrow] {
-  font-family: var(--orbit-font-code);
-  font-size: 10.5px;
+#sidebar-group-header {
+  font-family: inherit;
+  font-size: 14px;
   font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--orbit-text-muted);
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--orbit-ink) !important;
+  margin-bottom: 10px;
+}
+
+.sidebar-group-header * {
+  color: var(--orbit-ink) !important;
 }
 
 /* Hairline borders instead of the default grey rules. */
@@ -84,14 +106,9 @@ hr {
   border-color: var(--orbit-line-hairline);
 }
 
-/* Tables: mono cells for command and option columns, hairline rules. */
 table th {
-  font-family: var(--orbit-font-code);
-  font-size: 10.5px;
   font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--orbit-text-muted);
+  color: var(--orbit-text-primary);
 }
 
 table td,
@@ -104,11 +121,6 @@ table th {
 [class*="rounded-2xl"],
 [class*="rounded-xl"] {
   border-radius: 6px !important;
-}
-
-::selection {
-  background: #f4f2ec;
-  color: #050506;
 }
 
 .dark ::selection {
