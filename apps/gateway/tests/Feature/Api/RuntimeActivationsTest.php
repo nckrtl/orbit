@@ -68,7 +68,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
 });
 
-it('wakes the AppInstance Process group from the owning Node', function (): void {
+it('returns the Orbit progress page before it starts Processes', function (): void {
     $running = Process::query()->create([
         'owner_type' => AppInstance::class,
         'owner_id' => $this->instance->id,
@@ -82,7 +82,9 @@ it('wakes the AppInstance Process group from the owning Node', function (): void
     ]);
 
     $this->get('/api/v1/runtime-activations/app-instance/'.$this->instance->id)
-        ->assertOk();
+        ->assertStatus(401)
+        ->assertSee('Starting development runtime', false)
+        ->assertSee('http-equiv="refresh" content="2"', false);
 
     expect($this->runtime->started)
         ->toBe([$running->id])
@@ -132,7 +134,7 @@ it('returns an HTML progress page when another wake holds the AppInstance lock',
         ->assertSee('http-equiv="refresh" content="2"', false);
 });
 
-it('returns an HTML failure page when Process start fails', function (): void {
+it('returns an HTML failure page on the next intercept when Process start fails', function (): void {
     Process::query()->create([
         'owner_type' => AppInstance::class,
         'owner_id' => $this->instance->id,
@@ -147,7 +149,12 @@ it('returns an HTML failure page when Process start fails', function (): void {
     $this->runtime->failStartDuringCall = true;
 
     $this->get('/api/v1/runtime-activations/app-instance/'.$this->instance->id)
+        ->assertStatus(401)
+        ->assertSee('Starting development runtime', false);
+
+    $this->get('/api/v1/runtime-activations/app-instance/'.$this->instance->id)
         ->assertStatus(503)
         ->assertSee('Development runtime failed', false)
-        ->assertSee('The process did not start.', false);
+        ->assertSee('The process did not start.', false)
+        ->assertSee('http-equiv="refresh" content="5"', false);
 });

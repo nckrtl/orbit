@@ -32,7 +32,11 @@ A sweep that finds no recent HTTP activity stops each desired-running AppInstanc
 
 Caddy on the AppInstance Node checks `/dev/shm/orbit/hibernation/app-instance-{id}.awake`. When that file is absent, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard and trusts the Orbit root CA already published with the site certificate.
 
-The Gateway accepts that call only from the AppInstance's Node. It starts every desired-running AppInstance Process and holds the request until each Process reports running. When a Vite Process is present, the Gateway also waits until `127.0.0.1:5173` accepts a connection. It then writes the awake marker and returns HTTP 200 so Caddy can proxy the original request. A concurrent wake receives an HTML progress page with status 401 and a two-second refresh. A failed start returns an HTML failure page with status 503 and a five-second retry.
+The Gateway accepts that call only from the AppInstance's Node. It returns an HTML progress page with status 401 and a two-second refresh, then starts the desired-running AppInstance Processes after that response. Caddy shows that page and does not proxy the site.
+
+When a Vite Process is present, the Gateway waits until `127.0.0.1:5173` accepts a connection. It writes the awake marker only after every desired-running Process is running. The next browser refresh finds the marker and Caddy proxies that request, so the first application request already has Vite and its peers.
+
+A concurrent wake receives the same progress page. A failed start stores the error. The next intercept returns an HTML failure page with status 503 and a five-second retry, then starts again.
 
 After host reboot the tmpfs awake markers are gone. App-dev AppInstance Process units are not enabled for boot, so the first HTTP request wakes the desired-running group.
 
