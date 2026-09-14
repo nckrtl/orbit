@@ -161,6 +161,12 @@ final readonly class CommandActivityTargetResolver
             return $this->herdrSessionNode($request);
         }
 
+        if (str_contains($request->path(), '-definitions')) {
+            $app = $request->route('app');
+
+            return $app instanceof OrbitApp ? $app : null;
+        }
+
         if (str_starts_with((string) $request->route()?->getName(), 'process:')) {
             return $this->processOwner($request);
         }

@@ -1294,6 +1294,50 @@ it('keeps failed remove tools retained and redacted', function (): void {
         ->not->toContain('REMOVE_EXCEPTION_SENTINEL');
 });
 
+it('records definition commands against the App instead of a Process or Schedule target', function (): void {
+    $gateway = $this->markAsGateway(Node::query()->create([
+        'name' => 'definition-activity-gateway',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.41',
+        'wireguard_ip' => '10.44.0.41',
+    ]));
+    $orbitApp = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://example.test/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+
+    $this
+        ->postJson("/api/v1/apps/{$orbitApp->id}/process-definitions", [
+            'name' => 'worker',
+            'environments' => ['development'],
+            'spec' => [
+                'runtime' => 'systemd',
+                'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+            ],
+        ])
+        ->assertCreated();
+
+    $activity = Activity::query()->sole();
+
+    expect($activity->command)
+        ->toBe('process:create')
+        ->and($activity->subject_type)
+        ->toBe(OrbitApp::class)
+        ->and($activity->subject_id)
+        ->toBe($orbitApp->id)
+        ->and($activity->target_node_id)
+        ->toBeNull()
+        ->and($activity->properties?->get('input'))
+        ->toBe([
+            'name' => 'worker',
+            'environments' => ['development'],
+        ]);
+});
+
 it('records pre-persistence firewall allow and deny failures against the path-bound node', function (): void {
     app()->instance(FirewallManager::class, new CommandActivityFirewallFakeManager);
     $node = Node::query()->create([
