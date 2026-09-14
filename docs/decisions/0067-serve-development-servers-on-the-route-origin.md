@@ -4,7 +4,7 @@ In the context of Cluster-routed development AppInstances that run a frontend to
 
 ## Status
 
-Accepted on 2026-09-13. Extends [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0028](0028-require-one-route-per-active-appinstance.md), and [ADR 0033](0033-trust-wireguard-members-for-private-node-traffic.md).
+Accepted on 2026-09-13. Extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance), and [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic).
 
 ## Context
 
@@ -37,6 +37,6 @@ A development toolchain such as Vite binds a local HTTP server on the workload N
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0028](0028-require-one-route-per-active-appinstance.md), and [ADR 0033](0033-trust-wireguard-members-for-private-node-traffic.md)
+- ADRs: extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance), and [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic)
 - Detail: docs/reference/routes.md
 - Verify: Gateway Caddy renderer and process-environment tests, `composer docs-lint`

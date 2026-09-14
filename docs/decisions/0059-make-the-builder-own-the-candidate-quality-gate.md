@@ -4,11 +4,11 @@ In the context of local feature delivery, facing deterministic quality failures 
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0053](0053-use-local-review-checks-for-feature-landing.md). Supersedes ADR 0053 for ownership of local quality gate execution.
+Accepted on 2026-09-10. Extends [ADR 0053](/decisions/0053-use-local-review-checks-for-feature-landing). Supersedes ADR 0053 for ownership of local quality gate execution.
 
 ## Context
 
-[ADR 0053](0053-use-local-review-checks-for-feature-landing.md) moved the cross-project quality gate from GitHub to the independent reviewer. Failed affected tests now consume a reviewer dispatch before the Builder receives deterministic feedback. Running the same gate again during review would duplicate local work without adding environment diversity.
+[ADR 0053](/decisions/0053-use-local-review-checks-for-feature-landing) moved the cross-project quality gate from GitHub to the independent reviewer. Failed affected tests now consume a reviewer dispatch before the Builder receives deterministic feedback. Running the same gate again during review would duplicate local work without adding environment diversity.
 
 ## Decision
 
@@ -38,6 +38,6 @@ Accepted on 2026-09-10. Extends [ADR 0053](0053-use-local-review-checks-for-feat
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0053](0053-use-local-review-checks-for-feature-landing.md); supersedes ADR 0053 for ownership of local quality gate execution
-- Detail: [docs/reference/implementation-loop.md](../reference/implementation-loop.md)
+- ADRs: extends [ADR 0053](/decisions/0053-use-local-review-checks-for-feature-landing); supersedes ADR 0053 for ownership of local quality gate execution
+- Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
 - Verify: agent-role contract tests and local-gate receipt tests; `composer docs-lint`

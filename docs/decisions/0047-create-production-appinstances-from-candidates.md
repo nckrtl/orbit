@@ -4,7 +4,7 @@ In the context of preparing a production AppInstance from a known application pl
 
 ## Status
 
-Accepted on 2026-09-10. Supersedes [ADR 0031](0031-clone-initial-production-source-during-provisioning.md) for direct production creation and initial source selection. Extends [ADR 0032](0032-preserve-explicit-appinstance-branch-selection.md) for candidate branch inheritance and [ADR 0044](0044-own-appinstance-environment-configuration-in-orbit.md) for configuration duplication. Retains [ADR 0028](0028-require-one-route-per-active-appinstance.md), [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md), and [ADR 0045](0045-isolate-production-php-fpm-by-unix-user.md) for Route, lifecycle, and runtime ownership.
+Accepted on 2026-09-10. Supersedes [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning) for direct production creation and initial source selection. Extends [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) for candidate branch inheritance and [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) for configuration duplication. Retains [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) for Route, lifecycle, and runtime ownership.
 
 ## Context
 
@@ -61,6 +61,6 @@ A repository describes application code but does not supply an existing instance
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli, apps/e2e
-- ADRs: supersedes [ADR 0031](0031-clone-initial-production-source-during-provisioning.md) for direct production creation and initial source selection; extends [ADR 0032](0032-preserve-explicit-appinstance-branch-selection.md) and [ADR 0044](0044-own-appinstance-environment-configuration-in-orbit.md) for branch and configuration inheritance; retains [ADR 0028](0028-require-one-route-per-active-appinstance.md), [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md), and [ADR 0045](0045-isolate-production-php-fpm-by-unix-user.md) for Route, lifecycle, and runtime ownership
+- ADRs: supersedes [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning) for direct production creation and initial source selection; extends [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) and [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) for branch and configuration inheritance; retains [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) for Route, lifecycle, and runtime ownership
 - Detail: docs/reference/appinstance-cloning.md
 - Verify: `composer docs-lint`; implementation conformance through Gateway, PHP SDK, and CLI cloning tests and issue-specific Incus proof

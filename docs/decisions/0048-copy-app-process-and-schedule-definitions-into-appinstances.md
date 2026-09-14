@@ -4,7 +4,7 @@ In the context of cloning production AppInstances with workers and scheduled com
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0047](0047-create-production-appinstances-from-candidates.md) for process and schedule selection and [ADR 0038](0038-cascade-appinstance-removal-through-processes-and-schedules.md) for ownership of instantiated copies. Supersedes [ADR 0013](0013-native-systemd-schedule-management.md) for automatic timer startup during cloning and its prohibition on explicit activation of an installed AppInstance Schedule timer.
+Accepted on 2026-09-10. Extends [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) for process and schedule selection and [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules) for ownership of instantiated copies. Supersedes [ADR 0013](/decisions/0013-native-systemd-schedule-management) for automatic timer startup during cloning and its prohibition on explicit activation of an installed AppInstance Schedule timer.
 
 ## Context
 
@@ -48,6 +48,6 @@ A candidate can run a worker with testing options or a development-only server s
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli
-- ADRs: extends [ADR 0047](0047-create-production-appinstances-from-candidates.md) for definition selection and [ADR 0038](0038-cascade-appinstance-removal-through-processes-and-schedules.md) for instance-copy ownership; supersedes [ADR 0013](0013-native-systemd-schedule-management.md) for timer startup during cloning and explicit AppInstance timer activation; retains [ADR 0046](0046-own-production-release-deployment-in-orbit.md) for deployment-step ownership
+- ADRs: extends [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) for definition selection and [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules) for instance-copy ownership; supersedes [ADR 0013](/decisions/0013-native-systemd-schedule-management) for timer startup during cloning and explicit AppInstance timer activation; retains [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) for deployment-step ownership
 - Detail: docs/reference/app-processes-and-schedules.md
 - Verify: `composer docs-lint`; implementation conformance through Gateway, PHP SDK, and CLI definition and lifecycle tests and issue-specific Incus proof

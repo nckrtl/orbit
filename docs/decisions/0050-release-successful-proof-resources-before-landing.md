@@ -4,7 +4,7 @@ In the context of concurrent feature delivery on one Incus host, facing proof vi
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md). Supersedes [ADR 0006](0006-topology-led-feature-development.md) and [ADR 0035](0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md) for successful proof resource retention and snapshot closeout.
+Accepted on 2026-09-10. Extends [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence). Supersedes [ADR 0006](/decisions/0006-topology-led-feature-development) and [ADR 0035](/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot) for successful proof resource retention and snapshot closeout.
 
 ## Context
 
@@ -36,6 +36,6 @@ Each successful proof holds an isolated topology while independent review and co
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md); supersedes [ADR 0006](0006-topology-led-feature-development.md) and [ADR 0035](0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md) for successful proof resource retention and closeout
-- Detail: [docs/reference/proof-plans.md](../reference/proof-plans.md)
+- ADRs: extends [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence); supersedes [ADR 0006](/decisions/0006-topology-led-feature-development) and [ADR 0035](/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot) for successful proof resource retention and closeout
+- Detail: [docs/reference/proof-plans.md](/reference/proof-plans)
 - Verify: retained evidence and topology release tests; `composer docs-lint`

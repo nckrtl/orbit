@@ -4,11 +4,11 @@ In the context of closed node storage settings after one apps root replaced inst
 
 ## Status
 
-Accepted on 2026-09-13. Extends [ADR 0008](0008-typed-app-dev-node-storage-settings.md). Supersedes [ADR 0008](0008-typed-app-dev-node-storage-settings.md) for the known CLI setting paths `instance.path` and `worktree.path`. Extends [ADR 0009](0009-clustered-app-instance-routing.md) for the single apps-root setting.
+Accepted on 2026-09-13. Extends [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings). Supersedes [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) for the known CLI setting paths `instance.path` and `worktree.path`. Extends [ADR 0009](/decisions/0009-clustered-app-instance-routing) for the single apps-root setting.
 
 ## Context
 
-Orbit stores one typed apps-root setting on a Node and derives new AppInstance checkouts from that root. [ADR 0008](0008-typed-app-dev-node-storage-settings.md) closed the settings key set and named `instance.path` and `worktree.path` as the CLI setting paths. [ADR 0009](0009-clustered-app-instance-routing.md) replaced those two roots with one apps root and left ADR 0008's text unchanged. Operators who send the named ADR 0008 paths receive `node.setting_unknown`, while `apps.path` is the path the CLI, Gateway, and PHP SDK accept.
+Orbit stores one typed apps-root setting on a Node and derives new AppInstance checkouts from that root. [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) closed the settings key set and named `instance.path` and `worktree.path` as the CLI setting paths. [ADR 0009](/decisions/0009-clustered-app-instance-routing) replaced those two roots with one apps root and left ADR 0008's text unchanged. Operators who send the named ADR 0008 paths receive `node.setting_unknown`, while `apps.path` is the path the CLI, Gateway, and PHP SDK accept.
 
 ## Decision
 
@@ -33,6 +33,6 @@ Orbit stores one typed apps-root setting on a Node and derives new AppInstance c
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0008](0008-typed-app-dev-node-storage-settings.md); supersedes [ADR 0008](0008-typed-app-dev-node-storage-settings.md) for the known CLI setting paths; extends [ADR 0009](0009-clustered-app-instance-routing.md)
-- Detail: [Node settings](../reference/node-settings.md)
+- ADRs: extends [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings); supersedes [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) for the known CLI setting paths; extends [ADR 0009](/decisions/0009-clustered-app-instance-routing)
+- Detail: [Node settings](/reference/node-settings)
 - Verify: `composer docs-lint`; CLI unknown-setting command tests

@@ -4,7 +4,7 @@ This reference is for operators who manage packages on Nodes and need to underst
 
 ## Choose a Tool Manager
 
-Orbit exposes its code-owned Tool Managers on active Ubuntu 26.04 Nodes that the Gateway manages over Secure Shell (SSH). A Node role can require a manager during role convergence, but the role does not own the manager or its Tools. [ADR 0042](../decisions/0042-provision-tool-managers-on-demand.md) defines the management boundary.
+Orbit exposes its code-owned Tool Managers on active Ubuntu 26.04 Nodes that the Gateway manages over Secure Shell (SSH). A Node role can require a manager during role convergence, but the role does not own the manager or its Tools. [ADR 0042](/decisions/0042-provision-tool-managers-on-demand) defines the management boundary.
 
 List every manager supported for a Node before choosing one.
 
@@ -32,7 +32,7 @@ The supported managers have these scopes.
 | `composer` | Orbit's shared Composer global package scope on the Node | Materialized on first use or when a role requires it |
 | `brew` | Orbit's shared Homebrew prefix at `/home/linuxbrew/.linuxbrew` | Materialized or recognized on first use |
 
-[ADR 0001](../decisions/0001-tool-management.md) defines Tool ownership and caller input. [ADR 0042](../decisions/0042-provision-tool-managers-on-demand.md) defines manager availability and role independence.
+[ADR 0001](/decisions/0001-tool-management) defines Tool ownership and caller input. [ADR 0042](/decisions/0042-provision-tool-managers-on-demand) defines manager availability and role independence.
 
 ## Install a Tool
 
@@ -66,7 +66,7 @@ Homebrew input has these limits.
 | Source build | Never used |
 | Service or process lifecycle | Outside Tool operations |
 
-An update uses the verified bottle and keeps the installed Tool callable when no newer bottle is available. Removal targets only the recorded formula, does not run dependency autoremove, and retains the active Homebrew manager after the Tool row is deleted. [ADR 0043](../decisions/0043-manage-homebrew-core-formulae.md) defines the Homebrew source and bottle boundary.
+An update uses the verified bottle and keeps the installed Tool callable when no newer bottle is available. Removal targets only the recorded formula, does not run dependency autoremove, and retains the active Homebrew manager after the Tool row is deleted. [ADR 0043](/decisions/0043-manage-homebrew-core-formulae) defines the Homebrew source and bottle boundary.
 
 ## Remove a Tool
 
@@ -76,9 +76,9 @@ Run the removal command with the Tool ID from a successful install or from a fai
 orbit tool:remove <tool-id>
 ```
 
-The Gateway probes the package before removal unless the Tool is a failed row that never recorded a version, including `tool.version_probe_failed` after install, update, or remove. In that case the Gateway deletes the Tool row without probing a never-proven package. When the package is installed, removal proceeds when accepted under [ADR 0001](../decisions/0001-tool-management.md)'s Tool-removal contract, and the Gateway probes the package again after manager removal. A successful removal deletes the Tool row.
+The Gateway probes the package before removal unless the Tool is a failed row that never recorded a version, including `tool.version_probe_failed` after install, update, or remove. In that case the Gateway deletes the Tool row without probing a never-proven package. When the package is installed, removal proceeds when accepted under [ADR 0001](/decisions/0001-tool-management)'s Tool-removal contract, and the Gateway probes the package again after manager removal. A successful removal deletes the Tool row.
 
-APT removes the package without purging its configuration files. Dpkg can therefore retain the package record, configuration files, and last package version after the executable files are gone. The Gateway treats that removed package state as absence and deletes the Tool row. [ADR 0001](../decisions/0001-tool-management.md) defines the package-ownership and exact-removal boundary.
+APT removes the package without purging its configuration files. Dpkg can therefore retain the package record, configuration files, and last package version after the executable files are gone. The Gateway treats that removed package state as absence and deletes the Tool row. [ADR 0001](/decisions/0001-tool-management) defines the package-ownership and exact-removal boundary.
 
 The Gateway returns bounded outcomes for each removal result.
 
@@ -90,7 +90,7 @@ The Gateway returns bounded outcomes for each removal result.
 | The installed-version probe fails or returns unsafe output on an installed or otherwise proven Tool | `tool.version_probe_failed` | Retained as a retryable failure |
 | The manager removal fails or the package remains installed | `tool.remove_failed` | Retained as a retryable failure |
 
-[ADR 0001](../decisions/0001-tool-management.md) governs removal-plan eligibility and package-set limits.
+[ADR 0001](/decisions/0001-tool-management) governs removal-plan eligibility and package-set limits.
 
 ## Retry a failed removal
 
@@ -104,10 +104,10 @@ Run Doctor for the Tool family when you need to verify the Node after removal.
 orbit doctor --node=<node-id> --family=tool
 ```
 
-A retained Tool row for an absent package produces bounded `tool.not_installed` drift. After successful removal deletes that row, Doctor reports the Tool family as healthy when no other Tool finding exists. Doctor never includes the raw dpkg status or retained package version in its report. [ADR 0004](../decisions/0004-verify-only-doctor-boundary.md) defines the verify-only and bounded-report boundary.
+A retained Tool row for an absent package produces bounded `tool.not_installed` drift. After successful removal deletes that row, Doctor reports the Tool family as healthy when no other Tool finding exists. Doctor never includes the raw dpkg status or retained package version in its report. [ADR 0004](/decisions/0004-verify-only-doctor-boundary) defines the verify-only and bounded-report boundary.
 
 ## Limits
 
-Installing or updating the Herdr formula changes package files only. It does not start, stop, or restart a managed [Herdr session](herdr-sessions.md).
+Installing or updating the Herdr formula changes package files only. It does not start, stop, or restart a managed [Herdr session](/reference/herdr-sessions).
 
-[ADR 0001](../decisions/0001-tool-management.md) governs Tool ownership and removal limits. [ADR 0004](../decisions/0004-verify-only-doctor-boundary.md) governs Doctor inspection and reporting limits.
+[ADR 0001](/decisions/0001-tool-management) governs Tool ownership and removal limits. [ADR 0004](/decisions/0004-verify-only-doctor-boundary) governs Doctor inspection and reporting limits.

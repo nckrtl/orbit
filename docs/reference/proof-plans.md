@@ -1,8 +1,8 @@
 # Proof plans
 
-This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the separate candidate-bound artifact workspace, and the commands that run a plan are on the [Incus topology registry](incus-topologies.md).
+This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) governs the separate candidate-bound artifact workspace, and the commands that run a plan are on the [Incus topology registry](/reference/incus-topologies).
 
-This page applies to the `proof` delivery flow. The [implementation loop](implementation-loop.md) describes the discovery-only flow, which requires no proof plan or isolated acceptance run.
+This page applies to the `proof` delivery flow. The [implementation loop](/reference/implementation-loop) describes the discovery-only flow, which requires no proof plan or isolated acceptance run.
 
 ## Plan file
 
@@ -36,7 +36,7 @@ Each action has exactly these four keys, and the harness refuses a `stdin` key b
 | `argv` | list of strings | Non-empty, without NUL or newline; the first item is a program or absolute path and cannot start with `-` or carry `=` |
 | `timeout_seconds` | integer | 1 through 900 |
 
-A literal `/home/orbit/orbit/...` argument must resolve to a runtime path under the static policy or to a declared input; otherwise `prove` refuses before it creates an attempt. Actions run with the [Guest commands](incus-topologies.md#guest-commands) environment.
+A literal `/home/orbit/orbit/...` argument must resolve to a runtime path under the static policy or to a declared input; otherwise `prove` refuses before it creates an attempt. Actions run with the [Guest commands](/reference/incus-topologies#guest-commands) environment.
 
 ## Fixtures
 
@@ -55,7 +55,7 @@ The harness empties the guest directory before staging. Every physical Node prin
 | `identity` | Proves each guest checkout holds the candidate SHA and tree |
 | `fixtures` | Stages the fixtures |
 | `sury-runtime` | Prepares the packaged PHP runtime on `gateway` and `app-dev` |
-| `converge` | Runs the full convergence sequence; see [Refresh](topology-snapshot.md#refresh) |
+| `converge` | Runs the full convergence sequence; see [Refresh](/reference/topology-snapshot#refresh) |
 | `setup`, `acceptance` | Runs each action in order; with `observed_inputs`, `pcov.*` phases surround them |
 | `manifest` | Builds the immutable proof-input manifest |
 | `verify` | Runs general topology verification against the declared end state |
@@ -82,11 +82,11 @@ With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matc
 | `failed_action` | The action that ended the proof, with `stdout_tail` and `stderr_tail` of the final 4096 bytes |
 | `error` | `proof phase <phase> failed: <message>` |
 
-A proved result also writes the manifest, whose content [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. Its topology input records the normalized construction declaration, promoted source generation or generic base, ordered physical Node inventory and identities, and every image alias and fingerprint used for cold construction. Equivalence is stale when the current declaration or construction input differs. The harness pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` while captured evidence or the retained topology refers to it and never overwrites immutable evidence.
+A proved result also writes the manifest, whose content [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. Its topology input records the normalized construction declaration, promoted source generation or generic base, ordered physical Node inventory and identities, and every image alias and fingerprint used for cold construction. Equivalence is stale when the current declaration or construction input differs. The harness pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` while captured evidence or the retained topology refers to it and never overwrites immutable evidence.
 
 ## Equivalence outcomes
 
-After a later commit, `bin/e2e-topology equivalence ISSUE` compares the clean HEAD with the retained proof, and the head must contain current `origin/main`. The evaluator follows the rules in [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) and classifies every changed path. The immutable report lands at `<worktree>/.e2e/equivalence/<fingerprint>.json`, and `equivalence.json` points at the latest one.
+After a later commit, `bin/e2e-topology equivalence ISSUE` compares the clean HEAD with the retained proof, and the head must contain current `origin/main`. The evaluator follows the rules in [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence) and classifies every changed path. The immutable report lands at `<worktree>/.e2e/equivalence/<fingerprint>.json`, and `equivalence.json` points at the latest one.
 
 | Outcome | Meaning | Next command |
 | --- | --- | --- |
@@ -100,7 +100,7 @@ The report's `next_action` field names the same step, and the command exits `0` 
 
 ## Captured proof and interactive review
 
-After successful proof, capture verifies the exact plan, complete zero-exit actions, matching topology and candidate identities, complete physical Node inventory, and complete input manifest. The harness writes immutable acceptance evidence to `<primary>/.e2e/proof-evidence/<ISSUE>/<attempt>.json` and `<worktree>/.e2e/captured-proof/<attempt>.json` before it grants successful-proof `shell` or `exec` access. It retains the proof commit reference and every standard or extended proof Node. A missing, incomplete, failed, or mismatched capture leaves the topology unavailable for successful-proof review. [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md) governs this capture and review lifecycle.
+After successful proof, capture verifies the exact plan, complete zero-exit actions, matching topology and candidate identities, complete physical Node inventory, and complete input manifest. The harness writes immutable acceptance evidence to `<primary>/.e2e/proof-evidence/<ISSUE>/<attempt>.json` and `<worktree>/.e2e/captured-proof/<attempt>.json` before it grants successful-proof `shell` or `exec` access. It retains the proof commit reference and every standard or extended proof Node. A missing, incomplete, failed, or mismatched capture leaves the topology unavailable for successful-proof review. [ADR 0056](/decisions/0056-retain-proof-topologies-for-interactive-review) governs this capture and review lifecycle.
 
 Interactive actions run as the ordinary `orbit` guest user and may change application or machine state through the user's normal `sudo` boundary. The harness stores their action identity, Node, result, required or exploratory status, and finding in a separate review record bound to the issue, candidate, and attempt. It never appends review output to the proof result or changes captured proof bytes and hashes. An unfinished interactive action remains visible as incomplete.
 

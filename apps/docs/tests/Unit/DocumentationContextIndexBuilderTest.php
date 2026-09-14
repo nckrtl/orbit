@@ -76,3 +76,16 @@ it('detects whether the committed index matches its sources', function (): void 
 
     expect($this->builder->isFresh())->toBeFalse();
 });
+
+it('indexes MDX frontmatter titles and maps model names to the readable concept', function (): void {
+    file_put_contents($this->docsPath.'/concepts.md', "# Concepts\n\n- **App instance** — One copy of an App.\n");
+    file_put_contents($this->docsPath.'/index.mdx', "---\ntitle: \"Orbit documentation\"\n---\n\nRead about App instances. See [ADR 0002](/decisions/0002-instance#identity).\n");
+    file_put_contents($this->docsPath.'/decisions/0002-instance.md', "# Instance identity\n\nAppInstance and AppInstances are model names.\n");
+
+    $documents = collect($this->builder->build()->documents);
+
+    expect($documents->firstWhere('path', 'docs/index.mdx')->title)->toBe('Orbit documentation')
+        ->and($documents->firstWhere('path', 'docs/index.mdx')->concepts)->toBe(['App instance'])
+        ->and($documents->firstWhere('path', 'docs/index.mdx')->governingAdrs)->toBe(['0002'])
+        ->and($documents->firstWhere('path', 'docs/decisions/0002-instance.md')->concepts)->toBe(['App instance']);
+});

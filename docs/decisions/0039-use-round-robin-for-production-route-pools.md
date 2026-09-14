@@ -4,7 +4,7 @@ In the context of one production Route serving AppInstances on several Nodes, fa
 
 ## Status
 
-Accepted on 2026-09-06. Extends [ADR 0028](0028-require-one-route-per-active-appinstance.md) and [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md). Supersedes [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for its deferral of production pool balancing, backend health, affinity, retry, and target-removal policy.
+Accepted on 2026-09-06. Extends [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) and [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates). Supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for its deferral of production pool balancing, backend health, affinity, retry, and target-removal policy.
 
 ## Context
 
@@ -42,6 +42,6 @@ An explicit production Route can identify placements of one App on several app-p
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli
-- ADRs: extends [ADR 0028](0028-require-one-route-per-active-appinstance.md) and [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md); supersedes [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for production pool policy
-- Detail: [Routes](../reference/routes.md)
+- ADRs: extends [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) and [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates); supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production pool policy
+- Detail: [Routes](/reference/routes)
 - Verify: `composer docs-lint`; implementation conformance through Gateway Route tests and declared Incus multi-target routing acceptance

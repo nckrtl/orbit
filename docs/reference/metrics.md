@@ -1,8 +1,8 @@
 # Metrics role
 
-This page tells an operator what the `metrics` role runs, how to enable, inspect, and disable it, and what each command answers. [ADR 0003](../decisions/0003-singleton-metrics-role.md) records the role contract, [ADR 0055](../decisions/0055-restrict-grafana-access-to-authorized-gateway-peers.md) records the Grafana access boundary, and [ADR 0057](../decisions/0057-limit-metrics-exporters-to-managed-nodes.md) limits exporter service management to eligible managed Nodes; this page states what the operator observes.
+The `metrics` role runs Prometheus and Grafana on one Node and collects metrics from selected managed Nodes. Use it to view machine health at `https://metrics.orbit`. [ADR 0003](/decisions/0003-singleton-metrics-role) defines placement, [ADR 0055](/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers) defines access, and [ADR 0057](/decisions/0057-limit-metrics-exporters-to-managed-nodes) defines eligible exporters.
 
-The role runs two Docker containers on one node, `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and the packaged `prometheus-node-exporter` unit on every selected node. Both containers use Docker host networking. Prometheus binds `127.0.0.1:9090` and has no firewall rule, so only a process on the Metrics node reaches it. Grafana binds the node's WireGuard address on port 3000. Two UFW rules that the Metrics role owns admit the Gateway's WireGuard address and deny every other WireGuard peer before the general member-trust rule. Both containers log through the `json-file` driver, capped at 10 MB per file and three files.
+The containers are `orbit-metrics-prometheus` and `orbit-metrics-grafana`. Each selected Node runs `prometheus-node-exporter`. Both containers use host networking. Prometheus listens locally at `127.0.0.1:9090`, without a firewall rule. Grafana listens on WireGuard port 3000. Two Orbit UFW rules allow the Gateway and block other peers before general member rules apply. Container logs use `json-file`, limited to three files of 10 MB each.
 
 ## Placement and recovery
 
@@ -14,7 +14,7 @@ orbit metrics:enable [node]
 
 The node is a numeric ID or a registered node name. The command prompts for a node only in an interactive terminal. JSON and other non-interactive calls must supply the node.
 
-The Gateway accepts the role on a node that already carries any other role, and it answers `node.role_conflict` to a second `metrics:enable` while an assignment exists on any node, whatever that assignment's status.
+Metrics can share a Node with any other role. Only one Metrics assignment may exist. A second enable request returns `node.role_conflict`, even if the existing assignment failed.
 
 Retry a failed convergence with the generic role command:
 
@@ -24,7 +24,7 @@ orbit node:role:add <node> metrics --converge
 
 `--converge` re-claims an assignment that is active or whose failed step starts with `converge:`. A removal that fails leaves the assignment `failed` with a step that starts with `remove:`; `orbit metrics:disable` retries that removal, and `--converge` answers `node.role_conflict` for it. There is no separate Metrics convergence command.
 
-The Gateway converges each container against the files it reads: Prometheus against `prometheus.yml`, Grafana against `grafana.ini` and its provisioning files. A change in the selected exporters stops and replaces the Prometheus container, so a Prometheus query in flight fails, while the Grafana container and its sessions keep running. The provisioned dashboard is bound to neither container: Grafana's file provider reloads it from the bind mount while Grafana runs. A credential reset sets the password through Grafana's own API and replaces neither container.
+Orbit updates each container when its configuration changes: `prometheus.yml` for Prometheus; `grafana.ini` and provisioning files for Grafana. Changing exporters replaces Prometheus and interrupts active queries. Grafana and its sessions keep running. Grafana reloads dashboard files without a container restart. Password resets use Grafana's API and replace neither container.
 
 ## Exporter selection
 
@@ -71,9 +71,9 @@ orbit metrics:credentials
 orbit metrics:credentials --reset
 ```
 
-The username is `admin`. The Gateway stores the active and pending passwords as encrypted node settings on the Metrics node. The Gateway gives each Metrics Node one credential owner. That owner serializes initial creation, verified reads, reset, and purge from their first credential read through their final state change. A contender waits within the command deadline and then either reads the state left by the owner or gets `metrics.credentials_busy` (HTTP 409) without changing credential state. The owner does not expire while its operation runs.
+The username is `admin`. The Gateway encrypts active and pending passwords in the Metrics Node's settings. One lock protects password creation, verified reads, resets, and deletion from first read to final update. A competing request waits within its deadline, then reads the completed state or returns HTTP 409 `metrics.credentials_busy` without changes. The lock does not expire during an operation.
 
-A reset retains the encrypted pending password when an error occurs before apply, after apply, or during authentication. A retry first authenticates the pending password. It promotes that password without applying it again when Grafana already accepts it; otherwise it applies the pending password and promotes it only after authenticated verification. A credential response contains the password only after verification and carries `Cache-Control: no-store`.
+A failed reset keeps the encrypted pending password. A retry first checks whether Grafana accepts it. If so, Orbit marks it active; otherwise, Orbit applies and verifies it first. Credential responses include the password only after verification and use `Cache-Control: no-store`.
 
 ## Status, disable, and purge
 

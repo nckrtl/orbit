@@ -4,7 +4,7 @@ In the context of Orbit Nodes that use WireGuard for private reachability, facin
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md), and [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md).
+Accepted on 2026-09-05. Extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), and [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing).
 
 ## Context
 
@@ -33,6 +33,6 @@ Orbit already distinguishes its WireGuard control-plane identity from applicatio
 ## Affects
 
 - Components: apps/docs, apps/e2e, apps/gateway
-- ADRs: extends [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md), and [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md)
+- ADRs: extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), and [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing)
 - Detail: docs/reference/routes.md
 - Verify: `composer docs-lint` and the private Route Incus proof actions

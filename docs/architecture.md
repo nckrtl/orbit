@@ -1,6 +1,6 @@
 # Architecture
 
-Orbit is built around one Gateway. You use the CLI to ask the Gateway to make changes, and the Gateway coordinates the machines managed by Orbit. These machines are called Nodes.
+Orbit has one active Gateway. The command-line interface (CLI) sends it requests, and it coordinates changes on managed machines called Nodes.
 
 This is how a command reaches a Node:
 
@@ -18,56 +18,52 @@ Human or AI agent
   Managed Nodes
 ```
 
-Web traffic follows a separate path from CLI control traffic. [Routes](reference/routes.md) explains how a hostname reaches its AppInstance target through the Node, Router, and Ingress roles.
+Web traffic follows a separate path from CLI control traffic. [Routes](/reference/routes) explains how a hostname reaches its App instance target through the Node, Router, and Ingress roles.
 
 ## CLI
 
-The CLI lives in `apps/cli`. It is the main way to use Orbit from a terminal. It shows clear output to humans and can return structured output for scripts and agents.
-
-The CLI sends HTTP requests to the Gateway.
+The CLI lives in `apps/cli`. It sends HTTP requests to the Gateway and returns readable output for people or structured data for scripts and agents.
 
 ## Gateway
 
-The Gateway lives in `apps/gateway`. It stores Orbit's data, authorizes actions, and coordinates changes on Nodes. Because an Orbit setup has one active Gateway, you always have one place to see the machines and applications managed by Orbit.
-
-The Gateway stores its data in SQLite. Nodes hold the files and run the services needed to apply those settings.
+The Gateway lives in `apps/gateway`. It stores Orbit's records in SQLite, authorizes actions, and coordinates changes on Nodes. Nodes hold the files and run the services that apply those settings.
 
 ## Nodes and roles
 
-A Node is a machine connected to Orbit. It can remain standalone or belong to one optional Cluster, and it can have one or more roles. For example, an `app-dev` Node runs development applications, a `database` Node receives Docker for shared Node Processes, and a Router sends clustered traffic to the right application.
+A Node can stand alone or belong to one Cluster. Roles define its work: `app-dev` runs development applications, `database` installs Docker for shared database processes, and Router sends Cluster traffic to applications.
 
 The Gateway manages Nodes over SSH. After setup, WireGuard provides the private network used for those connections. Orbit manages the files and services needed by each Node's assigned roles.
 
 ## Applications and traffic
 
-Orbit can group related Nodes in a Cluster, but a Cluster is not required. An App represents an application and owns its source defaults and Routes. An AppInstance represents one place on a Node where that App is developed or runs in production. [Applications](domains/applications.md) explains source placement, and [Routes](reference/routes.md) owns the hostname and target contract.
+An App stores shared source defaults and owns Routes. An App instance is one copy of that App on a Node, used for development or production. A Route gives it a hostname. Related Nodes can share a Cluster, but this is optional.
 
-A development AppInstance owns one Git checkout or worktree. A standalone production AppInstance owns a user, home, configured deployment branch, and ordered application steps. Orbit owns release deployments, while the operating agent starts them and selects application commands. The Gateway selects the required PHP runtime and provisions the AppInstance's sole Route. [Applications](domains/applications.md) owns source identity, branch selection, production placement, migrations, and application configuration. [AppInstance removal](reference/appinstance-removal.md) owns source deletion, cascades, retained production content, Route cleanup, and retry. [PHP runtime](reference/php-runtime.md) owns runtime settings, and [Routes](reference/routes.md) owns the private traffic path and mutation guards.
+A development App instance owns one Git checkout or worktree. A standalone production App instance has a dedicated user, home, deployment branch, and application steps. Orbit prepares and activates releases; the operator or agent starts deployments and chooses application commands. The Gateway selects any required PHP runtime and prepares one Route per active App instance.
 
-When a development AppInstance sits on a Node with the active `app-dev` role, idle HTTP silence stops its desired-running Processes that are not keep-alive, and the next request starts the desired-running group. The [hibernation page](reference/app-dev-runtime-hibernation.md) states that contract.
+When an App instance is idle on an active `app-dev` Node, it can [hibernate](/reference/app-dev-runtime-hibernation). Orbit stops processes configured to run unless they have keep-alive enabled. The next HTTP request starts the group configured to run.
 
-[ADR 0009](decisions/0009-clustered-app-instance-routing.md) and [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md) define traffic ownership. [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md) define hostname, scope, and target identity. [ADR 0025](decisions/0025-stabilize-the-default-appinstance-identity.md), [ADR 0027](decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md), and [ADR 0032](decisions/0032-preserve-explicit-appinstance-branch-selection.md) define stable default identity, owned source layouts, and explicit branch selection. [ADR 0028](decisions/0028-require-one-route-per-active-appinstance.md), [ADR 0029](decisions/0029-manage-laravel-application-urls-through-orbit.md), and [ADR 0030](decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md) define active Route ownership, Laravel URL alignment, and the application-health boundary. [ADR 0033](decisions/0033-trust-wireguard-members-for-private-node-traffic.md) defines private Node trust, and [ADR 0034](decisions/0034-select-appinstance-php-from-composer-constraints.md) defines AppInstance PHP selection.
+See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and hostname changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [App instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
 
-Legacy Instance and Workspace records remain available during staged conversion. New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route persistence remains separate from runtime projection, conversion, and Ingress behavior.
+Legacy Instance and Workspace records remain available during conversion. New instance commands manage App instances. Route changes leave legacy hostname and certificate fields untouched.
 
 ## Herdr sessions
 
-A Herdr session is a named headless Herdr server on a managed Node. The Gateway composes a node-targeted Process, publishes a private receive-only observer, and issues short-lived `terminal.observe` grants so Commander can watch recorded panes without SSH or terminal input. [Herdr sessions](reference/herdr-sessions.md) owns that contract.
+A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server on a Node. The Gateway manages its process and grants Commander temporary, read-only access to recorded panes through `terminal.observe`.
 
 ## Database connections
 
-The Gateway stores named mysql, pgsql, and sqlite connection records. An operator registers a remote host or a sqlite path without assigning the `database` role. An operator attaches a connection to an AppInstance so the Gateway writes prefixed keys into that instance's stored environment. Node Processes own Docker database server lifecycle. [Database connections](reference/database-connections.md) owns the registry and attach contract.
+The Gateway stores named MySQL, PostgreSQL, and SQLite connections. Register a host or SQLite path, then attach the connection to an App instance to populate its stored environment. Registration needs no `database` role. Node processes manage database containers. See [Database connections](/reference/database-connections).
 
 ## Doctor
 
-`orbit doctor` compares what the Gateway expects with what is actually on a Node. It reports problems without changing the machine. This behavior is described in [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
+`orbit doctor` compares what the Gateway expects with what is actually on a Node. It reports problems without changing the machine. This behavior is described in [ADR 0004](/decisions/0004-verify-only-doctor-boundary).
 
 ## Testing on real Linux machines
 
-Automated tests cover most Orbit behavior. When a change depends on Linux, systemd, file permissions, networking, or several machines, contributors also observe it in a disposable Incus environment. The selected [implementation flow](reference/implementation-loop.md#incus-requirement) decides whether that environment is development discovery or a separate fresh proof topology. [ADR 0006](decisions/0006-topology-led-feature-development.md) explains why Orbit uses Incus.
+Automated tests cover most Orbit behavior. When a change depends on Linux, systemd, file permissions, networking, or several machines, contributors also observe it in a disposable Incus environment. The selected [implementation flow](/reference/implementation-loop#incus-requirement) decides whether that environment is development discovery or a separate fresh proof topology. [ADR 0006](/decisions/0006-topology-led-feature-development) explains why Orbit uses Incus.
 
 ## Documentation tools
 
-The `apps/docs` project checks the Markdown files in `docs/` and builds the index used by `composer docs-context`. It runs during development and does not provide a website or production service. The approach is explained in [ADR 0014](decisions/0014-maintain-verified-documentation-context.md).
+Mintlify publishes the pages in `docs/`. The `apps/docs` console project checks documentation and builds the index used by `composer docs-context`. [ADR 0014](/decisions/0014-maintain-verified-documentation-context) explains the index.
 
 The `apps/e2e` project creates the temporary Incus machines used for these tests. Keeping it separate from the product code makes the test environment easier to trust.

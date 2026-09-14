@@ -4,7 +4,7 @@ In the context of Laravel AppInstances whose configured application URL can diff
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0028](0028-require-one-route-per-active-appinstance.md). Amends [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for Orbit ownership of Laravel's canonical application URL configuration on app-prod Nodes.
+Accepted on 2026-09-05. Extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) and [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance). Amends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for Orbit ownership of Laravel's canonical application URL configuration on app-prod Nodes.
 
 ## Context
 
@@ -35,6 +35,6 @@ A Laravel application uses its configured application URL when it generates link
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0028](0028-require-one-route-per-active-appinstance.md); amends [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for Orbit ownership of Laravel's canonical application URL configuration on app-prod Nodes
-- Detail: [Applications](../domains/applications.md)
+- ADRs: extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) and [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance); amends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for Orbit ownership of Laravel's canonical application URL configuration on app-prod Nodes
+- Detail: [Applications](/domains/applications)
 - Verify: `bin/test`

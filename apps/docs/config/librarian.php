@@ -7,6 +7,7 @@ use App\Librarian\Rules\DecisionRecordLanguageRule;
 use App\Librarian\Rules\DecisionRecordStructureRule;
 use App\Librarian\Rules\DocumentationIssueReferenceRule;
 use App\Librarian\Rules\DocumentationNarrativeRule;
+use App\Librarian\Rules\MintlifyLinksRule;
 use HardImpact\Librarian\Linting\Rules\BulletComplexityRule;
 use HardImpact\Librarian\Linting\Rules\CompoundNounStackRule;
 use HardImpact\Librarian\Linting\Rules\DocumentComplexityRule;
@@ -29,6 +30,7 @@ return [
         DecisionRecordLanguageRule::class,
         DocumentationNarrativeRule::class,
         DocumentationIssueReferenceRule::class,
+        MintlifyLinksRule::class,
         RequirementSmellRule::class,
         SentenceCaseHeadingRule::class,
         DocumentComplexityRule::class,

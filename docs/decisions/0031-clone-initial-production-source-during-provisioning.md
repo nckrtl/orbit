@@ -4,7 +4,7 @@ In the context of production AppInstances created before their application files
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md) and [ADR 0032](0032-preserve-explicit-appinstance-branch-selection.md). Supersedes [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for initial production source preparation and recording initial branch and commit evidence.
+Accepted on 2026-09-05. Extends [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection). Supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for initial production source preparation and recording initial branch and commit evidence.
 
 ## Context
 
@@ -38,6 +38,6 @@ Creating an empty production placement leaves Orbit unable to detect Laravel or 
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk, apps/e2e
-- ADRs: extends [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md) and [ADR 0032](0032-preserve-explicit-appinstance-branch-selection.md); supersedes [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for initial production source preparation and recording initial branch and commit evidence
-- Detail: [Applications](../reference/apps.md)
+- ADRs: extends [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection); supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for initial production source preparation and recording initial branch and commit evidence
+- Detail: [Applications](/reference/apps)
 - Verify: `composer docs-lint`; implementation conformance through `bin/test`

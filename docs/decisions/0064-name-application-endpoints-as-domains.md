@@ -4,7 +4,7 @@ In the context of application endpoints and machine identities both being called
 
 ## Status
 
-Accepted on 2026-09-13. Extends [ADR 0044](0044-own-appinstance-environment-configuration-in-orbit.md). Supersedes [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0063](0063-prefer-active-cluster-tlds-for-generated-routes.md) only where they name a Route-owned application endpoint a hostname.
+Accepted on 2026-09-13. Extends [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). Supersedes [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) and [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes) only where they name a Route-owned application endpoint a hostname.
 
 ## Context
 
@@ -41,6 +41,6 @@ A Route-owned application endpoint and a Node's machine identity share the term 
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0044](0044-own-appinstance-environment-configuration-in-orbit.md); supersedes [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0063](0063-prefer-active-cluster-tlds-for-generated-routes.md) for the application endpoint term
-- Detail: [Routes](../reference/routes.md)
+- ADRs: extends [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit); supersedes [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) and [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes) for the application endpoint term
+- Detail: [Routes](/reference/routes)
 - Verify: Gateway migration and domain-contract tests, affected CLI and PHP SDK tests, `composer docs-lint`, and application routing checks on disposable Nodes

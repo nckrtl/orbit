@@ -1,27 +1,27 @@
-# AppInstance cloning
+# App instance cloning
 
-This page tells an operating agent how the Gateway creates a prepared production AppInstance from an eligible development or production candidate. [ADR 0047](../decisions/0047-create-production-appinstances-from-candidates.md) owns candidate cloning, [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns private Route scope and Router projection, [ADR 0044](../decisions/0044-own-appinstance-environment-configuration-in-orbit.md) owns stored environment configuration, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns runtime-definition copies.
+This page tells an operating agent how the Gateway creates a prepared production App instance from an eligible development or production candidate. [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) owns candidate cloning, [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) owns private Route scope and Router projection, [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns stored environment configuration, and [ADR 0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances) owns runtime-definition copies.
 
 ## Request a clone
 
-An authorized client sends one candidate AppInstance selector and the target identity to the Gateway.
+An authorized client sends one candidate App instance selector and the target identity to the Gateway.
 
 | Input | Requirement |
 | --- | --- |
 | Endpoint | `POST /api/v1/instances/{candidate}/clone` |
 | `node_id` | Required positive ID of the destination Node |
-| `name` | Required normalized target AppInstance name |
+| `name` | Required normalized target App instance name |
 | `preview_name` | Required name that Orbit normalizes before it derives the preview hostname |
 | `branch` | Optional existing target repository branch; omission inherits the candidate's configured branch |
 | `sqlite_source_path` | Optional absolute path to one SQLite database on the candidate |
 
 The request accepts no target App, commit identifier, Unix user, destination path, or other source or runtime override. The Gateway refuses malformed JSON, duplicate members, unknown members, and invalid values before it changes stored or remote state.
 
-The caller needs directed access to both the candidate Node and the destination Node. The candidate selects the App. The destination must be an active Node with the active `app-prod` role, and the App must not already have a production AppInstance there. The destination can be standalone or a member of an active Cluster. A Cluster destination needs its active Router before cloning can reserve the target. Existing active-role, production-placement, and legacy production conflicts still apply.
+The caller needs directed access to both the candidate Node and the destination Node. The candidate selects the App. The destination must be an active Node with the active `app-prod` role, and the App must not already have a production App instance there. The destination can be standalone or a member of an active Cluster. A Cluster destination needs its active Router before cloning can reserve the target. Existing active-role, production-placement, and legacy production conflicts still apply.
 
 ## Clone from the CLI
 
-Provision the production Node with its own TLD before it receives a clone. The `--tld` value supplies the suffix for private production preview hostnames. The command needs no `--architecture` value, because the Gateway records the architecture it observes on the machine, as [Node provisioning](node-provisioning.md#machine-architecture) describes:
+Provision the production Node with its own TLD before it receives a clone. The `--tld` value supplies the suffix for private production preview hostnames. The command needs no `--architecture` value, because the Gateway records the architecture it observes on the machine, as [Node provisioning](/reference/node-provisioning#machine-architecture) describes:
 
 ```text
 orbit node:add production production.example \
@@ -38,7 +38,7 @@ orbit instance:clone CANDIDATE NODE NAME \
   [--sqlite-source-path=PATH]
 ```
 
-Use unambiguous candidate and Node identifiers in noninteractive and `--json` calls. The command sends typed requests through the PHP software development kit (SDK) and does not open a local or remote shell. Its result identifies the target AppInstance ID, configured branch, actual preview hostname, and current selected release. A new target has no selected release.
+Use unambiguous candidate and Node identifiers in noninteractive and `--json` calls. The command sends typed requests through the PHP software development kit (SDK) and does not open a local or remote shell. Its result identifies the target App instance ID, configured branch, actual preview hostname, and current selected release. A new target has no selected release.
 
 The candidate supplies committed source evidence, stored environment values, and an optional SQLite snapshot. The candidate's App supplies the production Process and Schedule definitions. Cloning copies no candidate-specific Process or Schedule override and starts no copied runtime.
 
@@ -62,13 +62,13 @@ The candidate must have no staged, unstaged, nonignored untracked, or submodule 
 
 The Gateway reconstructs the selected App repository branch beneath the target's owned production release directory. It does not copy the candidate working directory and does not select the target's `current` release link.
 
-Orbit copies every stored candidate environment entry into an independently encrypted target value. Literal values such as `APP_KEY` and reference expressions remain unchanged in storage. Target synchronization resolves `{{app_instance.hostname}}` and `{{app_instance.environment}}` against the new AppInstance after the reusable remote preflight succeeds. The clone copies no source `.env` bytes, cached Laravel configuration, or local environment-file edits.
+Orbit copies every stored candidate environment entry into an independently encrypted target value. Literal values such as `APP_KEY` and reference expressions remain unchanged in storage. Target synchronization resolves `{{app_instance.hostname}}` and `{{app_instance.environment}}` against the new App instance after the reusable remote preflight succeeds. The clone copies no source `.env` bytes, cached Laravel configuration, or local environment-file edits.
 
-Orbit copies the App's production Process and Schedule definitions into independent AppInstance-owned records. It installs those copies in stopped state and does not use candidate-specific overrides. A PHP source receives a dedicated target runtime from Orbit defaults; a non-PHP source receives no PHP runtime. Candidate dependencies, ignored logs, caches, and local PHP-FPM tuning do not transfer.
+Orbit copies the App's production Process and Schedule definitions into independent App instance-owned records. It installs those copies in stopped state and does not use candidate-specific overrides. A PHP source receives a dedicated target runtime from Orbit defaults; a non-PHP source receives no PHP runtime. Candidate dependencies, ignored logs, caches, and local PHP-FPM tuning do not transfer.
 
 ## Select an optional SQLite database
 
-Database seeding is optional. When a clone includes a seed, the operating agent supplies one explicit absolute path on the candidate AppInstance.
+Database seeding is optional. When a clone includes a seed, the operating agent supplies one explicit absolute path on the candidate App instance.
 
 The Gateway validates the source and target before it can replace the target database.
 
@@ -90,11 +90,11 @@ Cloning does not stop source processes or schedules, pause queue processing, cle
 
 ## Complete without deployment
 
-A successful request returns the ordinary active production AppInstance and its sole private preview Route. The prepared target has no selected deployment release. Cloning does not require an application response, run a framework command, deploy code, select `current`, or start a Process or Schedule.
+A successful request returns the ordinary active production App instance and its sole private preview Route. The prepared target has no selected deployment release. Cloning does not require an application response, run a framework command, deploy code, select `current`, or start a Process or Schedule.
 
-The first deployment is a separate explicit request. It fetches the target's configured branch, synchronizes its stored environment, runs only configured deployment steps, and selects the new release as described in [Production release layout](deployments.md).
+The first deployment is a separate explicit request. It fetches the target's configured branch, synchronizes its stored environment, runs only configured deployment steps, and selects the new release as described in [Production release layout](/reference/deployments).
 
-For a standalone destination, private Domain Name System (DNS) resolves the preview directly to the workload Node. For a Cluster destination, private DNS resolves it to the Router. The Router and workload receive separate Orbit certificate authority identities. Router Caddy preserves the preview hostname as both the HTTP `Host` value and Transport Layer Security server name when it forwards to the workload. The workload firewall permits only the required private path, and Caddy uses the target's dedicated PHP socket when the source needs PHP. [Routes](routes.md#initial-private-projection) describes the shared private projection, and [PHP runtimes](php-runtime.md#production-runtime) describes the dedicated production service.
+For a standalone destination, private Domain Name System (DNS) resolves the preview directly to the workload Node. For a Cluster destination, private DNS resolves it to the Router. The Router and workload receive separate Orbit certificate authority identities. Router Caddy preserves the preview hostname as both the HTTP `Host` value and Transport Layer Security server name when it forwards to the workload. The workload firewall permits only the required private path, and Caddy uses the target's dedicated PHP socket when the source needs PHP. [Routes](/reference/routes#set-up-private-traffic) describes the shared private projection, and [PHP runtimes](/reference/php-runtime#production-runtime) describes the dedicated production service.
 
 Clone preparation publishes no public listener or Ingress certificate. Orbit can prepare and activate the private Route before a deployment selects application code, so projection checks verify private routing and Transport Layer Security without requiring an HTTP success response.
 
@@ -104,7 +104,7 @@ The Gateway records the immutable clone request and bounded provisioning checkpo
 
 A source, certificate, firewall, Caddy, Router, or private DNS failure records its bounded clone boundary for the retry. A request that changes the candidate, destination, name, preview, branch override, or SQLite selection refuses without adopting or replacing that target.
 
-After completion, an identical request returns the same AppInstance and Route. It does not revalidate changing candidate state or replace target source, database, stored environment edits, definition copies, runtime desired state, or final hostname. Temporary SQLite work belongs to the clone operation and is cleaned without removing unrelated files.
+After completion, an identical request returns the same App instance and Route. It does not revalidate changing candidate state or replace target source, database, stored environment edits, definition copies, runtime desired state, or final hostname. Temporary SQLite work belongs to the clone operation and is cleaned without removing unrelated files.
 
 Orbit does not clean application data in either database. Before target workers start, the operating agent removes copied target queue entries or performs other target-only application cleanup when the application requires it. External storage and databases other than SQLite need separate preparation.
 

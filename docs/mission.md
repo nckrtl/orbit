@@ -1,52 +1,21 @@
 # Mission
 
-Orbit is an AI-first, all-in-one tool for local app development, production
-hosting, and day-to-day fleet maintenance. It can be fully operated by your AI
-agent, so you can focus on building products without operational distractions.
+Orbit manages local development, production hosting, and day-to-day machine maintenance. You or your AI agent can operate it through the same command-line interface (CLI).
 
 ## Why Orbit exists
 
-Modern development tools are good at individual jobs. One tool may handle local
-development, another may deploy an application, and another may monitor a
-server. The challenge starts when those tools need to work together. They often
-have separate logins, separate settings, and different concepts of the same
-application.
-
-Orbit connects those stages. It keeps track of your applications and machines
-and lets you manage them through the same CLI.
-You can see what changed without rebuilding the story from several dashboards
-and configuration files.
+Development, deployment, and monitoring tools often track the same application in separate settings and dashboards. Orbit connects these tasks. It keeps your applications, machines, and change history in one place.
 
 ## How Orbit helps
 
-The Gateway is the center of an Orbit setup. It remembers which machines and
-applications belong to Orbit and coordinates changes across them. The CLI is
-how people and coding agents talk to the Gateway. Managed Nodes do the actual
-work, such as running an application or routing traffic.
-
-Actions go through the Gateway, which authorizes them before passing them to
-managed Nodes.
+The Gateway stores your machine and application records. It authorizes CLI requests and coordinates changes on managed machines, called Nodes. Nodes run applications, route traffic, and perform other assigned work.
 
 ## Built for humans and agents
 
-Humans and coding agents use the same commands. Human output is easy to
-read, and structured output gives automation reliable data to work with.
-Orbit keeps a history of changes so you can understand what happened when
-something goes wrong.
-
-Agents can help with routine development and operations, but they do not get
-unrestricted access to every machine. Their actions stay focused, visible, and
-testable.
+Commands return readable output for people and structured data for automation. Agents use the same permissions as other callers. Orbit records changes so you can trace problems.
 
 ## What Orbit manages
 
-Orbit manages applications, development environments, production servers,
-routes, processes, tools, settings, metrics, networking, and certificates.
-These features grow over time, but they all belong to the same view of your
-infrastructure.
+Orbit manages applications, development environments, production servers, routes, processes, tools, settings, metrics, networking, and certificates. You choose the infrastructure. Orbit manages only the machines and resources you add.
 
-Orbit only manages machines and resources you explicitly add. You still choose
-and operate the infrastructure.
-
-To see how the main parts work together, continue with
-[Architecture](architecture.md).
+See [Architecture](/architecture) for how these parts work together.

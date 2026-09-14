@@ -44,5 +44,5 @@ An ADR records one decision, why it won, and what it binds. It does not carry me
 
 Current contributor-governance decisions:
 
-- [ADR 0010: Record decisions before implementation issues](0010-record-decisions-before-implementation-issues.md)
-- [ADR 0014: Maintain verified documentation context](0014-maintain-verified-documentation-context.md)
+- [ADR 0010: Record decisions before implementation issues](/decisions/0010-record-decisions-before-implementation-issues)
+- [ADR 0014: Maintain verified documentation context](/decisions/0014-maintain-verified-documentation-context)

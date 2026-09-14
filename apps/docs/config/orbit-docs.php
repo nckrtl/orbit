@@ -9,6 +9,8 @@ return [
         // Orbit's introductory pages use reader-focused headings instead of
         // Librarian's fixed Why / How / What / Boundaries templates.
         'librarian.core_docs_structure',
+        // MintlifyLinksRule also handles MDX cards and extensionless page URLs.
+        'librarian.links',
     ],
 
     // Prose rules that do not apply to accepted decision records numbered

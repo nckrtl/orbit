@@ -4,7 +4,7 @@ In the context of private Metrics access, facing a conflict between unrestricted
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0003](0003-singleton-metrics-role.md) from Metrics command authorization to Grafana access. Supersedes [ADR 0033](0033-trust-wireguard-members-for-private-node-traffic.md) only for Grafana network access and authorization. Retains ADR 0003's Grafana login, credential controls, and Gateway-owned publication.
+Accepted on 2026-09-10. Extends [ADR 0003](/decisions/0003-singleton-metrics-role) from Metrics command authorization to Grafana access. Supersedes [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic) only for Grafana network access and authorization. Retains ADR 0003's Grafana login, credential controls, and Gateway-owned publication.
 
 ## Context
 
@@ -38,6 +38,6 @@ The Gateway proxy publishes Grafana without checking a browser caller's Gateway 
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0003](0003-singleton-metrics-role.md) for dashboard authorization; supersedes [ADR 0033](0033-trust-wireguard-members-for-private-node-traffic.md) for Grafana access
-- Detail: [Metrics role](../reference/metrics.md)
+- ADRs: extends [ADR 0003](/decisions/0003-singleton-metrics-role) for dashboard authorization; supersedes [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic) for Grafana access
+- Detail: [Metrics role](/reference/metrics)
 - Verify: Gateway authorization and Metrics publication tests; private access, bypass refusal, and revocation checks on an isolated topology; `composer docs-lint`

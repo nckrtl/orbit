@@ -4,7 +4,7 @@ In the context of standalone and clustered AppInstances, facing generated names 
 
 ## Status
 
-Accepted on 2026-09-04. Extends [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md), and [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md). Supersedes [ADR 0017](0017-optional-cluster-placement-and-tld-precedence.md) where it gives the active Cluster TLD precedence over the Node TLD, uses TLD presence to select routing scope, permits direct public workload publication, and makes a Router optional for every TLD-less Cluster.
+Accepted on 2026-09-04. Extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), and [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates). Supersedes [ADR 0017](/decisions/0017-optional-cluster-placement-and-tld-precedence) where it gives the active Cluster TLD precedence over the Node TLD, uses TLD presence to select routing scope, permits direct public workload publication, and makes a Router optional for every TLD-less Cluster.
 
 ## Context
 
@@ -49,6 +49,6 @@ ADR 0017 couples generated hostname selection to the traffic path, so joining an
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md), and [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md); supersedes [ADR 0017](0017-optional-cluster-placement-and-tld-precedence.md) for generated-hostname precedence, routing-scope selection, Router requirements, and direct public workload publication
+- ADRs: extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), and [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates); supersedes [ADR 0017](/decisions/0017-optional-cluster-placement-and-tld-precedence) for generated-hostname precedence, routing-scope selection, Router requirements, and direct public workload publication
 - Detail: docs/reference/routes.md
 - Verify: `bin/test` verifies the typed Route, placement, scope, and reconciliation contracts

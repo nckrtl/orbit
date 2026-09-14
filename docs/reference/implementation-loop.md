@@ -1,10 +1,10 @@
 # Implementation loop
 
-This page is for contributors who prepare a candidate for review. It describes delivery flow selection, local checks, and the Git references that hold plans and development evidence. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs artifact storage; [proof plans](proof-plans.md) describes Incus evidence.
+This page is for contributors who prepare a candidate for review. It describes delivery flow selection, local checks, and the Git references that hold plans and development evidence. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) governs artifact storage; [proof plans](/reference/proof-plans) describes Incus evidence.
 
 ## Select a flow
 
-Discovery is the built-in default for new clones and unselected worktrees. Proof requires an explicit selection. A worktree uses either `discovery` or `proof`, as governed by [ADR 0051](../decisions/0051-select-discovery-only-feature-delivery.md). The selected flow lives in ignored `.loop/flow.json` and travels with the candidate-bound artifact ref. Each plan, implementation, review, and closeout handoff names the flow. The reviewer verifies the published selection matches the handoff and local selection.
+Discovery is the built-in default for new clones and unselected worktrees. Proof requires an explicit selection. A worktree uses either `discovery` or `proof`, as governed by [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery). The selected flow lives in ignored `.loop/flow.json` and travels with the candidate-bound artifact ref. Each plan, implementation, review, and closeout handoff names the flow. The reviewer verifies the published selection matches the handoff and local selection.
 
 | Command | Result |
 | --- | --- |
@@ -23,7 +23,7 @@ The default uses repository-local Git configuration `orbit.loopFlow`, shared acr
 
 ## Incus requirement
 
-The `incus` issue label identifies acceptance that needs real machines. [ADR 0058](../decisions/0058-separate-incus-requirements-from-delivery-flow.md) separates that requirement from the selected flow. The implementer resolves the label and flow before acquiring resources; preflight and independent plan review precede acquisition.
+The `incus` issue label identifies acceptance that needs real machines. [ADR 0058](/decisions/0058-separate-incus-requirements-from-delivery-flow) separates that requirement from the selected flow. The implementer resolves the label and flow before acquiring resources; preflight and independent plan review precede acquisition.
 
 | Issue label | Selected flow | Required topology |
 | --- | --- | --- |
@@ -68,19 +68,19 @@ The discovery flow follows this order.
 
 The issue's acceptance outcomes stay required. Existing Incus `Proof:` venues map to reproducible discovery observations, affected tests selected by TIA, and the Builder candidate gate. The handoff identifies each actual check and says `Discovery development only; isolated acceptance proof not run`. It does not claim immutable acceptance proof. A proof plan, proof fixtures, observations manifest, equivalence report, candidate-convergence attempt, or snapshot refresh is not required. The harness refuses `prove`, `equivalence`, and `candidate` for a worktree selected as `discovery`.
 
-Discovery uses the existing isolated topology machinery and mounts the changing worktree. Acquisition validates the saved snapshot against its recorded generation and checks cold-base compatibility, ownership, capacity, and readiness. It does not require that snapshot to match current main. An incompatible cold base or absent snapshot still needs an explicit infrastructure repair. Optional extended discovery reuses the existing extension declaration format described in [Incus topologies](incus-topologies.md); its actions do not run as acceptance proof.
+Discovery uses the existing isolated topology machinery and mounts the changing worktree. Acquisition validates the saved snapshot against its recorded generation and checks cold-base compatibility, ownership, capacity, and readiness. It does not require that snapshot to match current main. An incompatible cold base or absent snapshot still needs an explicit infrastructure repair. Optional extended discovery reuses the existing extension declaration format described in [Incus topologies](/reference/incus-topologies); its actions do not run as acceptance proof.
 
 An advance of main alone does not require integration, another approval, proof, or local checks on a replacement candidate. The orchestrator merges when GitHub reports the approved candidate can merge and the Builder's gate receipt validates for that candidate. If actual conflicts block merging, the implementer fetches main, merges it into the branch, resolves conflicts, runs affected checks and a fresh candidate gate, publishes artifacts for the new head, and pushes again. The reviewer checks the resolution changes and affected acceptance items on that head; preflight does not restart.
 
-GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0059](../decisions/0059-make-the-builder-own-the-candidate-quality-gate.md) governs the local candidate gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
+GitHub CI is disabled and no GitHub status check is required for merge. [ADR 0059](/decisions/0059-make-the-builder-own-the-candidate-quality-gate) governs the local candidate gate. Conflict-free candidates can merge after exact-candidate review without including newer main.
 
 Closeout verifies authoritative GitHub merge state and runs `bin/loop-flow verify-merge --candidate=SHA --merge=SHA`. The command requires the approved candidate as the exact second parent and the conflict-free merge tree of the recorded parents. That tree can differ from the candidate when main has advanced. Closeout advances the primary checkout, releases any discovery resources, and runs `bin/worktree-remove ISSUE`. Snapshot promotion and refresh are separate infrastructure operations in this flow.
 
 ## Proof delivery
 
-The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](proof-plans.md). Release idle discovery resources before handing the candidate to review. Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
+The proof flow uses the same worktree, preflight, documentation, review, artifacts, and local checks. Issues with `incus` also require the isolated acceptance proof and captured evidence described in [Proof plans](/reference/proof-plans). Release idle discovery resources before handing the candidate to review. Candidate preparation includes current main; review and closeout enforce that binding. A later candidate uses the retained-proof evaluation and main-delta review rules in the existing skills. `verify-merge` requires the feature to include the merged base and the merge tree to equal the approved candidate's tree.
 
-After every declared proof action and general verification exits `0`, the harness captures the proof result, action evidence, topology inventory, input manifest, and candidate identity before it permits successful-proof inspection. It retains every standard or declared extended proof Node through review. Reviewers may use proof `shell` and `exec` access with the ordinary guest privilege boundary, including commands that change live application or machine state. The harness records review actions, results, required-check status, and findings separately from the immutable captured proof. [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md) governs this retained-proof review lifecycle.
+After every declared proof action and general verification exits `0`, the harness captures the proof result, action evidence, topology inventory, input manifest, and candidate identity before it permits successful-proof inspection. It retains every standard or declared extended proof Node through review. Reviewers may use proof `shell` and `exec` access with the ordinary guest privilege boundary, including commands that change live application or machine state. The harness records review actions, results, required-check status, and findings separately from the immutable captured proof. [ADR 0056](/decisions/0056-retain-proof-topologies-for-interactive-review) governs this retained-proof review lifecycle.
 
 A required review check that fails or has an incomplete record prevents approval. An exploratory command failure remains distinct and does not replace a required result. A code or configuration fix requires a new candidate and fresh proof from declared inputs; an edit left on a reviewed machine and an equivalence report for the old proof cannot establish the fix. The old attempt may be released before replacement or explicit abandonment, but its captured proof and review record remain available.
 
@@ -187,7 +187,7 @@ If publication omits supplied evidence, the orchestrator restores it from the im
 
 ## Main test baselines
 
-[ADR 0052](../decisions/0052-seed-worktrees-from-successful-main-test-baselines.md) governs baseline ownership. Each repository stores one successful publication per Composer project in its Git common directory under `orbit-tia/v1/published`. Linked worktrees share these publications and keep their writable Pest caches separate. Other repositories and separate clones need their own initial refresh.
+[ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) governs baseline ownership. Each repository stores one successful publication per Composer project in its Git common directory under `orbit-tia/v1/published`. Linked worktrees share these publications and keep their writable Pest caches separate. Other repositories and separate clones need their own initial refresh.
 
 Worktree creation requires clean primary main, fetches origin, fast-forwards main, and queues background maintenance without waiting for newer caches. It then calls bootstrap, which installs the patched Pest runner and copies a compatible main dependency graph into each absent private cache. Bootstrap preserves an existing cache and reports a cache miss without running tests. Manually created worktrees get the same setup through `bin/bootstrap`.
 
@@ -228,7 +228,7 @@ New worktrees may use the previous successful compatible publication while a ref
 
 ## Maintenance recovery
 
-[ADR 0054](../decisions/0054-maintain-main-caches-asynchronously.md) governs asynchronous maintenance. The orchestrator inspects `bin/tia-cache status --json --remote` through its existing watchdog. The result names remote main, whether a worker holds the lock, pending project requests, publication freshness, per-project command results, retained correctness failures, and log paths. A remote-read failure is an inspection error. A successful status command reports observed state; it does not mean checks passed.
+[ADR 0054](/decisions/0054-maintain-main-caches-asynchronously) governs asynchronous maintenance. The orchestrator inspects `bin/tia-cache status --json --remote` through its existing watchdog. The result names remote main, whether a worker holds the lock, pending project requests, publication freshness, per-project command results, retained correctness failures, and log paths. A remote-read failure is an inspection error. A successful status command reports observed state; it does not mean checks passed.
 
 When publications lag main and no worker is active, the orchestrator queues refresh. This also recovers merges outside its closeout flow and requests left after interruption. A reported failure is an owned recovery task. Cache transport, installation, and publication failures can use prior compatible caches or cold checks.
 
@@ -238,11 +238,11 @@ A cached or zero-execution result that leaves an older graph anchor reports `rec
 
 Status and retained command logs distinguish the unresolved correctness failure from the latest recovery result. These records prove native maintenance execution and cache publication only. The orchestrator separately admits a reviewed repair or revert through the merge hold and clears that hold only after verification on main containing the repair.
 
-One maintenance owner covers all five projects. Routine warming uses scripts; failures needing investigation use [maintaining-monorepo](../../.agents/skills/maintaining-monorepo/SKILL.md). The agent diagnoses the exact failed commit, preserves evidence, and performs source repairs in a separate worktree. It returns verification to the orchestrator instead of approving its own change or mutating primary main. Feature development can continue during a correctness hold. Cache freshness alone never holds creation, merge, or cleanup.
+One maintenance owner covers all five projects. Routine warming uses scripts; failures needing investigation use [maintaining-monorepo](https://github.com/nckrtl/orbit/blob/main/.agents/skills/maintaining-monorepo/SKILL.md). The agent diagnoses the exact failed commit, preserves evidence, and performs source repairs in a separate worktree. It returns verification to the orchestrator instead of approving its own change or mutating primary main. Feature development can continue during a correctness hold. Cache freshness alone never holds creation, merge, or cleanup.
 
 ## Plan validation
 
-The [plan template](../../.agents/skills/planning-features/template.md) is the
+The [plan template](https://github.com/nckrtl/orbit/blob/main/.agents/skills/planning-features/template.md) is the
 source for new worktrees and revised plans. Change the template, format number,
 linter, and fixtures together when the format changes. Completed reviews and
 saved artifacts do not need migration merely because the format advances.

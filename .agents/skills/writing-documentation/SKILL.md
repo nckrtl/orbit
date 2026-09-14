@@ -28,12 +28,15 @@ A domain page under `domains/` exists only when a feature needs a guide that no 
 
 1. Name the reader and the question the page answers in its first paragraph.
 2. State behavior as `<actor> <verb> <observable result>`. The Gateway refuses, the CLI sends, Doctor reports. Never "is refused" without the actor.
-3. Use the term from `concepts.md` and its capitalization: Node, Cluster, App, AppInstance, Route, Router, Ingress, Gateway, Doctor. Expand an acronym on first use in the page.
+3. Use the reader-facing terms from `concepts.md`: Node, Cluster, App, App instance, Web root, Route, Router, Ingress, Gateway, Doctor. Reserve model names such as `AppInstance` for code. Prefer common words, short sentences, and compact paragraphs. Expand an acronym on first use in the page.
 4. Put a list of commands, fields, options, or failure codes in a table. Open every section with one sentence of prose before a table or list.
 5. Keep one mechanism in one place. If a fact already lives on another page or in an ADR, link it.
 6. Remove change narration and every tracker identifier. A page never says what was, what is no longer, or what comes later, and never names the issue that produced it. History is in ADRs and Git.
 7. Write markdown paragraphs as one line each. Hard wraps break the prose rules' sentence measurement.
+8. Link to Mintlify pages with root-relative URLs without `.md` or `.mdx`, such as `/reference/apps`. Preserve section anchors. Use GitHub URLs for repository files outside `docs/`. Keep commands, API fields, and model identifiers exact inside code.
 
 ## Verify
 
 Run `composer docs-lint` from the repository root and fix every finding. The prose rules, `orbit.docs_narrative`, and the link rules apply to every page. Run `composer docs-build` when a page was added or its title, component mentions, concept mentions, or ADR links changed, and commit `docs/generated/context.json`. A lint rule enforces a corpus-wide writing invariant and never a product fact; product facts are tested in the product.
+
+For Mintlify navigation, link, or MDX changes, run `npx mint validate` and `npx mint broken-links` from `docs/`. The local linter checks page targets and MDX narrative; Mintlify checks the build and site links.

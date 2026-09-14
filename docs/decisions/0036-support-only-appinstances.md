@@ -4,7 +4,7 @@ In the context of replacing legacy Instances and Workspaces with AppInstances, f
 
 ## Status
 
-Accepted on 2026-09-06. Supersedes [ADR 0009](0009-clustered-app-instance-routing.md) for staged legacy conversion and legacy compatibility during the transition.
+Accepted on 2026-09-06. Supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) for staged legacy conversion and legacy compatibility during the transition.
 
 ## Context
 
@@ -36,6 +36,6 @@ Orbit's supported application model is AppInstance with App-owned Routes. The ex
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk, apps/e2e
-- ADRs: supersedes [ADR 0009](0009-clustered-app-instance-routing.md) for staged legacy conversion and legacy compatibility during the transition
-- Detail: [Apps](../reference/apps.md)
+- ADRs: supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) for staged legacy conversion and legacy compatibility during the transition
+- Detail: [Apps](/reference/apps)
 - Verify: `composer docs-lint`; implementation conformance through `bin/test`

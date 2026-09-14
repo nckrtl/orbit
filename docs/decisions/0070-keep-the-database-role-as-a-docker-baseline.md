@@ -4,7 +4,7 @@ In the context of dedicated Nodes that host shared Docker databases, facing a re
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0069](0069-allow-node-process-targets.md). Extends [ADR 0001](0001-tool-management.md).
+Accepted on 2026-09-14. Extends [ADR 0069](/decisions/0069-allow-node-process-targets). Extends [ADR 0001](/decisions/0001-tool-management).
 
 ## Context
 
@@ -39,6 +39,6 @@ Shared Docker databases have a Node Process owner under ADR 0069. The rewrite ha
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0069](0069-allow-node-process-targets.md); extends [ADR 0001](0001-tool-management.md)
-- Detail: [Database role](../reference/database-role.md)
+- ADRs: extends [ADR 0069](/decisions/0069-allow-node-process-targets); extends [ADR 0001](/decisions/0001-tool-management)
+- Detail: [Database role](/reference/database-role)
 - Verify: `composer docs-lint`; Gateway RoleRegistry, DatabaseRoleBaseline, and node-role conflict tests

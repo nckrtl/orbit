@@ -4,7 +4,7 @@ In the context of Route domain changes that must coordinate database and machine
 
 ## Status
 
-Accepted on 2026-09-13. Extends [ADR 0064](0064-name-application-endpoints-as-domains.md). Supersedes [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md), [ADR 0024](0024-follow-generated-route-targets.md), and [ADR 0028](0028-require-one-route-per-active-appinstance.md) only where they require domain mutation on one Route, preserve that Route identity, or prohibit a temporary non-authoritative Route association.
+Accepted on 2026-09-13. Extends [ADR 0064](/decisions/0064-name-application-endpoints-as-domains). Supersedes [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0024](/decisions/0024-follow-generated-route-targets), and [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) only where they require domain mutation on one Route, preserve that Route identity, or prohibit a temporary non-authoritative Route association.
 
 ## Context
 
@@ -43,6 +43,6 @@ A domain change keeps the authoritative, previous, and candidate endpoint values
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0064](0064-name-application-endpoints-as-domains.md); supersedes [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md), [ADR 0024](0024-follow-generated-route-targets.md), and [ADR 0028](0028-require-one-route-per-active-appinstance.md) for in-place domain changes, Route identity preservation, and temporary replacement associations
-- Detail: [Routes](../reference/routes.md)
+- ADRs: extends [ADR 0064](/decisions/0064-name-application-endpoints-as-domains); supersedes [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0024](/decisions/0024-follow-generated-route-targets), and [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) for in-place domain changes, Route identity preservation, and temporary replacement associations
+- Detail: [Routes](/reference/routes)
 - Verify: Gateway replacement lifecycle and failure-injection tests, affected CLI and PHP SDK tests, and domain cutover checks on disposable Nodes

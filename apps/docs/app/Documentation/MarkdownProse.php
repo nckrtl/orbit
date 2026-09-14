@@ -14,8 +14,17 @@ final class MarkdownProse
     {
         $lines = [];
         $inFence = false;
+        $inFrontmatter = str_starts_with($contents, "---\n") || str_starts_with($contents, "---\r\n");
 
         foreach (preg_split('/\R/', $contents) ?: [] as $index => $line) {
+            if ($inFrontmatter) {
+                if ($index > 0 && trim($line) === '---') {
+                    $inFrontmatter = false;
+                }
+
+                continue;
+            }
+
             if (preg_match('/^\s*(```|~~~)/', $line) === 1) {
                 $inFence = ! $inFence;
 

@@ -3,7 +3,7 @@
 ## Status
 
 Accepted on 2026-08-31. This ADR extends
-[ADR 0009](0009-clustered-app-instance-routing.md) and supersedes only its
+[ADR 0009](/decisions/0009-clustered-app-instance-routing) and supersedes only its
 production-specific decisions that make every AppInstance an Orbit-owned Git
 clone under the Node apps root and make the production Router own public
 ingress. ADR 0009's app-dev clone, private Router, Route, Cluster, network,

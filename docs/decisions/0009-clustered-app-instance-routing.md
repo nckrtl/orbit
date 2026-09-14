@@ -3,7 +3,7 @@
 ## Status
 
 Accepted on 2026-08-31. This ADR supersedes
-[ADR 0008](0008-typed-app-dev-node-storage-settings.md) only where ADR 0008
+[ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) only where ADR 0008
 defines the runnable Instance and child Workspace model, a separate worktree
 root, and instance or workspace checkout-path derivation. ADR 0008 remains
 unchanged. Its applicable closed typed-settings, raw-value, derived-default,

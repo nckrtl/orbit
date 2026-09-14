@@ -4,7 +4,7 @@ In the context of AppInstances whose environment configuration exists only on wo
 
 ## Status
 
-Accepted on 2026-09-09. Extends [ADR 0029](0029-manage-laravel-application-urls-through-orbit.md) from Laravel URL ownership to complete AppInstance environment configuration. Supersedes its preservation requirement for local environment-file values that differ from the stored configuration. The Route remains the authority for the Laravel canonical URL, and [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md) retains provisioning without application bootstrap.
+Accepted on 2026-09-09. Extends [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit) from Laravel URL ownership to complete AppInstance environment configuration. Supersedes its preservation requirement for local environment-file values that differ from the stored configuration. The Route remains the authority for the Laravel canonical URL, and [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) retains provisioning without application bootstrap.
 
 ## Context
 
@@ -50,6 +50,6 @@ An environment file combines application settings, credentials, and values that 
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli
-- ADRs: extends [ADR 0029](0029-manage-laravel-application-urls-through-orbit.md); supersedes its preservation requirement for local environment-file values that differ from stored configuration; retains [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md) for provisioning without application bootstrap
+- ADRs: extends [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit); supersedes its preservation requirement for local environment-file values that differ from stored configuration; retains [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) for provisioning without application bootstrap
 - Detail: docs/reference/environment-variables.md
 - Verify: `composer docs-lint`; implementation conformance through Gateway, PHP SDK, and CLI environment tests and issue-specific Incus proof

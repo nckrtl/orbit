@@ -1,31 +1,28 @@
-# Tech Stack
+# Tech stack
 
-Orbit is built as several PHP projects in one repository. Each application or
-package keeps its own dependencies, tests, and Composer lock file.
+Orbit contains separate PHP projects in one repository. Each has its own dependencies, tests, and Composer lock file.
 
 ## PHP applications
 
-Every project requires PHP 8.5 and uses Composer. Each project's `composer.json` pins its own framework, so that file is the source for the version in use.
+Every project requires PHP 8.5 and uses Composer. Its `composer.json` records the framework version.
 
 - `apps/gateway` is a Laravel 13 application.
 - `apps/cli` uses Laravel Zero 13.
 - `apps/docs` uses Laravel 13 and Librarian.
-- `packages/php-sdk` uses Saloon for its HTTP connector and request classes. It
-  does not depend on Laravel.
+- `packages/php-sdk` uses Saloon for HTTP requests, without Laravel.
+- `apps/e2e` provides the Incus test harness.
 
 ## Managed machines
 
-Orbit supports Ubuntu 26.04 Resolute Nodes. Ubuntu 24.04 is unsupported, including for roleless operator clients. It installs PHP from the Sury apt source that `apps/gateway/app/Infrastructure/Nodes/RemotePhpPackageManager.php` pins and manages services with systemd. The [PHP runtime defaults](reference/php-runtime.md) page lists the settings Orbit publishes on those machines.
+Orbit supports Ubuntu 26.04 Resolute Nodes. Ubuntu 24.04 is unsupported, including for operator clients without roles. Orbit installs PHP from a pinned Sury apt source and manages services with systemd. See [PHP runtime defaults](/reference/php-runtime) for the settings.
 
 Caddy 2.6 or newer handles HTTP and HTTPS traffic. WireGuard provides the private network between Nodes. Orbit runs these services directly instead of putting everything in containers.
 
 ## Data
 
-The Gateway stores Orbit's data in SQLite. Your applications continue to manage
-their own data.
+The Gateway stores Orbit's data in SQLite. Applications manage their own data.
 
-Documentation is Markdown in the root `docs/` directory. A generated JSON file
-helps humans and agents find pages about the part of Orbit they are working on.
+Mintlify publishes Markdown and MDX pages from `docs/`. A generated JSON index helps contributors and agents find pages for each component or concept.
 
 ## Development and testing
 
@@ -38,4 +35,4 @@ Orbit uses these tools to keep its code and documentation consistent:
 - Librarian checks documentation.
 - Incus creates temporary Linux machines for end-to-end testing.
 
-Project scripts run affected tests through TIA and local quality checks. The [implementation loop](reference/implementation-loop.md#candidate-quality-gate) explains the repository-wide local gate and review workflow. GitHub continuous integration is disabled.
+Project scripts use test impact analysis (TIA) to run affected tests alongside local quality checks. The [implementation loop](/reference/implementation-loop#candidate-quality-gate) explains checks and review. GitHub continuous integration is disabled.

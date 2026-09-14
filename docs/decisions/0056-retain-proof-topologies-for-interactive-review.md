@@ -4,7 +4,7 @@ In the context of issues that select proof delivery, facing reviewers who need t
 
 ## Status
 
-Accepted on 2026-09-10. Supersedes [ADR 0006](0006-topology-led-feature-development.md), [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md), and [ADR 0040](0040-extend-issue-proof-with-one-app-prod-node.md) for prohibiting changes to successful proof machines during review; ADR 0015 also changes for evidence reuse after a code or configuration fix. Supersedes [ADR 0050](0050-release-successful-proof-resources-before-landing.md) for releasing successful proof before review. Retains [ADR 0051](0051-select-discovery-only-feature-delivery.md) for flow selection and discovery exemptions, and ADRs 0040 and 0050 for snapshot closeout and topology boundaries.
+Accepted on 2026-09-10. Supersedes [ADR 0006](/decisions/0006-topology-led-feature-development), [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence), and [ADR 0040](/decisions/0040-extend-issue-proof-with-one-app-prod-node) for prohibiting changes to successful proof machines during review; ADR 0015 also changes for evidence reuse after a code or configuration fix. Supersedes [ADR 0050](/decisions/0050-release-successful-proof-resources-before-landing) for releasing successful proof before review. Retains [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery) for flow selection and discovery exemptions, and ADRs 0040 and 0050 for snapshot closeout and topology boundaries.
 
 ## Context
 
@@ -46,6 +46,6 @@ ADR 0050 releases successful proof machines before review, while ADR 0040 retain
 ## Affects
 
 - Components: apps/e2e
-- ADRs: supersedes [ADR 0006](0006-topology-led-feature-development.md), [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md), and [ADR 0040](0040-extend-issue-proof-with-one-app-prod-node.md) for proof-machine immutability during review; supersedes ADR 0015 for evidence reuse after fixes and [ADR 0050](0050-release-successful-proof-resources-before-landing.md) for release timing; retains [ADR 0051](0051-select-discovery-only-feature-delivery.md) for flow scope
-- Detail: [Proof plans](../reference/proof-plans.md); [Incus topologies](../reference/incus-topologies.md); [Implementation loop](../reference/implementation-loop.md)
+- ADRs: supersedes [ADR 0006](/decisions/0006-topology-led-feature-development), [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence), and [ADR 0040](/decisions/0040-extend-issue-proof-with-one-app-prod-node) for proof-machine immutability during review; supersedes ADR 0015 for evidence reuse after fixes and [ADR 0050](/decisions/0050-release-successful-proof-resources-before-landing) for release timing; retains [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery) for flow scope
+- Detail: [Proof plans](/reference/proof-plans); [Incus topologies](/reference/incus-topologies); [Implementation loop](/reference/implementation-loop)
 - Verify: harness tests for capture before inspection, retained standard and extended topology access, separate review evidence, fresh proof after fixes, and closeout cleanup; `composer docs-lint`

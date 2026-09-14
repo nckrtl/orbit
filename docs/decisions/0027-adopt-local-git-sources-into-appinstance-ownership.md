@@ -4,7 +4,7 @@ In the context of operators who already have usable Git checkouts and worktrees 
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0008](0008-typed-app-dev-node-storage-settings.md), [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md), [ADR 0025](0025-stabilize-the-default-appinstance-identity.md), and [ADR 0026](0026-identify-each-app-by-one-repository.md). Supersedes [ADR 0018](0018-register-caller-local-development-worktrees.md) in full.
+Accepted on 2026-09-05. Extends [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings), [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity), and [ADR 0026](/decisions/0026-identify-each-app-by-one-repository). Supersedes [ADR 0018](/decisions/0018-register-caller-local-development-worktrees) in full.
 
 ## Context
 
@@ -54,6 +54,6 @@ ADR 0018 limits registration to a linked worktree, keeps that source externally 
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0008](0008-typed-app-dev-node-storage-settings.md), [ADR 0009](0009-clustered-app-instance-routing.md), [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md), [ADR 0025](0025-stabilize-the-default-appinstance-identity.md), and [ADR 0026](0026-identify-each-app-by-one-repository.md); supersedes [ADR 0018](0018-register-caller-local-development-worktrees.md) in full
+- ADRs: extends [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings), [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity), and [ADR 0026](/decisions/0026-identify-each-app-by-one-repository); supersedes [ADR 0018](/decisions/0018-register-caller-local-development-worktrees) in full
 - Detail: docs/domains/applications.md
 - Verify: `bin/test`

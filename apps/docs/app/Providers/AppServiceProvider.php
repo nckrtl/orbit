@@ -28,7 +28,7 @@ final class AppServiceProvider extends ServiceProvider
         ));
 
         $this->app->singleton(DocumentationNarrativeRule::class, fn (): DocumentationNarrativeRule => new DocumentationNarrativeRule(
-            $this->app->make(MarkdownSnapshot::class),
+            $this->app->make(DocumentationRepository::class),
             new BlockedPhrases($this->stringList('orbit-docs.narrative_phrases')),
         ));
 

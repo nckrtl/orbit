@@ -4,11 +4,11 @@ In the context of machine-level Tools unavailable through Orbit's existing manag
 
 ## Status
 
-Accepted on 2026-09-08. Extends [ADR 0001](0001-tool-management.md) and [ADR 0042](0042-provision-tool-managers-on-demand.md).
+Accepted on 2026-09-08. Extends [ADR 0001](/decisions/0001-tool-management) and [ADR 0042](/decisions/0042-provision-tool-managers-on-demand).
 
 ## Context
 
-[ADR 0001](0001-tool-management.md) keeps the manager registry closed and requires another decision before Brew support. Homebrew can provide machine-level Linux tools such as Herdr, but its complete interface accepts extra repositories, local definitions, applications, source compilation, and options that exceed Orbit's bounded Tool input. Orbit needs a Homebrew boundary that retains manager-native package behavior without making the Tool API a remote software-source or build interface.
+[ADR 0001](/decisions/0001-tool-management) keeps the manager registry closed and requires another decision before Brew support. Homebrew can provide machine-level Linux tools such as Herdr, but its complete interface accepts extra repositories, local definitions, applications, source compilation, and options that exceed Orbit's bounded Tool input. Orbit needs a Homebrew boundary that retains manager-native package behavior without making the Tool API a remote software-source or build interface.
 
 ## Decision
 
@@ -43,6 +43,6 @@ Accepted on 2026-09-08. Extends [ADR 0001](0001-tool-management.md) and [ADR 004
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0001](0001-tool-management.md) and [ADR 0042](0042-provision-tool-managers-on-demand.md)
-- Detail: [Tools](../reference/tools.md)
+- ADRs: extends [ADR 0001](/decisions/0001-tool-management) and [ADR 0042](/decisions/0042-provision-tool-managers-on-demand)
+- Detail: [Tools](/reference/tools)
 - Verify: issue-local Incus proof installs, inspects, updates, and removes a Homebrew Core bottle

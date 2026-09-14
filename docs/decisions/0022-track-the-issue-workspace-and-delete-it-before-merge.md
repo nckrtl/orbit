@@ -4,7 +4,7 @@ In the context of the plan, the proof plan, and the fixtures that describe how o
 
 ## Status
 
-Accepted on 2026-09-03. Amends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md) where a proof plan declares another issue's fixtures.
+Accepted on 2026-09-03. Amends [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence) where a proof plan declares another issue's fixtures.
 
 Corrected on 2026-09-03: the directory is named `.loop`. The record named it
 `.orbit` when it was accepted, before anything used it.
@@ -48,6 +48,6 @@ After an issue merges, no command reads its plan, its proof plan, or its fixture
 ## Affects
 
 - Components: apps/e2e
-- ADRs: amends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md) for cross-issue fixture staging
+- ADRs: amends [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence) for cross-issue fixture staging
 - Detail: docs/reference/proof-plans.md
 - Verify: the `apps/e2e` Pest suite applies the fixture checks to whatever fixtures a branch carries; `git diff <approved-sha> <head> --name-only` on a removal head lists only paths under `.loop/`

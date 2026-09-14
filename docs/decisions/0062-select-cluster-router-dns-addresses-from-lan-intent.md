@@ -4,7 +4,7 @@ In the context of Cluster members reaching private Routes, facing a VPN detour b
 
 ## Status
 
-Accepted on 2026-09-12. Supersedes [ADR 0009](0009-clustered-app-instance-routing.md) only where Cluster Router DNS publication always selects the Router's WireGuard address. Extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0033](0033-trust-wireguard-members-for-private-node-traffic.md).
+Accepted on 2026-09-12. Supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) only where Cluster Router DNS publication always selects the Router's WireGuard address. Extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) and [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic).
 
 ## Context
 
@@ -43,6 +43,6 @@ The Router already forwards requests to workloads through their configured LAN a
 ## Affects
 
 - Components: apps/gateway
-- ADRs: supersedes [ADR 0009](0009-clustered-app-instance-routing.md) for unconditional Router WireGuard DNS answers; extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0033](0033-trust-wireguard-members-for-private-node-traffic.md)
-- Detail: [Routes](../reference/routes.md) and docs/reference/private-dns.md
+- ADRs: supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) for unconditional Router WireGuard DNS answers; extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) and [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic)
+- Detail: [Routes](/reference/routes) and docs/reference/private-dns.md
 - Verify: `composer docs-lint`, requester-specific DNS tests, and DNS and HTTPS observations from LAN-configured and VPN-only Nodes in a disposable topology

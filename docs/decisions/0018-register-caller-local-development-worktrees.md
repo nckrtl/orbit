@@ -5,14 +5,14 @@
 Accepted on 2026-09-03.
 
 If accepted, this decision extends
-[ADR 0009](0009-clustered-app-instance-routing.md) with an externally owned
+[ADR 0009](/decisions/0009-clustered-app-instance-routing) with an externally owned
 app-dev source mode and supersedes only its requirement that every new
 development AppInstance use an Orbit-owned independent clone and never use a
 Git worktree. It extends
-[ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md) with
+[ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) with
 registered-source reconciliation rules. The remaining AppInstance, placement,
 routing, source-safety, and update boundaries in those decisions and
-[ADR 0017](0017-optional-cluster-placement-and-tld-precedence.md) stay in force.
+[ADR 0017](/decisions/0017-optional-cluster-placement-and-tld-precedence) stay in force.
 
 ## Context
 

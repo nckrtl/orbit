@@ -4,7 +4,7 @@ In the context of AppInstance removal from single-target development Routes and 
 
 ## Status
 
-Accepted on 2026-09-07. Extends [ADR 0039](0039-use-round-robin-for-production-route-pools.md). Supersedes [ADR 0028](0028-require-one-route-per-active-appinstance.md) and [ADR 0024](0024-follow-generated-route-targets.md) for Route retention after AppInstance removal.
+Accepted on 2026-09-07. Extends [ADR 0039](/decisions/0039-use-round-robin-for-production-route-pools). Supersedes [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) and [ADR 0024](/decisions/0024-follow-generated-route-targets) for Route retention after AppInstance removal.
 
 ## Context
 
@@ -33,6 +33,6 @@ ADR 0028 permits a Route to remain after its AppInstance is removed, and ADR 002
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0039](0039-use-round-robin-for-production-route-pools.md); supersedes [ADR 0028](0028-require-one-route-per-active-appinstance.md) and [ADR 0024](0024-follow-generated-route-targets.md) for Route retention after AppInstance removal
-- Detail: [Routes](../reference/routes.md)
+- ADRs: extends [ADR 0039](/decisions/0039-use-round-robin-for-production-route-pools); supersedes [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) and [ADR 0024](/decisions/0024-follow-generated-route-targets) for Route retention after AppInstance removal
+- Detail: [Routes](/reference/routes)
 - Verify: `bin/test`

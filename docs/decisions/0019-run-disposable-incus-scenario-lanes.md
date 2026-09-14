@@ -5,11 +5,11 @@
 Accepted on 2026-09-03.
 
 If accepted, this decision extends the rolling Incus topology in
-[ADR 0005](0005-rolling-incus-development-topology.md), the separation of
+[ADR 0005](/decisions/0005-rolling-incus-development-topology), the separation of
 discovery and proof in
-[ADR 0006](0006-topology-led-feature-development.md), and the observed-input
+[ADR 0006](/decisions/0006-topology-led-feature-development), and the observed-input
 model in
-[ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md). Their
+[ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence). Their
 feature-proof, promotion, exact-cleanup, and production-separation boundaries
 otherwise remain in force.
 

@@ -4,7 +4,7 @@ In the context of AppInstances that need a source branch different from their Ap
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0025](0025-stabilize-the-default-appinstance-identity.md). Supersedes ADR 0025 for unconditional reconciliation of a default AppInstance when the App default branch changes.
+Accepted on 2026-09-05. Extends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity). Supersedes ADR 0025 for unconditional reconciliation of a default AppInstance when the App default branch changes.
 
 ## Context
 
@@ -39,6 +39,6 @@ An operator can need a `default` AppInstance to use a release branch while its A
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0025](0025-stabilize-the-default-appinstance-identity.md); supersedes ADR 0025 for unconditional reconciliation of a default AppInstance when the App default branch changes
-- Detail: [Applications](../reference/apps.md)
+- ADRs: extends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity); supersedes ADR 0025 for unconditional reconciliation of a default AppInstance when the App default branch changes
+- Detail: [Applications](/reference/apps)
 - Verify: `composer docs-lint`; implementation conformance through `bin/test`

@@ -4,7 +4,7 @@ In the context of production AppInstances deployed by an operating agent, facing
 
 ## Status
 
-Accepted on 2026-09-10. Supersedes [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for production release ownership and serving layout, [ADR 0031](0031-clone-initial-production-source-during-provisioning.md) and [ADR 0032](0032-preserve-explicit-appinstance-branch-selection.md) for ongoing production source ownership, and [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md) for production setup-step ownership and automatic execution after provisioning. Extends [ADR 0044](0044-own-appinstance-environment-configuration-in-orbit.md) and [ADR 0045](0045-isolate-production-php-fpm-by-unix-user.md) for deployment coordination.
+Accepted on 2026-09-10. Supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production release ownership and serving layout, [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning) and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) for ongoing production source ownership, and [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) for production setup-step ownership and automatic execution after provisioning. Extends [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) for deployment coordination.
 
 ## Context
 
@@ -59,6 +59,6 @@ Production provisioning prepares initial source under ADR 0031, while the agent 
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli, apps/e2e
-- ADRs: supersedes [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for production release ownership and serving layout, [ADR 0031](0031-clone-initial-production-source-during-provisioning.md) and [ADR 0032](0032-preserve-explicit-appinstance-branch-selection.md) for ongoing production source ownership, and [ADR 0030](0030-complete-appinstance-provisioning-without-application-health-gates.md) for production setup-step ownership and automatic execution; extends [ADR 0044](0044-own-appinstance-environment-configuration-in-orbit.md) and [ADR 0045](0045-isolate-production-php-fpm-by-unix-user.md) for deployment coordination
+- ADRs: supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production release ownership and serving layout, [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning) and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) for ongoing production source ownership, and [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) for production setup-step ownership and automatic execution; extends [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) for deployment coordination
 - Detail: docs/reference/deployments.md
 - Verify: `composer docs-lint`; implementation conformance through Gateway, PHP SDK, and CLI deployment tests and issue-specific Incus proof

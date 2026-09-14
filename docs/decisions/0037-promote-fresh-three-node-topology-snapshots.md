@@ -4,7 +4,7 @@ In the context of replacing the legacy application samples in Orbit's shared dev
 
 ## Status
 
-Accepted on 2026-09-06. Extends [ADR 0036](0036-support-only-appinstances.md). Supersedes [ADR 0005](0005-rolling-incus-development-topology.md) for explicitly requested cold snapshot replacement, [ADR 0006](0006-topology-led-feature-development.md) for the starting state of that replacement's proof, and [ADR 0019](0019-run-disposable-incus-scenario-lanes.md) for cold runs declared as snapshot replacements before construction.
+Accepted on 2026-09-06. Extends [ADR 0036](/decisions/0036-support-only-appinstances). Supersedes [ADR 0005](/decisions/0005-rolling-incus-development-topology) for explicitly requested cold snapshot replacement, [ADR 0006](/decisions/0006-topology-led-feature-development) for the starting state of that replacement's proof, and [ADR 0019](/decisions/0019-run-disposable-incus-scenario-lanes) for cold runs declared as snapshot replacements before construction.
 
 ## Context
 
@@ -17,7 +17,7 @@ The shared cold constructor already builds an isolated topology from a generic b
 - The replacement must start from the configured generic base image and the exact candidate commit, without inheriting application records, source directories, or runtime state from the old snapshot.
 - The replacement must construct its sample workloads through AppInstance and App-owned Route contracts under ADR 0036.
 - The replacement must satisfy ADR 0006's issue-owned proof, declared acceptance, immutability, diagnosis, and exact cleanup requirements; cold construction replaces only the snapshot-cloning starting step.
-- The harness may promote the verified replacement after review and merge satisfy the existing source-acceptance rules in [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md).
+- The harness may promote the verified replacement after review and merge satisfy the existing source-acceptance rules in [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence).
 - The harness must preserve the current promoted generation until the replacement passes its required gates and the promotion transaction can replace it under the existing recovery rules.
 - The promoted replacement must become the single shared snapshot for subsequent discovery and proof acquisition; normal issue cycles must continue to start from that snapshot.
 - The harness must retire the replaced legacy sample state through exact snapshot-resource replacement, without converting its workloads or supplying fleet migration tooling.
@@ -40,6 +40,6 @@ The shared cold constructor already builds an isolated topology from a generic b
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0036](0036-support-only-appinstances.md); supersedes [ADR 0005](0005-rolling-incus-development-topology.md) for cold replacement, [ADR 0006](0006-topology-led-feature-development.md) for replacement proof construction, and [ADR 0019](0019-run-disposable-incus-scenario-lanes.md) for declared replacement runs
-- Detail: [Topology snapshot](../reference/topology-snapshot.md)
+- ADRs: extends [ADR 0036](/decisions/0036-support-only-appinstances); supersedes [ADR 0005](/decisions/0005-rolling-incus-development-topology) for cold replacement, [ADR 0006](/decisions/0006-topology-led-feature-development) for replacement proof construction, and [ADR 0019](/decisions/0019-run-disposable-incus-scenario-lanes) for declared replacement runs
+- Detail: [Topology snapshot](/reference/topology-snapshot)
 - Verify: `composer docs-lint`; implementation conformance through the declared cold replacement acceptance and subsequent discovery and proof acquisition

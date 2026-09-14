@@ -1,6 +1,6 @@
 # Private DNS
 
-This page tells an operator how a managed Linux Node selects a Domain Name System (DNS) resolver, how the Gateway selects a Cluster Router address, how to inspect those answers, and what remains unchanged when the Gateway converges DNS. [ADR 0061](../decisions/0061-use-vpn-dns-by-default-on-managed-peers.md) owns the default resolver policy.
+Managed Linux Nodes use Orbit's Domain Name System (DNS) server over the VPN by default. This page explains resolver selection, Cluster Router addresses, and how to inspect or repair one peer. [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) defines the default policy.
 
 ## Resolver selection
 
@@ -11,11 +11,7 @@ The Gateway selects the resolver policy when it provisions a managed Linux peer.
 | No per-Node DNS override | Orbit VPN DNS | `~.` | The normal operating-system resolver sends private and ordinary queries to Orbit VPN DNS. The Node TLD and Cluster TLD do not change this selection. |
 | Per-Node `--dns-server` override | The supplied address | The private VPN domain and the Node TLD when present | The explicit resolver keeps suffix-only routing, including when its address is inside the WireGuard subnet. |
 
-The `~.` routing domain makes Orbit VPN DNS the preferred default for the peer without changing the system-wide `/etc/resolv.conf` owner. The peer does not run a local DNS server and does not need local hostname records or a list of private Route suffixes.
-
-The default resolver policy for managed peers does not apply to operator-owned clients.
-
-Existing peers keep their working resolver configuration until the Gateway provisions them again or an operator repairs one peer. Orbit does not apply this policy to the fleet automatically.
+The `~.` routing domain makes Orbit VPN DNS the preferred resolver. It leaves `/etc/resolv.conf` ownership unchanged and needs no local DNS server, hostname records, or Route suffix list. Operator-owned clients are excluded. Existing peers keep their configuration until you provision them again or repair them individually.
 
 ## Inspect a peer
 
@@ -37,7 +33,7 @@ An explicit underlay override can use a link other than `orbit`. Read line 1 of 
 
 ## Repair one peer
 
-Run the DNS-only repair on the Gateway when one active managed Linux peer has an older resolver selection. The command uses the peer's stored WireGuard address and pinned Secure Shell (SSH) identity. It does not provision roles or restart the WireGuard tunnel.
+Run this DNS repair on the Gateway to update one active managed Linux peer's resolver settings. It uses the saved WireGuard address and pinned Secure Shell (SSH) identity. Roles and the running tunnel stay unchanged.
 
 ```bash
 php artisan orbit:node-dns-repair <node-name>
@@ -47,7 +43,7 @@ The command refuses a missing or inactive Node, an operator-owned client with no
 
 Before the repair, record the commands in [Inspect a peer](#inspect-a-peer), `systemctl is-active wg-quick@orbit`, each role service state, and a fingerprint of `wg show orbit public-key`. Record the same values after the repair. The DNS server, routing domains, managed hooks, and saved DNS state can change. The public-key fingerprint, role services, WireGuard service state, application placement, and `ip route` output stay the same.
 
-The repair holds `/run/lock/orbit-wireguard-peer.lock`, validates a candidate configuration, saves the preceding managed files, publishes the new hooks and DNS state, and then applies the live resolver selection. Running the command again produces the same resolver state.
+The repair locks `/run/lock/orbit-wireguard-peer.lock` and validates the proposed configuration. It backs up managed files, writes the hooks and DNS state, then applies the resolver settings. Repeating the command produces the same result.
 
 The repair changes only the managed DNS servers and routing domains on each resolver link. It keeps unrelated per-link settings such as the default-route preference, name resolution over local multicast (LLMNR), Multicast DNS (mDNS), DNS Security Extensions (DNSSEC), DNS over Transport Layer Security (TLS), and negative trust anchors.
 
@@ -78,19 +74,19 @@ Do not edit `/etc/wireguard/orbit.key` or the peer private key to repair DNS. Re
 
 ## Availability and upstream resolution
 
-A peer that uses Orbit VPN DNS as its default loses both private and ordinary DNS resolution while the VPN DNS listener is unavailable. Existing IP connections and the Node's general IP routes do not change, but new hostname lookups can fail until the listener or tunnel recovers.
+If Orbit VPN DNS is unavailable, peers using it as their default lose both private and ordinary hostname resolution. Existing IP connections and routes stay unchanged. New lookups can fail until the DNS service or tunnel recovers.
 
-Orbit VPN DNS answers private names from the published requester catalog on the Gateway WireGuard address, then forwards ordinary queries to a loopback dnsmasq backend. The backend uses independent uplink resolvers and excludes loopback and the `orbit` interface so forwarding cannot return to the public listener. [VPN dnsmasq uplink resolvers](../solutions/vpn-dnsmasq-uplink-resolvers.md) owns upstream selection, fallback behavior, and verification.
+Orbit VPN DNS answers private names from the published requester catalog on the Gateway WireGuard address, then forwards ordinary queries to a loopback dnsmasq backend. The backend uses independent uplink resolvers and excludes loopback and the `orbit` interface so forwarding cannot return to the public listener. [VPN dnsmasq uplink resolvers](/solutions/vpn-dnsmasq-uplink-resolvers) owns upstream selection, fallback behavior, and verification.
 
-DNS answers select an application address; they do not select or rewrite the application traffic route. [Routes](routes.md) explains how a resolved private Route reaches its workload through a Node or Router.
+DNS answers select an application address; they do not select or rewrite the application traffic route. [Routes](/reference/routes) explains how a resolved private Route reaches its workload through a Node or Router.
 
 ## Cluster Router addresses
 
-This section tells an operator how to see which Cluster Router address a requester receives and how to correct LAN intent. [ADR 0062](../decisions/0062-select-cluster-router-dns-addresses-from-lan-intent.md) owns the selection rule.
+The requester's registered Node and local area network (LAN) settings determine which Router address it receives. [ADR 0062](/decisions/0062-select-cluster-router-dns-addresses-from-lan-intent) defines the rule.
 
 The Gateway returns the Router's configured LAN address to an active, LAN-configured WireGuard member of the same active Cluster. It returns the Router's WireGuard address to every other permitted requester, including a member without a LAN address, a member of another Cluster, and a source it cannot identify as an active registered WireGuard Node.
 
-The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route hostname. Node-scoped Routes, `gateway.orbit`, `metrics.orbit`, and Herdr observer hostnames of the form `{session}.herdr.{node}.{tld}` keep their established addresses. [Herdr sessions](herdr-sessions.md) owns observer publication.
+The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route hostname. Node-scoped Routes, `gateway.orbit`, `metrics.orbit`, and Herdr observer hostnames of the form `{session}.herdr.{node}.{tld}` keep their established addresses. [Herdr sessions](/reference/herdr-sessions) owns observer publication.
 
 | Observation | Meaning |
 | --- | --- |
@@ -110,4 +106,4 @@ Inspect the published catalog and the live listener on the Gateway, then query f
 
 Remove incorrect LAN intent through the Node's existing provision operation by omitting or replacing `lan_ip`, then retry that operation. The Gateway republishes affected selection before the new Node, Cluster, Router, or Route state becomes authoritative. The live listener rereads the published catalog without a manual restart. A publication or listener-activation failure restores the previous working DNS files and services or retains explicit recovery state, and a refused Cluster or Router transition remains refused.
 
-A configured Router LAN address that does not respond stays selected. The Gateway does not substitute the WireGuard address. Correct the LAN path, or remove the LAN intent, then retry the owning operation. An HTTPS client that uses that address fails the connection until the operator changes the configuration.
+An unreachable configured LAN address stays selected; Orbit does not fall back to WireGuard. HTTPS connections fail until you repair the LAN path or remove the LAN setting and retry provisioning.

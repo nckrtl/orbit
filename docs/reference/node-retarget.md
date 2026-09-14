@@ -14,7 +14,7 @@ The owner does not serialize role or settings writers. A held owner expires afte
 
 ## Two boundaries
 
-Role convergence removes the `orbit:public-ssh-recovery` UFW rule once the `orbit:wireguard-members` rule exists. After that, the Gateway can reach the node only over WireGuard. Removing the last role row restores the `orbit:public-ssh-recovery` rule over WireGuard before the Gateway deletes that row, and [Node removal](node-provisioning.md#remove-a-node) restores it before the Gateway removes the WireGuard peer. Removing a role while another role row remains keeps public SSH closed. When that restore fails, the Gateway leaves the role assignment failed at step `remove:firewall-recovery` with `node.firewall_recovery_failed`, and a retry repeats the removal. The retarget selects its path from stored state:
+Role convergence removes the `orbit:public-ssh-recovery` UFW rule once the `orbit:wireguard-members` rule exists. After that, the Gateway can reach the node only over WireGuard. Removing the last role row restores the `orbit:public-ssh-recovery` rule over WireGuard before the Gateway deletes that row, and [Node removal](/reference/node-provisioning#remove-a-node) restores it before the Gateway removes the WireGuard peer. Removing a role while another role row remains keeps public SSH closed. When that restore fails, the Gateway leaves the role assignment failed at step `remove:firewall-recovery` with `node.firewall_recovery_failed`, and a retry repeats the removal. The retarget selects its path from stored state:
 
 | Node state | Path | Steps |
 | --- | --- | --- |
