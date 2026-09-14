@@ -167,9 +167,11 @@ it('exposes only the implemented Orbit product commands', function (): void {
 describe('command vocabulary', function (): void {
     it('rejects a command whose last segment is outside the vocabulary and family-specific actions', function (): void {
         expect(CommandVocabulary::allowsCommand('app:create'))->toBeTrue();
-        expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('instance:clone'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('node:settings'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('doctor'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeFalse();
+        expect(CommandVocabulary::allowsCommand('workspace:php'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('app:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('app:frobnicate'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('cluster:attach'))->toBeFalse();

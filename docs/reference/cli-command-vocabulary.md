@@ -2,7 +2,7 @@
 
 This page tells an operator or agent which last segment a CLI command uses, how ownership selects `create` and `destroy` or `add` and `remove`, which family-specific actions exist, and which commands keep a noun as their last segment. [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) owns the naming decision. The CLI lives in `apps/cli`.
 
-Each command is one noun family and one last segment. The last segment is a verb from the pairs below, a family-specific action listed for that family, or one of the three noun-ending commands.
+Each command is one noun family and one last segment. The last segment is a verb from the pairs below, a family-specific action listed for that family, or one of the two noun-ending commands.
 
 ## Verb pairs
 
@@ -40,7 +40,6 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `route` | `create` and `destroy` | A [Route](/reference/routes) |
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules) or an App Schedule definition |
 | `tool` | `install` and `remove` | A Tool on a Node |
-| `workspace` | `new` and `remove` | A Workspace |
 
 `cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
 
@@ -60,19 +59,17 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
-| `workspace` | `new` | The CLI creates a Workspace. |
 
 `doctor` is a one-segment command. Its family name is the command.
 
 ## Noun-ending commands
 
-Three commands keep a noun as their last segment.
+Two commands keep a noun as their last segment.
 
 | Command | Result |
 | --- | --- |
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
-| `workspace:php` | The CLI selects the PHP version for a Workspace. |
 
 ## Gateway route names
 
