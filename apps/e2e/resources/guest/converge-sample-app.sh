@@ -107,7 +107,7 @@ case ${1-} in
       read -r cluster_id cluster_phase <<<"$cluster_state"
       cluster_mutated=0
       if [[ "$cluster_phase" == create ]]; then
-        cluster_response=$("$orbit" cluster:new "$typed_cluster_name" --json)
+        cluster_response=$("$orbit" cluster:create "$typed_cluster_name" --json)
         cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
         cluster_state=$(typed_cluster_state none <<<"$cluster_response")
         read -r cluster_id cluster_phase <<<"$cluster_state"
@@ -116,7 +116,7 @@ case ${1-} in
         cluster_phase=attach
       fi
       if [[ "$cluster_phase" == attach ]]; then
-        cluster_response=$("$orbit" cluster:node:attach "$cluster_id" "$dev_id" --json)
+        cluster_response=$("$orbit" cluster:node:add "$cluster_id" "$dev_id" --json)
         cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
         mutation_state=$(typed_cluster_state "$cluster_id" <<<"$cluster_response")
         read -r mutation_cluster_id mutation_phase <<<"$mutation_state"
@@ -163,10 +163,10 @@ case ${1-} in
         typed_state=$(typed_app_instance_state <<<"$typed_instances")
       fi
       if [[ -z "$app_id" ]]; then
-        app_id=$("$orbit" app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
+        app_id=$("$orbit" app:create laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
       fi
       if [[ "$typed_count" -eq 0 ]]; then
-        "$orbit" instance:new "$app_id" "$dev_id" e2e-dev --hostname=e2e-dev.orbit --json >/dev/null
+        "$orbit" instance:create "$app_id" "$dev_id" e2e-dev --hostname=e2e-dev.orbit --json >/dev/null
         typed_instances=$("$orbit" instance:list --json)
         typed_state=$(typed_app_instance_state <<<"$typed_instances")
       fi
@@ -174,7 +174,7 @@ case ${1-} in
       typed_routes=$("$orbit" route:list --json)
       typed_route=$(typed_route_id "$typed_instance_id" list <<<"$typed_routes")
       if [[ "$typed_route" == missing ]]; then
-        route_response=$("$orbit" route:new "$app_id" e2e-dev.orbit --publication=private --target="$typed_instance_id" --json)
+        route_response=$("$orbit" route:create "$app_id" e2e-dev.orbit --publication=private --target="$typed_instance_id" --json)
         created_route=$(typed_route_id "$typed_instance_id" response <<<"$route_response")
         typed_routes=$("$orbit" route:list --json)
         typed_route=$(typed_route_id "$typed_instance_id" list <<<"$typed_routes")
@@ -216,16 +216,16 @@ case ${1-} in
     apps=$("$orbit" app:list --json)
     app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3])) exit(65); echo $m[0]["id"] ?? "";' laravel https://github.com/laravel/laravel.git Laravel <<<"$apps")
     if [[ -z "$app_id" ]]; then
-      app_id=$("$orbit" app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')
+      app_id=$("$orbit" app:create laravel https://github.com/laravel/laravel.git --name=Laravel --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')
     fi
     instances=$("$orbit" instance:list --json)
     dev_instance_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["instances"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["app_id"] ?? null)!==(int)$argv[2] || ($m[0]["node_id"] ?? null)!==(int)$argv[3] || ($m[0]["environment"] ?? null)!==$argv[4])) exit(65); echo $m[0]["id"] ?? "";' e2e-dev "$app_id" "$dev_id" development <<<"$instances")
     if [[ -z "$dev_instance_id" ]]; then
-      dev_instance_id=$("$orbit" instance:new "$app_id" "$dev_id" e2e-dev --environment=development --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')
+      dev_instance_id=$("$orbit" instance:create "$app_id" "$dev_id" e2e-dev --environment=development --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')
     fi
     prod_instance_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["instances"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["app_id"] ?? null)!==(int)$argv[2] || ($m[0]["node_id"] ?? null)!==(int)$argv[3] || ($m[0]["environment"] ?? null)!==$argv[4] || ($m[0]["hostname"] ?? null)!==$argv[5])) exit(65); echo $m[0]["id"] ?? "";' e2e-prod "$app_id" "$prod_id" production laravel.internal <<<"$instances")
     if [[ -z "$prod_instance_id" ]]; then
-      "$orbit" instance:new "$app_id" "$prod_id" e2e-prod --environment=production --hostname=laravel.internal --json >/dev/null
+      "$orbit" instance:create "$app_id" "$prod_id" e2e-prod --environment=production --hostname=laravel.internal --json >/dev/null
     fi
     workspaces=$("$orbit" workspace:list --json)
     workspace_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["workspaces"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["instance_id"] ?? null)!==(int)$argv[2] || ($m[0]["branch"] ?? null)!==$argv[3])) exit(65); echo $m[0]["id"] ?? "";' e2e "$dev_instance_id" e2e <<<"$workspaces")

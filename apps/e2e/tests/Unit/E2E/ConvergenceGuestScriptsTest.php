@@ -308,13 +308,13 @@ function typed_sample_resource_fixture(): array
               printf '{"clusters":[]}'
             fi
             ;;
-          cluster:new)
-            [[ "$*" == 'cluster:new e2e-development --json' ]]
+          cluster:create)
+            [[ "$*" == 'cluster:create e2e-development --json' ]]
             touch "$state/cluster"
             [[ -n "${CLUSTER_NEW_RESPONSE:-}" ]] && printf '%s' "$CLUSTER_NEW_RESPONSE" || cluster_json
             ;;
-          cluster:node:attach)
-            [[ "$*" == 'cluster:node:attach 3 2 --json' ]]
+          cluster:node:add)
+            [[ "$*" == 'cluster:node:add 3 2 --json' ]]
             touch "$state/attached"
             [[ -n "${CLUSTER_ATTACH_RESPONSE:-}" ]] && printf '%s' "$CLUSTER_ATTACH_RESPONSE" || cluster_json
             ;;
@@ -338,7 +338,7 @@ function typed_sample_resource_fixture(): array
               printf '{"apps":[%s]}' "$legacy"
             fi
             ;;
-          app:new)
+          app:create)
             [[ -e "$state/verified" ]] || touch "$state/app-before-cluster"
             touch "$state/app"
             printf '{"id":1}'
@@ -362,9 +362,9 @@ function typed_sample_resource_fixture(): array
               printf '{%s"app_instances":[]}' "$prefix"
             fi
             ;;
-          instance:new)
+          instance:create)
             [[ -e "$state/verified" ]] || touch "$state/instance-before-cluster"
-            [[ "$*" == 'instance:new 1 2 e2e-dev --hostname=e2e-dev.orbit --json' ]]
+            [[ "$*" == 'instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json' ]]
             touch "$state/instance"
             touch "$state/route"
             printf '{"id":4}'
@@ -392,8 +392,8 @@ function typed_sample_resource_fixture(): array
               printf '{"routes":[],"request_id":"0198e15d-16c4-7855-8eb2-182b53ad28ba"}'
             fi
             ;;
-          route:new)
-            [[ "$*" == 'route:new 1 e2e-dev.orbit --publication=private --target=4 --json' ]]
+          route:create)
+            [[ "$*" == 'route:create 1 e2e-dev.orbit --publication=private --target=4 --json' ]]
             touch "$state/route"
             if [[ -n "${ROUTE_NEW_RESPONSE:-}" ]]; then
               printf '%s' "$ROUTE_NEW_RESPONSE"
@@ -491,7 +491,7 @@ function typed_cluster_mutations(array $commands): array
         $commands,
         static fn (string $command): bool => in_array(
             explode(' ', $command, 2)[0],
-            ['cluster:new', 'cluster:node:attach', 'cluster:router:set', 'cluster:update'],
+            ['cluster:create', 'cluster:node:add', 'cluster:router:set', 'cluster:update'],
             true,
         ),
     ));
@@ -505,8 +505,8 @@ function typed_cluster_creation_commands(): array
         'instance:list --json',
         'list --raw',
         'cluster:list --json',
-        'cluster:new e2e-development --json',
-        'cluster:node:attach 3 2 --json',
+        'cluster:create e2e-development --json',
+        'cluster:node:add 3 2 --json',
         'cluster:router:set 3 2 --json',
         'cluster:update 3 --state=active --json',
         'node:list --json',
@@ -2375,8 +2375,11 @@ describe('convergence guest scripts', function () {
             )->and($sample)->toContain(
                 'https://github.com/laravel/laravel.git',
                 'node:access:add',
-                'app:new laravel',
-                'instance:new',
+                'cluster:create',
+                'cluster:node:add',
+                'app:create laravel',
+                'instance:create',
+                'route:create',
                 'workspace:new',
                 'APP_KEY=base64:',
                 'composer install',
@@ -2399,6 +2402,17 @@ describe('convergence guest scripts', function () {
                 'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
             )
             ->not->toContain('AAAAAAAAAAAAAAAA');
+
+        foreach ((new Filesystem)->files($guest) as $scriptFile) {
+            expect((string) file_get_contents($scriptFile->getPathname()))
+                ->not->toContain(
+                    'cluster:new',
+                    'cluster:node:attach',
+                    'app:new',
+                    'instance:new',
+                    'route:new',
+                );
+        }
 
         expect($production)
             ->toContain(
@@ -2748,7 +2762,7 @@ describe('convergence guest scripts', function () {
                 else printf '{"apps":[]}'
                 fi
                 ;;
-              app:new) touch "$state/app"; printf '{"id":1}' ;;
+              app:create) touch "$state/app"; printf '{"id":1}' ;;
               instance:list)
                 printf '{"instances":['
                 sep=
@@ -2756,7 +2770,7 @@ describe('convergence guest scripts', function () {
                 if [[ -e "$state/prod" ]]; then printf '%s{"id":5,"app_id":1,"node_id":3,"name":"e2e-prod","environment":"production","hostname":"laravel.internal"}' "$sep"; fi
                 printf ']}'
                 ;;
-              instance:new) [[ "$4" == e2e-dev ]] && touch "$state/dev" || touch "$state/prod"; printf '{"id":4}' ;;
+              instance:create) [[ "$4" == e2e-dev ]] && touch "$state/dev" || touch "$state/prod"; printf '{"id":4}' ;;
               workspace:list) [[ -e "$state/workspace" ]] && printf '{"workspaces":[{"id":6,"instance_id":4,"name":"e2e","branch":"e2e"}]}' || printf '{"workspaces":[]}' ;;
               workspace:new) touch "$state/workspace"; printf '{"id":6}' ;;
               *) exit 70 ;;
@@ -2778,15 +2792,15 @@ describe('convergence guest scripts', function () {
             'node:list --json',
             'instance:list --json',
             'app:list --json',
-            'app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json',
+            'app:create laravel https://github.com/laravel/laravel.git --name=Laravel --json',
             'instance:list --json',
         ]);
         expect(new Process($arguments)->run())->toBe(0);
         $commands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
-        expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
+        expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:create ')))
             ->toHaveCount(1)
-            ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'instance:new ')))
+            ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'instance:create ')))
             ->toHaveCount(2)
             ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'workspace:new ')))
             ->toHaveCount(1);
@@ -2794,10 +2808,10 @@ describe('convergence guest scripts', function () {
             'node:list --json',
             'instance:list --json',
             'app:list --json',
-            'app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json',
+            'app:create laravel https://github.com/laravel/laravel.git --name=Laravel --json',
             'instance:list --json',
-            'instance:new 1 2 e2e-dev --environment=development --json',
-            'instance:new 1 3 e2e-prod --environment=production --hostname=laravel.internal --json',
+            'instance:create 1 2 e2e-dev --environment=development --json',
+            'instance:create 1 3 e2e-prod --environment=production --hostname=laravel.internal --json',
             'workspace:list --json',
             'workspace:new 4 e2e --branch=e2e --json',
             'node:list --json',
@@ -2810,7 +2824,7 @@ describe('convergence guest scripts', function () {
         file_put_contents("{$root}/app", 'wrong');
         expect(new Process($arguments)->run())->not->toBe(0);
         $commands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
+        expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:create ')))
             ->toHaveCount(1);
     });
 
@@ -2828,14 +2842,14 @@ describe('convergence guest scripts', function () {
             expect($second->run())->toBe(0, $second->getErrorOutput());
 
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
+            expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:create ')))
                 ->toHaveCount(0)
                 ->and(array_filter($commands, fn (string $command): bool => str_starts_with(
                     $command,
-                    'instance:new ',
+                    'instance:create ',
                 )))
                 ->toHaveCount(1)
-                ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'route:new ')))
+                ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'route:create ')))
                 ->toHaveCount(0);
             expect(json_decode(
                 (string) file_get_contents($fixture['state']),
@@ -2873,7 +2887,7 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(implode("\n", $commands))
                 ->not
-                ->toContain('app:new ', 'instance:new ');
+                ->toContain('app:create ', 'instance:create ');
             expect(file_exists("{$fixture['root']}/app"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/instance"))
@@ -2931,7 +2945,7 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(implode("\n", $commands))
                 ->not
-                ->toContain('app:new ', 'instance:new ');
+                ->toContain('app:create ', 'instance:create ');
             expect(file_exists("{$fixture['root']}/app"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/instance"))
@@ -2968,8 +2982,8 @@ describe('convergence guest scripts', function () {
             expect($firstCommands)->toBe([
                 ...typed_cluster_creation_commands(),
                 'app:list --json',
-                'app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
-                'instance:new 1 2 e2e-dev --hostname=e2e-dev.orbit --json',
+                'app:create laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
+                'instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json',
                 'instance:list --json',
                 'route:list --json',
             ]);
@@ -3010,11 +3024,11 @@ describe('convergence guest scripts', function () {
                 'app:list --json',
                 'route:list --json',
             ]);
-            expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
+            expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'app:create ')))
                 ->toHaveCount(1)
                 ->and(array_filter($allCommands, fn (string $command): bool => str_starts_with(
                     $command,
-                    'instance:new ',
+                    'instance:create ',
                 )))
                 ->toHaveCount(1)
                 ->and(file_exists("{$fixture['root']}/app-before-cluster"))
@@ -3077,7 +3091,7 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect($commands)
                 ->toContain('instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json')
-                ->not->toContain('instance:deploy 5 --json', 'instance:new 1 3 e2e-prod');
+                ->not->toContain('instance:deploy 5 --json', 'instance:create 1 3 e2e-prod');
             expect(file_exists($fixture['state']))->toBeFalse();
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
@@ -3103,7 +3117,7 @@ describe('convergence guest scripts', function () {
                     'cluster:list --json',
                     'app:list --json',
                     'route:list --json',
-                    'route:new 1 e2e-dev.orbit --publication=private --target=4 --json',
+                    'route:create 1 e2e-dev.orbit --publication=private --target=4 --json',
                     'route:list --json',
                 ])
                 ->and(file_exists("{$fixture['root']}/route"))
@@ -3127,7 +3141,7 @@ describe('convergence guest scripts', function () {
             expect($commands)->toContain('route:list --json');
             expect(implode("\n", $commands))
                 ->not
-                ->toContain('route:new ', 'sqlite', 'gateway.sqlite');
+                ->toContain('route:create ', 'sqlite', 'gateway.sqlite');
             expect(file_exists("{$fixture['root']}/route"))
                 ->toBeFalse()
                 ->and(file_exists($fixture['state']))
@@ -3176,7 +3190,7 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($commands)->toContain('route:new 1 e2e-dev.orbit --publication=private --target=4 --json');
+            expect($commands)->toContain('route:create 1 e2e-dev.orbit --publication=private --target=4 --json');
             expect(file_exists($fixture['state']))->toBeFalse();
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
@@ -3221,7 +3235,7 @@ describe('convergence guest scripts', function () {
         'after Cluster creation' => [
             ['cluster'],
             [
-                'cluster:node:attach 3 2 --json',
+                'cluster:node:add 3 2 --json',
                 'cluster:router:set 3 2 --json',
                 'cluster:update 3 --state=active --json',
             ],
@@ -3253,8 +3267,8 @@ describe('convergence guest scripts', function () {
             expect($first->run())->not->toBe(0);
             $firstCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(typed_cluster_mutations($firstCommands))->toBe($firstMutations);
-            expect(implode("\n", $firstCommands))->not->toContain('app:new ');
-            expect(implode("\n", $firstCommands))->not->toContain('instance:new ');
+            expect(implode("\n", $firstCommands))->not->toContain('app:create ');
+            expect(implode("\n", $firstCommands))->not->toContain('instance:create ');
             expect(file_exists("{$fixture['root']}/app-before-cluster"))->toBeFalse();
             expect(file_exists("{$fixture['root']}/instance-before-cluster"))->toBeFalse();
 
@@ -3269,9 +3283,9 @@ describe('convergence guest scripts', function () {
         'Cluster creation output' => [
             'CLUSTER_NEW_RESPONSE',
             '{',
-            ['cluster:new e2e-development --json'],
+            ['cluster:create e2e-development --json'],
             [
-                'cluster:node:attach 3 2 --json',
+                'cluster:node:add 3 2 --json',
                 'cluster:router:set 3 2 --json',
                 'cluster:update 3 --state=active --json',
             ],
@@ -3280,8 +3294,8 @@ describe('convergence guest scripts', function () {
             'CLUSTER_ATTACH_RESPONSE',
             '{',
             [
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
+                'cluster:create e2e-development --json',
+                'cluster:node:add 3 2 --json',
             ],
             [
                 'cluster:router:set 3 2 --json',
@@ -3292,8 +3306,8 @@ describe('convergence guest scripts', function () {
             'CLUSTER_ROUTER_RESPONSE',
             '{',
             [
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
+                'cluster:create e2e-development --json',
+                'cluster:node:add 3 2 --json',
                 'cluster:router:set 3 2 --json',
             ],
             ['cluster:update 3 --state=active --json'],
@@ -3302,8 +3316,8 @@ describe('convergence guest scripts', function () {
             'CLUSTER_UPDATE_RESPONSE',
             '{',
             [
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
+                'cluster:create e2e-development --json',
+                'cluster:node:add 3 2 --json',
                 'cluster:router:set 3 2 --json',
                 'cluster:update 3 --state=active --json',
             ],
@@ -3313,8 +3327,8 @@ describe('convergence guest scripts', function () {
             'CLUSTER_ATTACH_RESPONSE',
             '[{"name":"other"},{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":null}]',
             [
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
+                'cluster:create e2e-development --json',
+                'cluster:node:add 3 2 --json',
             ],
             [
                 'cluster:router:set 3 2 --json',
@@ -3325,8 +3339,8 @@ describe('convergence guest scripts', function () {
             'CLUSTER_ATTACH_RESPONSE',
             '{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":{"id":2,"name":"app-dev","status":"active"}}',
             [
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
+                'cluster:create e2e-development --json',
+                'cluster:node:add 3 2 --json',
             ],
             [
                 'cluster:router:set 3 2 --json',
@@ -3337,8 +3351,8 @@ describe('convergence guest scripts', function () {
             'CLUSTER_ROUTER_RESPONSE',
             '{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":null}',
             [
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
+                'cluster:create e2e-development --json',
+                'cluster:node:add 3 2 --json',
                 'cluster:router:set 3 2 --json',
             ],
             ['cluster:update 3 --state=active --json'],
@@ -3347,8 +3361,8 @@ describe('convergence guest scripts', function () {
             'CLUSTER_UPDATE_RESPONSE',
             '{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":{"id":2,"name":"app-dev","status":"active"}}',
             [
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
+                'cluster:create e2e-development --json',
+                'cluster:node:add 3 2 --json',
                 'cluster:router:set 3 2 --json',
                 'cluster:update 3 --state=active --json',
             ],
@@ -3372,12 +3386,12 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             $transcript = implode("\n", $commands);
             expect(typed_cluster_mutations($commands))->toBe([]);
-            expect($transcript)->not->toContain('cluster:new ');
-            expect($transcript)->not->toContain('cluster:node:attach ');
+            expect($transcript)->not->toContain('cluster:create ');
+            expect($transcript)->not->toContain('cluster:node:add ');
             expect($transcript)->not->toContain('cluster:router:set ');
             expect($transcript)->not->toContain('cluster:update ');
-            expect($transcript)->not->toContain('app:new ');
-            expect($transcript)->not->toContain('instance:new ');
+            expect($transcript)->not->toContain('app:create ');
+            expect($transcript)->not->toContain('instance:create ');
             expect(file_exists("{$fixture['root']}/app"))->toBeFalse();
             expect(file_exists("{$fixture['root']}/instance"))
                 ->toBeFalse()
@@ -3713,7 +3727,7 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($commands)->toContain('instance:new 1 2 e2e-dev --hostname=e2e-dev.orbit --json');
+            expect($commands)->toContain('instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json');
             expect(file_exists($fixture['state']))->toBeFalse();
             expect(implode("\n", $commands))
                 ->not
