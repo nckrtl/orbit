@@ -879,10 +879,6 @@ it('refuses registration while the authoritative Route domain change is incomple
         'replaces_route_id' => $route->id,
         'replacement_step' => RouteReplacementStep::Reserved,
     ]);
-    $replacement->targets()->create([
-        'app_instance_id' => $instance->id,
-        'position' => 0,
-    ]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
     $instanceBefore = $instance->refresh()->getAttributes();
     $routeBefore = $route->refresh()->getAttributes();

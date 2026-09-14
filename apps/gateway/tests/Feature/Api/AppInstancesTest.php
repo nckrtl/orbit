@@ -1624,13 +1624,13 @@ it('accepts environment and domain operations after recovering an active source 
         'prepareWorkloadCaddy',
         'prepareRouterCertificate',
         'prepareFirewallPolicy',
-        'verifyWorkload',
         'prepareRouterCaddy',
         'publishDns',
         'cleanup',
     ] as $method) {
         $projector->shouldReceive($method)->once();
     }
+    $projector->shouldReceive('verifyWorkload')->twice();
     app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,

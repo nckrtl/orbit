@@ -73,6 +73,7 @@ it('permits activation only after one Route association exists', function (): vo
         ->toThrow(QueryException::class);
 
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => AppInstanceState::Active]);
 
     expect($instance->refresh()->status)->toBe(AppInstanceState::Active);

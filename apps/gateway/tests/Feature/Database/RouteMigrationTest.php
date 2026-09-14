@@ -180,13 +180,15 @@ it('accepts pending active activating retiring and failed Route statuses', funct
             'error_code' => 'route.domain_change_failed',
         ]))
         ->not->toThrow(QueryException::class)
-        ->and(fn () => Route::query()->create([
+        ->and(fn () => DB::table('routes')->insert([
             'app_id' => $pending->app_id,
             'node_id' => $pending->node_id,
             'domain' => 'status-invalid.example.test',
-            'provenance' => RouteProvenance::Explicit,
-            'publication' => RoutePublication::Private,
+            'provenance' => RouteProvenance::Explicit->value,
+            'publication' => RoutePublication::Private->value,
             'status' => 'unknown',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]))
         ->toThrow(QueryException::class);
 });

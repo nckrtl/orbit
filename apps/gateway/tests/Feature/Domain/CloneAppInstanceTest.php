@@ -33,6 +33,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -379,7 +380,31 @@ it('resumes one owned target and makes the completed identical retry terminal', 
         'env_value' => 'base64:target-edited-key',
     ]);
     $route = $resumed['appInstance']->routes()->sole();
-    $route->update(['domain' => 'final.example.test']);
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'node_id' => $route->node_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'final.example.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    $replacement->targets()->create([
+        'app_instance_id' => $resumed['appInstance']->id,
+        'position' => 0,
+    ]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
+    $replacement->update(['status' => RouteStatus::Activating]);
+    $route->update(['status' => RouteStatus::Retiring]);
+    $route->targets()->delete();
+    $route->delete();
+    $replacement->update([
+        'status' => RouteStatus::Active,
+        'replaces_route_id' => null,
+        'replacement_step' => null,
+    ]);
     $inspectionCount = $this->inspector->calls;
     $this->inspector->fail = true;
     $terminal = $this->action->execute($this->candidate, $this->data);

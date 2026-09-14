@@ -360,7 +360,10 @@ it('keeps legacy Instance and Workspace host identity unchanged through Route op
         'node_id' => $this->node->id,
     ])->assertCreated();
     $routeId = $route->json('data.id');
-    $this->patchJson("/api/v1/routes/{$routeId}", ['domain' => 'changed.example.test'])->assertOk();
+    $routeId = $this
+        ->patchJson("/api/v1/routes/{$routeId}", ['domain' => 'changed.example.test'])
+        ->assertOk()
+        ->json('data.id');
     $this->putJson("/api/v1/routes/{$routeId}/target", ['app_instance_id' => $this->target->id])->assertOk();
     $this->target->update(['status' => AppInstanceState::Reserved]);
     $this->deleteJson("/api/v1/routes/{$routeId}/target")->assertOk();
@@ -520,7 +523,7 @@ it('updates an active explicit private development domain through a replacement 
     $projector->shouldReceive('prepareWorkloadCaddy')->once();
     $projector->shouldReceive('prepareRouterCertificate')->once();
     $projector->shouldReceive('prepareFirewallPolicy')->once();
-    $projector->shouldReceive('verifyWorkload')->once();
+    $projector->shouldReceive('verifyWorkload')->twice();
     $projector->shouldReceive('prepareRouterCaddy')->once();
     $projector->shouldReceive('publishDns')->once();
     $projector->shouldReceive('cleanup')->once();
@@ -765,12 +768,13 @@ function route_api_domain_projector(bool $rollback = false, bool $cleanup = fals
         'prepareWorkloadCaddy',
         'prepareRouterCertificate',
         'prepareFirewallPolicy',
-        'verifyWorkload',
         'prepareRouterCaddy',
         'publishDns',
     ] as $method) {
         $projector->shouldReceive($method)->once();
     }
+
+    $projector->shouldReceive('verifyWorkload')->times($cleanup ? 2 : 1);
 
     if ($rollback) {
         foreach (['rollbackDns', 'rollbackCaddy', 'rollbackCertificates'] as $method) {

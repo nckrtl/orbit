@@ -15,6 +15,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -144,9 +145,29 @@ it('refuses a stale pending Route or target placement before copying values', fu
     'pending Route activates' => [static fn (AppInstance $target, Route $route) => $route->update([
         'status' => RouteStatus::Active,
     ])],
-    'pending Route domain changes' => [static fn (AppInstance $target, Route $route) => $route->update([
-        'domain' => 'changed.prod.orbit',
-    ])],
+    'pending Route domain changes' => [static function (AppInstance $target, Route $route): void {
+        $replacement = Route::query()->create([
+            'app_id' => $route->app_id,
+            'node_id' => $route->node_id,
+            'cluster_id' => $route->cluster_id,
+            'domain' => 'changed.prod.orbit',
+            'provenance' => $route->provenance,
+            'publication' => $route->publication,
+            'status' => RouteStatus::Pending,
+            'replaces_route_id' => $route->id,
+            'replacement_step' => RouteReplacementStep::Reserved,
+        ]);
+        $route->targets()->delete();
+        $replacement->targets()->create([
+            'app_instance_id' => $target->id,
+            'position' => 0,
+        ]);
+        $route->delete();
+        $replacement->update([
+            'replaces_route_id' => null,
+            'replacement_step' => null,
+        ]);
+    }],
     'target placement changes' => [static fn (AppInstance $target, Route $route) => $target->update([
         'production_home' => '/home/orbit-clone-target-moved',
         'checkout_path' => '/home/orbit-clone-target-moved',

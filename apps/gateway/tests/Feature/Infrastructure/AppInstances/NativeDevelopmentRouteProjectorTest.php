@@ -86,8 +86,8 @@ it('uses one local workload site when Router and workload roles share a Node', f
 
 it('renders old and candidate hostname sites with separate certificate scopes before DNS cutover', function (): void {
     [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
-    $appInstance->update(['status' => AppInstanceState::Active]);
     $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active]);
     $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node']);
     $candidate = clone $route;
     $candidate->domain = 'next.acme.test';
@@ -97,14 +97,14 @@ it('renders old and candidate hostname sites with separate certificate scopes be
     $routerSites = $sites->forNode($router, additionalRoute: $candidate);
     $dns = new AppDevDnsConfigRenderer($sites)->render(additionalRoute: $candidate);
 
-    expect($workloadSites->pluck('hostname')->all())
+    expect($workloadSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
         ->and($workloadSites->map->certificateDirectory()->all())
         ->toBe([
             "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
             "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}-hostname-change/current",
         ])
-        ->and($routerSites->pluck('hostname')->all())
+        ->and($routerSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
         ->and($routerSites->map->certificateDirectory()->all())
         ->toBe([
@@ -120,14 +120,14 @@ it('renders old and candidate hostname sites with separate certificate scopes be
 
 it('preserves the ready hostname candidate across an interrupted DNS publication and ordinary rebuild', function (): void {
     [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
     $appInstance->update([
         'status' => AppInstanceState::Active,
         'source_is_laravel' => false,
     ]);
-    $route->update(['status' => RouteStatus::Active]);
     $sites = new AppDevSiteRepository;
 
-    expect($sites->forNode($workload)->pluck('hostname')->all())
+    expect($sites->forNode($workload)->pluck('domain')->all())
         ->toBe(['feature.acme.test']);
 
     $replacement = Route::query()->create([
@@ -150,14 +150,14 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
     $routerSites = $sites->forNode($router);
     $dns = new AppDevDnsConfigRenderer($sites)->render();
 
-    expect($workloadSites->pluck('hostname')->all())
+    expect($workloadSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
         ->and($workloadSites->map->certificateDirectory()->all())
         ->toBe([
             "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
             "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
         ])
-        ->and($routerSites->pluck('hostname')->all())
+        ->and($routerSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
         ->and($dns)
         ->toContain(
@@ -165,12 +165,13 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
             "host-record=next.acme.test,{$router->wireguard_ip}",
         );
 
-    expect($sites->forNode($workload, additionalRoute: $replacement)->pluck('hostname')->all())
+    expect($sites->forNode($workload, additionalRoute: $replacement)->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test']);
 });
 
 it('preserves production release sites at the environment synchronization checkpoint', function (): void {
     [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
     $appInstance->update([
         'environment' => 'production',
         'checkout_path' => '/srv/acme/releases/one',
@@ -180,7 +181,6 @@ it('preserves production release sites at the environment synchronization checkp
         'status' => AppInstanceState::Active,
         'source_is_laravel' => true,
     ]);
-    $route->update(['status' => RouteStatus::Active]);
     $replacement = Route::query()->create([
         'app_id' => $route->app_id,
         'cluster_id' => $route->cluster_id,
@@ -201,13 +201,13 @@ it('preserves production release sites at the environment synchronization checkp
     $workloadSites = $sites->forNode($workload);
     $routerSites = $sites->forNode($router);
 
-    expect($workloadSites->pluck('hostname')->all())
+    expect($workloadSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
         ->and($workloadSites->pluck('checkoutPath')->unique()->values()->all())
         ->toBe(['/srv/acme/current'])
         ->and($workloadSites->pluck('productionPhpSocket')->unique()->values()->all())
         ->toBe(['/run/php/orbit-acme.sock'])
-        ->and($routerSites->pluck('hostname')->all())
+        ->and($routerSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test']);
 });
 
@@ -314,7 +314,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         ->and($workloadSites->pluck('scope')->all())
         ->toHaveCount(2)
         ->toContain("app-instance-{$pendingInstance->id}", "app-instance-{$activeInstance->id}")
-        ->and($workloadSites->pluck('hostname'))
+        ->and($workloadSites->pluck('domain'))
         ->not->toContain($failedRoute->domain, $unrelatedRoute->domain)->and($retrievedRoutes)->toContain(
             $pendingRoute->id,
             $activeRoute->id,
@@ -323,7 +323,7 @@ it('hydrates only requested workload and Router routes while global inventory st
             $pendingInstance->id,
             $activeInstance->id,
         )
-        ->not->toContain($failedInstance->id, $unrelatedInstance->id)->and($globalSites->pluck('hostname'))->toContain(
+        ->not->toContain($failedInstance->id, $unrelatedInstance->id)->and($globalSites->pluck('domain'))->toContain(
             $pendingRoute->domain,
             $activeRoute->domain,
             $unrelatedRoute->domain,
@@ -422,8 +422,8 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
 
 it('retains active workload and Router sites while publishing a second Route on the same Router', function (): void {
     [$firstInstance, $firstRoute, $workload, $router] = orb127_route_projection_models(phpVersion: '8.5');
-    $firstInstance->update(['status' => AppInstanceState::Active]);
     $firstRoute->update(['status' => RouteStatus::Active]);
+    $firstInstance->update(['status' => AppInstanceState::Active]);
     $secondInstance = AppInstance::query()->create([
         'app_id' => $firstInstance->app_id,
         'node_id' => $workload->id,

@@ -9,6 +9,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
@@ -85,6 +86,8 @@ beforeEach(function (): void {
 
         public ?string $observedHostname = null;
 
+        public ?string $observedPublication = null;
+
         public function __construct(
             private readonly ProvisionDevelopmentProjectionOwner $owner,
         ) {}
@@ -93,7 +96,8 @@ beforeEach(function (): void {
         {
             $this->convergences++;
             $this->ownerWasActive = $this->owner->active;
-            $this->observedHostname = $route->hostname;
+            $this->observedHostname = $route->domain;
+            $this->observedPublication = $route->publication->value;
             if ($this->failure instanceof RuntimeConvergenceException) {
                 throw $this->failure;
             }
@@ -126,12 +130,12 @@ it('refreshes projection facts after ownership begins', function (): void {
     $this->provisioner->reserve($this->instance, null);
     $route = $this->instance->routes()->sole();
     $this->projectionOwner->onEnter = static function () use ($route): void {
-        Route::query()->whereKey($route->id)->update(['hostname' => 'fresh.test']);
+        Route::query()->whereKey($route->id)->update(['publication' => RoutePublication::Public->value]);
     };
 
     $this->provisioner->complete($this->instance, null);
 
-    expect($this->projection->observedHostname)->toBe('fresh.test');
+    expect($this->projection->observedPublication)->toBe(RoutePublication::Public->value);
 });
 
 it('rejects target membership that changes before projection ownership begins', function (): void {
