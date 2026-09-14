@@ -92,12 +92,12 @@ final class StoreAppInstanceDeployStepRequest extends FormRequest
         return $this->step;
     }
 
-    public function before(): ?string
+    public function beforeStep(): ?string
     {
         return $this->before;
     }
 
-    public function after(): ?string
+    public function afterStep(): ?string
     {
         return $this->after;
     }

@@ -96,12 +96,12 @@ final class UpdateAppInstanceDeployStepRequest extends FormRequest
         return is_int($this->payload['timeout_seconds'] ?? null) ? $this->payload['timeout_seconds'] : null;
     }
 
-    public function before(): ?string
+    public function beforeStep(): ?string
     {
         return is_string($this->payload['before'] ?? null) ? $this->payload['before'] : null;
     }
 
-    public function after(): ?string
+    public function afterStep(): ?string
     {
         return is_string($this->payload['after'] ?? null) ? $this->payload['after'] : null;
     }

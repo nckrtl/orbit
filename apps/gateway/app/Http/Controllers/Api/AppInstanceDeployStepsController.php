@@ -44,7 +44,7 @@ final class AppInstanceDeployStepsController extends Controller
     ): JsonResponse {
         return response()->json([
             'data' => DeploymentStepData::fromDomain(
-                $action->execute($instance, $request->step(), $request->before(), $request->after()),
+                $action->execute($instance, $request->step(), $request->beforeStep(), $request->afterStep()),
             )->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ], 201);
@@ -65,8 +65,8 @@ final class AppInstanceDeployStepsController extends Controller
                     $request->command(),
                     $request->phase(),
                     $request->timeoutSeconds(),
-                    $request->before(),
-                    $request->after(),
+                    $request->beforeStep(),
+                    $request->afterStep(),
                     $request->hasCommand(),
                     $request->hasPhase(),
                     $request->hasTimeout(),
