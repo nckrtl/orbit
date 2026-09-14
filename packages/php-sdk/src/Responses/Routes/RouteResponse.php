@@ -15,16 +15,15 @@ final readonly class RouteResponse
         public ?int $nodeId,
         public ?int $clusterId,
         public ?int $generationBasisNodeId,
-        public string $hostname,
+        public string $domain,
         public string $provenance,
         public string $publication,
         public string $status,
         public ?string $failedStep,
         public ?string $errorCode,
-        public ?string $hostnameChangePrevious,
-        public ?string $hostnameChangeTarget,
-        public ?string $hostnameChangeDirection,
-        public ?string $hostnameChangeStep,
+        public ?int $replacesRouteId,
+        public ?int $replacedByRouteId,
+        public ?string $replacementStep,
         public ?RouteTargetResponse $target,
         public string $requestId,
     ) {}
@@ -46,24 +45,17 @@ final readonly class RouteResponse
             generationBasisNodeId: is_int($data['generation_basis_node_id'] ?? null)
                 ? $data['generation_basis_node_id']
                 : null,
-            hostname: is_string($data['hostname'] ?? null) ? $data['hostname'] : '',
+            domain: is_string($data['domain'] ?? null) ? $data['domain'] : '',
             provenance: is_string($data['provenance'] ?? null) ? $data['provenance'] : '',
             publication: is_string($data['publication'] ?? null) ? $data['publication'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
-            hostnameChangePrevious: is_string($data['hostname_change_previous'] ?? null)
-                ? $data['hostname_change_previous']
+            replacesRouteId: is_int($data['replaces_route_id'] ?? null) ? $data['replaces_route_id'] : null,
+            replacedByRouteId: is_int($data['replaced_by_route_id'] ?? null)
+                ? $data['replaced_by_route_id']
                 : null,
-            hostnameChangeTarget: is_string($data['hostname_change_target'] ?? null)
-                ? $data['hostname_change_target']
-                : null,
-            hostnameChangeDirection: is_string($data['hostname_change_direction'] ?? null)
-                ? $data['hostname_change_direction']
-                : null,
-            hostnameChangeStep: is_string($data['hostname_change_step'] ?? null)
-                ? $data['hostname_change_step']
-                : null,
+            replacementStep: is_string($data['replacement_step'] ?? null) ? $data['replacement_step'] : null,
             target: $target,
             requestId: $requestId,
         );
@@ -78,16 +70,15 @@ final readonly class RouteResponse
             'node_id' => $this->nodeId,
             'cluster_id' => $this->clusterId,
             'generation_basis_node_id' => $this->generationBasisNodeId,
-            'hostname' => $this->hostname,
+            'domain' => $this->domain,
             'provenance' => $this->provenance,
             'publication' => $this->publication,
             'status' => $this->status,
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
-            'hostname_change_previous' => $this->hostnameChangePrevious,
-            'hostname_change_target' => $this->hostnameChangeTarget,
-            'hostname_change_direction' => $this->hostnameChangeDirection,
-            'hostname_change_step' => $this->hostnameChangeStep,
+            'replaces_route_id' => $this->replacesRouteId,
+            'replaced_by_route_id' => $this->replacedByRouteId,
+            'replacement_step' => $this->replacementStep,
             'target' => $this->target?->toArray(),
             'request_id' => $this->requestId,
         ];

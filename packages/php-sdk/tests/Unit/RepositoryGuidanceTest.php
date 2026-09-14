@@ -364,7 +364,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep AppInstance deployment-layout transport limited to the numeric AppInstance ID and an optional explicit SQLite source path.',
             )
             ->toContain(
-                'Keep AppInstance environment transport limited to an ID-or-hostname selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
+                'Keep AppInstance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
             )
             ->toContain(
                 'Keep AppInstance deployment transport limited to named deploy-step create, list, update, and destroy, AppInstance branch update, explicit deploy and rollback streams, and retained-release inspection.',
@@ -382,7 +382,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep Database connection transport limited to slug identity, driver, optional Node ID, host, port, database name, sqlite path, username, and password.',
             )
             ->toContain(
-                'Attach and detach send an AppInstance ID-or-hostname selector, the connection slug, and an optional prefix.',
+                'Attach and detach send an AppInstance ID-or-domain selector, the connection slug, and an optional prefix.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))

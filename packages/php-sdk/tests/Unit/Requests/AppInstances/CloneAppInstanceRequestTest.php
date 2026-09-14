@@ -52,7 +52,7 @@ describe(CloneAppInstanceRequest::class, function (): void {
             ->toBe('release')
             ->and($response->route?->id)
             ->toBe(41)
-            ->and($response->route?->hostname)
+            ->and($response->route?->domain)
             ->toBe('shop.com.prod.orbit')
             ->and($response->route?->target?->appInstanceId)
             ->toBe(29)
@@ -160,19 +160,22 @@ function clone_instance_envelope(): array
                 'node_id' => 7,
                 'cluster_id' => null,
                 'generation_basis_node_id' => null,
-                'hostname' => 'shop.com.prod.orbit',
+                'domain' => 'shop.com.prod.orbit',
                 'provenance' => 'explicit',
                 'publication' => 'private',
                 'status' => 'active',
                 'failed_step' => null,
                 'error_code' => null,
+                'replaces_route_id' => null,
+                'replaced_by_route_id' => null,
+                'replacement_step' => null,
                 'target' => [
                     'id' => 51,
                     'app_instance_id' => 29,
                     'position' => 1,
                 ],
             ],
-            'hostname' => 'shop.com.prod.orbit',
+            'domain' => 'shop.com.prod.orbit',
             'url' => 'https://shop.com.prod.orbit',
             'removal' => null,
             'deploy_steps' => [],

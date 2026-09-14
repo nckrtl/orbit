@@ -27,7 +27,7 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
         private readonly int $nodeId,
         private readonly string $name,
         private readonly ?string $root = null,
-        private readonly ?string $hostname = null,
+        private readonly ?string $domain = null,
         private readonly ?string $branch = null,
         private readonly ?bool $recoverSourceProfile = null,
     ) {}
@@ -58,8 +58,8 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
             $body['root'] = $this->root;
         }
 
-        if ($this->hostname !== null) {
-            $body['hostname'] = $this->hostname;
+        if ($this->domain !== null) {
+            $body['domain'] = $this->domain;
         }
 
         if ($this->branch !== null) {
