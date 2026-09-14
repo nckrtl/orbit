@@ -29,7 +29,6 @@ use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 use Orbit\Sdk\Responses\Tools\ToolsResponse;
-use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
 
 it('rejects unsafe success error codes across every response surface', function (): void {
     $credential = substr(hash('sha256', __METHOD__), offset: 0, length: 20);
@@ -41,7 +40,6 @@ it('rejects unsafe success error codes across every response surface', function 
         NodeResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         ProcessResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         HerdrSessionResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
-        WorkspaceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         ToolManagerResponse::fromGatewayData([
             'id' => 1,
             'node_id' => 1,
@@ -201,7 +199,6 @@ it('marks every public gateway DTO factory ingress as sensitive', function (): v
         ScheduleLogsResponse::class => ['fromGatewayData'],
         ScheduleResponse::class => ['fromGatewayData'],
         SchedulesResponse::class => ['fromGatewayData'],
-        WorkspaceResponse::class => ['fromGatewayData'],
         ToolManagerResponse::class => ['fromGatewayData'],
         ToolManagersResponse::class => ['__construct'],
         ToolResponse::class => ['fromGatewayData'],

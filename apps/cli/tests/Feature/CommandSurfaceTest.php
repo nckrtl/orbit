@@ -160,11 +160,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:remove',
         'tool:show',
         'tool:update',
-        'workspace:list',
-        'workspace:new',
-        'workspace:php',
-        'workspace:remove',
-        'workspace:show',
     ]);
 });
 
@@ -195,7 +190,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(113);
+    expect($orbitCommands)->toHaveCount(108);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -294,6 +289,17 @@ it('does not expose replaced instance lifecycle names', function (): void {
         'instance:new',
         'instance:remove',
         'instance:releases',
+        'instance:php',
+    ]);
+});
+
+it('does not expose retired Workspace command names', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKeys([
+        'workspace:list',
+        'workspace:new',
+        'workspace:php',
+        'workspace:remove',
+        'workspace:show',
     ]);
 });
 
@@ -671,14 +677,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'tool:remove' => [['tool'], ['json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
-        'workspace:list' => [[], ['json' => false]],
-        'workspace:new' => [
-            ['instance', 'name'],
-            ['branch' => null, 'path' => null, 'php' => null, 'json' => false],
-        ],
-        'workspace:php' => [['workspace', 'version'], ['json' => false]],
-        'workspace:remove' => [['workspace'], ['json' => false]],
-        'workspace:show' => [['workspace'], ['json' => false]],
     ];
     $globalOptions = [
         'help',
@@ -951,11 +949,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:remove' => [['tool' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
-        'workspace:list' => [[], ...$profileMissing],
-        'workspace:new' => [['instance' => '1', 'name' => 'work'], ...$profileMissing],
-        'workspace:php' => [['workspace' => '1', 'version' => '8.5'], ...$profileMissing],
-        'workspace:remove' => [['workspace' => '1'], ...$profileMissing],
-        'workspace:show' => [['workspace' => '1'], ...$profileMissing],
     ];
     $visibleCommandNames = collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())

@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 116 concrete public Gateway API operations:
+The SDK models exactly 111 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -10,7 +10,6 @@ The SDK models exactly 116 concrete public Gateway API operations:
 - App runtime definition: process and Schedule list, create, show, update, and destroy.
 - AppInstance: list, show, create, register, clone, remove, update, deployment-layout preparation, deployment configuration read and replace, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
-- Workspace: list, show, create, remove, and update PHP.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
 - Firewall: list, allow, deny, and remove.
@@ -94,7 +93,7 @@ operations. Keep the public API typed and small.
   grant/revoke compatibility.
 - Do not restore the retired Agent, generic executor, direct SSH execution,
   Docker Swarm, Compose, image-building, generic stream, database query,
-  or proxy surfaces.
+  proxy, legacy Instance, or Workspace surfaces.
 - Coordinate contract changes with Gateway and CLI owners. Do not implement
   Gateway policy or CLI presentation in this repository.
 - Preserve manager, package, nullable constraint, outcomes, structured errors,

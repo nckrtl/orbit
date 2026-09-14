@@ -2,51 +2,12 @@
 
 declare(strict_types=1);
 
-use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
+it('keeps no Workspace response class on the retired fingerprint path', function (): void {
+    $path = dirname(__DIR__, levels: 4).'/src/Responses/Workspaces/WorkspaceResponse.php';
 
-describe(WorkspaceResponse::class, function (): void {
-    it('maps every public workspace field from gateway data', function (): void {
-        $response = WorkspaceResponse::fromGatewayData([
-            'id' => 9,
-            'instance_id' => 7,
-            'node_id' => 4,
-            'name' => 'feature-auth',
-            'branch' => 'feature/auth',
-            'checkout_path' => '/home/orbit/.orbit/worktrees/orbit-docs/feature-auth',
-            'php_version' => null,
-            'effective_php_version' => '8.5',
-            'hostname' => 'feature-auth.orbit-docs.beast',
-            'status' => 'active',
-            'failed_step' => null,
-            'error_code' => null,
-        ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
-
-        expect($response->toArray())->toBe([
-            'id' => 9,
-            'instance_id' => 7,
-            'node_id' => 4,
-            'name' => 'feature-auth',
-            'branch' => 'feature/auth',
-            'checkout_path' => '/home/orbit/.orbit/worktrees/orbit-docs/feature-auth',
-            'php_version' => null,
-            'effective_php_version' => '8.5',
-            'hostname' => 'feature-auth.orbit-docs.beast',
-            'status' => 'active',
-            'failed_step' => null,
-            'error_code' => null,
-            'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
-        ]);
-    });
-
-    it('normalizes invalid nullable gateway fields', function (): void {
-        $response = WorkspaceResponse::fromGatewayData([
-            'php_version' => ['invalid'],
-            'error_code' => false,
-        ], 'request-id');
-
-        expect($response->phpVersion)
-            ->toBeNull()
-            ->and($response->errorCode)
-            ->toBeNull();
-    });
+    expect((string) file_get_contents($path))
+        ->not
+        ->toMatch('/\b(?:class|interface|trait|enum)\s+[A-Za-z_]/')
+        ->and(class_exists('Orbit\\Sdk\\Responses\\Workspaces\\WorkspaceResponse'))
+        ->toBeFalse();
 });
