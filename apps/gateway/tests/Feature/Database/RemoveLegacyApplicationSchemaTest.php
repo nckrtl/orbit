@@ -93,6 +93,7 @@ function operator_prepared_supported_graph(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
+        'generation_basis_node_id' => $node->id,
         'hostname' => 'acme.app-dev.orbit',
         'status' => RouteStatus::Pending,
         'publication' => RoutePublication::Private,
