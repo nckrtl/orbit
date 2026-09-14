@@ -17,8 +17,8 @@ use App\Models\Route;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Route as RouteFacade;
+use Illuminate\Support\Facades\Schema;
 
 function remove_legacy_application_schema_migration(): object
 {
