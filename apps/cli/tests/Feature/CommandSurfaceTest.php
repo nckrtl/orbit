@@ -213,7 +213,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
 });
 
 it('keeps command-surface visibility independent of caller Herdr settings', function (bool $herdrEnabled): void {
-    $filesystem = new Filesystem();
+    $filesystem = new Filesystem;
     $callerHome = sys_get_temp_dir().'/orbit-cli-command-surface-caller-'.Str::uuid();
     mkdir($callerHome, 0700, true);
     $sentinel = '{"sentinel":"orb-347-caller-config"}'.PHP_EOL;
@@ -257,7 +257,7 @@ it('keeps command-surface visibility independent of caller Herdr settings', func
 ]);
 
 it('removes only owned command-surface fixtures and leaves caller configuration intact', function (): void {
-    $filesystem = new Filesystem();
+    $filesystem = new Filesystem;
     $callerHome = sys_get_temp_dir().'/orbit-cli-command-surface-caller-'.Str::uuid();
     mkdir($callerHome, 0700, true);
     mkdir($this->orbitHome, 0700, true);
