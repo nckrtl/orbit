@@ -88,8 +88,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'metrics:status',
         'node:access:add',
         'node:access:remove',
+        'node:add',
         'node:list',
-        'node:provision',
         'node:remove',
         'node:role:add',
         'node:role:list',
@@ -389,8 +389,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'metrics:status' => [[], ['json' => false]],
         'node:access:add' => [['consumer', 'serving'], ['json' => false]],
         'node:access:remove' => [['consumer', 'serving'], ['force' => false, 'json' => false]],
-        'node:list' => [[], ['json' => false]],
-        'node:provision' => [
+        'node:add' => [
             ['name', 'host'],
             [
                 'ssh-port' => '22',
@@ -411,6 +410,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'node:list' => [[], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
@@ -517,7 +517,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         expect(array_keys($definition->getArguments()))->toBe($arguments);
         $optionalArguments = match ($name) {
             'dns:resolve' => ['target'],
-            'node:provision' => ['host'],
+            'node:add' => ['host'],
             'tool:install' => ['package'],
             'metrics:enable' => ['node'],
             default => [],
@@ -711,8 +711,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'metrics:status' => [[], ...$profileMissing],
         'node:access:add' => [['consumer' => '2', 'serving' => '3'], ...$profileMissing],
         'node:access:remove' => [['consumer' => '2', 'serving' => '3', '--force' => true], ...$profileMissing],
+        'node:add' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:list' => [[], ...$profileMissing],
-        'node:provision' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:remove' => [['node' => '1', '--force' => true], ...$profileMissing],
         'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
         'node:role:list' => [['node' => '7'], ...$profileMissing],

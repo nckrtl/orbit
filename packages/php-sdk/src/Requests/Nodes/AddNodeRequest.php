@@ -12,7 +12,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-final class ProvisionNodeRequest extends GatewayRequest implements HasBody
+final class AddNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 

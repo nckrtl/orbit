@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
+use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
@@ -13,7 +13,7 @@ use Saloon\Http\Faking\MockResponse;
 
 it('omits absent optional node payload fields and maps the typed response', function (): void {
     $mockClient = new MockClient([
-        ProvisionNodeRequest::class => MockResponse::make([
+        AddNodeRequest::class => MockResponse::make([
             'data' => [
                 'id' => 1,
                 'name' => 'app-dev',
@@ -40,7 +40,7 @@ it('omits absent optional node payload fields and maps the typed response', func
     ]);
     $connector = new GatewayConnector('https://10.44.0.1');
     $connector->withMockClient($mockClient);
-    $request = new ProvisionNodeRequest(
+    $request = new AddNodeRequest(
         name: 'app-dev',
         publicSshHost: '94.237.40.75',
         roles: ['app-dev'],
@@ -70,7 +70,7 @@ it('omits absent optional node payload fields and maps the typed response', func
 
 it('sends explicit optional node payload fields exactly as supplied and maps the typed response', function (): void {
     $mockClient = new MockClient([
-        ProvisionNodeRequest::class => MockResponse::make([
+        AddNodeRequest::class => MockResponse::make([
             'data' => [
                 'id' => 1,
                 'name' => 'app-dev',
@@ -97,7 +97,7 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
     ]);
     $connector = new GatewayConnector('https://10.44.0.1');
     $connector->withMockClient($mockClient);
-    $request = new ProvisionNodeRequest(
+    $request = new AddNodeRequest(
         name: 'app-dev',
         publicSshHost: '94.237.40.75',
         roles: ['app-dev'],
@@ -159,7 +159,7 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
 });
 
 it('represents a Linux node without inventing a public SSH host', function (): void {
-    $request = new ProvisionNodeRequest(
+    $request = new AddNodeRequest(
         name: 'private-app-dev',
         publicSshHost: null,
         platform: 'linux',
@@ -178,7 +178,7 @@ it('represents a Linux node without inventing a public SSH host', function (): v
 });
 
 it('sends an explicit settings object when supplied and omits it otherwise', function (): void {
-    $withSettings = new ProvisionNodeRequest(
+    $withSettings = new AddNodeRequest(
         name: 'app-dev',
         publicSshHost: '94.237.40.75',
         settingsProvided: true,
@@ -186,7 +186,7 @@ it('sends an explicit settings object when supplied and omits it otherwise', fun
             apps: new AppsSettings('/srv/orbit/apps'),
         ),
     );
-    $withoutSettings = new ProvisionNodeRequest(
+    $withoutSettings = new AddNodeRequest(
         name: 'app-dev',
         publicSshHost: '94.237.40.75',
     );
@@ -197,4 +197,8 @@ it('sends an explicit settings object when supplied and omits it otherwise', fun
         ])
         ->and($withoutSettings->body()->all())
         ->not->toHaveKey('settings');
+});
+
+it('does not keep the replaced ProvisionNodeRequest class', function (): void {
+    expect(class_exists('Orbit\\Sdk\\Requests\\Nodes\\ProvisionNodeRequest'))->toBeFalse();
 });

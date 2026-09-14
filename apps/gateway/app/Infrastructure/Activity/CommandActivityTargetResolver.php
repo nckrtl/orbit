@@ -195,7 +195,7 @@ final readonly class CommandActivityTargetResolver
         }
 
         return match ($request->route()?->getName()) {
-            'node:provision' => Node::query()->where('name', $request->input('name'))->first(),
+            'node:add' => Node::query()->where('name', $request->input('name'))->first(),
             'doctor:run' => $this->doctorNode($request),
             'app:create' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
             'instance:create' => AppInstance::query()

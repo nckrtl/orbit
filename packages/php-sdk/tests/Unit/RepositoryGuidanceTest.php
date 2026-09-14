@@ -320,7 +320,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($publicContract)
             ->toContain('The SDK models exactly 110 concrete public Gateway API operations:')
             ->toContain(
-                '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
+                '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',

@@ -139,7 +139,7 @@ final readonly class RemoveNodeAction
         }
 
         // Public SSH is reopened while the tunnel still exists, so the machine
-        // stays reachable for `node:provision` or recovery after it leaves.
+        // stays reachable for `node:add` or recovery after it leaves.
         // A node without a peer never had its public path closed, and an
         // offline removal cannot change the machine at all.
         if (! $offline && $node->wireguard_public_key !== null) {

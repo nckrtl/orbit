@@ -270,11 +270,11 @@ describe('instance:clone help and execution boundary', function (): void {
                 'candidate supplies source, stored environment values, and an optional SQLite snapshot',
                 'App supplies production Process and Schedule definitions',
                 'Clean application state on the target only',
-                'node:provision --tld',
+                'node:add --tld',
                 'env:update and env:sync',
                 'instance:deployment-config and instance:deploy',
             )
-            ->and($commands['node:provision']->getDefinition()->getOption('tld')->getDescription())
+            ->and($commands['node:add']->getDefinition()->getOption('tld')->getDescription())
             ->toContain('required for production clone preview hostnames');
     });
 
