@@ -1,0 +1,13 @@
+{
+  "id": "ORB-349",
+  "title": "Align ORB-255 endpoint-shape fixtures with the deploy-step candidate contract",
+  "url": "https://linear.app/nckrtl/issue/ORB-349/align-orb-255-endpoint-shape-fixtures-with-the-deploy-step-candidate",
+  "status": "In Progress",
+  "labels": ["apps/e2e", "Bug"],
+  "flow": "discovery",
+  "incus": false,
+  "candidate": "067837e875236fdef112bbb0eb1300b70d128c03",
+  "branch": "cursor/orb-349-endpoint-shape-fixtures-5191",
+  "base": "25038b816423859874caa73e9c5dafba463ecb9e",
+  "pr": "https://github.com/nckrtl/orbit/pull/415"
+}
