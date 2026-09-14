@@ -197,11 +197,11 @@ Route::prefix('v1')->group(function (): void {
         Route::patch(
             'instances/{instance}/deploy-steps/{step}',
             [AppInstanceDeployStepsController::class, 'update'],
-        )->where('step', '[a-z0-9]+(?:-[a-z0-9]+)*')->name('instance:deploy-step:update');
+        )->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')->name('instance:deploy-step:update');
         Route::delete(
             'instances/{instance}/deploy-steps/{step}',
             [AppInstanceDeployStepsController::class, 'destroy'],
-        )->where('step', '[a-z0-9]+(?:-[a-z0-9]+)*')->name('instance:deploy-step:destroy');
+        )->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')->name('instance:deploy-step:destroy');
         Route::post(
             'instances/{instance}/deployment-layout',
             [AppInstanceDeploymentLayoutsController::class, 'store'],

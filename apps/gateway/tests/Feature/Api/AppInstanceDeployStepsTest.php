@@ -162,6 +162,31 @@ it('updates and destroys a step by name and includes steps on instance show', fu
         ->assertJsonCount(1, 'data');
 });
 
+it('updates and destroys a step whose name carries consecutive hyphens', function (): void {
+    store_deploy_steps($this->instance, [
+        ['name' => 'db--migrate', 'phase' => 'before_activation', 'command' => 'old', 'timeout_seconds' => 30],
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->patchJson($this->url.'/db--migrate', ['command' => 'new'])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'db--migrate')
+        ->assertJsonPath('data.command', 'new');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->deleteJson($this->url.'/db--migrate')
+        ->assertOk()
+        ->assertJsonPath('data.name', 'db--migrate');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->getJson($this->url)
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});
+
 it('changes the deployment branch without changing steps and refuses development AppInstances', function (): void {
     store_deploy_steps($this->instance, [
         ['name' => 'migrate', 'phase' => 'before_activation', 'command' => 'migrate', 'timeout_seconds' => 30],
