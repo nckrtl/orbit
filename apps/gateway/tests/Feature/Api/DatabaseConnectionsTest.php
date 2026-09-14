@@ -125,7 +125,7 @@ it('registers a remote sqlite path without a database role on the optional node'
         'public_ssh_host' => '192.0.2.11',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'tld' => 'orbit',
+        'tld' => null,
         'wireguard_ip' => '10.44.0.8',
     ]);
 

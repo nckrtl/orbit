@@ -34,7 +34,7 @@ final class RemoveDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        if (! $this->confirmed('removal')) {
+        if (! $this->confirmed()) {
             return self::FAILURE;
         }
 
@@ -49,5 +49,23 @@ final class RemoveDatabaseConnectionCommand extends DatabaseCommand
         }
 
         return $this->renderConnection($connection, "Database connection [{$connection->slug}] removed.");
+    }
+
+    private function confirmed(): bool
+    {
+        if ($this->option('force') === true) {
+            return true;
+        }
+
+        if ($this->option('json') !== true && $this->input->isInteractive()) {
+            return $this->confirm('Confirm Database connection removal?', false);
+        }
+
+        $this->renderGatewayFailure(
+            'database.confirmation_required',
+            'Use --force to confirm Database connection removal.',
+        );
+
+        return false;
     }
 }

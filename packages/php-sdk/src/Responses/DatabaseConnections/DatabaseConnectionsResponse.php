@@ -6,20 +6,24 @@ namespace Orbit\Sdk\Responses\DatabaseConnections;
 
 use InvalidArgumentException;
 use Orbit\Sdk\Support\GatewayRequestId;
+use SensitiveParameter;
 
 final readonly class DatabaseConnectionsResponse
 {
-    /** @param list<DatabaseConnectionResponse> $connections */
-    private function __construct(
-        public array $connections,
-        public string $requestId,
-    ) {}
+    /** @var list<DatabaseConnectionResponse> */
+    public array $connections;
+
+    public string $requestId;
 
     /**
-     * @param  list<DatabaseConnectionResponse>  $connections
+     * @param  array<array-key, mixed>  $connections
      */
-    public static function fromConnections(array $connections, string $requestId): self
-    {
+    public function __construct(
+        #[SensitiveParameter]
+        array $connections,
+        #[SensitiveParameter]
+        string $requestId,
+    ) {
         if (! array_is_list($connections)) {
             throw new InvalidArgumentException('Invalid Database connection collection response.');
         }
@@ -30,7 +34,17 @@ final readonly class DatabaseConnectionsResponse
             }
         }
 
-        return new self($connections, GatewayRequestId::fromTransport($requestId) ?? '');
+        /** @var list<DatabaseConnectionResponse> $connections */
+        $this->connections = $connections;
+        $this->requestId = GatewayRequestId::fromTransport($requestId) ?? '';
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $connections
+     */
+    public static function fromConnections(array $connections, string $requestId): self
+    {
+        return new self($connections, $requestId);
     }
 
     /** @return array{connections: list<array<string, bool|int|string|null>>, request_id: string} */

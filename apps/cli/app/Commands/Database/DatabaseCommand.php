@@ -31,24 +31,6 @@ abstract class DatabaseCommand extends GatewayCommand
         return $slug;
     }
 
-    protected function confirmed(string $operation): bool
-    {
-        if ($this->option('force') === true) {
-            return true;
-        }
-
-        if ($this->option('json') !== true && $this->input->isInteractive()) {
-            return $this->confirm("Confirm Database connection {$operation}?", false);
-        }
-
-        $this->renderGatewayFailure(
-            'database.confirmation_required',
-            "Use --force to confirm Database connection {$operation}.",
-        );
-
-        return false;
-    }
-
     protected function renderConnection(DatabaseConnectionResponse $connection, string $message): int
     {
         if ($this->option('json') === true) {
