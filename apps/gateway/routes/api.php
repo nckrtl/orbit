@@ -175,13 +175,13 @@ Route::prefix('v1')->group(function (): void {
         });
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
-        Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:new');
+        Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:create');
         Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
         Route::post('instances/{candidate}/clone', [AppInstanceClonesController::class, 'store'])
             ->whereNumber('candidate')
             ->name('instance:clone');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
-            ->name('instance:remove');
+            ->name('instance:destroy');
         Route::get(
             'instances/{instance}/deployment-config',
             [AppInstanceDeploymentConfigsController::class, 'show'],
@@ -197,11 +197,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post(
             'instances/{instance}/deploy',
             [AppInstanceDeploymentsController::class, 'store'],
-        )->name('instance:deployment:store');
+        )->name('instance:deploy');
         Route::post(
             'instances/{instance}/rollback',
             [AppInstanceRollbacksController::class, 'store'],
-        )->name('instance:rollback:store');
+        )->name('instance:rollback');
         Route::get(
             'instances/{instance}/releases',
             [AppInstanceReleasesController::class, 'index'],
@@ -209,15 +209,15 @@ Route::prefix('v1')->group(function (): void {
         Route::post(
             'instances/{instance}/environment/import',
             [AppInstanceEnvironmentImportsController::class, 'store'],
-        )->name('instance:environment:import');
+        )->name('env:import');
         Route::post(
             'instances/{instance}/environment/sync',
             [AppInstanceEnvironmentSynchronizationsController::class, 'store'],
-        )->name('instance:environment:sync');
+        )->name('env:sync');
         Route::put(
             'instances/{instance}/environment/{key}',
             [AppInstanceEnvironmentValuesController::class, 'update'],
-        )->name('instance:environment:update');
+        )->name('env:update');
         Route::put(
             'instances/{instance}/database-connections/{database_connection}',
             [DatabaseConnectionAttachmentsController::class, 'store'],

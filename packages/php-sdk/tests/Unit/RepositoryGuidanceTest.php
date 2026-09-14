@@ -5,8 +5,8 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
@@ -277,7 +277,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(CloneAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
-            ->toContain(RemoveAppInstanceRequest::class)
+            ->toContain(DestroyAppInstanceRequest::class)
             ->toContain(ImportAppInstanceEnvironmentRequest::class)
             ->toContain(UpdateAppInstanceEnvironmentRequest::class)
             ->toContain(SynchronizeAppInstanceEnvironmentRequest::class)

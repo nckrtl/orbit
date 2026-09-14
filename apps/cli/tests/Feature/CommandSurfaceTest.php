@@ -67,14 +67,14 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'herdr:session:restart',
         'herdr:session:show',
         'instance:clone',
+        'instance:create',
         'instance:deploy',
         'instance:deployment-config',
+        'instance:destroy',
         'instance:list',
-        'instance:new',
         'instance:prepare-deployment',
         'instance:register',
-        'instance:releases',
-        'instance:remove',
+        'instance:release:list',
         'instance:rollback',
         'instance:show',
         'metrics:credentials',
@@ -149,6 +149,14 @@ it('registers only the Orbit Schedule adapters', function (): void {
         ]);
     expect($commands['schedule:list'])->toBeInstanceOf(ListSchedulesCommand::class);
     expect($commands['schedule:run'])->toBeInstanceOf(RunScheduleCommand::class);
+});
+
+it('does not expose replaced instance lifecycle names', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKeys([
+        'instance:new',
+        'instance:remove',
+        'instance:releases',
+    ]);
 });
 
 it('keeps the hidden Boost MCP entrypoint available to coding agents', function (): void {
@@ -310,10 +318,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['candidate', 'node', 'name'],
             ['preview-name' => null, 'branch' => null, 'sqlite-source-path' => null, 'json' => false],
         ],
-        'instance:deploy' => [['instance'], ['json' => false]],
-        'instance:deployment-config' => [['instance'], ['file' => null, 'json' => false]],
-        'instance:list' => [[], ['json' => false]],
-        'instance:new' => [
+        'instance:create' => [
             ['app', 'node', 'name'],
             [
                 'root' => null,
@@ -323,11 +328,14 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'instance:deploy' => [['instance'], ['json' => false]],
+        'instance:deployment-config' => [['instance'], ['file' => null, 'json' => false]],
+        'instance:destroy' => [['instance'], ['force' => false, 'json' => false]],
+        'instance:list' => [[], ['json' => false]],
         'instance:prepare-deployment' => [
             ['instance'],
             ['sqlite-source-path' => null, 'json' => false],
         ],
-        'instance:releases' => [['instance'], ['json' => false]],
         'instance:register' => [
             [],
             [
@@ -343,7 +351,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'instance:remove' => [['instance'], ['force' => false, 'json' => false]],
+        'instance:release:list' => [['instance'], ['json' => false]],
         'instance:rollback' => [['instance'], ['release' => null, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
@@ -649,18 +657,18 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ['candidate' => '1', 'node' => '2', 'name' => 'web', '--preview-name' => 'web'],
             ...$profileMissing,
         ],
+        'instance:create' => [['app' => '1', 'node' => '1', 'name' => 'web'], ...$profileMissing],
         'instance:deploy' => [['instance' => '1'], ...$profileMissing],
         'instance:deployment-config' => [['instance' => '1'], ...$profileMissing],
+        'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
-        'instance:new' => [['app' => '1', 'node' => '1', 'name' => 'web'], ...$profileMissing],
         'instance:prepare-deployment' => [['instance' => '1'], ...$profileMissing],
-        'instance:releases' => [['instance' => '1'], ...$profileMissing],
         'instance:register' => [
             ['--app' => '1', '--no-interaction' => true, '--path' => '/tmp/orbit-command-surface-not-git'],
             'code' => 'instance.source_invalid',
             'message' => 'The current path is not a supported Git checkout or worktree.',
         ],
-        'instance:remove' => [['instance' => '1'], ...$profileMissing],
+        'instance:release:list' => [['instance' => '1'], ...$profileMissing],
         'instance:rollback' => [['instance' => '1', '--release' => 'release-a'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],
