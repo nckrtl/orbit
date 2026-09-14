@@ -6,6 +6,8 @@ namespace App\Actions\Gateway;
 
 use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -35,6 +37,7 @@ final readonly class BootstrapGatewayAction
         private GatewayVpnConverger $vpn,
         private GatewayWebConverger $web,
         private GatewaySelfAccessConverger $selfAccess,
+        private PrivateDnsManager $dns,
         private string $orbitHome,
     ) {}
 
@@ -88,6 +91,18 @@ final readonly class BootstrapGatewayAction
             $this->ensureCertificateAuthority();
             $this->vpn->converge($node, $data);
             $this->web->converge("{$data->name}.{$data->domain}", $data->wireguardIp);
+            $this->dns->converge($node);
+        } catch (RuntimeConvergenceException $exception) {
+            $failure = new NodeProvisioningException(
+                step: $exception->step,
+                errorCode: $exception->errorCode,
+                message: $exception->getMessage(),
+                previous: $exception,
+                result: $exception->result,
+            );
+            $this->markFailed($node, $failure);
+
+            throw $failure;
         } catch (Throwable $exception) {
             $failure = $exception instanceof NodeProvisioningException
                 ? $exception

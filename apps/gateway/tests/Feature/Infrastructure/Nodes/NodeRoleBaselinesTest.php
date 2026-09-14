@@ -62,10 +62,10 @@ it('converges and removes only app development role-owned infrastructure', funct
     $baseline->remove($node, $assignment, purgeData: true);
 
     expect($events)->toBe([
+        "dns:{$node->id}",
         'ssh:app-dev',
         'caddy:converge',
         'firewall:converge:app-dev',
-        "dns:{$node->id}",
         'caddy:remove',
         'firewall:remove:app-dev',
         'dns:none',
@@ -617,10 +617,10 @@ it('checks the remote operating system before every role convergence', function 
         'ssh:vpn',
         'firewall:converge:vpn',
         'guard:app-dev',
+        'dns:3',
         'ssh:app-dev',
         'caddy:converge',
         'firewall:converge:app-dev',
-        'dns:3',
         'guard:app-prod',
         'ssh:app-prod',
         'caddy:converge',

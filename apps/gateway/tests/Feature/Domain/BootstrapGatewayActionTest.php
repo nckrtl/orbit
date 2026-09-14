@@ -7,6 +7,8 @@ use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -61,6 +63,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
         vpn: gateway_vpn_noop(),
         web: $web,
         selfAccess: $selfAccess,
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
     $data = new BootstrapGatewayData(
@@ -123,6 +126,92 @@ it('initializes the portable gateway authority idempotently', function (): void 
             ->toBe('SHA256:gateway')
             ->and(Node::query()->count())
             ->toBe(1);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('activates private DNS after the VPN backend so the first peer can resolve ordinary names', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $events = [];
+    $vpn = new class($events) implements GatewayVpnConverger
+    {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(Node $gateway, BootstrapGatewayData $data): void
+        {
+            $this->events[] = 'vpn';
+        }
+    };
+    $web = new class($events) implements GatewayWebConverger
+    {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(string $hostname, string $wireguardIp): void
+        {
+            $this->events[] = 'web';
+        }
+    };
+    $dns = new class($events) implements PrivateDnsManager
+    {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(?Node $pendingNode = null): void
+        {
+            $this->events[] = 'dns:'.($pendingNode->name ?? 'none');
+        }
+    };
+    $action = bootstrap_gateway_action($orbitHome, vpn: $vpn, web: $web, dns: $dns);
+
+    try {
+        $action->execute(bootstrap_gateway_action_data());
+
+        expect($events)->toBe(['vpn', 'web', 'dns:gateway']);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('reports a private DNS activation failure as a typed bootstrap step', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $dns = new class implements PrivateDnsManager
+    {
+        public function converge(?Node $pendingNode = null): void
+        {
+            throw new RuntimeConvergenceException(
+                step: 'private-dns',
+                errorCode: 'app-dev.dns_config_failed',
+                message: 'Could not converge Orbit private DNS records.',
+            );
+        }
+    };
+    $action = bootstrap_gateway_action($orbitHome, dns: $dns);
+
+    try {
+        expect(fn () => $action->execute(bootstrap_gateway_action_data()))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)
+                    ->toBe('private-dns')
+                    ->and($exception->errorCode)
+                    ->toBe('app-dev.dns_config_failed');
+            });
+
+        $failed = Node::query()->first();
+        expect($failed?->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($failed?->getAttribute('failed_step'))
+            ->toBe('private-dns')
+            ->and($failed?->getAttribute('error_code'))
+            ->toBe('app-dev.dns_config_failed');
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -243,6 +332,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
             }
         },
         selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -333,6 +423,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
             }
         },
         selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -400,6 +491,7 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
             public function converge(string $hostname, string $wireguardIp): void {}
         },
         selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -450,6 +542,7 @@ it('rejects an invalid static identity before persistence or host side effects',
             }
         },
         selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -553,6 +646,7 @@ it('records provisioning and failed host convergence state and activates an idem
         vpn: gateway_vpn_noop(),
         web: $web,
         selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
     $data = new BootstrapGatewayData(
@@ -692,6 +786,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
             }
         },
         selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
     $data = new BootstrapGatewayData(
@@ -991,6 +1086,7 @@ it('rejects unsupported local gateway operating systems before any persistence o
         vpn: $vpn,
         web: $web,
         selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -1034,6 +1130,7 @@ function bootstrap_gateway_action(
     ?GatewayVpnConverger $vpn = null,
     ?GatewayWebConverger $web = null,
     ?GatewaySelfAccessConverger $selfAccess = null,
+    ?PrivateDnsManager $dns = null,
 ): BootstrapGatewayAction {
     return new BootstrapGatewayAction(
         assignRole: app(AssignRoleAction::class),
@@ -1048,6 +1145,7 @@ function bootstrap_gateway_action(
             public function converge(string $hostname, string $wireguardIp): void {}
         },
         selfAccess: $selfAccess ?? gateway_self_access_noop(),
+        dns: $dns ?? gateway_dns_noop(),
         orbitHome: $orbitHome,
     );
 }
@@ -1104,6 +1202,14 @@ function gateway_self_access_noop(): GatewaySelfAccessConverger
         {
             return 'SHA256:gateway';
         }
+    };
+}
+
+function gateway_dns_noop(): PrivateDnsManager
+{
+    return new class implements PrivateDnsManager
+    {
+        public function converge(?Node $pendingNode = null): void {}
     };
 }
 

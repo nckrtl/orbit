@@ -529,6 +529,7 @@ final class AppServiceProvider extends ServiceProvider
                 vpn: app(GatewayVpnConverger::class),
                 web: app(GatewayWebConverger::class),
                 selfAccess: app(GatewaySelfAccessConverger::class),
+                dns: app(PrivateDnsManager::class),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
             ),
         );

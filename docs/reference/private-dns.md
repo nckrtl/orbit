@@ -80,6 +80,8 @@ Do not edit `/etc/wireguard/orbit.key` or the peer private key to repair DNS. Re
 
 A peer that uses Orbit VPN DNS as its default loses both private and ordinary DNS resolution while the VPN DNS listener is unavailable. Existing IP connections and the Node's general IP routes do not change, but new hostname lookups can fail until the listener or tunnel recovers.
 
+Gateway bootstrap starts `orbit-private-dns.service` after the VPN dnsmasq backend is bound, so the first managed peer can resolve ordinary names during role prerequisites.
+
 Orbit VPN DNS answers private names from the published requester catalog on the Gateway WireGuard address, then forwards ordinary queries to a loopback dnsmasq backend. The backend uses independent uplink resolvers and excludes loopback and the `orbit` interface so forwarding cannot return to the public listener. [VPN dnsmasq uplink resolvers](../solutions/vpn-dnsmasq-uplink-resolvers.md) owns upstream selection, fallback behavior, and verification.
 
 DNS answers select an application address; they do not select or rewrite the application traffic route. [Routes](routes.md) explains how a resolved private Route reaches its workload through a Node or Router.
