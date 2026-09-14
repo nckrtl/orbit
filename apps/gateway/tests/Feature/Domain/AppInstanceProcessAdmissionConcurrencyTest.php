@@ -176,7 +176,7 @@ it('keeps add start and restart admission behind SQLite placement after a clean 
     expect($events)->toBe([
         'conversion:process-snapshot-clean',
         'conversion:sqlite-placed',
-        'process:create',
+        'process:add',
         'process:start',
         'process:restart',
     ]);
