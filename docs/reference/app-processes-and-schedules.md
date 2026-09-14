@@ -97,7 +97,7 @@ The two runtimes accept these values.
 | systemd | Process name and absolute executable with argv | Absolute working directory, restart policy, and initial start | The AppInstance development checkout, the production home's `current` path, or `/home/{user}` on a Node target |
 | Docker | Process name, image, and command argv | Container working directory, environment, published ports, volumes, restart policy, and initial start | `/app` |
 
-A development systemd Process on a Node with the active `app-dev` role installs without host-boot start intent. The Gateway starts it with `systemctl start` and does not `systemctl enable` the unit. After host reboot the Process stays down until `process:start` or the next HTTP wake. [App-dev runtime hibernation](app-dev-runtime-hibernation.md) owns idle halt and wake.
+A development systemd Process on a Node with the active `app-dev` role installs without host-boot start intent. The Gateway starts it with `systemctl start` and does not `systemctl enable` the unit. After host reboot the Process stays down until `process:start` or the next HTTP wake. The [hibernation page](app-dev-runtime-hibernation.md) states idle halt and wake.
 
 A development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the AppInstance Route hostname from that user's certificate projection. When the AppInstance has a Route, the unit also receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` so the frontend toolchain publishes assets and hot module replacement on the [development-server endpoint](routes.md#development-server-endpoint).
 
