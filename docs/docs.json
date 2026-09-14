@@ -162,6 +162,243 @@
         ]
       },
       {
+        "tab": "API",
+        "groups": [
+          {
+            "group": "Using the API",
+            "pages": [
+              "api/overview",
+              "api/php-sdk"
+            ]
+          },
+          {
+            "group": "Gateway",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/ca/root",
+              "GET /api/v1/gateway/status"
+            ]
+          },
+          {
+            "group": "Nodes",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/nodes",
+              "POST /api/v1/nodes",
+              "DELETE /api/v1/nodes/{node}",
+              "GET /api/v1/nodes/{node}",
+              "GET /api/v1/nodes/{node}/roles",
+              "POST /api/v1/nodes/{node}/roles",
+              "DELETE /api/v1/nodes/{node}/roles/{role}",
+              "PATCH /api/v1/nodes/{node}/settings",
+              "DELETE /api/v1/nodes/{serving_node}/access/{consumer_node}",
+              "PUT /api/v1/nodes/{serving_node}/access/{consumer_node}"
+            ]
+          },
+          {
+            "group": "Clusters",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/clusters",
+              "POST /api/v1/clusters",
+              "DELETE /api/v1/clusters/{cluster}",
+              "GET /api/v1/clusters/{cluster}",
+              "PATCH /api/v1/clusters/{cluster}",
+              "DELETE /api/v1/clusters/{cluster}/nodes/{node}",
+              "PUT /api/v1/clusters/{cluster}/nodes/{node}",
+              "DELETE /api/v1/clusters/{cluster}/router",
+              "PUT /api/v1/clusters/{cluster}/router/{node}"
+            ]
+          },
+          {
+            "group": "Firewall",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/nodes/{node}/firewall-rules",
+              "POST /api/v1/nodes/{node}/firewall-rules/allow",
+              "POST /api/v1/nodes/{node}/firewall-rules/deny",
+              "DELETE /api/v1/nodes/{node}/firewall-rules/{firewall_rule}"
+            ]
+          },
+          {
+            "group": "Tools",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/tool-managers",
+              "GET /api/v1/tools",
+              "POST /api/v1/tools",
+              "DELETE /api/v1/tools/{tool}",
+              "GET /api/v1/tools/{tool}",
+              "POST /api/v1/tools/{tool}/update"
+            ]
+          },
+          {
+            "group": "Metrics",
+            "openapi": "/openapi.json",
+            "pages": [
+              "DELETE /api/v1/metrics",
+              "POST /api/v1/metrics",
+              "GET /api/v1/metrics/credentials",
+              "POST /api/v1/metrics/credentials/reset",
+              "DELETE /api/v1/metrics/exporters/{node}",
+              "PUT /api/v1/metrics/exporters/{node}",
+              "GET /api/v1/metrics/status"
+            ]
+          },
+          {
+            "group": "Apps",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/apps",
+              "POST /api/v1/apps",
+              "DELETE /api/v1/apps/{app}",
+              "GET /api/v1/apps/{app}"
+            ]
+          },
+          {
+            "group": "AppInstances",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/instances",
+              "POST /api/v1/instances",
+              "POST /api/v1/instances/register",
+              "POST /api/v1/instances/{candidate}/clone",
+              "DELETE /api/v1/instances/{instance}",
+              "GET /api/v1/instances/{instance}",
+              "PATCH /api/v1/instances/{instance}",
+              "DELETE /api/v1/instances/{instance}/database-connections/{database_connection}",
+              "PUT /api/v1/instances/{instance}/database-connections/{database_connection}",
+              "POST /api/v1/instances/{instance}/deploy",
+              "GET /api/v1/instances/{instance}/deploy-steps",
+              "POST /api/v1/instances/{instance}/deploy-steps",
+              "DELETE /api/v1/instances/{instance}/deploy-steps/{step}",
+              "PATCH /api/v1/instances/{instance}/deploy-steps/{step}",
+              "GET /api/v1/instances/{instance}/deployment-config",
+              "PUT /api/v1/instances/{instance}/deployment-config",
+              "POST /api/v1/instances/{instance}/deployment-layout",
+              "GET /api/v1/instances/{instance}/releases",
+              "POST /api/v1/instances/{instance}/rollback"
+            ]
+          },
+          {
+            "group": "Environment",
+            "openapi": "/openapi.json",
+            "pages": [
+              "POST /api/v1/instances/{instance}/environment/import",
+              "POST /api/v1/instances/{instance}/environment/sync",
+              "PUT /api/v1/instances/{instance}/environment/{key}"
+            ]
+          },
+          {
+            "group": "Routes",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/routes",
+              "POST /api/v1/routes",
+              "DELETE /api/v1/routes/{route}",
+              "GET /api/v1/routes/{route}",
+              "PATCH /api/v1/routes/{route}",
+              "DELETE /api/v1/routes/{route}/target",
+              "PUT /api/v1/routes/{route}/target"
+            ]
+          },
+          {
+            "group": "Database connections",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/database-connections",
+              "POST /api/v1/database-connections",
+              "DELETE /api/v1/database-connections/{database_connection}",
+              "GET /api/v1/database-connections/{database_connection}",
+              "PATCH /api/v1/database-connections/{database_connection}"
+            ]
+          },
+          {
+            "group": "Processes",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/apps/{app}/process-definitions",
+              "POST /api/v1/apps/{app}/process-definitions",
+              "DELETE /api/v1/apps/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/apps/{app}/process-definitions/{process_definition}",
+              "PUT /api/v1/apps/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/processes",
+              "POST /api/v1/processes",
+              "DELETE /api/v1/processes/{process}",
+              "GET /api/v1/processes/{process}/logs",
+              "POST /api/v1/processes/{process}/restart",
+              "POST /api/v1/processes/{process}/start",
+              "POST /api/v1/processes/{process}/stop"
+            ]
+          },
+          {
+            "group": "Schedules",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/apps/{app}/schedule-definitions",
+              "POST /api/v1/apps/{app}/schedule-definitions",
+              "DELETE /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
+              "GET /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
+              "PUT /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
+              "GET /api/v1/schedules",
+              "POST /api/v1/schedules",
+              "DELETE /api/v1/schedules/{schedule}",
+              "GET /api/v1/schedules/{schedule}",
+              "POST /api/v1/schedules/{schedule}/activate",
+              "GET /api/v1/schedules/{schedule}/logs",
+              "POST /api/v1/schedules/{schedule}/run"
+            ]
+          },
+          {
+            "group": "Doctor",
+            "openapi": "/openapi.json",
+            "pages": [
+              "POST /api/v1/doctor"
+            ]
+          },
+          {
+            "group": "Activities",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/activities",
+              "GET /api/v1/activities/{activity}"
+            ]
+          },
+          {
+            "group": "Herdr sessions",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/herdr/sessions",
+              "POST /api/v1/herdr/sessions",
+              "DELETE /api/v1/herdr/sessions/{session}",
+              "GET /api/v1/herdr/sessions/{session}",
+              "POST /api/v1/herdr/sessions/{session}/observation-grants",
+              "POST /api/v1/herdr/sessions/{session}/restart"
+            ]
+          },
+          {
+            "group": "Workspaces",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/workspaces",
+              "POST /api/v1/workspaces",
+              "DELETE /api/v1/workspaces/{workspace}",
+              "GET /api/v1/workspaces/{workspace}",
+              "PATCH /api/v1/workspaces/{workspace}/php"
+            ]
+          },
+          {
+            "group": "Node callbacks",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/metrics/grafana/authorize",
+              "GET /api/v1/runtime-activations/app-instance/{instance}",
+              "POST /api/v1/schedules/{schedule}/complete"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Decisions",
         "groups": [
           {
@@ -266,6 +503,16 @@
   "footer": {
     "socials": {
       "github": "https://github.com/nckrtl/orbit"
+    }
+  },
+  "api": {
+    "playground": {
+      "display": "simple"
+    },
+    "examples": {
+      "languages": [
+        "curl"
+      ]
     }
   }
 }

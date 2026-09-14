@@ -1,0 +1,155 @@
+---
+title: "PHP SDK"
+description: "Call the Gateway API from PHP with typed requests, typed responses, bounded errors, and a closeable deployment stream."
+---
+
+The PHP SDK is the typed [Saloon](https://docs.saloon.dev) client that the `orbit` command line uses. It ships one request class per Gateway operation, one immutable response class per record, and one exception type. It applies no Gateway policy: validation, authorization, and lifecycle decisions stay on the Gateway.
+
+Every endpoint page in this reference shows its request class under the **PHP SDK** tab of the code sample.
+
+## Install
+
+The SDK lives in the Orbit repository as `packages/php-sdk` and requires PHP 8.5 and Composer 2. Add it to a project as a path repository from a checkout:
+
+```json
+{
+  "repositories": [
+    { "type": "path", "url": "../orbit/packages/php-sdk" }
+  ],
+  "require": {
+    "nckrtl/orbit-php-sdk": "*"
+  }
+}
+```
+
+The package depends on `saloonphp/saloon` and `psr/http-message` only. It does not depend on Laravel or on the Gateway application.
+
+## Connect
+
+`GatewayConnector` takes the HTTPS origin of the Gateway and the path to the pinned root certificate that `orbit gateway:add` stored. It refuses any origin that is not HTTPS.
+
+```php
+use Orbit\Sdk\GatewayConnector;
+
+$connector = new GatewayConnector(
+    baseUrl: 'https://gateway.orbit',
+    caPemPath: '/path/to/orbit-root-ca.pem',
+);
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `baseUrl` | required | HTTPS origin of the Gateway, such as `https://gateway.orbit` or `https://10.44.0.1`. |
+| `caPemPath` | `null` | Path to the pinned Gateway root CA. Omit it only when the operating system already trusts the certificate. |
+| `timeout` | `900` | Request timeout in seconds. Deployment streams run within it. |
+| `clientName` | `cli` | Value of the `X-Orbit-Client` header. |
+| `requestIdResolver` | UUID generator | Closure that returns the `X-Orbit-Request-Id` for each request. |
+
+The connector adds `Accept: application/json`, the two Orbit headers, a 10-second connect timeout, and never follows redirects. It cannot be serialized, and its raw transport debugging is disabled so request bodies never reach a log.
+
+## Send a request
+
+Each operation is a request class under `Orbit\Sdk\Requests\<Family>`. Construct it with named arguments, send it, and call `dto()` for the typed response.
+
+```php
+use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
+
+$node = $connector
+    ->send(new AddNodeRequest(name: 'beast', publicSshHost: 'beast.example.com', roles: ['app-dev'], tld: 'test'))
+    ->dto();
+
+assert($node instanceof NodeResponse);
+echo $node->name, ' ', $node->status, ' ', $node->requestId;
+```
+
+A request that takes optional values keeps an omitted value separate from an explicit one, so the Gateway sees exactly what you passed. Collection requests return a response with a list and the request ID:
+
+```php
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+
+$nodes = $connector->send(new ListNodesRequest())->dto();
+
+foreach ($nodes->nodes as $node) {
+    echo $node->id, ' ', $node->name, PHP_EOL;
+}
+```
+
+Requests that select an owner take a small target object, for example `new AppInstanceProcessTarget(12)` or `new NodeProcessTarget(7)` for `CreateProcessRequest` and `ListProcessesRequest`, and `NodeScheduleTarget` or `AppInstanceScheduleTarget` for `CreateScheduleRequest`.
+
+## Read a response
+
+Response classes are `final readonly` objects with public camel-case properties that mirror the JSON fields, plus `requestId`. Values are bounded, credential-shaped strings are redacted, and a malformed Gateway payload raises an exception instead of producing a half-filled object. Collection responses omit command text where the Gateway omits it.
+
+| Response | Returned by |
+| --- | --- |
+| `NodeResponse`, `NodesResponse` | Node operations. |
+| `AppResponse`, `AppRuntimeDefinitionResponse` | Apps and their process and Schedule definitions. |
+| `AppInstanceResponse`, `AppInstanceRegistrationResponse`, `AppInstanceRemovalResponse` | AppInstance placement, registration, and removal. |
+| `DeploymentConfigResponse`, `DeploymentStepResponse`, `DeploymentReleasesResponse` | Deploy steps, configuration documents, and retained releases. |
+| `EnvironmentOperationResponse` | Environment import, update, and sync. |
+| `RouteResponse`, `ClusterResponse`, `FirewallRuleResponse`, `ToolResponse`, `ToolManagerResponse` | Fleet records. |
+| `ProcessResponse`, `ProcessLogsResponse`, `ScheduleResponse`, `ScheduleLogsResponse` | Processes and Schedules. |
+| `DatabaseConnectionResponse`, `DatabaseConnectionAttachmentResponse` | The connection registry and attachments. |
+| `MetricsStatusResponse`, `MetricsCredentialsResponse`, `MetricsMutationResponse` | The Metrics role. |
+| `DoctorReportResponse` | Doctor, with `DoctorNodeResponse`, `DoctorFamilyResponse`, and `DoctorIssueResponse` nested inside. |
+| `ActivityResponse`, `HerdrSessionResponse`, `ObservationGrantResponse`, `WorkspaceResponse` | Activities, Herdr sessions, and legacy Workspaces. |
+
+## Handle an error
+
+Every failed request throws `Orbit\Sdk\GatewayApiException`. It carries the Gateway's stable error code, redacted details, and the request ID, and it never carries a request body or raw remote output.
+
+```php
+use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
+
+try {
+    $connector->send(new SetRouteTargetRequest(routeId: 9, appInstanceId: 12))->dto();
+} catch (GatewayApiException $exception) {
+    echo $exception->errorCode();   // route.target_conflict
+    echo $exception->getMessage();  // safe message
+    echo $exception->requestId();   // for orbit activity:list --request-id
+    var_dump($exception->details()); // bounded, redacted details
+}
+```
+
+A transport failure such as an unreachable Gateway or a certificate mismatch throws the same exception type with a `null` error code.
+
+## Stream a deployment
+
+`DeployAppInstanceRequest` and `RollbackAppInstanceRequest` return a `DeploymentStream`, an iterator of typed events. The SDK validates each newline-delimited JSON line, its sequence, and its request ID as you advance, and it reports success only when the final event is a succeeded result.
+
+```php
+use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Responses\Deployments\DeploymentOutputEvent;
+use Orbit\Sdk\Responses\Deployments\DeploymentPhaseEvent;
+use Orbit\Sdk\Responses\Deployments\DeploymentResultEvent;
+
+$stream = $connector->send(new DeployAppInstanceRequest(appInstanceId: 15))->dto();
+
+foreach ($stream as $event) {
+    match (true) {
+        $event instanceof DeploymentPhaseEvent => printf("phase %s %s\n", $event->phase, $event->stepName ?? ''),
+        $event instanceof DeploymentOutputEvent => fwrite($event->stream === 'stderr' ? STDERR : STDOUT, $event->data),
+        $event instanceof DeploymentResultEvent => printf("%s (%s)\n", $event->status, $event->selectedRelease ?? 'no release'),
+    };
+}
+```
+
+Call `$stream->close()` to stop early; closing the stream closes the HTTP connection so the Gateway observes the cancellation. The SDK never retries or replays a stream, and a truncated or malformed stream throws before it can report success.
+
+## Doctor
+
+`RunDoctorRequest` sends `POST /api/v1/doctor` with an optional Node ID and family list and returns a `DoctorReportResponse` with `healthy`, the per-Node reports, and the summary the Gateway computed.
+
+```php
+use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
+
+$report = $connector->send(new RunDoctorRequest(nodeId: 7, families: ['instance', 'process']))->dto();
+
+foreach ($report->nodes as $node) {
+    foreach ($node->families as $family) {
+        printf("%s %s %s\n", $node->nodeName, $family->family, $family->status);
+    }
+}
+```
