@@ -170,6 +170,8 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::allowsCommand('doctor'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('workspace:php'))->toBeFalse();
+        expect(CommandVocabulary::allowsCommand('instance:deployment-config'))->toBeFalse();
+        expect(CommandVocabulary::allowsCommand('instance:prepare-deployment'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('app:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('app:frobnicate'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('cluster:attach'))->toBeFalse();
