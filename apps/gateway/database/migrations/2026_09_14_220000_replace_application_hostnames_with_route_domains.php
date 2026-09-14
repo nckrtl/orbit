@@ -339,29 +339,9 @@ return new class extends Migration
                 )
                 OR (
                     (SELECT status FROM routes WHERE id = NEW.route_id) IN ('active', 'activating', 'retiring')
-                    AND (
-                        SELECT MAX(position)
-                        FROM (
-                            SELECT position FROM route_targets WHERE route_id = NEW.route_id
-                            UNION ALL
-                            SELECT NEW.position
-                        )
-                    ) <> (
-                        SELECT COUNT(*)
-                        FROM (
-                            SELECT id FROM route_targets WHERE route_id = NEW.route_id
-                            UNION ALL
-                            SELECT -1
-                        )
-                    ) - 1
-                    OR (
-                        SELECT MIN(position)
-                        FROM (
-                            SELECT position FROM route_targets WHERE route_id = NEW.route_id
-                            UNION ALL
-                            SELECT NEW.position
-                        )
-                    ) <> 0
+                    AND NEW.position <> (
+                        SELECT COUNT(*) FROM route_targets WHERE route_id = NEW.route_id
+                    )
                 )
             )
             BEGIN
@@ -400,29 +380,9 @@ return new class extends Migration
                 )
                 OR (
                     (SELECT status FROM routes WHERE id = NEW.route_id) IN ('active', 'activating', 'retiring')
-                    AND (
-                        SELECT MAX(position)
-                        FROM (
-                            SELECT position FROM route_targets WHERE route_id = NEW.route_id AND id <> OLD.id
-                            UNION ALL
-                            SELECT NEW.position
-                        )
-                    ) <> (
-                        SELECT COUNT(*)
-                        FROM (
-                            SELECT id FROM route_targets WHERE route_id = NEW.route_id AND id <> OLD.id
-                            UNION ALL
-                            SELECT -1
-                        )
-                    ) - 1
-                    OR (
-                        SELECT MIN(position)
-                        FROM (
-                            SELECT position FROM route_targets WHERE route_id = NEW.route_id AND id <> OLD.id
-                            UNION ALL
-                            SELECT NEW.position
-                        )
-                    ) <> 0
+                    AND NEW.position >= (
+                        SELECT COUNT(*) FROM route_targets WHERE route_id = NEW.route_id
+                    )
                 )
             )
             BEGIN

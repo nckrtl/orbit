@@ -158,7 +158,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                 ],
                 input: <<<'BASH'
                     scope=$1
-                    hostname=$2
+                    domain=$2
                     version=$3
                     expected_root_hash=$4
                     managed_user=$5
@@ -245,7 +245,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         $this->publish(
             node: $node,
             scope: $scope,
-            hostname: $domain,
+            domain: $domain,
             version: $version,
             certificate: $certificate,
             rootCertificate: $rootCertificate,
@@ -292,7 +292,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     {
         return <<<'BASH'
             scope=$1
-            hostname=$2
+            domain=$2
             version=$3
             expected_root_hash=$4
             certificate_length=$5

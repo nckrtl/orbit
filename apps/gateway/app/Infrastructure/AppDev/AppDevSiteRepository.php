@@ -50,9 +50,14 @@ final readonly class AppDevSiteRepository
                     RouteStatus::Active->value,
                     RouteStatus::Activating->value,
                     RouteStatus::Retiring->value,
-                    RouteStatus::Pending->value,
-                    RouteStatus::Failed->value,
-                ]);
+                ])->orWhere(static function (Builder $query): void {
+                    $query
+                        ->whereIn('status', [
+                            RouteStatus::Pending->value,
+                            RouteStatus::Failed->value,
+                        ])
+                        ->whereNotNull('replaces_route_id');
+                });
 
                 if ($pendingRoute instanceof Route) {
                     $query->orWhere('id', $pendingRoute->id);
@@ -139,8 +144,11 @@ final readonly class AppDevSiteRepository
 
         }
 
-        if ($additionalRoute instanceof Route) {
-            $this->appendHostnameChangeSites($sites, $additionalRoute);
+        if (
+            $additionalRoute instanceof Route
+            && $sites->every(static fn (AppDevSite $site): bool => $site->domain !== $additionalRoute->domain)
+        ) {
+            $this->appendDomainChangeSites($sites, $additionalRoute);
         }
 
         if ($node instanceof Node) {
@@ -151,7 +159,7 @@ final readonly class AppDevSiteRepository
     }
 
     /** @param Collection<int, AppDevSite> $sites */
-    private function appendHostnameChangeSites(Collection $sites, Route $route): void
+    private function appendDomainChangeSites(Collection $sites, Route $route): void
     {
         $route->loadMissing([
             'targets.appInstance.app',

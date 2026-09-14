@@ -31,15 +31,16 @@ it('adds nullable clone evidence without changing legacy AppInstances', function
         $migration->up();
 
         $after = (array) DB::table('app_instances')->find($instanceId);
-        $evidence = array_intersect_key($after, array_flip(app_instance_clone_columns()));
-        foreach (app_instance_clone_columns() as $column) {
+        $isolationColumns = app_instance_clone_isolation_columns();
+        $evidence = array_intersect_key($after, array_flip($isolationColumns));
+        foreach ($isolationColumns as $column) {
             unset($after[$column]);
         }
 
-        expect(Schema::hasColumns('app_instances', app_instance_clone_columns()))
+        expect(Schema::hasColumns('app_instances', $isolationColumns))
             ->toBeTrue()
             ->and($evidence)
-            ->toBe(array_fill_keys(app_instance_clone_columns(), null))
+            ->toBe(array_fill_keys($isolationColumns, null))
             ->and($after)
             ->toBe($before);
     } finally {
@@ -156,6 +157,20 @@ function app_instance_clone_migration(): object
     return require base_path(
         'database/migrations/2026_09_12_000000_add_clone_evidence_to_app_instances.php',
     );
+}
+
+/** @return list<string> */
+function app_instance_clone_isolation_columns(): array
+{
+    return [
+        'clone_candidate_id',
+        'clone_candidate_commit',
+        'clone_requested_branch',
+        'clone_preview_name',
+        'clone_preview_hostname',
+        'clone_sqlite_source_path',
+        'clone_completed_at',
+    ];
 }
 
 /** @return list<string> */

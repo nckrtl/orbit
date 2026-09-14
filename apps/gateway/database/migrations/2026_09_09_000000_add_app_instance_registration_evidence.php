@@ -69,7 +69,9 @@ return new class extends Migration
                 'registration_worktree_paths',
                 'registration_relocation_state',
                 'registration_authoritative_path',
-                'registration_route_hostname',
+                Schema::hasColumn('app_instances', 'registration_route_hostname')
+                    ? 'registration_route_hostname'
+                    : 'registration_route_domain',
                 'registration_route_provenance',
                 'registration_completed_at',
             ]);
