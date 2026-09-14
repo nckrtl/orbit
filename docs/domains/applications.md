@@ -42,7 +42,7 @@ The instance name and Node's [apps root](/reference/node-settings) determine the
 | Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
 | Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
 
-`instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory, without a Workspace or shared worktree metadata.
+`instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory and no shared worktree metadata.
 
 The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route.
 

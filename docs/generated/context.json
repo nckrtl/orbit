@@ -42,13 +42,11 @@
                 "Gateway",
                 "Herdr session",
                 "Ingress",
-                "Legacy Instance",
                 "Node",
                 "Process",
                 "Proof topology",
                 "Route",
-                "Router",
-                "Workspace"
+                "Router"
             ],
             "governing_adrs": [
                 "0004",
@@ -73,7 +71,6 @@
                 "Gateway",
                 "Herdr session",
                 "Ingress",
-                "Legacy Instance",
                 "Node",
                 "Process",
                 "Proof topology",
@@ -84,8 +81,7 @@
                 "Schedule",
                 "Tool",
                 "Tool Manager",
-                "Web root",
-                "Workspace"
+                "Web root"
             ],
             "governing_adrs": [
                 "0004",
@@ -151,8 +147,7 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Tool",
-                "Workspace"
+                "Tool"
             ],
             "governing_adrs": [
                 "0004"
@@ -200,8 +195,7 @@
                 "App",
                 "Database",
                 "Gateway",
-                "Node",
-                "Workspace"
+                "Node"
             ],
             "governing_adrs": [
                 "0008"
@@ -219,14 +213,12 @@
                 "Database",
                 "Gateway",
                 "Ingress",
-                "Legacy Instance",
                 "Node",
                 "Process",
                 "Route",
                 "Router",
                 "Schedule",
-                "Web root",
-                "Workspace"
+                "Web root"
             ],
             "governing_adrs": [
                 "0008",
@@ -302,8 +294,7 @@
                 "Proof topology",
                 "Schedule",
                 "Tool",
-                "Web root",
-                "Workspace"
+                "Web root"
             ],
             "governing_adrs": [
                 "0002",
@@ -384,11 +375,9 @@
                 "Cluster",
                 "Gateway",
                 "Ingress",
-                "Legacy Instance",
                 "Node",
                 "Route",
-                "Router",
-                "Workspace"
+                "Router"
             ],
             "governing_adrs": [
                 "0009",
@@ -463,9 +452,7 @@
             "components": [
                 "apps/e2e"
             ],
-            "concepts": [
-                "Workspace"
-            ],
+            "concepts": [],
             "governing_adrs": [
                 "0015",
                 "0022"
@@ -785,9 +772,7 @@
                 "App",
                 "App instance",
                 "Gateway",
-                "Legacy Instance",
-                "Route",
-                "Workspace"
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -830,11 +815,9 @@
             "concepts": [
                 "App instance",
                 "Gateway",
-                "Legacy Instance",
                 "Node",
                 "Process",
-                "Schedule",
-                "Workspace"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0013",
@@ -1087,9 +1070,7 @@
             "components": [
                 "apps/e2e"
             ],
-            "concepts": [
-                "Workspace"
-            ],
+            "concepts": [],
             "governing_adrs": [
                 "0015",
                 "0022",
@@ -1366,10 +1347,8 @@
                 "App instance",
                 "Cluster",
                 "Gateway",
-                "Legacy Instance",
                 "Node",
-                "Route",
-                "Workspace"
+                "Route"
             ],
             "governing_adrs": [
                 "0023",
@@ -1492,8 +1471,7 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Schedule",
-                "Workspace"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0036",
@@ -1542,12 +1520,10 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
-                "Legacy Instance",
                 "Node",
                 "Process",
                 "Route",
-                "Schedule",
-                "Workspace"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0036",
@@ -1615,8 +1591,7 @@
                 "Node",
                 "Process",
                 "Runtime hibernation",
-                "Schedule",
-                "Workspace"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0021",
@@ -1686,14 +1661,12 @@
                 "Doctor",
                 "Gateway",
                 "Ingress",
-                "Legacy Instance",
                 "Node",
                 "Process",
                 "Repository identity",
                 "Route",
                 "Router",
-                "Web root",
-                "Workspace"
+                "Web root"
             ],
             "governing_adrs": [
                 "0009",
@@ -1766,8 +1739,7 @@
                 "Node",
                 "Process",
                 "Route",
-                "Schedule",
-                "Workspace"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0036",
@@ -1893,8 +1865,7 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Route",
-                "Workspace"
+                "Route"
             ],
             "governing_adrs": [
                 "0044",
@@ -1988,8 +1959,7 @@
                 "Herdr session",
                 "Node",
                 "Process",
-                "Tool",
-                "Workspace"
+                "Tool"
             ],
             "governing_adrs": [
                 "0004",
@@ -2013,8 +1983,7 @@
                 "Process",
                 "Proof topology",
                 "Route",
-                "Tool",
-                "Workspace"
+                "Tool"
             ],
             "governing_adrs": [
                 "0049",
@@ -2041,12 +2010,10 @@
                 "Database",
                 "Doctor",
                 "Gateway",
-                "Legacy Instance",
                 "Node",
                 "Process",
                 "Proof topology",
-                "Route",
-                "Workspace"
+                "Route"
             ],
             "governing_adrs": [
                 "0005",
@@ -2179,8 +2146,7 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Proof topology",
-                "Workspace"
+                "Proof topology"
             ],
             "governing_adrs": [
                 "0015",
@@ -2202,13 +2168,11 @@
                 "Doctor",
                 "Gateway",
                 "Ingress",
-                "Legacy Instance",
                 "Node",
                 "Process",
                 "Route",
                 "Router",
-                "Web root",
-                "Workspace"
+                "Web root"
             ],
             "governing_adrs": [
                 "0009",
@@ -2237,8 +2201,7 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Schedule",
-                "Workspace"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0013",
@@ -2287,8 +2250,7 @@
                 "Process",
                 "Proof topology",
                 "Route",
-                "Web root",
-                "Workspace"
+                "Web root"
             ],
             "governing_adrs": [
                 "0005",
@@ -2331,8 +2293,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Proof topology",
-                "Workspace"
+                "Proof topology"
             ],
             "governing_adrs": [
                 "0022"
@@ -2347,8 +2308,7 @@
             ],
             "concepts": [
                 "App",
-                "Gateway",
-                "Workspace"
+                "Gateway"
             ],
             "governing_adrs": [
                 "0022"
