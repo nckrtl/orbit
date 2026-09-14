@@ -10,6 +10,7 @@ use App\Domain\Herdr\ObservationGrantValidator;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\HerdrObservationNonce;
 use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Process;
@@ -75,9 +76,6 @@ it('creates a named Herdr session on a managed Node with a private observer', fu
             '--session',
             'commander-tasks',
             'server',
-            '--observe-listen=127.0.0.1:7411',
-            '--observe-mode=read-only',
-            '--observe-jwks=https://gateway.orbit/.well-known/jwks.json',
         ])
         ->and($this->runtime->convergedProcessIds)
         ->toBe([$process->id])
@@ -150,6 +148,58 @@ it('keeps the Herdr session when observer publication fails', function (): void 
     expect(Process::query()->count())->toBe(1);
 });
 
+it('returns 422 without publishing when the Herdr observe protocol is unsupported', function (?int $protocol): void {
+    $this->inspector->protocol = $protocol;
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.observer_unsupported');
+
+    $session = HerdrSession::query()->sole();
+
+    expect($session->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($session->observer_status)
+        ->toBe('failed')
+        ->and($session->protocol)
+        ->toBe($protocol)
+        ->and($this->observers->published)
+        ->toBeEmpty()
+        ->and(Process::query()->count())
+        ->toBe(1);
+})->with([
+    'older protocol' => 20,
+    'unknown protocol' => null,
+]);
+
+it('returns 422 without publishing when observer capability inspection fails', function (): void {
+    $this->inspector->failure = new RuntimeException('untrusted transport detail');
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.inspection_failed')
+        ->assertJsonMissing(['message' => 'untrusted transport detail']);
+
+    $session = HerdrSession::query()->sole();
+
+    expect($session->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($session->observer_status)
+        ->toBe('failed')
+        ->and($this->observers->published)
+        ->toBeEmpty();
+});
+
 it('issues a scoped receive-only observation grant for one pane', function (): void {
     $this->postJson('/api/v1/herdr/sessions', [
         'node_id' => $this->node->id,
@@ -164,6 +214,7 @@ it('issues a scoped receive-only observation grant for one pane', function (): v
         'terminal' => 'term-abc',
         'cols' => 120,
         'rows' => 40,
+        'origin' => 'https://tasks.commander.test',
     ]);
 
     $grant
@@ -194,6 +245,62 @@ it('issues a scoped receive-only observation grant for one pane', function (): v
     );
 
     expect($claims->node)->toBe('beast')->and($claims->session)->toBe('commander-tasks');
+    expect($claims->origin)->toBe('https://tasks.commander.test');
+});
+
+it('returns 422 without a nonce when the Herdr protocol drifts before a grant', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+    $this->inspector->protocol = 20;
+
+    $this->postJson('/api/v1/herdr/sessions/'.$session->id.'/observation-grants', [
+        'pane' => 'w1:p1',
+        'terminal' => 'term-abc',
+        'cols' => 120,
+        'rows' => 40,
+        'origin' => 'https://tasks.commander.test',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.observer_unsupported');
+
+    expect(HerdrObservationNonce::query()->count())
+        ->toBe(0)
+        ->and($session->refresh()->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($session->observer_status)
+        ->toBe('failed');
+});
+
+it('returns 422 without a nonce when inspection fails before a grant', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+    $this->inspector->failure = new RuntimeException('untrusted transport detail');
+
+    $this->postJson('/api/v1/herdr/sessions/'.$session->id.'/observation-grants', [
+        'pane' => 'w1:p1',
+        'terminal' => 'term-abc',
+        'cols' => 120,
+        'rows' => 40,
+        'origin' => 'https://tasks.commander.test',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.inspection_failed')
+        ->assertJsonMissing(['message' => 'untrusted transport detail']);
+
+    expect(HerdrObservationNonce::query()->count())
+        ->toBe(0)
+        ->and($session->refresh()->observer_status)
+        ->toBe('published');
 });
 
 it('rejects expired, wrong-node, and pane-mismatch grants', function (): void {
@@ -227,6 +334,7 @@ it('rejects expired, wrong-node, and pane-mismatch grants', function (): void {
         'terminal' => 'term-abc',
         'cols' => 120,
         'rows' => 40,
+        'origin' => 'https://tasks.commander.test',
     ])->json('data.observer_url');
     parse_str((string) parse_url((string) $url, PHP_URL_QUERY), $query);
     $token = (string) $query['access_token'];
@@ -249,6 +357,7 @@ it('rejects expired, wrong-node, and pane-mismatch grants', function (): void {
         'terminal' => 'term-abc',
         'cols' => 120,
         'rows' => 40,
+        'origin' => 'https://tasks.commander.test',
     ])->json('data.observer_url');
     parse_str((string) parse_url((string) $freshUrl, PHP_URL_QUERY), $freshQuery);
     $freshToken = (string) $freshQuery['access_token'];
@@ -312,6 +421,31 @@ it('restarts with Herdr handoff when requested and supported', function (): void
     expect($this->inspector->handoffs)->toBe(1);
 });
 
+it('returns 422 without republishing when the Herdr protocol drifts during restart', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+    $this->observers->published = [];
+    $this->inspector->protocol = 20;
+
+    $this->postJson('/api/v1/herdr/sessions/'.$session->id.'/restart')
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.observer_unsupported');
+
+    expect($this->observers->published)
+        ->toBeEmpty()
+        ->and($session->refresh()->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($session->protocol)
+        ->toBe(20)
+        ->and($session->observer_status)
+        ->toBe('failed');
+});
+
 it('lets Commander observe panes on two Nodes without SSH or input capability', function (): void {
     $second = Node::query()->create([
         'name' => 'workhorse',
@@ -341,6 +475,7 @@ it('lets Commander observe panes on two Nodes without SSH or input capability', 
             'terminal' => 'term-'.$session->node->name,
             'cols' => 120,
             'rows' => 40,
+            'origin' => 'https://tasks.commander.test',
         ])->assertCreated()->json('data.observer_url');
     });
 

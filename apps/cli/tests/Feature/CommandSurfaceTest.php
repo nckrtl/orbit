@@ -48,6 +48,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'env:import',
         'env:sync',
         'env:update',
+        'extension:disable',
+        'extension:enable',
+        'extension:list',
         'firewall:allow',
         'firewall:deny',
         'firewall:list',
@@ -57,12 +60,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'gateway:status',
         'gateway:trust',
         'gateway:use',
-        'herdr:observe',
-        'herdr:session:create',
-        'herdr:session:destroy',
-        'herdr:session:list',
-        'herdr:session:restart',
-        'herdr:session:show',
         'instance:clone',
         'instance:create',
         'instance:database:add',
@@ -153,14 +150,24 @@ it('rejects each replaced App Cluster and Route lifecycle name as an unknown com
     'route:target:clear',
 ]);
 
-it('does not register hidden Orbit product commands', function (): void {
+it('only hides Orbit commands that belong to disabled extensions', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(104);
-    expect($orbitCommands->every(
-        static fn (Command $command): bool => ! $command->isHidden(),
-    ))->toBeTrue();
+    expect($orbitCommands)->toHaveCount(107);
+    expect($orbitCommands
+        ->filter(static fn (Command $command): bool => $command->isHidden())
+        ->keys()
+        ->sort()
+        ->values()
+        ->all())->toBe([
+            'herdr:observe',
+            'herdr:session:create',
+            'herdr:session:destroy',
+            'herdr:session:list',
+            'herdr:session:restart',
+            'herdr:session:show',
+        ]);
 });
 
 it('registers only the Orbit Schedule adapters', function (): void {
@@ -300,6 +307,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'env:import' => [[], ['instance' => null, 'replace' => false, 'json' => false]],
         'env:sync' => [[], ['instance' => null, 'json' => false]],
         'env:update' => [[], ['instance' => null, 'key' => null, 'value' => null, 'json' => false]],
+        'extension:disable' => [['extension'], ['json' => false]],
+        'extension:enable' => [['extension'], ['json' => false]],
+        'extension:list' => [[], ['json' => false]],
         'firewall:allow' => [
             ['name'],
             ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'json' => false],
@@ -323,6 +333,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'terminal' => null,
                 'cols' => null,
                 'rows' => null,
+                'origin' => null,
                 'json' => false,
             ],
         ],
@@ -664,6 +675,16 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ['--instance' => 'app.com', '--key' => 'PRIVATE_VALUE', '--value' => 'validation-secret'],
             ...$profileMissing,
         ],
+        'extension:disable' => [
+            ['extension' => 'validation-secret'],
+            'code' => 'extension.unknown',
+            'message' => 'Unknown Orbit extension.',
+        ],
+        'extension:enable' => [
+            ['extension' => 'validation-secret'],
+            'code' => 'extension.unknown',
+            'message' => 'Unknown Orbit extension.',
+        ],
         'firewall:allow' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:deny' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:list' => [['--node' => '1'], ...$profileMissing],
@@ -685,25 +706,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'gateway.profile_not_found',
             'message' => 'Gateway profile does not exist.',
         ],
-        'herdr:observe' => [
-            [
-                'session' => 'commander-tasks',
-                '--node' => '1',
-                '--pane' => 'w1:p1',
-                '--terminal' => 'term-abc',
-                '--cols' => '120',
-                '--rows' => '40',
-            ],
-            ...$profileMissing,
-        ],
-        'herdr:session:create' => [
-            ['session' => 'commander-tasks', '--node' => '1', '--user' => 'nckrtl'],
-            ...$profileMissing,
-        ],
-        'herdr:session:list' => [['--node' => '1'], ...$profileMissing],
-        'herdr:session:destroy' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
-        'herdr:session:restart' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
-        'herdr:session:show' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
         'instance:clone' => [
             ['candidate' => '1', 'node' => '2', 'name' => 'web', '--preview-name' => 'web'],
             ...$profileMissing,
@@ -817,6 +819,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
     ];
     $visibleCommandNames = collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())
+        ->except(['extension:list'])
         ->keys()
         ->sort()
         ->values()

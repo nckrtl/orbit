@@ -24,6 +24,10 @@ final class ShowHerdrSessionCommand extends HerdrSessionCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
+        if (($failure = $this->guardExtension()) !== null) {
+            return $failure;
+        }
+
         $name = $this->sessionName();
 
         if ($name === null) {

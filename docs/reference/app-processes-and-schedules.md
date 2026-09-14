@@ -110,12 +110,9 @@ orbit process:create postgres \
   --node=beast \
   --runtime=docker \
   --image=postgres:18
-
-orbit process:create herdr-observer \
-  --node=beast \
-  --runtime=systemd \
-  --command=/usr/local/bin/herdr-observer
 ```
+
+The Herdr session commands compose their Node Process and observer service through the [Herdr sessions](herdr-sessions.md) contract. Operators do not add that observer as a generic Process.
 
 `--node` accepts a positive Node ID or the registered Node name. The CLI resolves a name through the node list before it sends the create request.
 

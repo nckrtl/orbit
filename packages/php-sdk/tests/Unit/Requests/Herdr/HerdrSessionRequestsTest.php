@@ -167,7 +167,7 @@ it('issues a scoped observation grant without exposing a raw token field', funct
             'meta' => ['request_id' => herdr_request_id()],
         ], 201),
     ]);
-    $request = new IssueObservationGrantRequest(12, 'w1:p1', 'term-abc', 120, 40);
+    $request = new IssueObservationGrantRequest(12, 'w1:p1', 'term-abc', 120, 40, 'https://tasks.commander.test');
     $response = herdr_connector($mock)->send($request)->dto();
 
     expect($request->getMethod())
@@ -180,6 +180,7 @@ it('issues a scoped observation grant without exposing a raw token field', funct
             'terminal' => 'term-abc',
             'cols' => 120,
             'rows' => 40,
+            'origin' => 'https://tasks.commander.test',
         ])
         ->and($response)
         ->toBeInstanceOf(ObservationGrantResponse::class)

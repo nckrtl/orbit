@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Commands\Herdr;
 
 use App\Commands\GatewayCommand;
+use App\Exceptions\GatewayConfigException;
+use App\Services\Extensions\LocalExtensionState;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
 use Orbit\Sdk\Responses\Herdr\HerdrSessionResponse;
@@ -12,6 +14,36 @@ use Orbit\Sdk\Responses\Herdr\HerdrSessionsResponse;
 
 abstract class HerdrSessionCommand extends GatewayCommand
 {
+    public function isHidden(): bool
+    {
+        try {
+            return ! app(LocalExtensionState::class)->enabled('herdr');
+        } catch (GatewayConfigException) {
+            return true;
+        }
+    }
+
+    protected function guardExtension(): ?int
+    {
+        try {
+            $enabled = app(LocalExtensionState::class)->enabled('herdr');
+        } catch (GatewayConfigException) {
+            return $this->renderGatewayFailure(
+                'extension.config_invalid',
+                'Orbit extension configuration is invalid or not private.',
+            );
+        }
+
+        if ($enabled) {
+            return null;
+        }
+
+        return $this->renderGatewayFailure(
+            'extension.disabled',
+            'The Herdr extension is disabled. Run `orbit extension:enable herdr` first.',
+        );
+    }
+
     protected function sessionName(): ?string
     {
         $name = $this->stringArgument('session', 'Herdr session name', 'herdr.session_required');

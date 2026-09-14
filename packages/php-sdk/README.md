@@ -65,7 +65,7 @@ Doctor accepts the current Gateway family set, including Schedule, Herdr, and Da
 The SDK exposes typed list, add, show, restart, remove, and observation-grant
 requests for managed Herdr sessions. Add and list preserve a numeric Node ID.
 Item operations use the numeric session ID. Observation grants send pane,
-terminal, columns, and rows. Item and collection responses are immutable and
+terminal, columns, rows, and the allowed HTTPS browser origin. Item and collection responses are immutable and
 bounded and preserve the request ID. Observation grant URLs stay out of generic
 diagnostics. The Gateway owns session lifecycle, publication, and grant policy.
 
