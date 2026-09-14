@@ -6,7 +6,6 @@ namespace App\Data\AppInstances;
 
 use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
-use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Route;
@@ -80,7 +79,7 @@ final class AppInstanceData extends Data
                 ? AppInstanceRemovalData::fromModel($removal)
                 : null,
             deploySteps: array_map(
-                static fn (DeploymentStep $step): DeploymentStepData => DeploymentStepData::fromDomain($step),
+                DeploymentStepData::fromDomain(...),
                 app(AppInstanceDeployStepStore::class)->ordered($appInstance),
             ),
         );

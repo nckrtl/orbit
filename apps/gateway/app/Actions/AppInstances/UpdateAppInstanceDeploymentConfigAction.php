@@ -23,15 +23,13 @@ final readonly class UpdateAppInstanceDeploymentConfigAction
         #[\SensitiveParameter]
         DeploymentConfig $config,
     ): DeploymentConfig {
-        return $this->operations->run([$instance->id], function () use ($instance, $config): DeploymentConfig {
-            return DB::transaction(function () use ($instance, $config): DeploymentConfig {
-                $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
-                $this->resolver->assertAvailable($locked);
-                $locked->update(['deployment_branch' => $config->branch]);
-                $this->steps->replaceAll($locked, $config->steps);
+        return $this->operations->run([$instance->id], fn (): DeploymentConfig => DB::transaction(function () use ($instance, $config): DeploymentConfig {
+            $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+            $this->resolver->assertAvailable($locked);
+            $locked->update(['deployment_branch' => $config->branch]);
+            $this->steps->replaceAll($locked, $config->steps);
 
-                return $this->resolver->resolve($locked->refresh());
-            });
-        });
+            return $this->resolver->resolve($locked->refresh());
+        }));
     }
 }
