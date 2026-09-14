@@ -19,6 +19,9 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
     public array $stopped = [];
 
     /** @var list<int> */
+    public array $restarted = [];
+
+    /** @var list<int> */
     public array $convergedProcessIds = [];
 
     /** @var list<int> */
@@ -76,7 +79,10 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
         $this->stopped[] = $process->id;
     }
 
-    public function restart(Process $process): void {}
+    public function restart(Process $process): void
+    {
+        $this->restarted[] = $process->id;
+    }
 
     public function remove(Process $process): void {}
 

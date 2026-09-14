@@ -21,6 +21,7 @@ use Throwable;
 final readonly class IssueObservationGrantAction
 {
     public function __construct(
+        private RequireHerdrToolAction $requireTool,
         private ObservationGrantSigner $signer,
         private HerdrObserveContract $contract,
         private HerdrSessionInspector $inspector,
@@ -29,6 +30,7 @@ final readonly class IssueObservationGrantAction
     public function execute(HerdrSession $session, IssueObservationGrantData $data): ObservationGrant
     {
         $session->loadMissing('node');
+        $this->requireTool->execute($session->node);
 
         if ($session->observer_url === null || $session->observer_status !== 'published') {
             throw new ResourceOperationException(
