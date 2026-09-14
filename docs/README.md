@@ -24,7 +24,7 @@ Choose a page based on what you want to learn:
 - Application reference pages describe [Apps](reference/apps.md), [AppInstance cloning](reference/appinstance-cloning.md), [AppInstance environment variables](reference/environment-variables.md), [App process and Schedule definitions and copies](reference/app-processes-and-schedules.md), and [AppInstance removal](reference/appinstance-removal.md).
 - Runtime reference pages describe the [production release layout](reference/deployments.md), [PHP runtime defaults](reference/php-runtime.md), [Routes](reference/routes.md), and [Schedules](reference/schedules.md).
 - Infrastructure reference pages describe [Gateway trust](reference/gateway-trust.md), [Herdr sessions](reference/herdr-sessions.md), the [Database role](reference/database-role.md), the [Metrics role](reference/metrics.md), [Node provisioning](reference/node-provisioning.md), [Node retarget](reference/node-retarget.md), [Node settings](reference/node-settings.md), [Tools](reference/tools.md), and [WireGuard endpoints](reference/wireguard-endpoints.md).
-- [Database connections](reference/database-connections.md) describes the Gateway-owned mysql, pgsql, and sqlite registry and AppInstance attach.
+- [Database connections](reference/database-connections.md) describes the Gateway-owned mysql, pgsql, and sqlite registry and how an operator adds a connection on an AppInstance.
 - Development reference pages describe the [Incus topology registry](reference/incus-topologies.md), [Proof plans](reference/proof-plans.md), and the [Topology snapshot](reference/topology-snapshot.md).
 - [Solutions](solutions/README.md) collects useful fixes and lessons from past
   work.

@@ -32,7 +32,7 @@ beforeEach(function (): void {
 
 it('exposes exactly eight UUID-keyed Schedule routes and returns 404 for unknown identities', function (): void {
     $routes = collect(Route::getRoutes()->getRoutes())
-        ->filter(static fn (RoutingRoute $route): bool => str_starts_with((string) $route->getName(), 'schedule:'))
+        ->filter(static fn (RoutingRoute $route): bool => str_starts_with($route->uri(), 'api/v1/schedules'))
         ->mapWithKeys(static fn (RoutingRoute $route): array => [
             $route->getName() => [
                 'methods' => $route->methods(),

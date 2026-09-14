@@ -90,7 +90,7 @@ describe('POST /api/v1/nodes', function (): void {
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
         expect($activity->command)
-            ->toBe('node:provision')
+            ->toBe('node:add')
             ->and($activity->subject_type)
             ->toBe(Node::class)
             ->and($activity->subject_id)
@@ -618,7 +618,7 @@ describe('POST /api/v1/nodes', function (): void {
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
         expect($activity->command)
-            ->toBe('node:provision')
+            ->toBe('node:add')
             ->and($activity->status)
             ->toBe('failed')
             ->and($activity->error_code)

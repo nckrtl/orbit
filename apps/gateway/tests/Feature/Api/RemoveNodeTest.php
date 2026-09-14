@@ -9,7 +9,6 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Herdr\HerdrObserverPublisher;
-use App\Domain\Herdr\HerdrSessionInspector;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -23,7 +22,6 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
@@ -45,7 +43,6 @@ use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Schedule;
 use Tests\Support\FakeHerdrObserverPublisher;
-use Tests\Support\FakeHerdrSessionInspector;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
 
@@ -54,10 +51,14 @@ beforeEach(function (): void {
     $this->peers = new RemoveNodeFakePeerProjection;
     $this->metricsAccess = new RemoveNodeFakeMetricsAccessRevoker;
     $this->firewall = new FakeNodeRoleFirewallManager;
+    $this->processRuntime = new RemoveNodeFakeProcessRuntimeManager;
+    $this->herdrObservers = new FakeHerdrObserverPublisher;
     app()->instance(NodeRoleFirewallManager::class, $this->firewall);
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
     app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
+    app()->instance(ProcessRuntimeManager::class, $this->processRuntime);
+    app()->instance(HerdrObserverPublisher::class, $this->herdrObservers);
 });
 
 it('rejects removal contention before remote effects or state writes', function (): void {
@@ -344,24 +345,12 @@ it('retires Metrics exporter state before removing network projections', functio
     expect($this->peers->removed)->toBe([$target->id]);
 });
 
-it('retracts Herdr observers before removing Node-owned Processes', function (): void {
-    $runtime = new RemoveNodeFakeProcessRuntimeManager;
-    app()->instance(ProcessRuntimeManager::class, $runtime);
-    $observers = new FakeHerdrObserverPublisher;
-    app()->instance(HerdrObserverPublisher::class, $observers);
-    app()->instance(HerdrSessionInspector::class, new FakeHerdrSessionInspector);
+it('refuses Node removal before mutation while the Node owns a Herdr session', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
     $caller->accessibleNodes()->attach($target);
-    $process = $target->processes()->create([
-        'name' => 'herdr-commander-tasks',
-        'runtime' => 'systemd',
-        'working_directory' => '/home/orbit',
-        'runtime_config' => ['command' => ['herdr'], 'environment_file' => ''],
-        'restart_policy' => 'unless-stopped',
-        'desired_state' => 'running',
-        'status' => LifecycleStatus::Active,
-    ]);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    $process = remove_node_owned_process($target);
     HerdrSession::query()->create([
         'node_id' => $target->id,
         'session' => 'commander-tasks',
@@ -374,91 +363,89 @@ it('retracts Herdr observers before removing Node-owned Processes', function ():
         'publish_observer' => true,
     ]);
 
-    app(RemoveNodeAction::class)->execute($target, $caller);
-
-    expect($target->fresh())
-        ->toBeNull()
-        ->and($observers->retracted)
-        ->toBe(['commander-tasks'])
-        ->and($runtime->removed)
-        ->toBe([$process->id]);
-    $this->assertDatabaseMissing('herdr_sessions', ['session' => 'commander-tasks']);
-});
-
-it('removes Node-owned Processes before deleting the Node', function (): void {
-    $runtime = new RemoveNodeFakeProcessRuntimeManager;
-    app()->instance(ProcessRuntimeManager::class, $runtime);
-    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
-    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
-    $caller->accessibleNodes()->attach($target);
-    $process = $target->processes()->create([
-        'name' => 'postgres',
-        'runtime' => 'docker',
-        'working_directory' => '/app',
-        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
-        'restart_policy' => 'unless-stopped',
-        'desired_state' => 'stopped',
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    app(RemoveNodeAction::class)->execute($target, $caller);
-
-    expect($target->fresh())
-        ->toBeNull()
-        ->and($runtime->removed)
-        ->toBe([$process->id]);
-    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
-});
-
-it('keeps the Node and remaining Processes when owned Process cleanup fails', function (): void {
-    $runtime = new RemoveNodeFakeProcessRuntimeManager;
-    $runtime->failRemove = true;
-    app()->instance(ProcessRuntimeManager::class, $runtime);
-    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
-    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
-    $process = $target->processes()->create([
-        'name' => 'postgres',
-        'runtime' => 'docker',
-        'working_directory' => '/app',
-        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
-        'restart_policy' => 'unless-stopped',
-        'desired_state' => 'stopped',
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
-        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'node.process_cleanup_failed');
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'node.has_herdr_sessions');
 
     expect($target->refresh()->status)
         ->toBe(LifecycleStatus::Active)
         ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0)
+        ->and($this->metricsAccess->calls)
+        ->toBe(0)
+        ->and($this->firewall->commands)
+        ->toBeEmpty()
+        ->and($this->processRuntime->commands)
+        ->toBeEmpty()
+        ->and($this->herdrObservers->retracted)
+        ->toBeEmpty();
+    $this->assertDatabaseHas('herdr_sessions', ['session' => 'commander-tasks']);
+    $this->assertDatabaseHas('processes', ['id' => $process->id]);
+});
+
+it('refuses Node removal before mutation while the Node owns a Process', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    $process = remove_node_owned_process($target);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'node.has_processes');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0)
+        ->and($this->metricsAccess->calls)
+        ->toBe(0)
+        ->and($this->firewall->commands)
+        ->toBeEmpty()
+        ->and($this->processRuntime->commands)
+        ->toBeEmpty()
+        ->and($this->herdrObservers->retracted)
         ->toBeEmpty();
     $this->assertDatabaseHas('processes', ['id' => $process->id]);
 });
 
-it('forgets Node-owned Process records during offline removal without remote cleanup', function (): void {
-    $runtime = new RemoveNodeFakeProcessRuntimeManager;
-    app()->instance(ProcessRuntimeManager::class, $runtime);
+it('forgets Node-owned Process and Herdr session records during offline removal without remote cleanup', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
     $caller->accessibleNodes()->attach($target);
     remove_node_offline_probe($target);
-    $process = $target->processes()->create([
-        'name' => 'postgres',
-        'runtime' => 'docker',
-        'working_directory' => '/app',
-        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
-        'restart_policy' => 'unless-stopped',
-        'desired_state' => 'stopped',
+    $process = remove_node_owned_process($target);
+    HerdrSession::query()->create([
+        'node_id' => $target->id,
+        'session' => 'commander-tasks',
+        'user' => 'orbit',
+        'process_id' => $process->id,
+        'observer_port' => 7411,
+        'observer_hostname' => 'commander-tasks.herdr.retired.orbit',
+        'observer_status' => 'published',
         'status' => LifecycleStatus::Active,
+        'publish_observer' => true,
     ]);
 
     app(RemoveNodeAction::class)->execute($target, $caller, offline: true, force: true);
 
     expect($target->fresh())->toBeNull()
-        ->and($runtime->removed)
+        ->and($this->processRuntime->commands)
+        ->toBeEmpty()
+        ->and($this->herdrObservers->retracted)
+        ->toBeEmpty()
+        ->and($this->firewall->commands)
         ->toBeEmpty();
     $this->assertDatabaseMissing('processes', ['id' => $process->id]);
+    $this->assertDatabaseMissing('herdr_sessions', ['session' => 'commander-tasks']);
 });
 
 it('refuses Node removal before mutation while a Schedule uses the Node', function (): void {
@@ -622,6 +609,14 @@ it('reopens public SSH over WireGuard before removing the WireGuard peer', funct
         ->toBe([$target->id])
         ->and($this->firewall->restoredUsers)
         ->toBe(['orbit'])
+        ->and($this->firewall->commands)
+        ->toBe(['firewall-recovery'])
+        ->and($this->processRuntime->commands)
+        ->toBeEmpty()
+        ->and($this->herdrObservers->retracted)
+        ->toBeEmpty()
+        ->and($this->herdrObservers->published)
+        ->toBeEmpty()
         ->and($peersRemovedAtRestore)
         ->toBe([])
         ->and($this->peers->removed)
@@ -933,6 +928,18 @@ it('removes an unreachable node holding a role in one command', function (): voi
     $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
     remove_node_offline_probe($target);
     remove_node_role_fixture($target, RoleName::AppProd);
+    $process = remove_node_owned_process($target);
+    HerdrSession::query()->create([
+        'node_id' => $target->id,
+        'session' => 'commander-tasks',
+        'user' => 'orbit',
+        'process_id' => $process->id,
+        'observer_port' => 7411,
+        'observer_hostname' => 'commander-tasks.herdr.retired.orbit',
+        'observer_status' => 'published',
+        'status' => LifecycleStatus::Active,
+        'publish_observer' => true,
+    ]);
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
     $metrics->shouldReceive('reconcile')->atLeast()->once();
     $metrics->shouldReceive('retire')->once();
@@ -965,7 +972,15 @@ it('removes an unreachable node holding a role in one command', function (): voi
         ->and($this->peers->removed)
         ->toBe([$target->id])
         ->and($this->firewall->restored)
-        ->toBe([]);
+        ->toBe([])
+        ->and($this->firewall->commands)
+        ->toBeEmpty()
+        ->and($this->processRuntime->commands)
+        ->toBeEmpty()
+        ->and($this->herdrObservers->retracted)
+        ->toBeEmpty();
+    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
+    $this->assertDatabaseMissing('herdr_sessions', ['session' => 'commander-tasks']);
 });
 
 it('refuses an unreachable node without the offline claim and names the flag', function (): void {
@@ -1150,6 +1165,19 @@ function remove_node_role_fixture(Node $node, RoleName $role): void
     ]);
 }
 
+function remove_node_owned_process(Node $node): Process
+{
+    return $node->processes()->create([
+        'name' => 'postgres',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => ['image' => 'postgres:18', 'command' => ['postgres']],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Active,
+    ]);
+}
+
 function remove_node_record(string $name, string $wireguardIp): Node
 {
     return Node::query()->create([
@@ -1316,17 +1344,30 @@ final class RemoveNodeFakeProcessRuntimeManager implements ProcessRuntimeManager
     /** @var list<int> */
     public array $removed = [];
 
-    public bool $failRemove = false;
+    /** @var list<string> */
+    public array $commands = [];
 
     public function assertCanStart(Process $process): void {}
 
-    public function converge(Process $process): void {}
+    public function converge(Process $process): void
+    {
+        $this->commands[] = 'converge';
+    }
 
-    public function start(Process $process): void {}
+    public function start(Process $process): void
+    {
+        $this->commands[] = 'start';
+    }
 
-    public function stop(Process $process): void {}
+    public function stop(Process $process): void
+    {
+        $this->commands[] = 'stop';
+    }
 
-    public function restart(Process $process): void {}
+    public function restart(Process $process): void
+    {
+        $this->commands[] = 'restart';
+    }
 
     public function status(Process $process): string
     {
@@ -1340,14 +1381,7 @@ final class RemoveNodeFakeProcessRuntimeManager implements ProcessRuntimeManager
 
     public function remove(Process $process): void
     {
-        if ($this->failRemove) {
-            throw new ProcessOperationException(
-                step: 'remove',
-                errorCode: 'process.remove_failed',
-                message: 'Exact Process ownership could not be verified.',
-            );
-        }
-
+        $this->commands[] = 'remove';
         $this->removed[] = $process->id;
     }
 }

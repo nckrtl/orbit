@@ -24,6 +24,7 @@ final class IssueObservationGrantRequest extends GatewayRequest implements HasBo
         private readonly string $terminal,
         private readonly int $cols,
         private readonly int $rows,
+        private readonly string $origin,
     ) {}
 
     public function resolveEndpoint(): string
@@ -39,7 +40,7 @@ final class IssueObservationGrantRequest extends GatewayRequest implements HasBo
         );
     }
 
-    /** @return array{pane: string, terminal: string, cols: int, rows: int} */
+    /** @return array{pane: string, terminal: string, cols: int, rows: int, origin: string} */
     protected function defaultBody(): array
     {
         return [
@@ -47,6 +48,7 @@ final class IssueObservationGrantRequest extends GatewayRequest implements HasBo
             'terminal' => $this->terminal,
             'cols' => $this->cols,
             'rows' => $this->rows,
+            'origin' => $this->origin,
         ];
     }
 }

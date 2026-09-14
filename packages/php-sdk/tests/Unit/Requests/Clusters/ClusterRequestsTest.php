@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Clusters\AttachClusterNodeRequest;
-use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
+use Orbit\Sdk\Requests\Clusters\AddClusterNodeRequest;
 use Orbit\Sdk\Requests\Clusters\CreateClusterRequest;
-use Orbit\Sdk\Requests\Clusters\DetachClusterNodeRequest;
+use Orbit\Sdk\Requests\Clusters\DestroyClusterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
-use Orbit\Sdk\Requests\Clusters\RemoveClusterRequest;
+use Orbit\Sdk\Requests\Clusters\RemoveClusterNodeRequest;
 use Orbit\Sdk\Requests\Clusters\SetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ShowClusterRequest;
+use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\UpdateClusterRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 use Orbit\Sdk\Responses\Clusters\ClustersResponse;
@@ -68,7 +68,7 @@ describe('Cluster requests', function (): void {
 
     it('shows and removes a Cluster by numeric ID', function (): void {
         $show = new ShowClusterRequest(3);
-        $remove = new RemoveClusterRequest(3);
+        $remove = new DestroyClusterRequest(3);
 
         expect($show->getMethod())
             ->toBe(Method::GET)
@@ -111,7 +111,7 @@ describe('Cluster requests', function (): void {
     });
 
     it('attaches and sets a Router through bodyless PUT requests', function (): void {
-        $attach = new AttachClusterNodeRequest(clusterId: 3, nodeId: 7);
+        $attach = new AddClusterNodeRequest(clusterId: 3, nodeId: 7);
         $setRouter = new SetClusterRouterRequest(clusterId: 3, nodeId: 7);
 
         expect($attach->getMethod())
@@ -125,8 +125,8 @@ describe('Cluster requests', function (): void {
     });
 
     it('detaches and clears a Router with the required force payload', function (): void {
-        $detach = new DetachClusterNodeRequest(clusterId: 3, nodeId: 7, force: true);
-        $clearRouter = new ClearClusterRouterRequest(clusterId: 3, force: true);
+        $detach = new RemoveClusterNodeRequest(clusterId: 3, nodeId: 7, force: true);
+        $clearRouter = new UnsetClusterRouterRequest(clusterId: 3, force: true);
 
         expect($detach->getMethod())
             ->toBe(Method::DELETE)
@@ -147,22 +147,31 @@ describe('Cluster requests', function (): void {
         $request = match ($requestClass) {
             ShowClusterRequest::class => new ShowClusterRequest(3),
             UpdateClusterRequest::class => new UpdateClusterRequest(3, hasName: true, name: 'development'),
-            RemoveClusterRequest::class => new RemoveClusterRequest(3),
-            AttachClusterNodeRequest::class => new AttachClusterNodeRequest(3, 7),
-            DetachClusterNodeRequest::class => new DetachClusterNodeRequest(3, 7, true),
+            DestroyClusterRequest::class => new DestroyClusterRequest(3),
+            AddClusterNodeRequest::class => new AddClusterNodeRequest(3, 7),
+            RemoveClusterNodeRequest::class => new RemoveClusterNodeRequest(3, 7, true),
             SetClusterRouterRequest::class => new SetClusterRouterRequest(3, 7),
-            ClearClusterRouterRequest::class => new ClearClusterRouterRequest(3, true),
+            UnsetClusterRouterRequest::class => new UnsetClusterRouterRequest(3, true),
         };
 
         expect($connector->send($request)->dto())->toBeInstanceOf(ClusterResponse::class);
     })->with([
         ShowClusterRequest::class,
         UpdateClusterRequest::class,
-        RemoveClusterRequest::class,
-        AttachClusterNodeRequest::class,
-        DetachClusterNodeRequest::class,
+        DestroyClusterRequest::class,
+        AddClusterNodeRequest::class,
+        RemoveClusterNodeRequest::class,
         SetClusterRouterRequest::class,
-        ClearClusterRouterRequest::class,
+        UnsetClusterRouterRequest::class,
+    ]);
+
+    it('does not keep replaced Cluster request class names', function (string $class): void {
+        expect(class_exists($class))->toBeFalse();
+    })->with([
+        'Orbit\\Sdk\\Requests\\Clusters\\RemoveClusterRequest',
+        'Orbit\\Sdk\\Requests\\Clusters\\AttachClusterNodeRequest',
+        'Orbit\\Sdk\\Requests\\Clusters\\DetachClusterNodeRequest',
+        'Orbit\\Sdk\\Requests\\Clusters\\ClearClusterRouterRequest',
     ]);
 });
 

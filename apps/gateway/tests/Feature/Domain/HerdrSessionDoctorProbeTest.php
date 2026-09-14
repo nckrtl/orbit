@@ -14,6 +14,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\HerdrSession;
 use App\Models\Node;
+use App\Models\Process;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 it('reports distinct Process, listener, and session findings', function (): void {
@@ -94,3 +95,28 @@ it('reports unreachable nodes without changing Herdr sessions', function (): voi
         ->and(HerdrSession::query()->count())
         ->toBe(1);
 });
+
+it('reports session health only for the supported Herdr observe protocol', function (?int $protocol, string $expected): void {
+    $runtime = new ProcessesApiFakeRuntimeManager;
+    $process = new Process([
+        'desired_state' => DesiredProcessState::Running,
+    ]);
+    $process->exists = true;
+    $session = new HerdrSession([
+        'observer_url' => 'wss://commander-tasks.herdr.beast.orbit',
+        'observer_status' => 'published',
+        'status' => LifecycleStatus::Active,
+        'herdr_version' => '0.9.0',
+        'protocol' => $protocol,
+        'publish_observer' => true,
+    ]);
+    $session->setRelation('process', $process);
+
+    $health = new HerdrSessionHealth($runtime)->inspect($session);
+
+    expect($health['session'])->toBe($expected);
+})->with([
+    'supported' => [22, 'healthy'],
+    'older' => [20, 'unhealthy'],
+    'unknown' => [null, 'unhealthy'],
+]);

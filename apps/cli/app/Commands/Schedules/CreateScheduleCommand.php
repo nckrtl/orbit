@@ -4,20 +4,30 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
+use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\SelectsAppDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use JsonException;
+use Orbit\Sdk\Requests\Apps\CreateScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\AppInstanceScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
+use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 
 final class CreateScheduleCommand extends ScheduleCommand
 {
+    use RendersAppRuntimeDefinitions;
+    use SelectsAppDefinitionTarget;
+
     #[\Override]
     protected $signature = 'schedule:create
         {name : Schedule name}
         {--node= : Positive Node ID}
         {--instance= : Positive AppInstance ID}
+        {--app= : Numeric App ID}
+        {--for= : Comma-separated definition environments}
         {--calendar= : Native systemd calendar expression}
         {--command= : Command to run}
         {--timeout=3600 : Execution timeout in seconds, from 1 to 86400}
@@ -25,18 +35,12 @@ final class CreateScheduleCommand extends ScheduleCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create one Node or AppInstance Schedule through the Gateway.';
+    protected $description = 'Create one Node or AppInstance Schedule, or an App Schedule definition.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $target = $this->target();
-
-        if (! $target instanceof NodeScheduleTarget && ! $target instanceof AppInstanceScheduleTarget) {
-            return self::FAILURE;
-        }
-
         $name = $this->stringArgument('name', 'Schedule name', 'schedule.name_required');
         $calendar = $this->stringOption('calendar');
         $command = $this->stringOption('command');
@@ -77,6 +81,29 @@ final class CreateScheduleCommand extends ScheduleCommand
             );
         }
 
+        $selector = $this->exclusiveScheduleTarget();
+
+        if ($selector === null) {
+            return self::FAILURE;
+        }
+
+        if ($selector === 'app') {
+            return $this->createDefinition($repository, $connectors, $name, $calendar, $command, $timeout);
+        }
+
+        if ($this->stringOption('for') !== null) {
+            return $this->renderGatewayFailure(
+                'schedule.option_invalid',
+                'The --for option requires --app.',
+            );
+        }
+
+        $target = $this->target();
+
+        if (! $target instanceof NodeScheduleTarget && ! $target instanceof AppInstanceScheduleTarget) {
+            return self::FAILURE;
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -105,24 +132,119 @@ final class CreateScheduleCommand extends ScheduleCommand
         return self::SUCCESS;
     }
 
-    private function target(): NodeScheduleTarget|AppInstanceScheduleTarget|null
+    /** @return 'app'|'instance'|'node'|null */
+    private function exclusiveScheduleTarget(): ?string
     {
-        $node = $this->option('node');
-        $instance = $this->option('instance');
+        $hasApp = $this->providedOption('app');
+        $hasInstance = $this->providedOption('instance');
+        $hasNode = $this->providedOption('node');
+        $count = (int) $hasApp + (int) $hasInstance + (int) $hasNode;
 
-        if ($node === null && $instance === null) {
+        if ($count > 1) {
             $this->renderGatewayFailure(
-                'schedule.target_required',
-                'Exactly one of --node or --instance is required.',
+                'schedule.target_conflict',
+                'Use only one of --app, --node, or --instance.',
             );
 
             return null;
         }
 
+        if ($count === 0) {
+            $this->renderGatewayFailure(
+                'schedule.target_required',
+                'Exactly one of --app, --node, or --instance is required.',
+            );
+
+            return null;
+        }
+
+        return match (true) {
+            $hasApp => 'app',
+            $hasInstance => 'instance',
+            default => 'node',
+        };
+    }
+
+    private function createDefinition(
+        GatewayConfigRepository $repository,
+        GatewayConnectorFactory $connectors,
+        string $name,
+        string $calendar,
+        string $command,
+        int $timeout,
+    ): int {
+        if ($this->option('no-start') === true) {
+            return $this->renderGatewayFailure(
+                'schedule.option_invalid',
+                'The --no-start option requires --instance.',
+            );
+        }
+
+        $appId = $this->appIdOption();
+
+        if ($appId === false) {
+            return self::FAILURE;
+        }
+
+        if ($appId === null) {
+            return $this->renderGatewayFailure(
+                'schedule.target_required',
+                'The --app option is required.',
+            );
+        }
+
+        $environments = $this->definitionEnvironments(errorCode: 'schedule.option_invalid');
+
+        if ($environments === false) {
+            return self::FAILURE;
+        }
+
+        try {
+            $definition = json_encode(
+                [
+                    'name' => $name,
+                    'environments' => $environments,
+                    'spec' => [
+                        'command' => $command,
+                        'calendar' => $calendar,
+                        'timeout_seconds' => $timeout,
+                    ],
+                ],
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            );
+        } catch (JsonException) {
+            return $this->renderGatewayFailure(
+                'schedule.definition_invalid',
+                'Schedule definition could not be encoded.',
+            );
+        }
+
+        $connector = $this->gatewayConnector($repository, $connectors);
+
+        if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $response = $this->send(
+            $connector,
+            new CreateScheduleDefinitionRequest($appId, $definition),
+            AppRuntimeDefinitionResponse::class,
+        );
+
+        return $response instanceof AppRuntimeDefinitionResponse
+            ? $this->renderDefinition($response, 'Schedule')
+            : self::FAILURE;
+    }
+
+    private function target(): NodeScheduleTarget|AppInstanceScheduleTarget|null
+    {
+        $node = $this->option('node');
+        $instance = $this->option('instance');
+
         if ($node !== null && $instance !== null) {
             $this->renderGatewayFailure(
                 'schedule.target_conflict',
-                'Use only one of --node or --instance.',
+                'Use only one of --app, --node, or --instance.',
             );
 
             return null;

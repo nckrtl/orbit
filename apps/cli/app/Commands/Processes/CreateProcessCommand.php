@@ -4,18 +4,26 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
+use App\Commands\Concerns\RendersAppRuntimeDefinitions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use JsonException;
+use Orbit\Sdk\Requests\Apps\CreateProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
+use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
 final class CreateProcessCommand extends TargetedProcessCommand
 {
+    use RendersAppRuntimeDefinitions;
+
     #[\Override]
     protected $signature = 'process:create
         {name : Process name}
         {--instance= : Positive AppInstance ID}
         {--node= : Node ID or registered name}
+        {--app= : Numeric App ID}
+        {--for= : Comma-separated definition environments}
         {--runtime=systemd : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
@@ -28,7 +36,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create one systemd service or Docker container process.';
+    protected $description = 'Create one systemd service, Docker container process, or App process definition.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -134,6 +142,35 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
+        $selector = $this->exclusiveProcessTarget();
+
+        if ($selector === null) {
+            return self::FAILURE;
+        }
+
+        if ($selector === 'app') {
+            return $this->createDefinition(
+                $repository,
+                $connectors,
+                $name,
+                $runtime,
+                $command,
+                $image,
+                $workingDirectory,
+                $environmentWasProvided ? $environment : null,
+                $portsWereProvided ? $ports : null,
+                $volumesWereProvided ? $volumes : null,
+                $restartPolicy,
+            );
+        }
+
+        if ($this->stringOption('for') !== null) {
+            return $this->renderGatewayFailure(
+                'process.option_invalid',
+                'The --for option requires --app.',
+            );
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -180,122 +217,107 @@ final class CreateProcessCommand extends TargetedProcessCommand
         return self::SUCCESS;
     }
 
-    /** @return array<string, string>|null */
-    private function environment(): ?array
-    {
-        $environment = [];
-        $values = $this->stringListOption('environment');
-
-        if (count($values) > 100) {
-            $this->renderInvalidEnvironment();
-
-            return null;
+    /**
+     * @param  list<string>  $command
+     * @param  array<string, string>|null  $environment
+     * @param  list<string>|null  $ports
+     * @param  list<array{source: string, target: string, read_only: bool}>|null  $volumes
+     */
+    private function createDefinition(
+        GatewayConfigRepository $repository,
+        GatewayConnectorFactory $connectors,
+        string $name,
+        string $runtime,
+        array $command,
+        ?string $image,
+        ?string $workingDirectory,
+        ?array $environment,
+        ?array $ports,
+        ?array $volumes,
+        string $restartPolicy,
+    ): int {
+        if ($this->option('start') === true) {
+            return $this->renderGatewayFailure(
+                'process.option_invalid',
+                'The --start option requires --instance or --node.',
+            );
         }
 
-        foreach ($values as $value) {
-            [$name, $item] = array_pad(explode('=', $value, limit: 2), length: 2, value: null);
+        $appId = $this->appIdOption();
 
-            if (
-                ! is_string($name)
-                || ! is_string($item)
-                || strlen($item) > 4096
-                || preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $name) !== 1
-                || preg_match('/[\x00\r\n]/', $value) === 1
-            ) {
-                $this->renderInvalidEnvironment();
-
-                return null;
-            }
-
-            $environment[$name] = $item;
+        if ($appId === false) {
+            return self::FAILURE;
         }
 
-        return $environment;
-    }
-
-    /** @return list<array{source: string, target: string, read_only: bool}>|null */
-    private function volumes(): ?array
-    {
-        $volumes = [];
-        $values = $this->stringListOption('volume');
-
-        if (count($values) > 100) {
-            $this->renderInvalidVolume();
-
-            return null;
+        if ($appId === null) {
+            return $this->renderGatewayFailure(
+                'process.target_invalid',
+                'The --app option is required.',
+            );
         }
 
-        foreach ($values as $value) {
-            $segments = explode(':', $value);
-            $readOnly = ($segments[2] ?? null) === 'ro';
-            $source = $segments[0];
-            $target = $segments[1] ?? '';
+        $environments = $this->definitionEnvironments(errorCode: 'process.option_invalid');
 
-            if (
-                preg_match('/[\x00\r\n]/', $value) === 1
-                || ! in_array(count($segments), [2, 3], strict: true)
-                || strlen($source) > 4096
-                || strlen($target) > 4096
-                || ($segments[2] ?? null) !== null
-                && ! $readOnly
-            ) {
-                $this->renderInvalidVolume();
-
-                return null;
-            }
-
-            $volumes[] = [
-                'source' => $segments[0],
-                'target' => $segments[1],
-                'read_only' => $readOnly,
-            ];
+        if ($environments === false) {
+            return self::FAILURE;
         }
 
-        return $volumes;
-    }
+        $spec = [
+            'runtime' => $runtime,
+            'command' => $command,
+            'restart_policy' => $restartPolicy,
+        ];
 
-    /** @return list<string>|null */
-    private function ports(): ?array
-    {
-        $ports = $this->stringListOption('port');
-
-        if (
-            count($ports) > 100
-            || array_any(
-                $ports,
-                static fn (string $port): bool => strlen($port) > 4096
-                || preg_match('/[\x00-\x1F\x7F]/', $port) === 1,
-            )
-        ) {
-            $this->renderInvalidPort();
-
-            return null;
+        if ($image !== null) {
+            $spec['image'] = $image;
         }
 
-        return $ports;
-    }
+        if ($workingDirectory !== null) {
+            $spec['working_directory'] = $workingDirectory;
+        }
 
-    private function renderInvalidEnvironment(): void
-    {
-        $this->renderGatewayFailure(
-            'process.environment_invalid',
-            'Invalid environment value. Use NAME=VALUE.',
+        if ($environment !== null) {
+            $spec['environment'] = $environment;
+        }
+
+        if ($ports !== null) {
+            $spec['ports'] = $ports;
+        }
+
+        if ($volumes !== null) {
+            $spec['volumes'] = $volumes;
+        }
+
+        try {
+            $definition = json_encode(
+                [
+                    'name' => $name,
+                    'environments' => $environments,
+                    'spec' => $spec,
+                ],
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            );
+        } catch (JsonException) {
+            return $this->renderGatewayFailure(
+                'process.definition_invalid',
+                'Process definition could not be encoded.',
+            );
+        }
+
+        $connector = $this->gatewayConnector($repository, $connectors);
+
+        if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $response = $this->send(
+            $connector,
+            new CreateProcessDefinitionRequest($appId, $definition),
+            AppRuntimeDefinitionResponse::class,
         );
-    }
 
-    private function renderInvalidPort(): void
-    {
-        $this->renderGatewayFailure(
-            'process.port_invalid',
-            'Process port value is invalid.',
-        );
-    }
-
-    private function renderInvalidVolume(): void
-    {
-        $this->renderGatewayFailure(
-            'process.volume_invalid',
-            'Invalid volume. Use SOURCE:TARGET[:ro].',
-        );
+        return $response instanceof AppRuntimeDefinitionResponse
+            ? $this->renderDefinition($response, 'Process')
+            : self::FAILURE;
     }
 }

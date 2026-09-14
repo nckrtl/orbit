@@ -70,7 +70,7 @@ final readonly class OpenSslObservationGrantSigner implements ObservationGrantSi
             throw $this->invalidGrant();
         }
 
-        foreach (['node', 'session', 'pane', 'terminal', 'jti'] as $field) {
+        foreach (['node', 'session', 'pane', 'terminal', 'jti', 'origin'] as $field) {
             if (! is_string($payload[$field] ?? null) || $payload[$field] === '') {
                 throw $this->invalidGrant();
             }
@@ -92,6 +92,7 @@ final readonly class OpenSslObservationGrantSigner implements ObservationGrantSi
             nonce: $payload['jti'],
             expiresAt: $payload['exp'],
             issuedAt: $payload['iat'],
+            origin: $payload['origin'],
         );
     }
 

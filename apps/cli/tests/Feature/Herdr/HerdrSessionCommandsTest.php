@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\LocalExtensionState;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
@@ -20,6 +21,8 @@ beforeEach(function (): void {
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-herdr-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
+    app()->forgetInstance(LocalExtensionState::class);
+    app(LocalExtensionState::class)->enable('herdr');
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
         name: 'test',
         url: 'https://10.44.0.1',
@@ -178,6 +181,7 @@ it('issues receive-only observation grants for panes on two Nodes without SSH or
             '--terminal' => 'term-abc',
             '--cols' => '120',
             '--rows' => '40',
+            '--origin' => 'https://tasks.commander.test',
             '--json' => true,
         ])
         ->assertExitCode(0);
@@ -190,6 +194,7 @@ it('issues receive-only observation grants for panes on two Nodes without SSH or
             '--terminal' => 'term-workhorse',
             '--cols' => '120',
             '--rows' => '40',
+            '--origin' => 'https://tasks.commander.test',
             '--json' => true,
         ])
         ->assertExitCode(0);
@@ -202,9 +207,30 @@ it('issues receive-only observation grants for panes on two Nodes without SSH or
             'terminal' => 'term-workhorse',
             'cols' => 120,
             'rows' => 40,
+            'origin' => 'https://tasks.commander.test',
         ])
         ->and($mock->getLastRequest()?->resolveEndpoint())
         ->toBe('/api/v1/herdr/sessions/12/observation-grants');
+});
+
+it('rejects an unsafe observation origin without sending a request', function (): void {
+    $mock = MockClient::global([]);
+
+    $this
+        ->artisan('herdr:observe', [
+            'session' => 'commander-tasks',
+            '--node' => '4',
+            '--pane' => 'w1:p1',
+            '--terminal' => 'term-abc',
+            '--cols' => '120',
+            '--rows' => '40',
+            '--origin' => 'http://tasks.commander.test',
+            '--json' => true,
+        ])
+        ->assertExitCode(1)
+        ->expectsOutputToContain('valid HTTPS origin');
+
+    $mock->assertNothingSent();
 });
 
 function herdr_cli_nodes_response(): MockResponse

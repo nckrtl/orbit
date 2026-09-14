@@ -69,7 +69,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
         Route::get('clusters', [ClustersController::class, 'index'])->name('cluster:list');
-        Route::post('clusters', [ClustersController::class, 'store'])->name('cluster:new');
+        Route::post('clusters', [ClustersController::class, 'store'])->name('cluster:create');
         Route::get('clusters/{cluster}', [ClustersController::class, 'show'])
             ->whereNumber('cluster')
             ->name('cluster:show');
@@ -78,24 +78,24 @@ Route::prefix('v1')->group(function (): void {
             ->name('cluster:update');
         Route::delete('clusters/{cluster}', [ClustersController::class, 'destroy'])
             ->whereNumber('cluster')
-            ->name('cluster:remove');
+            ->name('cluster:destroy');
         Route::put('clusters/{cluster}/nodes/{node}', [ClustersController::class, 'attach'])
             ->whereNumber('cluster')
             ->whereNumber('node')
-            ->name('cluster:node:attach');
+            ->name('cluster:node:add');
         Route::delete('clusters/{cluster}/nodes/{node}', [ClustersController::class, 'detach'])
             ->whereNumber('cluster')
             ->whereNumber('node')
-            ->name('cluster:node:detach');
+            ->name('cluster:node:remove');
         Route::put('clusters/{cluster}/router/{node}', [ClustersController::class, 'setRouter'])
             ->whereNumber('cluster')
             ->whereNumber('node')
             ->name('cluster:router:set');
         Route::delete('clusters/{cluster}/router', [ClustersController::class, 'clearRouter'])
             ->whereNumber('cluster')
-            ->name('cluster:router:clear');
+            ->name('cluster:router:unset');
         Route::post('doctor', [DoctorRunsController::class, 'store'])
-            ->name('doctor:run');
+            ->name('doctor');
         Route::get('nodes/{node}', [NodesController::class, 'show'])
             ->name('node:show');
         Route::get('nodes/{node}/roles', [NodeRolesController::class, 'index'])
@@ -114,7 +114,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('activities/{activity}', [ActivitiesController::class, 'show'])
             ->name('activity:show');
         Route::post('nodes', [NodesController::class, 'store'])
-            ->name('node:provision');
+            ->name('node:add');
         Route::patch('nodes/{node}/settings', [NodesController::class, 'settings'])
             ->whereNumber('node')
             ->name('node:settings');
@@ -142,37 +142,31 @@ Route::prefix('v1')->group(function (): void {
             ->name('firewall:remove');
         Route::get('apps', [AppsController::class, 'index'])->name('app:list');
         Route::get('apps/{app}', [AppsController::class, 'show'])->name('app:show');
-        Route::post('apps', [AppsController::class, 'store'])->name('app:new');
-        Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:remove');
+        Route::post('apps', [AppsController::class, 'store'])->name('app:create');
+        Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:destroy');
         Route::prefix('apps/{app}/process-definitions')->scopeBindings()->group(function (): void {
             Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
-                ->name('process-definition:list');
+                ->name('process:list');
             Route::post('/', [AppRuntimeDefinitionsController::class, 'processStore'])
-                ->name('process-definition:new');
+                ->name('process:create');
             Route::get('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processShow'])
-                ->whereUuid('processDefinition')
-                ->name('process-definition:show');
+                ->name('process:show');
             Route::put('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processUpdate'])
-                ->whereUuid('processDefinition')
-                ->name('process-definition:update');
+                ->name('process:update');
             Route::delete('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processDestroy'])
-                ->whereUuid('processDefinition')
-                ->name('process-definition:remove');
+                ->name('process:destroy');
         });
         Route::prefix('apps/{app}/schedule-definitions')->scopeBindings()->group(function (): void {
             Route::get('/', [AppRuntimeDefinitionsController::class, 'scheduleIndex'])
-                ->name('schedule-definition:list');
+                ->name('schedule:list');
             Route::post('/', [AppRuntimeDefinitionsController::class, 'scheduleStore'])
-                ->name('schedule-definition:new');
+                ->name('schedule:create');
             Route::get('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleShow'])
-                ->whereUuid('scheduleDefinition')
-                ->name('schedule-definition:show');
+                ->name('schedule:show');
             Route::put('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleUpdate'])
-                ->whereUuid('scheduleDefinition')
-                ->name('schedule-definition:update');
+                ->name('schedule:update');
             Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
-                ->whereUuid('scheduleDefinition')
-                ->name('schedule-definition:remove');
+                ->name('schedule:destroy');
         });
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
@@ -241,15 +235,15 @@ Route::prefix('v1')->group(function (): void {
             [DatabaseConnectionAttachmentsController::class, 'store'],
         )
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:attach');
+            ->name('instance:database:add');
         Route::delete(
             'instances/{instance}/database-connections/{database_connection}',
             [DatabaseConnectionAttachmentsController::class, 'destroy'],
         )
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:detach');
+            ->name('instance:database:remove');
         Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
-        Route::post('routes', [RoutesController::class, 'store'])->name('route:new');
+        Route::post('routes', [RoutesController::class, 'store'])->name('route:create');
         Route::get('routes/{route}', [RoutesController::class, 'show'])
             ->whereNumber('route')
             ->name('route:show');
@@ -261,10 +255,10 @@ Route::prefix('v1')->group(function (): void {
             ->name('route:target:set');
         Route::delete('routes/{route}/target', [RoutesController::class, 'clearTarget'])
             ->whereNumber('route')
-            ->name('route:target:clear');
+            ->name('route:target:unset');
         Route::delete('routes/{route}', [RoutesController::class, 'destroy'])
             ->whereNumber('route')
-            ->name('route:remove');
+            ->name('route:destroy');
         Route::get('workspaces', [WorkspacesController::class, 'index'])->name('workspace:list');
         Route::get('workspaces/{workspace}', [WorkspacesController::class, 'show'])
             ->name('workspace:show');
@@ -307,18 +301,18 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:destroy');
         Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
-            ->name('database-connection:list');
+            ->name('database:list');
         Route::post('database-connections', [DatabaseConnectionsController::class, 'store'])
-            ->name('database-connection:add');
+            ->name('database:create');
         Route::get('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'show'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:show');
+            ->name('database:show');
         Route::patch('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'update'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:update');
+            ->name('database:update');
         Route::delete('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'destroy'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:remove');
+            ->name('database:destroy');
         Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
             ->name('herdr:session:list');
         Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])
@@ -349,7 +343,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('tool')
             ->name('tool:remove');
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
-        Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:remove');
+        Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
         Route::get('metrics/status', [MetricsController::class, 'status'])->name('metrics:status');
         Route::get('metrics/credentials', [MetricsController::class, 'credentials'])->name('metrics:credentials');
         Route::post('metrics/credentials/reset', [MetricsController::class, 'reset'])->name(

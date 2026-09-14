@@ -12,12 +12,14 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 
 beforeEach(function (): void {
@@ -35,12 +37,16 @@ describe('Cluster lifecycle', function (): void {
     it('creates, lists, shows, updates, and removes normalized Clusters', function (): void {
         $this->operator->update(['tld' => 'beast']);
 
+        $createRequestId = (string) Str::uuid();
         $withoutTld = $this
+            ->withHeader('X-Orbit-Request-Id', $createRequestId)
             ->postJson('/api/v1/clusters', ['name' => 'no-tld'])
             ->assertCreated()
             ->assertJsonPath('data.name', 'no-tld')
             ->assertJsonPath('data.tld', null)
             ->assertJsonPath('data.state', 'inactive');
+        expect(Activity::query()->where('request_id', $createRequestId)->sole()->command)
+            ->toBe('cluster:create');
 
         $withTld = $this
             ->postJson('/api/v1/clusters', ['name' => 'development', 'tld' => '  Beast  '])
@@ -75,12 +81,17 @@ describe('Cluster lifecycle', function (): void {
             ->assertJsonPath('data.name', 'local')
             ->assertJsonPath('data.tld', null);
 
+        $destroyRequestId = (string) Str::uuid();
         $this
+            ->withHeader('X-Orbit-Request-Id', $destroyRequestId)
             ->deleteJson("/api/v1/clusters/{$clusterId}")
             ->assertOk()
             ->assertJsonPath('data.id', $clusterId);
 
-        expect(Cluster::query()->find($clusterId))->toBeNull();
+        expect(Cluster::query()->find($clusterId))
+            ->toBeNull()
+            ->and(Activity::query()->where('request_id', $destroyRequestId)->sole()->command)
+            ->toBe('cluster:destroy');
     });
 
     it('refuses removal for member Nodes before owned Routes whatever the Route status', function (): void {

@@ -3,7 +3,7 @@
     "paths": [
         "apps/cli/app/Commands/Apps/CreateAppCommand.php",
         "apps/cli/app/Commands/Apps/ListAppsCommand.php",
-        "apps/cli/app/Commands/Clusters/AttachClusterNodeCommand.php",
+        "apps/cli/app/Commands/Clusters/AddClusterNodeCommand.php",
         "apps/cli/app/Commands/Clusters/ClusterCommand.php",
         "apps/cli/app/Commands/Clusters/CreateClusterCommand.php",
         "apps/cli/app/Commands/Clusters/ListClustersCommand.php",
@@ -388,7 +388,7 @@
         "packages/php-sdk/src/GatewayRequest.php",
         "packages/php-sdk/src/Requests/Apps/CreateAppRequest.php",
         "packages/php-sdk/src/Requests/Apps/ListAppsRequest.php",
-        "packages/php-sdk/src/Requests/Clusters/AttachClusterNodeRequest.php",
+        "packages/php-sdk/src/Requests/Clusters/AddClusterNodeRequest.php",
         "packages/php-sdk/src/Requests/Clusters/CreateClusterRequest.php",
         "packages/php-sdk/src/Requests/Clusters/ListClustersRequest.php",
         "packages/php-sdk/src/Requests/Clusters/SetClusterRouterRequest.php",

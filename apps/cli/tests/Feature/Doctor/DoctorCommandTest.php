@@ -42,9 +42,9 @@ it('lists every accepted family including schedule in doctor help', function ():
         DoctorFamily::cases(),
     );
 
-    expect($families)->toContain('schedule');
+    expect($families)->toContain('schedule', 'database_connection');
     expect(app(Kernel::class)->all()['doctor']->getDefinition()->getOption('family')->getDescription())
-        ->toBe('Limit checks to node, role, app, instance, workspace, schedule, tool, process, firewall, or herdr');
+        ->toBe('Limit checks to node, role, app, instance, workspace, schedule, tool, process, firewall, herdr, or database_connection');
 
     expect(Artisan::call('help', ['command_name' => 'doctor']))->toBe(Command::SUCCESS);
     expect(Artisan::output())->toContain(...$families);

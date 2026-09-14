@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
-use App\Actions\Herdr\CascadeNodeHerdrSessionsAction;
-use App\Actions\Processes\CascadeNodeProcessesAction;
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Firewall\RouterLanIngressReconciler;
@@ -25,6 +23,7 @@ use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
+use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -45,8 +44,6 @@ final readonly class RemoveNodeAction
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
-        private ?CascadeNodeProcessesAction $nodeProcesses = null,
-        private ?CascadeNodeHerdrSessionsAction $herdrSessions = null,
     ) {}
 
     public function execute(
@@ -86,8 +83,13 @@ final readonly class RemoveNodeAction
         $this->guardProtected($node, $caller);
         $shed = $offline ? $this->shedRoles($node, $force) : null;
         $this->guardRemoval($node);
-        $this->cleanupHerdrSessions($node, forgetRecords: $shed !== null);
-        $this->cleanupNodeProcesses($node, forgetRecords: $shed !== null);
+
+        if ($shed === null) {
+            $this->guardOwnedRuntime($node);
+        } else {
+            $this->forgetOwnedRuntimeRecords($node);
+        }
+
         $peerRemoved = false;
         $result = new RemoveNodeData(
             id: $node->id,
@@ -139,7 +141,7 @@ final readonly class RemoveNodeAction
         }
 
         // Public SSH is reopened while the tunnel still exists, so the machine
-        // stays reachable for `node:provision` or recovery after it leaves.
+        // stays reachable for `node:add` or recovery after it leaves.
         // A node without a peer never had its public path closed, and an
         // offline removal cannot change the machine at all.
         if (! $offline && $node->wireguard_public_key !== null) {
@@ -380,44 +382,40 @@ final readonly class RemoveNodeAction
         return $shed;
     }
 
-    private function cleanupHerdrSessions(Node $node, bool $forgetRecords): void
+    private function guardOwnedRuntime(Node $node): void
     {
-        try {
-            ($this->herdrSessions ?? app(CascadeNodeHerdrSessionsAction::class))
-                ->execute($node, $forgetRecords);
-        } catch (Throwable $exception) {
-            throw $this->failure(
-                step: 'herdr-cleanup',
-                errorCode: 'node.herdr_cleanup_failed',
-                message: "Could not remove Herdr sessions on [{$node->name}].",
-                previous: $exception,
+        if ($node->herdrSessions()->exists()) {
+            throw $this->conflict(
+                'node.has_herdr_sessions',
+                "Node [{$node->name}] still owns Herdr sessions.",
+            );
+        }
+
+        if ($node->processes()->exists()) {
+            throw $this->conflict(
+                'node.has_processes',
+                "Node [{$node->name}] still owns Processes.",
             );
         }
     }
 
-    private function cleanupNodeProcesses(Node $node, bool $forgetRecords): void
+    private function forgetOwnedRuntimeRecords(Node $node): void
     {
-        try {
-            if ($forgetRecords) {
-                Process::query()
-                    ->where('owner_type', Node::class)
-                    ->where('owner_id', $node->id)
-                    ->orderBy('id')
-                    ->get()
-                    ->each(fn (Process $process) => $process->delete());
+        HerdrSession::query()
+            ->where('node_id', $node->id)
+            ->orderBy('id')
+            ->get()
+            ->each(function (HerdrSession $session): void {
+                $session->update(['process_id' => null]);
+                $session->delete();
+            });
 
-                return;
-            }
-
-            ($this->nodeProcesses ?? app(CascadeNodeProcessesAction::class))->execute($node->id);
-        } catch (Throwable $exception) {
-            throw $this->failure(
-                step: 'process-cleanup',
-                errorCode: 'node.process_cleanup_failed',
-                message: "Could not remove Node-owned Processes on [{$node->name}].",
-                previous: $exception,
-            );
-        }
+        Process::query()
+            ->where('owner_type', Node::class)
+            ->where('owner_id', $node->id)
+            ->orderBy('id')
+            ->get()
+            ->each(fn (Process $process) => $process->delete());
     }
 
     private function guardRemoval(Node $node): void

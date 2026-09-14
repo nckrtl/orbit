@@ -16,7 +16,7 @@ remote execution behavior.
 
 ## App runtime definitions
 
-The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions. Create and replace requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
+The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions. Create and update requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
 
 ## Schedules
 
@@ -58,14 +58,14 @@ The SDK exposes `RunDoctorRequest` and bounded typed report responses. It sends
 `POST /api/v1/doctor` as JSON. It omits null filters and preserves explicit
 filter values so the Gateway can validate them. It transports received health,
 order, issues, and summary aggregates without applying Doctor policy.
-Doctor accepts the current Gateway family set, including Schedule and Herdr.
+Doctor accepts the current Gateway family set, including Schedule, Herdr, and Database connection.
 
 ## Herdr sessions
 
 The SDK exposes typed list, add, show, restart, remove, and observation-grant
 requests for managed Herdr sessions. Add and list preserve a numeric Node ID.
 Item operations use the numeric session ID. Observation grants send pane,
-terminal, columns, and rows. Item and collection responses are immutable and
+terminal, columns, rows, and the allowed HTTPS browser origin. Item and collection responses are immutable and
 bounded and preserve the request ID. Observation grant URLs stay out of generic
 diagnostics. The Gateway owns session lifecycle, publication, and grant policy.
 

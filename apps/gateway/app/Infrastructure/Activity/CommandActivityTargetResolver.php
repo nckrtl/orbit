@@ -161,6 +161,12 @@ final readonly class CommandActivityTargetResolver
             return $this->herdrSessionNode($request);
         }
 
+        if (str_contains($request->path(), '-definitions')) {
+            $app = $request->route('app');
+
+            return $app instanceof OrbitApp ? $app : null;
+        }
+
         if (str_starts_with((string) $request->route()?->getName(), 'process:')) {
             return $this->processOwner($request);
         }
@@ -195,14 +201,14 @@ final readonly class CommandActivityTargetResolver
         }
 
         return match ($request->route()?->getName()) {
-            'node:provision' => Node::query()->where('name', $request->input('name'))->first(),
-            'doctor:run' => $this->doctorNode($request),
-            'app:new' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
+            'node:add' => Node::query()->where('name', $request->input('name'))->first(),
+            'doctor' => $this->doctorNode($request),
+            'app:create' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
             'instance:create' => AppInstance::query()
                 ->where('app_id', $request->integer('app_id'))
                 ->where('name', $request->input('name'))
                 ->first(),
-            'route:new' => Route::query()
+            'route:create' => Route::query()
                 ->where('hostname', mb_strtolower(trim((string) $request->input('hostname'))))
                 ->first(),
             'workspace:new' => Workspace::query()

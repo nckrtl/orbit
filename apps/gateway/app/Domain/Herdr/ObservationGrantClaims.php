@@ -16,6 +16,7 @@ final readonly class ObservationGrantClaims
         public string $nonce,
         public int $expiresAt,
         public int $issuedAt,
+        public string $origin,
     ) {}
 
     /**
@@ -33,6 +34,7 @@ final readonly class ObservationGrantClaims
             'terminal' => $this->terminal,
             'cols' => $this->cols,
             'rows' => $this->rows,
+            'origin' => $this->origin,
             'jti' => $this->nonce,
             'iat' => $this->issuedAt,
             'exp' => $this->expiresAt,

@@ -11,5 +11,6 @@ final readonly class IssueObservationGrantData
         public string $terminal,
         public int $cols,
         public int $rows,
+        public string $origin,
     ) {}
 }

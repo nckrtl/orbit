@@ -9,6 +9,7 @@ use App\Domain\Herdr\HerdrSessionInspection;
 use App\Domain\Herdr\HerdrSessionInspector;
 use App\Models\HerdrSession;
 use App\Models\Node;
+use Throwable;
 
 final class FakeHerdrSessionInspector implements HerdrSessionInspector
 {
@@ -23,8 +24,14 @@ final class FakeHerdrSessionInspector implements HerdrSessionInspector
 
     public int $handoffs = 0;
 
+    public ?Throwable $failure = null;
+
     public function inspect(HerdrSession $session, Node $node): HerdrSessionInspection
     {
+        if ($this->failure instanceof Throwable) {
+            throw $this->failure;
+        }
+
         return new HerdrSessionInspection(
             version: $this->version,
             protocol: $this->protocol,

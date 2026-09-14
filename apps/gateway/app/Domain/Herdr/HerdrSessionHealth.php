@@ -60,7 +60,7 @@ final readonly class HerdrSessionHealth
             return 'unhealthy';
         }
 
-        return $session->herdr_version !== null || $session->protocol !== null
+        return $session->herdr_version !== null && $session->protocol === HerdrObserveContract::DefaultProtocol
             ? 'healthy'
             : 'unhealthy';
     }

@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\StringInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 it('exposes only the implemented Orbit product commands', function (): void {
     $visibleCommands = collect(app(Kernel::class)->all())
@@ -23,28 +25,22 @@ it('exposes only the implemented Orbit product commands', function (): void {
     expect($visibleCommands)->toBe([
         'activity:list',
         'activity:show',
+        'app:create',
+        'app:destroy',
         'app:list',
-        'app:new',
-        'app:process-definition',
-        'app:process-definitions',
-        'app:remove',
-        'app:schedule-definition',
-        'app:schedule-definitions',
         'app:show',
+        'cluster:create',
+        'cluster:destroy',
         'cluster:list',
-        'cluster:new',
-        'cluster:node:attach',
-        'cluster:node:detach',
-        'cluster:remove',
-        'cluster:router:clear',
+        'cluster:node:add',
+        'cluster:node:remove',
         'cluster:router:set',
+        'cluster:router:unset',
         'cluster:show',
         'cluster:update',
-        'database:add',
-        'database:attach',
-        'database:detach',
+        'database:create',
+        'database:destroy',
         'database:list',
-        'database:remove',
         'database:show',
         'database:update',
         'dns:resolve',
@@ -52,22 +48,22 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'env:import',
         'env:sync',
         'env:update',
+        'extension:disable',
+        'extension:enable',
+        'extension:list',
         'firewall:allow',
         'firewall:deny',
         'firewall:list',
         'firewall:remove',
         'gateway:add',
+        'gateway:remove',
         'gateway:status',
         'gateway:trust',
         'gateway:use',
-        'herdr:observe',
-        'herdr:session:create',
-        'herdr:session:destroy',
-        'herdr:session:list',
-        'herdr:session:restart',
-        'herdr:session:show',
         'instance:clone',
         'instance:create',
+        'instance:database:add',
+        'instance:database:remove',
         'instance:deploy',
         'instance:deploy-step:create',
         'instance:deploy-step:destroy',
@@ -90,8 +86,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'metrics:status',
         'node:access:add',
         'node:access:remove',
+        'node:add',
         'node:list',
-        'node:provision',
         'node:remove',
         'node:role:add',
         'node:role:list',
@@ -103,14 +99,16 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'process:list',
         'process:logs',
         'process:restart',
+        'process:show',
         'process:start',
         'process:stop',
+        'process:update',
+        'route:create',
+        'route:destroy',
         'route:list',
-        'route:new',
-        'route:remove',
         'route:show',
-        'route:target:clear',
         'route:target:set',
+        'route:target:unset',
         'route:update',
         'schedule:create',
         'schedule:destroy',
@@ -119,6 +117,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'schedule:logs',
         'schedule:run',
         'schedule:show',
+        'schedule:update',
         'tool:install',
         'tool:list',
         'tool:manager:list',
@@ -133,14 +132,47 @@ it('exposes only the implemented Orbit product commands', function (): void {
     ]);
 });
 
-it('does not register hidden Orbit product commands', function (): void {
+it('rejects each replaced App Cluster and Route lifecycle name as an unknown command', function (string $command): void {
+    $output = new BufferedOutput;
+    $status = app(Kernel::class)->handle(new StringInput($command), $output);
+
+    expect(collect(app(Kernel::class)->all())->keys()->all())
+        ->not->toContain($command)
+        ->and($status)
+        ->toBe(Command::FAILURE)
+        ->and(trim($output->fetch()))
+        ->toContain(sprintf('Command "%s" is not defined.', $command));
+})->with([
+    'app:new',
+    'app:remove',
+    'cluster:new',
+    'cluster:remove',
+    'cluster:node:attach',
+    'cluster:node:detach',
+    'cluster:router:clear',
+    'route:new',
+    'route:remove',
+    'route:target:clear',
+]);
+
+it('only hides Orbit commands that belong to disabled extensions', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(109);
-    expect($orbitCommands->every(
-        static fn (Command $command): bool => ! $command->isHidden(),
-    ))->toBeTrue();
+    expect($orbitCommands)->toHaveCount(112);
+    expect($orbitCommands
+        ->filter(static fn (Command $command): bool => $command->isHidden())
+        ->keys()
+        ->sort()
+        ->values()
+        ->all())->toBe([
+            'herdr:observe',
+            'herdr:session:create',
+            'herdr:session:destroy',
+            'herdr:session:list',
+            'herdr:session:restart',
+            'herdr:session:show',
+        ]);
 });
 
 it('registers only the Orbit Schedule adapters', function (): void {
@@ -161,6 +193,24 @@ it('does not expose replaced instance lifecycle names', function (): void {
         'instance:new',
         'instance:remove',
         'instance:releases',
+    ]);
+});
+
+it('does not expose replaced definition command names', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKeys([
+        'app:process-definition',
+        'app:process-definitions',
+        'app:schedule-definition',
+        'app:schedule-definitions',
+    ]);
+});
+
+it('does not expose replaced database connection names', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKeys([
+        'database:add',
+        'database:remove',
+        'database:attach',
+        'database:detach',
     ]);
 });
 
@@ -208,35 +258,25 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'activity:list' => [[], ['limit' => '25', 'request-id' => null, 'json' => false]],
         'activity:show' => [['activity'], ['json' => false]],
         'app:list' => [[], ['json' => false]],
-        'app:new' => [
+        'app:create' => [
             ['slug', 'repository'],
             ['name' => null, 'default-branch' => null, 'root' => 'public', 'json' => false],
         ],
-        'app:process-definition' => [
-            ['app'],
-            ['id' => null, 'file' => null, 'remove' => false, 'json' => false],
-        ],
-        'app:process-definitions' => [['app'], ['json' => false]],
-        'app:remove' => [['app'], ['json' => false]],
-        'app:schedule-definition' => [
-            ['app'],
-            ['id' => null, 'file' => null, 'remove' => false, 'json' => false],
-        ],
-        'app:schedule-definitions' => [['app'], ['json' => false]],
+        'app:destroy' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
         'cluster:list' => [[], ['json' => false]],
-        'cluster:new' => [['name'], ['tld' => null, 'json' => false]],
-        'cluster:node:attach' => [['cluster', 'node'], ['json' => false]],
-        'cluster:node:detach' => [['cluster', 'node'], ['force' => false, 'json' => false]],
-        'cluster:remove' => [['cluster'], ['force' => false, 'json' => false]],
-        'cluster:router:clear' => [['cluster'], ['force' => false, 'json' => false]],
+        'cluster:create' => [['name'], ['tld' => null, 'json' => false]],
+        'cluster:node:add' => [['cluster', 'node'], ['json' => false]],
+        'cluster:node:remove' => [['cluster', 'node'], ['force' => false, 'json' => false]],
+        'cluster:destroy' => [['cluster'], ['force' => false, 'json' => false]],
+        'cluster:router:unset' => [['cluster'], ['force' => false, 'json' => false]],
         'cluster:router:set' => [['cluster', 'node'], ['json' => false]],
         'cluster:show' => [['cluster'], ['json' => false]],
         'cluster:update' => [
             ['cluster'],
             ['name' => null, 'tld' => null, 'state' => null, 'json' => false],
         ],
-        'database:add' => [
+        'database:create' => [
             ['slug'],
             [
                 'driver' => null,
@@ -250,16 +290,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'database:attach' => [
-            ['slug'],
-            ['instance' => null, 'prefix' => null, 'json' => false],
-        ],
-        'database:detach' => [
-            ['slug'],
-            ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
-        ],
+        'database:destroy' => [['slug'], ['force' => false, 'json' => false]],
         'database:list' => [[], ['json' => false]],
-        'database:remove' => [['slug'], ['force' => false, 'json' => false]],
         'database:show' => [['slug'], ['json' => false]],
         'database:update' => [
             ['slug'],
@@ -280,6 +312,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'env:import' => [[], ['instance' => null, 'replace' => false, 'json' => false]],
         'env:sync' => [[], ['instance' => null, 'json' => false]],
         'env:update' => [[], ['instance' => null, 'key' => null, 'value' => null, 'json' => false]],
+        'extension:disable' => [['extension'], ['json' => false]],
+        'extension:enable' => [['extension'], ['json' => false]],
+        'extension:list' => [[], ['json' => false]],
         'firewall:allow' => [
             ['name'],
             ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'json' => false],
@@ -291,6 +326,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'firewall:list' => [[], ['node' => null, 'json' => false]],
         'firewall:remove' => [['name'], ['node' => null, 'json' => false]],
         'gateway:add' => [['gateway'], ['name' => 'default', 'ca' => null, 'use' => false, 'json' => false]],
+        'gateway:remove' => [['name'], ['force' => false, 'json' => false]],
         'gateway:status' => [[], ['json' => false]],
         'gateway:trust' => [[], ['accept-ca-change' => false, 'json' => false]],
         'gateway:use' => [['name'], ['json' => false]],
@@ -302,6 +338,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'terminal' => null,
                 'cols' => null,
                 'rows' => null,
+                'origin' => null,
                 'json' => false,
             ],
         ],
@@ -332,6 +369,14 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'recover-source-profile' => false,
                 'json' => false,
             ],
+        ],
+        'instance:database:add' => [
+            ['slug'],
+            ['instance' => null, 'prefix' => null, 'json' => false],
+        ],
+        'instance:database:remove' => [
+            ['slug'],
+            ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
         ],
         'instance:deploy' => [['instance'], ['json' => false]],
         'instance:deploy-step:create' => [
@@ -392,8 +437,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'metrics:status' => [[], ['json' => false]],
         'node:access:add' => [['consumer', 'serving'], ['json' => false]],
         'node:access:remove' => [['consumer', 'serving'], ['force' => false, 'json' => false]],
-        'node:list' => [[], ['json' => false]],
-        'node:provision' => [
+        'node:add' => [
             ['name', 'host'],
             [
                 'ssh-port' => '22',
@@ -414,6 +458,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'node:list' => [[], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
@@ -428,6 +473,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             [
                 'instance' => null,
                 'node' => null,
+                'app' => null,
+                'for' => null,
                 'runtime' => 'systemd',
                 'command' => [],
                 'image' => null,
@@ -440,14 +487,31 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'process:list' => [[], ['instance' => null, 'node' => null, 'json' => false]],
+        'process:list' => [[], ['instance' => null, 'node' => null, 'app' => null, 'json' => false]],
         'process:logs' => [['process'], ['lines' => '100', 'json' => false]],
-        'process:destroy' => [['process'], ['json' => false]],
+        'process:destroy' => [['process'], ['app' => null, 'json' => false]],
         'process:restart' => [['process'], ['json' => false]],
+        'process:show' => [['name'], ['app' => null, 'json' => false]],
         'process:start' => [['process'], ['json' => false]],
         'process:stop' => [['process'], ['json' => false]],
+        'process:update' => [
+            ['name'],
+            [
+                'app' => null,
+                'for' => null,
+                'runtime' => 'systemd',
+                'command' => [],
+                'image' => null,
+                'working-directory' => null,
+                'environment' => [],
+                'port' => [],
+                'volume' => [],
+                'restart' => 'never',
+                'json' => false,
+            ],
+        ],
         'route:list' => [[], ['json' => false]],
-        'route:new' => [
+        'route:create' => [
             ['app', 'hostname'],
             [
                 'publication' => 'private',
@@ -457,9 +521,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'route:remove' => [['route'], ['json' => false]],
+        'route:destroy' => [['route'], ['json' => false]],
         'route:show' => [['route'], ['json' => false]],
-        'route:target:clear' => [['route'], ['json' => false]],
+        'route:target:unset' => [['route'], ['json' => false]],
         'route:target:set' => [['route', 'target'], ['json' => false]],
         'route:update' => [['route'], ['hostname' => null, 'publication' => null, 'json' => false]],
         'schedule:enable' => [['schedule'], ['json' => false]],
@@ -468,17 +532,29 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ], [
             'node' => null,
             'instance' => null,
+            'app' => null,
+            'for' => null,
             'calendar' => null,
             'command' => null,
             'timeout' => '3600',
             'no-start' => false,
             'json' => false,
         ]],
-        'schedule:list' => [[], ['json' => false]],
+        'schedule:list' => [[], ['app' => null, 'json' => false]],
         'schedule:logs' => [['schedule'], ['lines' => '100', 'json' => false]],
-        'schedule:destroy' => [['schedule'], ['json' => false]],
+        'schedule:destroy' => [['schedule'], ['app' => null, 'json' => false]],
         'schedule:run' => [['schedule'], ['json' => false]],
-        'schedule:show' => [['schedule'], ['json' => false]],
+        'schedule:show' => [['schedule'], ['app' => null, 'json' => false]],
+        'schedule:update' => [[
+            'name',
+        ], [
+            'app' => null,
+            'for' => null,
+            'calendar' => null,
+            'command' => null,
+            'timeout' => '3600',
+            'json' => false,
+        ]],
         'tool:install' => [
             ['package'],
             ['node' => null, 'manager' => null, 'constraint' => null, 'json' => false],
@@ -520,7 +596,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         expect(array_keys($definition->getArguments()))->toBe($arguments);
         $optionalArguments = match ($name) {
             'dns:resolve' => ['target'],
-            'node:provision' => ['host'],
+            'node:add' => ['host'],
             'tool:install' => ['package'],
             'metrics:enable' => ['node'],
             default => [],
@@ -590,32 +666,22 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'activity:list' => [[], ...$profileMissing],
         'activity:show' => [['activity' => '1'], ...$profileMissing],
         'app:list' => [[], ...$profileMissing],
-        'app:new' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
-        'app:process-definition' => [[
-            'app' => '1',
-            '--id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
-        ], ...$profileMissing],
-        'app:process-definitions' => [['app' => '1'], ...$profileMissing],
-        'app:remove' => [['app' => '1'], ...$profileMissing],
-        'app:schedule-definition' => [[
-            'app' => '1',
-            '--id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
-        ], ...$profileMissing],
-        'app:schedule-definitions' => [['app' => '1'], ...$profileMissing],
+        'app:create' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
+        'app:destroy' => [['app' => '1'], ...$profileMissing],
         'app:show' => [['app' => '1'], ...$profileMissing],
         'cluster:list' => [[], ...$profileMissing],
-        'cluster:new' => [['name' => 'development'], ...$profileMissing],
-        'cluster:node:attach' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
-        'cluster:node:detach' => [
+        'cluster:create' => [['name' => 'development'], ...$profileMissing],
+        'cluster:node:add' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
+        'cluster:node:remove' => [
             ['cluster' => '1', 'node' => '2', '--force' => true],
             ...$profileMissing,
         ],
-        'cluster:remove' => [['cluster' => '1', '--force' => true], ...$profileMissing],
-        'cluster:router:clear' => [['cluster' => '1', '--force' => true], ...$profileMissing],
+        'cluster:destroy' => [['cluster' => '1', '--force' => true], ...$profileMissing],
+        'cluster:router:unset' => [['cluster' => '1', '--force' => true], ...$profileMissing],
         'cluster:router:set' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
         'cluster:show' => [['cluster' => '1'], ...$profileMissing],
         'cluster:update' => [['cluster' => '1', '--state' => 'inactive'], ...$profileMissing],
-        'database:add' => [[
+        'database:create' => [[
             'slug' => 'app',
             '--driver' => 'mysql',
             '--host' => 'db.example.test',
@@ -623,17 +689,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--username' => 'app',
             '--password' => 'secret',
         ], ...$profileMissing],
-        'database:attach' => [[
-            'slug' => 'app',
-            '--instance' => '12',
-        ], ...$profileMissing],
-        'database:detach' => [[
-            'slug' => 'app',
-            '--instance' => '12',
-            '--force' => true,
-        ], ...$profileMissing],
+        'database:destroy' => [['slug' => 'app', '--force' => true], ...$profileMissing],
         'database:list' => [[], ...$profileMissing],
-        'database:remove' => [['slug' => 'app', '--force' => true], ...$profileMissing],
         'database:show' => [['slug' => 'app'], ...$profileMissing],
         'database:update' => [['slug' => 'app', '--host' => 'db.example.test'], ...$profileMissing],
         'dns:resolve' => [
@@ -648,6 +705,16 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ['--instance' => 'app.com', '--key' => 'PRIVATE_VALUE', '--value' => 'validation-secret'],
             ...$profileMissing,
         ],
+        'extension:disable' => [
+            ['extension' => 'validation-secret'],
+            'code' => 'extension.unknown',
+            'message' => 'Unknown Orbit extension.',
+        ],
+        'extension:enable' => [
+            ['extension' => 'validation-secret'],
+            'code' => 'extension.unknown',
+            'message' => 'Unknown Orbit extension.',
+        ],
         'firewall:allow' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:deny' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:list' => [['--node' => '1'], ...$profileMissing],
@@ -657,6 +724,11 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'gateway.profile_invalid',
             'message' => 'Gateway URL must use HTTPS.',
         ],
+        'gateway:remove' => [
+            ['name' => 'validation-secret'],
+            'code' => 'gateway.profile_not_found',
+            'message' => 'Gateway profile does not exist.',
+        ],
         'gateway:status' => [[], ...$profileMissing],
         'gateway:trust' => [[], ...$profileMissing],
         'gateway:use' => [
@@ -664,30 +736,20 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'gateway.profile_not_found',
             'message' => 'Gateway profile does not exist.',
         ],
-        'herdr:observe' => [
-            [
-                'session' => 'commander-tasks',
-                '--node' => '1',
-                '--pane' => 'w1:p1',
-                '--terminal' => 'term-abc',
-                '--cols' => '120',
-                '--rows' => '40',
-            ],
-            ...$profileMissing,
-        ],
-        'herdr:session:create' => [
-            ['session' => 'commander-tasks', '--node' => '1', '--user' => 'nckrtl'],
-            ...$profileMissing,
-        ],
-        'herdr:session:list' => [['--node' => '1'], ...$profileMissing],
-        'herdr:session:destroy' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
-        'herdr:session:restart' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
-        'herdr:session:show' => [['session' => 'commander-tasks', '--node' => '1'], ...$profileMissing],
         'instance:clone' => [
             ['candidate' => '1', 'node' => '2', 'name' => 'web', '--preview-name' => 'web'],
             ...$profileMissing,
         ],
         'instance:create' => [['app' => '1', 'node' => '1', 'name' => 'web'], ...$profileMissing],
+        'instance:database:add' => [[
+            'slug' => 'app',
+            '--instance' => '12',
+        ], ...$profileMissing],
+        'instance:database:remove' => [[
+            'slug' => 'app',
+            '--instance' => '12',
+            '--force' => true,
+        ], ...$profileMissing],
         'instance:deploy' => [['instance' => '1'], ...$profileMissing],
         'instance:deploy-step:create' => [['instance' => '1', 'name' => 'migrate', '--command' => 'true'], ...$profileMissing],
         'instance:deploy-step:destroy' => [['instance' => '1', 'name' => 'migrate'], ...$profileMissing],
@@ -714,8 +776,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'metrics:status' => [[], ...$profileMissing],
         'node:access:add' => [['consumer' => '2', 'serving' => '3'], ...$profileMissing],
         'node:access:remove' => [['consumer' => '2', 'serving' => '3', '--force' => true], ...$profileMissing],
+        'node:add' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:list' => [[], ...$profileMissing],
-        'node:provision' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:remove' => [['node' => '1', '--force' => true], ...$profileMissing],
         'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
         'node:role:list' => [['node' => '7'], ...$profileMissing],
@@ -730,13 +792,20 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'process:logs' => [['process' => '1'], ...$profileMissing],
         'process:destroy' => [['process' => '1'], ...$profileMissing],
         'process:restart' => [['process' => '1'], ...$profileMissing],
+        'process:show' => [['name' => 'worker', '--app' => '1'], ...$profileMissing],
         'process:start' => [['process' => '1'], ...$profileMissing],
         'process:stop' => [['process' => '1'], ...$profileMissing],
+        'process:update' => [[
+            'name' => 'worker',
+            '--app' => '1',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ], ...$profileMissing],
         'route:list' => [[], ...$profileMissing],
-        'route:new' => [['app' => '1', 'hostname' => 'app.test', '--node' => '1'], ...$profileMissing],
-        'route:remove' => [['route' => '1'], ...$profileMissing],
+        'route:create' => [['app' => '1', 'hostname' => 'app.test', '--node' => '1'], ...$profileMissing],
+        'route:destroy' => [['route' => '1'], ...$profileMissing],
         'route:show' => [['route' => '1'], ...$profileMissing],
-        'route:target:clear' => [['route' => '1'], ...$profileMissing],
+        'route:target:unset' => [['route' => '1'], ...$profileMissing],
         'route:target:set' => [['route' => '1', 'target' => '2'], ...$profileMissing],
         'route:update' => [['route' => '1', '--publication' => 'private'], ...$profileMissing],
         'schedule:enable' => [[
@@ -761,6 +830,13 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'schedule:show' => [[
             'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], ...$profileMissing],
+        'schedule:update' => [[
+            'name' => 'daily-report',
+            '--app' => '1',
+            '--for' => 'production',
+            '--calendar' => 'daily',
+            '--command' => 'php artisan report:send',
+        ], ...$profileMissing],
         'tool:install' => [
             ['package' => 'curl', '--node' => '1', '--manager' => 'apt'],
             ...$profileMissing,
@@ -778,6 +854,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
     ];
     $visibleCommandNames = collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())
+        ->except(['extension:list'])
         ->keys()
         ->sort()
         ->values()

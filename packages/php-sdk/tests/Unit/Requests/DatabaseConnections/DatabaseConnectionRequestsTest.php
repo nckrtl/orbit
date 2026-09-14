@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\RemoveDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse;
@@ -22,6 +22,17 @@ use Saloon\Http\Faking\MockResponse;
 const DATABASE_CONNECTION_SDK_SECRET = 'db-sdk-secret-71ae';
 
 describe('database connection requests', function (): void {
+    it('does not keep replaced request class names', function (): void {
+        expect(class_exists('Orbit\\Sdk\\Requests\\DatabaseConnections\\AddDatabaseConnectionRequest'))
+            ->toBeFalse()
+            ->and(class_exists('Orbit\\Sdk\\Requests\\DatabaseConnections\\RemoveDatabaseConnectionRequest'))
+            ->toBeFalse()
+            ->and(class_exists('Orbit\\Sdk\\Requests\\DatabaseConnections\\AttachDatabaseConnectionRequest'))
+            ->toBeFalse()
+            ->and(class_exists('Orbit\\Sdk\\Requests\\DatabaseConnections\\DetachDatabaseConnectionRequest'))
+            ->toBeFalse();
+    });
+
     it('uses the exact registry and attachment methods and endpoints', function (
         GatewayRequest $request,
         Method $method,
@@ -34,11 +45,11 @@ describe('database connection requests', function (): void {
     })->with([
         'list' => [new ListDatabaseConnectionsRequest, Method::GET, '/api/v1/database-connections'],
         'show' => [new ShowDatabaseConnectionRequest('app'), Method::GET, '/api/v1/database-connections/app'],
-        'add' => [new AddDatabaseConnectionRequest('app', 'mysql'), Method::POST, '/api/v1/database-connections'],
+        'create' => [new CreateDatabaseConnectionRequest('app', 'mysql'), Method::POST, '/api/v1/database-connections'],
         'update' => [new UpdateDatabaseConnectionRequest('app'), Method::PATCH, '/api/v1/database-connections/app'],
-        'remove' => [new RemoveDatabaseConnectionRequest('app'), Method::DELETE, '/api/v1/database-connections/app'],
-        'attach' => [new AttachDatabaseConnectionRequest(12, 'app'), Method::PUT, '/api/v1/instances/12/database-connections/app'],
-        'detach' => [new DetachDatabaseConnectionRequest('app.test', 'app'), Method::DELETE, '/api/v1/instances/app.test/database-connections/app'],
+        'destroy' => [new DestroyDatabaseConnectionRequest('app'), Method::DELETE, '/api/v1/database-connections/app'],
+        'add' => [new AddInstanceDatabaseRequest(12, 'app'), Method::PUT, '/api/v1/instances/12/database-connections/app'],
+        'remove' => [new RemoveInstanceDatabaseRequest('app.test', 'app'), Method::DELETE, '/api/v1/instances/app.test/database-connections/app'],
     ]);
 
     it('encodes slugs in item paths', function (): void {
@@ -46,14 +57,14 @@ describe('database connection requests', function (): void {
             ->toBe('/api/v1/database-connections/app-db');
     });
 
-    it('omits null add fields and preserves an explicit empty password', function (): void {
-        expect(new AddDatabaseConnectionRequest('local', 'sqlite', path: '/tmp/app.sqlite')->body()->all())
+    it('omits null create fields and preserves an explicit empty password', function (): void {
+        expect(new CreateDatabaseConnectionRequest('local', 'sqlite', path: '/tmp/app.sqlite')->body()->all())
             ->toBe([
                 'slug' => 'local',
                 'driver' => 'sqlite',
                 'path' => '/tmp/app.sqlite',
             ])
-            ->and(new AddDatabaseConnectionRequest(
+            ->and(new CreateDatabaseConnectionRequest(
                 slug: 'app',
                 driver: 'mysql',
                 host: 'db.example.test',
@@ -86,12 +97,12 @@ describe('database connection requests', function (): void {
             ]);
     });
 
-    it('omits an absent attach prefix and encodes hostname selectors', function (): void {
-        expect(new AttachDatabaseConnectionRequest(12, 'app')->body()->all())
+    it('omits an absent add prefix and encodes hostname selectors', function (): void {
+        expect(new AddInstanceDatabaseRequest(12, 'app')->body()->all())
             ->toBe([])
-            ->and(new AttachDatabaseConnectionRequest('app.test', 'app-db', 'CACHE_DB')->body()->all())
+            ->and(new AddInstanceDatabaseRequest('app.test', 'app-db', 'CACHE_DB')->body()->all())
             ->toBe(['prefix' => 'CACHE_DB'])
-            ->and(new AttachDatabaseConnectionRequest('app.test', 'app-db')->resolveEndpoint())
+            ->and(new AddInstanceDatabaseRequest('app.test', 'app-db')->resolveEndpoint())
             ->toBe('/api/v1/instances/app.test/database-connections/app-db');
     });
 
@@ -109,7 +120,7 @@ describe('database connection requests', function (): void {
             'key_count' => 6,
         ];
         $mockClient = new MockClient([
-            AttachDatabaseConnectionRequest::class => MockResponse::make([
+            AddInstanceDatabaseRequest::class => MockResponse::make([
                 'data' => $payload,
                 'meta' => ['request_id' => $requestId],
             ]),
@@ -117,7 +128,7 @@ describe('database connection requests', function (): void {
         $connector = new GatewayConnector('https://10.44.0.1');
         $connector->withMockClient($mockClient);
 
-        $attached = $connector->send(new AttachDatabaseConnectionRequest(12, 'app'))->dto();
+        $attached = $connector->send(new AddInstanceDatabaseRequest(12, 'app'))->dto();
 
         expect($attached)
             ->toBeInstanceOf(DatabaseConnectionAttachmentResponse::class)
@@ -127,12 +138,12 @@ describe('database connection requests', function (): void {
             ->not->toContain('password');
     });
 
-    it('keeps list show and remove requests bodyless', function (GatewayRequest $request): void {
+    it('keeps list show and destroy requests bodyless', function (GatewayRequest $request): void {
         expect($request)->not->toBeInstanceOf(HasBody::class);
     })->with([
         'list' => [new ListDatabaseConnectionsRequest],
         'show' => [new ShowDatabaseConnectionRequest('app')],
-        'remove' => [new RemoveDatabaseConnectionRequest('app')],
+        'destroy' => [new DestroyDatabaseConnectionRequest('app')],
     ]);
 
     it('maps item and collection envelopes without exposing a password', function (): void {

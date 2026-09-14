@@ -463,7 +463,7 @@ final readonly class RecordCommandActivity
     {
         $command = $request->route()?->getName();
 
-        if ($command === 'doctor:run') {
+        if ($command === 'doctor') {
             return $this->doctorInput($request);
         }
 
@@ -514,13 +514,7 @@ final readonly class RecordCommandActivity
             return $this->appInstanceRollbackInput($request);
         }
 
-        if (
-            is_string($command)
-            && (
-                str_starts_with($command, 'process-definition:')
-                || str_starts_with($command, 'schedule-definition:')
-            )
-        ) {
+        if (is_string($command) && str_contains($request->path(), '-definitions')) {
             return $this->appDefinitionInput($request, $command);
         }
 
@@ -642,7 +636,7 @@ final readonly class RecordCommandActivity
     /** @return array{name: string, environments: list<string>}|array{} */
     private function appDefinitionInput(Request $request, string $command): array
     {
-        if (! str_ends_with($command, ':new') && ! str_ends_with($command, ':update')) {
+        if (! str_ends_with($command, ':create') && ! str_ends_with($command, ':update')) {
             return [];
         }
 

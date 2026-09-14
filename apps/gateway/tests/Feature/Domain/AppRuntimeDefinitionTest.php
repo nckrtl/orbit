@@ -79,7 +79,7 @@ it('accepts complete systemd, Docker, and Schedule definition specifications', f
 });
 
 it('stores printable Schedule definition calendars without host systemd-analyze', function (string $calendar): void {
-    $created = $this
+    $this
         ->postJson(
             "/api/v1/apps/{$this->orbitApp->id}/schedule-definitions",
             domain_schedule_definition_payload(spec: [
@@ -91,7 +91,6 @@ it('stores printable Schedule definition calendars without host systemd-analyze'
         ->assertCreated()
         ->assertJsonPath('data.spec.calendar', $calendar);
 
-    $id = $created->json('data.id');
     $replacement = domain_schedule_definition_payload(spec: [
         'command' => 'php artisan report',
         'calendar' => $calendar,
@@ -100,7 +99,7 @@ it('stores printable Schedule definition calendars without host systemd-analyze'
     $replacement['name'] = 'replaced';
 
     $this
-        ->putJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/{$id}", $replacement)
+        ->putJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/report", $replacement)
         ->assertOk()
         ->assertJsonPath('data.spec.calendar', $calendar);
 

@@ -7,6 +7,11 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Apps\CreateScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\DestroyScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\ListScheduleDefinitionsRequest;
+use Orbit\Sdk\Requests\Apps\ShowScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\UpdateScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
@@ -114,6 +119,86 @@ it('omits start when an AppInstance Schedule uses the default enabled state', fu
     $mock->assertSentCount(1, CreateScheduleRequest::class);
     expect($mock->getLastRequest()?->body()->all())->not->toHaveKey('start');
 });
+
+it('records one App Schedule definition through structured flags', function (): void {
+    $mock = MockClient::global([
+        CreateScheduleDefinitionRequest::class => MockResponse::make(schedule_definition_cli_envelope(), 201),
+    ]);
+
+    $this
+        ->artisan('schedule:create', [
+            'name' => 'hourly-report',
+            '--app' => '7',
+            '--for' => 'production',
+            '--calendar' => 'hourly',
+            '--command' => 'php artisan report:send',
+            '--timeout' => '3600',
+            '--json' => true,
+        ])
+        ->expectsOutput(schedule_definition_cli_json())
+        ->assertExitCode(Command::SUCCESS);
+
+    expect($mock->getLastRequest())
+        ->toBeInstanceOf(CreateScheduleDefinitionRequest::class)
+        ->and($mock->getLastPendingRequest()?->getUrl())
+        ->toBe('https://10.44.0.1/api/v1/apps/7/schedule-definitions')
+        ->and((string) $mock->getLastPendingRequest()?->body())
+        ->toBe('{"name":"hourly-report","environments":["production"],"spec":{"command":"php artisan report:send","calendar":"hourly","timeout_seconds":3600}}');
+});
+
+it('lists shows updates and destroys App Schedule definitions by name', function (
+    string $command,
+    array $arguments,
+    string $requestClass,
+    string $endpoint,
+): void {
+    $mock = MockClient::global([
+        ListScheduleDefinitionsRequest::class => MockResponse::make(schedule_definition_cli_collection_envelope()),
+        ShowScheduleDefinitionRequest::class => MockResponse::make(schedule_definition_cli_envelope()),
+        UpdateScheduleDefinitionRequest::class => MockResponse::make(schedule_definition_cli_envelope()),
+        DestroyScheduleDefinitionRequest::class => MockResponse::make(schedule_definition_cli_envelope()),
+    ]);
+
+    $this
+        ->artisan($command, [...$arguments, '--json' => true])
+        ->assertExitCode(Command::SUCCESS);
+
+    expect($mock->getLastRequest())
+        ->toBeInstanceOf($requestClass)
+        ->and($mock->getLastPendingRequest()?->getUrl())
+        ->toBe("https://10.44.0.1{$endpoint}");
+})->with([
+    'list' => [
+        'schedule:list',
+        ['--app' => '7'],
+        ListScheduleDefinitionsRequest::class,
+        '/api/v1/apps/7/schedule-definitions',
+    ],
+    'show' => [
+        'schedule:show',
+        ['schedule' => 'hourly-report', '--app' => '7'],
+        ShowScheduleDefinitionRequest::class,
+        '/api/v1/apps/7/schedule-definitions/hourly-report',
+    ],
+    'update' => [
+        'schedule:update',
+        [
+            'name' => 'hourly-report',
+            '--app' => '7',
+            '--for' => 'production',
+            '--calendar' => 'hourly',
+            '--command' => 'php artisan report:send',
+        ],
+        UpdateScheduleDefinitionRequest::class,
+        '/api/v1/apps/7/schedule-definitions/hourly-report',
+    ],
+    'destroy' => [
+        'schedule:destroy',
+        ['schedule' => 'hourly-report', '--app' => '7'],
+        DestroyScheduleDefinitionRequest::class,
+        '/api/v1/apps/7/schedule-definitions/hourly-report',
+    ],
+]);
 
 it('lists the unfiltered collection without command text in human output', function (): void {
     $item = schedule_cli_payload(includeCommand: false);
@@ -280,11 +365,23 @@ it('applies explicit selector validation before HTTP in every output and interac
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with(function (): array {
     $cases = [
-        'neither selector' => [[], 'schedule.target_required', 'Exactly one of --node or --instance is required.'],
+        'neither selector' => [[], 'schedule.target_required', 'Exactly one of --app, --node, or --instance is required.'],
         'both selectors' => [[
             '--node' => '3',
             '--instance' => '7',
-        ], 'schedule.target_conflict', 'Use only one of --node or --instance.'],
+        ], 'schedule.target_conflict', 'Use only one of --app, --node, or --instance.'],
+        'app with instance' => [[
+            '--app' => '7',
+            '--instance' => '7',
+            '--for' => 'production',
+        ], 'schedule.target_conflict', 'Use only one of --app, --node, or --instance.'],
+        'for without app' => [[
+            '--node' => '3',
+            '--for' => 'production',
+        ], 'schedule.option_invalid', 'The --for option requires --app.'],
+        'app without for' => [[
+            '--app' => '7',
+        ], 'schedule.option_invalid', 'The --for option is required with --app.'],
         'malformed Node ID' => [[
             '--node' => 'edge',
         ], 'schedule.node_id_invalid', 'Node ID must be a positive integer.'],
@@ -313,6 +410,99 @@ it('applies explicit selector validation before HTTP in every output and interac
 
     return $datasets;
 });
+
+it('renders one exact json envelope for App-target schedule refusals', function (
+    string $command,
+    array $arguments,
+    string $code,
+    string $message,
+): void {
+    $mock = MockClient::global();
+    $expectedPayload = [
+        'error' => [
+            'code' => $code,
+            'message' => $message,
+            'request_id' => null,
+        ],
+    ];
+    $expected = json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(Command::FAILURE);
+    expect($output)->toBe($expected);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe($expectedPayload);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'update missing target' => [
+        'schedule:update',
+        [
+            'name' => 'daily',
+            '--calendar' => 'daily',
+            '--command' => 'x',
+        ],
+        'schedule.target_required',
+        'The --app option is required.',
+    ],
+    'create app with instance' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => '7',
+            '--instance' => '7',
+            '--for' => 'production',
+        ]),
+        'schedule.target_conflict',
+        'Use only one of --app, --node, or --instance.',
+    ],
+    'create app with node' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => '7',
+            '--node' => '3',
+            '--for' => 'production',
+        ]),
+        'schedule.target_conflict',
+        'Use only one of --app, --node, or --instance.',
+    ],
+    'create for without app' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--node' => '3',
+            '--for' => 'production',
+        ]),
+        'schedule.option_invalid',
+        'The --for option requires --app.',
+    ],
+    'create app without for' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => '7',
+        ]),
+        'schedule.option_invalid',
+        'The --for option is required with --app.',
+    ],
+    'create invalid app without for' => [
+        'schedule:create',
+        schedule_cli_add_arguments([
+            '--app' => 'abc',
+        ]),
+        'app.id_invalid',
+        'App ID must be a positive integer.',
+    ],
+    'update app without for' => [
+        'schedule:update',
+        [
+            'name' => 'daily',
+            '--app' => '7',
+            '--calendar' => 'daily',
+            '--command' => 'x',
+        ],
+        'schedule.option_invalid',
+        'The --for option is required with --app.',
+    ],
+]);
 
 it('rejects malformed Schedule UUIDs and log bounds before HTTP', function (
     string $command,
@@ -489,4 +679,49 @@ function schedule_cli_uuid(): string
 function schedule_cli_request_id(): string
 {
     return '0198e15d-16c4-7855-8eb2-182b53ad28ba';
+}
+
+/** @return array<string, mixed> */
+function schedule_definition_cli_data(): array
+{
+    return [
+        'id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
+        'app_id' => 7,
+        'name' => 'hourly-report',
+        'environments' => ['production'],
+        'spec' => [
+            'command' => 'php artisan report:send',
+            'calendar' => 'hourly',
+            'timeout_seconds' => 3600,
+        ],
+    ];
+}
+
+/** @return array<string, mixed> */
+function schedule_definition_cli_envelope(): array
+{
+    return [
+        'data' => schedule_definition_cli_data(),
+        'meta' => ['request_id' => schedule_cli_request_id()],
+    ];
+}
+
+/** @return array<string, mixed> */
+function schedule_definition_cli_collection_envelope(): array
+{
+    $item = schedule_definition_cli_data();
+    unset($item['spec']['command']);
+
+    return [
+        'data' => [$item],
+        'meta' => ['request_id' => schedule_cli_request_id()],
+    ];
+}
+
+function schedule_definition_cli_json(): string
+{
+    return json_encode([
+        ...schedule_definition_cli_data(),
+        'request_id' => schedule_cli_request_id(),
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

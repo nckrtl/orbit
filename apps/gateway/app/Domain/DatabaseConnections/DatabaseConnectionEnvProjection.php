@@ -78,6 +78,38 @@ final readonly class DatabaseConnectionEnvProjection
     }
 
     /**
+     * @param  array<string, string>  $stored
+     * @param  array{
+     *     values: array<string, string>,
+     *     forget: list<string>,
+     *     keys: list<string>,
+     *     host: string|null,
+     *     port: int|null
+     * }  $projected
+     * @return list<string>
+     */
+    public function driftedKeys(array $stored, array $projected): array
+    {
+        $drifted = [];
+
+        foreach ($projected['values'] as $key => $value) {
+            if (! array_key_exists($key, $stored) || $stored[$key] !== $value) {
+                $drifted[] = $key;
+            }
+        }
+
+        foreach ($projected['forget'] as $key) {
+            if (array_key_exists($key, $stored)) {
+                $drifted[] = $key;
+            }
+        }
+
+        sort($drifted);
+
+        return $drifted;
+    }
+
+    /**
      * @param  array<string, string>  $values
      * @param  list<string>  $managed
      * @return array{

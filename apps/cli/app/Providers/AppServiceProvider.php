@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\ResolvesLocalDns;
+use App\Services\Extensions\LocalExtensionState;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\NativeGitRegistrationDiscovery;
 use Illuminate\Support\ServiceProvider;
@@ -25,6 +26,12 @@ final class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
         $this->app->singleton(GitRegistrationDiscovery::class, NativeGitRegistrationDiscovery::class);
+        $this->app->singleton(
+            LocalExtensionState::class,
+            static fn (): LocalExtensionState => new LocalExtensionState(
+                rtrim((string) config('orbit.home'), '/').'/extensions.json',
+            ),
+        );
 
         $this->app->singleton(
             GatewayConfigRepository::class,

@@ -24,11 +24,25 @@ final readonly class ComposedHerdrObserverPublisher implements HerdrObserverPubl
     public function publish(HerdrSession $session, Node $node): HerdrObserverPublication
     {
         $url = $this->contract->observerUrl($session->observer_hostname);
+        $sitePublished = false;
 
         try {
             $this->sites->publish($session, $node, $this->caddy->render($session));
+            $sitePublished = true;
             $this->dns->converge();
         } catch (Throwable) {
+            if ($sitePublished) {
+                try {
+                    $this->sites->retract($session, $node);
+                } catch (Throwable) {
+                    return new HerdrObserverPublication(
+                        url: $url,
+                        published: false,
+                        error: 'observer publication rollback failed',
+                    );
+                }
+            }
+
             return new HerdrObserverPublication(
                 url: $url,
                 published: false,

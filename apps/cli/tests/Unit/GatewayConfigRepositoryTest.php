@@ -106,6 +106,49 @@ describe(GatewayConfigRepository::class, function (): void {
         expect(fn () => $repository->use('missing'))
             ->toThrow(GatewayConfigException::class, 'Gateway profile [missing] does not exist.');
     });
+
+    it('removes an inactive profile and its pinned certificate file', function (): void {
+        $repository = new GatewayConfigRepository($this->configPath);
+        $repository->add(new GatewayProfile('test', 'https://10.70.0.1'));
+        $caPath = $this->configDirectory.'/ca/root.pem';
+        mkdir(directory: dirname($caPath), permissions: 0o700, recursive: true);
+        file_put_contents($caPath, "certificate\n");
+        $repository->add(new GatewayProfile('production', 'https://10.80.0.1', $caPath));
+
+        $repository->remove('production');
+
+        expect($repository->find('production'))
+            ->toBeNull()
+            ->and($repository->active()?->name)
+            ->toBe('test')
+            ->and(is_file($caPath))
+            ->toBeFalse();
+    });
+
+    it('refuses to remove the active profile without force', function (): void {
+        $repository = new GatewayConfigRepository($this->configPath);
+        $repository->add(new GatewayProfile('test', 'https://10.70.0.1'));
+
+        expect(fn () => $repository->remove('test'))
+            ->toThrow(GatewayConfigException::class, 'Cannot remove the active gateway profile.')
+            ->and($repository->active()?->name)
+            ->toBe('test');
+    });
+
+    it('removes the active profile with force and clears the active selection', function (): void {
+        $repository = new GatewayConfigRepository($this->configPath);
+        $repository->add(new GatewayProfile('test', 'https://10.70.0.1'));
+        $repository->add(new GatewayProfile('production', 'https://10.80.0.1'));
+
+        $repository->remove('test', force: true);
+
+        expect($repository->find('test'))
+            ->toBeNull()
+            ->and($repository->active())
+            ->toBeNull()
+            ->and($repository->find('production')?->url)
+            ->toBe('https://10.80.0.1');
+    });
 });
 
 it('preserves a same-name profile replacement when a stale pin update finishes later', function (

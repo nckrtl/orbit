@@ -6,10 +6,10 @@ This page tells an operator how Orbit creates or adopts, configures, and exposes
 
 ## Create an App
 
-New Apps require a repository URL and a normalized relative web root. The `app:new` command accepts an optional default branch:
+New Apps require a repository URL and a normalized relative web root. The `app:create` command accepts an optional default branch:
 
 ```text
-orbit app:new \
+orbit app:create \
   acme \
   git@github.com:acme/site.git \
   --default-branch=main \

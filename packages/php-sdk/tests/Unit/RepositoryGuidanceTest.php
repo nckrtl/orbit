@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
@@ -8,13 +9,13 @@ use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
-use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\RemoveDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
@@ -180,11 +181,11 @@ describe('repository guidance bootstrap', function (): void {
         $databaseRequests = [
             ListDatabaseConnectionsRequest::class,
             ShowDatabaseConnectionRequest::class,
-            AddDatabaseConnectionRequest::class,
+            CreateDatabaseConnectionRequest::class,
             UpdateDatabaseConnectionRequest::class,
-            RemoveDatabaseConnectionRequest::class,
-            AttachDatabaseConnectionRequest::class,
-            DetachDatabaseConnectionRequest::class,
+            DestroyDatabaseConnectionRequest::class,
+            AddInstanceDatabaseRequest::class,
+            RemoveInstanceDatabaseRequest::class,
         ];
         $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests);
         $expectedRequests = [
@@ -298,7 +299,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ListAppInstanceReleasesRequest::class)
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
-            ->toContain(ClearClusterRouterRequest::class);
+            ->toContain(UnsetClusterRouterRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,
@@ -329,7 +330,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($publicContract)
             ->toContain('The SDK models exactly 115 concrete public Gateway API operations:')
             ->toContain(
-                '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
+                '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
@@ -339,7 +340,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Herdr: session list, add, show, restart, remove, and observation-grant.')
             ->toContain('- Database connection: list, show, add, update, remove, attach, and detach.')
             ->toContain(
-                '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
+                '- App runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
                 '- AppInstance: list, show, create, register, clone, remove, update, deployment-layout preparation, deployment configuration read and replace, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
@@ -370,13 +371,13 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep AppInstance deployment transport limited to named deploy-step create, list, update, and destroy, AppInstance branch update, configuration read and replacement, explicit deploy and rollback streams, and retained-release inspection.',
             )
             ->toContain(
-                "Keep App runtime definition transport limited to a numeric App ID, a definition UUID for item operations, and the caller's exact JSON document for create and full replacement.",
+                "Keep App runtime definition transport limited to a numeric App ID, a definition name for item operations, and the caller's exact JSON document for create and full update.",
             )
             ->toContain(
                 'Keep Schedule transport limited to typed Node and AppInstance targets and the eight shipped operations.',
             )
             ->toContain(
-                'Keep Herdr transport limited to a numeric Node ID, a numeric session ID for item operations, explicit session name and Unix user on add, optional observer publication and restart handoff flags, optional removal termination acceptance, and pane, terminal, columns, and rows for observation grants.',
+                'Keep Herdr transport limited to a numeric Node ID, a numeric session ID for item operations, explicit session name and Unix user on add, optional observer publication and restart handoff flags, optional removal termination acceptance, and pane, terminal, columns, rows, and an HTTPS browser origin for observation grants.',
             )
             ->toContain(
                 'Keep Database connection transport limited to slug identity, driver, optional Node ID, host, port, database name, sqlite path, username, and password.',
@@ -394,12 +395,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(
                 'The SDK exposes exactly 115 public Gateway operations.',
                 'The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records.',
-                'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
+                'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
-                'Doctor accepts the current Gateway family set, including Schedule and Herdr.',
+                'Doctor accepts the current Gateway family set, including Schedule, Herdr, and Database connection.',
                 'The SDK exposes typed list, add, show, restart, remove, and observation-grant requests for managed Herdr sessions.',
                 'Observation grant URLs stay out of generic diagnostics.',
-                "Create and replace requests send the caller's exact JSON document to the Gateway.",
+                "Create and update requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
                 'The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations.',
                 'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',

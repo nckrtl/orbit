@@ -46,6 +46,11 @@ final class ProcessDefinition extends Model
         return $this->toArray();
     }
 
+    public function getRouteKeyName(): string
+    {
+        return 'name';
+    }
+
     /** @return BelongsTo<App, $this> */
     public function app(): BelongsTo
     {
