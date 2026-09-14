@@ -457,8 +457,16 @@ it('correlates unhandled failures without exposing exception text', function ():
 
 it('records node:add as the activity command for node store', function (): void {
     $requestId = (string) Str::uuid();
+    $operator = Node::query()->create([
+        'name' => 'operator',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => '10.44.0.2',
+    ]);
+    $this->markAsGateway($operator);
 
     $this
+        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/nodes', [
             'name' => 'not valid',
