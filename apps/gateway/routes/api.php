@@ -36,7 +36,6 @@ use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
-use App\Http\Controllers\Api\WorkspacesController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -268,14 +267,6 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('routes/{route}', [RoutesController::class, 'destroy'])
             ->whereNumber('route')
             ->name('route:destroy');
-        Route::get('workspaces', [WorkspacesController::class, 'index'])->name('workspace:list');
-        Route::get('workspaces/{workspace}', [WorkspacesController::class, 'show'])
-            ->name('workspace:show');
-        Route::post('workspaces', [WorkspacesController::class, 'store'])->name('workspace:new');
-        Route::delete('workspaces/{workspace}', [WorkspacesController::class, 'destroy'])
-            ->name('workspace:remove');
-        Route::patch('workspaces/{workspace}/php', [WorkspacesController::class, 'php'])
-            ->name('workspace:php');
         Route::get('schedules', [SchedulesController::class, 'index'])
             ->name('schedule:list');
         Route::post('schedules', [SchedulesController::class, 'store'])

@@ -2653,12 +2653,20 @@ it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint d
         ->getJson("/api/v1/instances/{$legacy->id}")
         ->assertOk()
         ->assertJsonPath('data.name', 'dev')
-        ->assertJsonPath('data.source_layout', 'checkout');
+        ->assertJsonPath('data.source_layout', 'checkout')
+        ->assertJsonMissingPath('data.certificate_mode')
+        ->assertJsonMissingPath('data.document_root')
+        ->assertJsonMissingPath('data.php_version')
+        ->assertJsonMissingPath('data.instance_id');
     $this
         ->getJson("/api/v1/workspaces/{$workspace->id}")
-        ->assertOk()
-        ->assertJsonPath('data.instance_id', $legacy->id)
-        ->assertJsonPath('data.name', 'workspace');
+        ->assertNotFound();
+    expect($workspace->refresh()->only(['instance_id', 'name', 'checkout_path']))
+        ->toBe([
+            'instance_id' => $legacy->id,
+            'name' => 'workspace',
+            'checkout_path' => '/srv/orbit/workspaces/acme/workspace',
+        ]);
 });
 
 it('removes an active AppInstance through every durable checkpoint', function (bool $force): void {

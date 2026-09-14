@@ -1,6 +1,6 @@
 # Applications
 
-Create an App instance on a Node you choose, or register an existing checkout. The App stores shared source defaults. Each App instance has its own location and Route.
+Create an App instance on a Node you choose, or register an existing checkout. The App stores shared source defaults. Each App instance has its own location and Route. The supported App instance commands are `instance:create`, `instance:list`, `instance:show`, and `instance:destroy`. Those commands resolve App instances owned by their App and Node. The fleet operator prepares incompatible legacy deployments outside Orbit. Orbit provides no conversion command, API, or SDK operation.
 
 [ADR 0009](/decisions/0009-clustered-app-instance-routing) defines the development source boundary. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines stable default identity, [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) defines owned source layouts, and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) defines explicit branch selection. [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) defines production placement, and [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) defines its release layout.
 
@@ -36,7 +36,54 @@ orbit instance:create <app-id> <node-id> feature-one [--branch=release] [--hostn
 
 The instance name and Node's [apps root](/reference/node-settings) determine the checkout path. Branch selection is separate.
 
-| Creation input | Managed placement | Selected b…1171 tokens truncated… App instances, Routes, and managed paths; conflicting input preserves the accepted registration.
+| Creation input | Managed placement | Selected branch |
+| --- | --- | --- |
+| `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The App `default_branch` |
+| Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
+| Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
+
+`instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory, without a Workspace or shared worktree metadata.
+
+The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route.
+
+Orbit records the branch-selection intent, selected branch, and starting commit before it provisions the application endpoint.
+
+Source preparation moves through three durable states:
+
+```text
+reserved -> checkout_prepared -> source_resolved
+```
+
+A retry must match the recorded App, Node, source layout, root, path, repository, branch override, selected branch, and hostname input. Orbit also verifies the commit recorded before activation, then resumes the next incomplete step. After activation, development can advance `HEAD` without changing the recorded starting commit. Adding, removing, or changing the branch override returns `instance.placement_conflict` before any changes.
+
+## Register an existing development source
+
+Run registration from an independent Git checkout or a linked worktree on the caller's app-dev Node:
+
+```text
+orbit instance:register
+```
+
+The CLI rejects directories outside a Git checkout or worktree. It also rejects origins containing credentials without displaying them or contacting the Gateway. The Gateway verifies the source on the authenticated caller's Node before changing Git, files, runtime, Routes, or records.
+
+The Gateway resolves an existing App by the source's canonical repository identity. The [Apps reference](/reference/apps#resolve-an-app-during-registration) owns App lookup, inference, confirmation, and missing-App creation.
+
+`--json` confirms the ownership transfer and disables prompts and the source summary. The CLI returns one JSON document containing the result or an error.
+
+Registration infers App instance placement from verified source facts.
+
+| Verified source | App instance identity | Managed placement |
+| --- | --- | --- |
+| Top-level directory matches the App slug and the checked-out branch matches `default_branch` | `default` | `<node-apps-root>/<app-slug>/default` |
+| Any other accepted checkout or worktree | The Git top-level directory name | `<node-apps-root>/<app-slug>/<instance-name>` |
+
+An explicit valid value can fill an unresolved or optional value. It cannot replace conflicting verified source identity. Registration infers `public` as the web root only when Laravel detection is unambiguous.
+
+Orbit records `checkout` for an independent repository and `worktree` for a linked worktree. It moves the complete source to the managed path. HEAD, branch or detached state, index, dirty and untracked files, refs, commits, and unrelated settings stay intact. A source already at the correct path stays there.
+
+Registration adopts only the caller's source by default. After moving a shared checkout, Orbit repairs links so other worktrees remain usable and unregistered. Use `--include-worktrees` to adopt the checkout and all linked worktrees together. Before moving anything, the Gateway checks each source's Git identity, metadata ownership and permissions, instance name, and destination. It also checks for overlap with managed App instances, legacy Instances, and Workspaces. If any check fails, nothing moves.
+
+For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress binds original cleanup to the verified source directory identity and keeps one verified authoritative copy after interruption. An identical retry revalidates the canonical authoritative path, repository identity, checkout or worktree layout, and provisioning safety without requiring an unchanged source digest. After relocation, the CLI can retry from the managed primary source path while Orbit retains the original primary and complete requested set. It resumes the same App, App instances, Routes, and managed paths; conflicting input preserves the accepted registration.
 
 ## Create a production App instance
 
@@ -50,7 +97,7 @@ A given App can have one production App instance per app-prod Node. The same App
 
 ### Keep existing production App instances
 
-When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it.
+When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it. App instance commands do not remove a legacy Instance.
 
 When an existing active production App instance still uses a recorded flat source and shared PHP runtime, the operator converts that placement with `orbit instance:prepare-deployment`. The [production release-layout reference](/reference/deployments#convert-an-existing-production-home) describes its preflight, retained content, optional SQLite move, dedicated runtime, and retry boundary. Conversion does not require a candidate and does not run an application deployment.
 
@@ -128,6 +175,8 @@ orbit instance:destroy <id> --force
 Production removal uses the same command without deleting application content. It retains a shared Route and republishes its surviving production targets, or deletes a final-target Route and releases its hostname. The [App instance removal reference](/reference/appinstance-removal) describes development source preflight, retained production content, Route cleanup, the `removing` state, bounded progress, refusals, and safe retry.
 
 The removal reference also describes worktree preflight, forced fixed-set cascades, retained branches, ordered cleanup, and transient unavailable traffic.
+
+`instance:destroy` removes an App instance owned by its App and Node. It does not remove a legacy Instance.
 
 ## Move an App instance
 

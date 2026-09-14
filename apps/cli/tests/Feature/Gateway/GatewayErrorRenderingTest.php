@@ -597,12 +597,6 @@ it('renders local validation failures through the exact json boundary', function
         'instance.name_required',
         'Instance name is required.',
     ],
-    'PHP version helper' => [
-        'workspace:php',
-        ['workspace' => '1', 'version' => 'validation-secret'],
-        'php.version_invalid',
-        'PHP version must use major.minor format, for example 8.5.',
-    ],
     'node arguments' => [
         'node:add',
         ['name' => 'node', 'host' => 'node.test', '--ssh-port' => 'validation-secret'],
@@ -683,12 +677,6 @@ it('renders local validation failures through the exact json boundary', function
         'process.log_lines_invalid',
         'Log lines must be between 1 and 1000.',
     ],
-    'workspace checkout path' => [
-        'workspace:new',
-        ['instance' => '1', 'name' => 'workspace', '--path' => 'validation-secret'],
-        'workspace.checkout_path_invalid',
-        'Workspace checkout path must be a safe absolute path.',
-    ],
     'multiple firewall values fail at the first error' => [
         'firewall:allow',
         [
@@ -706,12 +694,6 @@ it('renders local validation failures through the exact json boundary', function
         ['app' => 'validation-secret', 'node' => '0', 'name' => ''],
         'app.id_invalid',
         'App ID must be a positive integer.',
-    ],
-    'multiple workspace values fail at the first error' => [
-        'workspace:php',
-        ['workspace' => 'validation-secret', 'version' => 'validation-secret'],
-        'workspace.id_invalid',
-        'Workspace ID must be a positive integer.',
     ],
     'node role list id' => [
         'node:role:list',

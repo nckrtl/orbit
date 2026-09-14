@@ -161,11 +161,6 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tool:remove' => ServingNode::ToolOwning,
         'tool:show' => ServingNode::ToolOwning,
         'tool:update' => ServingNode::ToolOwning,
-        'workspace:list' => ServingNode::Collection,
-        'workspace:new' => ServingNode::WorkspaceOwning,
-        'workspace:php' => ServingNode::WorkspaceOwning,
-        'workspace:remove' => ServingNode::WorkspaceOwning,
-        'workspace:show' => ServingNode::WorkspaceOwning,
     ];
 
     expect($actualScopes)->toBe($expectedScopes);

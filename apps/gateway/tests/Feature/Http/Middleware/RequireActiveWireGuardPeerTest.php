@@ -132,7 +132,6 @@ it('identifies the peer before resolving a route-bound resource', function (stri
     'node firewall rules' => '/api/v1/nodes/999999/firewall-rules',
     'app' => '/api/v1/apps/999999',
     'instance' => '/api/v1/instances/999999',
-    'workspace' => '/api/v1/workspaces/999999',
     'process logs' => '/api/v1/processes/999999/logs',
     'activity' => '/api/v1/activities/999999',
     'tool managers' => '/api/v1/tool-managers',
