@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Hibernation;
 
 use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Hibernation\RuntimeHibernationSweepResult;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -23,13 +25,16 @@ final readonly class SweepIdleAppDevRuntimesAction
         private ProcessAdmissionLock $admissions,
         private ProcessRuntimeManager $runtime,
         private HibernationMarkerStore $markers,
+        private AppInstanceCheckoutInspector $checkouts,
         private int $idleSeconds = RuntimeHibernation::DefaultIdleSeconds,
+        private int $dependencyIdleSeconds = RuntimeHibernation::DefaultDependencyIdleSeconds,
     ) {}
 
-    public function execute(?Carbon $now = null): int
+    public function execute(?Carbon $now = null): RuntimeHibernationSweepResult
     {
         $now ??= Carbon::now();
         $halted = 0;
+        $pruned = 0;
 
         $instances = AppInstance::query()
             ->where('environment', 'development')
@@ -53,24 +58,86 @@ final readonly class SweepIdleAppDevRuntimesAction
                 continue;
             }
 
-            $activity = $this->markers->lastActivityUnix($instance->node, RuntimeHibernation::key((int) $instance->id));
+            $key = RuntimeHibernation::key((int) $instance->id);
+            $httpActivity = $this->markers->lastActivityUnix($instance->node, $key);
 
-            if ($activity !== null && ($now->getTimestamp() - $activity) < $this->idleSeconds) {
-                continue;
+            if ($this->isIdle($httpActivity, $now, $this->idleSeconds)) {
+                $this->admissions->run([(int) $instance->id], function () use ($instance, $running, $key): void {
+                    foreach ($running as $process) {
+                        $this->runtime->stop($process);
+                    }
+
+                    $this->markers->markAsleep($instance->node, $key);
+                });
+
+                $halted++;
             }
 
-            $this->admissions->run([(int) $instance->id], function () use ($instance, $running): void {
-                foreach ($running as $process) {
-                    $this->runtime->stop($process);
-                }
-
-                $this->markers->markAsleep($instance->node, RuntimeHibernation::key((int) $instance->id));
-            });
-
-            $halted++;
+            if ($this->prune($instance, $key, $now, $httpActivity)) {
+                $pruned++;
+            }
         }
 
-        return $halted;
+        return new RuntimeHibernationSweepResult($halted, $pruned);
+    }
+
+    private function prune(AppInstance $instance, string $key, Carbon $now, ?int $httpActivity): bool
+    {
+        if ($this->hasKeepAliveDesiredRunning($instance)) {
+            return false;
+        }
+
+        if ($this->markers->isAwake($instance->node, $key) || $this->markers->isCold($instance->node, $key)) {
+            return false;
+        }
+
+        if (! $this->isIdle($httpActivity, $now, $this->dependencyIdleSeconds)) {
+            return false;
+        }
+
+        if (! $this->isIdle($this->processLifecycleUnix($instance), $now, $this->dependencyIdleSeconds)) {
+            return false;
+        }
+
+        $state = $this->checkouts->inspect($instance);
+
+        if (! $this->isIdle($state->sourceTreeLastActivityUnix, $now, $this->dependencyIdleSeconds)) {
+            return false;
+        }
+
+        if (! $state->hasPrunable()) {
+            return false;
+        }
+
+        $this->admissions->run([(int) $instance->id], function () use ($instance, $key, $state): void {
+            $this->checkouts->prune($instance, $state);
+            $this->markers->markCold($instance->node, $key);
+        });
+
+        return true;
+    }
+
+    private function isIdle(?int $activity, Carbon $now, int $window): bool
+    {
+        return $activity === null || ($now->getTimestamp() - $activity) >= $window;
+    }
+
+    private function processLifecycleUnix(AppInstance $instance): ?int
+    {
+        $times = $instance->processes
+            ->map(static fn (Process $process): ?int => $process->updated_at?->getTimestamp())
+            ->filter(static fn (?int $time): bool => $time !== null)
+            ->all();
+
+        return $times === [] ? null : max($times);
+    }
+
+    private function hasKeepAliveDesiredRunning(AppInstance $instance): bool
+    {
+        return $instance->processes->contains(
+            static fn (Process $process): bool => $process->desired_state === DesiredProcessState::Running
+                && $process->keep_alive,
+        );
     }
 
     /** @return list<Process> */

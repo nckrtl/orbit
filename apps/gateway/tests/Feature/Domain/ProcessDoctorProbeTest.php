@@ -430,6 +430,10 @@ final class DoctorFakeHibernationMarkerStore implements HibernationMarkerStore
         $this->awake[$key] = false;
     }
 
+    public function markCold(Node $node, string $key): void {}
+
+    public function clearCold(Node $node, string $key): void {}
+
     public function lastActivityUnix(Node $node, string $key): ?int
     {
         return null;
@@ -438,5 +442,10 @@ final class DoctorFakeHibernationMarkerStore implements HibernationMarkerStore
     public function isAwake(Node $node, string $key): bool
     {
         return $this->awake[$key] ?? false;
+    }
+
+    public function isCold(Node $node, string $key): bool
+    {
+        return false;
     }
 }

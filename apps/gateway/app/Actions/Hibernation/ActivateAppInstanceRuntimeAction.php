@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Hibernation;
 
 use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
@@ -26,6 +27,7 @@ final readonly class ActivateAppInstanceRuntimeAction
         private ProcessRuntimeManager $runtime,
         private HibernationMarkerStore $markers,
         private AppInstanceRuntimeReadiness $readiness,
+        private AppInstanceCheckoutInspector $checkouts,
     ) {}
 
     public function execute(#[SensitiveParameter] AppInstance $instance): void
@@ -45,6 +47,11 @@ final readonly class ActivateAppInstanceRuntimeAction
         try {
             $this->admissions->run([$instanceId], function () use ($instance, $instanceId): void {
                 $instance->load('processes');
+                $key = RuntimeHibernation::key($instanceId);
+
+                if ($this->markers->isCold($instance->node, $key)) {
+                    $this->checkouts->restore($instance, $this->checkouts->inspect($instance));
+                }
 
                 $running = $this->desiredRunning($instance);
 
@@ -53,7 +60,12 @@ final readonly class ActivateAppInstanceRuntimeAction
                 }
 
                 $this->readiness->waitUntilReady($instance, $running);
-                $this->markers->markAwake($instance->node, RuntimeHibernation::key($instanceId));
+
+                if ($this->markers->isCold($instance->node, $key)) {
+                    $this->markers->clearCold($instance->node, $key);
+                }
+
+                $this->markers->markAwake($instance->node, $key);
             });
         } catch (ProcessOperationException|ResourceOperationException $exception) {
             throw new HibernationException(
