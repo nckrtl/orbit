@@ -72,7 +72,7 @@ case ${1-} in
       has_command() { grep -Fxq -- "$1" <<<"$command_surface"; }
       candidate_contract=0
       environment_contract=0
-      if has_command instance:clone && has_command instance:deploy; then
+      if has_command instance:clone && has_command instance:deploy && has_command instance:deploy-step:create; then
         candidate_contract=1
       fi
       if has_command env:import && has_command env:update && has_command env:sync; then
@@ -199,6 +199,8 @@ case ${1-} in
           if [[ "$environment_contract" -eq 1 ]]; then
             "$orbit" env:sync --instance="$prod_instance_id" --json >/dev/null
           fi
+          "$orbit" instance:deploy-step:create "$prod_instance_id" composer-install --command='composer install --no-dev --no-interaction --no-progress' --timeout=900 --json >/dev/null
+          "$orbit" instance:deploy-step:create "$prod_instance_id" migrate --command='php artisan migrate --force --no-interaction' --json >/dev/null
           "$orbit" instance:deploy "$prod_instance_id" --json >/dev/null
           typed_instances=$("$orbit" instance:list --json)
           production_state=$(typed_production_state <<<"$typed_instances")

@@ -375,6 +375,12 @@ function typed_sample_resource_fixture(): array
             touch "$state/production"
             printf '{"id":5}'
             ;;
+          instance:deploy-step:create)
+            [[ "${STEP_CREATE_FAILS:-0}" == 0 ]] || exit 19
+            [[ "$*" == 'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json' || "$*" == 'instance:deploy-step:create 5 migrate --command=php artisan migrate --force --no-interaction --json' ]]
+            printf '%s\n' "$*" >>"$state/deploy-steps"
+            printf '{"name":"step"}'
+            ;;
           instance:deploy)
             [[ "$*" == 'instance:deploy 5 --json' ]]
             touch "$state/deployed"
@@ -2394,6 +2400,14 @@ describe('convergence guest scripts', function () {
                 '--cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/',
                 'artisan" migrate --force --no-interaction',
                 'database/database.sqlite',
+                'instance:deploy-step:create',
+                "instance:deploy-step:create \"\$prod_instance_id\" composer-install --command='composer install --no-dev --no-interaction --no-progress' --timeout=900 --json",
+                "instance:deploy-step:create \"\$prod_instance_id\" migrate --command='php artisan migrate --force --no-interaction' --json",
+            )
+            ->not->toContain(
+                'instance:deployment-config',
+                'instance:prepare-deployment',
+                'e2e-candidate',
             )
             ->not->toContain('/api/root-ca')->and($hydrate)->toContain(
                 '$ORBIT_HOME/gateway.app-key',
@@ -3052,7 +3066,14 @@ describe('convergence guest scripts', function () {
 
     it('selects candidate creation and explicit deployment once without repeat mutation', function (): void {
         $fixture = typed_sample_resource_fixture();
-        $surface = implode("\n", ['instance:clone', 'instance:deploy', 'env:import', 'env:update', 'env:sync'])."\n";
+        $surface = implode("\n", [
+            'instance:clone',
+            'instance:deploy',
+            'instance:deploy-step:create',
+            'env:import',
+            'env:update',
+            'env:sync',
+        ])."\n";
         try {
             $first = typed_sample_create_resources_process($fixture, ['COMMAND_SURFACE' => $surface]);
             expect($first->run())->toBe(0, $first->getErrorOutput());
@@ -3064,7 +3085,15 @@ describe('convergence guest scripts', function () {
                 ->toContain(
                     'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json',
                     'env:sync --instance=5 --json',
+                    'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
+                    'instance:deploy-step:create 5 migrate --command=php artisan migrate --force --no-interaction --json',
                     'instance:deploy 5 --json',
+                )
+                ->not->toContain(
+                    'instance:deployment-config',
+                    'instance:prepare-deployment',
+                    'instance:create 1 3 e2e-prod',
+                    'e2e-candidate',
                 );
 
             $second = typed_sample_create_resources_process($fixture, ['COMMAND_SURFACE' => $surface]);
@@ -3072,6 +3101,8 @@ describe('convergence guest scripts', function () {
             $all = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(array_filter($all, fn (string $command): bool => str_starts_with($command, 'instance:clone ')))
                 ->toHaveCount(1)
+                ->and(array_filter($all, fn (string $command): bool => str_starts_with($command, 'instance:deploy-step:create ')))
+                ->toHaveCount(2)
                 ->and(array_filter($all, fn (string $command): bool => str_starts_with($command, 'instance:deploy ')))
                 ->toHaveCount(1);
         } finally {
@@ -3081,7 +3112,7 @@ describe('convergence guest scripts', function () {
 
     it('does not enter the direct path after a selected clone fails', function (): void {
         $fixture = typed_sample_resource_fixture();
-        $surface = "instance:clone\ninstance:deploy\n";
+        $surface = "instance:clone\ninstance:deploy\ninstance:deploy-step:create\n";
         try {
             $process = typed_sample_create_resources_process($fixture, [
                 'COMMAND_SURFACE' => $surface,
@@ -3091,7 +3122,40 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect($commands)
                 ->toContain('instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json')
-                ->not->toContain('instance:deploy 5 --json', 'instance:create 1 3 e2e-prod');
+                ->not->toContain(
+                    'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
+                    'instance:deploy 5 --json',
+                    'instance:create 1 3 e2e-prod',
+                    'instance:deployment-config',
+                    'instance:prepare-deployment',
+                );
+            expect(file_exists($fixture['state']))->toBeFalse();
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('does not enter the direct path after selected deploy-step creation fails', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        $surface = "instance:clone\ninstance:deploy\ninstance:deploy-step:create\n";
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'COMMAND_SURFACE' => $surface,
+                'STEP_CREATE_FAILS' => '1',
+            ]);
+            expect($process->run())->toBe(19);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)
+                ->toContain(
+                    'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json',
+                    'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
+                )
+                ->not->toContain(
+                    'instance:deploy 5 --json',
+                    'instance:create 1 3 e2e-prod',
+                    'instance:deployment-config',
+                    'instance:prepare-deployment',
+                );
             expect(file_exists($fixture['state']))->toBeFalse();
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
