@@ -57,6 +57,7 @@ it('creates a named Herdr session on a managed Node with a private observer', fu
         ->assertJsonPath('data.node', 'beast')
         ->assertJsonPath('data.session', 'commander-tasks')
         ->assertJsonPath('data.user', 'nckrtl')
+        ->assertJsonPath('data.management', 'managed')
         ->assertJsonPath('data.observer_url', 'wss://commander-tasks.herdr.beast.orbit')
         ->assertJsonPath('data.status', 'active')
         ->assertJsonPath('data.herdr_version', '0.9.0')
@@ -90,6 +91,244 @@ it('creates a named Herdr session on a managed Node with a private observer', fu
         'command' => 'herdr:session:create',
         'status' => 'succeeded',
     ]);
+});
+
+it('adopts an existing session for observation without creating or controlling a Process', function (): void {
+    $response = $this->postJson('/api/v1/herdr/sessions/adopt', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.management', 'external')
+        ->assertJsonPath('data.process_id', null)
+        ->assertJsonPath('data.observer_url', 'wss://commander-tasks.herdr.beast.orbit')
+        ->assertJsonPath('data.health.process', 'external')
+        ->assertJsonPath('data.health.listener', 'healthy')
+        ->assertJsonPath('data.health.session', 'healthy');
+
+    expect(Process::query()->count())
+        ->toBe(0)
+        ->and($this->runtime->convergedProcessIds)
+        ->toBeEmpty()
+        ->and($this->runtime->started)
+        ->toBeEmpty()
+        ->and($this->runtime->restarted)
+        ->toBeEmpty()
+        ->and($this->runtime->stopped)
+        ->toBeEmpty()
+        ->and($this->observers->published)
+        ->toBe(['commander-tasks']);
+
+    $this->assertDatabaseHas('activity_log', [
+        'command' => 'herdr:session:adopt',
+        'status' => 'succeeded',
+    ]);
+});
+
+it('forbids adoption by a peer without directed access to the target Node', function (): void {
+    $consumer = Node::query()->create([
+        'name' => 'unauthorized-consumer',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.21',
+        'public_ssh_port' => 22,
+        'user' => 'nckrtl',
+        'wireguard_ip' => '10.44.0.9',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
+        ->postJson('/api/v1/herdr/sessions/adopt', [
+            'node_id' => $this->node->id,
+            'session' => 'commander-tasks',
+            'user' => 'nckrtl',
+            'publish_observer' => true,
+        ])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->observers->published)
+        ->toBeEmpty();
+});
+
+it('repeats identical external adoption without republishing or creating a Process', function (): void {
+    $payload = [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ];
+
+    $this->postJson('/api/v1/herdr/sessions/adopt', $payload)->assertCreated();
+    $this->postJson('/api/v1/herdr/sessions/adopt', $payload)
+        ->assertOk()
+        ->assertJsonPath('data.management', 'external');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(1)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->observers->published)
+        ->toBe(['commander-tasks']);
+});
+
+it('retains an external protocol 20 observation without publishing it', function (): void {
+    $this->inspector->protocol = 20;
+
+    $this->postJson('/api/v1/herdr/sessions/adopt', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.observer_unsupported');
+
+    $session = HerdrSession::query()->sole();
+    expect($session->management->value)
+        ->toBe('external')
+        ->and($session->protocol)
+        ->toBe(20)
+        ->and($session->process_id)
+        ->toBeNull()
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->observers->published)
+        ->toBeEmpty();
+});
+
+it('publishes a retained external observation after the session protocol is upgraded', function (): void {
+    $this->inspector->protocol = 20;
+    $payload = [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ];
+
+    $this->postJson('/api/v1/herdr/sessions/adopt', $payload)
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.observer_unsupported');
+
+    $this->inspector->protocol = 22;
+
+    $this->postJson('/api/v1/herdr/sessions/adopt', $payload)
+        ->assertOk()
+        ->assertJsonPath('data.protocol', 22)
+        ->assertJsonPath('data.observer_url', 'wss://commander-tasks.herdr.beast.orbit')
+        ->assertJsonPath('data.status', 'active');
+
+    expect(HerdrSession::query()->count())
+        ->toBe(1)
+        ->and(Process::query()->count())
+        ->toBe(0)
+        ->and($this->observers->published)
+        ->toBe(['commander-tasks']);
+});
+
+it('does not retain an external session when live inspection fails', function (): void {
+    $this->inspector->failure = new RuntimeException('untrusted transport detail');
+
+    $this->postJson('/api/v1/herdr/sessions/adopt', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'herdr.inspection_failed')
+        ->assertJsonMissing(['message' => 'untrusted transport detail']);
+
+    expect(HerdrSession::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0);
+});
+
+it('refuses to adopt a session already managed by Orbit', function (): void {
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+    ])->assertCreated();
+
+    $this->postJson('/api/v1/herdr/sessions/adopt', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.session_conflict');
+
+    expect(HerdrSession::query()->sole()->management->value)->toBe('managed');
+});
+
+it('refuses to create over a session adopted for observation', function (): void {
+    $this->postJson('/api/v1/herdr/sessions/adopt', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+    ])->assertCreated();
+
+    $this->postJson('/api/v1/herdr/sessions', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.session_conflict');
+
+    expect(Process::query()->count())->toBe(0);
+});
+
+it('never restarts or terminates the service behind an externally managed session', function (): void {
+    $this->postJson('/api/v1/herdr/sessions/adopt', [
+        'node_id' => $this->node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'publish_observer' => true,
+    ])->assertCreated();
+    $session = HerdrSession::query()->sole();
+
+    $process = Process::query()->create([
+        'owner_type' => Node::class,
+        'owner_id' => $this->node->id,
+        'name' => 'unrelated-process',
+        'runtime' => 'systemd',
+        'working_directory' => '.',
+        'restart_policy' => 'always',
+        'desired_state' => 'running',
+        'status' => LifecycleStatus::Active,
+        'runtime_config' => [],
+    ]);
+    $session->update(['process_id' => $process->id]);
+
+    $this->herdrTool->delete();
+
+    $this->postJson('/api/v1/herdr/sessions/'.$session->id.'/restart')
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'herdr.session_external');
+
+    $this->inspector->panes = [new HerdrLivePane('w1:p1', 'term-abc', true)];
+    $this->deleteJson('/api/v1/herdr/sessions/'.$session->id)->assertOk();
+
+    expect(HerdrSession::query()->count())
+        ->toBe(0)
+        ->and(Process::query()->count())
+        ->toBe(1)
+        ->and($this->runtime->stopped)
+        ->toBeEmpty()
+        ->and($this->runtime->restarted)
+        ->toBeEmpty()
+        ->and($this->runtime->removed)
+        ->toBeEmpty()
+        ->and($this->observers->retracted)
+        ->toBe(['commander-tasks']);
 });
 
 it('returns 409 without runtime changes when Herdr Tool intent is missing', function (): void {

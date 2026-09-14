@@ -159,7 +159,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(112);
+    expect($orbitCommands)->toHaveCount(113);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -167,6 +167,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
         ->values()
         ->all())->toBe([
             'herdr:observe',
+            'herdr:session:adopt',
             'herdr:session:create',
             'herdr:session:destroy',
             'herdr:session:list',
@@ -343,6 +344,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ],
         ],
         'herdr:session:create' => [
+            ['session'],
+            ['node' => null, 'user' => null, 'publish-observer' => false, 'json' => false],
+        ],
+        'herdr:session:adopt' => [
             ['session'],
             ['node' => null, 'user' => null, 'publish-observer' => false, 'json' => false],
         ],

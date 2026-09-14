@@ -8,6 +8,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\HerdrSessionDoctorIssueCode;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Herdr\HerdrSessionHealth;
+use App\Domain\Herdr\HerdrSessionManagement;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -120,3 +121,35 @@ it('reports session health only for the supported Herdr observe protocol', funct
     'older' => [20, 'unhealthy'],
     'unknown' => [null, 'unhealthy'],
 ]);
+
+it('does not report an owned Process finding for an externally managed session', function (): void {
+    $runtime = new ProcessesApiFakeRuntimeManager;
+    $node = Node::query()->create([
+        'name' => 'beast',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.20',
+        'public_ssh_port' => 22,
+        'user' => 'nckrtl',
+        'wireguard_ip' => '10.44.0.8',
+    ]);
+    HerdrSession::query()->create([
+        'node_id' => $node->id,
+        'session' => 'commander-tasks',
+        'user' => 'nckrtl',
+        'management' => HerdrSessionManagement::External,
+        'observer_port' => 7411,
+        'observer_hostname' => 'commander-tasks.herdr.beast.orbit',
+        'observer_url' => 'wss://commander-tasks.herdr.beast.orbit',
+        'observer_status' => 'published',
+        'status' => LifecycleStatus::Active,
+        'herdr_version' => '0.9.0',
+        'protocol' => 22,
+        'publish_observer' => true,
+    ]);
+
+    $report = new HerdrSessionDoctorProbe(new HerdrSessionHealth($runtime))
+        ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+
+    expect($report->issues)->toBeEmpty();
+});

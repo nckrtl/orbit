@@ -91,7 +91,7 @@ final readonly class HerdrSessionDoctorProbe implements DoctorFamilyProbe
     {
         $issues = [];
 
-        if ($health['process'] !== 'healthy') {
+        if (! in_array($health['process'], ['healthy', 'external'], true)) {
             $issues[] = $this->issue(
                 $session,
                 HerdrSessionDoctorIssueCode::ProcessUnhealthy,

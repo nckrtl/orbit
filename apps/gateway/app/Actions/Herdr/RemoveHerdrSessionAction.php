@@ -7,6 +7,7 @@ namespace App\Actions\Herdr;
 use App\Actions\Processes\RemoveProcessAction;
 use App\Domain\Herdr\HerdrObserverPublisher;
 use App\Domain\Herdr\HerdrSessionInspector;
+use App\Domain\Herdr\HerdrSessionManagement;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\HerdrSession;
@@ -24,7 +25,7 @@ final readonly class RemoveHerdrSessionAction
     {
         $session->loadMissing('node', 'process');
 
-        if (! $acceptTermination) {
+        if ($session->management === HerdrSessionManagement::Managed && ! $acceptTermination) {
             try {
                 $inspection = $this->inspector->inspect($session, $session->node);
             } catch (Throwable) {
@@ -67,7 +68,7 @@ final readonly class RemoveHerdrSessionAction
             'observer_url' => null,
         ]);
 
-        if ($process !== null) {
+        if ($session->management === HerdrSessionManagement::Managed && $process !== null) {
             $this->removeProcess->execute($process);
         }
 

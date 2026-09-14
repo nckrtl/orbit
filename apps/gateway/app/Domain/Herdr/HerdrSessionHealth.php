@@ -22,7 +22,9 @@ final readonly class HerdrSessionHealth
     public function inspect(HerdrSession $session): array
     {
         return [
-            'process' => $this->process($session->process),
+            'process' => $session->management === HerdrSessionManagement::External
+                ? 'external'
+                : $this->process($session->process),
             'listener' => $this->listener($session),
             'session' => $this->session($session),
         ];

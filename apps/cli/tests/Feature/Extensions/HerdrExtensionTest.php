@@ -122,6 +122,7 @@ it('keeps Herdr commands hidden and returns stable JSON for invalid extension st
         ->doesntExpectOutputToContain($this->orbitHome);
 })->with([
     'create' => ['herdr:session:create', ['session' => 'commander-tasks']],
+    'adopt' => ['herdr:session:adopt', ['session' => 'commander-tasks']],
     'list' => ['herdr:session:list', []],
     'show' => ['herdr:session:show', ['session' => 'commander-tasks']],
     'restart' => ['herdr:session:restart', ['session' => 'commander-tasks']],

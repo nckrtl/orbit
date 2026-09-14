@@ -12,6 +12,7 @@ use App\Domain\Herdr\HerdrObserveContract;
 use App\Domain\Herdr\HerdrObserverPublisher;
 use App\Domain\Herdr\HerdrSessionInspection;
 use App\Domain\Herdr\HerdrSessionInspector;
+use App\Domain\Herdr\HerdrSessionManagement;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
@@ -80,7 +81,8 @@ final readonly class EnsureHerdrSessionAction
                 ->lockForUpdate()
                 ->first();
 
-            if ($existing instanceof HerdrSession && $existing->user !== $data->user) {
+            if ($existing instanceof HerdrSession
+                && ($existing->user !== $data->user || $existing->management !== HerdrSessionManagement::Managed)) {
                 throw new ResourceOperationException(
                     errorCode: 'herdr.session_conflict',
                     message: "Herdr session [{$data->session}] already exists with different configuration.",
@@ -99,6 +101,7 @@ final readonly class EnsureHerdrSessionAction
                 'node_id' => $node->id,
                 'session' => $data->session,
                 'user' => $data->user,
+                'management' => HerdrSessionManagement::Managed,
                 'observer_port' => $this->contract->nextPort($node),
                 'observer_hostname' => $this->contract->hostname($node, $data->session),
                 'observer_status' => 'pending',
