@@ -3137,7 +3137,7 @@ describe('convergence guest scripts', function () {
 
     it('accepts a valid application domain on Routes and production AppInstances', function (): void {
         $fixture = typed_sample_resource_fixture();
-        $surface = implode("\n", ['instance:clone', 'instance:deploy'])."\n";
+        $surface = implode("\n", ['instance:clone', 'instance:deploy', 'instance:deploy-step:create'])."\n";
         try {
             $process = typed_sample_create_resources_process($fixture, [
                 'COMMAND_SURFACE' => $surface,
@@ -3157,7 +3157,7 @@ describe('convergence guest scripts', function () {
 
     it('accepts hostname only when domain is absent', function (): void {
         $fixture = typed_sample_resource_fixture();
-        $surface = implode("\n", ['instance:clone', 'instance:deploy'])."\n";
+        $surface = implode("\n", ['instance:clone', 'instance:deploy', 'instance:deploy-step:create'])."\n";
         try {
             $process = typed_sample_create_resources_process($fixture, [
                 'COMMAND_SURFACE' => $surface,
@@ -3180,7 +3180,7 @@ describe('convergence guest scripts', function () {
         string $productionShape,
     ): void {
         $fixture = typed_sample_resource_fixture();
-        $surface = implode("\n", ['instance:clone', 'instance:deploy'])."\n";
+        $surface = implode("\n", ['instance:clone', 'instance:deploy', 'instance:deploy-step:create'])."\n";
         try {
             $process = typed_sample_create_resources_process($fixture, [
                 'COMMAND_SURFACE' => $surface,
