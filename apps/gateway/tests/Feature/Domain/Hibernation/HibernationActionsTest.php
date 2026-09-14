@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Hibernation\ActivateAppInstanceRuntimeAction;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
+use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
@@ -53,6 +54,23 @@ beforeEach(function (): void {
         'provisioning_step' => 'active',
         'status' => 'active',
     ]);
+});
+
+it('does not converge PHP-FPM when it wakes or halts AppInstance Processes', function (): void {
+    $fpm = new HibernationRecordingPhpFpmManager;
+    app()->instance(AppDevPhpFpmManager::class, $fpm);
+    $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+
+    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(3_601)->getTimestamp();
+    app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($fpm->converges)
+        ->toBe(0)
+        ->and($this->runtime->started)
+        ->toBe([$running->id])
+        ->and($this->runtime->stopped)
+        ->toBe([$running->id]);
 });
 
 it('wakes desired-running AppInstance Processes and writes the awake marker', function (): void {
@@ -196,6 +214,16 @@ function hibernation_action_process(
         'desired_state' => $desired,
         'status' => 'active',
     ]);
+}
+
+final class HibernationRecordingPhpFpmManager implements AppDevPhpFpmManager
+{
+    public int $converges = 0;
+
+    public function converge(Node $node): void
+    {
+        $this->converges++;
+    }
 }
 
 final class HibernationFakeMarkerStore implements HibernationMarkerStore

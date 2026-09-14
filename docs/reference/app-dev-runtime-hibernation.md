@@ -14,7 +14,7 @@ The Gateway applies idle halt to Processes that meet every condition below.
 | Desired state | `running`. The Gateway leaves desired-stopped Processes stopped. |
 | Restart policy | Any value. Restart policy does not exempt a Process. |
 
-The Gateway does not halt Node Processes, production AppInstance Processes, or Schedules. Hibernation never stops, disables, or rewrites a systemd timer. It does not stop the shared per-version PHP-FPM service or its on-demand pools.
+The Gateway does not halt Node Processes, production AppInstance Processes, or Schedules. Hibernation never stops, disables, or rewrites a systemd timer. It does not stop the shared per-version PHP FastCGI Process Manager (PHP-FPM) service or its on-demand pools, and it does not rewrite pool files or Caddy FastCGI socket paths. Caddy keeps the published per-site socket after a wake.
 
 ## Idle window and sweep
 
