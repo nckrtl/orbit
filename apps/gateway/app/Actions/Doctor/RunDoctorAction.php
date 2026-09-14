@@ -32,6 +32,7 @@ final readonly class RunDoctorAction
         private ProcessDoctorProbe $processProbe,
         private FirewallDoctorProbe $firewallProbe,
         private HerdrSessionDoctorProbe $herdrProbe,
+        private DatabaseConnectionDoctorProbe $databaseConnectionProbe,
     ) {}
 
     /** @param list<DoctorFamily> $families */
@@ -122,6 +123,7 @@ final readonly class RunDoctorAction
             DoctorFamily::Process => $this->processProbe,
             DoctorFamily::Firewall => $this->firewallProbe,
             DoctorFamily::Herdr => $this->herdrProbe,
+            DoctorFamily::DatabaseConnection => $this->databaseConnectionProbe,
         };
     }
 }

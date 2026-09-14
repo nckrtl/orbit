@@ -58,7 +58,7 @@ The SDK exposes `RunDoctorRequest` and bounded typed report responses. It sends
 `POST /api/v1/doctor` as JSON. It omits null filters and preserves explicit
 filter values so the Gateway can validate them. It transports received health,
 order, issues, and summary aggregates without applying Doctor policy.
-Doctor accepts the current Gateway family set, including Schedule and Herdr.
+Doctor accepts the current Gateway family set, including Schedule, Herdr, and Database connection.
 
 ## Herdr sessions
 
