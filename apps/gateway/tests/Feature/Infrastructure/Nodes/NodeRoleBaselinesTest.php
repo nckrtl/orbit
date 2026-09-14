@@ -77,8 +77,7 @@ it('rejects stored protected settings before preparing app-dev roots', function 
     [$node, $assignment] = role_baseline_models(RoleName::AppDev);
     $node->update([
         'settings' => [
-            'instance' => ['path' => '/etc/orbit'],
-            'worktree' => ['path' => '/srv/orbit/worktrees'],
+            'apps' => ['path' => '/etc/orbit'],
         ],
     ]);
     $baseline = app_dev_role_baseline($events);

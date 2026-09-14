@@ -10,6 +10,4 @@ enum SettingScopeType: string
     case Node = 'node';
     case NodeRole = 'node-role';
     case App = 'app';
-    case Instance = 'instance';
-    case Workspace = 'workspace';
 }

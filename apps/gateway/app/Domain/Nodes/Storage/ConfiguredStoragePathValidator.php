@@ -46,21 +46,9 @@ final readonly class ConfiguredStoragePathValidator
         ManagedUserAccount $account,
     ): EffectiveStorageRoots {
         $this->validateGrammar($settings);
-        $roots = $this->roots->resolveApps(
-            $settings,
-            $this->normalizer->legacyFromStored($node->settings),
-            $account,
-        );
-
-        if ($roots->instance->overlaps($roots->worktree)) {
-            throw new ResourceOperationException(
-                errorCode: 'node.settings_roots_overlap',
-                message: 'The apps and legacy worktree roots must not overlap.',
-            );
-        }
+        $roots = $this->roots->resolveApps($settings, $account);
 
         $this->assertAllowedRoot($roots->instance, $account, $node, 'apps');
-        $this->assertAllowedRoot($roots->worktree, $account, $node, 'worktree');
 
         return $roots;
     }

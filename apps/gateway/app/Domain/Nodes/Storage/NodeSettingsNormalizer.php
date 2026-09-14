@@ -23,16 +23,15 @@ final readonly class NodeSettingsNormalizer
     }
 
     /** @return array<string, mixed>|null */
-    public function stored(?NodeSettingsData $settings, mixed $existing = null): ?array
+    public function stored(?NodeSettingsData $settings): ?array
     {
         $normalized = $this->normalize($settings);
-        $payload = $this->legacyPayload($existing);
 
-        if ($normalized instanceof NodeSettingsData) {
-            $payload['apps'] = ['path' => $normalized->appsPath()];
+        if (! $normalized instanceof NodeSettingsData) {
+            return null;
         }
 
-        return $payload === [] ? null : $payload;
+        return ['apps' => ['path' => $normalized->appsPath()]];
     }
 
     public function fromStored(mixed $value): ?NodeSettingsData
@@ -79,23 +78,5 @@ final readonly class NodeSettingsNormalizer
         $path = $value['path'] ?? null;
 
         return is_string($path) ? $path : null;
-    }
-
-    /** @return array<string, mixed> */
-    private function legacyPayload(mixed $value): array
-    {
-        if (! is_array($value)) {
-            return [];
-        }
-
-        $payload = [];
-
-        foreach (['instance', 'worktree'] as $key) {
-            if (array_key_exists($key, $value)) {
-                $payload[$key] = $value[$key];
-            }
-        }
-
-        return $payload;
     }
 }

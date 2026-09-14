@@ -30,7 +30,7 @@ final readonly class AppDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $rows = App::query()
-            ->whereHas('instances', static fn (Builder $query): Builder => $query->where(
+            ->whereHas('appInstances', static fn (Builder $query): Builder => $query->where(
                 'node_id',
                 $context->node->id,
             ))

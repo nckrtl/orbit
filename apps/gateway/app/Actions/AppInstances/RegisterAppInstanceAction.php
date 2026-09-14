@@ -578,7 +578,6 @@ final readonly class RegisterAppInstanceAction
         $account = $this->accounts->resolve($node);
         $roots = $this->storageRoots->resolveApps(
             $this->nodeSettings->fromStored($node->settings),
-            $this->nodeSettings->legacyFromStored($node->settings),
             $account,
         );
         $destination = $roots->instance->append($app->slug, $name)->value;
@@ -698,7 +697,6 @@ final readonly class RegisterAppInstanceAction
         $account = $this->accounts->resolve($node);
         $roots = $this->storageRoots->resolveApps(
             $this->nodeSettings->fromStored($node->settings),
-            $this->nodeSettings->legacyFromStored($node->settings),
             $account,
         );
         $rootOverride = $data->root !== null && $data->root !== $app->root ? $data->root : null;

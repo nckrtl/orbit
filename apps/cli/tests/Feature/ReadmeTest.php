@@ -24,7 +24,7 @@ it('documents the doctor verification boundary', function (): void {
 
         ```bash
         ./orbit doctor
-        ./orbit doctor --node=7 --family=instance --family=workspace
+        ./orbit doctor --node=7 --family=instance --family=schedule
         ./orbit doctor --family=firewall --json
         ```
 

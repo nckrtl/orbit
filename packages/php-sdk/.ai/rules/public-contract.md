@@ -82,7 +82,7 @@ operations. Keep the public API typed and small.
   prefix. Attachment responses omit environment values and passwords. The
   Gateway owns validation, encryption, persistence, and stored-environment writes.
 - Accept only the current Doctor family tokens: node, role, app, instance,
-  workspace, schedule, tool, process, firewall, herdr, and database_connection.
+  schedule, tool, process, firewall, herdr, and database_connection.
   Keep Doctor verify-only and policy-free.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy

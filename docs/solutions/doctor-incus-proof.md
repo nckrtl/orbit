@@ -6,7 +6,7 @@ A proof of the verify-only Doctor runs on the `gateway_app-dev_app-prod` proof t
 
 ## Cause
 
-Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Instance and Workspace inspectors run `sudo bash`. The role inspector runs `sudo ufw`, and the firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. A file inventory of the Gateway home also sees SQLite's `-wal` and `-shm` sidecars appear and disappear. SQLite creates and removes them for any connection, including a read-only one.
+Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`, and the firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. A file inventory of the Gateway home also sees SQLite's `-wal` and `-shm` sidecars appear and disappear. SQLite creates and removes them for any connection, including a read-only one.
 
 ## Solution
 
@@ -33,7 +33,7 @@ Inventory the Orbit home and record table row counts and service states before a
 These fixtures depend on three properties of the harness and the Nodes.
 
 - The baseline depends on the convergence sequence on [Topology snapshot](/reference/topology-snapshot#refresh), which `prove` runs before setup.
-- Denying one sudo command works because sudoers applies the last matching entry, so the drop-in must sort after Orbit's grant in `/etc/sudoers.d`. Denying `bash` instead also breaks the Instance and Workspace inspectors.
+- Denying one sudo command works because sudoers applies the last matching entry, so the drop-in must sort after Orbit's grant in `/etc/sudoers.d`. Denying `bash` instead also breaks the Instance inspector.
 - Setup actions run before every acceptance action, so the baseline report is recorded before any fixture is applied.
 
 ## Verification

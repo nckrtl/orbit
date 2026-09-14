@@ -9,6 +9,13 @@ use App\Domain\Settings\SettingValueProtection;
 use App\Models\Setting;
 
 describe(SettingRepository::class, function (): void {
+    it('exposes only supported setting scopes', function (): void {
+        expect(array_map(
+            static fn (SettingScopeType $type): string => $type->value,
+            SettingScopeType::cases(),
+        ))->toBe(['gateway', 'node', 'node-role', 'app']);
+    });
+
     it('stores plain and encrypted scoped settings', function (): void {
         $repository = app(SettingRepository::class);
         $scope = new SettingScope(SettingScopeType::Gateway);

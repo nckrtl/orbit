@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Tool;
+use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -175,6 +177,45 @@ describe('activity access and redaction', function (): void {
             ->assertJsonPath('data.properties', activity_api_sanitized_properties());
 
         expect($response->getContent())->not->toContain($credential, $invalidKeyCredential);
+    });
+
+    it('keeps historical leftover instance and workspace subjects on read', function (): void {
+        $legacy = activity_api_record(
+            requestId: '44444444-4444-4444-8444-444444444444',
+            command: 'instance:show',
+            status: 'succeeded',
+            properties: [],
+        );
+        $legacy->update([
+            'subject_type' => Instance::class,
+            'subject_id' => 9,
+        ]);
+        $workspace = activity_api_record(
+            requestId: '55555555-5555-4555-8555-555555555555',
+            command: 'workspace:new',
+            status: 'succeeded',
+            properties: [],
+        );
+        $workspace->update([
+            'subject_type' => Workspace::class,
+            'subject_id' => 8,
+        ]);
+
+        expect(DB::table('activity_log')->where('id', $legacy->id)->value('subject_type'))
+            ->toBe(Instance::class)
+            ->and(DB::table('activity_log')->where('id', $workspace->id)->value('subject_type'))
+            ->toBe(Workspace::class);
+
+        $this
+            ->getJson("/api/v1/activities/{$legacy->id}")
+            ->assertOk()
+            ->assertJsonPath('data.subject_type', 'instance')
+            ->assertJsonPath('data.subject_id', 9);
+        $this
+            ->getJson("/api/v1/activities/{$workspace->id}")
+            ->assertOk()
+            ->assertJsonPath('data.subject_type', 'workspace')
+            ->assertJsonPath('data.subject_id', 8);
     });
 
     it('exposes a persisted tool subject with the public tool vocabulary', function (): void {

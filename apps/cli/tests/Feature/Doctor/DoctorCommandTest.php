@@ -42,12 +42,16 @@ it('lists every accepted family including schedule in doctor help', function ():
         DoctorFamily::cases(),
     );
 
-    expect($families)->toContain('schedule', 'database_connection');
+    expect($families)
+        ->toContain('schedule', 'database_connection')
+        ->not->toContain('workspace');
     expect(app(Kernel::class)->all()['doctor']->getDefinition()->getOption('family')->getDescription())
-        ->toBe('Limit checks to node, role, app, instance, workspace, schedule, tool, process, firewall, herdr, or database_connection');
+        ->toBe('Limit checks to node, role, app, instance, schedule, tool, process, firewall, herdr, or database_connection');
 
     expect(Artisan::call('help', ['command_name' => 'doctor']))->toBe(Command::SUCCESS);
-    expect(Artisan::output())->toContain(...$families);
+    expect(Artisan::output())
+        ->toContain(...$families)
+        ->not->toContain('workspace');
 });
 
 it('rejects invalid node options through the exact json envelope before HTTP', function (mixed $node): void {
@@ -93,7 +97,7 @@ it('accepts the schedule filter and renders its received canonical position', fu
     $mock = doctor_cli_mock(doctor_cli_report(
         healthy: true,
         nodes: [doctor_cli_node('alpha', [
-            doctor_cli_family(family: 'workspace', status: 'healthy', checked: 1, issues: []),
+            doctor_cli_family(family: 'instance', status: 'healthy', checked: 1, issues: []),
             doctor_cli_family(family: 'schedule', status: 'healthy', checked: 2, issues: []),
             doctor_cli_family(family: 'tool', status: 'healthy', checked: 3, issues: []),
         ])],
@@ -105,7 +109,7 @@ it('accepts the schedule filter and renders its received canonical position', fu
         ->expectsTable(
             ['Node', 'Family', 'Status', 'Checked', 'Finding'],
             [
-                ['alpha', 'workspace', 'healthy', 1, '—'],
+                ['alpha', 'instance', 'healthy', 1, '—'],
                 ['alpha', 'schedule', 'healthy', 2, '—'],
                 ['alpha', 'tool', 'healthy', 3, '—'],
             ],
@@ -123,9 +127,9 @@ it('renders rich unhealthy reports in received order', function (): void {
         nodes: [
             doctor_cli_node(name: 'alpha', families: [
                 doctor_cli_family(family: 'node', status: 'healthy', checked: 2, issues: []),
-                doctor_cli_family(family: 'workspace', status: 'drift', checked: 3, issues: [
-                    doctor_cli_issue(code: 'workspace.branch_mismatch', summary: 'Branch differs.'),
-                    doctor_cli_issue(code: 'workspace.php_mismatch', summary: 'PHP version differs.'),
+                doctor_cli_family(family: 'instance', status: 'drift', checked: 3, issues: [
+                    doctor_cli_issue(code: 'instance.origin_mismatch', summary: 'Origin differs.'),
+                    doctor_cli_issue(code: 'instance.checkout_missing', summary: 'Checkout is missing.'),
                 ]),
             ]),
             doctor_cli_node(
@@ -153,8 +157,8 @@ it('renders rich unhealthy reports in received order', function (): void {
             ['Node', 'Family', 'Status', 'Checked', 'Finding'],
             [
                 ['alpha', 'node', 'healthy', 2, '—'],
-                ['alpha', 'workspace', 'drift', 3, 'workspace.branch_mismatch: Branch differs.'],
-                ['alpha', 'workspace', 'drift', 3, 'workspace.php_mismatch: PHP version differs.'],
+                ['alpha', 'instance', 'drift', 3, 'instance.origin_mismatch: Origin differs.'],
+                ['alpha', 'instance', 'drift', 3, 'instance.checkout_missing: Checkout is missing.'],
                 ['beta', 'firewall', 'unverifiable', 1, 'firewall.status_unavailable: Firewall status is unavailable.'],
             ],
         )
@@ -341,7 +345,7 @@ function doctor_cli_issue(
     string $code,
     string $summary,
     string $kind = 'drift',
-    string $resourceType = 'workspace',
+    string $resourceType = 'instance',
     int|string|null $resourceId = 7,
     ?string $resourceName = 'primary',
     bool|string|null $expected = true,
