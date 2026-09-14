@@ -19,6 +19,7 @@ final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernat
         private string $artisan = '',
         private string $orbitHome = '',
         private string $workingDirectory = '',
+        private string $user = 'orbit',
         private int $sweepSeconds = RuntimeHibernation::DefaultSweepSeconds,
     ) {}
 
@@ -27,7 +28,8 @@ final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernat
         $artisan = $this->artisan !== '' ? $this->artisan : base_path('artisan');
         $orbitHome = $this->orbitHome !== '' ? $this->orbitHome : (string) config('orbit.home');
         $workingDirectory = $this->workingDirectory !== '' ? $this->workingDirectory : base_path();
-        $service = $this->units->renderService($this->phpBinary, $artisan, $orbitHome, $workingDirectory);
+        $user = $this->user !== '' ? $this->user : 'orbit';
+        $service = $this->units->renderService($this->phpBinary, $artisan, $orbitHome, $workingDirectory, $user);
         $timer = $this->units->renderTimer($this->sweepSeconds);
 
         $this->install($this->units->servicePath(), $service, 'gateway-hibernator-service');
