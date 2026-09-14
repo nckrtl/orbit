@@ -50,6 +50,16 @@ class VerifyTest(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("missing state: Task Running", result["failures"])
 
+    def test_rejects_undelivered_live_input_despite_successful_child(self):
+        root = self.recording(["Task Queued", "Task Running", "Task Done"])
+        path = root / "summary.json"
+        summary = json.loads(path.read_text())
+        summary["input_bytes_pending"] = 64
+        path.write_text(json.dumps(summary))
+        result = MODULE.verify(root, self.expectation())
+        self.assertFalse(result["passed"])
+        self.assertIn("queued input was not fully delivered", result["failures"])
+
     def test_rejects_wrong_candidate(self):
         expectation = self.expectation()
         expectation["candidate"] = "different"

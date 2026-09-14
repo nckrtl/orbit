@@ -5,7 +5,7 @@ import argparse
 import base64
 import codecs
 import ctypes
-from collections import namedtuple
+from collections import deque, namedtuple
 import errno
 import fcntl
 import json
@@ -215,6 +215,11 @@ def capture(args):
     termination = None
     terminating_at = None
     input_index = 0
+    pending_input = deque()
+    pending_bytes = 0
+    input_bytes_sent = 0
+    plan_queued = False
+    input_closed = False
     since_input = ""
     stdin_open = sys.stdin.isatty() and not args.no_live
     original_terminal = None
@@ -257,6 +262,7 @@ def capture(args):
             except BaseException as error:
                 print(f"Cannot start command: {error}", file=sys.stderr, flush=True)
                 os._exit(127)
+        os.set_blocking(fd, False)
         (directory / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
         if stdin_open:
             original_terminal = termios.tcgetattr(sys.stdin.fileno())
@@ -287,18 +293,25 @@ def capture(args):
                     # Report incomplete draining instead of claiming success.
                     if now - terminating_at >= 2:
                         break
-                readers = ([] if eof else [fd]) + ([sys.stdin.fileno()] if stdin_open else [])
-                ready, _, _ = select.select(readers, [], [], 0.03)
+                accepting_input = termination is None and status is None and not eof and not input_closed
+                # Bound queued live input and apply backpressure to its source.
+                # A scripted action can be larger, but only one is queued.
+                live_ready = stdin_open and accepting_input and pending_bytes < 65536
+                readers = ([] if eof else [fd]) + ([sys.stdin.fileno()] if live_ready else [])
+                writers = [fd] if pending_input and accepting_input else []
+                ready, writable, _ = select.select(readers, writers, [], 0.03)
                 if fd in ready:
                     try:
                         data = os.read(fd, 65536)
+                    except BlockingIOError:
+                        data = None
                     except OSError as error:
                         if error.errno != errno.EIO:
                             raise
                         data = b""
-                    if not data:
+                    if data == b"":
                         eof = True
-                    else:
+                    elif data:
                         now = time.monotonic()
                         elapsed = now - started
                         gap = now - last_output
@@ -318,23 +331,54 @@ def capture(args):
                         if not args.no_live:
                             sys.stdout.buffer.write(data)
                             sys.stdout.buffer.flush()
-                if stdin_open and sys.stdin.fileno() in ready:
+                if live_ready and not eof and sys.stdin.fileno() in ready:
                     typed = os.read(sys.stdin.fileno(), 4096)
                     if typed:
-                        os.write(fd, typed)
-                        record(inputs, {"elapsed": time.monotonic() - started,
-                                        "source": "terminal", "bytes": len(typed)})
+                        pending_input.append({"data": memoryview(typed), "source": "terminal"})
+                        pending_bytes += len(typed)
                     else:
                         stdin_open = False
-                if input_index < len(plan) and not eof and status is None:
+                if input_index < len(plan) and not plan_queued and accepting_input and not eof:
                     action = plan[input_index]
                     if action["wait_for"] in since_input:
                         outgoing = action["send"].encode()
-                        os.write(fd, outgoing)
-                        record(inputs, {"elapsed": time.monotonic() - started,
-                                        "source": "plan", "index": input_index, "bytes": len(outgoing)})
-                        input_index += 1
+                        if outgoing:
+                            pending_input.append({"data": memoryview(outgoing),
+                                                  "source": "plan", "index": input_index})
+                            pending_bytes += len(outgoing)
+                            plan_queued = True
+                        else:
+                            record(inputs, {"elapsed": time.monotonic() - started,
+                                            "source": "plan", "index": input_index,
+                                            "bytes": 0, "complete": True})
+                            input_index += 1
                         since_input = ""
+                if fd in writable and not eof:
+                    outgoing = pending_input[0]
+                    try:
+                        # One bounded, nonblocking write per loop keeps output,
+                        # signals, and both deadlines responsive under pressure.
+                        written = os.write(fd, outgoing["data"][:65536])
+                    except BlockingIOError:
+                        written = 0
+                    except OSError as error:
+                        if error.errno not in (errno.EIO, errno.EPIPE):
+                            raise
+                        input_closed = True
+                        written = 0
+                    if written:
+                        pending_bytes -= written
+                        input_bytes_sent += written
+                        outgoing["data"] = outgoing["data"][written:]
+                        complete = not outgoing["data"]
+                        if complete:
+                            pending_input.popleft()
+                            if outgoing["source"] == "plan":
+                                input_index += 1
+                                plan_queued = False
+                        event = {key: value for key, value in outgoing.items() if key != "data"}
+                        record(inputs, {"elapsed": time.monotonic() - started, **event,
+                                        "bytes": written, "complete": complete})
             final_text = decoder.decode(b"", final=True)
             transcript.write(final_text)
             emulator.feed(final_text)
@@ -410,14 +454,16 @@ def capture(args):
     if collector_errors or child_exit is None:
         capture_exit = 125
         termination = "collector_error"
-    if capture_exit == 0 and (input_index != len(plan) or not eof):
+    if ((capture_exit == 0 and (input_index != len(plan) or not eof))
+            or (termination is None and pending_bytes)):
         capture_exit = 125
     summary = {"schema": 1, "label": args.label, "candidate": args.candidate,
                "child_exit_code": child_exit, "capture_exit_code": capture_exit,
                "duration_seconds": duration, "first_output_seconds": first_output,
                "max_idle_gap_seconds": max_gap, "termination": termination,
                "drained": eof, "input_actions_sent": input_index,
-               "input_actions_expected": len(plan), "collector_errors": collector_errors}
+               "input_actions_expected": len(plan), "input_bytes_sent": input_bytes_sent,
+               "input_bytes_pending": pending_bytes, "collector_errors": collector_errors}
     try:
         (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     except OSError as error:

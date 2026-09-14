@@ -31,6 +31,8 @@ def verify(directory, expectation):
         failures.append("capture failure differs from the child result")
     if summary["input_actions_sent"] != summary["input_actions_expected"]:
         failures.append("the input plan was not completed")
+    if summary.get("input_bytes_pending", 0):
+        failures.append("queued input was not fully delivered")
     if not frames or not frames[-1].get("final"):
         failures.append("final reconstructed frame is missing")
     visible = "\n".join("\n".join(frame["lines"]) for frame in frames)
