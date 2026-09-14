@@ -2233,8 +2233,8 @@ it('publishes private Caddy and DNS configurations through complete preserved va
             'app-dev.caddy',
             "printf 'import %s/%s/fragments/*.caddy\n' \"\$versions\" \"\$version\"",
             'caddy validate --config "$candidate/Caddyfile"',
-            'install -d -o root -g caddy -m 0755 -- /dev/shm/orbit/hibernation',
-            'install -d -o root -g caddy -m 2775 -- /data/caddy/orbit/hibernation',
+            'install -d -o root -g caddy -m 0755 -- "$hibernation_markers"',
+            'install -d -o root -g caddy -m 2775 -- "$hibernation_logs"',
             'cmp -s -- "$candidate/fragments/app-dev.caddy" "$previous_fragments/app-dev.caddy"',
             'mv -fT -- "$candidate_link" "$live_caddyfile"',
             'if ! systemctl enable "$caddy_service" || ! systemctl reload-or-restart "$caddy_service"; then',
@@ -2245,7 +2245,11 @@ it('publishes private Caddy and DNS configurations through complete preserved va
         ->and(array_slice(array: $ssh->commands[0]->arguments, offset: 0, length: 3))
         ->toBe(['sudo', 'bash', '-seu'])
         ->and($ssh->commands[0]->arguments)
-        ->toContain('/run/lock/orbit/caddy.lock');
+        ->toContain(
+            '/run/lock/orbit/caddy.lock',
+            '/dev/shm/orbit/hibernation',
+            '/data/caddy/orbit/hibernation',
+        );
 
     $lockSetup = mb_strpos(haystack: $ssh->commands[0]->input, needle: 'lock_directory=$(dirname "$lock")');
     $lockOpen = mb_strpos(haystack: $ssh->commands[0]->input, needle: 'exec 9>>"$lock"');
@@ -3585,6 +3589,8 @@ function zero_site_publisher(AppDevCaddyPublishHarness $harness): AppDevCaddyPub
         liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
         caddyServiceName: 'caddy',
         lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
+        hibernationMarkerDirectory: $harness->etcCaddyPath('hibernation-markers'),
+        hibernationAccessLogDirectory: $harness->etcCaddyPath('hibernation-logs'),
     );
 }
 
