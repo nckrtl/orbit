@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
+use App\Domain\AppInstances\Deployment\DeploymentPhase;
+use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\RoleName;
@@ -10,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
@@ -34,6 +38,36 @@ $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
 
 if (is_string($tiaDirectory) && $tiaDirectory !== '') {
     pest()->tia()->directory($tiaDirectory);
+}
+
+/** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */
+function store_deploy_steps(AppInstance $instance, array $steps): void
+{
+    app(AppInstanceDeployStepStore::class)->replaceAll(
+        $instance,
+        array_map(static fn (array $step): DeploymentStep => new DeploymentStep(
+            $step['name'],
+            DeploymentPhase::from($step['phase']),
+            $step['command'],
+            $step['timeout_seconds'],
+        ), $steps),
+    );
+}
+
+/** @return list<array{name: string, phase: string, command: string, timeout_seconds: int}> */
+function normalized_deploy_steps(AppInstance $instance): array
+{
+    return array_map(
+        static fn (DeploymentStep $step): array => $step->toArray(),
+        app(AppInstanceDeployStepStore::class)->ordered($instance),
+    );
+}
+
+function app_instance_deploy_step_records_migration(): object
+{
+    return require base_path(
+        'database/migrations/2026_09_14_180000_store_deploy_steps_as_named_records.php',
+    );
 }
 
 function orb183_production_route_migration(): Migration

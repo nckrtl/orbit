@@ -9,6 +9,7 @@ use App\Actions\AppInstances\ListAppInstancesAction;
 use App\Actions\AppInstances\RegisterAppInstanceAction;
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\AppInstances\ShowAppInstanceAction;
+use App\Actions\AppInstances\UpdateAppInstanceAction;
 use App\Data\AppInstances\AppInstanceData;
 use App\Data\AppInstances\AppInstanceRegistrationData;
 use App\Data\AppInstances\AppInstanceRemovalData;
@@ -18,6 +19,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\RegisterAppInstanceRequest;
 use App\Http\Requests\AppInstances\RemoveAppInstanceRequest;
 use App\Http\Requests\AppInstances\StoreAppInstanceRequest;
+use App\Http\Requests\AppInstances\UpdateAppInstanceRequest;
 use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
@@ -82,6 +84,18 @@ final class AppInstancesController extends Controller
     {
         return response()->json([
             'data' => AppInstanceData::fromModel($action->handle($instance))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    public function update(
+        UpdateAppInstanceRequest $request,
+        AppInstance $instance,
+        UpdateAppInstanceAction $action,
+    ): JsonResponse {
+        return response()->json([
+            'data' => AppInstanceData::fromModel($action->execute($instance, $request->branch()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

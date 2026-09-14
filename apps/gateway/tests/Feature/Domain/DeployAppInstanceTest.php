@@ -34,11 +34,9 @@ it('captures one configuration and preserves the complete deployment order', fun
     $instance->update(['deployment_branch' => 'release']);
     $trace = new Orb219DeploymentTrace;
     $environment = new Orb219EnvironmentSynchronizer($trace, function () use ($instance): void {
-        $instance->update([
-            'deployment_branch' => 'next-release',
-            'deployment_steps' => [
-                ['name' => 'replacement', 'phase' => 'before_activation', 'command' => 'new', 'timeout_seconds' => 30],
-            ],
+        $instance->update(['deployment_branch' => 'next-release']);
+        store_deploy_steps($instance, [
+            ['name' => 'replacement', 'phase' => 'before_activation', 'command' => 'new', 'timeout_seconds' => 30],
         ]);
     });
     [$deploy] = orb219_actions($trace, $environment);
@@ -358,7 +356,7 @@ function orb219_actions(
     $remote = new Orb219ProductionDeployment($trace);
     $runtime = new Orb219PhpRuntime($trace);
     $deadline = new CommandDeadline;
-    $resolver = new AppInstanceDeploymentConfigResolver;
+    $resolver = app(AppInstanceDeploymentConfigResolver::class);
     $environment ??= new Orb219EnvironmentSynchronizer($trace);
 
     return [
@@ -386,7 +384,7 @@ function orb219_deployment_instance(array $steps, bool $php = false): AppInstanc
         'root' => 'public',
     ]);
 
-    return AppInstance::query()->create([
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
@@ -397,12 +395,14 @@ function orb219_deployment_instance(array $steps, bool $php = false): AppInstanc
         'production_home' => '/home/orbit-app-1',
         'root' => 'public',
         'branch' => 'main',
-        'deployment_steps' => $steps,
         'selected_php_version' => $php ? '8.5' : null,
         'source_is_laravel' => $php,
         'provisioning_step' => 'active',
         'status' => 'active',
     ]);
+    store_deploy_steps($instance, $steps);
+
+    return $instance;
 }
 
 final class Orb219DeploymentTrace

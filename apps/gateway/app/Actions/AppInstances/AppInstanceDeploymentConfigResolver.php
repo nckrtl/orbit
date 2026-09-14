@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\AppInstances;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Domain\AppInstances\Deployment\DeploymentConfig;
-use App\Domain\AppInstances\Deployment\DeploymentPhase;
-use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Models\AppInstance;
@@ -15,6 +14,8 @@ use InvalidArgumentException;
 
 final readonly class AppInstanceDeploymentConfigResolver
 {
+    public function __construct(private AppInstanceDeployStepStore $steps) {}
+
     public function resolve(AppInstance $instance): DeploymentConfig
     {
         $this->assertAvailable($instance);
@@ -22,28 +23,7 @@ final readonly class AppInstanceDeploymentConfigResolver
         assert(is_string($branch));
 
         try {
-            $steps = array_map(
-                static function (array $step): DeploymentStep {
-                    $name = $step['name'] ?? null;
-                    $phase = $step['phase'] ?? null;
-                    $command = $step['command'] ?? null;
-                    $timeout = $step['timeout_seconds'] ?? null;
-
-                    if (! is_string($name) || ! is_string($phase) || ! is_string($command) || ! is_int($timeout)) {
-                        throw new InvalidArgumentException('Stored deployment step shape is invalid.');
-                    }
-
-                    return new DeploymentStep(
-                        $name,
-                        DeploymentPhase::from($phase),
-                        $command,
-                        $timeout,
-                    );
-                },
-                $instance->deployment_steps,
-            );
-
-            return new DeploymentConfig($branch, $steps);
+            return new DeploymentConfig($branch, $this->steps->ordered($instance));
         } catch (InvalidArgumentException|\ValueError) {
             throw $this->unavailable();
         }

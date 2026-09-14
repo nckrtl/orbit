@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 it('backfills prior production branches while preserving source evidence and null compatibility', function (): void {
+    $records = app_instance_deploy_step_records_migration();
+    $records->down();
     $migration = app_instance_deployment_config_migration();
     DB::table('app_instances')->update(['deployment_branch' => null, 'deployment_steps' => null]);
     $migration->down();
@@ -51,25 +53,29 @@ it('backfills prior production branches while preserving source evidence and nul
     try {
         DB::table('app_instances')->where('id', $incomplete)->update(['environment' => 'production']);
         $migration->up();
+        $records->up();
 
         $configuredRow = DB::table('app_instances')->find($configured);
         $incompleteRow = DB::table('app_instances')->find($incomplete);
 
-        expect(Schema::hasColumns('app_instances', ['deployment_branch', 'deployment_steps']))->toBeTrue()
+        expect(Schema::hasColumn('app_instances', 'deployment_branch'))->toBeTrue()
+            ->and(Schema::hasColumn('app_instances', 'deployment_steps'))->toBeFalse()
             ->and($configuredRow->deployment_branch)->toBe('release/one')
             ->and($configuredRow->branch)->toBe('release/one')
             ->and($configuredRow->branch_override)->toBe('release/one')
             ->and($incompleteRow->deployment_branch)->toBeNull()
-            ->and(AppInstance::query()->findOrFail($configured)->deployment_steps)->toBe([])
-            ->and(AppInstance::query()->findOrFail($incomplete)->deployment_steps)->toBe([]);
+            ->and(normalized_deploy_steps(AppInstance::query()->findOrFail($configured)))->toBe([])
+            ->and(normalized_deploy_steps(AppInstance::query()->findOrFail($incomplete)))->toBe([]);
     } finally {
-        if (! Schema::hasColumn('app_instances', 'deployment_branch')) {
-            $migration->up();
+        if (! Schema::hasTable('app_instance_deploy_steps')) {
+            $records->up();
         }
     }
 });
 
 it('refuses rollback before discarding configured deployment state', function (): void {
+    $records = app_instance_deploy_step_records_migration();
+    $records->down();
     $migration = app_instance_deployment_config_migration();
     [$app, $node] = deployment_migration_parents();
     AppInstance::query()->create([
@@ -86,6 +92,8 @@ it('refuses rollback before discarding configured deployment state', function ()
     expect(fn () => $migration->down())
         ->toThrow(RuntimeException::class, 'Cannot discard configured AppInstance deployment state.')
         ->and(Schema::hasColumns('app_instances', ['deployment_branch', 'deployment_steps']))->toBeTrue();
+
+    $records->up();
 });
 
 function app_instance_deployment_config_migration(): object

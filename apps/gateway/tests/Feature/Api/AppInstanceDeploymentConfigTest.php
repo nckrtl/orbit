@@ -53,7 +53,7 @@ it('returns legacy configuration and atomically replaces the complete normalized
         ->deployment_branch->toBe('release/next')
         ->branch->toBe('main')
         ->branch_override->toBe('main')
-        ->and($stored->deployment_steps)->toBe($response->json('data.steps'))
+        ->and(normalized_deploy_steps($stored))->toBe($response->json('data.steps'))
         ->and($stored->toArray())->not->toHaveKey('deployment_steps');
 
     $this
@@ -65,14 +65,18 @@ it('returns legacy configuration and atomically replaces the complete normalized
 });
 
 it('rejects malformed duplicate unknown and wrongly typed input without mutation', function (string $body): void {
-    $before = $this->instance->only(['deployment_branch', 'deployment_steps']);
+    $before = [
+        'deployment_branch' => $this->instance->deployment_branch,
+        'steps' => normalized_deploy_steps($this->instance),
+    ];
     $response = $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->call('PUT', $this->url, server: ['CONTENT_TYPE' => 'application/json'], content: $body);
 
     $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     expect($response->getContent())->not->toContain('secret-command-sentinel')
-        ->and($this->instance->fresh()->only(['deployment_branch', 'deployment_steps']))->toBe($before);
+        ->and($this->instance->fresh()->deployment_branch)->toBe($before['deployment_branch'])
+        ->and(normalized_deploy_steps($this->instance->fresh()))->toBe($before['steps']);
 })->with([
     'malformed' => '{"branch":"main","steps":',
     'not object' => '[]',
@@ -185,7 +189,7 @@ it('keeps commands out of Activity and generic diagnostics', function (): void {
             ->and(json_encode(Activity::query()->latest('id')->firstOrFail()->properties?->toArray()))
             ->not->toContain($sentinel)
             ->and($this->instance->fresh()->deployment_branch)->toBe('main')
-            ->and($this->instance->fresh()->deployment_steps)->toBe([
+            ->and(normalized_deploy_steps($this->instance->fresh()))->toBe([
                 [
                     'name' => 'secret-step',
                     'phase' => 'before_activation',

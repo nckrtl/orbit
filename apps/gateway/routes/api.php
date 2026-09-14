@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AppInstanceClonesController;
 use App\Http\Controllers\Api\AppInstanceDeploymentConfigsController;
 use App\Http\Controllers\Api\AppInstanceDeploymentLayoutsController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
+use App\Http\Controllers\Api\AppInstanceDeployStepsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentSynchronizationsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
@@ -175,6 +176,7 @@ Route::prefix('v1')->group(function (): void {
         });
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
+        Route::patch('instances/{instance}', [AppInstancesController::class, 'update'])->name('instance:update');
         Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:create');
         Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
         Route::post('instances/{candidate}/clone', [AppInstanceClonesController::class, 'store'])
@@ -190,6 +192,22 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/deployment-config',
             [AppInstanceDeploymentConfigsController::class, 'update'],
         )->name('instance:deployment-config:update');
+        Route::get(
+            'instances/{instance}/deploy-steps',
+            [AppInstanceDeployStepsController::class, 'index'],
+        )->name('instance:deploy-step:list');
+        Route::post(
+            'instances/{instance}/deploy-steps',
+            [AppInstanceDeployStepsController::class, 'store'],
+        )->name('instance:deploy-step:create');
+        Route::patch(
+            'instances/{instance}/deploy-steps/{step}',
+            [AppInstanceDeployStepsController::class, 'update'],
+        )->where('step', '[a-z0-9]+(?:-[a-z0-9]+)*')->name('instance:deploy-step:update');
+        Route::delete(
+            'instances/{instance}/deploy-steps/{step}',
+            [AppInstanceDeployStepsController::class, 'destroy'],
+        )->where('step', '[a-z0-9]+(?:-[a-z0-9]+)*')->name('instance:deploy-step:destroy');
         Route::post(
             'instances/{instance}/deployment-layout',
             [AppInstanceDeploymentLayoutsController::class, 'store'],
