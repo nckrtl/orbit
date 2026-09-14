@@ -79,7 +79,7 @@ The Gateway keeps a compatible running Herdr server in place unless the operator
 | `herdr:session:restart --handoff` | When the inspected server reports handoff support, Herdr transfers live panes. When it does not, or when the operator omits `--handoff`, the Gateway restarts the owned Process. |
 | Removal | Inspects live panes first. The Gateway refuses `herdr.session_in_use` while any pane is live unless the operator passes `--accept-termination`. |
 | Observer publication failure | Records listener health. It does not destroy or restart the Herdr session. |
-| Node removal | Retracts each owned observer and then removes the owned Process. A cleanup failure keeps the Node and unfinished Herdr cleanup resumable. |
+| Node removal | The Gateway refuses `node:remove` while the Node owns a Herdr session. [Node provisioning](node-provisioning.md#remove-a-node) owns that guard. |
 | Offline decommissioning of an unreachable Node | Deletes those session and Process records without remote cleanup. |
 
 ## Doctor
@@ -126,7 +126,6 @@ The Gateway returns these Herdr-specific codes.
 | `herdr.node_unavailable` | The Node is inactive, unmanaged, or unreachable for mutation. |
 | `herdr.grant_invalid` | The grant request is missing a required pane, terminal, or viewport bound. |
 | `herdr.observer_failed` | Observer publication failed; the Herdr session remains. |
-| `node.herdr_cleanup_failed` | Node removal stopped while observer or session cleanup was unfinished. |
 
 ## Herdr observe contract
 
