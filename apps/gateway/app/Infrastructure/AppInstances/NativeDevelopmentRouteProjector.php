@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppInstances;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\Routes\RouteHostnameProjector;
+use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -32,6 +33,14 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
 
+        $this->ssh->execute(
+            $appInstance->node,
+            new DevelopmentCaddyAccessCommand()->command(
+                new AppDevSiteRepository()->forNode($appInstance->node, $route),
+            ),
+            step: 'source-access',
+            errorCode: 'app-dev.source_access_failed',
+        );
         $this->php->convergeRoute($appInstance->node, $route);
         $this->certificates->convergeAppInstance($appInstance, $route);
         $this->caddy->convergeRoute($appInstance->node, $route);

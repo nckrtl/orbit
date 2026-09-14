@@ -84,6 +84,8 @@ The Gateway prepares the initial private Route before it marks the Route and App
 
 For Node routing, Gateway Domain Name System (DNS) records point the hostname at the workload Node. Its Caddy service terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the App instance's web root through its runtime.
 
+Before publishing a development Route, the Gateway gives Caddy read access to each local development Web root and traversal access to its parent directories. Source files outside those roots remain private to their owner. The Web root must exist inside its checkout. Symlinks in the Web root are refused except Laravel's `public/storage` link to that checkout's `storage/app/public`. Nested Git worktrees keep access to their own Web roots. If file-access preparation fails, the Gateway restores the preceding permissions and reports `app-dev.source_access_failed` at `source-access` before publishing the Route.
+
 ### Cluster scope
 
 For Cluster routing, Gateway DNS points the Route hostname and Cluster TLD at the Router. [ADR 0062](/decisions/0062-select-cluster-router-dns-addresses-from-lan-intent) defines which Router address each requester receives.
