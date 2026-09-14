@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -20,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $username
  * @property string|null $password
  * @property-read Node|null $node
+ * @property-read Collection<int, DatabaseConnectionTarget> $targets
  */
 final class DatabaseConnection extends Model
 {
@@ -58,6 +61,12 @@ final class DatabaseConnection extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /** @return HasMany<DatabaseConnectionTarget, $this> */
+    public function targets(): HasMany
+    {
+        return $this->hasMany(DatabaseConnectionTarget::class);
     }
 
     /** @return array<string, string> */

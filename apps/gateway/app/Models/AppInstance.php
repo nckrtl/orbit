@@ -75,6 +75,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, RouteTarget> $routeTargets
  * @property-read Collection<int, Route> $routes
  * @property-read Collection<int, AppInstanceEnvironmentValue> $environmentValues
+ * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppInstanceRemovalMember|null $removalMember
@@ -184,6 +185,12 @@ final class AppInstance extends Model
     public function environmentValues(): HasMany
     {
         return $this->hasMany(AppInstanceEnvironmentValue::class);
+    }
+
+    /** @return HasMany<DatabaseConnectionTarget, $this> */
+    public function databaseConnectionTargets(): HasMany
+    {
+        return $this->hasMany(DatabaseConnectionTarget::class);
     }
 
     /** @return MorphMany<Process, $this> */

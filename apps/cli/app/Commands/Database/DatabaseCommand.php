@@ -11,6 +11,8 @@ abstract class DatabaseCommand extends GatewayCommand
 {
     public const string SLUG_PATTERN = '/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D';
 
+    public const string PREFIX_PATTERN = '/\A[A-Z][A-Z0-9_]{0,31}\z/D';
+
     /** @var list<string> */
     protected const array DRIVERS = ['mysql', 'pgsql', 'sqlite'];
 

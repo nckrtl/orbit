@@ -1721,13 +1721,17 @@
             "components": [],
             "concepts": [
                 "App",
+                "AppInstance",
                 "Database",
                 "Database connection",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Route",
+                "Workspace"
             ],
             "governing_adrs": [
+                "0044",
                 "0069",
                 "0070"
             ]
@@ -1784,6 +1788,7 @@
                 "App",
                 "AppInstance",
                 "Database",
+                "Database connection",
                 "Doctor",
                 "Gateway",
                 "Node",
