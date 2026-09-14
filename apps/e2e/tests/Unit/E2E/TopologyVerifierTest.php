@@ -565,7 +565,7 @@ describe('TopologyVerifier typed application state', function () {
             'service' => 'php8.5-fpm.service',
             'socket' => '/run/php/orbit-prod-instance-7.sock',
             'current_target' => null,
-            'hostname' => 'laravel.internal',
+            'domain' => 'laravel.internal',
         ]],
         'release dedicated' => [[
             'layout' => 'release',
@@ -579,14 +579,14 @@ describe('TopologyVerifier typed application state', function () {
             'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
             'socket' => '/run/php/orbit-laravel.sock',
             'current_target' => '/var/www/laravel/releases/20260910T120000Z',
-            'hostname' => 'e2e-prod.orbit.test',
+            'domain' => 'e2e-prod.orbit.test',
         ]],
     ]);
 
-    it('normalizes a domain-shaped production placement to one hostname endpoint for every production probe', function (): void {
+    it('passes a domain-shaped production placement to every production probe', function (): void {
         setUpTopologyVerifierProcessFacade();
         $sha = str_repeat('a', 40);
-        $recorded = [
+        $domain = [
             'layout' => 'release',
             'instance_id' => 7,
             'user' => 'orbit-laravel',
@@ -598,12 +598,9 @@ describe('TopologyVerifier typed application state', function () {
             'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
             'socket' => '/run/php/orbit-laravel.sock',
             'current_target' => '/var/www/laravel/releases/20260910T120000Z',
-            'hostname' => 'e2e-prod.orbit.test',
+            'domain' => 'e2e-prod.orbit.test',
         ];
-        $domain = array_replace(array_diff_key($recorded, ['hostname' => true]), [
-            'domain' => $recorded['hostname'],
-        ]);
-        $encoded = base64_encode(json_encode($recorded, JSON_THROW_ON_ERROR));
+        $encoded = base64_encode(json_encode($domain, JSON_THROW_ON_ERROR));
         $argv = [];
         Process::fake(function (PendingProcess $process) use ($sha, $domain, &$argv): ProcessResult {
             $inventory = topologyVerifierInventory($process);
@@ -682,6 +679,67 @@ describe('TopologyVerifier typed application state', function () {
             'current_target' => '/var/www/laravel/releases/20260910T120000Z',
             'hostname' => 'e2e-prod.orbit.test',
             'domain' => '',
+        ];
+        Process::fake(function (PendingProcess $process) use ($placement): ProcessResult {
+            $inventory = topologyVerifierInventory($process);
+            if ($inventory instanceof ProcessResult) {
+                return $inventory;
+            }
+            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
+            $results = [];
+            foreach ($payload['requests'] as $request) {
+                if ($request['label'] === 'sample-app-state') {
+                    $results[] = [
+                        'label' => 'sample-app-state',
+                        'stdout' => json_encode([
+                            'shape' => 'app_instances',
+                            'app_id' => 1,
+                            'node_id' => 2,
+                            'name' => 'e2e-dev',
+                            'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
+                            'effective_root' => 'public',
+                            'production' => $placement,
+                        ], JSON_THROW_ON_ERROR),
+                        'stderr' => '',
+                        'exit_code' => 0,
+                    ];
+
+                    continue;
+                }
+                $results[] = [
+                    'label' => $request['label'],
+                    'stdout' => '',
+                    'stderr' => '',
+                    'exit_code' => 0,
+                ];
+            }
+
+            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
+        });
+
+        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
+            TopologyTarget::topologySnapshot(),
+            VerificationMode::Readiness,
+            new SourceState($sha, $sha),
+        ))->toThrow(RuntimeException::class, 'Sample production placement is invalid.');
+    });
+
+    it('refuses a hostname-only production placement without fallback', function (): void {
+        setUpTopologyVerifierProcessFacade();
+        $sha = str_repeat('a', 40);
+        $placement = [
+            'layout' => 'release',
+            'instance_id' => 7,
+            'user' => 'orbit-laravel',
+            'home' => '/var/www/laravel',
+            'checkout_path' => '/var/www/laravel/current',
+            'effective_root' => '/var/www/laravel/current/public',
+            'environment_path' => '/var/www/laravel/.env',
+            'database_path' => null,
+            'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
+            'socket' => '/run/php/orbit-laravel.sock',
+            'current_target' => '/var/www/laravel/releases/20260910T120000Z',
+            'hostname' => 'e2e-prod.orbit.test',
         ];
         Process::fake(function (PendingProcess $process) use ($placement): ProcessResult {
             $inventory = topologyVerifierInventory($process);
