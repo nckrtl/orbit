@@ -11,8 +11,10 @@ use Throwable;
 
 final class RuntimeHibernatorCommand extends Command
 {
+    #[\Override]
     protected $signature = 'orbit:runtime-hibernator';
 
+    #[\Override]
     protected $description = 'Halt idle app-dev AppInstance Processes after the configured HTTP idle window.';
 
     public function handle(SweepIdleAppDevRuntimesAction $sweep): int
@@ -23,7 +25,7 @@ final class RuntimeHibernatorCommand extends Command
             $this->error($exception->getMessage());
 
             return self::FAILURE;
-        } catch (Throwable $exception) {
+        } catch (Throwable) {
             $this->error('Runtime hibernator failed.');
 
             return self::FAILURE;

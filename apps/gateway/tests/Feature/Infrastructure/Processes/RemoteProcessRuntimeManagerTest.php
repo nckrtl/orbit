@@ -270,7 +270,6 @@ it('keeps the systemd backup until a desired-running replacement restarts succes
         process_runtime_result(),
         process_runtime_result(),
         process_runtime_result(),
-        process_runtime_result(),
         process_runtime_result(1, stderr: 'replacement restart failed'),
         process_runtime_result(),
         process_runtime_result(),
