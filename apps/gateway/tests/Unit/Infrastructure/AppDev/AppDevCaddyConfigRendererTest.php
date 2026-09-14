@@ -20,16 +20,55 @@ it('proxies the reserved development-server path to loopback on a development si
         ->toContain('uri strip_prefix /__orbit/vite')
         ->toContain('reverse_proxy 127.0.0.1:5173')
         ->toContain($socket)
-        ->toContain('not file /dev/shm/orbit/hibernation/app-instance-6.awake')
+        ->toContain('root /dev/shm/orbit/hibernation')
+        ->toContain('try_files /app-instance-6.awake')
+        ->toContain('handle @orbit_asleep')
         ->toContain('uri /api/v1/runtime-activations/app-instance/6')
         ->toContain('output file /data/caddy/orbit/hibernation/app-instance-6.log')
-        ->toContain('tls_trust_pool file /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
-        ->not->toContain('tls_trusted_ca_certs')
+        ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('tls_trust_pool')
+        ->not->toContain('not file /dev/shm/orbit/hibernation/app-instance-6.awake')
         ->not->toContain('/etc/caddy/orbit-certificates/app-instance-6/current/root.pem')
         ->not->toContain('reverse_proxy https://');
-    expect(mb_strpos($configuration, 'forward_auth'))
+    expect(mb_strpos($configuration, 'handle @orbit_asleep'))
+        ->toBeInt()
+        ->toBeLessThan((int) mb_strpos($configuration, 'handle @orbit_vite'))
+        ->and(mb_strpos($configuration, 'handle @orbit_vite'))
         ->toBeInt()
         ->toBeLessThan((int) mb_strpos($configuration, $socket));
+});
+
+it('shows the Orbit wake page before Caddy proxies a sleeping site', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),
+    ]));
+
+    expect($configuration)
+        ->toContain("not file {\n        root /dev/shm/orbit/hibernation\n        try_files /app-instance-6.awake")
+        ->toContain('handle @orbit_asleep')
+        ->toContain('forward_auth https://gateway.orbit')
+        ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('tls_trust_pool')
+        ->not->toContain('not file /dev/shm/orbit/hibernation/app-instance-6.awake');
+    expect(mb_strpos($configuration, 'handle @orbit_asleep'))
+        ->toBeInt()
+        ->toBeLessThan((int) mb_strpos($configuration, 'handle @orbit_vite'));
+});
+
+it('adapts hibernation wake on Caddy 2.6 with a nested awake-marker matcher', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),
+    ]));
+
+    $result = caddy_adapt($configuration);
+
+    expect($result->succeeded())
+        ->toBeTrue()
+        ->and($result->stdout)
+        ->toContain('/dev/shm/orbit/hibernation')
+        ->toContain('/app-instance-6.awake')
+        ->toContain('/usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('tls_trust_pool');
 });
 
 it('keeps two development sites isolated on the same loopback port', function (): void {
@@ -47,7 +86,10 @@ it('keeps two development sites isolated on the same loopback port', function ()
         ->and($configuration)
         ->toContain('root * /home/orbit/apps/alpha/public')
         ->toContain('root * /home/orbit/apps/beta/public')
-        ->toContain('tls_trust_pool file /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->toContain('try_files /app-instance-6.awake')
+        ->toContain('try_files /app-instance-7.awake')
+        ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('tls_trust_pool')
         ->not->toContain('current/root.pem')
         ->not->toContain('reverse_proxy https://');
 });

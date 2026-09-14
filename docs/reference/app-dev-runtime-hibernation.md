@@ -53,9 +53,9 @@ A sweep that finds no recent HTTP activity stops each desired-running AppInstanc
 
 ## Wake
 
-Caddy on the AppInstance Node checks `/dev/shm/orbit/hibernation/app-instance-{id}.awake`. When that file is absent, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard and trusts the Orbit root CA already published as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt`.
+Caddy on the AppInstance Node looks for `app-instance-{id}.awake` under `/dev/shm/orbit/hibernation` with a file matcher that names that directory as its root. A matching request enters a `handle` that runs before the Vite and application handles. When the marker is absent, that handle calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard. The transport trusts the Orbit root CA already published as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` with `tls_trusted_ca_certs`, a Caddy 2.6 directive. Caddy 2.6 is the fleet floor for the Ubuntu `caddy` package Orbit installs. A Node may run a newer Caddy.
 
-The Gateway accepts that call only from the AppInstance's Node. It returns an HTML progress page with status 401 and a two-second refresh, then starts the desired-running AppInstance Processes after that response. Caddy shows that page and does not proxy the site.
+The Gateway accepts that call only from the AppInstance's Node. It returns an HTML progress page with status 401 and a two-second refresh, then starts the desired-running AppInstance Processes after that response. Caddy returns that non-2xx page to the client and does not proxy the site.
 
 When a Vite Process is present, the Gateway waits until `127.0.0.1:5173` accepts a connection. It writes the awake marker only after every desired-running Process is running. A keep-alive Process that is already running is already ready. The next browser refresh finds the marker and Caddy proxies that request, so the first application request already has Vite and its peers.
 
