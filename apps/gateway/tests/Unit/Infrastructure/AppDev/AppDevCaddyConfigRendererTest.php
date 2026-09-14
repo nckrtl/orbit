@@ -12,13 +12,22 @@ it('proxies the reserved development-server path to loopback on a development si
         development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),
     ]));
 
+    $socket = 'php_fastcgi unix//run/php/orbit-app-instance-6.sock';
+
     expect($configuration)
         ->toContain('https://tasks.commander.test {')
         ->toContain('path /__orbit/vite /__orbit/vite/*')
         ->toContain('uri strip_prefix /__orbit/vite')
         ->toContain('reverse_proxy 127.0.0.1:5173')
-        ->toContain('php_fastcgi unix//run/php/orbit-app-instance-6.sock')
+        ->toContain($socket)
+        ->toContain('not file /dev/shm/orbit/hibernation/app-instance-6.awake')
+        ->toContain('uri /api/v1/runtime-activations/app-instance/6')
+        ->toContain('output file /data/caddy/orbit/hibernation/app-instance-6.log')
+        ->toContain('tls_trusted_ca_certs /etc/caddy/orbit-certificates/app-instance-6/current/root.pem')
         ->not->toContain('reverse_proxy https://');
+    expect(mb_strpos($configuration, 'forward_auth'))
+        ->toBeInt()
+        ->toBeLessThan((int) mb_strpos($configuration, $socket));
 });
 
 it('keeps two development sites isolated on the same loopback port', function (): void {
@@ -76,6 +85,14 @@ it('does not attach the development-server handle to production, proxy, or unava
     $productionConfig = $renderer->render(new Collection([$production]));
     $proxyConfig = $renderer->render(new Collection([$proxy]));
     $unavailableConfig = $renderer->render(new Collection([$unavailable]));
+
+    expect($productionConfig)
+        ->not->toContain('forward_auth')
+        ->not->toContain('orbit_asleep');
+    expect($proxyConfig)
+        ->not->toContain('forward_auth');
+    expect($unavailableConfig)
+        ->not->toContain('forward_auth');
 
     expect($productionConfig)
         ->not->toContain('/__orbit/vite')

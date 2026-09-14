@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -222,6 +223,7 @@ final readonly class ProcessTargetResolver
             environmentFile: $environmentFile,
             productionReleaseLayout: $productionReleaseLayout,
             routeHostname: $this->developmentRouteHostname($instance),
+            onDemandHostStart: new AppDevHibernationPolicy()->usesOnDemandHostStart($instance),
         );
     }
 

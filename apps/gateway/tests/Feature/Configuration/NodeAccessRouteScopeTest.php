@@ -139,6 +139,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'route:target:set' => ServingNode::RouteOwning,
         'route:target:unset' => ServingNode::RouteOwning,
         'route:update' => ServingNode::RouteOwning,
+        'runtime-activation:app-instance' => ServingNode::AppInstanceHost,
         'schedule:complete' => ServingNode::ScheduleHost,
         'schedule:create' => [ServingNode::AppOwning, ServingNode::ScheduleOwning],
         'schedule:destroy' => [ServingNode::AppOwning, ServingNode::ScheduleOwning],

@@ -16,6 +16,9 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
     public array $started = [];
 
     /** @var list<int> */
+    public array $stopped = [];
+
+    /** @var list<int> */
     public array $convergedProcessIds = [];
 
     /** @var list<int> */
@@ -30,6 +33,8 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
     public bool $failStartDuringCall = false;
 
     public ?ProcessOperationException $lastConvergeFailure = null;
+
+    public ?string $statusOverride = null;
 
     public function assertCanStart(Process $process): void {}
 
@@ -66,7 +71,10 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
         $this->started[] = $process->id;
     }
 
-    public function stop(Process $process): void {}
+    public function stop(Process $process): void
+    {
+        $this->stopped[] = $process->id;
+    }
 
     public function restart(Process $process): void {}
 
@@ -74,6 +82,10 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
 
     public function status(Process $process): string
     {
+        if (is_string($this->statusOverride)) {
+            return $this->statusOverride;
+        }
+
         return $process->exists
             ? $process->desired_state->value
             : 'absent';

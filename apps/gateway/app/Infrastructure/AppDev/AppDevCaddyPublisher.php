@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\Hibernation\RuntimeHibernation;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 
@@ -15,6 +16,8 @@ final readonly class AppDevCaddyPublisher
         private string $caddyServiceName = 'caddy',
         private string $lockPath = '/run/lock/orbit/caddy.lock',
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
+        private string $hibernationMarkerDirectory = RuntimeHibernation::MarkerDirectory,
+        private string $hibernationAccessLogDirectory = RuntimeHibernation::AccessLogDirectory,
     ) {}
 
     public function serviceOrderingCommand(): RemoteCommand
@@ -40,6 +43,8 @@ final readonly class AppDevCaddyPublisher
                 $this->liveCaddyfilePath,
                 $this->caddyServiceName,
                 $this->lockPath,
+                $this->hibernationMarkerDirectory,
+                $this->hibernationAccessLogDirectory,
             ],
             input: <<<BASH
                 version=\$1
@@ -47,6 +52,8 @@ final readonly class AppDevCaddyPublisher
                 live_caddyfile=\$3
                 caddy_service=\$4
                 lock=\$5
+                hibernation_markers=\$6
+                hibernation_logs=\$7
                 umask 0077
                 lock_directory=\$(dirname "\$lock")
                 if ! mkdir -- "\$lock_directory" 2>/dev/null; then
@@ -77,6 +84,8 @@ final readonly class AppDevCaddyPublisher
                 previous_main="\$versions/.previous-main.\$version"
                 trap 'rm -rf -- "\$candidate"; rm -f -- "\$candidate_link" "\$rollback_link" "\$rollback_file" "\$previous_main"' EXIT
                 install -d -o root -g caddy -m 0750 -- "\$versions" "\$candidate/fragments"
+                install -d -o root -g caddy -m 0755 -- "\$hibernation_markers"
+                install -d -o root -g caddy -m 2775 -- "\$hibernation_logs"
                 source_main=\$(readlink -f "\$live_caddyfile")
                 test -f "\$source_main"
                 cp -a -- "\$source_main" "\$previous_main"

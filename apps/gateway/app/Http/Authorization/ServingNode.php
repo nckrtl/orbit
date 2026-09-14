@@ -17,6 +17,7 @@ enum ServingNode
     case HerdrSessionOwning;
     case ScheduleOwning;
     case ScheduleHost;
+    case AppInstanceHost;
     case ToolOwning;
     case ClusterOwning;
     case RouteOwning;

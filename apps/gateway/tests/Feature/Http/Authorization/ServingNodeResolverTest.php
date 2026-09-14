@@ -304,6 +304,27 @@ it('resolves the recorded Schedule host and leaves deleted callbacks unresolved'
         ->toBeEmpty();
 });
 
+it('resolves the AppInstance host for runtime activation', function (): void {
+    $node = resolver_node('activation-host');
+    $app = resolver_app('activation-app');
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'main',
+        'environment' => 'development',
+        'checkout_path' => '/home/orbit/apps/docs',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['instance' => $instance]),
+        ServingNode::AppInstanceHost,
+    )))
+        ->toBe([$node->id]);
+});
+
 it('rejects a bound legacy Workspace Process owner', function (): void {
     $app = resolver_app('workspace-process-owner');
     $node = resolver_node('workspace-process-node');

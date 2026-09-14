@@ -17,6 +17,7 @@
                 "Gateway",
                 "Node",
                 "Process",
+                "Runtime hibernation",
                 "Schedule",
                 "Tool"
             ],
@@ -92,6 +93,7 @@
                 "Repository identity",
                 "Route",
                 "Router",
+                "Runtime hibernation",
                 "Schedule",
                 "Tool",
                 "Tool Manager",
@@ -107,7 +109,8 @@
                 "0042",
                 "0056",
                 "0069",
-                "0070"
+                "0070",
+                "0074"
             ]
         },
         {
@@ -1616,6 +1619,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0074-hibernate-idle-app-dev-appinstance-processes.md",
+            "title": "ADR 0074: Hibernate idle app-dev AppInstance Processes",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Runtime hibernation",
+                "Schedule",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0021",
+                "0036",
+                "0069",
+                "0074"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1686,6 +1714,24 @@
                 "Tool"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/app-dev-runtime-hibernation.md",
+            "title": "App-dev runtime hibernation",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Runtime hibernation"
+            ],
+            "governing_adrs": [
+                "0074"
+            ]
         },
         {
             "path": "docs/reference/app-processes-and-schedules.md",

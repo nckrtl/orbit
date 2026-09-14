@@ -219,3 +219,21 @@ it('maps common restart policies to Docker restart policies', function (string $
     'always' => ['always', 'always'],
     'unless stopped' => ['unless-stopped', 'unless-stopped'],
 ]);
+
+it('maps on-demand app-dev always to unless-stopped so an idle stop survives daemon restart', function (): void {
+    $process = new Process([
+        'name' => 'worker',
+        'runtime_config' => ['image' => 'busybox:1', 'command' => ['sleep', '60']],
+        'working_directory' => '/work',
+        'restart_policy' => 'always',
+    ]);
+    $process->id = 3;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'dev']),
+        user: 'orbit',
+        checkoutPath: '/home/orbit/apps/docs',
+        onDemandHostStart: true,
+    );
+
+    expect(new DockerProcessRenderer()->createArguments($process, $target))->toContain('unless-stopped');
+});
