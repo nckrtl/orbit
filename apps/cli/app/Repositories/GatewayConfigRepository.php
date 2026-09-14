@@ -86,6 +86,39 @@ final readonly class GatewayConfigRepository
         });
     }
 
+    public function remove(string $name, bool $force = false): void
+    {
+        new GatewayConfigLock($this->path)->synchronized(function () use ($name, $force): void {
+            $config = $this->read();
+
+            if (! array_key_exists($name, $config['gateways'])) {
+                throw new GatewayConfigException(
+                    "Gateway profile [{$name}] does not exist.",
+                    errorCode: 'gateway.profile_not_found',
+                );
+            }
+
+            $isActive = $config['active_gateway'] === $name;
+
+            if ($isActive && ! $force) {
+                throw new GatewayConfigException(
+                    'Cannot remove the active gateway profile.',
+                    errorCode: 'gateway.profile_active',
+                );
+            }
+
+            $profile = $this->profile($name, $config['gateways'][$name]);
+            unset($config['gateways'][$name]);
+
+            if ($isActive) {
+                $config['active_gateway'] = null;
+            }
+
+            $this->write($config);
+            $this->deletePinnedCertificate($profile);
+        });
+    }
+
     public function active(): ?GatewayProfile
     {
         $config = $this->read();
@@ -234,6 +267,25 @@ final readonly class GatewayConfigRepository
             if (is_file($temporaryPath)) {
                 unlink($temporaryPath);
             }
+        }
+    }
+
+    private function deletePinnedCertificate(?GatewayProfile $profile): void
+    {
+        $caPath = $profile?->caPath;
+
+        if (! is_string($caPath)) {
+            return;
+        }
+
+        clearstatcache(true, $caPath);
+
+        if (is_link($caPath) || ! is_file($caPath)) {
+            return;
+        }
+
+        if (! unlink($caPath)) {
+            throw new GatewayConfigException('Could not update Orbit gateway configuration.');
         }
     }
 

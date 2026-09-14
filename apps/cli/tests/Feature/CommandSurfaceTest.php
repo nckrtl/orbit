@@ -59,6 +59,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'firewall:list',
         'firewall:remove',
         'gateway:add',
+        'gateway:remove',
         'gateway:status',
         'gateway:trust',
         'gateway:use',
@@ -157,7 +158,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(104);
+    expect($orbitCommands)->toHaveCount(105);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -311,6 +312,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'firewall:list' => [[], ['node' => null, 'json' => false]],
         'firewall:remove' => [['name'], ['node' => null, 'json' => false]],
         'gateway:add' => [['gateway'], ['name' => 'default', 'ca' => null, 'use' => false, 'json' => false]],
+        'gateway:remove' => [['name'], ['force' => false, 'json' => false]],
         'gateway:status' => [[], ['json' => false]],
         'gateway:trust' => [[], ['accept-ca-change' => false, 'json' => false]],
         'gateway:use' => [['name'], ['json' => false]],
@@ -651,6 +653,11 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ['gateway' => 'http://validation-secret'],
             'code' => 'gateway.profile_invalid',
             'message' => 'Gateway URL must use HTTPS.',
+        ],
+        'gateway:remove' => [
+            ['name' => 'validation-secret'],
+            'code' => 'gateway.profile_not_found',
+            'message' => 'Gateway profile does not exist.',
         ],
         'gateway:status' => [[], ...$profileMissing],
         'gateway:trust' => [[], ...$profileMissing],
