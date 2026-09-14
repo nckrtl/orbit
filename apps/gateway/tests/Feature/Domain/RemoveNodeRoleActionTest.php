@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
@@ -25,14 +24,11 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
-use App\Models\App;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
-use App\Models\Workspace;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeNodeRoleFirewallManager;
@@ -557,25 +553,25 @@ describe(RemoveNodeRoleAction::class, function (): void {
         'role baseline' => 'baseline',
     ]);
 
-    it('removes an app-dev role without deleting leftover Instance or Workspace rows', function (): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+    it('removes an app-dev role while leftover Instance and Workspace dependents stay empty', function (): void {
+        [$node, $assignment] = removal_role_fixture();
         $inspector = app(NodeRoleDependencyInspector::class);
         $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
         $action = removal_action($inspector, $cleaner, $baseline);
 
-        $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
+        $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
 
         expect($node->roles()->where('role', RoleName::AppDev->value)->exists())
             ->toBeFalse()
             ->and(NodeRole::query()->whereKey($assignment->id)->exists())
             ->toBeFalse()
-            ->and($node->instances()->exists())
-            ->toBeTrue()
-            ->and(Workspace::query()->whereIn('id', $dependencies->workspaceIds)->exists())
-            ->toBeTrue()
-            ->and(Process::query()->whereIn('id', $dependencies->processIds)->exists())
-            ->toBeTrue();
+            ->and($removed->dependencies->instanceIds)
+            ->toBeEmpty()
+            ->and($removed->dependencies->workspaceIds)
+            ->toBeEmpty()
+            ->and($removed->dependencies->processIds)
+            ->toBeEmpty();
     });
 
     it('records the exact failure on a Process that could not be cleaned', function (): void {
@@ -599,11 +595,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and($failed->failed_step)
             ->toBe('stop')
             ->and($failed->error_code)
-            ->toBe('process.stop_failed')
-            ->and(Workspace::query()->findOrFail($dependencies->workspaceIds[0])->status)
-            ->toBe(LifecycleStatus::Active)
-            ->and(Instance::query()->findOrFail($dependencies->instanceIds[0])->status)
-            ->toBe(LifecycleStatus::Active);
+            ->toBe('process.stop_failed');
     });
 
     it('sheds a role from an unreachable node without attempting anything on it', function (): void {
@@ -908,19 +900,12 @@ function removal_role_fixture(bool $withDependents = false, RoleName $role = Rol
         return [$node, $assignment];
     }
 
-    $instance = removal_instance(
-        node: $node,
-        slug: 'remove-app-'.strtolower(fake()->bothify('??##')),
-        certificateMode: CertificateMode::OrbitCa,
-        environment: 'development',
-    );
-    $workspace = removal_workspace(instance: $instance, name: 'feature', status: LifecycleStatus::Active);
-    $process = removal_process(owner: $workspace, name: 'worker', status: LifecycleStatus::Active);
+    $process = removal_process(owner: $node, name: 'worker', status: LifecycleStatus::Active);
     $dependencies = new NodeRoleDependencySet(
-        instanceIds: [$instance->id],
-        workspaceIds: [$workspace->id],
+        instanceIds: [],
+        workspaceIds: [],
         processIds: [$process->id],
-        summaries: ['1 development instance record', '1 process record', '1 workspace record'],
+        summaries: ['1 process record'],
     );
 
     return [$node, $assignment, $dependencies];
@@ -936,52 +921,14 @@ function removal_node(string $name): Node
     ]);
 }
 
-function removal_instance(
-    Node $node,
-    string $slug,
-    CertificateMode $certificateMode,
-    string $environment,
-): Instance {
-    $app = App::query()->create([
-        'name' => ucfirst($slug),
-        'slug' => $slug,
-        'repository_url' => "git@example.test:{$slug}.git",
-    ]);
-
-    return Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'main',
-        'environment' => $environment,
-        'checkout_path' => "/srv/{$slug}",
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'domain' => "{$slug}.example.test",
-        'certificate_mode' => $certificateMode,
-        'status' => LifecycleStatus::Active,
-    ]);
-}
-
-function removal_workspace(Instance $instance, string $name, LifecycleStatus $status): Workspace
-{
-    return Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => $name,
-        'branch' => $name,
-        'checkout_path' => "{$instance->checkout_path}/{$name}",
-        'domain' => "{$name}.{$instance->domain}",
-        'status' => $status,
-    ]);
-}
-
-function removal_process(Instance|Workspace $owner, string $name, LifecycleStatus $status): Process
+function removal_process(Node $owner, string $name, LifecycleStatus $status): Process
 {
     return Process::query()->create([
         'owner_type' => $owner::class,
         'owner_id' => $owner->id,
         'name' => $name,
         'runtime' => 'systemd',
-        'working_directory' => $owner->checkout_path,
+        'working_directory' => '/home/orbit',
         'runtime_config' => ['command' => ['/usr/bin/true']],
         'restart_policy' => 'never',
         'desired_state' => 'stopped',
@@ -991,10 +938,7 @@ function removal_process(Instance|Workspace $owner, string $name, LifecycleStatu
 
 function removal_dependency_rows_exist(NodeRoleDependencySet $dependencies): bool
 {
-    return
-        Instance::query()->whereIn('id', $dependencies->instanceIds)->exists()
-        && Workspace::query()->whereIn('id', $dependencies->workspaceIds)->exists()
-        && Process::query()->whereIn('id', $dependencies->processIds)->exists();
+    return Process::query()->whereIn('id', $dependencies->processIds)->exists();
 }
 
 final class RemovalInspectorFake implements NodeRoleDependencyInspector

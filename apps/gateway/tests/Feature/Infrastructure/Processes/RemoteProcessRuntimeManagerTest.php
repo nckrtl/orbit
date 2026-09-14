@@ -31,7 +31,6 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Workspace;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
 
@@ -162,8 +161,8 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
         ->toBe("line one\nline two\n");
 });
 
-it('rejects legacy Workspace ownership before systemd convergence', function (): void {
-    $process = runtime_manager_legacy_workspace_process();
+it('rejects leftover Workspace ownership before systemd convergence', function (): void {
+    $process = runtime_manager_leftover_workspace_process();
 
     expect(fn () => $this->manager->converge($process))
         ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node');
@@ -1677,8 +1676,8 @@ it('keeps the active-node prerequisite on the removal-only target path', functio
         });
 });
 
-it('rejects legacy Workspace ownership before runtime cleanup', function (): void {
-    $process = runtime_manager_legacy_workspace_process();
+it('rejects leftover Workspace ownership before runtime cleanup', function (): void {
+    $process = runtime_manager_leftover_workspace_process();
 
     expect(fn () => $this->manager->remove($process))
         ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node');
@@ -1816,10 +1815,10 @@ function runtime_manager_systemd_process(AppInstance $instance): Process
     ]);
 }
 
-function runtime_manager_legacy_workspace_process(): Process
+function runtime_manager_leftover_workspace_process(): Process
 {
     return Process::query()->create([
-        'owner_type' => Workspace::class,
+        'owner_type' => 'App\\Models\\Workspace',
         'owner_id' => 999_999,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
