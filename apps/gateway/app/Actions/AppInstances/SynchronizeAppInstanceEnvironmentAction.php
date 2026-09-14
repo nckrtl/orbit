@@ -9,7 +9,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRenderer;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentSynchronizer;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
@@ -39,16 +39,16 @@ final readonly class SynchronizeAppInstanceEnvironmentAction implements AppInsta
         );
     }
 
-    public function synchronizeRouteHostname(
+    public function synchronizeRouteDomain(
         AppInstance $instance,
-        AppInstanceEnvironmentRouteHostname $hostname,
+        AppInstanceEnvironmentRouteDomain $domain,
     ): AppInstanceEnvironmentResult {
         return $this->operations->run(
             [$instance->id],
             fn (): AppInstanceEnvironmentResult => $this->synchronize(
                 $this->contexts->resolveForRouteTransition(
                     $instance->refresh(),
-                    $hostname,
+                    $domain,
                     requireActiveNode: true,
                 ),
             ),

@@ -147,16 +147,16 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
 });
 
 it('rejects a hostname mismatch when OpenSSL exits successfully', function (): void {
-    $hostname = 'leaf-signer-unapproved.example';
+    $domain = 'leaf-signer-unapproved.example';
     $result = new CommandResult(
         exitCode: 0,
-        stdout: "Hostname {$hostname} does NOT match certificate\n",
+        stdout: "Hostname {$domain} does NOT match certificate\n",
         stderr: '',
         durationMs: 1,
         truncated: false,
     );
 
-    expect(leaf_certificate_host_check_matches($result, $hostname))->toBeFalse();
+    expect(leaf_certificate_host_check_matches($result, $domain))->toBeFalse();
 });
 
 it('fails closed when the root CA state is partial', function (): void {
@@ -418,7 +418,7 @@ function leaf_certificate_text(NativeProcessRunner $processes, string $certifica
 function leaf_certificate_matches_host(
     NativeProcessRunner $processes,
     string $certificatePath,
-    string $hostname,
+    string $domain,
 ): bool {
     $result = $processes->run(new ProcessInvocation([
         'openssl',
@@ -427,16 +427,16 @@ function leaf_certificate_matches_host(
         $certificatePath,
         '-noout',
         '-checkhost',
-        $hostname,
+        $domain,
     ]));
 
     if (! $result->succeeded() && str_contains($result->stderr, 'unknown option -checkhost')) {
         $extensions = leaf_certificate_extensions($certificatePath);
 
-        return ($extensions['subjectAltName'] ?? null) === "DNS:{$hostname}";
+        return ($extensions['subjectAltName'] ?? null) === "DNS:{$domain}";
     }
 
-    return leaf_certificate_host_check_matches($result, $hostname);
+    return leaf_certificate_host_check_matches($result, $domain);
 }
 
 function leaf_openssl_binary(): string
@@ -444,9 +444,9 @@ function leaf_openssl_binary(): string
     return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
 }
 
-function leaf_certificate_host_check_matches(CommandResult $result, string $hostname): bool
+function leaf_certificate_host_check_matches(CommandResult $result, string $domain): bool
 {
-    return $result->succeeded() && trim($result->stdout) === "Hostname {$hostname} does match certificate";
+    return $result->succeeded() && trim($result->stdout) === "Hostname {$domain} does match certificate";
 }
 
 function leaf_certificate_caddy_validation(
@@ -454,7 +454,7 @@ function leaf_certificate_caddy_validation(
     string $directory,
     string $certificatePath,
     string $privateKeyPath,
-    string $hostname,
+    string $domain,
 ): ?CommandResult {
     if (new ExecutableFinder()->find('caddy') === null) {
         return null;
@@ -462,7 +462,7 @@ function leaf_certificate_caddy_validation(
 
     $configurationPath = $directory.'/Caddyfile';
     file_put_contents($configurationPath, <<<CADDYFILE
-        https://{$hostname} {
+        https://{$domain} {
             tls {$certificatePath} {$privateKeyPath}
             respond "ok"
         }

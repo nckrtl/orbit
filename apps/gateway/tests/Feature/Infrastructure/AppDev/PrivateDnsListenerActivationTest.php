@@ -40,7 +40,7 @@ it('activates the requester-aware listener from a published catalog without rewr
         $restartAt = array_search('restart dnsmasq', $calls, true);
 
         expect($records)
-            ->toContain('host-record='.$route->hostname.',10.44.0.20')
+            ->toContain('host-record='.$route->domain.',10.44.0.20')
             ->not->toContain('192.168.10.20')
             ->and($vpn)
             ->toContain('listen-address=127.0.0.55', 'bind-interfaces')
@@ -364,7 +364,7 @@ function orb307_published_cluster(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'app.cluster.test',
+        'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

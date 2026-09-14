@@ -103,7 +103,7 @@ it('projects a production workload through a remote Router over LAN without publ
             '-connect',
             '10.10.0.10:443',
             '-servername',
-            $route->hostname,
+            $route->domain,
             '-verify_return_error',
         ])
         ->and($workloadConfiguration)->toContain(
@@ -113,8 +113,8 @@ it('projects a production workload through a remote Router over LAN without publ
         )
         ->and($routerConfiguration)->toContain(
             'reverse_proxy https://10.10.0.10',
-            "header_up Host {$route->hostname}",
-            "tls_server_name {$route->hostname}",
+            "header_up Host {$route->domain}",
+            "tls_server_name {$route->domain}",
             "tls /etc/caddy/orbit-certificates/route-{$route->id}-router/current/cert.pem",
         )
         ->and($publishedInputs->contains(
@@ -123,7 +123,7 @@ it('projects a production workload through a remote Router over LAN without publ
         ->and($publishedInputs->contains(
             static fn (string $input): bool => str_contains($input, base64_encode($routerConfiguration)),
         ))->toBeTrue()
-        ->and($dnsConfiguration)->toContain("host-record={$route->hostname},{$router->wireguard_ip}")
+        ->and($dnsConfiguration)->toContain("host-record={$route->domain},{$router->wireguard_ip}")
         ->and($processes->invocations)->toHaveCount(1)
         ->and(json_encode($ssh->commands, JSON_THROW_ON_ERROR))->not->toContain('ingress', 'acme');
 });
@@ -284,7 +284,7 @@ function orb199_production_route_models(
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'preview.prod.orbit',
+        'domain' => 'preview.prod.orbit',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -345,7 +345,7 @@ function orb199_production_route_projector(?Closure $failSsh = null): array
     };
     $signer = new class implements LeafCertificateSigner
     {
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
             return "LEAF CERTIFICATE\n";
         }

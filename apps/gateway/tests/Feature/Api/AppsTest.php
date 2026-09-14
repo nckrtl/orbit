@@ -414,7 +414,7 @@ describe('app lifecycle', function (): void {
             'name' => 'dev',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/acme/dev',
-            'hostname' => 'dev.dev.orbit',
+            'domain' => 'dev.dev.orbit',
             'certificate_mode' => 'orbit-ca',
         ]);
 
@@ -490,7 +490,7 @@ describe('app lifecycle', function (): void {
         $route = Route::query()->create([
             'app_id' => $app->id,
             'node_id' => $node->id,
-            'hostname' => 'acme.dev.orbit',
+            'domain' => 'acme.dev.orbit',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
         ]);
@@ -512,7 +512,7 @@ describe('app lifecycle', function (): void {
         Route::query()->create([
             'app_id' => $routed->id,
             'node_id' => $node->id,
-            'hostname' => 'routed.dev.orbit',
+            'domain' => 'routed.dev.orbit',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
         ]);
@@ -780,7 +780,7 @@ describe('app list access', function (): void {
                 'name' => 'legacy',
                 'environment' => 'development',
                 'checkout_path' => "/srv/legacy/{$app->slug}",
-                'hostname' => "{$app->slug}.example.test",
+                'domain' => "{$app->slug}.example.test",
                 'certificate_mode' => 'orbit-ca',
             ]);
         }
@@ -790,7 +790,7 @@ describe('app list access', function (): void {
             'name' => 'legacy',
             'environment' => 'development',
             'checkout_path' => '/srv/legacy/mixed-visible',
-            'hostname' => 'mixed-visible.example.test',
+            'domain' => 'mixed-visible.example.test',
             'certificate_mode' => 'orbit-ca',
         ]);
         AppInstance::query()->create([

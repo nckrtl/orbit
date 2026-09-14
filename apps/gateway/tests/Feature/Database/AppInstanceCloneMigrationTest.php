@@ -71,7 +71,7 @@ it('persists clone evidence with integer and immutable time casts', function ():
         'clone_candidate_commit' => str_repeat('a', 40),
         'clone_requested_branch' => 'release/one',
         'clone_preview_name' => 'preview',
-        'clone_preview_hostname' => 'preview.prod.orbit',
+        'clone_preview_domain' => 'preview.prod.orbit',
         'clone_sqlite_source_path' => 'database/source.sqlite',
         'clone_completed_at' => $completedAt,
     ])->refresh();
@@ -84,7 +84,7 @@ it('persists clone evidence with integer and immutable time casts', function ():
         ->toBe('release/one')
         ->and($target->clone_preview_name)
         ->toBe('preview')
-        ->and($target->clone_preview_hostname)
+        ->and($target->clone_preview_domain)
         ->toBe('preview.prod.orbit')
         ->and($target->clone_sqlite_source_path)
         ->toBe('database/source.sqlite')
@@ -121,7 +121,7 @@ it('refuses rollback before discarding any retained clone evidence', function (a
     'candidate commit' => [['clone_candidate_commit' => str_repeat('b', 40)]],
     'requested branch' => [['clone_requested_branch' => 'release/two']],
     'preview name' => [['clone_preview_name' => 'preview']],
-    'preview hostname' => [['clone_preview_hostname' => 'preview.prod.orbit']],
+    'preview domain' => [['clone_preview_domain' => 'preview.prod.orbit']],
     'SQLite source path' => [['clone_sqlite_source_path' => 'database/source.sqlite']],
     'completion time' => [['clone_completed_at' => '2026-09-12 12:34:56']],
 ]);
@@ -166,7 +166,7 @@ function app_instance_clone_columns(): array
         'clone_candidate_commit',
         'clone_requested_branch',
         'clone_preview_name',
-        'clone_preview_hostname',
+        'clone_preview_domain',
         'clone_sqlite_source_path',
         'clone_completed_at',
     ];

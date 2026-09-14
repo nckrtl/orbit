@@ -102,12 +102,12 @@ it('serves the exact transient development 503 without an upstream then deletes 
     $replacement = Route::query()->create([
         'app_id' => $member->app_id,
         'node_id' => $member->node_id,
-        'hostname' => $route->hostname,
+        'domain' => $route->domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    expect($replacement->hostname)->toBe($route->hostname);
+    expect($replacement->domain)->toBe($route->domain);
 });
 
 it('keeps the final Route row until every projection cleanup succeeds', function (): void {
@@ -386,7 +386,7 @@ function orb181_removal_projector(
     };
     $signer = new class implements LeafCertificateSigner
     {
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
             return "LEAF\n";
         }
@@ -511,14 +511,14 @@ function orb181_projector_route(
     OrbitApp $app,
     ?Node $node,
     ?Cluster $cluster,
-    string $hostname,
+    string $domain,
 ): Route {
     return Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node?->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $node?->id,
-        'hostname' => $hostname,
+        'domain' => $domain,
         'provenance' => $node instanceof Node ? RouteProvenance::Generated : RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

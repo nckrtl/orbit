@@ -35,7 +35,7 @@ final readonly class ImportAppInstanceEnvironmentAction
             $values = $this->importer->parse($this->reader->read($context));
 
             if ($context->laravel) {
-                $values['APP_URL'] = 'https://{{app_instance.hostname}}';
+                $values['APP_URL'] = 'https://{{app_instance.domain}}';
             }
 
             return $this->store->import($context, $values, $replace);

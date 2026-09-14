@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Routes\RouteHostnameChangeDirection;
-use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteStatus;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -48,7 +46,13 @@ final readonly class AppDevSiteRepository
         $routeQuery = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
             ->where(static function (Builder $query) use ($pendingRoute): void {
-                $query->where('status', RouteStatus::Active->value);
+                $query->whereIn('status', [
+                    RouteStatus::Active->value,
+                    RouteStatus::Activating->value,
+                    RouteStatus::Retiring->value,
+                    RouteStatus::Pending->value,
+                    RouteStatus::Failed->value,
+                ]);
 
                 if ($pendingRoute instanceof Route) {
                     $query->orWhere('id', $pendingRoute->id);
@@ -133,26 +137,6 @@ final readonly class AppDevSiteRepository
                 $sites->push($this->unavailableSite($unavailableInstance, $route, $router));
             }
 
-            if (
-                $route->hostname_change_direction === RouteHostnameChangeDirection::Forward
-                && in_array(
-                    $route->hostname_change_step,
-                    [
-                        RouteHostnameChangeStep::LaravelUrl,
-                        RouteHostnameChangeStep::EnvironmentSynchronized,
-                        RouteHostnameChangeStep::DnsPublished,
-                    ],
-                    true,
-                )
-                && is_string($route->hostname_change_target)
-                && ! ($additionalRoute instanceof Route
-                && $additionalRoute->id === $route->id
-                && $additionalRoute->hostname === $route->hostname_change_target)
-            ) {
-                $candidate = clone $route;
-                $candidate->hostname = $route->hostname_change_target;
-                $this->appendHostnameChangeSites($sites, $candidate);
-            }
         }
 
         if ($additionalRoute instanceof Route) {
@@ -182,7 +166,7 @@ final readonly class AppDevSiteRepository
         $router = $route->cluster?->routerAssignment?->node;
 
         foreach ($targets as $target) {
-            $sites->push($this->appInstanceSite($target, $route, hostnameChange: true));
+            $sites->push($this->appInstanceSite($target, $route, domainChange: true));
         }
 
         if (
@@ -194,7 +178,7 @@ final readonly class AppDevSiteRepository
                 array_values($targets->all()),
                 $route,
                 $router,
-                hostnameChange: true,
+                domainChange: true,
             ));
         }
     }
@@ -202,7 +186,7 @@ final readonly class AppDevSiteRepository
     private function appInstanceSite(
         AppInstance $instance,
         Route $route,
-        bool $hostnameChange = false,
+        bool $domainChange = false,
     ): AppDevSite {
         $checkoutPath = $instance->usesProductionReleaseLayout()
             ? "{$instance->production_home}/current"
@@ -215,12 +199,12 @@ final readonly class AppDevSiteRepository
             checkoutPath: $checkoutPath,
             documentRoot: $instance->root ?? $instance->app->root ?? '',
             phpVersion: $instance->selected_php_version,
-            hostname: $route->hostname,
+            domain: $route->domain,
             environment: $instance->environment,
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             appSlug: $instance->app->slug,
-            certificateScope: $hostnameChange ? "app-instance-{$instance->id}-hostname-change" : null,
+            certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
             productionPhpSocket: $instance->production_php_socket,
         );
     }
@@ -230,7 +214,7 @@ final readonly class AppDevSiteRepository
         array $instances,
         Route $route,
         Node $router,
-        bool $hostnameChange = false,
+        bool $domainChange = false,
     ): AppDevSite {
         $addresses = collect($instances)
             ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
@@ -250,9 +234,9 @@ final readonly class AppDevSiteRepository
             checkoutPath: '',
             documentRoot: '',
             phpVersion: null,
-            hostname: $route->hostname,
+            domain: $route->domain,
             upstreamAddresses: $addresses,
-            certificateScope: $hostnameChange ? "route-{$route->id}-router-hostname-change" : null,
+            certificateScope: $domainChange ? "route-{$route->id}-router-hostname-change" : null,
         );
     }
 
@@ -271,7 +255,7 @@ final readonly class AppDevSiteRepository
             checkoutPath: '',
             documentRoot: '',
             phpVersion: null,
-            hostname: $route->hostname,
+            domain: $route->domain,
             unavailable: true,
         );
     }

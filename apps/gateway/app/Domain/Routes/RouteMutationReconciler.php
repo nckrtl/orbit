@@ -54,6 +54,12 @@ final readonly class RouteMutationReconciler
                 new RouteReconciliationGuard()->refuse();
             }
 
+            if (array_key_exists('domain', $changed)) {
+                $this->replacePendingGenerated($route, $proposal);
+
+                continue;
+            }
+
             $route->update($proposal);
         }
     }
@@ -72,7 +78,7 @@ final readonly class RouteMutationReconciler
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
-     * @return array{Collection<int, Route>, array<int, array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, hostname: string}>}
+     * @return array{Collection<int, Route>, array<int, array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, domain: string}>}
      */
     private function proposals(
         array $nodeOverrides,
@@ -80,10 +86,10 @@ final readonly class RouteMutationReconciler
         array $baselineNodeOverrides,
         array $baselineClusterOverrides,
     ): array {
-        $hostnames = DB::table('routes')
+        $domains = DB::table('routes')
             ->lockForUpdate()
             ->orderBy('id')
-            ->pluck('id', 'hostname')
+            ->pluck('id', 'domain')
             ->all();
         $routes = $this->affectedRoutes(
             $nodeOverrides,
@@ -94,7 +100,7 @@ final readonly class RouteMutationReconciler
         $proposals = [];
 
         foreach ($routes as $route) {
-            unset($hostnames[$route->hostname]);
+            unset($domains[$route->domain]);
         }
 
         foreach ($routes as $route) {
@@ -105,17 +111,17 @@ final readonly class RouteMutationReconciler
                 $baselineNodeOverrides,
                 $baselineClusterOverrides,
             );
-            $owner = $hostnames[$proposal['hostname']] ?? null;
+            $owner = $domains[$proposal['domain']] ?? null;
 
             if ($owner !== null && $owner !== $route->id) {
                 throw new ResourceOperationException(
-                    errorCode: 'route.hostname_conflict',
-                    message: "Route hostname [{$proposal['hostname']}] would collide.",
+                    errorCode: 'route.domain_conflict',
+                    message: "Route domain [{$proposal['domain']}] would collide.",
                     status: 409,
                 );
             }
 
-            $hostnames[$proposal['hostname']] = $route->id;
+            $domains[$proposal['domain']] = $route->id;
             $proposals[$route->id] = $proposal;
         }
 
@@ -193,7 +199,7 @@ final readonly class RouteMutationReconciler
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
-     * @return array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, hostname: string}
+     * @return array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, domain: string}
      */
     private function proposal(
         Route $route,
@@ -218,7 +224,7 @@ final readonly class RouteMutationReconciler
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'route.target_scope_conflict',
-                    message: "Route [{$route->hostname}] targets would span routing scopes.",
+                    message: "Route [{$route->domain}] targets would span routing scopes.",
                     status: 409,
                 );
             }
@@ -235,17 +241,17 @@ final readonly class RouteMutationReconciler
             $this->state->assertRouter($placement->clusterId);
         }
 
-        $hostname = $route->hostname;
+        $domain = $route->domain;
 
         if ($route->provenance === RouteProvenance::Generated) {
             if ($firstTarget instanceof AppInstance && ! $firstTarget->migration_required) {
-                $hostname = $this->state->generatedHostname(
+                $domain = $this->state->generatedDomain(
                     $route->app->slug,
                     $firstTarget->name,
                     $placement->effectiveTld,
                 );
             } elseif (! $firstTarget instanceof AppInstance) {
-                $hostname = $this->rebaseRetainedHostname(
+                $domain = $this->rebaseRetainedDomain(
                     $route,
                     $placement,
                     $baselineNodeOverrides,
@@ -258,7 +264,7 @@ final readonly class RouteMutationReconciler
             'node_id' => $placement->nodeId,
             'cluster_id' => $placement->clusterId,
             'generation_basis_node_id' => $route->generation_basis_node_id,
-            'hostname' => RouteHostname::validate($hostname),
+            'domain' => RouteDomain::validate($domain),
         ];
     }
 
@@ -274,7 +280,7 @@ final readonly class RouteMutationReconciler
             if (! $basis instanceof Node) {
                 throw new ResourceOperationException(
                     errorCode: 'route.generation_basis_missing',
-                    message: "Generated Route [{$route->hostname}] has no generation basis.",
+                    message: "Generated Route [{$route->domain}] has no generation basis.",
                     status: 409,
                 );
             }
@@ -297,7 +303,7 @@ final readonly class RouteMutationReconciler
         if ($state !== ClusterState::Active) {
             throw new ResourceOperationException(
                 errorCode: 'route.scope_invalid',
-                message: "Targetless Route [{$route->hostname}] cannot leave its Cluster scope.",
+                message: "Targetless Route [{$route->domain}] cannot leave its Cluster scope.",
                 status: 409,
             );
         }
@@ -305,12 +311,43 @@ final readonly class RouteMutationReconciler
         return new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: null);
     }
 
+    /** @param array{node_id: ?int, cluster_id: ?int, generation_basis_node_id: ?int, domain: string} $proposal */
+    private function replacePendingGenerated(Route $route, array $proposal): void
+    {
+        $replacement = Route::query()->create([
+            'app_id' => $route->app_id,
+            'node_id' => $proposal['node_id'],
+            'cluster_id' => $proposal['cluster_id'],
+            'generation_basis_node_id' => $proposal['generation_basis_node_id'],
+            'domain' => $proposal['domain'],
+            'provenance' => $route->provenance,
+            'publication' => $route->publication,
+            'status' => RouteStatus::Pending,
+            'replaces_route_id' => $route->id,
+            'replacement_step' => RouteReplacementStep::Reserved,
+        ]);
+
+        foreach ($route->targets as $target) {
+            $replacement->targets()->create([
+                'app_instance_id' => $target->app_instance_id,
+                'position' => $target->position,
+            ]);
+        }
+
+        $route->targets()->delete();
+        $route->delete();
+        $replacement->update([
+            'replaces_route_id' => null,
+            'replacement_step' => null,
+        ]);
+    }
+
     private function assertTarget(Route $route, AppInstance $target): void
     {
         if ($target->app_id !== $route->app_id || $target->status !== AppInstanceState::Active) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_invalid',
-                message: "Route [{$route->hostname}] has an invalid target.",
+                message: "Route [{$route->domain}] has an invalid target.",
                 status: 409,
             );
         }
@@ -320,7 +357,7 @@ final readonly class RouteMutationReconciler
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
      */
-    private function rebaseRetainedHostname(
+    private function rebaseRetainedDomain(
         Route $route,
         RoutePlacement $proposedPlacement,
         array $baselineNodeOverrides,
@@ -336,23 +373,23 @@ final readonly class RouteMutationReconciler
         if ($proposedTld === null) {
             throw new ResourceOperationException(
                 errorCode: 'route.tld_required',
-                message: "Generated Route [{$route->hostname}] would have no effective TLD.",
+                message: "Generated Route [{$route->domain}] would have no effective TLD.",
                 status: 409,
             );
         }
 
         if ($currentTld === $proposedTld) {
-            return $route->hostname;
+            return $route->domain;
         }
 
-        if ($currentTld === null || ! str_ends_with($route->hostname, ".{$currentTld}")) {
+        if ($currentTld === null || ! str_ends_with($route->domain, ".{$currentTld}")) {
             throw new ResourceOperationException(
                 errorCode: 'route.generation_basis_invalid',
-                message: "Generated Route [{$route->hostname}] cannot be reconciled from its stored basis.",
+                message: "Generated Route [{$route->domain}] cannot be reconciled from its stored basis.",
                 status: 409,
             );
         }
 
-        return substr($route->hostname, 0, -strlen($currentTld)).$proposedTld;
+        return substr($route->domain, 0, -strlen($currentTld)).$proposedTld;
     }
 }

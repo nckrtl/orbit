@@ -18,7 +18,7 @@ use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\ResourceOperationException;
@@ -686,7 +686,7 @@ final readonly class RecordCommandActivity
                 'default_branch',
                 'instance_name',
                 'root',
-                'hostname',
+                'domain',
             ]);
         } catch (UnexpectedValueException) {
             return [];
@@ -725,7 +725,7 @@ final readonly class RecordCommandActivity
             || strlen($name) > 63
             || preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $name) !== 1
             || ! is_string($previewName)
-            || ! RouteHostname::isValid($previewName)
+            || ! RouteDomain::isValid($previewName)
             || (array_key_exists('branch', $input) && (! is_string($branch) || ! GitBranchName::isValid($branch)))
             || (array_key_exists('sqlite_source_path', $input) && ! is_string($sqliteSourcePath))
         ) {

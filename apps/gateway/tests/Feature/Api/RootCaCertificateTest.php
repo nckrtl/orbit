@@ -19,7 +19,7 @@ it('returns only the current public root CA with request correlation', function 
             private readonly string $certificate,
         ) {}
 
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
             throw new LogicException('Signing is outside the root CA endpoint.');
         }
@@ -89,7 +89,7 @@ it('returns 503 with a bounded error when the root CA is unavailable', function 
     $requestId = 'c5d56319-b820-440c-a7c5-f6bf8b6bf310';
     app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
     {
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
             throw new LogicException('Signing is outside the root CA endpoint.');
         }

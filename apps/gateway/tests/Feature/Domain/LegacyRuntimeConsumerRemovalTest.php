@@ -143,7 +143,7 @@ function leftover_runtime_models(CertificateMode $certificateMode = CertificateM
         'name' => 'legacy',
         'environment' => $certificateMode === CertificateMode::Acme ? 'production' : 'development',
         'checkout_path' => '/srv/legacy/acme',
-        'hostname' => 'legacy.app-dev.orbit',
+        'domain' => 'legacy.app-dev.orbit',
         'certificate_mode' => $certificateMode,
         'status' => LifecycleStatus::Active,
     ]);
@@ -152,7 +152,7 @@ function leftover_runtime_models(CertificateMode $certificateMode = CertificateM
         'name' => 'feature',
         'branch' => 'feature',
         'checkout_path' => '/srv/legacy/acme/feature',
-        'hostname' => 'feature.legacy.app-dev.orbit',
+        'domain' => 'feature.legacy.app-dev.orbit',
         'status' => LifecycleStatus::Active,
     ]);
 
@@ -172,12 +172,12 @@ function leftover_runtime_app_instance(Node $node, OrbitApp $app): AppInstance
     ]);
 }
 
-function leftover_runtime_route(AppInstance $appInstance, string $hostname): Route
+function leftover_runtime_route(AppInstance $appInstance, string $domain): Route
 {
     $route = Route::query()->create([
         'app_id' => $appInstance->app_id,
         'node_id' => $appInstance->node_id,
-        'hostname' => $hostname,
+        'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

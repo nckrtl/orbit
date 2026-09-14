@@ -280,24 +280,26 @@ final readonly class ClusterRouterDnsSelection
 
         $routes = Route::query()
             ->where('cluster_id', $clusterId)
-            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Pending->value])
+            ->whereIn('status', [
+                RouteStatus::Active->value,
+                RouteStatus::Activating->value,
+                RouteStatus::Retiring->value,
+                RouteStatus::Pending->value,
+                RouteStatus::Failed->value,
+            ])
             ->orderBy('id')
             ->get();
 
         foreach ($routes as $route) {
-            $names[] = $this->normalizeName($route->hostname);
-
-            if (is_string($route->hostname_change_target) && $route->hostname_change_target !== '') {
-                $names[] = $this->normalizeName($route->hostname_change_target);
-            }
+            $names[] = $this->normalizeName($route->domain);
         }
 
         if (
             $additionalRoute instanceof Route
             && $additionalRoute->cluster_id === $clusterId
-            && $additionalRoute->hostname !== ''
+            && $additionalRoute->domain !== ''
         ) {
-            $names[] = $this->normalizeName($additionalRoute->hostname);
+            $names[] = $this->normalizeName($additionalRoute->domain);
         }
 
         return array_values(array_unique(array_filter($names, static fn (string $name): bool => $name !== '')));

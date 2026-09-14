@@ -222,21 +222,22 @@ final readonly class ProcessTargetResolver
             appInstance: $instance,
             environmentFile: $environmentFile,
             productionReleaseLayout: $productionReleaseLayout,
-            routeHostname: $this->developmentRouteHostname($instance),
+            routeDomain: $this->developmentRouteDomain($instance),
             onDemandHostStart: new AppDevHibernationPolicy()->usesOnDemandHostStart($instance),
         );
     }
 
-    private function developmentRouteHostname(AppInstance $instance): ?string
+    private function developmentRouteDomain(AppInstance $instance): ?string
     {
         if ($instance->environment !== 'development') {
             return null;
         }
 
         $instance->loadMissing('routes');
-        $hostname = $instance->routes->sortBy('id')->first()?->hostname;
+        $domain = $instance->authoritativeRoute()?->domain
+            ?? $instance->routes->sortBy('id')->first()?->domain;
 
-        return is_string($hostname) && $hostname !== '' ? $hostname : null;
+        return is_string($domain) && $domain !== '' ? $domain : null;
     }
 
     private function ensureActiveInstance(AppInstance $instance): void

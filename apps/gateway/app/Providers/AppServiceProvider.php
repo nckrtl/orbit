@@ -104,7 +104,7 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
@@ -286,7 +286,7 @@ final class AppServiceProvider extends ServiceProvider
         ProductionCloneRouteProjector::class => NativeProductionRouteProjector::class,
         AppInstanceEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         AppInstanceRouteEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
-        RouteHostnameProjector::class => NativeDevelopmentRouteProjector::class,
+        RouteDomainProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,

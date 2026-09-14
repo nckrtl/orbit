@@ -209,7 +209,7 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
     $remoteRoute = Route::query()->create([
         'app_id' => $this->instance->app_id,
         'node_id' => $remote->id,
-        'hostname' => 'environment-api-remote.test',
+        'domain' => 'environment-api-remote.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -250,7 +250,7 @@ it('detaches the mapping and clears related stored keys without logging the pass
 
     $detach = $this->call(
         'DELETE',
-        "/api/v1/instances/{$this->route->hostname}/database-connections/app",
+        "/api/v1/instances/{$this->route->domain}/database-connections/app",
         server: ['CONTENT_TYPE' => 'application/json'],
         content: '{"prefix":"CACHE_DB"}',
     );
@@ -341,7 +341,7 @@ function database_attachment_fixture(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'environment-api.test',
+        'domain' => 'environment-api.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

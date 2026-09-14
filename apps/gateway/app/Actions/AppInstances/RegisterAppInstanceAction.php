@@ -22,7 +22,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -57,8 +57,8 @@ final readonly class RegisterAppInstanceAction
     {
         $this->assertPlacement($caller);
 
-        if ($data->hostname !== null) {
-            RouteHostname::validate($data->hostname);
+        if ($data->domain !== null) {
+            RouteDomain::validate($data->domain);
         }
 
         return $this->sourceLock->synchronized($caller->id, function () use ($caller, $data): array {
@@ -118,7 +118,7 @@ final readonly class RegisterAppInstanceAction
                         $instances[] = $this->completeMember(
                             $member['appInstance'],
                             $member['facts'],
-                            $member['routeHostname'],
+                            $member['routeDomain'],
                         );
                     }
                 } catch (Throwable $exception) {
@@ -685,7 +685,7 @@ final readonly class RegisterAppInstanceAction
 
     /**
      * @param  list<RegistrationSourceFacts>  $facts
-     * @return list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeHostname: string|null}>
+     * @return list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeDomain: string|null}>
      */
     private function reserveMembers(
         Node $node,
@@ -705,7 +705,7 @@ final readonly class RegisterAppInstanceAction
             ->where('registration_original_path', $primary->path)
             ->value('registration_request_id');
         $requestId = is_string($retainedRequestId) ? $retainedRequestId : (string) Str::uuid();
-        /** @var list<array{facts: RegistrationSourceFacts, name: string, destination: StoragePath, instance: AppInstance|null, primary: bool, routeHostname: string|null, routeProvenance: string, backfillRouteIntent: bool}> $proposals */
+        /** @var list<array{facts: RegistrationSourceFacts, name: string, destination: StoragePath, instance: AppInstance|null, primary: bool, routeDomain: string|null, routeProvenance: string, backfillRouteIntent: bool}> $proposals */
         $proposals = [];
         $names = [];
         $destinations = [];
@@ -786,7 +786,7 @@ final readonly class RegisterAppInstanceAction
 
             $routeIntent = $this->registrationRouteIntent(
                 $instance,
-                $fact === $primary ? $data->hostname : null,
+                $fact === $primary ? $data->domain : null,
             );
 
             $proposals[] = [
@@ -795,13 +795,13 @@ final readonly class RegisterAppInstanceAction
                 'destination' => $destination,
                 'instance' => $instance,
                 'primary' => $fact === $primary,
-                'routeHostname' => $routeIntent['hostname'],
+                'routeDomain' => $routeIntent['domain'],
                 'routeProvenance' => $routeIntent['provenance'],
                 'backfillRouteIntent' => $routeIntent['backfill'],
             ];
         }
 
-        /** @var list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeHostname: string|null}> $reserved */
+        /** @var list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeDomain: string|null}> $reserved */
         $reserved = DB::transaction(function () use ($proposals, $app, $node, $rootOverride, $requestId, $data): array {
             $reserved = [];
 
@@ -824,7 +824,7 @@ final readonly class RegisterAppInstanceAction
                             primary: $proposal['primary'],
                             includeWorktrees: $data->includeWorktrees,
                             routeIntent: [
-                                'hostname' => $proposal['routeHostname'],
+                                'domain' => $proposal['routeDomain'],
                                 'provenance' => $proposal['routeProvenance'],
                             ],
                         ));
@@ -832,7 +832,7 @@ final readonly class RegisterAppInstanceAction
                         $instance->save();
                     } elseif ($proposal['backfillRouteIntent']) {
                         $instance->update([
-                            'registration_route_hostname' => $proposal['routeHostname'],
+                            'registration_route_domain' => $proposal['routeDomain'],
                             'registration_route_provenance' => $proposal['routeProvenance'],
                         ]);
                     }
@@ -872,7 +872,7 @@ final readonly class RegisterAppInstanceAction
                     $reserved[] = [
                         'appInstance' => $instance,
                         'facts' => $fact,
-                        'routeHostname' => $proposal['routeHostname'],
+                        'routeDomain' => $proposal['routeDomain'],
                     ];
 
                     continue;
@@ -893,7 +893,7 @@ final readonly class RegisterAppInstanceAction
                         primary: $proposal['primary'],
                         includeWorktrees: $data->includeWorktrees,
                         routeIntent: [
-                            'hostname' => $proposal['routeHostname'],
+                            'domain' => $proposal['routeDomain'],
                             'provenance' => $proposal['routeProvenance'],
                         ],
                     ),
@@ -902,7 +902,7 @@ final readonly class RegisterAppInstanceAction
                 $reserved[] = [
                     'appInstance' => $instance,
                     'facts' => $fact,
-                    'routeHostname' => $proposal['routeHostname'],
+                    'routeDomain' => $proposal['routeDomain'],
                 ];
             }
 
@@ -913,7 +913,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     /**
-     * @param  list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeHostname: string|null}>  $members
+     * @param  list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeDomain: string|null}>  $members
      */
     private function needsRelocation(array $members): bool
     {
@@ -943,7 +943,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     /**
-     * @param  array{hostname: string|null, provenance: string}  $routeIntent
+     * @param  array{domain: string|null, provenance: string}  $routeIntent
      * @return array<string, mixed>
      */
     private function registrationEvidence(
@@ -969,7 +969,7 @@ final readonly class RegisterAppInstanceAction
             'registration_worktree_paths' => $facts->worktreePaths,
             'registration_relocation_state' => 'reserved',
             'registration_authoritative_path' => $facts->path,
-            'registration_route_hostname' => $routeIntent['hostname'],
+            'registration_route_domain' => $routeIntent['domain'],
             'registration_route_provenance' => $routeIntent['provenance'],
         ];
     }
@@ -1050,7 +1050,7 @@ final readonly class RegisterAppInstanceAction
 
     /**
      * @return array{
-     *     hostname: string|null,
+     *     domain: string|null,
      *     provenance: string,
      *     backfill: bool
      * }
@@ -1059,11 +1059,11 @@ final readonly class RegisterAppInstanceAction
     {
         $requestedHostname = $requestedHostname === null
             ? null
-            : RouteHostname::validate($requestedHostname);
+            : RouteDomain::validate($requestedHostname);
 
         if (! $instance instanceof AppInstance) {
             return [
-                'hostname' => $requestedHostname,
+                'domain' => $requestedHostname,
                 'provenance' => $requestedHostname === null
                     ? RouteProvenance::Generated->value
                     : RouteProvenance::Explicit->value,
@@ -1075,35 +1075,35 @@ final readonly class RegisterAppInstanceAction
             $current = $this->currentRegistrationRouteIntent($instance);
             $this->assertRequestedRegistrationRouteIntent(
                 $requestedHostname,
-                $current['hostname'],
+                $current['domain'],
                 $current['provenance'],
             );
 
             return [
-                'hostname' => $current['hostname'],
+                'domain' => $current['domain'],
                 'provenance' => $current['provenance'],
                 'backfill' => false,
             ];
         }
 
-        $hostname = $instance->registration_route_hostname;
+        $domain = $instance->registration_route_domain;
         $provenance = $instance->registration_route_provenance;
         $backfill = false;
 
-        if ($hostname === null && $provenance === null) {
+        if ($domain === null && $provenance === null) {
             $legacyIntent = $this->legacyRegistrationRouteIntent($instance);
-            $hostname = $legacyIntent['hostname'];
+            $domain = $legacyIntent['domain'];
             $provenance = $legacyIntent['provenance'];
             $backfill = $instance->registration_request_id !== null;
         }
 
-        $this->assertValidRegistrationRouteIntent($hostname, $provenance);
+        $this->assertValidRegistrationRouteIntent($domain, $provenance);
         assert(is_string($provenance));
-        $this->assertPrePublicationRegistrationRouteIntent($instance, $hostname, $provenance);
-        $this->assertRequestedRegistrationRouteIntent($requestedHostname, $hostname, $provenance);
+        $this->assertPrePublicationRegistrationRouteIntent($instance, $domain, $provenance);
+        $this->assertRequestedRegistrationRouteIntent($requestedHostname, $domain, $provenance);
 
         return [
-            'hostname' => $hostname,
+            'domain' => $domain,
             'provenance' => $provenance,
             'backfill' => $backfill,
         ];
@@ -1122,7 +1122,7 @@ final readonly class RegisterAppInstanceAction
 
     /**
      * @return array{
-     *     hostname: string|null,
+     *     domain: string|null,
      *     provenance: string
      * }
      */
@@ -1136,25 +1136,25 @@ final readonly class RegisterAppInstanceAction
 
         $route = $routes->first();
         assert($route instanceof Route);
-        $this->assertRouteHostnameChangeComplete($route);
-        $hostname = RouteHostname::validate($route->hostname);
+        $this->assertRouteDomainChangeComplete($route);
+        $domain = RouteDomain::validate($route->domain);
         $provenance = $route->provenance->value;
 
         return [
-            'hostname' => $provenance === RouteProvenance::Explicit->value ? $hostname : null,
+            'domain' => $provenance === RouteProvenance::Explicit->value ? $domain : null,
             'provenance' => $provenance,
         ];
     }
 
     private function assertPrePublicationRegistrationRouteIntent(
         AppInstance $instance,
-        ?string $hostname,
+        ?string $domain,
         string $provenance,
     ): void {
         $recovery = $this->migrationRecovery($instance);
 
         if ($recovery !== null) {
-            $this->assertRegistrationRouteIntentMatches($hostname, $provenance, $recovery['route']);
+            $this->assertRegistrationRouteIntentMatches($domain, $provenance, $recovery['route']);
         }
 
         $routes = $instance->routes()->get();
@@ -1166,41 +1166,41 @@ final readonly class RegisterAppInstanceAction
         $route = $routes->first();
 
         if ($route instanceof Route) {
-            $this->assertRouteHostnameChangeComplete($route);
+            $this->assertRouteDomainChangeComplete($route);
             $this->assertRegistrationRouteIntentMatches(
-                $hostname,
+                $domain,
                 $provenance,
                 [
                     'id' => $route->id,
-                    'hostname' => $route->hostname,
+                    'domain' => $route->domain,
                     'provenance' => $route->provenance->value,
                 ],
             );
         }
     }
 
-    private function assertRouteHostnameChangeComplete(Route $route): void
+    private function assertRouteDomainChangeComplete(Route $route): void
     {
-        if ($route->hostname_change_target === null) {
+        if ($route->replaced_by_route_id === null && $route->replaces_route_id === null) {
             return;
         }
 
         throw $this->conflict(
             'instance.registration_conflict',
-            'Registration cannot resume while the authoritative Route hostname change is incomplete.',
+            'Registration cannot resume while the authoritative Route domain change is incomplete.',
         );
     }
 
-    /** @param array{id: int, hostname: string, provenance: string} $route */
+    /** @param array{id: int, domain: string, provenance: string} $route */
     private function assertRegistrationRouteIntentMatches(
-        ?string $hostname,
+        ?string $domain,
         string $provenance,
         array $route,
     ): void {
         if (
             $route['provenance'] === $provenance
             && ($provenance === RouteProvenance::Generated->value
-            || $route['hostname'] === $hostname)
+            || $route['domain'] === $domain)
         ) {
             return;
         }
@@ -1210,24 +1210,24 @@ final readonly class RegisterAppInstanceAction
 
     private function assertRequestedRegistrationRouteIntent(
         ?string $requestedHostname,
-        ?string $hostname,
+        ?string $domain,
         string $provenance,
     ): void {
         if (
             $requestedHostname === null
             || $provenance === RouteProvenance::Explicit->value
-            && $hostname === $requestedHostname
+            && $domain === $requestedHostname
         ) {
             return;
         }
 
         throw $this->conflict(
             'instance.registration_conflict',
-            'Registration retry input conflicts with the authoritative Route hostname intent.',
+            'Registration retry input conflicts with the authoritative Route domain intent.',
         );
     }
 
-    /** @return array{hostname: string|null, provenance: string} */
+    /** @return array{domain: string|null, provenance: string} */
     private function legacyRegistrationRouteIntent(AppInstance $instance): array
     {
         $recovery = $this->migrationRecovery($instance);
@@ -1240,32 +1240,32 @@ final readonly class RegisterAppInstanceAction
 
             $route = $instance->routes()->sole();
             $routeIntent = [
-                'hostname' => $route->hostname,
+                'domain' => $route->domain,
                 'provenance' => $route->provenance->value,
             ];
         }
 
-        if (! RouteHostname::isValid($routeIntent['hostname'])) {
+        if (! RouteDomain::isValid($routeIntent['domain'])) {
             throw $this->invalidRegistrationRouteIntent();
         }
 
         return [
-            'hostname' => $routeIntent['provenance'] === RouteProvenance::Explicit->value
-                ? RouteHostname::normalize($routeIntent['hostname'])
+            'domain' => $routeIntent['provenance'] === RouteProvenance::Explicit->value
+                ? RouteDomain::normalize($routeIntent['domain'])
                 : null,
             'provenance' => $routeIntent['provenance'],
         ];
     }
 
-    private function assertValidRegistrationRouteIntent(?string $hostname, ?string $provenance): void
+    private function assertValidRegistrationRouteIntent(?string $domain, ?string $provenance): void
     {
         if (
             $provenance === RouteProvenance::Explicit->value
-            && $hostname !== null
-            && RouteHostname::isValid($hostname)
-            && RouteHostname::normalize($hostname) === $hostname
+            && $domain !== null
+            && RouteDomain::isValid($domain)
+            && RouteDomain::normalize($domain) === $domain
             || $provenance === RouteProvenance::Generated->value
-            && $hostname === null
+            && $domain === null
         ) {
             return;
         }
@@ -1329,10 +1329,10 @@ final readonly class RegisterAppInstanceAction
     private function completeMember(
         AppInstance $instance,
         RegistrationSourceFacts $facts,
-        ?string $hostname,
+        ?string $domain,
     ): AppInstance {
         if ($instance->registration_completed_at !== null && $instance->status === AppInstanceState::Active) {
-            $retryHostname = $this->retainedRouteHostname($instance, $hostname);
+            $retryHostname = $this->retainedRouteDomain($instance, $domain);
             $this->provisioner->reserve($instance, $retryHostname);
             $completed = $this->provisioner->complete($instance, $retryHostname);
             $this->sources->discardLaravelRollback($completed);
@@ -1342,7 +1342,7 @@ final readonly class RegisterAppInstanceAction
         }
 
         $migration = $instance->migration_required;
-        $provisioningHostname = $hostname;
+        $provisioningHostname = $domain;
 
         if (
             ! $migration
@@ -1370,7 +1370,7 @@ final readonly class RegisterAppInstanceAction
 
         if ($recovery !== null && $provisioningHostname === null) {
             $provisioningHostname = $recovery['route']['provenance'] === RouteProvenance::Explicit->value
-                ? $recovery['route']['hostname']
+                ? $recovery['route']['domain']
                 : null;
         }
 
@@ -1428,15 +1428,15 @@ final readonly class RegisterAppInstanceAction
         return $this->finishPublishedRegistration($completed);
     }
 
-    private function retainedRouteHostname(AppInstance $instance, ?string $hostname): ?string
+    private function retainedRouteDomain(AppInstance $instance, ?string $domain): ?string
     {
-        if ($hostname !== null) {
-            return $hostname;
+        if ($domain !== null) {
+            return $domain;
         }
 
         $route = $instance->routes()->sole();
 
-        return $route->provenance === RouteProvenance::Explicit ? $route->hostname : null;
+        return $route->provenance === RouteProvenance::Explicit ? $route->domain : null;
     }
 
     private function finishPublishedRegistration(AppInstance $completed): AppInstance
@@ -1455,7 +1455,7 @@ final readonly class RegisterAppInstanceAction
     /**
      * @return array{
      *     app_instance: array<string, mixed>,
-     *     route: array{id: int, hostname: string, provenance: string},
+     *     route: array{id: int, domain: string, provenance: string},
      *     planned: array{name: string, checkout_path: string}
      * }
      */
@@ -1489,7 +1489,7 @@ final readonly class RegisterAppInstanceAction
             'app_instance' => $original,
             'route' => [
                 'id' => $route->id,
-                'hostname' => $route->hostname,
+                'domain' => $route->domain,
                 'provenance' => $route->provenance->value,
             ],
             'planned' => [
@@ -1502,7 +1502,7 @@ final readonly class RegisterAppInstanceAction
     /**
      * @return array{
      *     app_instance: array<string, mixed>,
-     *     route: array{id: int, hostname: string, provenance: string},
+     *     route: array{id: int, domain: string, provenance: string},
      *     planned?: array{name: string, checkout_path: string}
      * }|null
      */
@@ -1524,7 +1524,7 @@ final readonly class RegisterAppInstanceAction
         if (
             ! is_array($original)
             || ! is_array($routeIntent)
-            || ! is_string($routeIntent['hostname'] ?? null)
+            || ! is_string($routeIntent['domain'] ?? null)
             || ! in_array(
                 $routeIntent['provenance'] ?? null,
                 [RouteProvenance::Explicit->value, RouteProvenance::Generated->value],
@@ -1535,7 +1535,7 @@ final readonly class RegisterAppInstanceAction
             || ! is_string($planned['name'] ?? null)
             || ! is_string($planned['checkout_path'] ?? null))
             || $route === null
-            || $route->hostname !== $routeIntent['hostname']
+            || $route->domain !== $routeIntent['domain']
             || $route->provenance->value !== $routeIntent['provenance']
             || array_diff([
                 'name',
@@ -1558,7 +1558,7 @@ final readonly class RegisterAppInstanceAction
             );
         }
 
-        /** @var array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}, planned?: array{name: string, checkout_path: string}} $recovery */
+        /** @var array{app_instance: array<string, mixed>, route: array{id: int, domain: string, provenance: string}, planned?: array{name: string, checkout_path: string}} $recovery */
         return $recovery;
     }
 

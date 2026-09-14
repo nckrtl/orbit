@@ -1544,7 +1544,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'name' => 'main',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit/main',
-            'hostname' => 'main.old.orbit',
+            'domain' => 'main.old.orbit',
             'certificate_mode' => 'orbit-ca',
         ]);
         $converger = new class implements AppDevTldConverger
@@ -1570,7 +1570,7 @@ describe(ProvisionNodeAction::class, function (): void {
         });
 
         expect($node->refresh()->tld)->toBe('old.orbit');
-        expect($node->instances()->first()->hostname)->toBe('main.old.orbit');
+        expect($node->instances()->first()->domain)->toBe('main.old.orbit');
         expect($nodeConverger->calls)->toBe(0);
         expect($converger->calls)->toBe(0);
     })->with([
@@ -1611,7 +1611,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'name' => 'main',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit/main',
-            'hostname' => 'main.app-dev.orbit',
+            'domain' => 'main.app-dev.orbit',
             'certificate_mode' => 'orbit-ca',
         ]);
 
@@ -1622,7 +1622,7 @@ describe(ProvisionNodeAction::class, function (): void {
             public function converge(Node $node): void
             {
                 $this->nodes[] = $node->tld;
-                $node->instances()->update(['hostname' => "main.{$node->tld}"]);
+                $node->instances()->update(['domain' => "main.{$node->tld}"]);
             }
         };
         app()->instance(AppDevTldConverger::class, $tldConverger);
@@ -1635,7 +1635,7 @@ describe(ProvisionNodeAction::class, function (): void {
 
         expect($result->tld)
             ->toBe('changed.orbit')
-            ->and($node->refresh()->instances()->first()->hostname)
+            ->and($node->refresh()->instances()->first()->domain)
             ->toBe('main.changed.orbit')
             ->and($tldConverger->nodes)
             ->toBe(['changed.orbit']);
@@ -1791,7 +1791,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'name' => 'main',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit/main',
-            'hostname' => 'main.app-dev.orbit',
+            'domain' => 'main.app-dev.orbit',
             'certificate_mode' => 'orbit-ca',
         ]);
 

@@ -81,7 +81,7 @@ it('refuses to discard durable manual migration recovery', function (): void {
     $instance->update([
         'registration_migration_recovery' => [
             'app_instance' => ['name' => '13.x'],
-            'route' => ['id' => 41, 'hostname' => 'preserved.test', 'provenance' => 'explicit'],
+            'route' => ['id' => 41, 'domain' => 'preserved.test', 'provenance' => 'explicit'],
         ],
     ]);
     $migration = orb105_migration_recovery_migration();

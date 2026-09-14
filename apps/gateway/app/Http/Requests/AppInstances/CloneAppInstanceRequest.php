@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\AppInstances;
 
 use App\Data\AppInstances\CloneAppInstanceData;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
@@ -59,7 +59,7 @@ final class CloneAppInstanceRequest extends FormRequest
         return [function (Validator $validator): void {
             $previewName = $this->input('preview_name');
 
-            if (is_string($previewName) && ! RouteHostname::isValid($previewName)) {
+            if (is_string($previewName) && ! RouteDomain::isValid($previewName)) {
                 $validator->errors()->add('preview_name', 'The preview name is invalid.');
             }
 
@@ -79,7 +79,7 @@ final class CloneAppInstanceRequest extends FormRequest
         return new CloneAppInstanceData(
             nodeId: (int) $validated['node_id'],
             name: (string) $validated['name'],
-            previewName: RouteHostname::normalize((string) $validated['preview_name']),
+            previewName: RouteDomain::normalize((string) $validated['preview_name']),
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
             sqliteSourcePath: is_string($validated['sqlite_source_path'] ?? null)
                 ? $validated['sqlite_source_path']

@@ -126,7 +126,7 @@ function dependency_instance(
         'checkout_path' => "/srv/{$slug}",
         'document_root' => 'public',
         'php_version' => '8.5',
-        'hostname' => "{$slug}.example.test",
+        'domain' => "{$slug}.example.test",
         'certificate_mode' => $certificateMode,
         'status' => $status,
     ]);
@@ -139,7 +139,7 @@ function dependency_workspace(Instance $instance, string $name, LifecycleStatus 
         'name' => $name,
         'branch' => $name,
         'checkout_path' => "{$instance->checkout_path}/{$name}",
-        'hostname' => "{$name}.{$instance->hostname}",
+        'domain' => "{$name}.{$instance->domain}",
         'status' => $status,
     ]);
 }

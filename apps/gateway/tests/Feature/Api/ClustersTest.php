@@ -122,7 +122,7 @@ describe('Cluster lifecycle', function (): void {
         $route = Route::query()->create([
             'app_id' => $app->id,
             'cluster_id' => $cluster->id,
-            'hostname' => 'acme.example.test',
+            'domain' => 'acme.example.test',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
         ]);

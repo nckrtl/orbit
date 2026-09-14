@@ -107,12 +107,12 @@ final readonly class CreateAppInstanceAction
             $appInstance->node_id,
             function () use ($appInstance, $created, $data): AppInstance {
                 try {
-                    $this->provisioner->reserve($appInstance, $data->hostname);
+                    $this->provisioner->reserve($appInstance, $data->domain);
                     $resolved = $this->resumeSource($appInstance, ! $created);
 
                     return $this->provisioner->complete(
                         $resolved,
-                        $data->hostname,
+                        $data->domain,
                         $data->recoverSourceProfile,
                     );
                 } catch (Throwable $exception) {

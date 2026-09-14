@@ -877,7 +877,7 @@ it('returns 409 when the target still owns an instance', function (): void {
         'name' => 'production',
         'environment' => 'production',
         'checkout_path' => '/var/www/acme/production',
-        'hostname' => 'acme.example.com',
+        'domain' => 'acme.example.com',
         'certificate_mode' => 'acme',
     ]);
 
@@ -1159,7 +1159,7 @@ function remove_node_role_fixture(Node $node, RoleName $role): void
         'name' => 'production',
         'environment' => 'production',
         'checkout_path' => '/var/www/acme/production',
-        'hostname' => 'acme.example.com',
+        'domain' => 'acme.example.com',
         'certificate_mode' => 'acme',
         'status' => LifecycleStatus::Active,
     ]);

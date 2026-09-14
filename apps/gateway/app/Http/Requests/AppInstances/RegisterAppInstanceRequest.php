@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\AppInstances;
 
 use App\Data\AppInstances\RegisterAppInstanceData;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\RelativeWebRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -30,7 +30,7 @@ final class RegisterAppInstanceRequest extends FormRequest
             'default_branch' => ['sometimes', 'string', 'max:255'],
             'instance_name' => ['sometimes', 'string', 'max:63'],
             'root' => ['sometimes', 'string', 'max:255'],
-            'hostname' => ['sometimes', 'string', 'max:253'],
+            'domain' => ['sometimes', 'string', 'max:253'],
         ];
     }
 
@@ -47,7 +47,7 @@ final class RegisterAppInstanceRequest extends FormRequest
                 'default_branch',
                 'instance_name',
                 'root',
-                'hostname',
+                'domain',
             ]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -68,9 +68,9 @@ final class RegisterAppInstanceRequest extends FormRequest
                 $validator->errors()->add('root', 'The root must be a normalized relative web path.');
             }
 
-            $hostname = $this->input('hostname');
-            if (is_string($hostname) && ! RouteHostname::isValid($hostname)) {
-                $validator->errors()->add('hostname', 'The Route hostname is invalid.');
+            $domain = $this->input('domain');
+            if (is_string($domain) && ! RouteDomain::isValid($domain)) {
+                $validator->errors()->add('domain', 'The Route domain is invalid.');
             }
         }];
     }
@@ -89,7 +89,7 @@ final class RegisterAppInstanceRequest extends FormRequest
             defaultBranch: is_string($values['default_branch'] ?? null) ? $values['default_branch'] : null,
             instanceName: is_string($values['instance_name'] ?? null) ? $values['instance_name'] : null,
             root: is_string($values['root'] ?? null) ? $values['root'] : null,
-            hostname: is_string($values['hostname'] ?? null) ? $values['hostname'] : null,
+            domain: is_string($values['domain'] ?? null) ? $values['domain'] : null,
         );
     }
 }

@@ -54,7 +54,7 @@ it('reports typed gateway provisioning failures without leaking command output',
         },
         web: new class implements GatewayWebConverger
         {
-            public function converge(string $hostname, string $wireguardIp): void {}
+            public function converge(string $domain, string $wireguardIp): void {}
         },
         selfAccess: new class implements GatewaySelfAccessConverger
         {
@@ -125,7 +125,7 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
         },
         web: new class implements GatewayWebConverger
         {
-            public function converge(string $hostname, string $wireguardIp): void {}
+            public function converge(string $domain, string $wireguardIp): void {}
         },
         selfAccess: new class implements GatewaySelfAccessConverger
         {

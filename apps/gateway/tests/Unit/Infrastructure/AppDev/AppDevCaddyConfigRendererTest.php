@@ -102,7 +102,7 @@ it('does not attach the development-server handle to production, proxy, or unava
         checkoutPath: '/var/www/acme/current',
         documentRoot: 'public',
         phpVersion: '8.5',
-        hostname: 'acme.example.test',
+        domain: 'acme.example.test',
         environment: 'production',
         productionPhpSocket: '/run/php/orbit-acme.sock',
     );
@@ -113,7 +113,7 @@ it('does not attach the development-server handle to production, proxy, or unava
         checkoutPath: '',
         documentRoot: '',
         phpVersion: null,
-        hostname: 'tasks.commander.test',
+        domain: 'tasks.commander.test',
         upstreamAddresses: ['10.44.0.10'],
     );
     $unavailable = new AppDevSite(
@@ -123,7 +123,7 @@ it('does not attach the development-server handle to production, proxy, or unava
         checkoutPath: '',
         documentRoot: '',
         phpVersion: null,
-        hostname: 'gone.commander.test',
+        domain: 'gone.commander.test',
         unavailable: true,
     );
 
@@ -165,7 +165,7 @@ it('exposes one origin URL and loopback upstream for frontend configuration', fu
 });
 
 function development_server_site(
-    string $hostname,
+    string $domain,
     string $checkoutPath,
     int $nodeId = 12,
     string $scope = 'app-instance-6',
@@ -177,6 +177,6 @@ function development_server_site(
         checkoutPath: $checkoutPath,
         documentRoot: 'public',
         phpVersion: '8.5',
-        hostname: $hostname,
+        domain: $domain,
     );
 }

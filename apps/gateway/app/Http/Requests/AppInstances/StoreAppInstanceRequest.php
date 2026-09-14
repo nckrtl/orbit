@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\AppInstances;
 
 use App\Data\AppInstances\CreateAppInstanceData;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\RelativeWebRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -32,7 +32,7 @@ final class StoreAppInstanceRequest extends FormRequest
                 'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/',
             ],
             'root' => ['sometimes', 'string', 'max:255'],
-            'hostname' => ['sometimes', 'string', 'max:253'],
+            'domain' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
             'recover_source_profile' => ['sometimes', 'boolean'],
         ];
@@ -44,7 +44,7 @@ final class StoreAppInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_id', 'node_id', 'name', 'root', 'hostname', 'branch', 'recover_source_profile'],
+                ['app_id', 'node_id', 'name', 'root', 'domain', 'branch', 'recover_source_profile'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -61,10 +61,10 @@ final class StoreAppInstanceRequest extends FormRequest
                 $validator->errors()->add('root', 'The root must be a normalized relative web path.');
             }
 
-            $hostname = $this->input('hostname');
+            $domain = $this->input('domain');
 
-            if (is_string($hostname) && ! RouteHostname::isValid($hostname)) {
-                $validator->errors()->add('hostname', 'The Route hostname is invalid.');
+            if (is_string($domain) && ! RouteDomain::isValid($domain)) {
+                $validator->errors()->add('domain', 'The Route domain is invalid.');
             }
 
             $branch = $this->input('branch');
@@ -85,8 +85,8 @@ final class StoreAppInstanceRequest extends FormRequest
             nodeId: (int) $validated['node_id'],
             name: (string) $validated['name'],
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
-            hostname: is_string($validated['hostname'] ?? null)
-                ? RouteHostname::normalize($validated['hostname'])
+            domain: is_string($validated['domain'] ?? null)
+                ? RouteDomain::normalize($validated['domain'])
                 : null,
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
             recoverSourceProfile: (bool) ($validated['recover_source_profile'] ?? false),

@@ -47,12 +47,12 @@ it('renders no leftover production Instance sites for Caddy or PHP-FPM', functio
         ->and($fpm)
         ->not->toContain(
             '[orbit-prod-instance-1]',
-            "https://{$instance->hostname}",
+            "https://{$instance->domain}",
             'php_fastcgi unix//run/php/orbit-prod-instance-1.sock',
         )
         ->and($caddy)
         ->not->toContain(
-            "https://{$instance->hostname}",
+            "https://{$instance->domain}",
             'root * /var/www/acme/main/public',
             'php_fastcgi unix//run/php/orbit-prod-instance-1.sock',
         );
@@ -1052,7 +1052,7 @@ function app_prod_runtime_models(): array
         'checkout_path' => '/var/www/acme/main',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'hostname' => 'orbit.nckrtl.com',
+        'domain' => 'orbit.nckrtl.com',
         'certificate_mode' => CertificateMode::Acme,
         'status' => LifecycleStatus::Active,
     ]);

@@ -9,8 +9,8 @@ use App\Domain\Routes\RoutePublication;
 final readonly class UpdateRouteData
 {
     public function __construct(
-        public bool $hostnameProvided,
-        public ?string $hostname,
+        public bool $domainProvided,
+        public ?string $domain,
         public bool $publicationProvided,
         public ?RoutePublication $publication,
     ) {}

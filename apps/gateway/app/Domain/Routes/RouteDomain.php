@@ -6,30 +6,30 @@ namespace App\Domain\Routes;
 
 use App\Domain\Shared\ResourceOperationException;
 
-final class RouteHostname
+final class RouteDomain
 {
     private const string PATTERN = '/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z/D';
 
-    public static function normalize(string $hostname): string
+    public static function normalize(string $domain): string
     {
-        return mb_strtolower(trim($hostname));
+        return mb_strtolower(trim($domain));
     }
 
-    public static function isValid(string $hostname): bool
+    public static function isValid(string $domain): bool
     {
-        $normalized = self::normalize($hostname);
+        $normalized = self::normalize($domain);
 
         return $normalized !== '' && strlen($normalized) <= 253 && preg_match(self::PATTERN, $normalized) === 1;
     }
 
-    public static function validate(string $hostname): string
+    public static function validate(string $domain): string
     {
-        $normalized = self::normalize($hostname);
+        $normalized = self::normalize($domain);
 
         if (! self::isValid($normalized)) {
             throw new ResourceOperationException(
-                errorCode: 'route.hostname_invalid',
-                message: 'The Route hostname is invalid.',
+                errorCode: 'route.domain_invalid',
+                message: 'The Route domain is invalid.',
             );
         }
 

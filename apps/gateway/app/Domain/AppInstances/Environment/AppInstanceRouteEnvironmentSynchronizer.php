@@ -8,8 +8,8 @@ use App\Models\AppInstance;
 
 interface AppInstanceRouteEnvironmentSynchronizer
 {
-    public function synchronizeRouteHostname(
+    public function synchronizeRouteDomain(
         AppInstance $instance,
-        AppInstanceEnvironmentRouteHostname $hostname,
+        AppInstanceEnvironmentRouteDomain $domain,
     ): AppInstanceEnvironmentResult;
 }

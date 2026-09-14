@@ -50,7 +50,7 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
                 $expectedHome,
                 "{$expectedHome}/releases/initial",
             );
-            $this->routes->ensureForAppInstance($existing, $data->hostname);
+            $this->routes->ensureForAppInstance($existing, $data->domain);
 
             if ($data->recoverSourceProfile && $existing->source_is_laravel === null) {
                 $existing = $this->sourceLock->synchronized(

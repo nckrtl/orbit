@@ -30,11 +30,11 @@ it('returns the Router LAN address to an eligible Cluster member for the TLD and
     $handler = orb260_handler($catalog);
     $codec = new PrivateDnsMessageCodec;
 
-    expect(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery($route->hostname))))
+    expect(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery($route->domain))))
         ->toBe('192.168.10.20')
         ->and(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery('site.cluster.test'))))
         ->toBe('192.168.10.20')
-        ->and(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery($outside->hostname))))
+        ->and(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery($outside->domain))))
         ->toBe('192.168.10.20');
 });
 
@@ -44,11 +44,11 @@ it('returns the Router WireGuard address when any LAN-selection condition is abs
     $handler = orb260_handler($catalog);
     $codec = new PrivateDnsMessageCodec;
 
-    expect(orb260_answer($handler->handle($source, $codec->encodeQuery($route->hostname))))
+    expect(orb260_answer($handler->handle($source, $codec->encodeQuery($route->domain))))
         ->toBe('10.44.0.20')
         ->and(orb260_answer($handler->handle($source, $codec->encodeQuery('site.cluster.test'))))
         ->toBe('10.44.0.20')
-        ->and(orb260_answer($handler->handle($source, $codec->encodeQuery($outside->hostname))))
+        ->and(orb260_answer($handler->handle($source, $codec->encodeQuery($outside->domain))))
         ->toBe('10.44.0.20');
 })->with([
     'vpn-only member' => ['10.44.0.12'],
@@ -61,11 +61,11 @@ it('ignores a caller-supplied EDNS identity when selecting a Router address', fu
     [$route, , $eligible] = orb260_cluster_routes();
     $handler = orb260_handler(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog());
     $codec = new PrivateDnsMessageCodec;
-    $claimed = $codec->encodeQuery($route->hostname, ednsClientSubnet: (string) $eligible->wireguard_ip);
+    $claimed = $codec->encodeQuery($route->domain, ednsClientSubnet: (string) $eligible->wireguard_ip);
 
     expect(orb260_answer($handler->handle('10.44.0.99', $claimed)))
         ->toBe('10.44.0.20')
-        ->and(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery($route->hostname, ednsClientSubnet: '10.44.0.99'))))
+        ->and(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery($route->domain, ednsClientSubnet: '10.44.0.99'))))
         ->toBe('192.168.10.20');
 });
 
@@ -74,7 +74,7 @@ it('keeps interleaved eligible and ineligible answers isolated across cache flus
     $cache = new InMemoryPrivateDnsAnswerCache;
     $handler = orb260_handler(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog(), $cache);
     $codec = new PrivateDnsMessageCodec;
-    $query = fn (): string => $codec->encodeQuery($route->hostname);
+    $query = fn (): string => $codec->encodeQuery($route->domain);
 
     $lan = $handler->handle((string) $eligible->wireguard_ip, $query());
     $vpn = $handler->handle('10.44.0.12', $query());
@@ -129,7 +129,7 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $solo->id,
-        'hostname' => 'solo.app.test',
+        'domain' => 'solo.app.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -190,15 +190,15 @@ it('fills requester catalog overrides for eligible LAN members only', function (
     $vpn = Node::query()->where('name', 'vpn-only')->sole();
     $vpnKey = DnsRequester::registered($vpn->id, (string) $vpn->wireguard_ip)->cacheKey();
 
-    expect($catalog->exact[$route->hostname])
+    expect($catalog->exact[$route->domain])
         ->toBe('10.44.0.20')
         ->and($catalog->suffixes['cluster.test'])
         ->toBe('10.44.0.20')
-        ->and($catalog->overrides[$eligibleKey][$route->hostname])
+        ->and($catalog->overrides[$eligibleKey][$route->domain])
         ->toBe('192.168.10.20')
         ->and($catalog->overrides[$eligibleKey]['cluster.test'])
         ->toBe('192.168.10.20')
-        ->and($catalog->overrides[$eligibleKey][$outside->hostname])
+        ->and($catalog->overrides[$eligibleKey][$outside->domain])
         ->toBe('192.168.10.20')
         ->and($catalog->overrides[$vpnKey] ?? [])
         ->toBe([]);
@@ -288,7 +288,7 @@ function orb260_cluster_routes(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'app.cluster.test',
+        'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -309,7 +309,7 @@ function orb260_cluster_routes(): array
     $outside = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'other.example.test',
+        'domain' => 'other.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
