@@ -229,7 +229,7 @@ it('keeps a healthy attachment silent and omits the password from doctor activit
         ->and($encodedActivity)
         ->not->toContain(DATABASE_CONNECTION_DOCTOR_SECRET)
         ->and($activity->command)
-        ->toBe('doctor:run');
+        ->toBe('doctor');
 });
 
 function database_connection_doctor_inspection(): DatabaseConnectionDoctorInspection
