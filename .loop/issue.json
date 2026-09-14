@@ -1,0 +1,8 @@
+{
+  "id": "ORB-348",
+  "title": "Drop retired deployment-config verbs from the CLI command vocabulary",
+  "url": "https://linear.app/nckrtl/issue/ORB-348/drop-retired-deployment-config-verbs-from-the-cli-command-vocabulary",
+  "status": "In Progress",
+  "labels": ["docs", "apps/cli", "Bug"],
+  "flow": "discovery"
+}
