@@ -927,7 +927,11 @@ it('removes an unreachable node holding a role in one command', function (): voi
     $caller->accessibleNodes()->attach($target);
     $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
     remove_node_offline_probe($target);
-    remove_node_role_fixture($target, RoleName::AppProd);
+    NodeRole::query()->create([
+        'node_id' => $target->id,
+        'role' => RoleName::AppProd,
+        'status' => LifecycleStatus::Active,
+    ]);
     $process = remove_node_owned_process($target);
     HerdrSession::query()->create([
         'node_id' => $target->id,
