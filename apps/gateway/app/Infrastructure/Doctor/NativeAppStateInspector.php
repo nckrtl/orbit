@@ -7,7 +7,6 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\DoctorInspectionException;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -45,45 +44,40 @@ final readonly class NativeAppStateInspector implements AppStateInspector
 
         /** @var list<array{path: string, root: string, user: string, slug: string, instance: string, mode: string}> $checkouts */
         $checkouts = [];
-        $instances = $app
-            ->instances()
+        $appInstances = $app
+            ->appInstances()
             ->where('node_id', $node->id)
-            ->with('workspaces')
+            ->orderBy('id')
             ->get();
-        foreach ($instances as $instance) {
-            $production = $instance->certificate_mode === CertificateMode::Acme;
-            if ($production) {
+        foreach ($appInstances as $appInstance) {
+            if ($appInstance->environment === 'production') {
+                $home = $appInstance->production_home;
+                $user = $appInstance->production_user;
+                if (! is_string($home) || $home === '' || ! is_string($user) || $user === '') {
+                    throw new DoctorInspectionException;
+                }
+
                 $checkouts[] = [
-                    'path' => $instance->checkout_path,
-                    'root' => "/var/www/{$app->slug}",
-                    'user' => "orbit-{$app->slug}",
+                    'path' => $appInstance->checkout_path,
+                    'root' => $home,
+                    'user' => $user,
                     'slug' => $app->slug,
-                    'instance' => $instance->name,
+                    'instance' => $appInstance->name,
                     'mode' => 'app-prod',
                 ];
-            } else {
-                $account ??= $this->accounts->resolve($node);
-                $checkouts[] = [
-                    'path' => $instance->checkout_path,
-                    'root' => $account->home,
-                    'user' => $account->user,
-                    'slug' => '',
-                    'instance' => '',
-                    'mode' => 'app-dev',
-                ];
+
+                continue;
             }
-            $workspaces = $instance->workspaces;
-            foreach ($workspaces as $workspace) {
-                $account ??= $this->accounts->resolve($node);
-                $checkouts[] = [
-                    'path' => $workspace->checkout_path,
-                    'root' => $account->home,
-                    'user' => $account->user,
-                    'slug' => '',
-                    'instance' => '',
-                    'mode' => 'app-dev',
-                ];
-            }
+
+            $account ??= $this->accounts->resolve($node);
+            $checkouts[] = [
+                'path' => $appInstance->checkout_path,
+                'root' => $account->home,
+                'user' => $account->user,
+                'slug' => '',
+                'instance' => '',
+                'mode' => 'app-dev',
+            ];
         }
         $match = true;
         foreach ($checkouts as $checkout) {
@@ -141,11 +135,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                         ."\n"
                         .'fi'
                         ."\n"
-                        .'test "$user" = "orbit-$slug"'
-                        ."\n"
-                        .'test "$root" = "/var/www/$slug"'
-                        ."\n"
-                        .'test "$checkout" = "$root/$instance"'
+                        .'test -n "$user" && test -n "$root" && test -n "$checkout"'
                         ."\n"
                         .'test ! -L "$root"'
                         ."\n"

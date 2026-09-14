@@ -35,7 +35,7 @@ it('preserves the exact report, received order, aggregates, and scalar variants'
                 observed: 'arm64',
             ),
         ]),
-        doctor_family_data(family: 'workspace', status: 'drift', checked: 2, issues: []),
+        doctor_family_data(family: 'instance', status: 'drift', checked: 2, issues: []),
     ];
     $data['nodes'][] = [
         'node_id' => 3,
@@ -69,7 +69,6 @@ it('accepts every family and all statuses', function (): void {
         'role',
         'app',
         'instance',
-        'workspace',
         'schedule',
         'tool',
         'process',

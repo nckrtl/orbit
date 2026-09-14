@@ -73,7 +73,7 @@ final readonly class UpdateNodeSettingsAction
 
     private function persist(Node $node, ?NodeSettingsData $normalized): void
     {
-        $node->settings = $this->normalizer->stored($normalized, $node->settings);
+        $node->settings = $this->normalizer->stored($normalized);
         $node->save();
     }
 

@@ -37,11 +37,13 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use App\Models\Workspace;
 use Illuminate\Support\Str;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManager;
@@ -211,6 +213,26 @@ it('records exactly one bounded doctor activity without report findings or diagn
         ])
         ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))
         ->not->toContain('issues', 'findings', 'summary', 'stdout', 'stderr', 'diagnostics');
+});
+
+it('rejects a removed doctor family without attributing leftover subjects', function (): void {
+    $caller = command_activity_doctor_node('doctor-removed-family-caller');
+    $selected = command_activity_doctor_node('doctor-removed-family-selected');
+    $caller->accessibleNodes()->attach($selected->id);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/doctor', [
+            'node_id' => $selected->id,
+            'families' => ['workspace'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect(Activity::query()->where('subject_type', Workspace::class)->exists())
+        ->toBeFalse()
+        ->and(Activity::query()->where('subject_type', Instance::class)->exists())
+        ->toBeFalse();
 });
 
 it('leaves doctor activity unattributed when node_id is omitted', function (): void {

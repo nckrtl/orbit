@@ -115,7 +115,7 @@ describe('node storage settings', function (): void {
         expect(Node::query()->where('name', 'app-dev')->sole()->settings)->toBeNull();
     });
 
-    it('patches and unsets apps while preserving legacy stored settings', function (): void {
+    it('patches and unsets apps without retaining leftover storage keys', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
@@ -143,8 +143,6 @@ describe('node storage settings', function (): void {
             ->assertJsonMissingPath('data.settings.worktree');
 
         expect($node->refresh()->settings)->toBe([
-            'instance' => ['path' => '/srv/orbit/instances'],
-            'worktree' => ['path' => '/srv/orbit/worktrees'],
             'apps' => ['path' => '/mnt/apps'],
         ]);
 
@@ -155,10 +153,7 @@ describe('node storage settings', function (): void {
             ->assertOk()
             ->assertJsonPath('data.settings', null);
 
-        expect($node->refresh()->settings)->toBe([
-            'instance' => ['path' => '/srv/orbit/instances'],
-            'worktree' => ['path' => '/srv/orbit/worktrees'],
-        ]);
+        expect($node->refresh()->settings)->toBeNull();
     });
 
     it('rejects unknown settings keys without persisting', function (): void {
@@ -180,7 +175,7 @@ describe('node storage settings', function (): void {
         expect($node->refresh()->settings)->toBeNull();
     });
 
-    it('rejects an apps root that overlaps the legacy worktree root without persisting', function (): void {
+    it('stores an apps root without consulting leftover worktree settings', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
@@ -200,11 +195,12 @@ describe('node storage settings', function (): void {
             ->patchJson("/api/v1/nodes/{$node->id}/settings", [
                 'apps' => ['path' => '/srv/orbit/source'],
             ])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.settings_roots_overlap');
+            ->assertOk()
+            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/source')
+            ->assertJsonMissingPath('data.settings.worktree');
 
         expect($node->refresh()->settings)->toBe([
-            'worktree' => ['path' => '/srv/orbit/source/worktrees'],
+            'apps' => ['path' => '/srv/orbit/source'],
         ]);
     });
 
@@ -377,7 +373,7 @@ describe('node storage settings', function (): void {
         ]);
     });
 
-    it('preserves the exact legacy worktree default while updating apps', function (): void {
+    it('updates apps without writing leftover worktree settings', function (): void {
         $inspected = [];
         $prepared = [];
         app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
@@ -405,7 +401,6 @@ describe('node storage settings', function (): void {
 
         expect($node->refresh()->settings)
             ->toBe([
-                'worktree' => ['path' => '/home/orbit/.orbit/worktrees'],
                 'apps' => ['path' => '/srv/orbit/apps'],
             ]);
     });
@@ -438,7 +433,7 @@ describe('node storage settings', function (): void {
         ]);
     });
 
-    it('falls back to the legacy instance path before the managed-home apps default', function (): void {
+    it('uses the managed-home apps default when the typed override is unset', function (): void {
         $inspected = [];
         $prepared = [];
         app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
@@ -466,13 +461,11 @@ describe('node storage settings', function (): void {
             ->assertJsonPath('data.settings', null);
 
         expect($node->refresh()->settings)
-            ->toBe([
-                'instance' => ['path' => '/srv/orbit/instances'],
-            ])
+            ->toBeNull()
             ->and($inspected)
             ->toBe([])
             ->and($prepared)
-            ->toBe(['/srv/orbit/instances', '/home/orbit/.orbit/worktrees']);
+            ->toBe(['/home/orbit/apps', '/home/orbit/.orbit/worktrees']);
     });
 
     it('leaves stored settings unchanged when preparing defaults for the last unset fails', function (): void {

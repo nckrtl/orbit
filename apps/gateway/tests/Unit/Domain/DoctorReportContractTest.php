@@ -20,16 +20,15 @@ use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\RoleDoctorIssueCode;
 use App\Domain\Doctor\ScheduleDoctorIssueCode;
 use App\Domain\Doctor\ToolDoctorIssueCode;
-use App\Domain\Doctor\WorkspaceDoctorIssueCode;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
 it('serializes bounded doctor reports and derives status precedence', function (): void {
     $drift = new DoctorIssueData(
-        WorkspaceDoctorIssueCode::BranchMismatch,
+        InstanceDoctorIssueCode::OriginMismatch,
         DoctorIssueKind::Drift,
-        'workspace',
+        'instance',
         31,
         'feature-a',
         'Mismatch.',
@@ -37,9 +36,9 @@ it('serializes bounded doctor reports and derives status precedence', function (
         'mismatch',
     );
     $unverifiable = new DoctorIssueData(
-        WorkspaceDoctorIssueCode::InspectionFailed,
+        InstanceDoctorIssueCode::InspectionFailed,
         DoctorIssueKind::Unverifiable,
-        'workspace',
+        'instance',
         31,
         'feature-a',
         'Unavailable.',
@@ -47,9 +46,9 @@ it('serializes bounded doctor reports and derives status precedence', function (
         null,
     );
     $secondDrift = new DoctorIssueData(
-        WorkspaceDoctorIssueCode::DocumentRootMissing,
+        InstanceDoctorIssueCode::CheckoutMissing,
         DoctorIssueKind::Drift,
-        'workspace',
+        'instance',
         31,
         'feature-a',
         'Root mismatch.',
@@ -57,16 +56,16 @@ it('serializes bounded doctor reports and derives status precedence', function (
         'mismatch',
     );
 
-    $family = DoctorFamilyReportData::fromIssues(DoctorFamily::Workspace, 1, [$drift, $secondDrift, $unverifiable]);
+    $family = DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 1, [$drift, $secondDrift, $unverifiable]);
     $node = DoctorNodeReportData::fromFamilies(7, 'app-1', [$family]);
     $report = DoctorReportData::fromNodes([$node]);
 
     expect(array_map(static fn (DoctorFamily $family): string => $family->value, DoctorFamily::cases()))
-        ->toEqual(['node', 'role', 'app', 'instance', 'workspace', 'schedule', 'tool', 'process', 'firewall', 'herdr', 'database_connection'])
+        ->toEqual(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'herdr', 'database_connection'])
         ->and($family->status->value)
         ->toBe('unverifiable')
         ->and($family->family)
-        ->toBe(DoctorFamily::Workspace)
+        ->toBe(DoctorFamily::Instance)
         ->and($family->checked)
         ->toBe(1)
         ->and($family->issues)
@@ -78,7 +77,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
         ->and($report->summary)
         ->toBe(['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 2, 'unverifiable' => 1])
         ->and($family->issues[0]->resourceType)
-        ->toBe('workspace')
+        ->toBe('instance')
         ->and($family->issues[0]->resourceId)
         ->toBe(31)
         ->and($unverifiable->observed)
@@ -95,14 +94,14 @@ it('serializes bounded doctor reports and derives status precedence', function (
                 'node_name' => 'app-1',
                 'healthy' => false,
                 'families' => [[
-                    'family' => 'workspace',
+                    'family' => 'instance',
                     'status' => 'unverifiable',
                     'checked' => 1,
                     'issues' => [
                         [
-                            'code' => 'workspace.branch_mismatch',
+                            'code' => 'instance.origin_mismatch',
                             'kind' => 'drift',
-                            'resource_type' => 'workspace',
+                            'resource_type' => 'instance',
                             'resource_id' => 31,
                             'resource_name' => 'feature-a',
                             'summary' => 'Mismatch.',
@@ -110,9 +109,9 @@ it('serializes bounded doctor reports and derives status precedence', function (
                             'observed' => 'mismatch',
                         ],
                         [
-                            'code' => 'workspace.document_root_missing',
+                            'code' => 'instance.checkout_missing',
                             'kind' => 'drift',
-                            'resource_type' => 'workspace',
+                            'resource_type' => 'instance',
                             'resource_id' => 31,
                             'resource_name' => 'feature-a',
                             'summary' => 'Root mismatch.',
@@ -120,9 +119,9 @@ it('serializes bounded doctor reports and derives status precedence', function (
                             'observed' => 'mismatch',
                         ],
                         [
-                            'code' => 'workspace.inspection_failed',
+                            'code' => 'instance.inspection_failed',
                             'kind' => 'unverifiable',
-                            'resource_type' => 'workspace',
+                            'resource_type' => 'instance',
                             'resource_id' => 31,
                             'resource_name' => 'feature-a',
                             'summary' => 'Unavailable.',
@@ -139,20 +138,20 @@ it('serializes bounded doctor reports and derives status precedence', function (
 });
 
 it('maps unknown internal issue codes to the family inspection failure', function (): void {
-    expect(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Workspace, 'workspace.branch_mismatch'))
-        ->toBe(WorkspaceDoctorIssueCode::BranchMismatch)
+    expect(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Instance, 'instance.origin_mismatch'))
+        ->toBe(InstanceDoctorIssueCode::OriginMismatch)
         ->and(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Instance, 'instance.php_fpm_projection_mismatch'))
         ->toBe(InstanceDoctorIssueCode::PhpFpmProjectionMismatch)
-        ->and(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Workspace, 'workspace.secret-sentinel'))
-        ->toBe(WorkspaceDoctorIssueCode::InspectionFailed);
+        ->and(DoctorIssueCodeCatalog::fromInternal(DoctorFamily::Instance, 'instance.secret-sentinel'))
+        ->toBe(InstanceDoctorIssueCode::InspectionFailed);
 });
 
 it('replaces unknown internal issue values with a bounded unverifiable finding', function (): void {
     $sentinel = 'credential=doctor-secret';
 
     $issue = DoctorIssueData::fromInternal(
-        DoctorFamily::Workspace,
-        "workspace.{$sentinel}",
+        DoctorFamily::Instance,
+        "instance.{$sentinel}",
         DoctorIssueKind::Drift,
         31,
         'feature-a',
@@ -162,11 +161,11 @@ it('replaces unknown internal issue values with a bounded unverifiable finding',
     );
 
     expect($issue->code)
-        ->toBe('workspace.inspection_failed')
+        ->toBe('instance.inspection_failed')
         ->and($issue->kind)
         ->toBe(DoctorIssueKind::Unverifiable)
         ->and($issue->summary)
-        ->toBe('Workspace inspection could not be verified.')
+        ->toBe('Instance inspection could not be verified.')
         ->and($issue->expected)
         ->toBe('verifiable')
         ->and($issue->observed)
@@ -181,7 +180,6 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         DoctorFamily::Role->value => RoleDoctorIssueCode::cases(),
         DoctorFamily::App->value => AppDoctorIssueCode::cases(),
         DoctorFamily::Instance->value => InstanceDoctorIssueCode::cases(),
-        DoctorFamily::Workspace->value => WorkspaceDoctorIssueCode::cases(),
         DoctorFamily::Schedule->value => ScheduleDoctorIssueCode::cases(),
         DoctorFamily::Tool->value => ToolDoctorIssueCode::cases(),
         DoctorFamily::Process->value => ProcessDoctorIssueCode::cases(),
@@ -237,19 +235,6 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'instance.caddy_projection_mismatch',
             'instance.inspection_failed',
             'instance.node_unreachable',
-        ],
-        'workspace' => [
-            'workspace.lifecycle_not_active',
-            'workspace.checkout_missing',
-            'workspace.worktree_missing',
-            'workspace.branch_mismatch',
-            'workspace.document_root_missing',
-            'workspace.caddy_projection_mismatch',
-            'workspace.php_fpm_projection_mismatch',
-            'workspace.certificate_projection_mismatch',
-            'workspace.dns_projection_mismatch',
-            'workspace.inspection_failed',
-            'workspace.node_unreachable',
         ],
         'schedule' => [
             'schedule.artifact_missing',

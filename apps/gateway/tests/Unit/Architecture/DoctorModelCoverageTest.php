@@ -38,7 +38,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         NodeRole::class => DoctorFamily::Role,
         AppModel::class => DoctorFamily::App,
         AppInstance::class => DoctorFamily::Instance,
-        Workspace::class => DoctorFamily::Workspace,
         Schedule::class => DoctorFamily::Schedule,
         Tool::class => DoctorFamily::Tool,
         Process::class => DoctorFamily::Process,
@@ -51,7 +50,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         ToolManagerRecord::class,
         Setting::class,
         Cluster::class,
-        Instance::class,
         Route::class,
         RouteTarget::class,
         ProcessDefinition::class,
@@ -66,6 +64,8 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         HerdrObservationNonce::class,
+        Instance::class,
+        Workspace::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

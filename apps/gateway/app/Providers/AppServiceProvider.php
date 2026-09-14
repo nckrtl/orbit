@@ -63,7 +63,6 @@ use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\ScheduleStateInspector;
-use App\Domain\Doctor\WorkspaceStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
@@ -166,7 +165,6 @@ use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
-use App\Infrastructure\Doctor\NativeWorkspaceStateInspector;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
@@ -344,7 +342,6 @@ final class AppServiceProvider extends ServiceProvider
         ToolInspector::class => NativeToolInspector::class,
         ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
         ToolOperationLock::class => NativeToolOperationLock::class,
-        WorkspaceStateInspector::class => NativeWorkspaceStateInspector::class,
     ];
 
     public function register(): void
