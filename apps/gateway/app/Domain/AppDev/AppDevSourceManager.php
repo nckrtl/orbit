@@ -2,18 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\AppDev;
+// This inert path remains a prepared-state fingerprint input. AppInstance owns
+// the supported application schema and operations.
+return;
 
-use App\Models\Instance;
-use App\Models\Workspace;
-
-interface AppDevSourceManager
-{
-    public function convergeInstance(Instance $instance): void;
-
-    public function removeInstance(Instance $instance): void;
-
-    public function convergeWorkspace(Workspace $workspace): void;
-
-    public function removeWorkspace(Workspace $workspace): void;
-}

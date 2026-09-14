@@ -427,10 +427,6 @@ final readonly class RemoveNodeAction
             );
         }
 
-        if ($node->instances()->exists()) {
-            throw $this->conflict('node.has_instances', "Node [{$node->name}] still has instances.");
-        }
-
         if ($node->firewallRules()->exists()) {
             throw $this->conflict('node.has_firewall_rules', "Node [{$node->name}] still has firewall rules.");
         }

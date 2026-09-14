@@ -12,7 +12,6 @@ enum ServingNode
     case InstanceOwning;
     case CandidateClone;
     case EnvironmentInstanceOwning;
-    case WorkspaceOwning;
     case ProcessOwning;
     case HerdrSessionOwning;
     case ScheduleOwning;

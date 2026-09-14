@@ -7,18 +7,15 @@ namespace App\Http\Authorization;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Workspaces\LegacyWorkspaceOwner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\HerdrSession;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Tool;
-use App\Models\Workspace;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
@@ -34,7 +31,6 @@ final readonly class ServingNodeResolver
             ServingNode::InstanceOwning => $this->instanceOwning($request),
             ServingNode::CandidateClone => $this->candidateClone($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
-            ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::HerdrSessionOwning => $this->herdrSessionOwning($request),
             ServingNode::ScheduleOwning => $this->scheduleOwning($request),
@@ -110,9 +106,7 @@ final readonly class ServingNodeResolver
         /** @var list<Node> $nodes */
         $nodes = Node::query()
             ->where(function ($query) use ($app): void {
-                $query
-                    ->whereIn('id', $app->instances()->select('node_id'))
-                    ->orWhereIn('id', $app->appInstances()->select('node_id'));
+                $query->whereIn('id', $app->appInstances()->select('node_id'));
             })
             ->orderBy('id')
             ->get()
@@ -130,7 +124,7 @@ final readonly class ServingNodeResolver
     {
         $instance = $request->route('instance');
 
-        if ($instance instanceof AppInstance || $instance instanceof Instance) {
+        if ($instance instanceof AppInstance) {
             return [Node::query()->findOrFail($instance->node_id)];
         }
 
@@ -207,30 +201,6 @@ final readonly class ServingNodeResolver
 
         $instance = $instances->sole();
         $request->route()?->setParameter('instance', $instance);
-
-        return [Node::query()->findOrFail($instance->node_id)];
-    }
-
-    /** @return list<Node> */
-    private function workspaceOwning(Request $request): array
-    {
-        $workspace = $request->route('workspace');
-
-        if ($workspace instanceof Workspace) {
-            $instance = Instance::query()->findOrFail($workspace->instance_id);
-
-            return [Node::query()->findOrFail($instance->node_id)];
-        }
-
-        $instanceId = $this->positiveInteger($request->input('instance_id'));
-
-        if ($instanceId === null) {
-            return [];
-        }
-
-        new LegacyWorkspaceOwner()->refuseAppInstance($instanceId);
-
-        $instance = Instance::query()->findOrFail($instanceId);
 
         return [Node::query()->findOrFail($instance->node_id)];
     }

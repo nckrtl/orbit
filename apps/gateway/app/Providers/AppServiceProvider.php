@@ -12,10 +12,7 @@ use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
 use App\Domain\AppDev\AppDevCaddyManager;
-use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\AppDev\AppDevPhpFpmManager;
-use App\Domain\AppDev\AppDevRuntimeConverger;
-use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
@@ -50,9 +47,6 @@ use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
-use App\Domain\AppProd\AppProdRuntimeConverger;
-use App\Domain\AppProd\AppProdSourceManager;
-use App\Domain\AppProd\AppProdUserManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
@@ -121,15 +115,12 @@ use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
-use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
 use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
-use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
-use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppInstances\NativeAppInstanceEnvironmentOperationLock;
 use App\Infrastructure\AppInstances\NativeAppInstanceRemovalProjector;
@@ -150,11 +141,8 @@ use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteProductionDeployment;
 use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
-use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
-use App\Infrastructure\AppProd\RemoteAppProdSourceManager;
-use App\Infrastructure\AppProd\RemoteAppProdUserManager;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
@@ -262,12 +250,9 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceOperationPreflight::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceSqliteSeeder::class => RemoteAppInstanceSqliteSeeder::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
-        AppDevCertificateManager::class => RemoteAppDevCertificateManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
-        AppDevRuntimeConverger::class => NativeAppDevRuntimeConverger::class,
-        AppDevTldConverger::class => NativeAppDevTldConverger::class,
+        AppDevTldConverger::class => NativeAppDevTldConverger::class;
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
-        AppDevSourceManager::class => RemoteAppDevSourceManager::class,
         DevelopmentAppInstanceSourceLifecycle::class => RemoteDevelopmentAppInstanceSourceLifecycle::class,
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentAppInstanceSourceRemoval::class => RemoteDevelopmentAppInstanceSourceRemoval::class,
@@ -289,9 +274,6 @@ final class AppServiceProvider extends ServiceProvider
         RouteDomainProjector::class => NativeDevelopmentRouteProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
-        AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,
-        AppProdSourceManager::class => RemoteAppProdSourceManager::class,
-        AppProdUserManager::class => RemoteAppProdUserManager::class,
         AppStateInspector::class => NativeAppStateInspector::class,
         FirewallInspector::class => NativeUfwFirewallInspector::class,
         FirewallManager::class => NativeUfwFirewallManager::class,
