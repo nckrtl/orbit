@@ -307,13 +307,13 @@ it('records a metrics disable request as metrics:disable', function (): void {
     $manager
         ->shouldReceive('remove')
         ->once()
-        ->with(false, false)
+        ->with(true, true)
         ->andReturn(new MetricsMutationData($gateway->id, 'removed', MetricsPublicationCleanup::Uncleaned));
     app()->instance(MetricsRoleManager::class, $manager);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->deleteJson('/api/v1/metrics')
+        ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
         ->assertOk();
 
     expect(Activity::query()->sole()->command)->toBe('metrics:disable');
