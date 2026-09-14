@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\DevelopmentServerEndpoint;
+use App\Domain\Hibernation\RuntimeHibernation;
 use Illuminate\Support\Collection;
 
 final readonly class AppDevCaddyConfigRenderer
 {
+    public function __construct(
+        private string $gatewayOrigin = 'https://gateway.orbit',
+    ) {}
+
     /** @param Collection<int, AppDevSite> $sites */
     public function render(Collection $sites): string
     {
@@ -70,7 +75,47 @@ final readonly class AppDevCaddyConfigRenderer
             return $application;
         }
 
-        return $this->withDevelopmentServer($application);
+        $handlers = $this->withDevelopmentServer($application);
+        $wake = $this->hibernationWake($site);
+
+        return $wake === null ? $handlers : $wake.PHP_EOL.$handlers;
+    }
+
+    private function hibernationWake(AppDevSite $site): ?string
+    {
+        if (preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $site->scope, $matches) !== 1) {
+            return null;
+        }
+
+        $id = $matches[1];
+        $key = RuntimeHibernation::key((int) $id);
+        $awake = RuntimeHibernation::awakePath($key);
+        $log = RuntimeHibernation::accessLogPath($key);
+        $host = parse_url($this->gatewayOrigin, PHP_URL_HOST);
+
+        if (! is_string($host) || $host === '') {
+            return null;
+        }
+
+        $uri = '/api/v1/runtime-activations/app-instance/'.$id;
+        $root = $site->certificateDirectory().'/root.pem';
+
+        return <<<CADDY
+            @orbit_asleep {
+                not file {$awake}
+            }
+            forward_auth @orbit_asleep {$this->gatewayOrigin} {
+                uri {$uri}
+                header_up Host {$host}
+                transport http {
+                    tls_trusted_ca_certs {$root}
+                    tls_server_name {$host}
+                }
+            }
+            log {
+                output file {$log}
+            }
+            CADDY;
     }
 
     private function withDevelopmentServer(string $applicationHandler): string

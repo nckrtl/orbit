@@ -20,6 +20,7 @@ final readonly class ProcessTarget
         public string $environmentFile = '',
         public bool $productionReleaseLayout = false,
         public ?string $routeHostname = null,
+        public bool $onDemandHostStart = false,
     ) {
         $this->defaultWorkingDirectory = $checkoutPath;
     }

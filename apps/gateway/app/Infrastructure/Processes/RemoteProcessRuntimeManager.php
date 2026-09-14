@@ -112,13 +112,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         $this->requireOwnedRuntime($process, 'start', 'process.start_failed', $target);
 
         $arguments = match ($process->runtime) {
-            ProcessRuntime::Systemd => [
-                'sudo',
-                'systemctl',
-                'enable',
-                '--now',
-                $this->systemd->unitName($process),
-            ],
+            ProcessRuntime::Systemd => $this->systemdStartArguments($process, $target),
             ProcessRuntime::Docker => [
                 'sudo',
                 'docker',
@@ -171,13 +165,16 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             return;
         }
 
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'systemctl', 'enable', $this->systemd->unitName($process)],
-            'restart-enable',
-            'process.restart_failed',
-            target: $target,
-        );
+        if (! $target->onDemandHostStart) {
+            $this->executeSuccessfully(
+                $process,
+                ['sudo', 'systemctl', 'enable', $this->systemd->unitName($process)],
+                'restart-enable',
+                'process.restart_failed',
+                target: $target,
+            );
+        }
+
         $this->executeSuccessfully(
             $process,
             ['sudo', 'systemctl', 'restart', $this->systemd->unitName($process)],
@@ -356,11 +353,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         ProcessTarget $target,
     ): void {
         $hadPreviousUnit = $this->convergeSystemd($process, $target);
-        $activation = $this->activateSystemdDesiredState($process);
+        $activation = $this->activateSystemdDesiredState($process, $target);
 
         if (! $activation->succeeded()) {
             if ($hadPreviousUnit) {
-                $this->rollbackSystemdReplacement($process);
+                $this->rollbackSystemdReplacement($process, $target);
             }
 
             if (! $hadPreviousUnit) {
@@ -471,24 +468,39 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         return $hadPreviousUnit;
     }
 
-    private function activateSystemdDesiredState(#[SensitiveParameter] Process $process): CommandResult
-    {
+    private function activateSystemdDesiredState(
+        #[SensitiveParameter]
+        Process $process,
+        ProcessTarget $target,
+    ): CommandResult {
         $unit = $this->systemd->unitName($process);
 
         if ($process->desired_state === DesiredProcessState::Stopped) {
             return $this->execute($process, ['sudo', 'systemctl', 'disable', '--now', $unit]);
         }
 
-        $enable = $this->execute($process, ['sudo', 'systemctl', 'enable', $unit]);
+        if (! $target->onDemandHostStart) {
+            $enable = $this->execute($process, ['sudo', 'systemctl', 'enable', $unit]);
 
-        if (! $enable->succeeded()) {
-            return $enable;
+            if (! $enable->succeeded()) {
+                return $enable;
+            }
         }
 
         return $this->execute($process, ['sudo', 'systemctl', 'restart', $unit]);
     }
 
-    private function rollbackSystemdReplacement(#[SensitiveParameter] Process $process): void
+    /** @return non-empty-list<string> */
+    private function systemdStartArguments(#[SensitiveParameter] Process $process, ProcessTarget $target): array
+    {
+        $unit = $this->systemd->unitName($process);
+
+        return $target->onDemandHostStart
+            ? ['sudo', 'systemctl', 'start', $unit]
+            : ['sudo', 'systemctl', 'enable', '--now', $unit];
+    }
+
+    private function rollbackSystemdReplacement(#[SensitiveParameter] Process $process, ProcessTarget $target): void
     {
         $unit = $this->systemd->unitName($process);
         $path = $this->systemd->unitPath($process);
@@ -499,7 +511,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         );
 
         $restoreState = $process->desired_state === DesiredProcessState::Running
-            ? ['sudo', 'systemctl', 'enable', '--now', $unit]
+            ? $this->systemdStartArguments($process, $target)
             : ['sudo', 'systemctl', 'disable', '--now', $unit];
         $this->executeSuccessfully(
             $process,

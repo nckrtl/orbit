@@ -8,6 +8,7 @@ use App\Actions\AppInstances\SynchronizeAppInstanceEnvironmentAction;
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
+use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
 use App\Domain\AppDev\AppDevCaddyManager;
@@ -75,6 +76,10 @@ use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Herdr\HerdrObserverPublisher;
 use App\Domain\Herdr\HerdrSessionInspector;
 use App\Domain\Herdr\ObservationGrantSigner;
+use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
+use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialOperationLock;
@@ -183,6 +188,9 @@ use App\Infrastructure\Herdr\HerdrObserverSitePublisher;
 use App\Infrastructure\Herdr\NativeHerdrSessionInspector;
 use App\Infrastructure\Herdr\OpenSslObservationGrantSigner;
 use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
+use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
+use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
+use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
@@ -319,6 +327,7 @@ final class AppServiceProvider extends ServiceProvider
         RouterLanIngressReconciler::class => NativeRouterLanIngressReconciler::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
         HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,
         HerdrSessionInspector::class => NativeHerdrSessionInspector::class,
@@ -339,6 +348,33 @@ final class AppServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->bind(
+            SweepIdleAppDevRuntimesAction::class,
+            static fn ($app): SweepIdleAppDevRuntimesAction => new SweepIdleAppDevRuntimesAction(
+                policy: $app->make(AppDevHibernationPolicy::class),
+                admissions: $app->make(ProcessAdmissionLock::class),
+                runtime: $app->make(ProcessRuntimeManager::class),
+                markers: $app->make(HibernationMarkerStore::class),
+                idleSeconds: (int) config('orbit.hibernation.idle_seconds'),
+            ),
+        );
+        $this->app->bind(
+            RuntimeHibernatorConverger::class,
+            static fn ($app): NativeRuntimeHibernatorConverger => new NativeRuntimeHibernatorConverger(
+                processes: $app->make(ProcessRunner::class),
+                sweepSeconds: (int) config('orbit.hibernation.sweep_seconds'),
+            ),
+        );
+        $this->app->bind(
+            AppInstanceRuntimeReadiness::class,
+            static fn ($app): RemoteAppInstanceRuntimeReadiness => new RemoteAppInstanceRuntimeReadiness(
+                runtime: $app->make(ProcessRuntimeManager::class),
+                ssh: $app->make(SshExecutor::class),
+                keys: $app->make(SshKeyProvider::class),
+                knownHosts: $app->make(KnownHostsStore::class),
+                timeoutSeconds: (int) config('orbit.hibernation.wake_timeout_seconds'),
+            ),
+        );
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
@@ -466,6 +502,7 @@ final class AppServiceProvider extends ServiceProvider
                 caddy: new NativeGatewayCaddyConverger(app(ProcessRunner::class)),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
+                hibernator: app(RuntimeHibernatorConverger::class),
             ),
         );
         $this->app->singleton(

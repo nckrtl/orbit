@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
+use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
@@ -22,7 +23,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
-    [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
+    [$converger, $processes, $issuer, $orbitHome, $hibernator] = gateway_web_converger();
 
     try {
         $converger->converge('gateway.orbit', '10.44.0.1');
@@ -159,7 +160,9 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->and($commands->contains(['sudo', 'chmod', '0710', '/home/orbit', '/home/orbit/orbit-gateway']))
             ->toBeTrue()
             ->and($commands->contains(['sudo', 'chmod', '0600', '/home/orbit/orbit-gateway/.env']))
-            ->toBeTrue();
+            ->toBeTrue()
+            ->and($hibernator->calls)
+            ->toBe(1);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -605,7 +608,8 @@ function protected_file_writer_wait_until(Closure $condition, float $timeoutSeco
  *     NativeGatewayWebConverger,
  *     object&ProcessRunner,
  *     object&GatewayCertificateIssuer,
- *     string
+ *     string,
+ *     RecordingRuntimeHibernatorConverger
  * }
  */
 function gateway_web_converger(?string $failure = null, string $checkoutPath = '/home/orbit/orbit-gateway'): array
@@ -700,11 +704,23 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             caddy: new NativeGatewayCaddyConverger($processes),
             orbitHome: $orbitHome,
             checkoutPath: $checkoutPath,
+            hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,
         ),
         $processes,
         $issuer,
         $orbitHome,
+        $hibernator,
     ];
+}
+
+final class RecordingRuntimeHibernatorConverger implements RuntimeHibernatorConverger
+{
+    public int $calls = 0;
+
+    public function converge(): void
+    {
+        $this->calls++;
+    }
 }
 
 final class GatewayFpmContentionProcessRunner implements ProcessRunner

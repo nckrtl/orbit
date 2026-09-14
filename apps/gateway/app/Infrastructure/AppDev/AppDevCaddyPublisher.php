@@ -77,6 +77,8 @@ final readonly class AppDevCaddyPublisher
                 previous_main="\$versions/.previous-main.\$version"
                 trap 'rm -rf -- "\$candidate"; rm -f -- "\$candidate_link" "\$rollback_link" "\$rollback_file" "\$previous_main"' EXIT
                 install -d -o root -g caddy -m 0750 -- "\$versions" "\$candidate/fragments"
+                install -d -o root -g caddy -m 0755 -- /dev/shm/orbit/hibernation
+                install -d -o root -g caddy -m 2775 -- /data/caddy/orbit/hibernation
                 source_main=\$(readlink -f "\$live_caddyfile")
                 test -f "\$source_main"
                 cp -a -- "\$source_main" "\$previous_main"

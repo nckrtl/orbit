@@ -39,6 +39,7 @@ final readonly class ServingNodeResolver
             ServingNode::HerdrSessionOwning => $this->herdrSessionOwning($request),
             ServingNode::ScheduleOwning => $this->scheduleOwning($request),
             ServingNode::ScheduleHost => $this->scheduleHost($request),
+            ServingNode::AppInstanceHost => $this->appInstanceHost($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
             ServingNode::ClusterOwning => $this->clusterOwning($request),
             ServingNode::RouteOwning => $this->routeOwning($request),
@@ -289,6 +290,28 @@ final readonly class ServingNodeResolver
             'node' => [Node::query()->findOrFail($targetId)],
             default => [],
         };
+    }
+
+    /** @return list<Node> */
+    private function appInstanceHost(Request $request): array
+    {
+        $instance = $request->route('instance');
+
+        if ($instance instanceof AppInstance) {
+            return [Node::query()->findOrFail($instance->node_id)];
+        }
+
+        $instanceId = $this->positiveInteger($instance);
+
+        if ($instanceId === null) {
+            return [];
+        }
+
+        $instance = AppInstance::query()->find($instanceId);
+
+        return $instance instanceof AppInstance
+            ? [Node::query()->findOrFail($instance->node_id)]
+            : [];
     }
 
     /** @return list<Node> */
