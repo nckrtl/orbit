@@ -1,0 +1,262 @@
+{
+  "from": "79a129447f58cec2cfb7fef3d922256e4162cf11",
+  "to": "f59e9a1bd83b2055fb7f422b5cac9e63380b50af",
+  "integrated_main": "d3121757a3d6ce45e12079b2af1b99e0fa62a2b7",
+  "owner": "ORB-256",
+  "public_command_count": 106,
+  "framework_command_count": 20,
+  "name_changes": [],
+  "signature_changes": [
+    {
+      "command": "env:import",
+      "field": "signature.options.instance.description",
+      "before": "Positive AppInstance ID or exact Route hostname",
+      "after": "Positive AppInstance ID or exact Route domain"
+    },
+    {
+      "command": "env:sync",
+      "field": "signature.options.instance.description",
+      "before": "Positive AppInstance ID or exact Route hostname",
+      "after": "Positive AppInstance ID or exact Route domain"
+    },
+    {
+      "command": "env:update",
+      "field": "signature.options.instance.description",
+      "before": "Positive AppInstance ID or exact Route hostname",
+      "after": "Positive AppInstance ID or exact Route domain"
+    },
+    {
+      "command": "instance:create",
+      "field": "signature.options.domain",
+      "before": null,
+      "after": {
+        "shortcut": null,
+        "accept_value": true,
+        "value_required": false,
+        "value_optional": true,
+        "array": false,
+        "negatable": false,
+        "default": null,
+        "description": "Optional explicit Route domain"
+      }
+    },
+    {
+      "command": "instance:create",
+      "field": "signature.options.hostname",
+      "before": {
+        "shortcut": null,
+        "accept_value": true,
+        "value_required": false,
+        "value_optional": true,
+        "array": false,
+        "negatable": false,
+        "default": null,
+        "description": "Optional explicit Route hostname"
+      },
+      "after": null
+    },
+    {
+      "command": "instance:database:add",
+      "field": "signature.options.instance.description",
+      "before": "Positive AppInstance ID or exact Route hostname",
+      "after": "Positive AppInstance ID or exact Route domain"
+    },
+    {
+      "command": "instance:database:remove",
+      "field": "signature.options.instance.description",
+      "before": "Positive AppInstance ID or exact Route hostname",
+      "after": "Positive AppInstance ID or exact Route domain"
+    },
+    {
+      "command": "instance:register",
+      "field": "signature.options.domain",
+      "before": null,
+      "after": {
+        "shortcut": null,
+        "accept_value": true,
+        "value_required": false,
+        "value_optional": true,
+        "array": false,
+        "negatable": false,
+        "default": null,
+        "description": "Optional explicit Route domain"
+      }
+    },
+    {
+      "command": "instance:register",
+      "field": "signature.options.hostname",
+      "before": {
+        "shortcut": null,
+        "accept_value": true,
+        "value_required": false,
+        "value_optional": true,
+        "array": false,
+        "negatable": false,
+        "default": null,
+        "description": "Optional explicit Route hostname"
+      },
+      "after": null
+    },
+    {
+      "command": "node:add",
+      "field": "signature.options.tld.description",
+      "before": "Node TLD; required for production clone preview hostnames",
+      "after": "Node TLD; required for production clone preview domains"
+    },
+    {
+      "command": "route:create",
+      "field": "signature.arguments.domain",
+      "before": null,
+      "after": {
+        "required": true,
+        "array": false,
+        "default": null,
+        "description": "Route domain"
+      }
+    },
+    {
+      "command": "route:create",
+      "field": "signature.arguments.hostname",
+      "before": {
+        "required": true,
+        "array": false,
+        "default": null,
+        "description": "Route hostname"
+      },
+      "after": null
+    },
+    {
+      "command": "route:update",
+      "field": "signature.options.domain",
+      "before": null,
+      "after": {
+        "shortcut": null,
+        "accept_value": true,
+        "value_required": false,
+        "value_optional": true,
+        "array": false,
+        "negatable": false,
+        "default": null,
+        "description": "New explicit domain"
+      }
+    },
+    {
+      "command": "route:update",
+      "field": "signature.options.hostname",
+      "before": {
+        "shortcut": null,
+        "accept_value": true,
+        "value_required": false,
+        "value_optional": true,
+        "array": false,
+        "negatable": false,
+        "default": null,
+        "description": "New explicit hostname"
+      },
+      "after": null
+    }
+  ],
+  "source_hash_changes": [
+    {
+      "path": "apps/cli/app/Commands/Database/DatabaseAttachmentCommand.php",
+      "before": "3a83b6d4c190524c7a7747d9fc025c6c8d77e2d36414f0dd39b7fefa748043f4",
+      "after": "04d38d49a5a51efdf3a0bbbc3142012c8cca8ad4967559dae7158e2694418c62"
+    },
+    {
+      "path": "apps/cli/app/Commands/Environment/EnvironmentCommand.php",
+      "before": "af85701401ea8d82627bd729ad745e8a2685705f4e93d9fecbba9ce13913102d",
+      "after": "bd459df02db812618b3f0989a27ca5ac2799b39e02fa8105a6e50540c7af76de"
+    },
+    {
+      "path": "apps/cli/app/Commands/Environment/ImportEnvironmentCommand.php",
+      "before": "672019be2738e4b4e902afd56bc51adc90aef559592d0cf84ca572f78e46146b",
+      "after": "765582878dd9ab132a4dc4dc1eb9dadee3872a5d05b27c54187154aaebba3d5c"
+    },
+    {
+      "path": "apps/cli/app/Commands/Environment/SynchronizeEnvironmentCommand.php",
+      "before": "562759b4e1a6a6014bf376da402df13f1e0a6e8e444f7088e6998774caeb9907",
+      "after": "558a2ab75857d4c16bbed339ee856a57d2d53079f81a1c20b892f901da0a1574"
+    },
+    {
+      "path": "apps/cli/app/Commands/Environment/UpdateEnvironmentCommand.php",
+      "before": "cfae3f6ee3a5c0a49afd74ef1e3ab6d501a84203383c4ff234c3d47cd4f9d965",
+      "after": "28da61c2a11b3be584f15eb8af072c8001f8112ee395fb93e8a43834867fc0f7"
+    },
+    {
+      "path": "apps/cli/app/Commands/Instances/AddInstanceDatabaseCommand.php",
+      "before": "98cbf5a3a5aea06776ae230ea379f1b4ed08747802e2738df86e6bb988b73fac",
+      "after": "ee55d395601bdb10c425447f0a56c84e012f9a1cd6f876d9c5787a05278813dd"
+    },
+    {
+      "path": "apps/cli/app/Commands/Instances/CloneInstanceCommand.php",
+      "before": "b70a600303fac2d293965965bfbf11ca08f8b38953c4ecd7a0f87d59a6f5e9a5",
+      "after": "dcac39f3ef12cae4e19e9d71c8bc62135e2e7a7aaa2a87841ed0a29f03c04e0e"
+    },
+    {
+      "path": "apps/cli/app/Commands/Instances/CreateInstanceCommand.php",
+      "before": "b542645516dc84a9fc430aef540af1e1aa78fe0a904c595dbeddb6457cfdffdb",
+      "after": "e714080674065ae343d8b6eeceae10a40105581ad20087f1d286be9c0e4e22bd"
+    },
+    {
+      "path": "apps/cli/app/Commands/Instances/ListInstancesCommand.php",
+      "before": "279adb5d284f9df51636d5af4a34df2672d78efa532c32103d321d042287cbb8",
+      "after": "fa4d702b2869ba9fb5a19584db01c919df105d706541994087c2b93c1e58f350"
+    },
+    {
+      "path": "apps/cli/app/Commands/Instances/RegisterInstanceCommand.php",
+      "before": "c66a05b76da429758dc87e900bb459d6f5cfa20026d5114d962c5f03d3a905ae",
+      "after": "beb2a1e8695063d2f252cd676b1572edba4c9f7eda23a5ebd0dd8800e6f87081"
+    },
+    {
+      "path": "apps/cli/app/Commands/Instances/RemoveInstanceDatabaseCommand.php",
+      "before": "bc36339d267009ea5855dea6192c1aac117c761dfd9b80099470c6e67b1652b3",
+      "after": "53323a220fff9946cdea824d89af0ac51efc9dab5df8c42da3be5cb9cf3eab30"
+    },
+    {
+      "path": "apps/cli/app/Commands/Instances/ShowInstanceCommand.php",
+      "before": "0cdecf0365b9e12b7d2673a547f7dd508f3043df7b281986c0b322efacce2a14",
+      "after": "c46db0fc4d91de8018edffdf687cfc5a2a1eb2b98a9cb855a8290f81d9fa8643"
+    },
+    {
+      "path": "apps/cli/app/Commands/Nodes/AddNodeCommand.php",
+      "before": "f5a1f247119cd4ded70f3a5cec9b6c6d84f1f9a6a418e6235bdc9da000838882",
+      "after": "07042b26cd24369adb28965f579a4d4aec6311fb953f84295c80b13ec70bef5e"
+    },
+    {
+      "path": "apps/cli/app/Commands/Routes/CreateRouteCommand.php",
+      "before": "34c95eb6e9fbd3d7dcc17704e53716f8c6748a4e4c1b7a773204b4e0f66df35d",
+      "after": "2bf0e9a52bb50bbdaa9f6a5df60f36f257c532761fecdc33513166d5bea83173"
+    },
+    {
+      "path": "apps/cli/app/Commands/Routes/DestroyRouteCommand.php",
+      "before": "9235868419d7d876c2d5ba58e58e667af52775ef7dc74c03ad4cc3f1036c971f",
+      "after": "60978d9bb9c38608c462185fac026ff86fe189545e0d7d263fba8ccca3e1d0ed"
+    },
+    {
+      "path": "apps/cli/app/Commands/Routes/ListRoutesCommand.php",
+      "before": "f08c11ae850e80f1fb7b030d633edb8dd5fe92363dcec50e792c86c14eb60922",
+      "after": "62256e441f60691a58a99b6d770f78f4996cd6558f398f5eeebef57cd71e5396"
+    },
+    {
+      "path": "apps/cli/app/Commands/Routes/SetRouteTargetCommand.php",
+      "before": "8bd05584c1a23f58caae715aacd7d0b2868243ae409555162a7a20de5771331b",
+      "after": "46d94d010dba351cfc675c7278c96ad2d9deb7d5690715ef6b6ba76bca08cd1d"
+    },
+    {
+      "path": "apps/cli/app/Commands/Routes/ShowRouteCommand.php",
+      "before": "ccaca9f2376efaf24e15b65ac54d3ed2d5138a0fd79c1635e0f9cd57566c028a",
+      "after": "054f7ddff6bc4772782139055ee66e8aa004174a0ed5e34b024b9a8a4ec8a224"
+    },
+    {
+      "path": "apps/cli/app/Commands/Routes/UnsetRouteTargetCommand.php",
+      "before": "36290fcb497c8d8177ab4a9d58afe2df18154490e9ce7f90475d61bb426d995c",
+      "after": "e0919503e2bc892e477ac40c089160c6a69f751e3c85523f2d6e9807fbcd11b2"
+    },
+    {
+      "path": "apps/cli/app/Commands/Routes/UpdateRouteCommand.php",
+      "before": "c1f47ea9526d1f92efc71635e2082d21420fbd4bf2ac0c64b4994873c80a3211",
+      "after": "e4d56781eed7a1151304267a237f898f3e434fc0ad7af36e353d84dc72cc191f"
+    }
+  ],
+  "ux_adoption": "Unverified; accepted product migration, not UX adoption"
+}

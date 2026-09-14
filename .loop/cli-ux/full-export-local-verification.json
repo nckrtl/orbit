@@ -1,0 +1,10 @@
+{
+  "candidate": "b58b6077b1190e20c3494d5934972221481dfb24",
+  "archive_bytes": 88704,
+  "sha256": "be27e535c1e06f10aa50e6911f9202e316acc6f0fd5872b46a2f177211fb8587",
+  "reads": 44,
+  "largest_response_bytes": 2795,
+  "files_verified": 28,
+  "all_hashes_match": true,
+  "runtime": "local tooling exercise; not Incus acceptance"
+}

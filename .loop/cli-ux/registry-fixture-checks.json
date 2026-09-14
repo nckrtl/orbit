@@ -1,0 +1,69 @@
+{
+  "candidate": "f59e9a1bd83b2055fb7f422b5cac9e63380b50af",
+  "results": [
+    {
+      "case": "exact-registry",
+      "exit_code": 0,
+      "result": {
+        "state": "passed",
+        "check": "ORB-351 exact registry and source reconciliation",
+        "candidate": "f59e9a1bd83b2055fb7f422b5cac9e63380b50af",
+        "candidate_binding": "Harness must bind the supplied commit to this mounted candidate; the fixture verifies recorded source hashes, not the commit label alone.",
+        "root": "/Users/nckrtl/orbit-worktrees/orb-351",
+        "php_version": "8.5.8",
+        "public_commands": 106,
+        "framework_commands": 20,
+        "registration_keys": 126,
+        "source_files": 174,
+        "source_manifest_sha256": "67b0c1db805522860e4fab2a882a35ab30a7d8cf509cf3a97d03cf8b86b0c5ce",
+        "expected_sha256": "a7f7fe7d5309efd132d3b8092852de3794670db66a5022b9292c1aa272a03ebf",
+        "verifier_sha256": "d4a45983b3d56117c25714eab66b25819cebc222ef49e2d9d6a24d414da2e69c",
+        "extension_configuration": {
+          "enabled": [
+            "herdr"
+          ]
+        },
+        "isolation": "Private temporary ORBIT_HOME; no command dispatched; no Gateway profile or caller home used.",
+        "ux_adoption": "Unverified for every public command; this proves registry coverage only."
+      },
+      "verdict": "Accepted expected registry"
+    },
+    {
+      "case": "changed-public-signature",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      },
+      "verdict": "Expected mismatch rejected"
+    },
+    {
+      "case": "changed-framework-signature",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: framework"
+      },
+      "verdict": "Expected mismatch rejected"
+    },
+    {
+      "case": "stale-doctor-workspace-description",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      },
+      "verdict": "Expected mismatch rejected"
+    },
+    {
+      "case": "stale-route-hostname-option",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      },
+      "verdict": "Expected mismatch rejected"
+    }
+  ],
+  "ux_adoption": "Unverified; no product command dispatched or terminal behavior proved"
+}
