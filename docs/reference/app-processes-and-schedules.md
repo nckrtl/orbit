@@ -80,7 +80,7 @@ List output omits each definition's command. Show, create, update, and destroy r
 
 ## Select the owner
 
-A Process has exactly one target: an AppInstance or a managed Node. The `process:create` and `process:list` commands require one selector: `--instance=ID` or `--node=ID-or-name` for a Process, or `--app=APP` for an App-owned definition. The CLI refuses more than one of those selectors together. The public API and PHP software development kit (SDK) send the Process target token `instance` or `node` with a positive numeric ID. Process start, stop, restart, and logs accept a positive Process ID and use that record's owner.
+A Process has exactly one target: an AppInstance or a managed Node. The `process:create` and `process:list` commands require one selector: `--instance=ID` or `--node=ID-or-name` for a Process, or `--app=APP` for an App-owned definition. The CLI refuses more than one of those selectors together. The public API and PHP software development kit (SDK) send the Process target token `instance` or `node` with a positive numeric ID. Process start, stop, restart, logs, and destroy accept a positive Process ID and use that record's owner.
 
 Orbit accepts no Workspace Process target. It does not convert or adopt legacy Process records or runtime artifacts, and it does not create a synthetic AppInstance to host a Node-scoped service. A fleet operator owns any required legacy transition outside Orbit, and Orbit provides no migration command or compatibility selector.
 
