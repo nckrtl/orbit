@@ -1,0 +1,57 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Orbit",
+  "description": "AI-first tooling for local app development, production hosting, and fleet maintenance.",
+  "colors": {
+    "primary": "#0F766E",
+    "light": "#14B8A6",
+    "dark": "#0F766E"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start here",
+        "pages": [
+          "index",
+          "mission",
+          "architecture",
+          "concepts",
+          "tech-stack"
+        ]
+      },
+      {
+        "group": "Applications",
+        "pages": [
+          "domains/applications",
+          "reference/apps",
+          "reference/routes"
+        ]
+      },
+      {
+        "group": "Infrastructure",
+        "pages": [
+          "reference/node-provisioning",
+          "reference/private-dns",
+          "reference/metrics"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/nckrtl/orbit"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/nckrtl/orbit"
+    }
+  }
+}
