@@ -45,7 +45,7 @@ final readonly class NodeFirewallRuleCatalog
                     $this->rule('orbit:app-prod-https', '443'),
                 ]
                 : [],
-            RoleName::Metrics => [],
+            RoleName::Metrics, RoleName::Database => [],
         };
     }
 

@@ -249,6 +249,66 @@ it('returns 201 for a new assignment and 200 for explicit convergence', function
     expect($this->roleLifecycle->converged)->toBe(['app-dev', 'app-dev']);
 });
 
+it('adds converges and removes the database role through the existing node role contract', function (): void {
+    $created = $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])
+        ->assertCreated()
+        ->assertJsonPath('data.role', 'database')
+        ->assertJsonPath('data.assignment.role', 'database')
+        ->assertJsonPath('data.assignment.status', 'active');
+
+    $assignmentId = $created->json('data.assignment.id');
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+            'role' => 'database',
+            'converge_existing' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.id', $assignmentId);
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/database", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true);
+
+    expect($this->roleLifecycle->converged)
+        ->toBe(['database', 'database'])
+        ->and($this->roleLifecycle->removed)
+        ->toBe([['role' => 'database', 'purge_data' => false]])
+        ->and($this->node->roles()->where('role', RoleName::Database)->exists())
+        ->toBeFalse();
+});
+
+it('refuses database settings and documented role conflicts', function (): void {
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+            'role' => 'database',
+            'settings' => ['engine' => 'mysql'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.details.body.0', 'The request body contains unsupported top-level keys.');
+
+    expect($this->node->roles()->exists())->toBeFalse();
+
+    $this->node->roles()->create([
+        'role' => RoleName::AppProd,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [database] conflicts with assigned role [app-prod].');
+
+    expect($this->roleLifecycle->converged)
+        ->toBeEmpty()
+        ->and($this->node->roles()->where('role', RoleName::Database)->exists())
+        ->toBeFalse();
+});
+
 it('assigns lists and retries one Ingress through the existing exact lifecycle contract', function (): void {
     $cluster = Cluster::query()->create(['name' => 'ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);

@@ -6,6 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\DatabaseRoleSettings;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -39,6 +40,7 @@ final readonly class AddNodeRoleAction
     public function execute(Node $node, RoleName $role, bool $convergeExisting = false): array
     {
         $this->guardActiveNode($node);
+        $this->guardEmptyDatabaseSettings($role);
 
         if (! $this->registry->definition($role)->mutable) {
             throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
@@ -61,6 +63,7 @@ final readonly class AddNodeRoleAction
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole
     {
         $this->guardProvisioningNode($node);
+        $this->guardEmptyDatabaseSettings($role);
 
         if (! $this->registry->definition($role)->assignableDuringProvisioning) {
             throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
@@ -191,6 +194,15 @@ final readonly class AddNodeRoleAction
             'assignment' => $claim['assignment']->refresh(),
             'created' => $claim['created'],
         ];
+    }
+
+    private function guardEmptyDatabaseSettings(RoleName $role): void
+    {
+        if ($role !== RoleName::Database) {
+            return;
+        }
+
+        DatabaseRoleSettings::from([]);
     }
 
     private function guardActiveNode(Node $node): void

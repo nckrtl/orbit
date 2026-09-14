@@ -19,6 +19,7 @@ describe(RoleRegistry::class, function (): void {
                 RoleName::AppDev,
                 RoleName::AppProd,
                 RoleName::Metrics,
+                RoleName::Database,
             ])
             ->and($registry->definition(RoleName::Gateway)->singleton)
             ->toBeTrue()
@@ -61,6 +62,12 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->definition(RoleName::Metrics)->assignableDuringProvisioning)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Metrics)->mutable)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Database)->singleton)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Database)->assignableDuringProvisioning)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Database)->mutable)
             ->toBeTrue();
     });
 
@@ -98,6 +105,22 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->conflicts(RoleName::Ingress, RoleName::AppDev))
             ->toBeTrue()
             ->and($registry->conflicts(RoleName::AppDev, RoleName::Ingress))
-            ->toBeTrue();
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::Database, RoleName::Gateway))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::Database, RoleName::Vpn))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::Database, RoleName::Router))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::Database, RoleName::Ingress))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::Database, RoleName::AppProd))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::AppProd, RoleName::Database))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::Database, RoleName::AppDev))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Database, RoleName::Metrics))
+            ->toBeFalse();
     });
 });

@@ -254,6 +254,55 @@ describe(AssignRoleAction::class, function (): void {
         'Ingress then app-dev' => [RoleName::Ingress, RoleName::AppDev],
         'app-dev then Ingress' => [RoleName::AppDev, RoleName::Ingress],
     ]);
+
+    it('rejects database conflicts with dedicated infrastructure roles', function (
+        RoleName $first,
+        RoleName $second,
+    ): void {
+        $cluster = Cluster::query()->create(['name' => "database-{$first->value}"]);
+        $node = Node::query()->create([
+            'name' => "database-{$first->value}",
+            'public_ssh_host' => '192.0.2.86',
+            'cluster_id' => $cluster->id,
+        ]);
+        $action = app(AssignRoleAction::class);
+        $assignment = $action->execute($node, $first);
+
+        expect(fn () => $action->execute($node, $second))
+            ->toThrow(
+                RoleAssignmentException::class,
+                "Role [{$second->value}] conflicts with assigned role [{$first->value}].",
+            );
+
+        expect($assignment->fresh()?->role)
+            ->toBe($first)
+            ->and($node->roles()->count())
+            ->toBe(1);
+    })->with([
+        'database then gateway' => [RoleName::Database, RoleName::Gateway],
+        'gateway then database' => [RoleName::Gateway, RoleName::Database],
+        'database then vpn' => [RoleName::Database, RoleName::Vpn],
+        'vpn then database' => [RoleName::Vpn, RoleName::Database],
+        'database then ingress' => [RoleName::Database, RoleName::Ingress],
+        'ingress then database' => [RoleName::Ingress, RoleName::Database],
+        'database then app-prod' => [RoleName::Database, RoleName::AppProd],
+        'app-prod then database' => [RoleName::AppProd, RoleName::Database],
+    ]);
+
+    it('assigns database beside app-dev', function (): void {
+        $node = Node::query()->create([
+            'name' => 'database-with-app-dev',
+            'public_ssh_host' => '192.0.2.87',
+        ]);
+        $action = app(AssignRoleAction::class);
+        $action->execute($node, RoleName::AppDev);
+        $database = $action->execute($node, RoleName::Database);
+
+        expect($database->role)
+            ->toBe(RoleName::Database)
+            ->and($node->roles()->count())
+            ->toBe(2);
+    });
 });
 
 /** @return array{0: 'claim-lock'|'claim-source-read'|'role-policy', 1: int|null}|null */

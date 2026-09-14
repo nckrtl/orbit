@@ -75,8 +75,9 @@ final readonly class NodeSideResidue
                 '/etc/orbit/metrics including the Orbit ownership marker',
                 'Grafana upstream firewall rule',
             ],
-            // Gateway and VPN are protected from removal. Router and Ingress have no host projection.
-            RoleName::Gateway, RoleName::Vpn, RoleName::Router, RoleName::Ingress => [],
+            // Gateway and VPN are protected from removal. Router, Ingress, and
+            // Database leave no role-owned host projection; Docker stays installed.
+            RoleName::Gateway, RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Database => [],
         };
     }
 }

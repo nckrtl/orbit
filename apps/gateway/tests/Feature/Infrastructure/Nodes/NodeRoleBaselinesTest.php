@@ -32,6 +32,7 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
+use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
@@ -364,6 +365,29 @@ it('passes a nondefault managed account into every baseline prerequisite command
         );
 });
 
+it('converges Docker prerequisites and leaves them installed on remove', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Database, 'database-role');
+    $baseline = database_role_baseline($events);
+
+    $baseline->converge($node, $assignment);
+    $baseline->remove($node, $assignment, purgeData: true);
+    $baseline->removeUnreachable($node, $assignment);
+
+    expect($events)->toBe(['ssh:database']);
+});
+
+it('refuses database convergence without a WireGuard address', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Database, 'database-unaddressed');
+    $node->update(['wireguard_ip' => null]);
+
+    expect(fn () => database_role_baseline($events)->converge($node, $assignment))
+        ->toThrow(NodeRoleOperationException::class, 'has no WireGuard address.')
+        ->and($events)
+        ->toBe([]);
+});
+
 it('dispatches every assignment to its code-defined baseline', function (): void {
     expect(class_exists(NativeRoleBaselineConverger::class))->toBeTrue();
 
@@ -371,7 +395,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(5);
+    $metricsFleet->shouldReceive('reconcile')->times(6);
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline($firewall),
         new VpnRoleBaseline(
@@ -397,6 +421,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
             baseline_keys(),
             baseline_known_hosts(),
         ),
+        database: database_role_baseline($events),
     );
 
     foreach (role_baseline_roles() as $role) {
@@ -418,6 +443,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:vpn',
         'ssh:app-dev',
         'ssh:app-prod',
+        'ssh:database',
     );
 });
 
@@ -573,6 +599,7 @@ it('checks the remote operating system before every role convergence', function 
             baseline_keys(),
             baseline_known_hosts(),
         ),
+        database: database_role_baseline($events),
     );
 
     foreach (role_baseline_roles() as $role) {
@@ -599,6 +626,8 @@ it('checks the remote operating system before every role convergence', function 
         'caddy:converge',
         'firewall:converge:app-prod',
         'guard:unknown',
+        'guard:database',
+        'ssh:database',
     ]);
 });
 
@@ -675,6 +704,7 @@ function baseline_guard_ssh(array &$events): SshExecutor
                     '10.44.0.3' => 'vpn',
                     '10.44.0.4' => 'app-dev',
                     '10.44.0.5' => 'app-prod',
+                    '10.44.0.7' => 'database',
                     default => 'unknown',
                 }
             : 'unknown';
@@ -721,6 +751,17 @@ function role_baseline_roles(): array
 }
 
 /** @param list<string> $events */
+function database_role_baseline(array &$events): DatabaseRoleBaseline
+{
+    return new DatabaseRoleBaseline(
+        new NodeRolePrerequisiteCommandFactory,
+        baseline_ssh($events),
+        baseline_keys(),
+        baseline_known_hosts(),
+        baseline_account_resolver(),
+    );
+}
+
 function app_dev_role_baseline(array &$events): AppDevRoleBaseline
 {
     $caddy = new class($events) implements AppDevCaddyManager

@@ -34,7 +34,7 @@ The Gateway stores its data in SQLite. Nodes hold the files and run the services
 
 ## Nodes and roles
 
-A Node is a machine connected to Orbit. It can remain standalone or belong to one optional Cluster, and it can have one or more roles. For example, an `app-dev` Node runs development applications, while a Router sends clustered traffic to the right application.
+A Node is a machine connected to Orbit. It can remain standalone or belong to one optional Cluster, and it can have one or more roles. For example, an `app-dev` Node runs development applications, a `database` Node receives Docker for shared Node Processes, and a Router sends clustered traffic to the right application.
 
 The Gateway manages Nodes over SSH. After setup, WireGuard provides the private network used for those connections. Orbit manages the files and services needed by each Node's assigned roles.
 

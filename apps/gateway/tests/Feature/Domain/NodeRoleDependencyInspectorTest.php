@@ -86,10 +86,10 @@ describe(EloquentNodeRoleDependencyInspector::class, function (): void {
             ]);
     });
 
-    it('returns an empty deterministic set for roles without application dependents', function (): void {
+    it('returns an empty deterministic set for roles without application dependents', function (RoleName $role): void {
         $dependencies = app(NodeRoleDependencyInspector::class)->inspect(
-            dependency_node('dependency-empty'),
-            RoleName::Gateway,
+            dependency_node('dependency-empty-'.$role->value),
+            $role,
         );
 
         expect($dependencies->instanceIds)
@@ -100,7 +100,10 @@ describe(EloquentNodeRoleDependencyInspector::class, function (): void {
             ->toBeEmpty()
             ->and($dependencies->summaries)
             ->toBeEmpty();
-    });
+    })->with([
+        'gateway' => RoleName::Gateway,
+        'database' => RoleName::Database,
+    ]);
 });
 
 function dependency_node(string $name): Node
