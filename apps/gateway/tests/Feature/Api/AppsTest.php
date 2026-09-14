@@ -17,7 +17,6 @@ use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Str;
@@ -398,34 +397,6 @@ describe('app lifecycle', function (): void {
             ->toBe('app:destroy');
     });
 
-    it('does not remove an app that still has instances', function (): void {
-        $node = Node::query()->create([
-            'name' => 'dev',
-            'public_ssh_host' => '192.0.2.10',
-        ]);
-        $app = OrbitApp::query()->create([
-            'name' => 'Acme',
-            'slug' => 'acme',
-            'repository_url' => 'https://github.com/acme/site.git',
-        ]);
-        Instance::query()->create([
-            'app_id' => $app->id,
-            'node_id' => $node->id,
-            'name' => 'dev',
-            'environment' => 'development',
-            'checkout_path' => '/home/orbit/apps/acme/dev',
-            'hostname' => 'dev.dev.orbit',
-            'certificate_mode' => 'orbit-ca',
-        ]);
-
-        $this
-            ->deleteJson("/api/v1/apps/{$app->id}")
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'app.has_instances');
-
-        expect($app->fresh())->not->toBeNull();
-    });
-
     it('does not remove an App that still owns AppInstances', function (): void {
         $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
         $node = Node::query()->create([
@@ -758,10 +729,10 @@ describe('app list access', function (): void {
             'wireguard_ip' => '10.44.0.22',
         ]);
         $consumer->accessibleNodes()->attach($accessibleNode);
-        $legacyOnly = OrbitApp::query()->create([
-            'name' => 'Legacy only',
-            'slug' => 'legacy-only',
-            'repository_url' => 'https://example.test/legacy-only.git',
+        OrbitApp::query()->create([
+            'name' => 'Unplaced',
+            'slug' => 'unplaced-direct',
+            'repository_url' => 'https://example.test/unplaced-direct.git',
         ]);
         $mixedHidden = OrbitApp::query()->create([
             'name' => 'Mixed hidden',
@@ -772,26 +743,6 @@ describe('app list access', function (): void {
             'name' => 'Mixed visible',
             'slug' => 'mixed-visible',
             'repository_url' => 'https://example.test/mixed-visible.git',
-        ]);
-        foreach ([$legacyOnly, $mixedHidden] as $app) {
-            Instance::query()->create([
-                'app_id' => $app->id,
-                'node_id' => $accessibleNode->id,
-                'name' => 'legacy',
-                'environment' => 'development',
-                'checkout_path' => "/srv/legacy/{$app->slug}",
-                'hostname' => "{$app->slug}.example.test",
-                'certificate_mode' => 'orbit-ca',
-            ]);
-        }
-        Instance::query()->create([
-            'app_id' => $mixedVisible->id,
-            'node_id' => $inaccessibleNode->id,
-            'name' => 'legacy',
-            'environment' => 'development',
-            'checkout_path' => '/srv/legacy/mixed-visible',
-            'hostname' => 'mixed-visible.example.test',
-            'certificate_mode' => 'orbit-ca',
         ]);
         AppInstance::query()->create([
             'app_id' => $mixedHidden->id,

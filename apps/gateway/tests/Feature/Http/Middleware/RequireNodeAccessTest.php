@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
@@ -13,7 +12,6 @@ use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Tool;
 use Illuminate\Foundation\Http\FormRequest;
@@ -198,8 +196,8 @@ it('allows access to any one node that owns a multiply placed app', function ():
     $first = middleware_node('first');
     $second = middleware_node('second');
     $app = middleware_app('placed');
-    middleware_instance($app, $first, name: 'first');
-    middleware_instance($app, $second, name: 'second');
+    middleware_app_instance($app, $first, name: 'first');
+    middleware_app_instance($app, $second, name: 'second');
     $consumer->accessibleNodes()->attach($second);
     middleware_gateway();
 
@@ -313,8 +311,8 @@ it('uses the first stable app node in a multiple-placement denial', function ():
     $first = middleware_node('first');
     $second = middleware_node('second');
     $app = middleware_app('placed');
-    middleware_instance($app, $second, name: 'second');
-    middleware_instance($app, $first, name: 'first');
+    middleware_app_instance($app, $second, name: 'second');
+    middleware_app_instance($app, $first, name: 'first');
     middleware_gateway();
 
     middleware_get($this, $consumer, "/_node-access/app/{$app->id}")
@@ -436,20 +434,6 @@ function middleware_app(string $slug): OrbitApp
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => 'https://example.test/'.$slug.'.git',
-    ]);
-}
-
-function middleware_instance(OrbitApp $app, Node $node, string $name): Instance
-{
-    return Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => $name,
-        'environment' => 'testing',
-        'checkout_path' => '/srv/'.$name,
-        'hostname' => $name.'.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
     ]);
 }
 
@@ -637,7 +621,7 @@ final class NodeAccessProcessRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'target_type' => ['required', 'in:instance,workspace'],
+            'target_type' => ['required', 'in:instance,node'],
             'target_id' => ['required', 'integer', 'min:1'],
         ];
     }

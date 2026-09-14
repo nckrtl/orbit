@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -17,11 +16,9 @@ use App\Http\Authorization\ServingNodeResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\HerdrSession;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Schedule;
-use App\Models\Workspace;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -64,8 +61,8 @@ it('resolves every distinct app-owning node in stable id order', function (): vo
     $app = resolver_app('multi-node-app');
     $first = resolver_node('first');
     $second = resolver_node('second');
-    resolver_instance($app, $second, name: 'second');
-    resolver_instance($app, $first, name: 'first');
+    resolver_app_instance($app, $second, name: 'second');
+    resolver_app_instance($app, $first, name: 'first');
 
     expect(resolver_node_ids(resolver()->resolve(resolver_request(['app' => $app]), ServingNode::AppOwning)))
         ->toBe([$first->id, $second->id]);
@@ -89,7 +86,7 @@ it('fails closed for an unplaced app without an active Gateway', function (): vo
 it('resolves an app-owning node from raw app input', function (): void {
     $app = resolver_app('raw-app');
     $node = resolver_node('raw-app-node');
-    resolver_instance($app, $node, name: 'raw-app-instance');
+    resolver_app_instance($app, $node, name: 'raw-app-instance');
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(input: ['app_id' => $app->id]),
@@ -100,7 +97,7 @@ it('resolves an app-owning node from raw app input', function (): void {
 it('resolves instance-owning nodes from a bound instance and create input', function (): void {
     $app = resolver_app('instance-owner');
     $node = resolver_node('instance-node');
-    $instance = resolver_instance($app, $node, name: 'instance');
+    $instance = resolver_app_instance($app, $node, name: 'instance');
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(['instance' => $instance]),
@@ -170,49 +167,6 @@ it('throws for a missing candidate clone destination Node', function (): void {
         ServingNode::CandidateClone,
     );
 })->throws(ModelNotFoundException::class);
-
-it('refuses workspace create input that identifies an AppInstance', function (): void {
-    $app = resolver_app('workspace-app-instance');
-    $node = resolver_node('workspace-app-instance-node');
-    $appInstance = resolver_app_instance($app, $node, name: 'workspace-app-instance');
-
-    resolver()->resolve(
-        resolver_request(input: ['instance_id' => $appInstance->id]),
-        ServingNode::WorkspaceOwning,
-    );
-})->throws(ResourceOperationException::class, 'legacy Instance surface');
-
-it('refuses workspace create input when an AppInstance ID collides with a legacy Instance', function (): void {
-    $app = resolver_app('workspace-collision');
-    $node = resolver_node('workspace-collision-node');
-    $instance = resolver_instance($app, $node, name: 'workspace-collision-legacy');
-    $appInstance = resolver_app_instance($app, $node, name: 'workspace-collision-app', id: $instance->id);
-
-    expect($appInstance->id)->toBe($instance->id);
-
-    resolver()->resolve(
-        resolver_request(input: ['instance_id' => $instance->id]),
-        ServingNode::WorkspaceOwning,
-    );
-})->throws(ResourceOperationException::class, 'legacy Instance surface');
-
-it('resolves workspace-owning nodes from a bound workspace and create input', function (): void {
-    $app = resolver_app('workspace-owner');
-    $node = resolver_node('workspace-node');
-    $instance = resolver_instance($app, $node, name: 'workspace-instance');
-    $workspace = resolver_workspace($instance, name: 'workspace');
-
-    expect(resolver_node_ids(resolver()->resolve(
-        resolver_request(['workspace' => $workspace]),
-        ServingNode::WorkspaceOwning,
-    )))
-        ->toBe([$node->id])
-        ->and(resolver_node_ids(resolver()->resolve(
-            resolver_request(input: ['instance_id' => $instance->id]),
-            ServingNode::WorkspaceOwning,
-        )))
-        ->toBe([$node->id]);
-});
 
 it('resolves the Tool-owning node from a bound Tool and raw node input', function (): void {
     $boundNode = resolver_node('tool-owner');
@@ -325,12 +279,17 @@ it('resolves the AppInstance host for runtime activation', function (): void {
         ->toBe([$node->id]);
 });
 
-it('rejects a bound legacy Workspace Process owner', function (): void {
-    $app = resolver_app('workspace-process-owner');
-    $node = resolver_node('workspace-process-node');
-    $instance = resolver_instance($app, $node, name: 'workspace-process-instance');
-    $workspace = resolver_workspace($instance, name: 'workspace-process');
-    $process = resolver_process($workspace);
+it('rejects a bound leftover Workspace Process owner', function (): void {
+    $process = Process::query()->create([
+        'owner_type' => 'App\\Models\\Workspace',
+        'owner_id' => 1,
+        'name' => 'worker',
+        'runtime' => ProcessRuntime::Systemd,
+        'working_directory' => '/srv/app',
+        'runtime_config' => ['command' => 'php artisan queue:work'],
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
 
     resolver()->resolve(
         resolver_request(['process' => $process]),
@@ -378,8 +337,6 @@ it('leaves malformed or absent raw identifiers to validation', function (string 
     'malformed app' => ['AppOwning', ['app_id' => 'not-a-number']],
     'missing instance node' => ['InstanceOwning', []],
     'malformed instance node' => ['InstanceOwning', ['node_id' => 'not-a-number']],
-    'missing workspace instance' => ['WorkspaceOwning', []],
-    'malformed workspace instance' => ['WorkspaceOwning', ['instance_id' => 0]],
     'missing process target' => ['ProcessOwning', []],
     'malformed process target type' => ['ProcessOwning', ['target_type' => 'cluster', 'target_id' => 1]],
     'legacy process Workspace target' => ['ProcessOwning', ['target_type' => 'workspace', 'target_id' => 1]],
@@ -397,7 +354,6 @@ it('throws for syntactically valid missing raw identifiers', function (string $s
 })->with([
     'app' => ['AppOwning', ['app_id' => 999_999]],
     'instance node' => ['InstanceOwning', ['node_id' => 999_999]],
-    'workspace instance' => ['WorkspaceOwning', ['instance_id' => 999_999]],
     'process instance' => ['ProcessOwning', ['target_type' => 'instance', 'target_id' => 999_999]],
     'tool node' => ['ToolOwning', ['node_id' => 999_999]],
     'herdr node' => ['HerdrSessionOwning', ['node_id' => 999_999]],
@@ -448,23 +404,9 @@ function resolver_app(string $slug): OrbitApp
     ]);
 }
 
-function resolver_instance(OrbitApp $app, Node $node, string $name): Instance
+function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
 {
-    return Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => $name,
-        'environment' => 'testing',
-        'checkout_path' => '/srv/'.$name,
-        'hostname' => $name.'.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
-    ]);
-}
-
-function resolver_app_instance(OrbitApp $app, Node $node, string $name, ?int $id = null): AppInstance
-{
-    $appInstance = new AppInstance([
+    return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
@@ -474,29 +416,9 @@ function resolver_app_instance(OrbitApp $app, Node $node, string $name, ?int $id
         'provisioning_step' => 'active',
         'status' => 'active',
     ]);
-
-    if ($id !== null) {
-        $appInstance->id = $id;
-    }
-
-    $appInstance->save();
-
-    return $appInstance;
 }
 
-function resolver_workspace(Instance $instance, string $name): Workspace
-{
-    return Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => $name,
-        'branch' => 'main',
-        'checkout_path' => '/srv/'.$name,
-        'hostname' => $name.'.example.test',
-        'status' => LifecycleStatus::Active,
-    ]);
-}
-
-function resolver_process(AppInstance|Instance|Workspace|Node $owner): Process
+function resolver_process(AppInstance|Node $owner): Process
 {
     return $owner
         ->processes()

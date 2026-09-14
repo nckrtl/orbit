@@ -12,7 +12,6 @@ use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\Registration\RegistrationSourceFacts;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -29,10 +28,8 @@ use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\Workspace;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -2229,7 +2226,7 @@ it('refuses retained source identity replacement before activation', function ()
     expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
 });
 
-it('refuses a source nested in an AppInstance checkout and ignores leftover Instance or Workspace paths', function (string $owner): void {
+it('refuses a source nested in an AppInstance checkout', function (): void {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -2245,43 +2242,14 @@ it('refuses a source nested in an AppInstance checkout and ignores leftover Inst
         'root' => 'public',
     ]);
     $source = '/managed/other/nested/acme';
-
-    if ($owner === 'app-instance') {
-        AppInstance::query()->create([
-            'app_id' => $other->id,
-            'node_id' => $this->node->id,
-            'name' => 'default',
-            'environment' => 'development',
-            'checkout_path' => '/managed/other',
-            'status' => AppInstanceState::Active,
-        ]);
-    } else {
-        $legacy = Instance::query()->create([
-            'app_id' => $other->id,
-            'node_id' => $this->node->id,
-            'name' => 'default',
-            'environment' => 'development',
-            'checkout_path' => '/managed/other',
-            'document_root' => '/managed/other/public',
-            'php_version' => '8.4',
-            'hostname' => 'other.test',
-            'certificate_mode' => CertificateMode::OrbitCa,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        if ($owner === 'workspace') {
-            $legacy->update(['checkout_path' => '/managed/legacy']);
-            Workspace::query()->create([
-                'instance_id' => $legacy->id,
-                'name' => 'other',
-                'branch' => 'feature',
-                'checkout_path' => '/managed/other',
-                'php_version' => '8.4',
-                'hostname' => 'workspace.test',
-                'status' => LifecycleStatus::Active,
-            ]);
-        }
-    }
+    AppInstance::query()->create([
+        'app_id' => $other->id,
+        'node_id' => $this->node->id,
+        'name' => 'default',
+        'environment' => 'development',
+        'checkout_path' => '/managed/other',
+        'status' => AppInstanceState::Active,
+    ]);
 
     $facts = registration_facts();
     $this->registrationSource->facts = [new RegistrationSourceFacts(
@@ -2300,24 +2268,16 @@ it('refuses a source nested in an AppInstance checkout and ignores leftover Inst
         sourceDigest: $facts->sourceDigest,
     )];
 
-    $response = $this->postJson('/api/v1/instances/register', [
-        'source_path' => $source,
-        'app_id' => $app->id,
-    ]);
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $source,
+            'app_id' => $app->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_conflict');
 
-    if ($owner === 'app-instance') {
-        $response
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'instance.source_conflict');
-        expect($this->registrationSource->calls)->toBe(['inspect']);
-
-        return;
-    }
-
-    expect($response->json('error.code'))
-        ->not
-        ->toBe('instance.source_conflict');
-})->with(['app-instance', 'legacy-instance', 'workspace']);
+    expect($this->registrationSource->calls)->toBe(['inspect']);
+});
 
 function bind_route_hostname_update_for_registration_test(): void
 {
