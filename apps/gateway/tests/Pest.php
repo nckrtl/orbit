@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -68,6 +69,77 @@ function app_instance_deploy_step_records_migration(): object
     return require base_path(
         'database/migrations/2026_09_14_180000_store_deploy_steps_as_named_records.php',
     );
+}
+
+function app_instance_deployment_config_migration(): object
+{
+    return require base_path(
+        'database/migrations/2026_09_11_000000_add_deployment_config_to_app_instances.php',
+    );
+}
+
+/** @return array{OrbitApp, Node} */
+function deployment_migration_parents(): array
+{
+    $count = Node::query()->count();
+    $node = Node::query()->create([
+        'name' => "deployment-migration-{$count}",
+        'status' => 'active',
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.'.(130 + $count),
+    ]);
+    $app = OrbitApp::query()->create([
+        'name' => "Deployment migration {$count}",
+        'slug' => "deployment-migration-{$count}",
+        'repository_url' => "https://example.test/deployment-migration-{$count}.git",
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+
+    return [$app, $node];
+}
+
+/** @return array{Node, Node, OrbitApp, AppInstance} */
+function deployment_api_fixture(): array
+{
+    $caller = Node::query()->create([
+        'name' => 'deployment-gateway-peer',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.140',
+        'wireguard_ip' => '10.44.0.140',
+        'user' => 'orbit',
+    ]);
+    $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $owner = Node::query()->create([
+        'name' => 'deployment-owner',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.141',
+        'wireguard_ip' => '10.44.0.141',
+        'user' => 'orbit',
+    ]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Deployment API',
+        'slug' => 'deployment-api',
+        'repository_url' => 'https://example.test/deployment-api.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $owner->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => '/home/deployment-api/releases/initial',
+        'production_user' => 'deployment-api',
+        'production_home' => '/home/deployment-api',
+        'branch' => 'main',
+        'branch_override' => 'main',
+        'status' => 'source_resolved',
+    ]);
+
+    return [$caller, $owner, $app, $instance->fresh()];
 }
 
 function orb183_production_route_migration(): Migration

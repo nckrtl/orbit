@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Support\Facades\Event;
@@ -201,46 +199,3 @@ it('keeps commands out of Activity and generic diagnostics', function (): void {
         Event::forget('eloquent.updating: '.AppInstance::class);
     }
 });
-
-/** @return array{Node, Node, OrbitApp, AppInstance} */
-function deployment_api_fixture(): array
-{
-    $caller = Node::query()->create([
-        'name' => 'deployment-gateway-peer',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.140',
-        'wireguard_ip' => '10.44.0.140',
-        'user' => 'orbit',
-    ]);
-    $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    $owner = Node::query()->create([
-        'name' => 'deployment-owner',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.141',
-        'wireguard_ip' => '10.44.0.141',
-        'user' => 'orbit',
-    ]);
-    $app = OrbitApp::query()->create([
-        'name' => 'Deployment API',
-        'slug' => 'deployment-api',
-        'repository_url' => 'https://example.test/deployment-api.git',
-        'default_branch' => 'main',
-        'root' => 'public',
-    ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $owner->id,
-        'name' => 'production',
-        'environment' => 'production',
-        'checkout_path' => '/home/deployment-api/releases/initial',
-        'production_user' => 'deployment-api',
-        'production_home' => '/home/deployment-api',
-        'branch' => 'main',
-        'branch_override' => 'main',
-        'status' => 'source_resolved',
-    ]);
-
-    return [$caller, $owner, $app, $instance->fresh()];
-}

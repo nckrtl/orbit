@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
@@ -95,31 +94,3 @@ it('refuses rollback before discarding configured deployment state', function ()
 
     $records->up();
 });
-
-function app_instance_deployment_config_migration(): object
-{
-    return require base_path(
-        'database/migrations/2026_09_11_000000_add_deployment_config_to_app_instances.php',
-    );
-}
-
-/** @return array{OrbitApp, Node} */
-function deployment_migration_parents(): array
-{
-    $count = Node::query()->count();
-    $node = Node::query()->create([
-        'name' => "deployment-migration-{$count}",
-        'status' => 'active',
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.'.(130 + $count),
-    ]);
-    $app = OrbitApp::query()->create([
-        'name' => "Deployment migration {$count}",
-        'slug' => "deployment-migration-{$count}",
-        'repository_url' => "https://example.test/deployment-migration-{$count}.git",
-        'default_branch' => 'main',
-        'root' => 'public',
-    ]);
-
-    return [$app, $node];
-}
