@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
@@ -24,8 +23,6 @@ use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
-use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentConfigRequest;
-use Orbit\Sdk\Requests\Deployments\UpdateAppInstanceDeploymentConfigRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
@@ -160,7 +157,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 89;
+        $preScheduleOperationCount = 86;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
@@ -283,7 +280,6 @@ describe('repository guidance bootstrap', function (): void {
             ->toBe($expectedOperationCount + 4)
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
-            ->toContain(AppInstanceDeploymentLayoutRequest::class)
             ->toContain(CloneAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
@@ -291,8 +287,6 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ImportAppInstanceEnvironmentRequest::class)
             ->toContain(UpdateAppInstanceEnvironmentRequest::class)
             ->toContain(SynchronizeAppInstanceEnvironmentRequest::class)
-            ->toContain(ShowAppInstanceDeploymentConfigRequest::class)
-            ->toContain(UpdateAppInstanceDeploymentConfigRequest::class)
             ->toContain(CreateInstanceDeployStepRequest::class)
             ->toContain(ListInstanceDeployStepsRequest::class)
             ->toContain(UpdateInstanceDeployStepRequest::class)
@@ -327,12 +321,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($databaseRequests);
     });
 
-    it('documents the 111-operation SDK surface including Database connection transport', function (): void {
+    it('documents the 108-operation SDK surface including Database connection transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 111 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 108 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -347,7 +341,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- App runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- AppInstance: list, show, create, register, clone, remove, update, deployment-layout preparation, deployment configuration read and replace, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
+                '- AppInstance: list, show, create, register, clone, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')
@@ -366,14 +360,14 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
             )
-            ->toContain(
+            ->not->toContain(
                 'Keep AppInstance deployment-layout transport limited to the numeric AppInstance ID and an optional explicit SQLite source path.',
             )
             ->toContain(
                 'Keep AppInstance environment transport limited to an ID-or-hostname selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
             )
             ->toContain(
-                'Keep AppInstance deployment transport limited to named deploy-step create, list, update, and destroy, AppInstance branch update, configuration read and replacement, explicit deploy and rollback streams, and retained-release inspection.',
+                'Keep AppInstance deployment transport limited to named deploy-step create, list, update, and destroy, AppInstance branch update, explicit deploy and rollback streams, and retained-release inspection.',
             )
             ->toContain(
                 "Keep App runtime definition transport limited to a numeric App ID, a definition name for item operations, and the caller's exact JSON document for create and full update.",
@@ -398,7 +392,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 111 public Gateway operations.',
+                'The SDK exposes exactly 108 public Gateway operations.',
                 'The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
@@ -406,8 +400,7 @@ describe('repository guidance bootstrap', function (): void {
                 'The SDK exposes typed list, add, adopt, show, restart, remove, and observation-grant requests for Herdr sessions.',
                 'Observation grant URLs stay out of generic diagnostics.',
                 "Create and update requests send the caller's exact JSON document to the Gateway.",
-                'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
-                'The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations.',
+                'The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations.',
                 'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',
                 'The SDK exposes typed import, update, and synchronization requests for AppInstance environment configuration.',
                 'Environment values remain outside normal SDK diagnostics and errors.',

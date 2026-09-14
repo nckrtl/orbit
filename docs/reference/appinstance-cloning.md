@@ -42,7 +42,7 @@ Use unambiguous candidate and Node identifiers in noninteractive and `--json` ca
 
 The candidate supplies committed source evidence, stored environment values, and an optional SQLite snapshot. The candidate's App supplies the production Process and Schedule definitions. Cloning copies no candidate-specific Process or Schedule override and starts no copied runtime.
 
-After cloning, update target environment values that must differ from the candidate and synchronize them. Remove copied queue entries or perform other application-specific cleanup on the target only. Configure deployment steps, then run the separate `instance:deploy` command to create and select the first release. Cloning does not deploy the target.
+After cloning, update target environment values that must differ from the candidate and synchronize them. Remove copied queue entries or perform other application-specific cleanup on the target only. Configure deployment steps, then run the separate `instance:deploy` command to create and select the first release. Cloning plus that first deployment is the only path to the release layout. Cloning does not deploy the target.
 
 ## Derive the private preview
 
@@ -92,7 +92,7 @@ Cloning does not stop source processes or schedules, pause queue processing, cle
 
 A successful request returns the ordinary active production App instance and its sole private preview Route. The prepared target has no selected deployment release. Cloning does not require an application response, run a framework command, deploy code, select `current`, or start a Process or Schedule.
 
-The first deployment is a separate explicit request. It fetches the target's configured branch, synchronizes its stored environment, runs only configured deployment steps, and selects the new release as described in [Production release layout](/reference/deployments).
+The first deployment is a separate explicit request. It fetches the target's configured branch, synchronizes its stored environment, runs only configured deployment steps, and selects the new release as described in [Production release layout](/reference/deployments). That sequence is the only path to the release layout.
 
 For a standalone destination, private Domain Name System (DNS) resolves the preview directly to the workload Node. For a Cluster destination, private DNS resolves it to the Router. The Router and workload receive separate Orbit certificate authority identities. Router Caddy preserves the preview hostname as both the HTTP `Host` value and Transport Layer Security server name when it forwards to the workload. The workload firewall permits only the required private path, and Caddy uses the target's dedicated PHP socket when the source needs PHP. [Routes](/reference/routes#set-up-private-traffic) describes the shared private projection, and [PHP runtimes](/reference/php-runtime#production-runtime) describes the dedicated production service.
 

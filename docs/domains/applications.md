@@ -99,7 +99,7 @@ A given App can have one production App instance per app-prod Node. The same App
 
 When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it. App instance commands do not remove a legacy Instance.
 
-When an existing active production App instance still uses a recorded flat source and shared PHP runtime, the operator converts that placement with `orbit instance:prepare-deployment`. The [production release-layout reference](/reference/deployments#convert-an-existing-production-home) describes its preflight, retained content, optional SQLite move, dedicated runtime, and retry boundary. Conversion does not require a candidate and does not run an application deployment.
+Cloning produces each production App instance, and the first deployment produces the release layout. See [App instance cloning](/reference/appinstance-cloning) and [Production release layout](/reference/deployments).
 
 Orbit owns later release preparation, activation, and explicit code rollback. The operating agent configures application steps and owns compatibility and recovery decisions. The [PHP runtime reference](/reference/php-runtime#production-cache-boundary) defines the separate cache boundary.
 

@@ -10,8 +10,6 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
-use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentConfigRequest;
-use Orbit\Sdk\Requests\Deployments\UpdateAppInstanceDeploymentConfigRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
@@ -31,148 +29,6 @@ beforeEach(function (): void {
 afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
-});
-
-describe('deployment configuration', function (): void {
-    it('shows configuration through one typed SDK request', function (): void {
-        $mock = MockClient::global([
-            ShowAppInstanceDeploymentConfigRequest::class => deployment_cli_config_response(),
-        ]);
-
-        $this
-            ->artisan('instance:deployment-config', ['instance' => '17'])
-            ->expectsOutput('Branch: "main"')
-            ->expectsOutput('Steps:')
-            ->expectsOutput('- Name: "migrate"')
-            ->expectsOutput('  Phase: before_activation')
-            ->expectsOutput('  Command: "php artisan migrate --force"')
-            ->expectsOutput('  Timeout: 300 seconds')
-            ->expectsOutput('Request ID: '.deployment_cli_request_id())
-            ->assertExitCode(0);
-
-        expect($mock->getLastRequest())
-            ->toBeInstanceOf(ShowAppInstanceDeploymentConfigRequest::class)
-            ->and($mock->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/instances/17/deployment-config')
-            ->and($mock->getRecordedResponses())
-            ->toHaveCount(1);
-    });
-
-    it('submits one complete typed configuration and renders its JSON response', function (): void {
-        $path = $this->orbitHome.'/deployment.json';
-        new Filesystem()->put($path, json_encode([
-            'branch' => 'release',
-            'steps' => [
-                [
-                    'name' => 'install',
-                    'phase' => 'before_activation',
-                    'command' => 'composer install --no-dev',
-                ],
-                [
-                    'name' => 'restart',
-                    'phase' => 'after_activation',
-                    'command' => 'php artisan queue:restart',
-                    'timeout_seconds' => 45,
-                ],
-            ],
-        ], JSON_THROW_ON_ERROR));
-        $mock = MockClient::global([
-            UpdateAppInstanceDeploymentConfigRequest::class => deployment_cli_config_response(
-                branch: 'release',
-                steps: [
-                    deployment_cli_step('install', 'before_activation', 'composer install --no-dev', 300),
-                    deployment_cli_step('restart', 'after_activation', 'php artisan queue:restart', 45),
-                ],
-            ),
-        ]);
-
-        $exitCode = Artisan::call('instance:deployment-config', [
-            'instance' => '17',
-            '--file' => $path,
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-
-        expect($exitCode)->toBe(0)
-            ->and(trim(Artisan::output()))
-            ->toBe(json_encode([
-                'branch' => 'release',
-                'steps' => [
-                    deployment_cli_step('install', 'before_activation', 'composer install --no-dev', 300),
-                    deployment_cli_step('restart', 'after_activation', 'php artisan queue:restart', 45),
-                ],
-                'request_id' => deployment_cli_request_id(),
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-            ->and($mock->getLastRequest())
-            ->toBeInstanceOf(UpdateAppInstanceDeploymentConfigRequest::class)
-            ->and($mock->getLastRequest()?->body()->all())
-            ->toBe([
-                'branch' => 'release',
-                'steps' => [
-                    [
-                        'name' => 'install',
-                        'phase' => 'before_activation',
-                        'command' => 'composer install --no-dev',
-                    ],
-                    [
-                        'name' => 'restart',
-                        'phase' => 'after_activation',
-                        'command' => 'php artisan queue:restart',
-                        'timeout_seconds' => 45,
-                    ],
-                ],
-            ])
-            ->and($mock->getRecordedResponses())
-            ->toHaveCount(1);
-    });
-
-    it('rejects unreadable malformed or incomplete configuration without exposing input or sending a request', function (string $contents): void {
-        $path = $this->orbitHome.'/private-command.json';
-        new Filesystem()->put($path, $contents);
-        $mock = MockClient::global();
-
-        $exitCode = Artisan::call('instance:deployment-config', [
-            'instance' => '17',
-            '--file' => $path,
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-
-        expect($exitCode)->toBe(1)
-            ->and(trim(Artisan::output()))
-            ->toBe(deployment_cli_error(
-                'deployment.config_file_invalid',
-                'Deployment configuration file is invalid.',
-            ))
-            ->not->toContain('private-command', 'secret-deploy-command')
-            ->and($mock->getLastPendingRequest())
-            ->toBeNull();
-    })->with([
-        'malformed JSON' => ['{"branch":"main","command":"secret-deploy-command"'],
-        'missing steps' => [json_encode(['branch' => 'main', 'secret' => 'secret-deploy-command'], JSON_THROW_ON_ERROR)],
-        'wrong step type' => [json_encode(['branch' => 'main', 'steps' => ['secret-deploy-command']], JSON_THROW_ON_ERROR)],
-        'unknown member' => [json_encode(['branch' => 'main', 'steps' => [], 'secret' => 'secret-deploy-command'], JSON_THROW_ON_ERROR)],
-    ]);
-
-    it('rejects an empty file option before sending a request', function (): void {
-        $mock = MockClient::global();
-
-        $exitCode = Artisan::call('instance:deployment-config', [
-            'instance' => '17',
-            '--file' => '',
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-
-        expect($exitCode)->toBe(1)
-            ->and(trim(Artisan::output()))
-            ->toBe(deployment_cli_error(
-                'deployment.config_file_invalid',
-                'Deployment configuration file is invalid.',
-            ))
-            ->and($mock->getLastPendingRequest())
-            ->toBeNull();
-    });
 });
 
 describe('retained releases', function (): void {
@@ -428,7 +284,6 @@ describe('deployment streams', function (): void {
 
         expect($commands['instance:deploy']->getSubscribedSignals())->toBe([])
             ->and($commands['instance:rollback']->getSubscribedSignals())->toBe([])
-            ->and($commands['instance:deployment-config']->getSubscribedSignals())->toBe([])
             ->and($commands['instance:release:list']->getSubscribedSignals())->toBe([]);
     });
 
@@ -492,30 +347,6 @@ describe('deployment streams', function (): void {
         }
     })->with(['before response headers' => 'headers-late', 'during blocked body read' => 'body-blocked']);
 });
-
-function deployment_cli_config_response(string $branch = 'main', ?array $steps = null): MockResponse
-{
-    return MockResponse::make([
-        'data' => [
-            'branch' => $branch,
-            'steps' => $steps ?? [
-                deployment_cli_step('migrate', 'before_activation', 'php artisan migrate --force', 300),
-            ],
-        ],
-        'meta' => ['request_id' => deployment_cli_request_id()],
-    ]);
-}
-
-/** @return array{name: string, phase: string, command: string, timeout_seconds: int} */
-function deployment_cli_step(string $name, string $phase, string $command, int $timeout): array
-{
-    return [
-        'name' => $name,
-        'phase' => $phase,
-        'command' => $command,
-        'timeout_seconds' => $timeout,
-    ];
-}
 
 function deployment_cli_releases_response(): MockResponse
 {

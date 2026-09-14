@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 111 concrete public Gateway API operations:
+The SDK models exactly 108 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -8,7 +8,7 @@ The SDK models exactly 111 concrete public Gateway API operations:
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, and remove.
 - App runtime definition: process and Schedule list, create, show, update, and destroy.
-- AppInstance: list, show, create, register, clone, remove, update, deployment-layout preparation, deployment configuration read and replace, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
+- AppInstance: list, show, create, register, clone, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
@@ -36,18 +36,14 @@ operations. Keep the public API typed and small.
   optional SQLite source path. Preserve omission separately from every supplied
   string. The Gateway owns candidate eligibility, placement, cloning, and Route
   policy.
-- Keep AppInstance deployment-layout transport limited to the numeric
-  AppInstance ID and an optional explicit SQLite source path. Preserve omission
-  separately from every supplied string. The Gateway owns eligibility,
-  placement, conversion, and recovery policy.
 - Keep AppInstance deployment transport limited to named deploy-step create,
-  list, update, and destroy, AppInstance branch update, configuration read and
-  replacement, explicit deploy and rollback streams, and retained-release
-  inspection. Preserve optional step-timeout omission, require an explicit empty
-  deployment body, and send only the selected release for rollback. Decode
-  bounded correlated events incrementally, close a cancelled response, and
-  never retry or replay a deployment stream. The Gateway owns deployment
-  validation, execution, cancellation, and recovery policy.
+  list, update, and destroy, AppInstance branch update, explicit deploy and
+  rollback streams, and retained-release inspection. Preserve optional
+  step-timeout omission, require an explicit empty deployment body, and send
+  only the selected release for rollback. Decode bounded correlated events
+  incrementally, close a cancelled response, and never retry or replay a
+  deployment stream. The Gateway owns deployment validation, execution,
+  cancellation, and recovery policy.
 - Treat configured deployment commands and decoded application output as
   sensitive transport values. Keep them out of generic debug and serialization
   representations while preserving their intended request or event value.

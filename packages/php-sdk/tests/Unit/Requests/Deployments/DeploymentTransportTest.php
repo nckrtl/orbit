@@ -9,8 +9,8 @@ use GuzzleHttp\Psr7\Utils;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
-use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentConfigRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -61,8 +61,8 @@ describe('deployment transport', function (): void {
 
     it('does not change ordinary JSON transport defaults', function (): void {
         $mock = new MockClient([
-            ShowAppInstanceDeploymentConfigRequest::class => MockResponse::make([
-                'data' => ['branch' => 'main', 'steps' => []],
+            ListInstanceDeployStepsRequest::class => MockResponse::make([
+                'data' => [],
                 'meta' => ['request_id' => deployment_transport_request_id()],
             ]),
         ]);
@@ -72,7 +72,7 @@ describe('deployment transport', function (): void {
             timeout: 17,
         );
         $connector->withMockClient($mock);
-        $connector->send(new ShowAppInstanceDeploymentConfigRequest(17))->dto();
+        $connector->send(new ListInstanceDeployStepsRequest(17))->dto();
         $config = $mock->getLastPendingRequest()?->config()->all() ?? [];
 
         expect($config)->toMatchArray([

@@ -230,44 +230,6 @@ it('refuses a step mutation while the AppInstance operation owner is held', func
         ->assertJsonPath('error.code', 'env.operation_busy');
 });
 
-it('makes document writes visible to list and step writes visible to the document', function (): void {
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->putJson("/api/v1/instances/{$this->instance->id}/deployment-config", [
-            'branch' => 'main',
-            'steps' => [[
-                'name' => 'migrate',
-                'phase' => 'before_activation',
-                'command' => 'php artisan migrate --force',
-            ]],
-        ])
-        ->assertOk();
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->getJson($this->url)
-        ->assertOk()
-        ->assertJsonPath('data.0.name', 'migrate')
-        ->assertJsonPath('data.0.timeout_seconds', 300);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->postJson($this->url, [
-            'name' => 'optimize',
-            'command' => 'php artisan optimize',
-            'phase' => 'after_activation',
-        ])
-        ->assertCreated();
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->getJson("/api/v1/instances/{$this->instance->id}/deployment-config")
-        ->assertOk()
-        ->assertJsonPath('data.branch', 'main')
-        ->assertJsonPath('data.steps.0.name', 'migrate')
-        ->assertJsonPath('data.steps.1.name', 'optimize');
-});
-
 it('keeps commands out of Activity for deploy-step mutations', function (): void {
     $sentinel = 'secret-command-sentinel';
 

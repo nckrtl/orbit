@@ -25,8 +25,6 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceCloneCandidateInspector;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\Deployment\ProductionDeployment;
-use App\Domain\AppInstances\DeploymentLayout\ProductionLayoutConverter;
-use App\Domain\AppInstances\DeploymentLayout\ProductionPhpRuntimeAdopter;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
@@ -151,7 +149,6 @@ use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteProductionDeployment;
-use App\Infrastructure\AppInstances\RemoteProductionLayoutConverter;
 use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
 use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
@@ -285,8 +282,6 @@ final class AppServiceProvider extends ServiceProvider
         ProductionDeployment::class => RemoteProductionDeployment::class,
         DeploymentStreamConnection::class => NativeDeploymentStreamConnection::class,
         ProductionAppInstanceSourceLifecycle::class => RemoteProductionAppInstanceSourceLifecycle::class,
-        ProductionLayoutConverter::class => RemoteProductionLayoutConverter::class,
-        ProductionPhpRuntimeAdopter::class => RemoteProductionPhpRuntimeManager::class,
         ProductionReleaseLayout::class => RemoteProductionAppInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
