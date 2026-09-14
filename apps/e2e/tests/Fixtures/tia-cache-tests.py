@@ -5,6 +5,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import signal
 import time
 from pathlib import Path
@@ -220,6 +221,260 @@ class MainCacheTest(unittest.TestCase):
         self.assertIn(str(self.common), command)
         self.assertTrue(options['start_new_session'])
         self.assertEqual(subprocess.DEVNULL, options['stdin'])
+
+    def test_native_background_checks_isolate_setup_settings_and_keep_dependency_access(self):
+        project = self.root / self.project
+        (self.root / 'bin/pest-support').mkdir(parents=True)
+        (project / 'tests').mkdir(parents=True)
+        (self.root / '.gitignore').write_text('**/vendor/\n')
+        (self.root / 'bin/pest-support/manifest.json').write_text('{}\n')
+        (project / 'tests/Pest.php').write_text('<?php\n')
+        (project / 'composer.lock').write_text('{"packages":[]}\n')
+        (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}\n')
+        (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
+        self.commit = self.commit_change('background environment fixture')
+
+        fake_bin = Path(self.temporary.name) / 'fake-bin'
+        fake_bin.mkdir()
+        observations = Path(self.temporary.name) / 'child-environment.jsonl'
+        runtime_cache = Path(self.temporary.name) / 'worker-test-cache'
+        composer = fake_bin / 'composer'
+        composer.write_text(r'''#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+import time
+from urllib.parse import urlparse
+
+blocked = (
+    'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH', 'DB_URL', 'DB_DATABASE',
+    'DATABASE_URL', 'CACHE_STORE', 'SESSION_DRIVER', 'QUEUE_CONNECTION',
+    'TMPDIR', 'TMP', 'TEMP',
+)
+observation = {
+    'command': sys.argv[1:],
+    'blocked_present': [name for name in blocked if name in os.environ],
+    'path_finds_fixture': os.environ.get('PATH', '').split(os.pathsep)[0] == os.environ['TIA_CACHE_FIXTURE_BIN'],
+    'composer_auth_available': os.environ.get('COMPOSER_AUTH') == 'disposable-composer-auth',
+    'github_token_available': os.environ.get('GITHUB_TOKEN') == 'disposable-github-token',
+    'composer_home_available': os.environ.get('COMPOSER_HOME') == os.environ['TIA_CACHE_FIXTURE_COMPOSER_HOME'],
+}
+with open(os.environ['TIA_CACHE_FIXTURE_OBSERVATIONS'], 'a') as stream:
+    stream.write(json.dumps(observation) + '\n')
+
+for name in ('ORBIT_HOME', 'APP_BASE_PATH', 'TMPDIR', 'TMP', 'TEMP'):
+    if name in os.environ:
+        destination = Path(os.environ[name]) / 'worker-touched'
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(name)
+for name in ('APP_CONFIG_CACHE', 'DB_DATABASE'):
+    if name in os.environ:
+        Path(os.environ[name]).write_text(name)
+for name in ('DB_URL', 'DATABASE_URL'):
+    if name in os.environ:
+        database = Path(urlparse(os.environ[name]).path)
+        database.write_text(name)
+
+command = sys.argv[1]
+if command == 'install':
+    Path(os.environ['TIA_CACHE_FIXTURE_READY']).touch()
+    deadline = time.monotonic() + 10
+    while not Path(os.environ['TIA_CACHE_FIXTURE_RELEASE']).exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+elif command == 'test:affected':
+    graph = {
+        'schema': 1,
+        'fingerprint': {'structural': {'schema': 18}, 'environmental': {'php_minor': '8.5'}},
+        'files': ['src/Example.php'],
+        'edges': {'tests/ExampleTest.php': [0]},
+        'baselines': {'main': {
+            'sha': os.environ['TIA_CACHE_FIXTURE_COMMIT'],
+            'tree': [],
+            'results': {'example': {'status': 0, 'file': 'tests/ExampleTest.php'}},
+        }},
+    }
+    destination = Path(os.environ['TIA_CACHE_FIXTURE_CACHE']) / 'graph.json'
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(graph))
+    sys.exit(int(os.environ['TIA_CACHE_FIXTURE_TEST_EXIT']))
+elif command == 'format:check':
+    destination = Path('vendor/pint.cache')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text('portable pint result')
+elif command == 'analyse':
+    destination = Path('vendor/phpstan/cache/resultCache.php')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text('portable phpstan result')
+''')
+        composer.chmod(0o755)
+        php = fake_bin / 'php'
+        php.write_text(r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+
+if 'PHP_MAJOR_VERSION' in sys.argv[2]:
+    print('8.5')
+else:
+    print(json.dumps({
+        'cache': os.environ['TIA_CACHE_FIXTURE_CACHE'],
+        'fingerprint': {'structural': {'schema': 18}, 'environmental': {'php_minor': '8.5'}},
+        'coverage': True,
+    }))
+''')
+        php.chmod(0o755)
+
+        sentinels = Path(self.temporary.name) / 'setup-sentinels'
+        orbit_home = sentinels / 'orbit-home'
+        app_base = sentinels / 'app-base'
+        temporary = sentinels / ('setup-temporary-' + ('long-' * 30))
+        short_temporary = sentinels / 'short-temporary'
+        legacy_temporary = sentinels / 'legacy-temporary'
+        for directory in (orbit_home, app_base, temporary, short_temporary, legacy_temporary):
+            directory.mkdir(parents=True)
+            (directory / 'state').write_text('unchanged')
+        app_config = sentinels / 'config.php'
+        database = sentinels / 'database.sqlite'
+        url_database = sentinels / 'url-database.sqlite'
+        database_url = sentinels / 'database-url.sqlite'
+        for path in (app_config, database, url_database, database_url):
+            path.write_text('unchanged')
+        original_sentinels = {
+            str(path.relative_to(sentinels)): path.read_bytes()
+            for path in sentinels.rglob('*') if path.is_file()
+        }
+        composer_home = Path(self.temporary.name) / 'composer-home'
+        composer_home.mkdir()
+        worker_ready = Path(self.temporary.name) / 'worker-ready'
+        worker_release = Path(self.temporary.name) / 'worker-release'
+        environment = {
+            **os.environ,
+            'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
+            'ORBIT_HOME': str(orbit_home),
+            'APP_CONFIG_CACHE': str(app_config),
+            'APP_BASE_PATH': str(app_base),
+            'DB_DATABASE': str(database),
+            'DB_URL': 'sqlite:///' + str(url_database),
+            'DATABASE_URL': 'sqlite:///' + str(database_url),
+            'CACHE_STORE': 'array',
+            'SESSION_DRIVER': 'array',
+            'QUEUE_CONNECTION': 'sync',
+            'TMPDIR': str(temporary),
+            'TMP': str(short_temporary),
+            'TEMP': str(legacy_temporary),
+            'COMPOSER_AUTH': 'disposable-composer-auth',
+            'GITHUB_TOKEN': 'disposable-github-token',
+            'COMPOSER_HOME': str(composer_home),
+            'TIA_CACHE_FIXTURE_BIN': str(fake_bin),
+            'TIA_CACHE_FIXTURE_CACHE': str(runtime_cache),
+            'TIA_CACHE_FIXTURE_COMMIT': self.commit,
+            'TIA_CACHE_FIXTURE_COMPOSER_HOME': str(composer_home),
+            'TIA_CACHE_FIXTURE_OBSERVATIONS': str(observations),
+            'TIA_CACHE_FIXTURE_READY': str(worker_ready),
+            'TIA_CACHE_FIXTURE_RELEASE': str(worker_release),
+            'TIA_CACHE_FIXTURE_TEST_EXIT': '7',
+        }
+        result = subprocess.run(
+            [sys.executable, str(cache.__file__), 'refresh', '--background',
+             '--repository', str(self.root), '--project', self.project],
+            cwd=self.root, env=environment, capture_output=True, text=True,
+        )
+        worker = re.search(r'pid (\d+)', result.stdout)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIsNotNone(worker, result.stdout)
+
+        deadline = time.monotonic() + 10
+        while not worker_ready.exists() and cache.active_worker(self.store) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        process_environment = {}
+        if worker_ready.exists():
+            entries = Path(f'/proc/{worker.group(1)}/environ').read_bytes().split(b'\0')
+            process_environment = {
+                entry.split(b'=', 1)[0].decode(): entry.split(b'=', 1)[1].decode()
+                for entry in entries if b'=' in entry
+            }
+        worker_release.touch()
+        deadline = time.monotonic() + 15
+        while (cache.active_worker(self.store) or cache.load_requests(self.store)['pending']) \
+                and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if cache.active_worker(self.store):
+            os.killpg(int(worker.group(1)), signal.SIGKILL)
+        self.assertFalse(cache.active_worker(self.store), (self.store / 'refresh.log').read_text())
+        state = cache.load_requests(self.store)
+        self.assertTrue(worker_ready.exists(), (self.store / 'refresh.log').read_text())
+        self.assertEqual([], [name for name in (
+            'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH', 'DB_URL', 'DB_DATABASE',
+            'DATABASE_URL', 'CACHE_STORE', 'SESSION_DRIVER', 'QUEUE_CONNECTION',
+            'TMPDIR', 'TMP', 'TEMP',
+        ) if name in process_environment])
+        self.assertEqual(str(fake_bin) + os.pathsep + os.environ['PATH'], process_environment['PATH'])
+        self.assertTrue(process_environment.get('COMPOSER_AUTH') == environment['COMPOSER_AUTH'])
+        self.assertTrue(process_environment.get('GITHUB_TOKEN') == environment['GITHUB_TOKEN'])
+        self.assertTrue(process_environment.get('COMPOSER_HOME') == environment['COMPOSER_HOME'])
+        self.assertEqual({}, state['pending'])
+        self.assertFalse(state['results'][self.project]['success'])
+        self.assertEqual(7, state['correctness_failures'][self.project]['tia']['exit_code'])
+        self.assertEqual('check_failure', state['correctness_failures'][self.project]['tia']['kind'])
+        self.assertEqual(
+            [('install', 0), ('tia', 7), ('pint', 0), ('phpstan', 0)],
+            [(check['tool'], check['exit_code']) for check in state['results'][self.project]['checks']],
+        )
+
+        child_environments = [json.loads(line) for line in observations.read_text().splitlines()]
+        self.assertEqual(
+            [['install', '--no-interaction', '--prefer-dist'], ['test:affected'],
+             ['format:check'], ['analyse']],
+            [observation['command'] for observation in child_environments],
+        )
+        for observation in child_environments:
+            self.assertEqual([], observation['blocked_present'])
+            self.assertTrue(observation['path_finds_fixture'])
+            self.assertTrue(observation['composer_auth_available'])
+            self.assertTrue(observation['github_token_available'])
+            self.assertTrue(observation['composer_home_available'])
+        final_sentinels = {
+            str(path.relative_to(sentinels)): path.read_bytes()
+            for path in sentinels.rglob('*') if path.is_file()
+        }
+        self.assertEqual(original_sentinels, final_sentinels)
+
+        evidence = os.environ.get('TIA_CACHE_EVIDENCE_DIR')
+        if evidence:
+            evidence_directory = Path(evidence)
+            evidence_directory.mkdir(parents=True, exist_ok=True)
+            retained_logs = {}
+            logs = {'refresh': self.store / 'refresh.log'}
+            logs.update({check['tool']: Path(check['log'])
+                         for check in state['results'][self.project]['checks']})
+            for name, source in logs.items():
+                destination = evidence_directory / f'background-environment-{name}.log'
+                destination.write_bytes(source.read_bytes())
+                retained_logs[name] = str(destination)
+            report = {
+                'scenario': 'native-background-environment-boundary',
+                'worker_blocked_present': [name for name in (
+                    'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH',
+                    'DB_URL', 'DB_DATABASE', 'DATABASE_URL', 'CACHE_STORE',
+                    'SESSION_DRIVER', 'QUEUE_CONNECTION', 'TMPDIR', 'TMP', 'TEMP',
+                ) if name in process_environment],
+                'worker_dependency_access': {
+                    'path': process_environment.get('PATH') == environment['PATH'],
+                    'composer_auth': process_environment.get('COMPOSER_AUTH') == environment['COMPOSER_AUTH'],
+                    'github_token': process_environment.get('GITHUB_TOKEN') == environment['GITHUB_TOKEN'],
+                    'composer_home': process_environment.get('COMPOSER_HOME') == environment['COMPOSER_HOME'],
+                },
+                'project_commands': child_environments,
+                'sentinels_unchanged': final_sentinels == original_sentinels,
+                'pending': state['pending'],
+                'result': state['results'][self.project],
+                'correctness_failures': state['correctness_failures'],
+                'retained_logs': retained_logs,
+            }
+            (evidence_directory / 'background-environment-boundary.json').write_text(
+                json.dumps(report, indent=2) + '\n'
+            )
 
     def test_refresh_releases_lock_and_preserves_other_project_progress_on_failure(self):
         failed = {'commit': self.commit, 'success': False, 'checks': [{'tool': 'tia', 'exit_code': 1}]}

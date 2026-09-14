@@ -208,6 +208,18 @@ Refresh fetches current main and advances an owned clean maintenance checkout un
 
 Maintenance installs dependencies and runs `composer test:affected`, `composer format:check`, and `composer analyse` one project at a time, with two test workers and PCOV or Xdebug coverage enabled. It starts from compatible successful results and records again when tooling changes. TIA graphs and each quality tool publish independently after their checks succeed. Quality publications live under `orbit-tia/v1/quality` and contain portable results with dependency, configuration, runtime, checksum, and main-commit bindings. Complete publications at the same main commit and worker version avoid repeated installation and checks.
 
+### Maintenance environment
+
+The background worker removes worktree-setup settings before it starts, and every project command applies the same boundary.
+
+| Boundary | Environment variables |
+| --- | --- |
+| Orbit, application, and database settings | Names that start with `ORBIT_`, `APP_`, or `DB_`, plus `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION` |
+| Setup temporary directories | `TMPDIR`, `TMP`, and `TEMP` |
+| Retained process access | Other settings, including `PATH`, the user home and shell, tool configuration, and dependency authentication |
+
+Each project loads its own environment and test configuration after this filter. The filter proves only that setup settings cannot select a project runtime; it does not prove that a queued background check ran or passed. Inspect a failed run with `bin/tia-cache status --json --remote`, then read the per-check `log` paths in `results` and `correctness_failures`; use `refresh_log` for worker launch or setup failures.
+
 One worker holds the repository refresh lock. Requests live in `orbit-tia/v1/requests.json` and remain pending until a worker records their outcome. Repeated requests for the same target combine; requests arriving during a run remain pending when they name newer work. Each batch fetches newest main. An interrupted worker leaves recoverable requests. Failed checks retain their logs and previous successful publications without an automatic retry loop. Background workers have reduced CPU priority and keep their runner and logs in the Git common directory so worktree removal cannot interrupt them. When closeout does not use `bin/worktree-remove`, the orchestrator queues refresh explicitly after verifying the merge.
 
 Publication replaces one complete snapshot atomically after testing succeeds on clean main. The snapshot contains only the portable dependency graph and its metadata. Seed checks the project, Pest patch and test configuration, Pest fingerprint including dependencies and PHP minor version, checksum, and commit ancestry. It does not copy affected-test lists, worker partials, coverage reports, or download state. A no-affected-tests run can publish a newer tested main commit while retaining an older graph anchor; both commits are recorded.
