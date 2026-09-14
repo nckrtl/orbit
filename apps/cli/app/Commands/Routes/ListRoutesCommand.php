@@ -34,14 +34,14 @@ final class ListRoutesCommand extends RouteCommand
         }
         $rows = array_map(static fn ($route): array => [
             $route->id,
-            $route->hostname,
+            $route->domain,
             $route->provenance,
             $route->publication,
             $route->clusterId === null ? "node {$route->nodeId}" : "cluster {$route->clusterId}",
             $route->target->appInstanceId ?? '—',
             $route->status,
         ], $response->routes);
-        $this->table(['ID', 'Hostname', 'Provenance', 'Publication', 'Scope', 'Target', 'Status'], $rows);
+        $this->table(['ID', 'Domain', 'Provenance', 'Publication', 'Scope', 'Target', 'Status'], $rows);
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

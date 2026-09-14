@@ -13,7 +13,7 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
 {
     #[\Override]
     protected $signature = 'env:sync
-        {--instance= : Positive AppInstance ID or exact Route hostname}
+        {--instance= : Positive AppInstance ID or exact Route domain}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

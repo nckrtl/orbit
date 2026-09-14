@@ -16,7 +16,7 @@ it('encrypts environment values and scopes unique keys to one AppInstance', func
         ->environmentValues()
         ->create([
             'env_key' => 'APP_URL',
-            'env_value' => 'https://{{app_instance.hostname}}',
+            'env_value' => 'https://{{app_instance.domain}}',
         ]);
     $second->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'other-instance']);
 
@@ -27,11 +27,11 @@ it('encrypts environment values and scopes unique keys to one AppInstance', func
 
     expect($raw)
         ->each->toBeString()
-        ->not->toContain('plain-literal', 'https://{{app_instance.hostname}}', 'other-instance')->and(
+        ->not->toContain('plain-literal', 'https://{{app_instance.domain}}', 'other-instance')->and(
             $literal->toArray(),
         )->toHaveKeys(['id', 'app_instance_id', 'env_key', 'created_at', 'updated_at'])->and($literal->toArray())
         ->not->toHaveKey('env_value')->and(print_r($placeholder, true))
-        ->not->toContain('https://{{app_instance.hostname}}');
+        ->not->toContain('https://{{app_instance.domain}}');
 });
 
 it('adds no values during migration and cascades values only when the owner is deleted', function (): void {

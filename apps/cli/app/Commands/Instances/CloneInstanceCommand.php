@@ -88,7 +88,7 @@ HELP;
             return self::FAILURE;
         }
 
-        if ($instance->route === null || $instance->route->hostname === '') {
+        if ($instance->route === null || $instance->route->domain === '') {
             return $this->renderGatewayFailure(
                 'gateway.invalid_response',
                 'Gateway response is invalid.',
@@ -110,7 +110,7 @@ HELP;
             $this->writeJson([
                 'target_id' => $instance->id,
                 'configured_branch' => $instance->selectedBranch,
-                'preview_hostname' => $instance->route->hostname,
+                'preview_domain' => $instance->route->domain,
                 'selected_release' => $releases->selectedRelease,
                 'request_ids' => [
                     'clone' => $instance->requestId,
@@ -124,7 +124,7 @@ HELP;
         $this->info("Production AppInstance [{$instance->name}] cloned.");
         $this->line("Target ID: {$instance->id}");
         $this->line('Configured branch: '.($instance->selectedBranch ?? '-'));
-        $this->line("Preview hostname: {$instance->route->hostname}");
+        $this->line("Preview domain: {$instance->route->domain}");
         $this->line('Selected release: '.($releases->selectedRelease ?? '-'));
         $this->line("Clone request ID: {$instance->requestId}");
         $this->line("Release request ID: {$releases->requestId}");

@@ -514,7 +514,7 @@ function orb197_firewall_legacy_instance(Node $node, LifecycleStatus $status): I
         'checkout_path' => "/var/www/legacy-{$node->name}",
         'document_root' => 'public',
         'php_version' => '8.5',
-        'hostname' => "legacy-{$node->name}.example.test",
+        'domain' => "legacy-{$node->name}.example.test",
         'certificate_mode' => CertificateMode::Acme,
         'status' => $status,
     ]);

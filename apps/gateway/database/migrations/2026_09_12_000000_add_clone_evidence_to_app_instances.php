@@ -24,26 +24,30 @@ return new class extends Migration
 
     public function down(): void
     {
+        $previewColumn = Schema::hasColumn('app_instances', 'clone_preview_hostname')
+            ? 'clone_preview_hostname'
+            : 'clone_preview_domain';
+
         if (DB::table('app_instances')
             ->whereNotNull('clone_candidate_id')
             ->orWhereNotNull('clone_candidate_commit')
             ->orWhereNotNull('clone_requested_branch')
             ->orWhereNotNull('clone_preview_name')
-            ->orWhereNotNull('clone_preview_hostname')
+            ->orWhereNotNull($previewColumn)
             ->orWhereNotNull('clone_sqlite_source_path')
             ->orWhereNotNull('clone_completed_at')
             ->exists()) {
             throw new RuntimeException('Cannot discard retained AppInstance clone evidence.');
         }
 
-        Schema::table('app_instances', static function (Blueprint $table): void {
+        Schema::table('app_instances', static function (Blueprint $table) use ($previewColumn): void {
             $table->dropIndex(['clone_candidate_id']);
             $table->dropColumn([
                 'clone_candidate_id',
                 'clone_candidate_commit',
                 'clone_requested_branch',
                 'clone_preview_name',
-                'clone_preview_hostname',
+                $previewColumn,
                 'clone_sqlite_source_path',
                 'clone_completed_at',
             ]);

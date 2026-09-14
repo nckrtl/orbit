@@ -22,7 +22,7 @@ final class AddNodeCommand extends GatewayCommand
         {--orbit-user= : Orbit-managed system user; defaults to orbit for a new node}
         {--platform=linux : Node platform (linux only)}
         {--architecture= : Node machine architecture; defaults to the architecture observed on the machine and must match it when given}
-        {--tld= : Node TLD; required for production clone preview hostnames}
+        {--tld= : Node TLD; required for production clone preview domains}
         {--role=* : Initial role assignment}
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
         {--cluster= : Optional numeric Cluster ID}

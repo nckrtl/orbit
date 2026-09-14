@@ -13,6 +13,6 @@ final readonly class CreateInstanceData
         public ?string $environment,
         public string $documentRoot,
         public string $phpVersion,
-        public ?string $hostname,
+        public ?string $domain,
     ) {}
 }

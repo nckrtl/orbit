@@ -39,7 +39,7 @@ describe('retired workspace API', function (): void {
             'name' => 'dev',
             'environment' => 'development',
             'checkout_path' => '/srv/users/nckrtl/apps/acme',
-            'hostname' => 'acme.app-dev.orbit',
+            'domain' => 'acme.app-dev.orbit',
             'certificate_mode' => CertificateMode::OrbitCa,
             'status' => LifecycleStatus::Active,
         ]);
@@ -48,7 +48,7 @@ describe('retired workspace API', function (): void {
             'name' => 'feature-one',
             'branch' => 'feature-one',
             'checkout_path' => '/srv/orbit/workspaces/acme/feature-one',
-            'hostname' => 'feature-one.app-dev.orbit',
+            'domain' => 'feature-one.app-dev.orbit',
             'status' => LifecycleStatus::Active,
         ]);
     });

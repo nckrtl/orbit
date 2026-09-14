@@ -295,10 +295,10 @@ final readonly class AppInstanceEnvironmentStore
         }
 
         try {
-            $current = $expected->routeHostnameSource instanceof AppInstanceEnvironmentRouteHostname
+            $current = $expected->routeDomainSource instanceof AppInstanceEnvironmentRouteDomain
                 ? $this->contexts->resolveForRouteTransition(
                     $instance,
-                    $expected->routeHostnameSource,
+                    $expected->routeDomainSource,
                     $requireActiveNode,
                     lockRoute: true,
                 )

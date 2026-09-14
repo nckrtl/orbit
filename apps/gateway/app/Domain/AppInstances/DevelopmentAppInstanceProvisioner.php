@@ -8,11 +8,11 @@ use App\Models\AppInstance;
 
 interface DevelopmentAppInstanceProvisioner
 {
-    public function reserve(AppInstance $appInstance, ?string $hostname): void;
+    public function reserve(AppInstance $appInstance, ?string $domain): void;
 
     public function complete(
         AppInstance $appInstance,
-        ?string $hostname,
+        ?string $domain,
         bool $recoverSourceProfile = false,
     ): AppInstance;
 }

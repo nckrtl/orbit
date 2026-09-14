@@ -13,7 +13,7 @@ final readonly class AppProdSite
         public string $checkoutPath,
         public string $documentRoot,
         public string $phpVersion,
-        public string $hostname,
+        public string $domain,
         public int $instanceId,
     ) {}
 

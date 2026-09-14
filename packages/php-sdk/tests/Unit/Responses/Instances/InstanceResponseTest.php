@@ -46,7 +46,7 @@ describe(AppInstanceResponse::class, function (): void {
             'detached' => false,
             'status' => 'active',
             'route' => null,
-            'hostname' => null,
+            'domain' => null,
             'url' => null,
             'removal' => null,
             'deploy_steps' => [],

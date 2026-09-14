@@ -33,7 +33,7 @@ afterEach(function (): void {
 
 describe('environment request wiring', function (): void {
     /** @param array{command:string,arguments:array<string,mixed>,request_class:class-string,path:string,body:array<string,mixed>,operation:string} $case */
-    it('sends one typed request with the exact hostname selector and operation body', function (array $case): void {
+    it('sends one typed request with the exact domain selector and operation body', function (array $case): void {
         $mock = MockClient::global([
             $case['request_class'] => environment_cli_response($case['operation']),
         ]);
@@ -137,7 +137,7 @@ describe('environment value preservation', function (): void {
         'false string' => ['false'],
         'zero string' => ['0'],
         'newlines' => ["first\nsecond"],
-        'Route hostname placeholder' => ['https://{{app_instance.hostname}}'],
+        'Route domain placeholder' => ['https://{{app_instance.domain}}'],
     ]);
 
     it('refuses every missing required option before an HTTP request', function (
@@ -302,7 +302,7 @@ describe('environment failures', function (): void {
                         'details' => [
                             'key' => 'KEY',
                             'rule' => 'placeholder',
-                            'placeholder' => '{{instance.hostname}}',
+                            'placeholder' => '{{instance.domain}}',
                             'value' => 'environment-secret-sentinel',
                         ],
                     ],
@@ -325,7 +325,7 @@ describe('environment failures', function (): void {
                 'The complete AppInstance environment configuration is invalid.',
                 'key: KEY',
                 'rule: placeholder',
-                'placeholder: {{instance.hostname}}',
+                'placeholder: {{instance.domain}}',
                 'Request ID: '.environment_cli_request_id(),
             ]))
             ->not->toContain('environment-secret-sentinel');
@@ -462,7 +462,7 @@ function environment_cli_error_json(
     array $details = [],
 ): string {
     $messages = [
-        'env.instance_required' => 'AppInstance ID or Route hostname is required.',
+        'env.instance_required' => 'AppInstance ID or Route domain is required.',
         'env.key_required' => 'Environment key is required.',
         'env.value_required' => 'Environment value is required.',
     ];

@@ -476,7 +476,7 @@ it('rejects legacy Process owners before runtime removal', function (): void {
         'name' => 'legacy',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/legacy',
-        'hostname' => 'legacy.app-dev.orbit',
+        'domain' => 'legacy.app-dev.orbit',
         'certificate_mode' => 'orbit-ca',
         'status' => LifecycleStatus::Active,
     ]);

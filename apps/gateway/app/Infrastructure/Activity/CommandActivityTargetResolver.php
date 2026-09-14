@@ -206,7 +206,7 @@ final readonly class CommandActivityTargetResolver
                 ->where('name', $request->input('name'))
                 ->first(),
             'route:create' => Route::query()
-                ->where('hostname', mb_strtolower(trim((string) $request->input('hostname'))))
+                ->where('domain', mb_strtolower(trim((string) $request->input('domain'))))
                 ->first(),
             default => null,
         };

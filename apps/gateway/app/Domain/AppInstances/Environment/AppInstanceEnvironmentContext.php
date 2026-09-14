@@ -17,10 +17,10 @@ final readonly class AppInstanceEnvironmentContext
         public string $executionUser,
         public bool $laravel,
         public int $routeId,
-        public string $routeHostname,
+        public string $routeDomain,
         public string $nodeStatus,
         public Node $node,
-        public ?AppInstanceEnvironmentRouteHostname $routeHostnameSource = null,
+        public ?AppInstanceEnvironmentRouteDomain $routeDomainSource = null,
     ) {}
 
     public function samePlacement(self $other): bool
@@ -34,8 +34,8 @@ final readonly class AppInstanceEnvironmentContext
             && $this->executionUser === $other->executionUser
             && $this->laravel === $other->laravel
             && $this->routeId === $other->routeId
-            && $this->routeHostname === $other->routeHostname
+            && $this->routeDomain === $other->routeDomain
             && $this->nodeStatus === $other->nodeStatus
-            && $this->routeHostnameSource === $other->routeHostnameSource;
+            && $this->routeDomainSource === $other->routeDomainSource;
     }
 }

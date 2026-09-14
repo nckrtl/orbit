@@ -14,7 +14,7 @@ final class UpdateRouteCommand extends RouteCommand
     #[\Override]
     protected $signature = 'route:update
         {route : Numeric Route ID}
-        {--hostname= : New explicit hostname}
+        {--domain= : New explicit domain}
         {--publication= : New publication intent}
         {--json : Return machine-readable JSON}';
 
@@ -27,7 +27,7 @@ final class UpdateRouteCommand extends RouteCommand
         if ($id === null) {
             return self::FAILURE;
         }
-        $hostname = $this->stringOption('hostname');
+        $domain = $this->stringOption('domain');
         $publication = null;
         if ($this->input->hasParameterOption('--publication')) {
             $publication = $this->publication($this->option('publication'));
@@ -35,17 +35,17 @@ final class UpdateRouteCommand extends RouteCommand
                 return self::FAILURE;
             }
         }
-        if ($hostname === null && $publication === null) {
+        if ($domain === null && $publication === null) {
             return $this->renderGatewayFailure('route.update_required', 'Provide at least one Route update.');
         }
         $connector = $this->gatewayConnector($repository, $connectors);
         if ($connector === null) {
             return self::FAILURE;
         }
-        $route = $this->send($connector, new UpdateRouteRequest($id, $hostname, $publication), RouteResponse::class);
+        $route = $this->send($connector, new UpdateRouteRequest($id, domain: $domain, publication: $publication), RouteResponse::class);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->hostname}] updated.")
+            ? $this->renderRoute($route, "Route [{$route->domain}] updated.")
             : self::FAILURE;
     }
 }

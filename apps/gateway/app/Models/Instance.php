@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string $checkout_path
  * @property string $document_root
  * @property string $php_version
- * @property string $hostname
+ * @property string $domain
  * @property CertificateMode $certificate_mode
  * @property LifecycleStatus $status
  * @property string|null $failed_step
@@ -50,7 +50,7 @@ final class Instance extends Model
         'checkout_path',
         'document_root',
         'php_version',
-        'hostname',
+        'domain',
         'certificate_mode',
         'status',
         'failed_step',

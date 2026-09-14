@@ -246,7 +246,7 @@ it('defines the AppInstance environment command boundary', function (): void {
         ->toContain('Import retains existing stored values unless `--replace` allows stored-key conflicts')
         ->toContain('update changes stored configuration only, and synchronization is explicit')
         ->toContain(
-            'Preserve quoted empty, multiline, `false`, `0`, and `https://{{app_instance.hostname}}` string values.',
+            'Preserve quoted empty, multiline, `false`, `0`, and `https://{{app_instance.domain}}` string values.',
         )
         ->toContain(
             'Never display values, read or write local files, select a target, resolve a placeholder, refresh an application cache, or restart a process.',

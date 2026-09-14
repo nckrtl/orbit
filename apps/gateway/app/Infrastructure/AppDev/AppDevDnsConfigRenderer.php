@@ -66,14 +66,14 @@ final readonly class AppDevDnsConfigRenderer
             ->toBase()
             ->merge($this->sites
                 ->all($pendingRoute, $unavailableInstance, $additionalRoute)
-                ->groupBy('hostname')
+                ->groupBy('domain')
                 ->map(static function ($sites): string {
                     /** @var AppDevSite $site */
                     $site = $sites->first(
                         static fn (AppDevSite $candidate): bool => $candidate->isProxy(),
                     ) ?? $sites->first();
 
-                    return "host-record={$site->hostname},{$site->nodeAddress}";
+                    return "host-record={$site->domain},{$site->nodeAddress}";
                 }));
         $gateway = Node::query()
             ->where('status', LifecycleStatus::Active->value)

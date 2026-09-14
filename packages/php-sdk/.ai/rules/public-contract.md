@@ -28,7 +28,7 @@ operations. Keep the public API typed and small.
 - Send `host_key_fingerprint` in a node add request. Parse
   `ssh_host_fingerprint` from a node response.
 - Keep AppInstance lifecycle transport limited to App, Node, name, optional
-  root, optional Route hostname, optional creation branch, explicit
+  root, optional Route domain, optional creation branch, explicit
   source-profile recovery, and explicit force intent.
   The Gateway owns placement, source, and Route policy.
 - Keep candidate clone transport limited to the numeric candidate AppInstance
@@ -47,13 +47,13 @@ operations. Keep the public API typed and small.
 - Treat configured deployment commands and decoded application output as
   sensitive transport values. Keep them out of generic debug and serialization
   representations while preserving their intended request or event value.
-- Keep AppInstance environment transport limited to an ID-or-hostname selector,
+- Keep AppInstance environment transport limited to an ID-or-domain selector,
   optional import replacement, one key and string value for update, an empty
   synchronization body, and the bounded value-free operation result. The
   Gateway owns lookup, validation, references, storage, and synchronization.
-- Keep Route transport limited to App, hostname, publication intent, exclusive
+- Keep Route transport limited to App, domain, publication intent, exclusive
   Node-or-Cluster scope, and at most one scalar AppInstance target. The Gateway
-  owns hostname, scope, basis, relationship, and lifecycle policy.
+  owns domain, scope, basis, relationship, and lifecycle policy.
 - Preserve explicitly supplied process fields for every runtime. The Gateway
   owns cross-field policy.
 - Keep App runtime definition transport limited to a numeric App ID, a
@@ -78,7 +78,7 @@ operations. Keep the public API typed and small.
   Node ID, host, port, database name, sqlite path, username, and password.
   Preserve omitted optional fields as absence. Item and collection responses
   omit the password and expose `has_password`. Attach and detach send an
-  AppInstance ID-or-hostname selector, the connection slug, and an optional
+  AppInstance ID-or-domain selector, the connection slug, and an optional
   prefix. Attachment responses omit environment values and passwords. The
   Gateway owns validation, encryption, persistence, and stored-environment writes.
 - Accept only the current Doctor family tokens: node, role, app, instance,

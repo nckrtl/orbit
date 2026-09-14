@@ -159,7 +159,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
                     '-connect',
                     "{$address}:443",
                     '-servername',
-                    $route->hostname,
+                    $route->domain,
                     '-verify_return_error',
                 ],
                 input: '',

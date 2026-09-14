@@ -87,7 +87,7 @@ A duplicate slug returns `database.slug_conflict` (HTTP 409) and leaves the exis
 
 ## Add a connection on an App instance
 
-Add writes stored environment keys for one App instance. The target is an App instance ID or exact Route hostname. Orbit accepts no Workspace target.
+Add writes stored environment keys for one App instance. The target is an App instance ID or exact Route domain. Orbit accepts no Workspace target.
 
 ```text
 orbit instance:database:add app --instance=12
@@ -137,7 +137,7 @@ The Gateway exposes add and remove on the App instance.
 | `PUT` | `/api/v1/instances/{instance}/database-connections/{slug}` | Add the connection and write stored environment keys |
 | `DELETE` | `/api/v1/instances/{instance}/database-connections/{slug}` | Remove the connection and clear the prefixed stored keys |
 
-The `{instance}` selector is a positive App instance ID or an exact Route hostname, as [App instance environment variables](/reference/environment-variables) describes. The optional JSON body accepts `prefix`. Omission uses `DB`. Access uses the App instance owning Node.
+The `{instance}` selector is a positive App instance ID or an exact Route domain, as [App instance environment variables](/reference/environment-variables) describes. The optional JSON body accepts `prefix`. Omission uses `DB`. Access uses the App instance owning Node.
 
 ## Inspect attachments with Doctor
 

@@ -306,7 +306,7 @@ final class MetricsPublicationManagerCertificateIssuer implements GatewayCertifi
         private array &$events,
     ) {}
 
-    public function issue(string $hostname, string $wireguardIp): GatewayCertificatePaths
+    public function issue(string $domain, string $wireguardIp): GatewayCertificatePaths
     {
         $this->events[] = 'certificate:issue';
 

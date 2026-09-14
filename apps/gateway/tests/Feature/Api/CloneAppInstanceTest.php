@@ -180,7 +180,7 @@ it('returns the ordinary created AppInstance and records the target without SQLi
     $candidateRoute = Route::query()->create([
         'app_id' => $this->candidate->app_id,
         'node_id' => $this->candidateNode->id,
-        'hostname' => 'candidate.clone-api.test',
+        'domain' => 'candidate.clone-api.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -255,7 +255,7 @@ it('returns an active Cluster-scoped clone with the production Node TLD', functi
     $candidateRoute = Route::query()->create([
         'app_id' => $this->candidate->app_id,
         'node_id' => $this->candidateNode->id,
-        'hostname' => 'candidate.clone-api.test',
+        'domain' => 'candidate.clone-api.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -292,7 +292,7 @@ it('returns an active Cluster-scoped clone with the production Node TLD', functi
         ->assertJsonPath('data.id', $target->id)
         ->assertJsonPath('data.status', 'active');
 
-    expect($route->hostname)->toBe('shop.com.prod.orbit')
+    expect($route->domain)->toBe('shop.com.prod.orbit')
         ->and($route->cluster_id)->toBe($cluster->id)
         ->and($route->node_id)->toBeNull()
         ->and($route->targets)->toHaveCount(1);

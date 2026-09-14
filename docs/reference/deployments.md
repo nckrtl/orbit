@@ -167,7 +167,7 @@ Code rollback does not fetch Git, synchronize environment values, run deployment
 
 ## Exclude competing mutations
 
-Deployment and code rollback share one operation owner for the same production App instance. That owner also covers deploy-step create, update, and destroy, and the branch update. It further covers App instance removal, environment import, stored environment updates, environment synchronization, and Route hostname changes. A competing request waits within the bounded operation deadline or receives a busy refusal before it can mutate that instance. An interrupted deployment releases the owner only after it has stopped its active application command.
+Deployment and code rollback share one operation owner for the same production App instance. That owner also covers deploy-step create, update, and destroy, and the branch update. It further covers App instance removal, environment import, stored environment updates, environment synchronization, and Route domain changes. A competing request waits within the bounded operation deadline or receives a busy refusal before it can mutate that instance. An interrupted deployment releases the owner only after it has stopped its active application command.
 
 ## Produce the release layout
 

@@ -20,7 +20,7 @@ final class UpdateRouteRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly int $routeId,
-        private readonly ?string $hostname = null,
+        private readonly ?string $domain = null,
         private readonly ?string $publication = null,
     ) {}
 
@@ -39,7 +39,7 @@ final class UpdateRouteRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
-                'hostname' => $this->hostname,
+                'domain' => $this->domain,
                 'publication' => $this->publication,
             ],
             static fn (?string $value): bool => $value !== null,

@@ -287,7 +287,7 @@ function environment_access_context(string $path, bool $production = false): App
         executionUser: $production ? 'example-app' : (string) posix_getpwuid(posix_geteuid())['name'],
         laravel: false,
         routeId: 1,
-        routeHostname: 'example.test',
+        routeDomain: 'example.test',
         nodeStatus: 'active',
         node: $node,
     );

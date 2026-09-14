@@ -288,7 +288,7 @@ function database_connection_doctor_instance(Node $node): AppInstance
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => "database-doctor-{$number}.test",
+        'domain' => "database-doctor-{$number}.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

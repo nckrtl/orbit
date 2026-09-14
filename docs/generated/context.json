@@ -79,6 +79,7 @@
                 "Proof topology",
                 "Repository identity",
                 "Route",
+                "Route replacement",
                 "Router",
                 "Runtime hibernation",
                 "Schedule",
@@ -91,7 +92,9 @@
                 "0004",
                 "0011",
                 "0047",
-                "0056"
+                "0056",
+                "0064",
+                "0065"
             ]
         },
         {
@@ -2236,6 +2239,7 @@
                 "0033",
                 "0041",
                 "0062",
+                "0065",
                 "0067"
             ]
         },

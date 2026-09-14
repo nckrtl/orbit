@@ -87,7 +87,7 @@ describe('legacy application surface removal', function (): void {
             'name' => 'legacy',
             'environment' => 'development',
             'checkout_path' => '/srv/orbit/legacy/acme',
-            'hostname' => 'legacy.example.test',
+            'domain' => 'legacy.example.test',
             'certificate_mode' => CertificateMode::OrbitCa,
             'status' => LifecycleStatus::Active,
         ]);
@@ -96,7 +96,7 @@ describe('legacy application surface removal', function (): void {
             'name' => 'workspace',
             'branch' => 'workspace',
             'checkout_path' => '/srv/orbit/workspaces/acme/workspace',
-            'hostname' => 'workspace.example.test',
+            'domain' => 'workspace.example.test',
             'status' => LifecycleStatus::Active,
         ]);
         $this->appInstance = AppInstance::query()->create([
@@ -156,7 +156,7 @@ describe('legacy application surface removal', function (): void {
     });
 
     it('rejects retired Workspace and legacy Instance inputs without mutation', function (string $method, string $uri, array $payload): void {
-        $legacyBefore = $this->legacy->only(['id', 'name', 'checkout_path', 'hostname', 'status']);
+        $legacyBefore = $this->legacy->only(['id', 'name', 'checkout_path', 'domain', 'status']);
         $workspaceBefore = $this->workspace->only(['id', 'instance_id', 'name', 'checkout_path', 'status']);
         $appInstanceBefore = $this->appInstance->only(['id', 'name', 'checkout_path', 'status']);
         $resolvedUri = str_replace(
@@ -175,7 +175,7 @@ describe('legacy application surface removal', function (): void {
             ->json($method, $resolvedUri, $resolvedPayload)
             ->assertNotFound();
 
-        expect($this->legacy->refresh()->only(['id', 'name', 'checkout_path', 'hostname', 'status']))
+        expect($this->legacy->refresh()->only(['id', 'name', 'checkout_path', 'domain', 'status']))
             ->toBe($legacyBefore)
             ->and($this->workspace->refresh()->only(['id', 'instance_id', 'name', 'checkout_path', 'status']))
             ->toBe($workspaceBefore)

@@ -33,6 +33,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -73,7 +74,7 @@ beforeEach(function (): void {
     $candidateRoute = Route::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->candidateNode->id,
-        'hostname' => 'candidate.dev.orbit',
+        'domain' => 'candidate.dev.orbit',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -89,7 +90,7 @@ beforeEach(function (): void {
     ]);
     $this->candidate->environmentValues()->create([
         'env_key' => 'APP_URL',
-        'env_value' => 'https://{{app_instance.hostname}}/{{app_instance.environment}}',
+        'env_value' => 'https://{{app_instance.domain}}/{{app_instance.environment}}',
     ]);
     $this->lock = new Orb198EnvironmentLock;
     $this->inspector = new Orb198CandidateInspector;
@@ -147,7 +148,7 @@ it('prepares an independent production target and activates its explicit private
         ->and($target->starting_commit)->toBe(str_repeat('b', 40))
         ->and($target->deployment_branch)->toBeNull()
         ->and($target->checkout_path)->toBe("/home/orbit-app-{$this->orbitApp->id}/releases/initial")
-        ->and($route->hostname)->toBe('shop.com.prod.orbit')
+        ->and($route->domain)->toBe('shop.com.prod.orbit')
         ->and($route->provenance)->toBe(RouteProvenance::Explicit)
         ->and($route->publication)->toBe(RoutePublication::Private)
         ->and($route->status)->toBe(RouteStatus::Active)
@@ -227,7 +228,7 @@ it('prepares a Cluster-scoped preview with the production Node TLD', function ()
     expect($target->status)->toBe(AppInstanceState::Active)
         ->and($route->node_id)->toBeNull()
         ->and($route->cluster_id)->toBe($cluster->id)
-        ->and($route->hostname)->toBe('shop.com.prod.orbit')
+        ->and($route->domain)->toBe('shop.com.prod.orbit')
         ->and($route->publication)->toBe(RoutePublication::Private)
         ->and($route->targets)->toHaveCount(1)
         ->and($route->targets->sole()->app_instance_id)->toBe($target->id)
@@ -250,7 +251,7 @@ it('refuses a Cluster-scoped destination without an active Router before reserva
         });
 
     expect(AppInstance::query()->where('name', 'preview')->exists())->toBeFalse()
-        ->and(Route::query()->where('hostname', 'shop.com.prod.orbit')->exists())->toBeFalse()
+        ->and(Route::query()->where('domain', 'shop.com.prod.orbit')->exists())->toBeFalse()
         ->and($this->source->calls)->toBeEmpty()
         ->and($this->writer->contents)->toBeNull();
 });
@@ -284,7 +285,7 @@ it('resumes one Cluster-scoped target without duplicate Route state', function (
         ->and($route->cluster_id)->toBe($cluster->id)
         ->and($route->node_id)->toBeNull()
         ->and(AppInstance::query()->where('name', 'preview')->count())->toBe(1)
-        ->and(Route::query()->where('hostname', 'shop.com.prod.orbit')->count())->toBe(1)
+        ->and(Route::query()->where('domain', 'shop.com.prod.orbit')->count())->toBe(1)
         ->and($route->targets()->count())->toBe(1);
 });
 
@@ -379,14 +380,38 @@ it('resumes one owned target and makes the completed identical retry terminal', 
         'env_value' => 'base64:target-edited-key',
     ]);
     $route = $resumed['appInstance']->routes()->sole();
-    $route->update(['hostname' => 'final.example.test']);
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'node_id' => $route->node_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'final.example.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    $replacement->targets()->create([
+        'app_instance_id' => $resumed['appInstance']->id,
+        'position' => 0,
+    ]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
+    $replacement->update(['status' => RouteStatus::Activating]);
+    $route->update(['status' => RouteStatus::Retiring]);
+    $route->targets()->delete();
+    $route->delete();
+    $replacement->update([
+        'status' => RouteStatus::Active,
+        'replaces_route_id' => null,
+        'replacement_step' => null,
+    ]);
     $inspectionCount = $this->inspector->calls;
     $this->inspector->fail = true;
     $terminal = $this->action->execute($this->candidate, $this->data);
 
     expect($terminal['created'])->toBeFalse()
         ->and($terminal['appInstance']->id)->toBe($targetId)
-        ->and($terminal['appInstance']->routes->sole()->hostname)->toBe('final.example.test')
+        ->and($terminal['appInstance']->routes->sole()->domain)->toBe('final.example.test')
         ->and($terminal['appInstance']->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)
         ->toBe('base64:target-edited-key')
         ->and($this->inspector->calls)->toBe($inspectionCount);
@@ -428,7 +453,7 @@ it('refuses an invalid or occupied destination preview before target reservation
         Route::query()->create([
             'app_id' => $this->orbitApp->id,
             'node_id' => $this->targetNode->id,
-            'hostname' => 'shop.com.prod.orbit',
+            'domain' => 'shop.com.prod.orbit',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,

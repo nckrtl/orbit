@@ -1018,7 +1018,7 @@ function application_production_app_instance(App $app, Node $node, string $secre
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => "{$app->slug}.example.test",
+        'domain' => "{$app->slug}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,

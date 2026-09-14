@@ -226,7 +226,7 @@ final class NativeScheduleInspectorFakeKnownHosts implements KnownHostsStore
 
 final class NativeScheduleInspectorFakeCertificates implements LeafCertificateSigner
 {
-    public function sign(string $hostname, string $certificateRequest): string
+    public function sign(string $domain, string $certificateRequest): string
     {
         throw new LogicException('Signing is not part of Schedule inspection tests.');
     }

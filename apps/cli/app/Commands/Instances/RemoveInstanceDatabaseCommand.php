@@ -15,7 +15,7 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
     #[\Override]
     protected $signature = 'instance:database:remove
         {slug : Database connection slug}
-        {--instance= : Positive AppInstance ID or exact Route hostname}
+        {--instance= : Positive AppInstance ID or exact Route domain}
         {--prefix= : Environment key prefix; defaults to DB}
         {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';

@@ -155,9 +155,9 @@ it('publishes LAN overrides for eligible Cluster members in the requester catalo
 
         expect($published['requesters'][(string) $member->wireguard_ip] ?? null)
             ->toBe($member->id)
-            ->and($catalog->exact[$route->hostname])
+            ->and($catalog->exact[$route->domain])
             ->toBe('10.44.0.20')
-            ->and($catalog->overrides[$key][$route->hostname])
+            ->and($catalog->overrides[$key][$route->domain])
             ->toBe('192.168.10.20');
     } finally {
         $harness->cleanup();
@@ -239,7 +239,7 @@ function orb260_published_cluster(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'app.cluster.test',
+        'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

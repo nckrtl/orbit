@@ -8,7 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 
 final readonly class AppInstanceEnvironmentRenderer
 {
-    private const string HostnamePlaceholder = '{{app_instance.hostname}}';
+    private const string DomainPlaceholder = '{{app_instance.domain}}';
 
     private const string EnvironmentPlaceholder = '{{app_instance.environment}}';
 
@@ -18,7 +18,7 @@ final readonly class AppInstanceEnvironmentRenderer
         #[\SensitiveParameter]
         array $values,
     ): string {
-        if ($context->routeHostname === '' || ! in_array($context->environment, ['development', 'production'], true)) {
+        if ($context->routeDomain === '' || ! in_array($context->environment, ['development', 'production'], true)) {
             $this->referenceUnavailable();
         }
 
@@ -27,8 +27,8 @@ final readonly class AppInstanceEnvironmentRenderer
 
         foreach ($values as $key => $value) {
             $resolved = str_replace(
-                [self::HostnamePlaceholder, self::EnvironmentPlaceholder],
-                [$context->routeHostname, $context->environment],
+                [self::DomainPlaceholder, self::EnvironmentPlaceholder],
+                [$context->routeDomain, $context->environment],
                 $value,
             );
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-enum RouteHostnameChangeStep: string
+enum RouteReplacementStep: string
 {
     case Reserved = 'reserved';
     case WorkloadCertificate = 'workload-certificate';
@@ -17,11 +17,5 @@ enum RouteHostnameChangeStep: string
     case EnvironmentSynchronized = 'environment-synchronized';
     case DnsPublished = 'dns-published';
     case DatabaseCutover = 'database-cutover';
-    case RollbackPending = 'rollback-pending';
-    case RollbackDns = 'rollback-dns';
-    case RollbackCaddy = 'rollback-caddy';
-    case RollbackCertificates = 'rollback-certificates';
-    case RollbackLaravelUrl = 'rollback-laravel-url';
-    case RollbackEnvironment = 'rollback-environment';
-    case RolledBack = 'rolled-back';
+    case Cleanup = 'cleanup';
 }

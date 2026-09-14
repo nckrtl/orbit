@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Routes;
 
 use App\Data\Routes\CreateRouteData;
-use App\Domain\Routes\RouteHostname;
+use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RoutePublication;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\App as OrbitApp;
@@ -22,10 +22,10 @@ final class StoreRouteRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        $hostname = $this->input('hostname');
+        $domain = $this->input('domain');
 
-        if (is_string($hostname)) {
-            $this->merge(['hostname' => RouteHostname::normalize($hostname)]);
+        if (is_string($domain)) {
+            $this->merge(['domain' => RouteDomain::normalize($domain)]);
         }
     }
 
@@ -34,7 +34,7 @@ final class StoreRouteRequest extends FormRequest
     {
         return [
             'app_id' => ['required', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
-            'hostname' => ['required', 'string', 'max:253'],
+            'domain' => ['required', 'string', 'max:253'],
             'publication' => ['required', Rule::enum(RoutePublication::class)],
             'app_instance_id' => ['sometimes', 'integer', Rule::exists(new AppInstance()->getTable(), 'id')],
             'node_id' => ['sometimes', 'integer', Rule::exists(new Node()->getTable(), 'id')],
@@ -48,7 +48,7 @@ final class StoreRouteRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_id', 'hostname', 'publication', 'app_instance_id', 'node_id', 'cluster_id'],
+                ['app_id', 'domain', 'publication', 'app_instance_id', 'node_id', 'cluster_id'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -59,10 +59,10 @@ final class StoreRouteRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $hostname = $this->input('hostname');
+            $domain = $this->input('domain');
 
-            if (is_string($hostname) && ! RouteHostname::isValid($hostname)) {
-                $validator->errors()->add('hostname', 'The Route hostname is invalid.');
+            if (is_string($domain) && ! RouteDomain::isValid($domain)) {
+                $validator->errors()->add('domain', 'The Route domain is invalid.');
             }
 
             $hasTarget = $this->input('app_instance_id') !== null;
@@ -86,7 +86,7 @@ final class StoreRouteRequest extends FormRequest
 
         return new CreateRouteData(
             appId: (int) $validated['app_id'],
-            hostname: (string) $validated['hostname'],
+            domain: (string) $validated['domain'],
             publication: RoutePublication::from((string) $validated['publication']),
             appInstanceId: is_int($validated['app_instance_id'] ?? null) ? $validated['app_instance_id'] : null,
             nodeId: is_int($validated['node_id'] ?? null) ? $validated['node_id'] : null,

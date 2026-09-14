@@ -84,7 +84,7 @@ beforeEach(function (): void {
         nodeId: $this->node->id,
         name: 'live',
         root: null,
-        hostname: null,
+        domain: null,
         branch: null,
     );
 });
@@ -169,7 +169,7 @@ it('recovers a missing source profile on a completed production AppInstance with
         nodeId: $this->node->id,
         name: 'live',
         root: null,
-        hostname: null,
+        domain: null,
         branch: null,
         recoverSourceProfile: true,
     );
@@ -212,7 +212,7 @@ function provision_production_active_instance(OrbitApp $app, Node $node, string 
         'app_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
-        'hostname' => "{$name}.{$app->slug}.{$node->tld}",
+        'domain' => "{$name}.{$app->slug}.{$node->tld}",
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

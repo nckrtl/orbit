@@ -67,9 +67,15 @@ return new class extends Migration
             DB::statement("DROP TRIGGER IF EXISTS {$trigger}");
         }
 
-        Schema::table('route_targets', static function (Blueprint $table): void {
-            $table->dropUnique(['app_instance_id']);
-        });
+        $hasUniqueAppInstanceIndex = collect(DB::select(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'route_targets_app_instance_id_unique'",
+        ))->isNotEmpty();
+
+        if ($hasUniqueAppInstanceIndex) {
+            Schema::table('route_targets', static function (Blueprint $table): void {
+                $table->dropUnique(['app_instance_id']);
+            });
+        }
         Schema::table('app_instances', static function (Blueprint $table): void {
             $table->dropColumn(['selected_php_version', 'provisioning_step', 'failed_step', 'error_code']);
         });

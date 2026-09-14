@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Domain\Routes\RouteHostnameChangeDirection;
-use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -20,20 +19,21 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $node_id
  * @property int|null $cluster_id
  * @property int|null $generation_basis_node_id
- * @property string $hostname
+ * @property string $domain
  * @property RouteProvenance $provenance
  * @property RoutePublication $publication
  * @property RouteStatus $status
  * @property string|null $failed_step
  * @property string|null $error_code
- * @property string|null $hostname_change_previous
- * @property string|null $hostname_change_target
- * @property RouteHostnameChangeDirection|null $hostname_change_direction
- * @property RouteHostnameChangeStep|null $hostname_change_step
+ * @property int|null $replaces_route_id
+ * @property int|null $replaced_by_route_id
+ * @property RouteReplacementStep|null $replacement_step
  * @property-read App $app
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
  * @property-read Node|null $generationBasisNode
+ * @property-read Route|null $replaces
+ * @property-read Route|null $replacedBy
  * @property-read Collection<int, RouteTarget> $targets
  */
 final class Route extends Model
@@ -51,17 +51,21 @@ final class Route extends Model
         'node_id',
         'cluster_id',
         'generation_basis_node_id',
-        'hostname',
+        'domain',
         'provenance',
         'publication',
         'status',
         'failed_step',
         'error_code',
-        'hostname_change_previous',
-        'hostname_change_target',
-        'hostname_change_direction',
-        'hostname_change_step',
+        'replaces_route_id',
+        'replaced_by_route_id',
+        'replacement_step',
     ];
+
+    public function isAuthoritative(): bool
+    {
+        return $this->status->isAuthoritative();
+    }
 
     /** @return BelongsTo<App, $this> */
     public function app(): BelongsTo
@@ -87,6 +91,18 @@ final class Route extends Model
         return $this->belongsTo(Node::class, 'generation_basis_node_id');
     }
 
+    /** @return BelongsTo<Route, $this> */
+    public function replaces(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replaces_route_id');
+    }
+
+    /** @return BelongsTo<Route, $this> */
+    public function replacedBy(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replaced_by_route_id');
+    }
+
     /** @return HasMany<RouteTarget, $this> */
     public function targets(): HasMany
     {
@@ -100,8 +116,7 @@ final class Route extends Model
             'provenance' => RouteProvenance::class,
             'publication' => RoutePublication::class,
             'status' => RouteStatus::class,
-            'hostname_change_direction' => RouteHostnameChangeDirection::class,
-            'hostname_change_step' => RouteHostnameChangeStep::class,
+            'replacement_step' => RouteReplacementStep::class,
         ];
     }
 }

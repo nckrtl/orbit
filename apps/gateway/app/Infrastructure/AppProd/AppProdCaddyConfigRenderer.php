@@ -16,9 +16,9 @@ final readonly class AppProdCaddyConfigRenderer
         }
 
         return $sites
-            ->sortBy('hostname')
+            ->sortBy('domain')
             ->map(static fn (AppProdSite $site): string => <<<CADDY
-                https://{$site->hostname} {
+                https://{$site->domain} {
                     root * {$site->checkoutPath}/{$site->documentRoot}
                     encode zstd gzip
                     @vite {

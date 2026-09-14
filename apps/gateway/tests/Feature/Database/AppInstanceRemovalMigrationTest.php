@@ -561,7 +561,7 @@ function orb179_removal_fixture(
         'app_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
-        'hostname' => "{$suffix}.{$app->slug}.test",
+        'domain' => "{$suffix}.{$app->slug}.test",
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

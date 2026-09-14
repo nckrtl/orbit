@@ -4,13 +4,13 @@ This page tells an operator how the Gateway reads, stores, and safely replaces a
 
 ## Select an App instance
 
-The import and update endpoints accept either a positive numeric App instance ID or an exact Route hostname in `{instance}`. A selector that matches no App instance returns HTTP 404. A Route hostname that has multiple App instance targets returns HTTP 409 with `env.target_ambiguous`.
+The import and update endpoints accept either a positive numeric App instance ID or an exact Route domain in `{instance}`. A selector that matches no App instance returns HTTP 404. A Route domain that has multiple App instance targets returns HTTP 409 with `env.target_ambiguous`.
 
-The Gateway accepts an active App instance only after its recorded placement is complete and no source migration or Route hostname change is pending. An otherwise eligible App instance with no recorded source profile returns HTTP 409 `instance.source_profile_missing` for import, stored update, and synchronization. The message names recovery through the same creation request with `recover_source_profile`. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
+The Gateway accepts an active App instance only after its recorded placement is complete and no source migration or Route domain replacement is pending. An otherwise eligible App instance with no recorded source profile returns HTTP 409 `instance.source_profile_missing` for import, stored update, and synchronization. The message names recovery through the same creation request with `recover_source_profile`. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
 
 ## Use the PHP SDK
 
-The PHP software development kit (SDK) provides typed import, update, and synchronization requests. Each request accepts a positive numeric App instance ID or an exact Route hostname and encodes the selector as one path segment. The update request also encodes its environment key as one path segment. The SDK forwards these inputs without looking up the App instance or resolving placeholders.
+The PHP software development kit (SDK) provides typed import, update, and synchronization requests. Each request accepts a positive numeric App instance ID or an exact Route domain and encodes the selector as one path segment. The update request also encodes its environment key as one path segment. The SDK forwards these inputs without looking up the App instance or resolving placeholders.
 
 The SDK sends one JSON object for each operation and preserves every supplied value for Gateway validation.
 
@@ -26,7 +26,7 @@ The SDK keeps a valid structured Gateway error code, safe message, details, and 
 
 ## Use the CLI
 
-The Orbit command-line interface (CLI) exposes the three environment operations without reading a local file, choosing a target Node, or displaying an environment value. Select an App instance with a positive numeric ID or its exact Route hostname.
+The Orbit command-line interface (CLI) exposes the three environment operations without reading a local file, choosing a target Node, or displaying an environment value. Select an App instance with a positive numeric ID or its exact Route domain.
 
 | Command | Required options | Optional options | Effect |
 | --- | --- | --- | --- |
@@ -34,7 +34,7 @@ The Orbit command-line interface (CLI) exposes the three environment operations 
 | `orbit env:update` | `--instance=SELECTOR`, `--key=KEY`, `--value=VALUE` | `--json` | Add or replace one stored value. The workload file stays unchanged. |
 | `orbit env:sync` | `--instance=SELECTOR` | `--json` | Replace the workload `.env` from the complete stored configuration. |
 
-Quote environment values for the shell so Orbit receives the intended string. An empty value needs an explicit empty quoted argument, `--value=''`; quote multiline values and values that contain spaces or shell metacharacters. Use single quotes for a reference expression such as `--value='https://{{app_instance.hostname}}'` so the Gateway stores the expression unchanged for destination-specific synchronization. The strings `false` and `0` remain strings.
+Quote environment values for the shell so Orbit receives the intended string. An empty value needs an explicit empty quoted argument, `--value=''`; quote multiline values and values that contain spaces or shell metacharacters. Use single quotes for a reference expression such as `--value='https://{{app_instance.domain}}'` so the Gateway stores the expression unchanged for destination-specific synchronization. The strings `false` and `0` remain strings.
 
 Import or update changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` explicitly to install it in the workload file. Synchronization does not refresh an application cache or restart a service or process, so run those application steps separately when existing application code must use the new configuration.
 
@@ -61,7 +61,7 @@ For development, the Gateway reads `.env` from the recorded checkout. For produc
 
 The importer accepts blank lines, comments, quoted values, escaped values, multiline quoted values, and variable expansion from keys in the same file. It does not read variables from the Gateway process environment. Duplicate keys, unresolved expansion, invalid dotenv syntax, or a file larger than 1 MiB reject the complete import. Orbit stores parsed keys and values, without comments or original formatting.
 
-For an App instance recorded as Laravel, import replaces an encountered `APP_URL` with `https://{{app_instance.hostname}}` or adds it when absent. It keeps `APP_KEY` and every other imported literal unchanged. Other application types receive no Laravel-specific key.
+For an App instance recorded as Laravel, import replaces an encountered `APP_URL` with `https://{{app_instance.domain}}` or adds it when absent. It keeps `APP_KEY` and every other imported literal unchanged. Other application types receive no Laravel-specific key.
 
 ## Update one stored value
 
@@ -74,7 +74,7 @@ Content-Type: application/json
 {"value":"example"}
 ```
 
-The body contains exactly one string `value`. Empty text, `false`, and `0` are distinct string values when sent as `""`, `"false"`, and `"0"`. An identical stored value succeeds with `changed: false`. For Laravel, an `APP_URL` update accepts only `https://{{app_instance.hostname}}`.
+The body contains exactly one string `value`. Empty text, `false`, and `0` are distinct string values when sent as `""`, `"false"`, and `"0"`. An identical stored value succeeds with `changed: false`. For Laravel, an `APP_URL` update accepts only `https://{{app_instance.domain}}`.
 
 ## Validate stored configuration
 
@@ -86,9 +86,9 @@ The Gateway validates the complete result before it stores any part of an import
 | Value | Valid UTF-8 string of at most 65,536 bytes without a null byte |
 | Keys per App instance | At most 1,024 |
 | Generated file | At most 1 MiB after conservative escaping and maximum placeholder expansion |
-| Placeholders | Only `{{app_instance.hostname}}` and `{{app_instance.environment}}`, including as part of a longer value |
+| Placeholders | Only `{{app_instance.domain}}` and `{{app_instance.environment}}`, including as part of a longer value |
 
-Malformed or unknown placeholder expressions fail validation. Database-path placeholders, `{{instance.hostname}}`, and `{{app_instance.url}}` are not supported. The Gateway returns HTTP 422 `env.configuration_invalid` with redacted details that name the key and failed rule, and never includes an environment value.
+Malformed or unknown placeholder expressions fail validation. Database-path placeholders, `{{app_instance.hostname}}`, `{{instance.hostname}}`, and `{{app_instance.url}}` are not supported. The Gateway returns HTTP 422 `env.configuration_invalid` with redacted details that name the key and failed rule, and never includes an environment value.
 
 ## Synchronize stored configuration
 
@@ -101,9 +101,9 @@ Content-Type: application/json
 {}
 ```
 
-The request body must be an empty JSON object. Synchronization accepts the same positive App instance ID or exact Route hostname selectors as import and update. It requires an active, complete App instance owner, an active owning Node, and access from the active peer to that Node.
+The request body must be an empty JSON object. Synchronization accepts the same positive App instance ID or exact Route domain selectors as import and update. It requires an active, complete App instance owner, an active owning Node, and access from the active peer to that Node.
 
-The Gateway takes one consistent snapshot of the App instance owner, sole Route, and complete stored configuration. It resolves `{{app_instance.hostname}}` from that Route and `{{app_instance.environment}}` to the recorded `development` or `production` value. A missing Route, a Route transition, or an unavailable reference stops synchronization before replacement. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
+The Gateway takes one consistent snapshot of the App instance owner, authoritative Route, and complete stored configuration. It resolves `{{app_instance.domain}}` from that Route and `{{app_instance.environment}}` to the recorded `development` or `production` value. A missing Route, a Route transition, or an unavailable reference stops synchronization before replacement. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
 For development, synchronization selects `.env` in the recorded checkout. For production, it selects `.env` in the recorded application-user home and runs as that user even when the account has a disabled login shell. Every prepared production release links its local `.env` to this home file. An App or App instance web root such as `public` does not change this location. Callers cannot override the Node, runtime user, directory, or filename. The [production release-layout reference](/reference/deployments) describes the complete home boundary.
 
@@ -123,13 +123,13 @@ Doctor renders the current stored configuration against the App instance's recor
 
 This comparison checks only Orbit-owned file projection. It does not inspect a framework configuration cache, restart a process, synchronize a pending stored change, or modify the file. A stale application cache is not environment projection drift.
 
-## Synchronize during a hostname change
+## Synchronize during a domain change
 
-A production Route hostname change uses the same stored-configuration, preflight, rendering, and protected-writer boundaries when the Route is active, explicit, private, and has one target. The change holds the App instance operation owner. This internal synchronization resolves `{{app_instance.hostname}}` against the candidate Route hostname even though the public import, update, and synchronization endpoints refuse an App instance with a Route transition in progress.
+A production Route domain replacement uses the same stored-configuration, preflight, rendering, and protected-writer boundaries when the current Route is active, explicit, and private. The change holds the App instance operation owner. This internal synchronization resolves `{{app_instance.domain}}` against the candidate replacement Route even though the public import, update, and synchronization endpoints refuse an App instance with a Route transition in progress.
 
 The operation does not change stored values. A placeholder-based `APP_URL` changes in the rendered production `.env`, while unrelated entries and a literal `APP_KEY` remain the stored values. The operation changes no framework cache, service, process, deployment release, source file, SQLite database, or local PHP tuning.
 
-If the Route change fails before the candidate hostname becomes authoritative, recovery renders the same stored snapshot against the previous hostname and restores the protected `.env` before it completes rollback. An interruption during restoration retains the Route checkpoint and reports no completed change. Retry requests revalidate the current Route operation, placement, stored configuration, and file before they continue. After the new hostname becomes authoritative, a cleanup retry revalidates the candidate environment without reverting it.
+If the replacement fails before cutover, recovery renders the same stored snapshot against the authoritative Route and restores the protected `.env` before it removes the replacement. Incomplete cleanup retains the failed replacement. Retry requests revalidate the current Route operation, placement, stored configuration, and file before they continue. After cutover, a cleanup retry revalidates the candidate environment without reverting it.
 
 ## Remote replacement boundary
 

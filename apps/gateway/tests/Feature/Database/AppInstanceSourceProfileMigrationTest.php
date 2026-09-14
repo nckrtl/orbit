@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\Schema;
 
 it('adds nullable profile evidence without inferring or changing legacy rows', function (): void {
     $migration = app_instance_source_profile_migration();
-    $routeMigration = route_hostname_change_state_migration();
-    $routeMigration->down();
 
     try {
         $migration->down();
@@ -36,38 +34,28 @@ it('adds nullable profile evidence without inferring or changing legacy rows', f
         if (! Schema::hasColumn('app_instances', 'source_is_laravel')) {
             $migration->up();
         }
-        $routeMigration->up();
     }
 });
 
 it('refuses rollback before discarding non-active retained profile evidence', function (): void {
     $migration = app_instance_source_profile_migration();
-    $routeMigration = route_hostname_change_state_migration();
-    $routeMigration->down();
+    [$phpSelected, $urlConfigured] = complete_retained_source_profile_rows();
+    $before = source_profile_migration_rows();
 
-    try {
-        [$phpSelected, $urlConfigured] = complete_retained_source_profile_rows();
-        $before = source_profile_migration_rows();
+    expect(fn () => $migration->down())
+        ->toThrow(
+            RuntimeException::class,
+            "Cannot discard retained AppInstance source profiles: {$phpSelected->id}, {$urlConfigured->id}",
+        );
 
-        expect(fn () => $migration->down())
-            ->toThrow(
-                RuntimeException::class,
-                "Cannot discard retained AppInstance source profiles: {$phpSelected->id}, {$urlConfigured->id}",
-            );
-
-        expect(Schema::hasColumn('app_instances', 'source_is_laravel'))
-            ->toBeTrue()
-            ->and(source_profile_migration_rows())
-            ->toBe($before);
-    } finally {
-        $routeMigration->up();
-    }
+    expect(Schema::hasColumn('app_instances', 'source_is_laravel'))
+        ->toBeTrue()
+        ->and(source_profile_migration_rows())
+        ->toBe($before);
 });
 
 it('allows rollback when complete profile evidence belongs only to Active rows', function (): void {
     $migration = app_instance_source_profile_migration();
-    $routeMigration = route_hostname_change_state_migration();
-    $routeMigration->down();
     [$active] = complete_retained_source_profile_rows(AppInstanceState::Active);
     $before = $active->getAttributes();
 
@@ -83,7 +71,6 @@ it('allows rollback when complete profile evidence belongs only to Active rows',
         if (! Schema::hasColumn('app_instances', 'source_is_laravel')) {
             $migration->up();
         }
-        $routeMigration->up();
     }
 });
 
@@ -91,13 +78,6 @@ function app_instance_source_profile_migration(): object
 {
     return require base_path(
         'database/migrations/2026_09_09_015031_add_source_profile_to_app_instances_table.php',
-    );
-}
-
-function route_hostname_change_state_migration(): object
-{
-    return require base_path(
-        'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
     );
 }
 

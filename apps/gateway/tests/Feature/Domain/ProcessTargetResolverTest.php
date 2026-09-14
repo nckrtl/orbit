@@ -36,7 +36,7 @@ it('derives development placement from the AppInstance', function (): void {
         ->toBe("app-instance-{$instance->id}")
         ->and($target->productionReleaseLayout)
         ->toBeFalse()
-        ->and($target->routeHostname)
+        ->and($target->routeDomain)
         ->toBeNull();
 });
 
@@ -45,7 +45,7 @@ it('derives the development-server origin hostname from the AppInstance Route', 
     $route = Route::query()->create([
         'app_id' => $instance->app_id,
         'node_id' => $instance->node_id,
-        'hostname' => 'tasks.commander.test',
+        'domain' => 'tasks.commander.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -55,7 +55,7 @@ it('derives the development-server origin hostname from the AppInstance Route', 
 
     $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::AppInstance, $instance->id);
 
-    expect($target->routeHostname)->toBe('tasks.commander.test');
+    expect($target->routeDomain)->toBe('tasks.commander.test');
 });
 
 it('derives production placement from the dedicated identity and current release', function (): void {
@@ -268,7 +268,7 @@ function process_target_legacy_instance(): Instance
         'name' => 'legacy',
         'environment' => 'development',
         'checkout_path' => '/srv/legacy',
-        'hostname' => 'legacy.example.test',
+        'domain' => 'legacy.example.test',
         'certificate_mode' => 'orbit-ca',
         'status' => LifecycleStatus::Active,
     ]);

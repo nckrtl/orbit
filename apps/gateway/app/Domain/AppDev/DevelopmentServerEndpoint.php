@@ -12,9 +12,9 @@ final readonly class DevelopmentServerEndpoint
 
     public const int PORT = 5173;
 
-    public static function origin(string $hostname): string
+    public static function origin(string $domain): string
     {
-        return 'https://'.$hostname.self::PATH;
+        return 'https://'.$domain.self::PATH;
     }
 
     public static function upstream(): string
