@@ -113,7 +113,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('activities/{activity}', [ActivitiesController::class, 'show'])
             ->name('activity:show');
         Route::post('nodes', [NodesController::class, 'store'])
-            ->name('node:provision');
+            ->name('node:add');
         Route::patch('nodes/{node}/settings', [NodesController::class, 'settings'])
             ->whereNumber('node')
             ->name('node:settings');

@@ -24,6 +24,8 @@ final class DoctorIssueCodeCatalog
                 ?? FirewallDoctorIssueCode::InspectionFailed,
             DoctorFamily::Herdr => HerdrSessionDoctorIssueCode::tryFrom($code)
                 ?? HerdrSessionDoctorIssueCode::InspectionFailed,
+            DoctorFamily::DatabaseConnection => DatabaseConnectionDoctorIssueCode::tryFrom($code)
+                ?? DatabaseConnectionDoctorIssueCode::InspectionFailed,
         };
     }
 }

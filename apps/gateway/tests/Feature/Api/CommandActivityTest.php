@@ -552,6 +552,30 @@ it('correlates unhandled failures without exposing exception text', function ():
         ->toBe('gateway.unhandled');
 });
 
+it('records node:add as the activity command for node store', function (): void {
+    $requestId = (string) Str::uuid();
+    $operator = Node::query()->create([
+        'name' => 'operator',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => '10.44.0.2',
+    ]);
+    $this->markAsGateway($operator);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/nodes', [
+            'name' => 'not valid',
+            'roles' => ['unknown'],
+            'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+        ])
+        ->assertUnprocessable();
+
+    expect(Activity::query()->where('request_id', $requestId)->sole()->command)
+        ->toBe('node:add');
+});
+
 it('records node access add and remove commands against the serving node and preserves access failures', function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'gateway',

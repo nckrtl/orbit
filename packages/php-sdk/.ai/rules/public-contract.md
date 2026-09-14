@@ -4,7 +4,7 @@ The SDK models exactly 110 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
-- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.
+- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, and remove.
 - App runtime definition: process and Schedule list, create, show, replace, and remove.
@@ -26,7 +26,7 @@ operations. Keep the public API typed and small.
 - Use numeric resource IDs in routes where the Gateway contract does. Keep a
   firewall rule name as the delete route key. Do not substitute display names
   for identifiers.
-- Send `host_key_fingerprint` in a node provision request. Parse
+- Send `host_key_fingerprint` in a node add request. Parse
   `ssh_host_fingerprint` from a node response.
 - Keep AppInstance lifecycle transport limited to App, Node, name, optional
   root, optional Route hostname, optional creation branch, explicit
@@ -85,8 +85,8 @@ operations. Keep the public API typed and small.
   prefix. Attachment responses omit environment values and passwords. The
   Gateway owns validation, encryption, persistence, and stored-environment writes.
 - Accept only the current Doctor family tokens: node, role, app, instance,
-  workspace, schedule, tool, process, firewall, and herdr. Keep Doctor verify-only and
-  policy-free.
+  workspace, schedule, tool, process, firewall, herdr, and database_connection.
+  Keep Doctor verify-only and policy-free.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy
   grant/revoke compatibility.

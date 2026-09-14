@@ -1,6 +1,6 @@
 # Node provisioning
 
-This page tells an operator which Linux user the Gateway connects as when `orbit node:provision <name> [host]` bootstraps a Node, how the Gateway records the machine architecture of that Node, and how `orbit node:remove <node>` returns a machine to a state that a later provisioning can reach. It explains how each choice differs between a new Node and an existing Node, and which identity and architecture inputs the command accepts. The same request serves a first provisioning and a later change to a Node's TLD, roles, or settings.
+This page tells an operator which Linux user the Gateway connects as when `orbit node:add <name> [host]` bootstraps a Node, how the Gateway records the machine architecture of that Node, and how `orbit node:remove <node>` returns a machine to a state that a later provisioning can reach. It explains how each choice differs between a new Node and an existing Node, and which identity and architecture inputs the command accepts. The same request serves a first provisioning and a later change to a Node's TLD, roles, or settings.
 
 ## Bootstrap identity
 
@@ -55,7 +55,7 @@ Each identity or architecture failure names the boundary that stopped the reques
 
 Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](node-retarget.md#two-boundaries) describes the same two boundaries.
 
-A later `node:provision` of a roleless Node therefore connects over public SSH again and republishes the WireGuard peer. The Gateway finalizes that publication over the verified tunnel, because role convergence closes the public path during the same request.
+A later `node:add` of a roleless Node therefore connects over public SSH again and republishes the WireGuard peer. The Gateway finalizes that publication over the verified tunnel, because role convergence closes the public path during the same request.
 
 ## Remove a Node
 

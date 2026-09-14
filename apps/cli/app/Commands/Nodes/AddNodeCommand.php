@@ -8,13 +8,13 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\NodeSettingOptions;
-use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
+use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-final class ProvisionNodeCommand extends GatewayCommand
+final class AddNodeCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'node:provision
+    protected $signature = 'node:add
         {name : Node name}
         {host? : Optional public SSH host}
         {--ssh-port=22 : Public SSH port}
@@ -35,7 +35,7 @@ final class ProvisionNodeCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Provision or converge a node.';
+    protected $description = 'Add a node to the fleet: provision a new machine or converge an existing one.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -160,7 +160,7 @@ final class ProvisionNodeCommand extends GatewayCommand
 
         $node = $this->send(
             $connector,
-            new ProvisionNodeRequest(
+            new AddNodeRequest(
                 name: $name,
                 publicSshHost: $host,
                 roles: $roleNames,

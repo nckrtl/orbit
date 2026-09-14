@@ -96,7 +96,7 @@ describe('activity reads', function (): void {
     it('finds the exact command attempt by request ID', function (): void {
         $expected = activity_api_record(
             requestId: '44444444-4444-4444-8444-444444444444',
-            command: 'node:provision',
+            command: 'node:add',
             status: 'failed',
             properties: ['method' => 'POST', 'path' => 'api/v1/nodes'],
             errorCode: 'node.ssh_host_fingerprint_required',
@@ -113,7 +113,7 @@ describe('activity reads', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $expected->id)
-            ->assertJsonPath('data.0.command', 'node:provision');
+            ->assertJsonPath('data.0.command', 'node:add');
     });
 
     it('validates the list bound and returns the standard missing-resource envelope', function (): void {
