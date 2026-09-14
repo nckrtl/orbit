@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\AppInstancesController;
 use App\Http\Controllers\Api\AppRuntimeDefinitionsController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
+use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
@@ -217,6 +218,18 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/environment/{key}',
             [AppInstanceEnvironmentValuesController::class, 'update'],
         )->name('instance:environment:update');
+        Route::put(
+            'instances/{instance}/database-connections/{database_connection}',
+            [DatabaseConnectionAttachmentsController::class, 'store'],
+        )
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database-connection:attach');
+        Route::delete(
+            'instances/{instance}/database-connections/{database_connection}',
+            [DatabaseConnectionAttachmentsController::class, 'destroy'],
+        )
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database-connection:detach');
         Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
         Route::post('routes', [RoutesController::class, 'store'])->name('route:new');
         Route::get('routes/{route}', [RoutesController::class, 'show'])

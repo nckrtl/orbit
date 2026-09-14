@@ -10,6 +10,8 @@ use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\RemoveDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
@@ -176,6 +178,8 @@ describe('repository guidance bootstrap', function (): void {
             AddDatabaseConnectionRequest::class,
             UpdateDatabaseConnectionRequest::class,
             RemoveDatabaseConnectionRequest::class,
+            AttachDatabaseConnectionRequest::class,
+            DetachDatabaseConnectionRequest::class,
         ];
         $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests);
         $expectedRequests = [
@@ -308,12 +312,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($databaseRequests);
     });
 
-    it('documents the 108-operation SDK surface including Database connection transport', function (): void {
+    it('documents the 110-operation SDK surface including Database connection transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 108 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 110 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -323,7 +327,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
             ->toContain('- Herdr: session list, add, show, restart, remove, and observation-grant.')
-            ->toContain('- Database connection: list, show, add, update, and remove.')
+            ->toContain('- Database connection: list, show, add, update, remove, attach, and detach.')
             ->toContain(
                 '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
             )
@@ -366,6 +370,9 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 'Keep Database connection transport limited to slug identity, driver, optional Node ID, host, port, database name, sqlite path, username, and password.',
+            )
+            ->toContain(
+                'Attach and detach send an AppInstance ID-or-hostname selector, the connection slug, and an optional prefix.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -375,8 +382,8 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 108 public Gateway operations.',
-                'The SDK exposes typed list, show, add, update, and remove requests for Gateway-owned database connection records.',
+                'The SDK exposes exactly 110 public Gateway operations.',
+                'The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
                 'Doctor accepts the current Gateway family set, including Schedule and Herdr.',

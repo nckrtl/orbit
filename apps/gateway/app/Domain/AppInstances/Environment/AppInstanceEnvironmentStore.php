@@ -65,6 +65,81 @@ final readonly class AppInstanceEnvironmentStore
         return $result;
     }
 
+    /**
+     * @param  array<string, string>  $values
+     */
+    public function putMany(
+        AppInstanceEnvironmentContext $expected,
+        #[\SensitiveParameter]
+        array $values,
+        string $operation,
+    ): AppInstanceEnvironmentResult {
+        /** @var AppInstanceEnvironmentResult $result */
+        $result = DB::transaction(function () use ($expected, $values, $operation): AppInstanceEnvironmentResult {
+            $this->assertCurrent($expected, requireActiveNode: false);
+            $stored = $this->storedValues($expected->appInstanceId);
+            $candidate = [...$stored, ...$values];
+            $this->validator->validate($candidate);
+            $changed = false;
+
+            foreach ($values as $key => $value) {
+                if (($stored[$key] ?? null) === $value && array_key_exists($key, $stored)) {
+                    continue;
+                }
+
+                AppInstanceEnvironmentValue::query()->updateOrCreate(
+                    ['app_instance_id' => $expected->appInstanceId, 'env_key' => $key],
+                    ['env_value' => $value],
+                );
+                $changed = true;
+            }
+
+            return new AppInstanceEnvironmentResult(
+                $expected->appInstanceId,
+                $operation,
+                $changed,
+                count($candidate),
+            );
+        });
+
+        return $result;
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    public function forget(
+        AppInstanceEnvironmentContext $expected,
+        array $keys,
+        string $operation,
+    ): AppInstanceEnvironmentResult {
+        /** @var AppInstanceEnvironmentResult $result */
+        $result = DB::transaction(function () use ($expected, $keys, $operation): AppInstanceEnvironmentResult {
+            $this->assertCurrent($expected, requireActiveNode: false);
+            $stored = $this->storedValues($expected->appInstanceId);
+            $removed = array_values(array_intersect($keys, array_keys($stored)));
+
+            if ($removed !== []) {
+                AppInstanceEnvironmentValue::query()
+                    ->where('app_instance_id', $expected->appInstanceId)
+                    ->whereIn('env_key', $removed)
+                    ->delete();
+            }
+
+            $remaining = array_diff_key($stored, array_flip($removed));
+            $this->validator->validate($remaining);
+
+            return new AppInstanceEnvironmentResult(
+                $expected->appInstanceId,
+                $operation,
+                $removed !== [],
+                count($remaining),
+            );
+        });
+
+        return $result;
+    }
+
     public function update(
         AppInstanceEnvironmentContext $expected,
         string $key,

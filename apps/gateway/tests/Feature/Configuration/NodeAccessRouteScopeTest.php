@@ -65,6 +65,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'cluster:show' => ServingNode::ClusterOwning,
         'cluster:update' => ServingNode::ClusterOwning,
         'database-connection:add' => ServingNode::Gateway,
+        'database-connection:attach' => ServingNode::EnvironmentInstanceOwning,
+        'database-connection:detach' => ServingNode::EnvironmentInstanceOwning,
         'database-connection:list' => ServingNode::Gateway,
         'database-connection:remove' => ServingNode::Gateway,
         'database-connection:show' => ServingNode::Gateway,

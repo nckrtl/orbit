@@ -149,6 +149,6 @@ A successful import, update, or synchronization returns only the AppInstance ID,
 
 The Gateway encrypts every literal and placeholder expression with its application encryption key before database storage. Recovery of stored configuration depends on retaining that Gateway key material. Orbit does not generate or delete an application key through these endpoints, and it never displays plaintext stored values.
 
-Import and update change only stored Gateway configuration. They do not write the workload `.env`, run application code, refresh framework caches, restart services, or require an application database or installed framework dependencies.
+Import and update change only stored Gateway configuration. They do not write the workload `.env`, run application code, refresh framework caches, restart services, or require an application database or installed framework dependencies. Database connection attach and detach also write or clear prefixed stored keys without changing the workload file; [Database connections](database-connections.md) owns that contract.
 
 Synchronization changes only the workload `.env`. It does not run application code, refresh framework caches, restart services or application processes, change Git metadata or source, or touch application database files. Stale framework caches, missing dependencies, and an absent application database do not block it. Run the application's separate cache refresh or process restart step when the new file must become effective in already running application code.

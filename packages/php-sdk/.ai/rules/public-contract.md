@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 108 concrete public Gateway API operations:
+The SDK models exactly 110 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -17,7 +17,7 @@ The SDK models exactly 108 concrete public Gateway API operations:
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Herdr: session list, add, show, restart, remove, and observation-grant.
-- Database connection: list, show, add, update, and remove.
+- Database connection: list, show, add, update, remove, attach, and detach.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
 The four abstract request bases are implementation details, not extra Gateway
@@ -80,8 +80,10 @@ operations. Keep the public API typed and small.
 - Keep Database connection transport limited to slug identity, driver, optional
   Node ID, host, port, database name, sqlite path, username, and password.
   Preserve omitted optional fields as absence. Item and collection responses
-  omit the password and expose `has_password`. The Gateway owns validation,
-  encryption, and persistence.
+  omit the password and expose `has_password`. Attach and detach send an
+  AppInstance ID-or-hostname selector, the connection slug, and an optional
+  prefix. Attachment responses omit environment values and passwords. The
+  Gateway owns validation, encryption, persistence, and stored-environment writes.
 - Accept only the current Doctor family tokens: node, role, app, instance,
   workspace, schedule, tool, process, firewall, and herdr. Keep Doctor verify-only and
   policy-free.

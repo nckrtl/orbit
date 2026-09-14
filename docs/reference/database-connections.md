@@ -1,8 +1,10 @@
 # Database connections
 
-This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, add, update, and remove behave. [ADR 0069](../decisions/0069-allow-node-process-targets.md) owns Node Process targets for shared Docker database servers, and [ADR 0070](../decisions/0070-keep-the-database-role-as-a-docker-baseline.md) owns the `database` role as a Docker baseline; this page owns the connection registry.
+This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, add, update, remove, attach, and detach behave. [ADR 0069](../decisions/0069-allow-node-process-targets.md) owns Node Process targets for shared Docker database servers, and [ADR 0070](../decisions/0070-keep-the-database-role-as-a-docker-baseline.md) owns the `database` role as a Docker baseline; this page owns the connection registry.
 
 A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start, stop, or query a database.
+
+The operator attaches a connection to an AppInstance only. Attach writes prefixed keys into the Gateway-owned stored AppInstance environment under [ADR 0044](../decisions/0044-own-appinstance-environment-configuration-in-orbit.md). It does not write the workload `.env`. Run `orbit env:sync` after attach or detach when the workload file must match stored configuration. [AppInstance environment variables](environment-variables.md) owns import, update, and synchronization.
 
 ## Register a connection
 
@@ -62,8 +64,10 @@ The CLI sends each operation through the Gateway.
 | `orbit database:add SLUG --driver=DRIVER` | Create one connection and encrypt the supplied password. |
 | `orbit database:update SLUG` | Replace the supplied fields on one connection. |
 | `orbit database:remove SLUG --force` | Delete the connection record. |
+| `orbit database:attach SLUG --instance=SELECTOR` | Attach the connection to one AppInstance and write prefixed stored environment keys. |
+| `orbit database:detach SLUG --instance=SELECTOR --force` | Detach the connection from one AppInstance and clear the prefixed stored environment keys. |
 
-Every command also accepts `--json`. Human and JSON results include the Gateway request ID. `database:remove` requires interactive confirmation or `--force` before it sends the delete request. `database:update` requires at least one field option.
+Every command also accepts `--json`. Human and JSON results include the Gateway request ID. `database:remove` and `database:detach` require interactive confirmation or `--force` before they send the delete request. `database:update` requires at least one field option.
 
 The add command accepts `--host`, `--port`, `--database`, `--path`, `--username`, `--password`, and `--node`. The update command accepts the same field options except the slug. An empty `--node` on update clears the stored Node association.
 
@@ -79,4 +83,58 @@ The Gateway exposes the registry at `/api/v1/database-connections`. Access to th
 | `PATCH` | `/api/v1/database-connections/{slug}` | Update supplied fields |
 | `DELETE` | `/api/v1/database-connections/{slug}` | Remove the record |
 
-A duplicate slug returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. An unknown slug returns `http.404`. Removing a record deletes that row. Recovery of a stored password depends on retaining the Gateway encryption key material.
+A duplicate slug returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. An unknown slug returns `http.404`. Removing a record deletes that row when no AppInstance attachment exists. The Gateway answers `database.connection_attached` (HTTP 409) when an attachment still exists. Recovery of a stored password depends on retaining the Gateway encryption key material.
+
+## Attach to an AppInstance
+
+Attach writes stored environment keys for one AppInstance. The target is an AppInstance ID or exact Route hostname. Orbit accepts no Workspace target.
+
+```text
+orbit database:attach app --instance=12
+```
+
+The optional `--prefix` value defaults to `DB`. A prefix is an uppercase name that starts with a letter and then uses letters, digits, or underscores, at most 32 characters. Attach replaces an existing mapping that already uses that prefix on the same AppInstance.
+
+The Gateway writes these keys for mysql and pgsql.
+
+| Prefix `DB` key | Source |
+| --- | --- |
+| `DB_CONNECTION` | Driver (`mysql` or `pgsql`) |
+| `DB_HOST` | Resolved hostname or IP |
+| `DB_PORT` | Resolved TCP port |
+| `DB_DATABASE` | Stored database name |
+| `DB_USERNAME` | Stored username |
+| `DB_PASSWORD` | Stored password |
+
+SQLite writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the Unix absolute path. It writes `DB_USERNAME` and `DB_PASSWORD` only when those values are stored. It does not write `DB_HOST` or `DB_PORT`, and it removes those keys when a previous mysql or pgsql attachment used the same prefix.
+
+Responses, activity records, errors, and debug output omit environment values and the password. The attach result names the AppInstance, slug, prefix, written key names, resolved host and port, whether stored configuration changed, and the total stored key count.
+
+Attach changes stored configuration only. The workload `.env` stays unchanged until the operator runs `orbit env:sync`.
+
+## Same-node Docker Process host and port
+
+A connection with a stored `node_id` can align with a Node-owned Docker Process on that Node. Alignment holds when one published port mapping on that Process uses the connection's port as the published host port or the container port.
+
+When the AppInstance lives on that same Node, the Gateway writes host `127.0.0.1` and the mapping's published host port. When the AppInstance lives on another Node, or the connection has no aligned Docker Process, the Gateway writes the registry host and port.
+
+## Detach from an AppInstance
+
+Detach removes the mapping and the related stored keys for that prefix.
+
+```text
+orbit database:detach app --instance=12 --force
+```
+
+`--prefix` defaults to `DB`. Detach deletes `PREFIX_CONNECTION`, `PREFIX_HOST`, `PREFIX_PORT`, `PREFIX_DATABASE`, `PREFIX_USERNAME`, and `PREFIX_PASSWORD` when they are stored. Other stored keys stay in place. An unknown attachment returns `database.attachment_missing` (HTTP 404).
+
+## Attachment API
+
+The Gateway exposes attach and detach on the AppInstance.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `PUT` | `/api/v1/instances/{instance}/database-connections/{slug}` | Attach the connection and write stored environment keys |
+| `DELETE` | `/api/v1/instances/{instance}/database-connections/{slug}` | Detach the connection and clear the prefixed stored keys |
+
+The `{instance}` selector is a positive AppInstance ID or an exact Route hostname, as [AppInstance environment variables](environment-variables.md) describes. The optional JSON body accepts `prefix`. Omission uses `DB`. Access uses the AppInstance owning Node.

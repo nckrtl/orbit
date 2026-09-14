@@ -41,6 +41,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'cluster:show',
         'cluster:update',
         'database:add',
+        'database:attach',
+        'database:detach',
         'database:list',
         'database:remove',
         'database:show',
@@ -130,7 +132,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(102);
+    expect($orbitCommands)->toHaveCount(104);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -234,6 +236,14 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'password' => null,
                 'json' => false,
             ],
+        ],
+        'database:attach' => [
+            ['slug'],
+            ['instance' => null, 'prefix' => null, 'json' => false],
+        ],
+        'database:detach' => [
+            ['slug'],
+            ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
         ],
         'database:list' => [[], ['json' => false]],
         'database:remove' => [['slug'], ['force' => false, 'json' => false]],
@@ -574,6 +584,15 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--database' => 'app',
             '--username' => 'app',
             '--password' => 'secret',
+        ], ...$profileMissing],
+        'database:attach' => [[
+            'slug' => 'app',
+            '--instance' => '12',
+        ], ...$profileMissing],
+        'database:detach' => [[
+            'slug' => 'app',
+            '--instance' => '12',
+            '--force' => true,
         ], ...$profileMissing],
         'database:list' => [[], ...$profileMissing],
         'database:remove' => [['slug' => 'app', '--force' => true], ...$profileMissing],

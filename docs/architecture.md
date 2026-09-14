@@ -54,7 +54,7 @@ A Herdr session is a named headless Herdr server on a managed Node. The Gateway 
 
 ## Database connections
 
-The Gateway stores named mysql, pgsql, and sqlite connection records. An operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes own Docker database server lifecycle. [Database connections](reference/database-connections.md) owns the registry contract.
+The Gateway stores named mysql, pgsql, and sqlite connection records. An operator registers a remote host or a sqlite path without assigning the `database` role. An operator attaches a connection to an AppInstance so the Gateway writes prefixed keys into that instance's stored environment. Node Processes own Docker database server lifecycle. [Database connections](reference/database-connections.md) owns the registry and attach contract.
 
 ## Doctor
 
