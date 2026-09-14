@@ -604,19 +604,19 @@ it('renders local validation failures through the exact json boundary', function
         'PHP version must use major.minor format, for example 8.5.',
     ],
     'node arguments' => [
-        'node:provision',
+        'node:add',
         ['name' => 'node', 'host' => 'node.test', '--ssh-port' => 'validation-secret'],
         'node.ssh_port_invalid',
         'SSH port must be an integer from 1 to 65535.',
     ],
     'node platform' => [
-        'node:provision',
+        'node:add',
         ['name' => 'node', 'host' => 'node.test', '--platform' => 'validation-secret'],
         'node.platform_invalid',
         'Platform must be linux.',
     ],
     'node host key fingerprint' => [
-        'node:provision',
+        'node:add',
         ['name' => 'node', 'host' => 'node.test', '--host-key-fingerprint' => 'validation-secret'],
         'node.host_key_fingerprint_invalid',
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
