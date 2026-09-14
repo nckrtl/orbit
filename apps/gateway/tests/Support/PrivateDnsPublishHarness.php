@@ -29,9 +29,11 @@ final class PrivateDnsPublishHarness
         $failTest = $this->root.'/state-fail-test';
         $failRestart = $this->root.'/state-fail-restart';
         $failListener = $this->root.'/state-fail-listener';
+        $failBind = $this->root.'/state-fail-bind';
         $active = $this->root.'/state-active';
         $listenerActive = $this->root.'/state-listener-active';
         $serviceLog = $this->root.'/systemctl.log';
+        $ssLog = $this->root.'/ss.log';
         $this->writeShim('dnsmasq', <<<BASH
             #!/bin/bash
             set -euo pipefail
@@ -57,6 +59,14 @@ final class PrivateDnsPublishHarness
                 fi
                 exit 3
             fi
+            if [ "\${1:-}" = 'show' ]; then
+                if [ -f '{$listenerActive}' ]; then
+                    printf '%s\n' '4242'
+                    exit 0
+                fi
+                printf '%s\n' '0'
+                exit 0
+            fi
             if [ "\${1:-}" = 'restart' ]; then
                 if [ -f '{$failRestart}' ]; then
                     echo 'dnsmasq failed to restart' >&2
@@ -73,6 +83,23 @@ final class PrivateDnsPublishHarness
                 touch '{$listenerActive}'
                 exit 0
             fi
+            exit 0
+            BASH);
+        $this->writeShim('ss', <<<BASH
+            #!/bin/bash
+            set -euo pipefail
+            printf '%s\n' "\$*" >> '{$ssLog}'
+            if [ -f '{$failBind}' ]; then
+                exit 0
+            fi
+            if [ -f '{$listenerActive}' ]; then
+                printf '%s\n' 'UNCONN 0 0 10.44.0.1:53 0.0.0.0:* users:(("php8.5",pid=4242,fd=5))'
+            fi
+            exit 0
+            BASH);
+        $this->writeShim('sleep', <<<'BASH'
+            #!/bin/bash
+            set -euo pipefail
             exit 0
             BASH);
         $this->writeShim('systemd-analyze', <<<'BASH'
@@ -116,6 +143,11 @@ final class PrivateDnsPublishHarness
             unitDirectory: $this->root.'/etc/systemd/system',
             orbitHome: $this->root.'/orbit-home',
         );
+    }
+
+    public function confDirectory(): string
+    {
+        return $this->root.'/etc/dnsmasq.d';
     }
 
     public function recordsPath(): string
@@ -168,6 +200,11 @@ final class PrivateDnsPublishHarness
         file_put_contents($this->root.'/state-fail-listener', '1');
     }
 
+    public function failListenerBind(): void
+    {
+        file_put_contents($this->root.'/state-fail-bind', '1');
+    }
+
     public function clearServiceLog(): void
     {
         file_put_contents($this->root.'/systemctl.log', '');
@@ -193,7 +230,55 @@ final class PrivateDnsPublishHarness
      */
     public function serviceCalls(): array
     {
-        $log = @file_get_contents($this->root.'/systemctl.log');
+        return $this->linesFrom($this->root.'/systemctl.log');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function socketProbes(): array
+    {
+        return $this->linesFrom($this->root.'/ss.log');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function confDirectoryEntries(): array
+    {
+        $entries = scandir($this->confDirectory());
+        if ($entries === false) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $entries,
+            static fn (string $name): bool => $name !== '.' && $name !== '..',
+        ));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function confDirectoryListenAddressFiles(): array
+    {
+        $files = [];
+        foreach ($this->confDirectoryEntries() as $name) {
+            $contents = (string) file_get_contents($this->confDirectory().'/'.$name);
+            if (str_contains($contents, 'listen-address=')) {
+                $files[] = $name;
+            }
+        }
+
+        return $files;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function linesFrom(string $path): array
+    {
+        $log = @file_get_contents($path);
         if (! is_string($log) || $log === '') {
             return [];
         }
