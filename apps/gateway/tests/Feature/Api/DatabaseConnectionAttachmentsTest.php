@@ -85,7 +85,13 @@ it('attaches mysql keys into stored AppInstance env and redacts the password', f
     $encoded = json_encode($activity->properties?->toArray() ?? [], JSON_THROW_ON_ERROR);
 
     expect($activity->command)
-        ->toBe('database-connection:attach')
+        ->toBe('instance:database:add')
+        ->and($activity->subject_type)
+        ->toBe(AppInstance::class)
+        ->and($activity->subject_id)
+        ->toBe($this->instance->id)
+        ->and($activity->target_node_id)
+        ->toBe($this->instance->node_id)
         ->and($encoded)
         ->not->toContain(DATABASE_ATTACHMENT_SECRET)
         ->and(print_r($this->instance->environmentValues, true))
@@ -256,6 +262,11 @@ it('detaches the mapping and clears related stored keys without logging the pass
         ->assertJsonPath('data.changed', true);
 
     expect($detach->getContent())->not->toContain(DATABASE_ATTACHMENT_SECRET);
+    expect(Activity::query()->where('request_id', $detach->json('meta.request_id'))->sole())
+        ->command->toBe('instance:database:remove')
+        ->subject_type->toBe(AppInstance::class)
+        ->subject_id->toBe($this->instance->id)
+        ->target_node_id->toBe($this->instance->node_id);
     expect(stored_env($this->instance))->toBe(['APP_KEY' => 'keep-me']);
     expect(DatabaseConnectionTarget::query()->exists())->toBeFalse();
 

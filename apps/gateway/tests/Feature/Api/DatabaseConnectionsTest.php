@@ -81,7 +81,7 @@ it('round-trips mysql connection CRUD, encrypts the password, and redacts it fro
     $encoded = json_encode($activity->properties?->toArray() ?? [], JSON_THROW_ON_ERROR);
 
     expect($activity->command)
-        ->toBe('database-connection:add')
+        ->toBe('database:create')
         ->and($encoded)
         ->not->toContain(DATABASE_CONNECTION_SECRET)
         ->and($activity->properties?->get('input'))
@@ -112,6 +112,8 @@ it('round-trips mysql connection CRUD, encrypts the password, and redacts it fro
         ->assertJsonMissingPath('data.password');
 
     expect($remove->getContent())->not->toContain(DATABASE_CONNECTION_SECRET);
+    expect(Activity::query()->where('request_id', $remove->json('meta.request_id'))->sole()->command)
+        ->toBe('database:destroy');
     expect(DatabaseConnection::query()->where('slug', 'app')->exists())->toBeFalse();
 
     $this->getJson('/api/v1/database-connections/app')->assertNotFound()->assertJsonPath('error.code', 'http.404');

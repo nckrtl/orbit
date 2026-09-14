@@ -6,19 +6,19 @@ namespace App\Commands\Database;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\DatabaseConnections\RemoveDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
 
-final class RemoveDatabaseConnectionCommand extends DatabaseCommand
+final class DestroyDatabaseConnectionCommand extends DatabaseCommand
 {
     #[\Override]
-    protected $signature = 'database:remove
+    protected $signature = 'database:destroy
         {slug : Database connection slug}
         {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove a Database connection.';
+    protected $description = 'Destroy a Database connection.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -40,7 +40,7 @@ final class RemoveDatabaseConnectionCommand extends DatabaseCommand
 
         $connection = $this->send(
             $connector,
-            new RemoveDatabaseConnectionRequest($slug),
+            new DestroyDatabaseConnectionRequest($slug),
             DatabaseConnectionResponse::class,
         );
 
@@ -48,7 +48,7 @@ final class RemoveDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        return $this->renderConnection($connection, "Database connection [{$connection->slug}] removed.");
+        return $this->renderConnection($connection, "Database connection [{$connection->slug}] destroyed.");
     }
 
     private function confirmed(): bool
@@ -58,12 +58,12 @@ final class RemoveDatabaseConnectionCommand extends DatabaseCommand
         }
 
         if ($this->option('json') !== true && $this->input->isInteractive()) {
-            return $this->confirm('Confirm Database connection removal?', false);
+            return $this->confirm('Confirm Database connection destruction?', false);
         }
 
         $this->renderGatewayFailure(
             'database.confirmation_required',
-            'Use --force to confirm Database connection removal.',
+            'Use --force to confirm Database connection destruction.',
         );
 
         return false;
