@@ -7,8 +7,6 @@ description: "Add a development Node and verify a page over private HTTPS."
 
 This walkthrough helps an operator add one development Node and serve a static page through Orbit's private HTTPS network. Complete [installation](/reference/installation) first. Run the CLI commands on the Gateway as `orbit`, using the connected profile.
 
-The fresh-machine trial has an unresolved serving failure: Caddy cannot traverse the managed account's home directory and returns HTTP 403 even when the App instance is active. This walkthrough is a reproducible trial, not a verified release path. Do not use broad permission changes to work around it.
-
 ## Prepare the source
 
 The example uses [MDN's public learning repository](https://github.com/mdn/learning-area), which contains a static test page. It requires no application dependencies, key, database, build command, or GitHub account. The page says `This is my page`.

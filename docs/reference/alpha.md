@@ -30,7 +30,6 @@ The first trial has a deliberately small environment and workload.
 | Distribution | Full monorepo source at one recorded commit or published release tag; no binary is required. Standalone Composer package publication needs a separate distribution workflow. |
 | Machines | Ubuntu 26.04 Gateway and managed Nodes; see [requirements](/reference/installation#requirements). |
 | Application | One standalone development Node and one public Git repository with a static page. Application databases and dependency installation need separate application setup. |
-| Serving blocker | The fresh trial returns HTTP 403 because Caddy lacks traversal access to the managed home directory. An active App instance and healthy Doctor result do not establish a working page. |
 | Network | Private HTTPS through WireGuard and Orbit DNS; no public production launch is implied. |
 | Production | Production deployment commands exist, but this trial establishes no production readiness, availability guarantee, or application-data recovery guarantee. |
 | Updates | Review each release's instructions. Database migrations can prevent a code-only downgrade. |
