@@ -4,39 +4,58 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
+use App\Commands\Concerns\SelectsAppDefinitionTarget;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 
 abstract class TargetedProcessCommand extends ProcessCommand
 {
+    use SelectsAppDefinitionTarget;
+
+    /** @return 'app'|'instance'|'node'|null */
+    protected function exclusiveProcessTarget(): ?string
+    {
+        $hasApp = $this->providedOption('app');
+        $hasInstance = $this->providedOption('instance');
+        $hasNode = $this->providedOption('node');
+        $count = (int) $hasApp + (int) $hasInstance + (int) $hasNode;
+
+        if ($count > 1) {
+            $this->renderGatewayFailure(
+                'process.target_invalid',
+                'Use only one of --app, --instance, or --node.',
+            );
+
+            return null;
+        }
+
+        if ($count === 0) {
+            $this->renderGatewayFailure(
+                'process.target_invalid',
+                'The --app, --instance, or --node option is required.',
+            );
+
+            return null;
+        }
+
+        return match (true) {
+            $hasApp => 'app',
+            $hasInstance => 'instance',
+            default => 'node',
+        };
+    }
+
     protected function processTarget(GatewayConnector $connector): AppInstanceProcessTarget|NodeProcessTarget|null
     {
-        $instance = $this->option('instance');
-        $node = $this->option('node');
-        $hasInstance = is_string($instance) && $instance !== '';
-        $hasNode = is_string($node) && $node !== '';
+        $target = $this->exclusiveProcessTarget();
 
-        if ($hasInstance && $hasNode) {
-            $this->renderGatewayFailure(
-                'process.target_invalid',
-                'Use either --instance or --node, not both.',
-            );
-
+        if ($target === null || $target === 'app') {
             return null;
         }
 
-        if (! $hasInstance && ! $hasNode) {
-            $this->renderGatewayFailure(
-                'process.target_invalid',
-                'The --instance or --node option is required.',
-            );
-
-            return null;
-        }
-
-        if ($hasInstance) {
-            $id = filter_var($instance, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($target === 'instance') {
+            $id = filter_var($this->option('instance'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
             if (! is_int($id)) {
                 $this->renderGatewayFailure(
@@ -50,12 +69,8 @@ abstract class TargetedProcessCommand extends ProcessCommand
             return new AppInstanceProcessTarget($id);
         }
 
-        $nodeId = $this->resolveNodeId($connector, $node);
+        $nodeId = $this->resolveNodeId($connector, $this->option('node'));
 
-        if ($nodeId === null) {
-            return null;
-        }
-
-        return new NodeProcessTarget($nodeId);
+        return $nodeId === null ? null : new NodeProcessTarget($nodeId);
     }
 }

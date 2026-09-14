@@ -226,6 +226,7 @@ it('defines the complete HTTP-only Schedule operator surface', function (): void
         'schedule:create',
         'schedule:list',
         'schedule:show',
+        'schedule:update',
         'schedule:run',
         'schedule:logs',
         'schedule:destroy',
@@ -245,7 +246,7 @@ it('defines the complete HTTP-only Schedule operator surface', function (): void
         ->toBeString()
         ->toContain(...$scheduleCommands)
         ->toContain('typed PHP SDK requests')
-        ->toContain('exactly one positive `--node` or `--instance` ID')
+        ->toContain('exactly one of `--app`, `--node`, or `--instance`')
         ->toContain('never discovers or prompts for a target')
         ->toContain('Completion remains an internal Node-authenticated API and SDK transport')
         ->not->toContain('schedule:complete` command', 'generic Schedule executor');

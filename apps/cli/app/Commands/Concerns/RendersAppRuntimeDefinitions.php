@@ -2,17 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Apps;
+namespace App\Commands\Concerns;
 
-use App\Commands\GatewayCommand;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
 
-abstract class AppRuntimeDefinitionCommand extends GatewayCommand
+trait RendersAppRuntimeDefinitions
 {
-    abstract protected function definitionLabel(): string;
-
-    protected function renderDefinition(AppRuntimeDefinitionResponse $definition): int
+    protected function renderDefinition(AppRuntimeDefinitionResponse $definition, string $label): int
     {
         if ($this->option('json') === true) {
             $this->writeJson($definition->toArray());
@@ -20,7 +17,7 @@ abstract class AppRuntimeDefinitionCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("{$this->definitionLabel()} definition [{$definition->name}] ({$definition->id})");
+        $this->info("{$label} definition [{$definition->name}] ({$definition->id})");
         $this->line("App ID: {$definition->appId}");
         $this->line('Environments: '.implode(', ', $definition->environments));
         $this->line('Specification: '.json_encode($definition->spec, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));

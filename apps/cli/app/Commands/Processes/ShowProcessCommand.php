@@ -2,47 +2,46 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Schedules;
+namespace App\Commands\Processes;
 
 use App\Commands\Concerns\RendersAppRuntimeDefinitions;
 use App\Commands\Concerns\SelectsAppDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Apps\ShowScheduleDefinitionRequest;
-use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
+use Orbit\Sdk\Requests\Apps\ShowProcessDefinitionRequest;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 
-final class ShowScheduleCommand extends ScheduleItemCommand
+final class ShowProcessCommand extends ProcessCommand
 {
     use RendersAppRuntimeDefinitions;
     use SelectsAppDefinitionTarget;
 
     #[\Override]
-    protected $signature = 'schedule:show
-        {schedule : Schedule UUID or definition name}
+    protected $signature = 'process:show
+        {name : Process definition name}
         {--app= : Numeric App ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show one authorized Schedule or App Schedule definition.';
+    protected $description = 'Show one App process definition.';
 
-    #[\Override]
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
         $appId = $this->appIdOption();
+        $name = $this->stringArgument('name', 'Process definition name', 'process.name_required');
 
         if ($appId === false) {
             return self::FAILURE;
         }
 
         if ($appId === null) {
-            return parent::handle($repository, $connectors);
+            return $this->renderGatewayFailure(
+                'process.target_invalid',
+                'The --app option is required.',
+            );
         }
-
-        $name = $this->stringArgument('schedule', 'Schedule definition name', 'schedule.name_required');
 
         if ($name === null) {
             return self::FAILURE;
@@ -56,17 +55,12 @@ final class ShowScheduleCommand extends ScheduleItemCommand
 
         $response = $this->send(
             $connector,
-            new ShowScheduleDefinitionRequest($appId, $name),
+            new ShowProcessDefinitionRequest($appId, $name),
             AppRuntimeDefinitionResponse::class,
         );
 
         return $response instanceof AppRuntimeDefinitionResponse
-            ? $this->renderDefinition($response, 'Schedule')
+            ? $this->renderDefinition($response, 'Process')
             : self::FAILURE;
-    }
-
-    protected function request(string $scheduleId): GatewayRequest
-    {
-        return new ShowScheduleRequest($scheduleId);
     }
 }
