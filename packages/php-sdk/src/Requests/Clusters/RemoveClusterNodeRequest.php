@@ -11,7 +11,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-final class ClearClusterRouterRequest extends GatewayRequest implements HasBody
+final class RemoveClusterNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
@@ -20,12 +20,13 @@ final class ClearClusterRouterRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly int $clusterId,
+        private readonly int $nodeId,
         private readonly bool $force,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/clusters/{$this->clusterId}/router";
+        return "/api/v1/clusters/{$this->clusterId}/nodes/{$this->nodeId}";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ClusterResponse

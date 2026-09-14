@@ -68,7 +68,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
         Route::get('clusters', [ClustersController::class, 'index'])->name('cluster:list');
-        Route::post('clusters', [ClustersController::class, 'store'])->name('cluster:new');
+        Route::post('clusters', [ClustersController::class, 'store'])->name('cluster:create');
         Route::get('clusters/{cluster}', [ClustersController::class, 'show'])
             ->whereNumber('cluster')
             ->name('cluster:show');
@@ -77,22 +77,22 @@ Route::prefix('v1')->group(function (): void {
             ->name('cluster:update');
         Route::delete('clusters/{cluster}', [ClustersController::class, 'destroy'])
             ->whereNumber('cluster')
-            ->name('cluster:remove');
+            ->name('cluster:destroy');
         Route::put('clusters/{cluster}/nodes/{node}', [ClustersController::class, 'attach'])
             ->whereNumber('cluster')
             ->whereNumber('node')
-            ->name('cluster:node:attach');
+            ->name('cluster:node:add');
         Route::delete('clusters/{cluster}/nodes/{node}', [ClustersController::class, 'detach'])
             ->whereNumber('cluster')
             ->whereNumber('node')
-            ->name('cluster:node:detach');
+            ->name('cluster:node:remove');
         Route::put('clusters/{cluster}/router/{node}', [ClustersController::class, 'setRouter'])
             ->whereNumber('cluster')
             ->whereNumber('node')
             ->name('cluster:router:set');
         Route::delete('clusters/{cluster}/router', [ClustersController::class, 'clearRouter'])
             ->whereNumber('cluster')
-            ->name('cluster:router:clear');
+            ->name('cluster:router:unset');
         Route::post('doctor', [DoctorRunsController::class, 'store'])
             ->name('doctor:run');
         Route::get('nodes/{node}', [NodesController::class, 'show'])
@@ -141,8 +141,8 @@ Route::prefix('v1')->group(function (): void {
             ->name('firewall:remove');
         Route::get('apps', [AppsController::class, 'index'])->name('app:list');
         Route::get('apps/{app}', [AppsController::class, 'show'])->name('app:show');
-        Route::post('apps', [AppsController::class, 'store'])->name('app:new');
-        Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:remove');
+        Route::post('apps', [AppsController::class, 'store'])->name('app:create');
+        Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:destroy');
         Route::prefix('apps/{app}/process-definitions')->scopeBindings()->group(function (): void {
             Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
                 ->name('process-definition:list');
@@ -231,7 +231,7 @@ Route::prefix('v1')->group(function (): void {
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database-connection:detach');
         Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
-        Route::post('routes', [RoutesController::class, 'store'])->name('route:new');
+        Route::post('routes', [RoutesController::class, 'store'])->name('route:create');
         Route::get('routes/{route}', [RoutesController::class, 'show'])
             ->whereNumber('route')
             ->name('route:show');
@@ -243,10 +243,10 @@ Route::prefix('v1')->group(function (): void {
             ->name('route:target:set');
         Route::delete('routes/{route}/target', [RoutesController::class, 'clearTarget'])
             ->whereNumber('route')
-            ->name('route:target:clear');
+            ->name('route:target:unset');
         Route::delete('routes/{route}', [RoutesController::class, 'destroy'])
             ->whereNumber('route')
-            ->name('route:remove');
+            ->name('route:destroy');
         Route::get('workspaces', [WorkspacesController::class, 'index'])->name('workspace:list');
         Route::get('workspaces/{workspace}', [WorkspacesController::class, 'show'])
             ->name('workspace:show');

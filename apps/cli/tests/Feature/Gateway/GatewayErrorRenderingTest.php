@@ -93,7 +93,7 @@ it('renders validation field details in the json envelope', function (): void {
         ],
     ];
 
-    $exitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $exitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -112,7 +112,7 @@ it('prints each validation field message on its own line after the error message
         ]),
     ]);
 
-    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -135,11 +135,11 @@ it('renders a validation failure without details as before in both modes', funct
     ];
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $jsonExitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonExitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $humanExitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $humanExitCode = Artisan::call('app:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
     expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
@@ -169,7 +169,7 @@ it('keeps non-validation failure details out of human output', function (): void
         ),
     ]);
 
-    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -196,11 +196,11 @@ it('never prints secret-looking validation details in either mode', function ():
     ];
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $jsonExitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonExitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $humanExitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $humanExitCode = Artisan::call('app:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
     expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
@@ -246,7 +246,7 @@ it('bounds validation details to sanitized field messages', function (): void {
         ],
     ];
 
-    $exitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $exitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -266,7 +266,7 @@ it('caps validation details at fifty field messages', function (): void {
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
 
-    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
     $lines = explode("\n", $output);
 
@@ -550,13 +550,13 @@ it('renders local validation failures through the exact json boundary', function
         'Activity ID must be a positive integer.',
     ],
     'string argument helper' => [
-        'app:new',
+        'app:create',
         ['slug' => '', 'repository' => 'https://example.test/repository.git'],
         'app.slug_required',
         'App slug is required.',
     ],
     'app slug' => [
-        'app:new',
+        'app:create',
         ['slug' => "validation\nsecret", 'repository' => 'https://example.test/repository.git'],
         'app.slug_invalid',
         'App slug is invalid.',
@@ -781,7 +781,7 @@ it('renders console input failures through the exact json boundary', function (a
     ],
     'app remove unknown force option' => [
         [
-            'command' => 'app:remove',
+            'command' => 'app:destroy',
             'app' => '1',
             '--json' => true,
             '--force' => true,

@@ -1,14 +1,15 @@
 <?php
 
 declare(strict_types=1);
+
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
+use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
@@ -288,7 +289,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ListAppInstanceReleasesRequest::class)
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
-            ->toContain(ClearClusterRouterRequest::class);
+            ->toContain(UnsetClusterRouterRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,

@@ -87,7 +87,9 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
     expect(Route::query()->count())
         ->toBe(1)
         ->and(Activity::query()->where('request_id', $requestId)->firstOrFail()->subject_type)
-        ->toBe(Route::class);
+        ->toBe(Route::class)
+        ->and(Activity::query()->where('request_id', $requestId)->firstOrFail()->command)
+        ->toBe('route:create');
 
     $this->getJson('/api/v1/routes')->assertOk()->assertJsonPath('data.0.id', $routeId);
     $this->getJson("/api/v1/routes/{$routeId}")->assertOk()->assertJsonPath('data.id', $routeId);
@@ -102,11 +104,28 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
         ->assertJsonPath('data.status', 'pending');
 
     $this->target->update(['status' => AppInstanceState::Reserved]);
-    $this->deleteJson("/api/v1/routes/{$routeId}/target")->assertOk()->assertJsonPath('data.target', null);
-    expect(Route::query()->sole()->node_id)->toBe($this->node->id);
+    $unsetRequestId = (string) Str::uuid();
+    $this
+        ->withHeader('X-Orbit-Request-Id', $unsetRequestId)
+        ->deleteJson("/api/v1/routes/{$routeId}/target")
+        ->assertOk()
+        ->assertJsonPath('data.target', null);
+    expect(Route::query()->sole()->node_id)
+        ->toBe($this->node->id)
+        ->and(Activity::query()->where('request_id', $unsetRequestId)->sole()->command)
+        ->toBe('route:target:unset');
 
-    $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
-    expect(Route::query()->count())->toBe(0)->and(RouteTarget::query()->count())->toBe(0);
+    $destroyRequestId = (string) Str::uuid();
+    $this
+        ->withHeader('X-Orbit-Request-Id', $destroyRequestId)
+        ->deleteJson("/api/v1/routes/{$routeId}")
+        ->assertOk();
+    expect(Route::query()->count())
+        ->toBe(0)
+        ->and(RouteTarget::query()->count())
+        ->toBe(0)
+        ->and(Activity::query()->where('request_id', $destroyRequestId)->sole()->command)
+        ->toBe('route:destroy');
 });
 
 it('creates targetless exclusive Node and active Cluster scopes', function (): void {

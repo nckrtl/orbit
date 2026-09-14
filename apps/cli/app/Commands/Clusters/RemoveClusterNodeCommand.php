@@ -6,25 +6,30 @@ namespace App\Commands\Clusters;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
+use Orbit\Sdk\Requests\Clusters\RemoveClusterNodeRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 
-final class ClearClusterRouterCommand extends ClusterCommand
+final class RemoveClusterNodeCommand extends ClusterCommand
 {
     #[\Override]
-    protected $signature = 'cluster:router:clear
+    protected $signature = 'cluster:node:remove
         {cluster : Numeric Cluster ID}
+        {node : Numeric Node ID}
         {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Clear the Router from an inactive Cluster.';
+    protected $description = 'Detach a Node from a Cluster.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $clusterId = $this->clusterId();
-
         if ($clusterId === null) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->nodeId();
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 
@@ -36,13 +41,13 @@ final class ClearClusterRouterCommand extends ClusterCommand
 
         $existing = $this->existingCluster($connector, $clusterId);
 
-        if ($existing === null || ! $this->confirmed('Router clearing')) {
+        if ($existing === null || ! $this->confirmed('Node detachment')) {
             return self::FAILURE;
         }
 
         $cluster = $this->send(
             $connector,
-            new ClearClusterRouterRequest($clusterId, true),
+            new RemoveClusterNodeRequest($clusterId, $nodeId, true),
             ClusterResponse::class,
         );
 
@@ -50,6 +55,6 @@ final class ClearClusterRouterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        return $this->renderCluster($cluster, "Router cleared from Cluster [{$cluster->name}].");
+        return $this->renderCluster($cluster, "Node #{$nodeId} detached from Cluster [{$cluster->name}].");
     }
 }

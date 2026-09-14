@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
-use Orbit\Sdk\Requests\Apps\RemoveAppRequest;
 use Orbit\Sdk\Requests\Apps\ShowAppRequest;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
@@ -117,14 +117,14 @@ describe('app requests', function (): void {
 
     it('removes an app by numeric ID and returns its deleted snapshot', function (): void {
         $mockClient = new MockClient([
-            RemoveAppRequest::class => MockResponse::make([
+            DestroyAppRequest::class => MockResponse::make([
                 'data' => app_gateway_data(),
                 'meta' => ['request_id' => orbit_request_id()],
             ]),
         ]);
         $connector = app_gateway_connector($mockClient);
 
-        $response = $connector->send(new RemoveAppRequest(3))->dto();
+        $response = $connector->send(new DestroyAppRequest(3))->dto();
         $request = $mockClient->getLastRequest();
 
         expect($request?->getMethod())
@@ -135,6 +135,10 @@ describe('app requests', function (): void {
             ->toBeInstanceOf(AppResponse::class)
             ->and($response->id)
             ->toBe(3);
+    });
+
+    it('does not keep the replaced App request class name', function (): void {
+        expect(class_exists('Orbit\\Sdk\\Requests\\Apps\\RemoveAppRequest'))->toBeFalse();
     });
 });
 
