@@ -15,7 +15,7 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Replacement | Optional `replaces_route_id`, `replaced_by_route_id`, and `replacement_step` that expose a reserved, activating, retiring, or failed replacement pair. |
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
 | Publication intent | The requested publication state, retained even when the Route has no target. |
-| Status | Pending during setup or replacement reservation, active once the private traffic path is authoritative, activating after cutover, retiring while the old Route waits for cleanup, and failed when replacement cleanup is incomplete. Failure details identify the step to retry. |
+| Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
 | Configured target | The API, PHP SDK, and CLI accept zero or one App instance target. Generated and development Routes permit at most one target. |
 
@@ -162,7 +162,11 @@ Deploy the shared publication owner by stopping admission of new Gateway mutatio
 
 ### Change an explicit private domain
 
-The Gateway can change a development or production Route domain when the Route is active, explicit, and private. A shared production Route keeps its complete ordered target pool on one replacement. This is the operation that replaces a production clone's preview domain with its intended private domain. The Gateway reserves a unique pending replacement Route for the same App and complete target set while the existing Route stays the sole authoritative `active` Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes Route records, environment configuration, runtime projections, or traffic. When an eligible target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing` and names recovery through the same creation request with `recover_source_profile`. The [applications domain](/domains/applications#provision-the-application-endpoint) owns that recovery.
+The Gateway can change a development or production Route domain when the Route is active, explicit, and private. A shared production Route keeps its complete ordered target pool on one replacement. This is the operation that replaces a production clone's preview domain with its intended private domain.
+
+The Gateway reserves a unique pending replacement Route for the same App and complete target set while the existing Route stays the sole authoritative `active` Route. It refuses an invalid, occupied, or conflicting domain before it changes Route records, environment configuration, runtime projections, or traffic.
+
+When an eligible target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing` and names recovery through the same creation request with `recover_source_profile`. The [applications domain](/domains/applications#provision-the-application-endpoint) owns that recovery.
 
 The Gateway prepares the replacement workload certificate and Caddy site before it prepares the Router certificate, workload firewall policy, and Router Caddy site. For a detected development Laravel source, it aligns `APP_URL` in the environment file and cached configuration without running Composer, Artisan, or application bootstrap. A non-Laravel development source receives no application configuration change.
 
