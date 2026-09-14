@@ -37,7 +37,6 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\HerdrSession;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -862,38 +861,6 @@ it('returns 409 when the target still has any role assignment', function (RoleNa
     static fn (RoleName $role): bool => $role !== RoleName::Router,
 )));
 
-it('returns 409 when the target still owns an instance', function (): void {
-    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
-    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
-    $caller->accessibleNodes()->attach($target);
-    $app = OrbitApp::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'https://github.com/acme/site.git',
-    ]);
-    Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $target->id,
-        'name' => 'production',
-        'environment' => 'production',
-        'checkout_path' => '/var/www/acme/production',
-        'domain' => 'acme.example.com',
-        'certificate_mode' => 'acme',
-    ]);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'node.has_instances');
-
-    expect($target->fresh())
-        ->not
-        ->toBeNull()
-        ->and($this->dns->convergences)
-        ->toBe(0);
-});
-
 it('returns 409 when the target still owns a firewall rule', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
@@ -966,8 +933,6 @@ it('removes an unreachable node holding a role in one command', function (): voi
         ->and($target->fresh())
         ->toBeNull()
         ->and(NodeRole::query()->where('node_id', $target->id)->exists())
-        ->toBeFalse()
-        ->and(Instance::query()->where('node_id', $target->id)->exists())
         ->toBeFalse()
         ->and($this->peers->removed)
         ->toBe([$target->id])
@@ -1091,9 +1056,8 @@ it('refuses to shed roles from an unreachable node without consent', function ()
     remove_node_offline_probe($target);
     remove_node_role_fixture($target, RoleName::AppProd);
 
-    // Offline removal deletes the node's instances, workspaces and processes.
-    // Before it existed this call was refused outright, so the widened blast
-    // radius must not be reachable on the claim alone.
+    // Offline removal still requires force. The claim alone must not widen
+    // the blast radius.
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => true])
@@ -1109,8 +1073,6 @@ it('refuses to shed roles from an unreachable node without consent', function ()
         ->toBeNull()
         ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
         ->toBe(LifecycleStatus::Active)
-        ->and(Instance::query()->where('node_id', $target->id)->exists())
-        ->toBeTrue()
         ->and($this->dns->convergences)
         ->toBe(0);
 });
@@ -1146,21 +1108,6 @@ function remove_node_role_fixture(Node $node, RoleName $role): void
     NodeRole::query()->create([
         'node_id' => $node->id,
         'role' => $role,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $app = OrbitApp::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'https://github.com/acme/site.git',
-    ]);
-    Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'production',
-        'environment' => 'production',
-        'checkout_path' => '/var/www/acme/production',
-        'domain' => 'acme.example.com',
-        'certificate_mode' => 'acme',
         'status' => LifecycleStatus::Active,
     ]);
 }

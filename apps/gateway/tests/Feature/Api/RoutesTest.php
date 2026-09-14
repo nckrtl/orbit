@@ -2,10 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Clusters\AttachClusterNodeAction;
-use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\CreateRouteAction;
-use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
@@ -14,7 +11,6 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
@@ -24,11 +20,9 @@ use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
-use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -329,70 +323,6 @@ it('leaves the complete Route unchanged for invalid target proposals', function 
         'app_instance_id' => $collision->id,
     ])->assertConflict();
     expect($route->fresh(['targets'])->toArray())->toBe($before);
-});
-
-it('keeps legacy Instance and Workspace host identity unchanged through Route operations', function (): void {
-    $legacy = Instance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'legacy',
-        'environment' => 'development',
-        'checkout_path' => '/srv/orbit/legacy/acme',
-        'domain' => 'legacy.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $workspace = Workspace::query()->create([
-        'instance_id' => $legacy->id,
-        'name' => 'preview',
-        'branch' => 'preview',
-        'checkout_path' => '/srv/orbit/legacy/acme/preview',
-        'domain' => 'preview.example.test',
-        'status' => LifecycleStatus::Active,
-    ]);
-    $legacyBefore = $legacy->only(['domain', 'certificate_mode']);
-    $workspaceBefore = $workspace->only(['domain']);
-
-    $route = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'route.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated();
-    $routeId = $route->json('data.id');
-    $routeId = $this
-        ->patchJson("/api/v1/routes/{$routeId}", ['domain' => 'changed.example.test'])
-        ->assertOk()
-        ->json('data.id');
-    $this->putJson("/api/v1/routes/{$routeId}/target", ['app_instance_id' => $this->target->id])->assertOk();
-    $this->target->update(['status' => AppInstanceState::Reserved]);
-    $this->deleteJson("/api/v1/routes/{$routeId}/target")->assertOk();
-
-    $cluster = Cluster::query()->create(['name' => 'legacy-proof', 'state' => ClusterState::Inactive]);
-    $router = route_node('legacy-router', '10.44.0.7', null);
-    $router->update(['cluster_id' => $cluster->id]);
-    $router
-        ->roles()
-        ->create([
-            'cluster_id' => $cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Active,
-        ]);
-    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
-    app(UpdateClusterAction::class)->execute($cluster, new UpdateClusterData(
-        nameProvided: false,
-        name: null,
-        tldProvided: false,
-        tld: null,
-        stateProvided: true,
-        state: ClusterState::Active,
-    ));
-    $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
-
-    expect($legacy->refresh()->only(['domain', 'certificate_mode']))
-        ->toBe($legacyBefore)
-        ->and($workspace->refresh()->only(['domain']))
-        ->toBe($workspaceBefore);
 });
 
 it('rejects malformed input, caller-owned fields, arrays, and conflicting retries unchanged', function (): void {

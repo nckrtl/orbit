@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Tool;
-use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -179,7 +177,7 @@ describe('activity access and redaction', function (): void {
         expect($response->getContent())->not->toContain($credential, $invalidKeyCredential);
     });
 
-    it('keeps historical leftover instance and workspace subjects on read', function (): void {
+    it('does not expose leftover instance or workspace subjects on read', function (): void {
         $legacy = activity_api_record(
             requestId: '44444444-4444-4444-8444-444444444444',
             command: 'instance:show',
@@ -187,7 +185,7 @@ describe('activity access and redaction', function (): void {
             properties: [],
         );
         $legacy->update([
-            'subject_type' => Instance::class,
+            'subject_type' => 'App\\Models\\Instance',
             'subject_id' => 9,
         ]);
         $workspace = activity_api_record(
@@ -197,24 +195,19 @@ describe('activity access and redaction', function (): void {
             properties: [],
         );
         $workspace->update([
-            'subject_type' => Workspace::class,
+            'subject_type' => 'App\\Models\\Workspace',
             'subject_id' => 8,
         ]);
-
-        expect(DB::table('activity_log')->where('id', $legacy->id)->value('subject_type'))
-            ->toBe(Instance::class)
-            ->and(DB::table('activity_log')->where('id', $workspace->id)->value('subject_type'))
-            ->toBe(Workspace::class);
 
         $this
             ->getJson("/api/v1/activities/{$legacy->id}")
             ->assertOk()
-            ->assertJsonPath('data.subject_type', 'instance')
+            ->assertJsonPath('data.subject_type', null)
             ->assertJsonPath('data.subject_id', 9);
         $this
             ->getJson("/api/v1/activities/{$workspace->id}")
             ->assertOk()
-            ->assertJsonPath('data.subject_type', 'workspace')
+            ->assertJsonPath('data.subject_type', null)
             ->assertJsonPath('data.subject_id', 8);
     });
 
