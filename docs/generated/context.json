@@ -1851,6 +1851,35 @@
             ]
         },
         {
+            "path": "docs/reference/cli-command-vocabulary.md",
+            "title": "CLI command vocabulary",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Database",
+                "Database connection",
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Route",
+                "Router",
+                "Schedule",
+                "Tool",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0071"
+            ]
+        },
+        {
             "path": "docs/reference/database-connections.md",
             "title": "Database connections",
             "kind": "reference",
