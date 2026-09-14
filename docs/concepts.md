@@ -11,8 +11,9 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Web root** — The directory served by an App instance, with a relative path inherited from the App or overridden per instance. Production resolves it inside the selected release. See [Production release layout](/reference/deployments).
 - **Legacy Instance** — A leftover application row awaiting schema removal. Doctor, runtime publication, overlap checks, and App instance commands do not use it.
 - **Workspace** — A leftover Git worktree row owned by a Legacy Instance. Orbit exposes no Workspace command. Doctor does not inspect it.
-- **Route** — A hostname owned by an App. It sends traffic to App instances through one Node or active Cluster. Orbit records whether the hostname is generated or explicit. See [Routes](/reference/routes).
-- **Development-server endpoint** — The reserved path `/__orbit/vite` on an App instance Route hostname that carries live frontend assets and hot module replacement through Cluster HTTPS to the owning Node. See [Routes](/reference/routes#development-server-endpoint).
+- **Route** — An App-owned domain that sends traffic to App instances through one Node or active Cluster. See [ADR 0064](/decisions/0064-name-application-endpoints-as-domains) and [Routes](/reference/routes).
+- **Route replacement** — The Route Orbit creates for a domain change. See [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
+- **Development-server endpoint** — The reserved path `/__orbit/vite` on an App instance Route domain that carries live frontend assets and hot module replacement through Cluster HTTPS to the owning Node. See [Routes](/reference/routes#development-server-endpoint).
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).
 - **Database** — A Node role that installs and manages Docker for shared database processes. See [Database role](/reference/database-role).

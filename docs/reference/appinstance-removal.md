@@ -67,12 +67,12 @@ After preflight succeeds, the Gateway records one immutable member for a worktre
 | Step | Result |
 | --- | --- |
 | `source_preparation` | Record verified development source identity or the production content-retention boundary without deleting content. |
-| `route_target_clear` | Stop the Route from forwarding to the App instance, republish an ordered surviving production set or delete the final-target Route after managed projection cleanup, and release a deleted Route's hostname. |
+| `route_target_clear` | Stop the Route from forwarding to the App instance, republish an ordered surviving production set or delete the final-target Route after managed projection cleanup, and release a deleted Route's domain. |
 | `source_finalization` | Delete the exact recorded development checkout or retain production application content, store matching completion evidence, and remove the App slug grouping directory when that directory is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule with its exact artifacts and record, then remove App instance runtime artifacts after Route traffic stops. |
 | `row_deletion` | Delete the member's App instance row. The final member's transaction also marks the operation completed. |
 
-Development source finalization never starts before that member's Route deletion releases the hostname. The Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections before it deletes the Route. A projection failure keeps the App instance `removing` and keeps the unfinished checkpoint available for retry. The common checkout stays usable while Orbit removes its worktree members and their Git administration entries. Orbit deletes the common checkout only after every accepted worktree completes.
+Development source finalization never starts before that member's Route deletion releases the domain. The Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections before it deletes the Route. A projection failure keeps the App instance `removing` and keeps the unfinished checkpoint available for retry. The common checkout stays usable while Orbit removes its worktree members and their Git administration entries. Orbit deletes the common checkout only after every accepted worktree completes.
 
 After that deletion leaves an App slug grouping directory empty, the Gateway removes that directory. It leaves a grouping directory that still has entries, the apps root, and unrelated paths unchanged.
 
@@ -99,7 +99,7 @@ The API, PHP SDK, CLI human output, CLI JSON output, and activity use one bounde
 | `total`, `completed`, `remaining` | Immutable fixed-set member counts; completed counts row deletion, and remaining equals total minus completed. |
 | `failed_step`, `error_code` | Null outside failure; on failure, the unfinished step and a bounded safe error token or null. |
 
-Repeating the same removal request resumes the first unfinished member and step. The Gateway refuses a changed force value or a request owned by another operation. Before further source deletion, it revalidates every unfinished source under the same Node lock. A retry after Route deletion continues without recreating the Route or reclaiming its hostname.
+Repeating the same removal request resumes the first unfinished member and step. The Gateway refuses a changed force value or a request owned by another operation. Before further source deletion, it revalidates every unfinished source under the same Node lock. A retry after Route deletion continues without recreating the Route or reclaiming its domain.
 
 Process and Schedule cleanup retry only records and exact-owned runtime artifacts that remain unfinished. A cleanup failure keeps the App instance and its removal progress, reports no completed removal, and permits the same request to continue after the Node or artifact conflict is repaired. Retry leaves Node-owned Schedules, other App instances' children, and unrecognized artifacts unchanged. If final cascade completion cannot commit, the same transaction restores the final member checkpoint and requested checkout row, so the identical public request remains model-bindable.
 

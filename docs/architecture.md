@@ -18,7 +18,7 @@ Human or AI agent
   Managed Nodes
 ```
 
-Web traffic follows a separate path from CLI control traffic. [Routes](/reference/routes) explains how a hostname reaches its App instance target through the Node, Router, and Ingress roles.
+Web traffic follows a separate path from CLI control traffic. [Routes](/reference/routes) explains how a domain reaches its App instance target through the Node, Router, and Ingress roles.
 
 ## CLI
 
@@ -36,13 +36,13 @@ The Gateway manages Nodes over SSH. After setup, WireGuard provides the private 
 
 ## Applications and traffic
 
-An App stores shared source defaults and owns Routes. An App instance is one copy of that App on a Node, used for development or production. A Route gives it a hostname. Related Nodes can share a Cluster, but this is optional.
+An App stores shared source defaults and owns Routes. An App instance is one copy of that App on a Node, used for development or production. A Route gives it a domain. Related Nodes can share a Cluster, but this is optional.
 
 A development App instance owns one Git checkout or worktree. A standalone production App instance has a dedicated user, home, deployment branch, and application steps. Orbit prepares and activates releases; the operator or agent starts deployments and chooses application commands. The Gateway selects any required PHP runtime and prepares one Route per active App instance.
 
 When an App instance is idle on an active `app-dev` Node, it can [hibernate](/reference/app-dev-runtime-hibernation). Orbit stops processes configured to run unless they have keep-alive enabled. After a longer idle period, it removes dependencies that can be rebuilt from lockfiles. The next HTTP request restores those dependencies and starts the group configured to run.
 
-See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and hostname changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [App instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
+See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and domain changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [App instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
 
 App instance commands manage App instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use App instances and Routes only. Doctor inspects App instances and Routes, not leftover Legacy Instance or Workspace rows.
 
