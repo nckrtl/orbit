@@ -59,14 +59,12 @@ A later `node:add` of a roleless Node therefore connects over public SSH again a
 
 ## Remove a Node
 
-`orbit node:remove <node> [--offline] [--force]` deletes a Node record and its Gateway-side projections, and leaves the machine reachable over its recorded public SSH target so an operator can provision it again or reach it for recovery. The Gateway refuses the request while the Node still owns AppInstances, instances, Orbit firewall rules, or roles, and it never removes a Node with the Gateway or VPN role or the Node that sends the request.
+`orbit node:remove <node> [--offline] [--force]` deletes a Node record and its Gateway-side projections, restores the public SSH recovery rule, and leaves the machine reachable over its recorded public SSH target so an operator can provision it again or reach it for recovery. The Gateway refuses the request while the Node still owns AppInstances, instances, Orbit firewall rules, roles, Processes, or Herdr sessions, and it never removes a Node with the Gateway or VPN role or the Node that sends the request. The machine keeps the units, containers, and checkouts the operator left on it. [ADR 0072](../decisions/0072-add-and-remove-nodes-without-changing-the-machine.md) owns that boundary.
 
 The online removal runs these steps in order and reports success only after the last step completes.
 
 | Step | Observable result |
 | --- | --- |
-| Herdr sessions | The Gateway retracts each owned private observer and deletes those session records. |
-| Node Processes | The Gateway stops and removes every Process owned by the Node, then deletes those records. |
 | Grafana access | The Gateway revokes the Node's Grafana access. |
 | Metrics exporter | The Gateway retires the Node's Metrics exporter state and converges the remaining fleet. |
 | Public SSH recovery | The Gateway restores the exact `orbit:public-ssh-recovery` UFW rule on the machine over WireGuard without enabling UFW. |
@@ -84,9 +82,7 @@ A failed step rolls the Gateway back and keeps the Node record active. Each fail
 
 | Code | Step | Result |
 | --- | --- | --- |
-| `node.has_app_instances`, `node.has_instances`, `node.has_firewall_rules`, `node.has_roles` | guard | The Gateway changes nothing. |
-| `node.herdr_cleanup_failed` | `herdr-cleanup` | The Node record stays active. Retracted observers stay retracted, and unfinished Herdr session cleanup remains for retry. |
-| `node.process_cleanup_failed` | `process-cleanup` | The Node record stays active. Removed Processes stay removed, and unfinished Process cleanup remains for retry. |
+| `node.has_app_instances`, `node.has_instances`, `node.has_firewall_rules`, `node.has_roles`, `node.has_processes`, `node.has_herdr_sessions` | guard | The Gateway changes nothing. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | guard | The Gateway changes nothing. |
 | `node.confirmation_required` | guard | The Gateway changes nothing; `--offline` needs `--force`. |
 | `node.provisioning_busy` | lifecycle owner | The Gateway changes nothing; another lifecycle operation holds the Node name. |

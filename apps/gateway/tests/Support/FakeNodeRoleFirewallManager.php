@@ -22,20 +22,36 @@ final class FakeNodeRoleFirewallManager implements NodeRoleFirewallManager
     /** @var list<string> */
     public array $events = [];
 
+    /** @var list<string> */
+    public array $commands = [];
+
     public ?Throwable $restoreFailure = null;
 
     public ?Closure $onRestore = null;
 
-    public function convergeBase(Node $node, string $managedUser): void {}
+    public function convergeBase(Node $node, string $managedUser): void
+    {
+        $this->commands[] = 'converge-base';
+    }
 
-    public function converge(Node $node, RoleName $role, string $managedUser): void {}
+    public function converge(Node $node, RoleName $role, string $managedUser): void
+    {
+        $this->commands[] = 'converge:'.$role->value;
+    }
 
-    public function remove(Node $node, RoleName $role, string $managedUser): void {}
+    public function remove(Node $node, RoleName $role, string $managedUser): void
+    {
+        $this->commands[] = 'remove:'.$role->value;
+    }
 
-    public function trustWireGuardMembers(Node $node, string $managedUser): void {}
+    public function trustWireGuardMembers(Node $node, string $managedUser): void
+    {
+        $this->commands[] = 'trust-wireguard';
+    }
 
     public function restorePublicSsh(Node $node, string $managedUser): void
     {
+        $this->commands[] = 'firewall-recovery';
         $this->restored[] = $node->id;
         $this->restoredUsers[] = $managedUser;
         $this->events[] = 'firewall-recovery:'.DB::transactionLevel();

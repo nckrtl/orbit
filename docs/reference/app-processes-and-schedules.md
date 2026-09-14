@@ -169,7 +169,7 @@ Doctor reads each recorded AppInstance Process and Node Process on the selected 
 
 When an operator removes an AppInstance, the Gateway runs source preflight before it changes any Process. Once removal accepts its fixed AppInstance set, no new Process can attach to a member. The removal then stops and removes every owned running, stopped, failed, or removing Process and its persistent exact-owned artifacts before it reports success. A cleanup failure keeps the AppInstance and unfinished Process cleanup resumable. Node-owned Processes stay in place. The [AppInstance removal reference](appinstance-removal.md) describes the order and retry boundary.
 
-When an operator removes a Node, the Gateway stops and removes every Node-owned Process before it tears down WireGuard. A cleanup failure keeps the Node and unfinished Process cleanup resumable. Offline decommissioning of an unreachable Node deletes those Process records without remote runtime cleanup. The [Node removal reference](node-provisioning.md#remove-a-node) describes that order.
+When an operator removes a Node, the Gateway refuses the request while the Node owns a Process. Offline decommissioning of an unreachable Node deletes those Process records without remote runtime cleanup. The [Node removal reference](node-provisioning.md#remove-a-node) describes that guard and that path.
 
 The AppInstance Process copy is independent. Changing or removing it does not change an App-owned definition, and creating, replacing, or deleting an App definition does not reconcile an existing copy or its runtime state.
 

@@ -2001,7 +2001,9 @@
                 "Tool",
                 "Tool Manager"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0072"
+            ]
         },
         {
             "path": "docs/reference/node-retarget.md",
