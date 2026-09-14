@@ -1,0 +1,14 @@
+{
+  "id": "ORB-339",
+  "uuid": "949a364c-dab9-4331-bf20-ef0dcc5178eb",
+  "title": "Per-process hibernation keep-alive opt-in",
+  "url": "https://linear.app/nckrtl/issue/ORB-339/per-process-hibernation-keep-alive-opt-in",
+  "status": "In Progress",
+  "parent": "ORB-337",
+  "labels": ["docs", "apps/gateway", "apps/cli", "Feature"],
+  "incus": false,
+  "flow": "discovery",
+  "acceptance": [
+    "Opt-in Process remains running across idle hibernation; others stop and wake on traffic; documented contract."
+  ]
+}
