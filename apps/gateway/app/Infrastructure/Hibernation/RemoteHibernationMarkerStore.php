@@ -25,30 +25,19 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
     public function markAwake(Node $node, string $key): void
     {
         $path = RuntimeHibernation::awakePath($key);
-        $this->run($node, 'prepare-awake-dir', [
-            'sudo',
-            'install',
-            '-d',
-            '-o',
-            'root',
-            '-g',
-            'caddy',
-            '-m',
-            '0755',
-            RuntimeHibernation::MarkerDirectory,
-        ]);
-        $this->run($node, 'prepare-log-dir', [
-            'sudo',
-            'install',
-            '-d',
-            '-o',
-            'root',
-            '-g',
-            'caddy',
-            '-m',
-            '2775',
-            RuntimeHibernation::AccessLogDirectory,
-        ]);
+        $this->run(
+            $node,
+            'prepare-dirs',
+            [
+                'sudo',
+                'bash',
+                '-seu',
+                '--',
+                RuntimeHibernation::MarkerDirectory,
+                RuntimeHibernation::AccessLogDirectory,
+            ],
+            HibernationDirectoryEnsure::script(),
+        );
         $this->run($node, 'mark-awake', ['sudo', 'touch', '--', $path]);
         $this->run($node, 'mark-awake-mode', ['sudo', 'chmod', '0644', '--', $path]);
     }
@@ -97,9 +86,9 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
     }
 
     /** @param non-empty-list<string> $arguments */
-    private function run(Node $node, string $step, array $arguments): void
+    private function run(Node $node, string $step, array $arguments, ?string $input = null): void
     {
-        $result = $this->ssh->execute($this->connection($node), new RemoteCommand($arguments));
+        $result = $this->ssh->execute($this->connection($node), new RemoteCommand($arguments, $input));
 
         if ($result->succeeded()) {
             return;
