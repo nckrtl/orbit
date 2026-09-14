@@ -83,6 +83,7 @@ it('adds one explicit Docker process through the active gateway', function (): v
             'volumes' => [['source' => 'redis-data', 'target' => '/data', 'read_only' => false]],
             'restart_policy' => 'unless-stopped',
             'start' => true,
+            'keep_alive' => false,
         ]);
 });
 
@@ -116,6 +117,7 @@ it('passes Gateway-owned process policy values through the typed SDK request', f
             'command' => ['php', 'artisan'],
             'restart_policy' => 'never',
             'start' => false,
+            'keep_alive' => false,
             'environment' => ['APP_MODE' => 'test'],
             'ports' => ['not-a-port'],
             'volumes' => [['source' => 'source,readonly', 'target' => 'relative', 'read_only' => false]],
@@ -148,6 +150,7 @@ it('passes an empty Docker command and missing image to the Gateway for policy v
             'command' => [],
             'restart_policy' => 'never',
             'start' => false,
+            'keep_alive' => false,
         ]);
 });
 
@@ -175,6 +178,7 @@ it('passes a relative systemd executable to the Gateway for policy validation', 
             'command' => ['php', 'artisan'],
             'restart_policy' => 'never',
             'start' => false,
+            'keep_alive' => false,
         ]);
 });
 
@@ -204,6 +208,7 @@ it('preserves explicitly supplied empty process arrays', function (): void {
             'command' => [],
             'restart_policy' => 'never',
             'start' => false,
+            'keep_alive' => false,
             'environment' => [],
             'ports' => [],
             'volumes' => [],
@@ -305,8 +310,8 @@ it('lists one node-targeted process collection', function (): void {
     $this
         ->artisan('process:list', ['--node' => '4'])
         ->expectsTable(
-            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart'],
-            [[12, 'postgres', 'docker', 'running', 'running', 'unless-stopped']],
+            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart', 'Keep-alive'],
+            [[12, 'postgres', 'docker', 'running', 'running', 'unless-stopped', 'no']],
         )
         ->assertExitCode(0);
 });
@@ -322,8 +327,8 @@ it('lists one target process collection for humans', function (): void {
     $this
         ->artisan('process:list', ['--instance' => '7'])
         ->expectsTable(
-            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart'],
-            [[12, 'redis', 'docker', 'running', 'running', 'unless-stopped']],
+            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart', 'Keep-alive'],
+            [[12, 'redis', 'docker', 'running', 'running', 'unless-stopped', 'no']],
         )
         ->expectsOutput('Request ID: '.process_cli_request_id())
         ->assertExitCode(0);
@@ -702,6 +707,7 @@ it('passes every explicit systemd field through the typed SDK request', function
             'command' => ['/usr/bin/php', 'artisan'],
             'restart_policy' => 'always',
             'start' => true,
+            'keep_alive' => false,
             'environment' => ['APP_MODE' => 'test'],
             'ports' => ['8080:80'],
             'volumes' => [['source' => 'data', 'target' => '/data', 'read_only' => true]],
@@ -1089,6 +1095,31 @@ it('exposes AppInstance and Node selectors on targeted process commands', functi
         ->and($commands['process:list']->getDefinition()->hasOption('workspace'))->toBeFalse();
 });
 
+it('forwards keep-alive independently of restart policy', function (): void {
+    $mock = MockClient::global([
+        CreateProcessRequest::class => process_cli_response(201),
+    ]);
+
+    $this
+        ->artisan('process:create', [
+            'name' => 'queue',
+            '--instance' => '7',
+            '--runtime' => 'systemd',
+            '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+            '--restart' => 'never',
+            '--keep-alive' => true,
+            '--start' => true,
+        ])
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())
+        ->toMatchArray([
+            'restart_policy' => 'never',
+            'keep_alive' => true,
+            'start' => true,
+        ]);
+});
+
 it('records one App process definition through structured flags', function (): void {
     $mock = MockClient::global([
         CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201),
@@ -1112,7 +1143,27 @@ it('records one App process definition through structured flags', function (): v
         ->and($mock->getLastPendingRequest()?->getUrl())
         ->toBe('https://10.44.0.1/api/v1/apps/7/process-definitions')
         ->and((string) $mock->getLastPendingRequest()?->body())
-        ->toBe('{"name":"queue","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure"}}');
+        ->toBe('{"name":"queue","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure","keep_alive":false}}');
+});
+
+it('records keep-alive on an App process definition', function (): void {
+    $mock = MockClient::global([
+        CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201),
+    ]);
+
+    $this
+        ->artisan('process:create', [
+            'name' => 'queue',
+            '--app' => '7',
+            '--for' => 'development',
+            '--runtime' => 'systemd',
+            '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+            '--keep-alive' => true,
+        ])
+        ->assertExitCode(0);
+
+    expect((string) $mock->getLastPendingRequest()?->body())
+        ->toContain('"keep_alive":true');
 });
 
 it('lists shows updates and destroys App process definitions by name', function (
@@ -1280,6 +1331,7 @@ function process_cli_payload(array $overrides = []): array
             'volumes' => [['source' => 'redis-data', 'target' => '/data', 'read_only' => false]],
         ],
         'restart_policy' => 'unless-stopped',
+        'keep_alive' => false,
         'desired_state' => 'running',
         'status' => 'active',
         'runtime_status' => 'running',

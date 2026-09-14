@@ -30,6 +30,7 @@ final readonly class AppDefinitionJsonInspector
                 'ports',
                 'volumes',
                 'restart_policy',
+                'keep_alive',
             ], 'process specification');
 
             if (property_exists($object->spec, 'environment') && ! $object->spec->environment instanceof stdClass) {

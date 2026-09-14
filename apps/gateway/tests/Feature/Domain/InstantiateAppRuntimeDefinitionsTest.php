@@ -59,6 +59,7 @@ it('selects App production definitions instead of development or candidate overr
         'runtime' => 'systemd',
         'command' => ['/usr/bin/php', 'artisan', 'queue:work', '--tries=3'],
         'restart_policy' => 'always',
+        'keep_alive' => true,
     ]);
     orb225_process_definition($this->orbitApp, 'vite', ['development'], [
         'runtime' => 'systemd',
@@ -81,6 +82,7 @@ it('selects App production definitions instead of development or candidate overr
     expect($this->target->refresh()->runtime_definitions_captured_at)->not->toBeNull()
         ->and($copy->source_definition_id)->toBe($worker->id)
         ->and($copy->runtime_config['command'])->toBe(['/usr/bin/php', 'artisan', 'queue:work', '--tries=3'])
+        ->and($copy->keep_alive)->toBeTrue()
         ->and($copy->desired_state)->toBe(DesiredProcessState::Stopped)
         ->and($copy->status)->toBe(LifecycleStatus::Active)
         ->and($schedule->source_definition_id)->toBe($scheduleDefinition->id)

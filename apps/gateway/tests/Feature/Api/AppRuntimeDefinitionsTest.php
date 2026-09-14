@@ -37,7 +37,9 @@ it('provides complete process definition CRUD with command-safe collections', fu
         ->assertJsonPath('data.name', 'worker')
         ->assertJsonPath('data.environments', ['development'])
         ->assertJsonPath('data.spec.runtime', 'systemd')
-        ->assertJsonPath('data.spec.command.0', $command);
+        ->assertJsonPath('data.spec.command.0', $command)
+        ->assertJsonPath('data.spec.restart_policy', 'on-failure')
+        ->assertJsonPath('data.spec.keep_alive', true);
     $id = $created->json('data.id');
 
     expect($id)->toBeString()->and(Str::isUuid($id))->toBeTrue();
@@ -448,6 +450,7 @@ function runtime_definition_process_payload(
             'command' => [$command, 'artisan', 'queue:work'],
             'working_directory' => '/srv/app',
             'restart_policy' => 'on-failure',
+            'keep_alive' => true,
         ],
     ];
 }

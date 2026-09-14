@@ -30,5 +30,6 @@ final readonly class AddProcessData
         public array $volumes,
         public string $restartPolicy,
         public bool $start,
+        public bool $keepAlive = false,
     ) {}
 }

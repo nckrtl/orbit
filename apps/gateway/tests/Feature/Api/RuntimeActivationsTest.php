@@ -35,6 +35,11 @@ beforeEach(function (): void {
         {
             return null;
         }
+
+        public function isAwake(Node $node, string $key): bool
+        {
+            return in_array($key, $this->awake, true);
+        }
     };
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
     app()->instance(HibernationMarkerStore::class, $this->markers);

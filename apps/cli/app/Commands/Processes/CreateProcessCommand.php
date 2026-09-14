@@ -32,6 +32,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--port=* : Docker HOST:CONTAINER[/tcp|udp]; repeat as needed}
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart=never : never, on-failure, always, or unless-stopped}
+        {--keep-alive : Keep running through app-dev idle hibernation}
         {--start : Start after adding}
         {--json : Return machine-readable JSON}';
 
@@ -161,6 +162,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 $portsWereProvided ? $ports : null,
                 $volumesWereProvided ? $volumes : null,
                 $restartPolicy,
+                $this->option('keep-alive') === true,
             );
         }
 
@@ -197,6 +199,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 volumes: $volumesWereProvided ? $volumes : null,
                 restartPolicy: $restartPolicy,
                 start: $this->option('start') === true,
+                keepAlive: $this->option('keep-alive') === true,
             ),
             ProcessResponse::class,
         );
@@ -235,6 +238,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         ?array $ports,
         ?array $volumes,
         string $restartPolicy,
+        bool $keepAlive,
     ): int {
         if ($this->option('start') === true) {
             return $this->renderGatewayFailure(
@@ -266,6 +270,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
             'runtime' => $runtime,
             'command' => $command,
             'restart_policy' => $restartPolicy,
+            'keep_alive' => $keepAlive,
         ];
 
         if ($image !== null) {

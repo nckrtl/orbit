@@ -56,6 +56,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
             'volumes' => [['source' => 'redis-data', 'target' => '/data', 'read_only' => false]],
             'restart_policy' => 'unless-stopped',
             'start' => true,
+            'keep_alive' => false,
         ])
         ->and($response)
         ->toBeInstanceOf(ProcessResponse::class)
@@ -86,6 +87,7 @@ it('forwards every explicit process field without applying runtime policy', func
         'command' => ['php', 'artisan', 'queue:work'],
         'restart_policy' => 'always',
         'start' => true,
+        'keep_alive' => false,
         'environment' => ['APP_MODE' => 'production'],
         'ports' => ['127.0.0.1:9080:8080/tcp'],
         'volumes' => [['source' => 'orbit-data', 'target' => '/data', 'read_only' => true]],
@@ -110,6 +112,7 @@ it('omits every absent optional process field without applying runtime policy', 
         'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
         'restart_policy' => 'never',
         'start' => false,
+        'keep_alive' => false,
     ]);
 });
 
@@ -132,6 +135,7 @@ it('preserves explicitly supplied empty process collections', function (): void 
         'command' => ['redis-server'],
         'restart_policy' => 'never',
         'start' => false,
+        'keep_alive' => false,
         'environment' => [],
         'ports' => [],
         'volumes' => [],
@@ -149,6 +153,24 @@ it('preserves an omitted optional volume read-only flag', function (): void {
 
     expect($request->body()->all())->toMatchArray([
         'volumes' => [['source' => 'redis-data', 'target' => '/data']],
+    ]);
+});
+
+it('forwards keep-alive without treating restart policy as the same contract', function (): void {
+    $request = new CreateProcessRequest(
+        target: new AppInstanceProcessTarget(7),
+        name: 'queue',
+        runtime: 'systemd',
+        command: ['/usr/bin/php', 'artisan', 'queue:work'],
+        restartPolicy: 'never',
+        start: true,
+        keepAlive: true,
+    );
+
+    expect($request->body()->all())->toMatchArray([
+        'restart_policy' => 'never',
+        'start' => true,
+        'keep_alive' => true,
     ]);
 });
 
@@ -170,6 +192,7 @@ it('adds a node-targeted process with the explicit node selector', function (): 
         'image' => 'postgres:18',
         'restart_policy' => 'never',
         'start' => false,
+        'keep_alive' => false,
     ]);
 });
 
@@ -337,6 +360,7 @@ function process_gateway_data(): array
             'volumes' => [],
         ],
         'restart_policy' => 'unless-stopped',
+        'keep_alive' => false,
         'desired_state' => 'running',
         'status' => 'active',
         'runtime_status' => 'running',

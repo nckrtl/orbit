@@ -71,6 +71,7 @@ final class StoreProcessRequest extends FormRequest
                 Rule::in(['never', 'on-failure', 'always', 'unless-stopped']),
             ],
             'start' => ['sometimes', 'boolean'],
+            'keep_alive' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -115,6 +116,7 @@ final class StoreProcessRequest extends FormRequest
                 ? $validated['restart_policy']
                 : 'never',
             start: ($validated['start'] ?? false) === true,
+            keepAlive: ($validated['keep_alive'] ?? false) === true,
         );
     }
 

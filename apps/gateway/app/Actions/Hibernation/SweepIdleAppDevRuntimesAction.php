@@ -77,7 +77,8 @@ final readonly class SweepIdleAppDevRuntimesAction
     private function desiredRunning(AppInstance $instance): array
     {
         return $instance->processes
-            ->filter(static fn (Process $process): bool => $process->desired_state === DesiredProcessState::Running)
+            ->filter(static fn (Process $process): bool => $process->desired_state === DesiredProcessState::Running
+                && ! $process->keep_alive)
             ->sortBy('id')
             ->values()
             ->all();

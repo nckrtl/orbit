@@ -95,10 +95,11 @@ final class ListProcessesCommand extends TargetedProcessCommand
                 $process->desiredState,
                 $process->runtimeStatus,
                 $process->restartPolicy,
+                $process->keepAlive ? 'yes' : 'no',
             ];
         }
 
-        $this->table(['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart'], $rows);
+        $this->table(['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart', 'Keep-alive'], $rows);
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

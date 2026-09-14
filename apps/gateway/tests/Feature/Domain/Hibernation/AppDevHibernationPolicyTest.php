@@ -61,6 +61,20 @@ it('does not treat restart policy as an exemption', function (): void {
     expect($policy->appliesToProcess($always))->toBeTrue();
 });
 
+it('still applies to a keep-alive Process so restart policy stays independent', function (): void {
+    $policy = new AppDevHibernationPolicy;
+    $node = hibernation_policy_node('app-dev', 'app-dev');
+    $app = OrbitApp::query()->create([
+        'name' => 'Docs',
+        'slug' => 'docs',
+        'repository_url' => 'git@example.test:docs.git',
+    ]);
+    $instance = hibernation_policy_instance($app, $node, 'development');
+    $queue = hibernation_policy_process($instance, 'never', keepAlive: true);
+
+    expect($policy->appliesToProcess($queue))->toBeTrue();
+});
+
 function hibernation_policy_node(string $name, string $role): Node
 {
     $node = Node::query()->create([
@@ -93,8 +107,11 @@ function hibernation_policy_instance(OrbitApp $app, Node $node, string $environm
     ]);
 }
 
-function hibernation_policy_process(AppInstance $instance, string $restartPolicy = 'on-failure'): Process
-{
+function hibernation_policy_process(
+    AppInstance $instance,
+    string $restartPolicy = 'on-failure',
+    bool $keepAlive = false,
+): Process {
     return Process::query()->create([
         'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
@@ -103,6 +120,7 @@ function hibernation_policy_process(AppInstance $instance, string $restartPolicy
         'working_directory' => $instance->checkout_path,
         'runtime_config' => ['command' => ['/usr/bin/vp', 'run', 'dev']],
         'restart_policy' => $restartPolicy,
+        'keep_alive' => $keepAlive,
         'desired_state' => 'running',
         'status' => 'active',
     ]);
