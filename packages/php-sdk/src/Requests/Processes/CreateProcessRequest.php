@@ -11,7 +11,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-final class AddProcessRequest extends GatewayRequest implements HasBody
+final class CreateProcessRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 

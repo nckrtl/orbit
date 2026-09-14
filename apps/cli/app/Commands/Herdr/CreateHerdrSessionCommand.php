@@ -6,29 +6,46 @@ namespace App\Commands\Herdr;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Herdr\RemoveHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
 use Orbit\Sdk\Responses\Herdr\HerdrSessionResponse;
 
-final class RemoveHerdrSessionCommand extends HerdrSessionCommand
+final class CreateHerdrSessionCommand extends HerdrSessionCommand
 {
     #[\Override]
-    protected $signature = 'herdr:session:remove
+    protected $signature = 'herdr:session:create
         {session : Named Herdr session}
         {--node= : Node ID or registered name}
-        {--accept-termination : Accept termination of live panes}
+        {--user= : Unix user that owns the Herdr session and socket}
+        {--publish-observer : Publish the private receive-only observer}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove one named Herdr session, its Process, and its private observer.';
+    protected $description = 'Create or ensure one named Herdr session on a managed Node.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $name = $this->sessionName();
+        $session = $this->sessionName();
 
-        if ($name === null) {
+        if ($session === null) {
             return self::FAILURE;
+        }
+
+        $user = $this->stringOption('user');
+
+        if ($user === null) {
+            return $this->renderGatewayFailure(
+                'herdr.user_required',
+                'Unix user is required.',
+            );
+        }
+
+        if (strlen($user) > 32 || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1) {
+            return $this->renderGatewayFailure(
+                'herdr.user_invalid',
+                'Unix user is invalid.',
+            );
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -43,15 +60,14 @@ final class RemoveHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $listed = $this->resolveSession($connector, $nodeId, $name);
-
-        if ($listed === null) {
-            return self::FAILURE;
-        }
-
         $response = $this->send(
             $connector,
-            new RemoveHerdrSessionRequest($listed->id, $this->option('accept-termination') === true),
+            new CreateHerdrSessionRequest(
+                nodeId: $nodeId,
+                session: $session,
+                user: $user,
+                publishObserver: $this->option('publish-observer') === true,
+            ),
             HerdrSessionResponse::class,
         );
 
@@ -65,7 +81,7 @@ final class RemoveHerdrSessionCommand extends HerdrSessionCommand
             return self::SUCCESS;
         }
 
-        $this->info("Herdr session [{$response->session}] on [{$response->node}] was removed.");
+        $this->info("Herdr session [{$response->session}] on [{$response->node}] is {$response->status}.");
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

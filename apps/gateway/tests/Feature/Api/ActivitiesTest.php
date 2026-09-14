@@ -151,7 +151,7 @@ describe('activity access and redaction', function (): void {
         $invalidKeyCredential = 'sentinel-serialized-invalid-key';
         $activity = activity_api_record(
             requestId: '77777777-7777-4777-8777-777777777777',
-            command: 'process:add',
+            command: 'process:create',
             status: 'failed',
             properties: ['safe' => ['status' => 'failed']],
         );
@@ -204,7 +204,7 @@ describe('activity access and redaction', function (): void {
         $invalidKeyCredential = 'sentinel-invalid-property-key';
         $activity = activity_api_record(
             requestId: '88888888-8888-4888-8888-888888888888',
-            command: 'process:add',
+            command: 'process:create',
             status: 'failed',
             properties: activity_api_sensitive_properties($credential, $invalidKeyCredential),
             errorCode: 'process.create_failed',

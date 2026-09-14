@@ -7,10 +7,10 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Schedules\ActivateScheduleRequest;
-use Orbit\Sdk\Requests\Schedules\AddScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
-use Orbit\Sdk\Requests\Schedules\RemoveScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
@@ -39,7 +39,7 @@ afterEach(function (): void {
 
 it('adds one Node Schedule through exactly one typed request and renders human output', function (): void {
     $mock = MockClient::global([
-        AddScheduleRequest::class => schedule_cli_response([
+        CreateScheduleRequest::class => schedule_cli_response([
             'target_type' => 'node',
             'target_id' => 3,
             'desired_timer_state' => 'enabled',
@@ -47,7 +47,7 @@ it('adds one Node Schedule through exactly one typed request and renders human o
     ]);
 
     $this
-        ->artisan('schedule:add', schedule_cli_add_arguments(['--node' => '3']))
+        ->artisan('schedule:create', schedule_cli_add_arguments(['--node' => '3']))
         ->expectsTable(['Field', 'Value'], schedule_cli_item_rows([
             'target_type' => 'node',
             'target_id' => 3,
@@ -55,7 +55,7 @@ it('adds one Node Schedule through exactly one typed request and renders human o
         ]))
         ->assertExitCode(Command::SUCCESS);
 
-    $mock->assertSentCount(1, AddScheduleRequest::class);
+    $mock->assertSentCount(1, CreateScheduleRequest::class);
     expect($mock->getLastPendingRequest()?->getUrl())
         ->toBe('https://10.44.0.1/api/v1/schedules')
         ->and($mock->getLastRequest()?->body()->all())
@@ -75,11 +75,11 @@ it('adds one stopped AppInstance Schedule and renders exact json', function (): 
         'status' => 'active',
     ]);
     $mock = MockClient::global([
-        AddScheduleRequest::class => schedule_cli_response($payload, 201),
+        CreateScheduleRequest::class => schedule_cli_response($payload, 201),
     ]);
 
     $this
-        ->artisan('schedule:add', schedule_cli_add_arguments([
+        ->artisan('schedule:create', schedule_cli_add_arguments([
             '--instance' => '7',
             '--no-start' => true,
             '--json' => true,
@@ -90,7 +90,7 @@ it('adds one stopped AppInstance Schedule and renders exact json', function (): 
         ))
         ->assertExitCode(Command::SUCCESS);
 
-    $mock->assertSentCount(1, AddScheduleRequest::class);
+    $mock->assertSentCount(1, CreateScheduleRequest::class);
     expect($mock->getLastRequest()?->body()->all())
         ->toBe([
             'target_type' => 'instance',
@@ -105,13 +105,13 @@ it('adds one stopped AppInstance Schedule and renders exact json', function (): 
 
 it('omits start when an AppInstance Schedule uses the default enabled state', function (): void {
     $mock = MockClient::global([
-        AddScheduleRequest::class => schedule_cli_response(status: 201),
+        CreateScheduleRequest::class => schedule_cli_response(status: 201),
     ]);
 
-    expect(Artisan::call('schedule:add', schedule_cli_add_arguments(['--instance' => '7'])))
+    expect(Artisan::call('schedule:create', schedule_cli_add_arguments(['--instance' => '7'])))
         ->toBe(Command::SUCCESS);
 
-    $mock->assertSentCount(1, AddScheduleRequest::class);
+    $mock->assertSentCount(1, CreateScheduleRequest::class);
     expect($mock->getLastRequest()?->body()->all())->not->toHaveKey('start');
 });
 
@@ -185,8 +185,8 @@ it('sends one UUID request and renders separate timer and lifecycle states', fun
 })->with([
     'show' => ['schedule:show', ShowScheduleRequest::class],
     'run' => ['schedule:run', RunScheduleRequest::class],
-    'remove' => ['schedule:remove', RemoveScheduleRequest::class],
-    'activate' => ['schedule:activate', ActivateScheduleRequest::class],
+    'remove' => ['schedule:destroy', DestroyScheduleRequest::class],
+    'activate' => ['schedule:enable', EnableScheduleRequest::class],
 ]);
 
 it('renders one UUID operation response in exact json', function (string $command, string $requestClass): void {
@@ -205,8 +205,8 @@ it('renders one UUID operation response in exact json', function (string $comman
 })->with([
     'show' => ['schedule:show', ShowScheduleRequest::class],
     'run' => ['schedule:run', RunScheduleRequest::class],
-    'remove' => ['schedule:remove', RemoveScheduleRequest::class],
-    'activate' => ['schedule:activate', ActivateScheduleRequest::class],
+    'remove' => ['schedule:destroy', DestroyScheduleRequest::class],
+    'activate' => ['schedule:enable', EnableScheduleRequest::class],
 ]);
 
 it('renders only the bounded log output returned by the Gateway for humans', function (): void {
@@ -261,7 +261,7 @@ it('applies explicit selector validation before HTTP in every output and interac
         $arguments['--no-interaction'] = true;
     }
 
-    $exitCode = Artisan::call('schedule:add', $arguments);
+    $exitCode = Artisan::call('schedule:create', $arguments);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(Command::FAILURE);
@@ -330,8 +330,8 @@ it('rejects malformed Schedule UUIDs and log bounds before HTTP', function (
     'show UUID' => ['schedule:show', ['schedule' => 'not-a-uuid'], 'Schedule UUID is invalid.'],
     'run UUID' => ['schedule:run', ['schedule' => 'not-a-uuid'], 'Schedule UUID is invalid.'],
     'logs UUID' => ['schedule:logs', ['schedule' => 'not-a-uuid'], 'Schedule UUID is invalid.'],
-    'remove UUID' => ['schedule:remove', ['schedule' => 'not-a-uuid'], 'Schedule UUID is invalid.'],
-    'activate UUID' => ['schedule:activate', ['schedule' => 'not-a-uuid'], 'Schedule UUID is invalid.'],
+    'remove UUID' => ['schedule:destroy', ['schedule' => 'not-a-uuid'], 'Schedule UUID is invalid.'],
+    'activate UUID' => ['schedule:enable', ['schedule' => 'not-a-uuid'], 'Schedule UUID is invalid.'],
     'logs lower bound' => ['schedule:logs', [
         'schedule' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         '--lines' => '0',
@@ -369,13 +369,13 @@ it('renders shared safe Gateway failures for every Schedule operation', function
     expect(Artisan::output())->not->toContain('secret command', 'details');
     $mock->assertSentCount(1, $requestClass);
 })->with([
-    'add' => ['schedule:add', AddScheduleRequest::class, schedule_cli_add_arguments(['--node' => '3'])],
+    'add' => ['schedule:create', CreateScheduleRequest::class, schedule_cli_add_arguments(['--node' => '3'])],
     'list' => ['schedule:list', ListSchedulesRequest::class, []],
     'show' => ['schedule:show', ShowScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
     'run' => ['schedule:run', RunScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
     'logs' => ['schedule:logs', ScheduleLogsRequest::class, ['schedule' => schedule_cli_uuid()]],
-    'remove' => ['schedule:remove', RemoveScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
-    'activate' => ['schedule:activate', ActivateScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
+    'remove' => ['schedule:destroy', DestroyScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
+    'activate' => ['schedule:enable', EnableScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
 ]);
 
 /** @param array<string, mixed> $overrides
@@ -476,7 +476,7 @@ function schedule_cli_endpoint_suffix(string $command): string
 {
     return match ($command) {
         'schedule:run' => '/run',
-        'schedule:activate' => '/activate',
+        'schedule:enable' => '/activate',
         default => '',
     };
 }

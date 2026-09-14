@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Processes\AddProcessRequest;
 use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
+use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
+use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
-use Orbit\Sdk\Requests\Processes\RemoveProcessRequest;
 use Orbit\Sdk\Requests\Processes\RestartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StopProcessRequest;
@@ -21,9 +21,9 @@ use Saloon\Http\Faking\MockResponse;
 
 it('adds a process with the explicit minimal runtime contract', function (): void {
     $mock = new MockClient([
-        AddProcessRequest::class => MockResponse::make(process_envelope(), 201),
+        CreateProcessRequest::class => MockResponse::make(process_envelope(), 201),
     ]);
-    $request = new AddProcessRequest(
+    $request = new CreateProcessRequest(
         target: new AppInstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
@@ -64,7 +64,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
 });
 
 it('forwards every explicit process field without applying runtime policy', function (): void {
-    $request = new AddProcessRequest(
+    $request = new CreateProcessRequest(
         target: new AppInstanceProcessTarget(7),
         name: 'worker',
         runtime: 'systemd',
@@ -95,7 +95,7 @@ it('forwards every explicit process field without applying runtime policy', func
 });
 
 it('omits every absent optional process field without applying runtime policy', function (): void {
-    $request = new AddProcessRequest(
+    $request = new CreateProcessRequest(
         target: new AppInstanceProcessTarget(7),
         name: 'worker',
         runtime: 'systemd',
@@ -114,7 +114,7 @@ it('omits every absent optional process field without applying runtime policy', 
 });
 
 it('preserves explicitly supplied empty process collections', function (): void {
-    $request = new AddProcessRequest(
+    $request = new CreateProcessRequest(
         target: new AppInstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
@@ -139,7 +139,7 @@ it('preserves explicitly supplied empty process collections', function (): void 
 });
 
 it('preserves an omitted optional volume read-only flag', function (): void {
-    $request = new AddProcessRequest(
+    $request = new CreateProcessRequest(
         target: new AppInstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
@@ -153,7 +153,7 @@ it('preserves an omitted optional volume read-only flag', function (): void {
 });
 
 it('adds a node-targeted process with the explicit node selector', function (): void {
-    $request = new AddProcessRequest(
+    $request = new CreateProcessRequest(
         target: new NodeProcessTarget(4),
         name: 'postgres',
         runtime: 'docker',
@@ -248,7 +248,7 @@ it('maps lifecycle and remove endpoints to one typed process response', function
     'start' => [StartProcessRequest::class, Method::POST, '/api/v1/processes/12/start'],
     'stop' => [StopProcessRequest::class, Method::POST, '/api/v1/processes/12/stop'],
     'restart' => [RestartProcessRequest::class, Method::POST, '/api/v1/processes/12/restart'],
-    'remove' => [RemoveProcessRequest::class, Method::DELETE, '/api/v1/processes/12'],
+    'remove' => [DestroyProcessRequest::class, Method::DELETE, '/api/v1/processes/12'],
 ]);
 
 it('sends lifecycle actions without a JSON request body', function (string $requestClass): void {

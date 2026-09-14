@@ -7,8 +7,8 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\GatewayRootCaClient;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
-use Orbit\Sdk\Requests\Processes\AddProcessRequest;
 use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
+use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
@@ -241,7 +241,7 @@ describe('gateway object-state boundary', function (): void {
             'environment' => $environment,
             'image' => 'orbit-worker:latest',
         ];
-        $request = new AddProcessRequest(
+        $request = new CreateProcessRequest(
             target: new AppInstanceProcessTarget(7),
             name: 'worker',
             runtime: 'docker',
@@ -497,7 +497,7 @@ function gateway_object_state_app_constructor_exception(string $repositoryUrl, a
 function gateway_object_state_process_constructor_exception(array $environment): TypeError
 {
     try {
-        new AddProcessRequest(
+        new CreateProcessRequest(
             target: new AppInstanceProcessTarget(7),
             name: 'worker',
             runtime: 'docker',

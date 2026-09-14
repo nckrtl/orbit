@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Herdr\AddHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\DestroyHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
-use Orbit\Sdk\Requests\Herdr\RemoveHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
 use Orbit\Sdk\Responses\Herdr\HerdrSessionResponse;
@@ -18,9 +18,9 @@ use Saloon\Http\Faking\MockResponse;
 
 it('adds a named Herdr session with the explicit Node selector', function (): void {
     $mock = new MockClient([
-        AddHerdrSessionRequest::class => MockResponse::make(herdr_session_envelope(), 201),
+        CreateHerdrSessionRequest::class => MockResponse::make(herdr_session_envelope(), 201),
     ]);
-    $request = new AddHerdrSessionRequest(
+    $request = new CreateHerdrSessionRequest(
         nodeId: 4,
         session: 'commander-tasks',
         user: 'nckrtl',
@@ -62,7 +62,7 @@ it('adds a named Herdr session with the explicit Node selector', function (): vo
 });
 
 it('preserves an explicit false observer publication flag', function (): void {
-    $request = new AddHerdrSessionRequest(
+    $request = new CreateHerdrSessionRequest(
         nodeId: 4,
         session: 'commander-tasks',
         user: 'nckrtl',
@@ -110,7 +110,7 @@ it('maps show, restart, and remove to one typed Herdr session response', functio
     array $body,
 ): void {
     $request = $requestClass === RestartHerdrSessionRequest::class
-        || $requestClass === RemoveHerdrSessionRequest::class
+        || $requestClass === DestroyHerdrSessionRequest::class
         ? new $requestClass(12, true)
         : new $requestClass(12);
     $mock = new MockClient([
@@ -137,7 +137,7 @@ it('maps show, restart, and remove to one typed Herdr session response', functio
         ['handoff' => true],
     ],
     'remove' => [
-        RemoveHerdrSessionRequest::class,
+        DestroyHerdrSessionRequest::class,
         Method::DELETE,
         '/api/v1/herdr/sessions/12',
         ['accept_termination' => true],
@@ -147,7 +147,7 @@ it('maps show, restart, and remove to one typed Herdr session response', functio
 it('preserves omitted Herdr lifecycle flags as explicit false', function (): void {
     expect((new RestartHerdrSessionRequest(12))->body()->all())
         ->toBe(['handoff' => false])
-        ->and((new RemoveHerdrSessionRequest(12))->body()->all())
+        ->and((new DestroyHerdrSessionRequest(12))->body()->all())
         ->toBe(['accept_termination' => false]);
 });
 

@@ -258,7 +258,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('schedules', [SchedulesController::class, 'index'])
             ->name('schedule:list');
         Route::post('schedules', [SchedulesController::class, 'store'])
-            ->name('schedule:add');
+            ->name('schedule:create');
         Route::get('schedules/{schedule}/logs', [SchedulesController::class, 'logs'])
             ->whereUuid('schedule')
             ->name('schedule:logs');
@@ -267,19 +267,19 @@ Route::prefix('v1')->group(function (): void {
             ->name('schedule:run');
         Route::post('schedules/{schedule}/activate', [SchedulesController::class, 'activate'])
             ->whereUuid('schedule')
-            ->name('schedule:activate');
+            ->name('schedule:enable');
         Route::get('schedules/{schedule}', [SchedulesController::class, 'show'])
             ->whereUuid('schedule')
             ->name('schedule:show');
         Route::delete('schedules/{schedule}', [SchedulesController::class, 'destroy'])
             ->whereUuid('schedule')
-            ->name('schedule:remove');
+            ->name('schedule:destroy');
         Route::get('processes', [ProcessesController::class, 'index'])
             ->name('process:list');
         Route::get('processes/{process}/logs', [ProcessesController::class, 'logs'])
             ->name('process:logs');
         Route::post('processes', [ProcessesController::class, 'store'])
-            ->name('process:add');
+            ->name('process:create');
         Route::post('processes/{process}/start', [ProcessesController::class, 'start'])
             ->name('process:start');
         Route::post('processes/{process}/stop', [ProcessesController::class, 'stop'])
@@ -287,7 +287,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('processes/{process}/restart', [ProcessesController::class, 'restart'])
             ->name('process:restart');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
-            ->name('process:remove');
+            ->name('process:destroy');
         Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
             ->name('database-connection:list');
         Route::post('database-connections', [DatabaseConnectionsController::class, 'store'])
@@ -304,7 +304,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
             ->name('herdr:session:list');
         Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])
-            ->name('herdr:session:add');
+            ->name('herdr:session:create');
         Route::get('herdr/sessions/{session}', [HerdrSessionsController::class, 'show'])
             ->whereNumber('session')
             ->name('herdr:session:show');
@@ -313,7 +313,7 @@ Route::prefix('v1')->group(function (): void {
             ->name('herdr:session:restart');
         Route::delete('herdr/sessions/{session}', [HerdrSessionsController::class, 'destroy'])
             ->whereNumber('session')
-            ->name('herdr:session:remove');
+            ->name('herdr:session:destroy');
         Route::post('herdr/sessions/{session}/observation-grants', [HerdrSessionsController::class, 'storeGrant'])
             ->whereNumber('session')
             ->name('herdr:observe');

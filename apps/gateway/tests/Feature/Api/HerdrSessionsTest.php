@@ -83,6 +83,11 @@ it('creates a named Herdr session on a managed Node with a private observer', fu
         ->toBe([$process->id])
         ->and($this->observers->published)
         ->toBe(['commander-tasks']);
+
+    $this->assertDatabaseHas('activity_log', [
+        'command' => 'herdr:session:create',
+        'status' => 'succeeded',
+    ]);
 });
 
 it('ensures an identical session without restarting a compatible running server', function (): void {
@@ -286,6 +291,10 @@ it('refuses removal while live panes exist unless termination is accepted', func
         ->assertOk();
 
     expect(HerdrSession::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0);
+    $this->assertDatabaseHas('activity_log', [
+        'command' => 'herdr:session:destroy',
+        'status' => 'succeeded',
+    ]);
 });
 
 it('restarts with Herdr handoff when requested and supported', function (): void {

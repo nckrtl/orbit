@@ -10,10 +10,10 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use SensitiveParameter;
 
-final class ActivateScheduleRequest extends GatewayRequest
+final class DestroyScheduleRequest extends GatewayRequest
 {
     #[\Override]
-    protected Method $method = Method::POST;
+    protected Method $method = Method::DELETE;
 
     public function __construct(
         #[SensitiveParameter]
@@ -22,7 +22,7 @@ final class ActivateScheduleRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return '/api/v1/schedules/'.rawurlencode($this->scheduleId).'/activate';
+        return '/api/v1/schedules/'.rawurlencode($this->scheduleId);
     }
 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): ScheduleResponse

@@ -51,4 +51,24 @@ describe('unknown command', function (): void {
             ))
             ->not->toContain('scheduled tasks');
     })->with(['schedule:finish', 'schedule:complete']);
+
+    it('treats replaced process, schedule, and Herdr session names as unknown commands', function (string $command): void {
+        [$status, $output] = run_orbit($command);
+
+        expect($status)
+            ->toBe(1)
+            ->and(trim($output))
+            ->toBe(sprintf(
+                'Command "%s" is not defined. Run "orbit list" to see available commands.',
+                $command,
+            ));
+    })->with([
+        'process:add',
+        'process:remove',
+        'schedule:add',
+        'schedule:remove',
+        'schedule:activate',
+        'herdr:session:add',
+        'herdr:session:remove',
+    ]);
 });
