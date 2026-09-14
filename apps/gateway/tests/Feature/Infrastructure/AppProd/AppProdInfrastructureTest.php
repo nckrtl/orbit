@@ -318,7 +318,7 @@ it('retires leftover app-prod pools without activating leftover Instance PHP ver
         ->toContain(base64_encode($leftoverConfiguration));
 });
 
-it('restores the previous leftover app-prod pool when retirement publication fails', function (): void {
+it('fails closed when leftover app-prod retirement publication fails', function (): void {
     [$node] = app_prod_runtime_models();
     $previousConfiguration = "[orbit-prod-instance-1]\n";
     $ssh = new AppDevFakeSshExecutor([
@@ -343,10 +343,10 @@ it('restores the previous leftover app-prod pool when retirement publication fai
     expect($publishCalls->first()?->arguments)
         ->toContain('/run/lock/orbit')
         ->and($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
-        ->toBe(['8.5', '8.5'])
+        ->toBe(['8.5'])
         ->and($publishCalls->first()?->input)
         ->toContain("printf '%s' '' | base64 --decode")
-        ->and($publishCalls->last()?->input)
+        ->not
         ->toContain(base64_encode($previousConfiguration));
 });
 
@@ -375,11 +375,11 @@ it('restores earlier leftover app-prod retirements when a later leftover version
         ->values();
 
     expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
-        ->toBe(['8.4', '8.5', '8.5', '8.4'])
+        ->toBe(['8.4', '8.5', '8.4'])
         ->and($publishCalls->get(0)?->input)
         ->toContain("printf '%s' '' | base64 --decode")
-        ->and($publishCalls->get(2)?->input)
-        ->toContain(base64_encode($previousFive))
+        ->and($publishCalls->get(1)?->input)
+        ->toContain("printf '%s' '' | base64 --decode")
         ->and($publishCalls->last()?->input)
         ->toContain(base64_encode($previousFour));
 });

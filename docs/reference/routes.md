@@ -145,7 +145,7 @@ Active WireGuard membership trusts a Node to reach every other active WireGuard 
 
 Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. A standalone production Route is private and terminates Orbit-CA TLS on its workload Node. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 
-App-prod role convergence retires Orbit-owned public HTTP and HTTPS workload rules and does not republish them. Ingress keeps public HTTP and HTTPS publication. Unrelated firewall rules stay in place. A retry after a failed cleanup uses the same owned-rule set.
+When the Gateway converges the app-prod role, it retires the Orbit-owned public HTTP and HTTPS workload rules and does not republish them. Ingress keeps public HTTP and HTTPS publication. Unrelated firewall rules stay in place. A retry after a failed cleanup uses the same owned-rule set.
 
 ### Publication ownership
 
