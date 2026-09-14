@@ -157,7 +157,7 @@ Repeating an identical add refreshes the surviving Process and its desired state
 
 Every runtime mutation rechecks exact Orbit ownership. Systemd replacement uses a validated candidate and restores the previous owned unit when activation fails. Docker replacement retains or restores exact-owned canonical and rollback containers. Orbit does not overwrite, adopt, or delete a colliding unit, container, or recovery artifact.
 
-Process responses identify the owning AppInstance or Node. Activity records identify that owner and the execution Node. Docker environment values and credential-shaped runtime data are redacted from responses, activity, errors, debug output, and bounded logs.
+Process responses identify the owning AppInstance or Node. Activity records identify that owner and the execution Node. Docker environment values and credential-shaped runtime data are redacted from responses, activity, errors, debug output, and bounded logs. Stored mysql, pgsql, and sqlite credentials live in the [Database connection](database-connections.md) registry; that registry does not start or stop a Process.
 
 Systemd units use `orbit-process-{id}-{name}.service` and Docker containers use `orbit-process-{id}-{name}`. Collision checks require the exact Orbit process ID marker before replacement or deletion.
 

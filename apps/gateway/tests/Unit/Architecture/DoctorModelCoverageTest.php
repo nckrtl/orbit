@@ -11,6 +11,7 @@ use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
+use App\Models\DatabaseConnection;
 use App\Models\FirewallRule;
 use App\Models\HerdrObservationNonce;
 use App\Models\HerdrSession;
@@ -62,6 +63,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         HerdrObservationNonce::class,
+        DatabaseConnection::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

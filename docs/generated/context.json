@@ -77,6 +77,7 @@
                 "AppInstance",
                 "Cluster",
                 "Database",
+                "Database connection",
                 "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
@@ -1621,6 +1622,7 @@
                 "App",
                 "AppInstance",
                 "Database",
+                "Database connection",
                 "Development-server endpoint",
                 "Doctor",
                 "Gateway",
@@ -1713,6 +1715,24 @@
             ]
         },
         {
+            "path": "docs/reference/database-connections.md",
+            "title": "Database connections",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0069",
+                "0070"
+            ]
+        },
+        {
             "path": "docs/reference/database-role.md",
             "title": "Database role",
             "kind": "reference",
@@ -1720,6 +1740,7 @@
             "concepts": [
                 "App",
                 "Database",
+                "Database connection",
                 "Doctor",
                 "Gateway",
                 "Ingress",

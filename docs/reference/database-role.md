@@ -2,7 +2,7 @@
 
 This page tells an operator what the `database` role converges on a Node, which other roles it may share, and how add, converge, and remove behave. [ADR 0070](../decisions/0070-keep-the-database-role-as-a-docker-baseline.md) records the role boundary, and [ADR 0069](../decisions/0069-allow-node-process-targets.md) owns Node Process targets for shared Docker databases; this page states what the operator observes.
 
-The role ensures Docker on the assigned Node. Shared MySQL or Postgres containers are Node Processes. The role add request accepts no settings members.
+The role ensures Docker on the assigned Node. Shared MySQL or Postgres containers are Node Processes. The role add request accepts no settings members. The [Database connection](database-connections.md) registry does not require this role; a remote or external host is registered without it.
 
 ## Add and converge
 

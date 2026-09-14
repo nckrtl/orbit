@@ -16,6 +16,7 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
 - **Database** — The Node role that converges Docker on a Node for shared database Processes. See [Database role](reference/database-role.md) and [ADR 0070](decisions/0070-keep-the-database-role-as-a-docker-baseline.md).
+- **Database connection** — A Gateway-owned mysql, pgsql, or sqlite registry record with encrypted credentials. See [Database connections](reference/database-connections.md).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
 - **Process** — Gateway intent for one systemd service or Docker container owned by an AppInstance or a managed Node. See [App processes and schedules](reference/app-processes-and-schedules.md) and [ADR 0069](decisions/0069-allow-node-process-targets.md).
 - **Herdr session** — Named headless Herdr server on a managed Node, published through a private receive-only observer and observed with a short-lived `terminal.observe` grant. See [Herdr sessions](reference/herdr-sessions.md).
