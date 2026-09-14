@@ -18,7 +18,7 @@ orbit app:create \
 
 When you omit the default branch, the Gateway reads the remote default branch once and stores it. A later remote default change does not rewrite the App.
 
-An App can return null for `default_branch` and root when its source defaults are incomplete. Existing legacy Instance and Workspace records continue to use that App. New App instance creation fails with `app.source_defaults_incomplete` until a separate conversion lifecycle supplies the missing values. Orbit has no command that updates or backfills them.
+An App can return null for `default_branch` and root when its source defaults are incomplete. New App instance creation fails with `app.source_defaults_incomplete`. Orbit has no command that updates or backfills them.
 
 ## Create a development App instance
 
@@ -81,7 +81,7 @@ An explicit valid value can fill an unresolved or optional value. It cannot repl
 
 Orbit records `checkout` for an independent repository and `worktree` for a linked worktree. It moves the complete source to the managed path. HEAD, branch or detached state, index, dirty and untracked files, refs, commits, and unrelated settings stay intact. A source already at the correct path stays there.
 
-Registration adopts only the caller's source by default. After moving a shared checkout, Orbit repairs links so other worktrees remain usable and unregistered. Use `--include-worktrees` to adopt the checkout and all linked worktrees together. Before moving anything, the Gateway checks each source's Git identity, metadata ownership and permissions, instance name, and destination. It also checks for overlap with managed App instances, legacy Instances, and Workspaces. If any check fails, nothing moves.
+Registration adopts only the caller's source by default. After moving a shared checkout, Orbit repairs links so other worktrees remain usable and unregistered. Use `--include-worktrees` to adopt the checkout and all linked worktrees together. Before moving anything, the Gateway checks each source's Git identity, metadata ownership and permissions, instance name, and destination. It also checks for overlap with managed App instances. If any check fails, nothing moves.
 
 For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress binds original cleanup to the verified source directory identity and keeps one verified authoritative copy after interruption. An identical retry revalidates the canonical authoritative path, repository identity, checkout or worktree layout, and provisioning safety without requiring an unchanged source digest. After relocation, the CLI can retry from the managed primary source path while Orbit retains the original primary and complete requested set. It resumes the same App, App instances, Routes, and managed paths; conflicting input preserves the accepted registration.
 
@@ -97,7 +97,7 @@ A given App can have one production App instance per app-prod Node. The same App
 
 ### Keep existing production App instances
 
-When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it. App instance commands do not remove a legacy Instance.
+When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it. App instance commands do not remove leftover Legacy Instance or Workspace rows or their source directories.
 
 Cloning produces each production App instance, and the first deployment produces the release layout. See [App instance cloning](/reference/appinstance-cloning) and [Production release layout](/reference/deployments).
 
@@ -176,7 +176,7 @@ Production removal uses the same command without deleting application content. I
 
 The removal reference also describes worktree preflight, forced fixed-set cascades, retained branches, ordered cleanup, and transient unavailable traffic.
 
-`instance:destroy` removes an App instance owned by its App and Node. It does not remove a legacy Instance.
+`instance:destroy` removes an App instance owned by its App and Node. It does not remove leftover Legacy Instance or Workspace rows or their source directories.
 
 ## Move an App instance
 

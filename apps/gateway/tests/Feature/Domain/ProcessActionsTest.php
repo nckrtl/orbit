@@ -10,9 +10,7 @@ use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
 use App\Data\Processes\AddProcessData;
-use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Processes\DesiredProcessState;
@@ -861,8 +859,6 @@ it('does not mark a process failed when role cleanup loses the runtime owner', f
     try {
         $cleaner = new NativeNodeRoleDependentCleaner(
             processes: $this->runtime,
-            appDev: Mockery::mock(AppDevRuntimeConverger::class),
-            appProd: Mockery::mock(AppProdRuntimeConverger::class),
         );
 
         expect(fn () => $cleaner->clean(new NodeRoleDependencySet(
@@ -887,8 +883,6 @@ it('role cleanup removes runtime artifacts and leaves the process row for the pa
     $process = process_actions_record($this->instance);
     $cleaner = new NativeNodeRoleDependentCleaner(
         processes: $this->runtime,
-        appDev: Mockery::mock(AppDevRuntimeConverger::class),
-        appProd: Mockery::mock(AppProdRuntimeConverger::class),
     );
 
     $cleaner->clean(new NodeRoleDependencySet(

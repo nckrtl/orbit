@@ -199,36 +199,48 @@ it('keeps the default resolver policy during an app development TLD convergence'
     }
 });
 
-it('renders isolated pools and private Caddy listeners for every active scope', function (): void {
+it('renders isolated pools and private Caddy listeners for every active AppInstance Route', function (): void {
     [$node, $instance, $workspace] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $sites = new AppDevSiteRepository()->forNode($node);
     $fpm = new AppDevPhpFpmConfigRenderer()->render($sites, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     $caddy = new AppDevCaddyConfigRenderer()->render($sites);
     $adapted = caddy_adapt($caddy);
 
     expect($sites)
-        ->toHaveCount(2)
+        ->toHaveCount(1)
+        ->and($sites->sole()->scope)
+        ->toBe("app-instance-{$appInstance->id}")
         ->and($fpm)
         ->toContain(
-            '[orbit-instance-1]',
-            'listen = /run/php/orbit-instance-1.sock',
-            '[orbit-workspace-1]',
-            'listen = /run/php/orbit-workspace-1.sock',
+            "[orbit-app-instance-{$appInstance->id}]",
+            "listen = /run/php/orbit-app-instance-{$appInstance->id}.sock",
             'listen.group = caddy',
             'env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'php_admin_value[opcache.validate_timestamps] = 1',
             'php_admin_value[opcache.revalidate_freq] = 0',
         )
-        ->not->toContain('opcache.file_update_protection', 'opcache.memory_consumption', 'opcache.jit')->and(
+        ->not->toContain(
+            '[orbit-instance-1]',
+            '[orbit-workspace-1]',
+            'opcache.file_update_protection',
+            'opcache.memory_consumption',
+            'opcache.jit',
+        )->and(
             $caddy,
         )->toContain(
-            "https://{$instance->hostname}",
-            "https://{$workspace->hostname}",
+            "https://{$route->hostname}",
             'bind 0.0.0.0',
-            'php_fastcgi unix//run/php/orbit-instance-1.sock',
-            'tls /etc/caddy/orbit-certificates/instance-1/current/cert.pem',
+            "php_fastcgi unix//run/php/orbit-app-instance-{$appInstance->id}.sock",
+            "tls /etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current/cert.pem",
         )
-        ->not->toContain(':80');
+        ->not->toContain(
+            ':80',
+            $instance->hostname === $route->hostname ? 'unused' : "https://{$instance->hostname}",
+            "https://{$workspace->hostname}",
+            'php_fastcgi unix//run/php/orbit-instance-1.sock',
+        );
 
     if (new ExecutableFinder()->find('caddy') !== null) {
         expect($adapted->succeeded())
@@ -239,8 +251,10 @@ it('renders isolated pools and private Caddy listeners for every active scope', 
     }
 });
 
-it('hydrates only the requested Node legacy sites while global DNS keeps every eligible site', function (): void {
+it('hydrates only AppInstance Route sites and never reads leftover Instance or Workspace rows', function (): void {
     [$node, $instance, $workspace] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $unrelatedNode = Node::query()->create([
         'name' => 'unrelated-app-dev',
         'status' => LifecycleStatus::Active,
@@ -248,25 +262,19 @@ it('hydrates only the requested Node legacy sites while global DNS keeps every e
         'public_ssh_host' => '192.0.2.40',
         'wireguard_ip' => '10.44.0.40',
     ]);
-    $unrelatedInstance = Instance::query()->create([
+    $unrelatedApp = app_dev_supported_app_instance($unrelatedNode, $instance->app_id, 'unrelated');
+    $unrelatedRoute = app_dev_supported_route($unrelatedApp, 'unrelated.app-dev.orbit');
+    Instance::query()->create([
         'app_id' => $instance->app_id,
         'node_id' => $unrelatedNode->id,
         'name' => 'unrelated',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/unrelated',
-        'hostname' => 'unrelated.app-dev.orbit',
+        'hostname' => 'legacy-unrelated.app-dev.orbit',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
     ]);
-    $unrelatedWorkspace = Workspace::query()->create([
-        'instance_id' => $unrelatedInstance->id,
-        'name' => 'unrelated-feature',
-        'branch' => 'unrelated-feature',
-        'checkout_path' => '/home/orbit/.orbit/worktrees/unrelated/feature',
-        'hostname' => 'feature.unrelated.app-dev.orbit',
-        'status' => LifecycleStatus::Active,
-    ]);
-    $failedWorkspace = Workspace::query()->create([
+    Workspace::query()->create([
         'instance_id' => $instance->id,
         'name' => 'failed',
         'branch' => 'failed',
@@ -303,22 +311,19 @@ it('hydrates only the requested Node legacy sites while global DNS keeps every e
     expect($nodeSites->map($siteIdentity)->all())
         ->toBe($globalSites->where('nodeId', $node->id)->values()->map($siteIdentity)->all())
         ->and($nodeSites->pluck('scope')->all())
-        ->toBe(["instance-{$instance->id}", "workspace-{$workspace->id}"])
-        ->and($nodeSites->last()?->phpVersion)
-        ->toBe($instance->php_version)
+        ->toBe(["app-instance-{$appInstance->id}"])
+        ->and($nodeSites->sole()->phpVersion)
+        ->toBe($appInstance->selected_php_version)
         ->and($retrievedInstances->all())
-        ->toBe([$instance->id])
+        ->toBe([])
         ->and($retrievedWorkspaces->all())
-        ->toHaveCount(2)
-        ->toContain($workspace->id, $failedWorkspace->id)
-        ->and($retrievedWorkspaces)
-        ->not->toContain($unrelatedWorkspace->id)->and($globalDns)->toContain(
-            "host-record={$instance->hostname},{$node->wireguard_ip}",
-            "host-record={$workspace->hostname},{$node->wireguard_ip}",
-            "host-record={$unrelatedInstance->hostname},{$unrelatedNode->wireguard_ip}",
-            "host-record={$unrelatedWorkspace->hostname},{$unrelatedNode->wireguard_ip}",
+        ->toBe([])
+        ->and($globalDns)
+        ->toContain(
+            "host-record={$route->hostname},{$node->wireguard_ip}",
+            "host-record={$unrelatedRoute->hostname},{$unrelatedNode->wireguard_ip}",
         )
-        ->not->toContain($failedWorkspace->hostname);
+        ->not->toContain($instance->hostname, $workspace->hostname);
 });
 
 it('uses only generated instance paths and registered Git worktrees for source removal', function (): void {
@@ -1688,15 +1693,18 @@ it('rejects a corrupted instance checkout path before SSH or recursive removal',
 });
 
 it('retires previous app-dev pools before activating their lower PHP version', function (): void {
-    [$node, $instance, $workspace] = app_dev_runtime_models();
+    [$node, $instance] = app_dev_runtime_models();
+    $moving = app_dev_supported_app_instance($node, $instance->app_id, 'moving');
+    app_dev_supported_route($moving, 'moving.app-dev.orbit');
+    $stable = app_dev_supported_app_instance($node, $instance->app_id, 'stable');
+    app_dev_supported_route($stable, 'stable.app-dev.orbit');
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
-    $workspace->update(['php_version' => '8.5']);
     $previousConfiguration = $renderer->render(
         $sites->forNode($node),
         new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
     );
-    $instance->update(['php_version' => '8.4']);
+    $moving->update(['selected_php_version' => '8.4']);
     $transitionConfiguration = $renderer->render(
         $sites->forNode($node)->where('phpVersion', '8.5')->values(),
         new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -1728,15 +1736,18 @@ it('retires previous app-dev pools before activating their lower PHP version', f
 });
 
 it('restores the previous app-dev pools when lower PHP activation fails', function (): void {
-    [$node, $instance, $workspace] = app_dev_runtime_models();
+    [$node, $instance] = app_dev_runtime_models();
+    $moving = app_dev_supported_app_instance($node, $instance->app_id, 'moving');
+    app_dev_supported_route($moving, 'moving.app-dev.orbit');
+    $stable = app_dev_supported_app_instance($node, $instance->app_id, 'stable');
+    app_dev_supported_route($stable, 'stable.app-dev.orbit');
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
-    $workspace->update(['php_version' => '8.5']);
     $previousConfiguration = $renderer->render(
         $sites->forNode($node),
         new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
     );
-    $instance->update(['php_version' => '8.4']);
+    $moving->update(['selected_php_version' => '8.4']);
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
         new CommandResult(0, '', '', 1, false),
@@ -1769,15 +1780,19 @@ it('restores the previous app-dev pools when lower PHP activation fails', functi
 });
 
 it('removes a newly activated app-dev pool when later PHP activation fails', function (): void {
-    [$node, $instance, $workspace] = app_dev_runtime_models();
+    [$node, $instance] = app_dev_runtime_models();
+    $lower = app_dev_supported_app_instance($node, $instance->app_id, 'lower');
+    app_dev_supported_route($lower, 'lower.app-dev.orbit');
+    $higher = app_dev_supported_app_instance($node, $instance->app_id, 'higher');
+    app_dev_supported_route($higher, 'higher.app-dev.orbit');
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
     $previousConfiguration = $renderer->render(
         $sites->forNode($node),
         new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
     );
-    $instance->update(['php_version' => '8.4']);
-    $workspace->update(['php_version' => '8.6']);
+    $lower->update(['selected_php_version' => '8.4']);
+    $higher->update(['selected_php_version' => '8.6']);
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
         new CommandResult(0, '', '', 1, false),
@@ -1813,7 +1828,11 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
 });
 
 it('installs selected PHP versions and validates a complete staged FPM configuration before publication', function (): void {
-    [$node] = app_dev_runtime_models(instancePhp: '8.4');
+    [$node, $instance] = app_dev_runtime_models();
+    $php84 = app_dev_supported_app_instance($node, $instance->app_id, 'php84', '8.4');
+    app_dev_supported_route($php84, 'php84.app-dev.orbit');
+    $php85 = app_dev_supported_app_instance($node, $instance->app_id, 'php85', '8.5');
+    app_dev_supported_route($php85, 'php85.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\n", '', 1, false),
         new CommandResult(0, "8.4\n", '', 1, false),
@@ -1834,7 +1853,7 @@ it('installs selected PHP versions and validates a complete staged FPM configura
         ->values();
 
     expect($ssh->commands)
-        ->toHaveCount(5)
+        ->toHaveCount(6)
         ->and($ssh->commands[2]->input)
         ->toContain('apt-get -o DPkg::Lock::Timeout=300 install')
         ->and($ssh->commands[2]->arguments)
@@ -1904,7 +1923,9 @@ it('installs selected PHP versions and validates a complete staged FPM configura
 
 it('renders and publishes AppDev FPM pools with the nondefault managed account', function (): void {
     $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
-    [$node] = app_dev_runtime_models(account: $account);
+    [$node, $instance] = app_dev_runtime_models(account: $account);
+    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $sites = new AppDevSiteRepository()->forNode($node);
     $rendered = new AppDevPhpFpmConfigRenderer()->render($sites, $account);
     $ssh = new AppDevFakeSshExecutor([
@@ -1942,7 +1963,9 @@ it('renders and publishes AppDev FPM pools with the nondefault managed account',
 });
 
 it('restores the exact AppDev FPM file before the recovery reload when activation fails', function (): void {
-    [$node] = app_dev_runtime_models();
+    [$node, $instance] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $harness = new FpmPublishHarness;
     $managed = $harness->prepare('8.5', 'orbit-scopes.conf', "previous app-dev pool\n");
     $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "8.5\n", '', 1, false)]);
@@ -1981,7 +2004,9 @@ it('restores the exact AppDev FPM file before the recovery reload when activatio
 });
 
 it('rejects an unsupported PHP version before target discovery or installation', function (): void {
-    [$node] = app_dev_runtime_models(instancePhp: '8.3');
+    [$node, $instance] = app_dev_runtime_models();
+    $unsupported = app_dev_supported_app_instance($node, $instance->app_id, 'unsupported', '8.3');
+    app_dev_supported_route($unsupported, 'unsupported.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor;
     $manager = new RemoteAppDevPhpFpmManager(
         sites: new AppDevSiteRepository,
@@ -2204,7 +2229,11 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
 ]);
 
 it('publishes private Caddy and DNS configurations through complete preserved validation aggregates', function (): void {
-    [$node] = app_dev_runtime_models();
+    [$node, $instance] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
+    $feature = app_dev_supported_app_instance($node, $instance->app_id, 'feature');
+    app_dev_supported_route($feature, 'feature.acme.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor;
     $caddyRenderer = new AppDevCaddyConfigRenderer;
     $caddy = new RemoteAppDevCaddyManager(
@@ -2884,6 +2913,42 @@ function app_dev_runtime_models(
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 
     return [$node, $instance, $workspace];
+}
+
+function app_dev_supported_app_instance(
+    Node $node,
+    int $appId,
+    string $name = 'default',
+    string $phpVersion = '8.5',
+): AppInstance {
+    return AppInstance::query()->create([
+        'app_id' => $appId,
+        'node_id' => $node->id,
+        'name' => $name,
+        'checkout_path' => "/home/orbit/apps/acme/{$name}",
+        'selected_php_version' => $phpVersion,
+        'root' => 'public',
+        'status' => AppInstanceState::Active,
+    ]);
+}
+
+function app_dev_supported_route(AppInstance $appInstance, string $hostname): Route
+{
+    $route = Route::query()->create([
+        'app_id' => $appInstance->app_id,
+        'node_id' => $appInstance->node_id,
+        'hostname' => $hostname,
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create([
+        'app_instance_id' => $appInstance->id,
+        'position' => 0,
+    ]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route->refresh();
 }
 
 function orb173_dns_projection_route(

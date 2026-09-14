@@ -37,7 +37,6 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
@@ -116,7 +115,6 @@ beforeEach(function (): void {
         new Orb198SourceLock,
         $this->source,
         new RouteStateResolver,
-        new AppProdSiteRepository,
         $environment,
         $this->sqlite,
         app(InstantiateAppRuntimeDefinitionsAction::class),

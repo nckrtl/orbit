@@ -25,11 +25,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
-use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -337,20 +335,6 @@ final readonly class RemoveNodeRoleAction
                     'failed_step' => null,
                     'error_code' => null,
                 ]);
-            Workspace::query()
-                ->whereIn('id', $dependencies->workspaceIds)
-                ->update([
-                    'status' => LifecycleStatus::Removing,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ]);
-            Instance::query()
-                ->whereIn('id', $dependencies->instanceIds)
-                ->update([
-                    'status' => LifecycleStatus::Removing,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ]);
 
             return [$assignment->refresh(), $dependencies];
         });
@@ -377,8 +361,6 @@ final readonly class RemoveNodeRoleAction
             }
 
             Process::query()->whereIn('id', $captured->processIds)->delete();
-            Workspace::query()->whereIn('id', $captured->workspaceIds)->delete();
-            Instance::query()->whereIn('id', $captured->instanceIds)->delete();
             $assignment->delete();
         });
     }

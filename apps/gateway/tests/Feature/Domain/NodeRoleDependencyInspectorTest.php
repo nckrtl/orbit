@@ -14,7 +14,7 @@ use App\Models\Process;
 use App\Models\Workspace;
 
 describe(EloquentNodeRoleDependencyInspector::class, function (): void {
-    it('returns deterministic app-dev dependencies from certificate ownership across every lifecycle state', function (): void {
+    it('ignores leftover Instance, Workspace, and legacy-owned Process rows for app-dev', function (): void {
         $node = dependency_node('dependency-dev');
         $development = dependency_instance(
             node: $node,
@@ -30,31 +30,23 @@ describe(EloquentNodeRoleDependencyInspector::class, function (): void {
             environment: 'development',
         );
         $workspaceTwo = dependency_workspace(instance: $development, name: 'two', status: LifecycleStatus::Removing);
-        $workspaceOne = dependency_workspace(instance: $development, name: 'one', status: LifecycleStatus::Failed);
-        $workspaceProcess = dependency_process(
-            owner: $workspaceTwo,
-            name: 'workspace',
-            status: LifecycleStatus::Removing,
-        );
-        $instanceProcess = dependency_process(owner: $development, name: 'instance', status: LifecycleStatus::Failed);
+        dependency_workspace(instance: $development, name: 'one', status: LifecycleStatus::Failed);
+        dependency_process(owner: $workspaceTwo, name: 'workspace', status: LifecycleStatus::Removing);
+        dependency_process(owner: $development, name: 'instance', status: LifecycleStatus::Failed);
 
         $dependencies = app(NodeRoleDependencyInspector::class)->inspect($node, RoleName::AppDev);
 
         expect($dependencies->instanceIds)
-            ->toBe([$development->id])
+            ->toBeEmpty()
             ->and($dependencies->workspaceIds)
-            ->toBe([$workspaceTwo->id, $workspaceOne->id])
+            ->toBeEmpty()
             ->and($dependencies->processIds)
-            ->toBe([$workspaceProcess->id, $instanceProcess->id])
+            ->toBeEmpty()
             ->and($dependencies->summaries)
-            ->toBe([
-                '1 development instance record',
-                '2 process records',
-                '2 workspace records',
-            ]);
+            ->toBeEmpty();
     });
 
-    it('returns only ACME instance-owned dependencies for app-prod regardless of environment labels', function (): void {
+    it('ignores leftover ACME Instance rows and their processes for app-prod', function (): void {
         $node = dependency_node('dependency-prod');
         $production = dependency_instance(
             node: $node,
@@ -68,22 +60,19 @@ describe(EloquentNodeRoleDependencyInspector::class, function (): void {
             name: 'ignored-workspace',
             status: LifecycleStatus::Active,
         );
-        $directProcess = dependency_process(owner: $production, name: 'direct', status: LifecycleStatus::Provisioning);
+        dependency_process(owner: $production, name: 'direct', status: LifecycleStatus::Provisioning);
         dependency_process(owner: $workspace, name: 'nested-ignored', status: LifecycleStatus::Active);
 
         $dependencies = app(NodeRoleDependencyInspector::class)->inspect($node, RoleName::AppProd);
 
         expect($dependencies->instanceIds)
-            ->toBe([$production->id])
+            ->toBeEmpty()
             ->and($dependencies->workspaceIds)
             ->toBeEmpty()
             ->and($dependencies->processIds)
-            ->toBe([$directProcess->id])
+            ->toBeEmpty()
             ->and($dependencies->summaries)
-            ->toBe([
-                '1 process record',
-                '1 production instance record',
-            ]);
+            ->toBeEmpty();
     });
 
     it('returns an empty deterministic set for roles without application dependents', function (RoleName $role): void {

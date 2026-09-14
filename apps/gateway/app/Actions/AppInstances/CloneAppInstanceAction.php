@@ -27,7 +27,6 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
@@ -43,7 +42,6 @@ final readonly class CloneAppInstanceAction
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceSourceLifecycle $source,
         private RouteStateResolver $routeState,
-        private AppProdSiteRepository $appProdSites,
         private CloneAppInstanceEnvironmentAction $environment,
         private AppInstanceSqliteSeeder $sqlite,
         private InstantiateAppRuntimeDefinitionsAction $definitions,
@@ -188,13 +186,6 @@ final readonly class CloneAppInstanceAction
 
         if ($placement->clusterId !== null) {
             $this->routeState->assertRouter($placement->clusterId);
-        }
-
-        if ($this->appProdSites->hasLivePublicFootprint($node)) {
-            throw $this->conflict(
-                'instance.legacy_production_conflict',
-                'The selected Node still serves a legacy public production Instance.',
-            );
         }
 
         if (AppInstance::query()

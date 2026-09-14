@@ -2368,7 +2368,7 @@ it('rejects inactive Node role and unsupported platform placement before mutatio
         ->toBeEmpty();
 })->with(['node', 'role', 'platform']);
 
-it('rejects overlap with every retained legacy checkout type before source work', function (string $owner): void {
+it('does not treat leftover Instance or Workspace checkouts as AppInstance overlap', function (string $owner): void {
     $legacy = Instance::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -2399,13 +2399,12 @@ it('rejects overlap with every retained legacy checkout type before source work'
             'node_id' => $this->node->id,
             'name' => 'dev',
         ])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.path_taken');
+        ->assertCreated();
 
     expect(AppInstance::query()->count())
-        ->toBe(0)
-        ->and($this->source->calls)
-        ->toBeEmpty();
+        ->toBe(1)
+        ->and($legacy->refresh()->checkout_path)
+        ->toBe($owner === 'instance' ? '/srv/orbit/apps/acme' : '/srv/orbit/legacy/acme');
 })->with(['instance', 'workspace']);
 
 it('keeps the first checkout immutable when a later AppInstance uses a changed apps root', function (): void {
@@ -2508,15 +2507,13 @@ it('returns migration conflict for an occupied reserved default identity before 
 });
 
 it('returns migration conflict for a managed default destination overlap before mutation', function (): void {
-    Instance::query()->create([
+    AppInstance::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
-        'name' => 'legacy',
-        'environment' => 'development',
+        'name' => 'occupied',
         'checkout_path' => '/srv/orbit/apps/acme/default',
-        'hostname' => 'legacy.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
+        'root' => 'public',
+        'status' => AppInstanceState::Active,
     ]);
 
     $this
@@ -2529,7 +2526,9 @@ it('returns migration conflict for a managed default destination overlap before 
         ->assertJsonPath('error.code', 'instance.migration_conflict');
 
     expect(AppInstance::query()->count())
-        ->toBe(0)
+        ->toBe(1)
+        ->and(AppInstance::query()->sole()->name)
+        ->toBe('occupied')
         ->and($this->source->calls)
         ->toBe([]);
 });

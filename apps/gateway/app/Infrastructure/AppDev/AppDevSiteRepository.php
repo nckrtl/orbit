@@ -8,12 +8,9 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteHostnameChangeDirection;
 use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteStatus;
-use App\Domain\Shared\LifecycleStatus;
 use App\Models\AppInstance;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -45,40 +42,8 @@ final readonly class AppDevSiteRepository
         ?AppInstance $unavailableInstance,
         ?Route $additionalRoute,
     ): Collection {
-        $instanceQuery = Instance::query()
-            ->with(['node', 'workspaces'])
-            ->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value]);
-
-        if ($node instanceof Node) {
-            $instanceQuery->where('node_id', $node->id);
-        }
-
-        $instances = $instanceQuery
-            ->latest('id')
-            ->get();
-        /** @var Collection<int, Instance> $instances */
         /** @var Collection<int, AppDevSite> $sites */
         $sites = collect();
-
-        foreach ($instances as $instance) {
-            if (! is_string($instance->node->wireguard_ip)) {
-                continue;
-            }
-
-            $sites->push($this->instanceSite($instance));
-
-            foreach ($instance->workspaces as $workspace) {
-                if (! in_array(
-                    needle: $workspace->status,
-                    haystack: [LifecycleStatus::Provisioning, LifecycleStatus::Active],
-                    strict: true,
-                )) {
-                    continue;
-                }
-
-                $sites->push($this->workspaceSite($instance, $workspace));
-            }
-        }
 
         $routeQuery = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
@@ -232,32 +197,6 @@ final readonly class AppDevSiteRepository
                 hostnameChange: true,
             ));
         }
-    }
-
-    private function instanceSite(Instance $instance): AppDevSite
-    {
-        return new AppDevSite(
-            nodeId: $instance->node_id,
-            nodeAddress: $instance->node->wireguard_ip ?? '',
-            scope: "instance-{$instance->id}",
-            checkoutPath: $instance->checkout_path,
-            documentRoot: $instance->document_root,
-            phpVersion: $instance->php_version,
-            hostname: $instance->hostname,
-        );
-    }
-
-    private function workspaceSite(Instance $instance, Workspace $workspace): AppDevSite
-    {
-        return new AppDevSite(
-            nodeId: $instance->node_id,
-            nodeAddress: $instance->node->wireguard_ip ?? '',
-            scope: "workspace-{$workspace->id}",
-            checkoutPath: $workspace->checkout_path,
-            documentRoot: $instance->document_root,
-            phpVersion: $workspace->php_version ?? $instance->php_version,
-            hostname: $workspace->hostname,
-        );
     }
 
     private function appInstanceSite(
