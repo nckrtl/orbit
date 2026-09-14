@@ -1,0 +1,9 @@
+{
+    "id": "ORB-338",
+    "title": "Core app-dev idle halt/resume (markers, wake, hibernator)",
+    "parent": "ORB-337",
+    "status": "In Progress",
+    "flow": "discovery",
+    "incus": false,
+    "labels": ["docs", "apps/gateway", "Feature"]
+}
