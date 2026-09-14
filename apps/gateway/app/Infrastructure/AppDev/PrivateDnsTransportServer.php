@@ -30,7 +30,7 @@ final class PrivateDnsTransportServer
 
     public function start(): void
     {
-        $udp = stream_socket_server(
+        $udp = @stream_socket_server(
             'udp://'.$this->listenAddress.':'.$this->port,
             $udpError,
             $udpMessage,
@@ -48,7 +48,7 @@ final class PrivateDnsTransportServer
         }
 
         $this->port = (int) substr($name, strrpos($name, ':') + 1);
-        $tcp = stream_socket_server(
+        $tcp = @stream_socket_server(
             'tcp://'.$this->listenAddress.':'.$this->port,
             $tcpError,
             $tcpMessage,

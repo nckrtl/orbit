@@ -107,6 +107,42 @@ it('restores the previous working service after a restart failure and republishe
     }
 });
 
+it('keeps only managed fragments in the live dnsmasq conf-dir after listener publication and restore', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb260_published_cluster();
+    $previousVpn = "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\n";
+    $harness->putVpnFragment($previousVpn);
+
+    try {
+        $harness->listenerManager()->converge();
+
+        expect($harness->confDirectoryEntries())
+            ->toEqualCanonicalizing(['orbit-records.conf', 'orbit-vpn.conf'])
+            ->and($harness->confDirectoryListenAddressFiles())
+            ->toBe(['orbit-vpn.conf'])
+            ->and((string) file_get_contents($harness->vpnFragmentPath()))
+            ->toContain('listen-address=127.0.0.55')
+            ->not->toContain('interface=orbit');
+
+        $harness->failListenerBind();
+        $restoreVpn = "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\nhost-record=extra.orbit,10.44.0.9\n";
+        $harness->putVpnFragment($restoreVpn);
+        $harness->clearServiceLog();
+
+        expect(fn () => $harness->listenerManager()->converge())
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect($harness->confDirectoryEntries())
+            ->toEqualCanonicalizing(['orbit-records.conf', 'orbit-vpn.conf'])
+            ->and($harness->confDirectoryListenAddressFiles())
+            ->toBe([])
+            ->and(file_get_contents($harness->vpnFragmentPath()))
+            ->toBe($restoreVpn);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('publishes LAN overrides for eligible Cluster members in the requester catalog', function (): void {
     $harness = new PrivateDnsPublishHarness;
     [$route, $member] = orb260_published_cluster();

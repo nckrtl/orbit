@@ -13,6 +13,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\PrivateDnsListenerFactory;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
+use App\Infrastructure\AppDev\PrivateDnsSocketBinder;
 use App\Infrastructure\AppDev\PrivateDnsTransportServer;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -20,6 +21,8 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
+use RuntimeException;
+use Symfony\Component\Process\Process;
 use Tests\Support\PrivateDnsPublishHarness;
 
 it('activates the requester-aware listener from a published catalog without rewriting LAN into the shared fragment', function (): void {
@@ -33,6 +36,10 @@ it('activates the requester-aware listener from a published catalog without rewr
         $vpn = (string) file_get_contents($harness->vpnFragmentPath());
         $unit = (string) file_get_contents($harness->unitPath());
 
+        $calls = $harness->serviceCalls();
+        $enableAt = array_search('enable --now orbit-private-dns.service', $calls, true);
+        $restartAt = array_search('restart dnsmasq', $calls, true);
+
         expect($records)
             ->toContain('host-record='.$route->hostname.',10.44.0.20')
             ->not->toContain('192.168.10.20')
@@ -42,9 +49,22 @@ it('activates the requester-aware listener from a published catalog without rewr
             ->and($unit)
             ->toContain('orbit:private-dns-serve')
             ->toContain('--listen=10.44.0.1')
-            ->and($harness->serviceCalls())
+            ->and($calls)
             ->toContain('restart dnsmasq')
-            ->toContain('enable --now orbit-private-dns.service');
+            ->toContain('enable --now orbit-private-dns.service')
+            ->and($enableAt)
+            ->toBeInt()
+            ->and($restartAt)
+            ->toBeInt()
+            ->and($enableAt)
+            ->toBeLessThan($restartAt)
+            ->and($harness->socketProbes())
+            ->toContain('-4 -ulpnH src 10.44.0.1:53')
+            ->toContain('-4 -tlnpH src 10.44.0.1:53')
+            ->and($harness->confDirectoryEntries())
+            ->toEqualCanonicalizing(['orbit-records.conf', 'orbit-vpn.conf'])
+            ->and($harness->confDirectoryListenAddressFiles())
+            ->toBe(['orbit-vpn.conf']);
     } finally {
         $harness->cleanup();
     }
@@ -67,7 +87,10 @@ it('picks up a catalog republish without restarting the listener once it is alre
             ->toContain('is-active --quiet dnsmasq')
             ->toContain('is-active --quiet orbit-private-dns.service')
             ->not->toContain('restart dnsmasq')
-            ->not->toContain('enable --now orbit-private-dns.service');
+            ->not->toContain('enable --now orbit-private-dns.service')
+            ->and($harness->socketProbes())
+            ->toContain('-4 -ulpnH src 10.44.0.1:53')
+            ->toContain('-4 -tlnpH src 10.44.0.1:53');
     } finally {
         $harness->cleanup();
     }
@@ -94,7 +117,47 @@ it('restores the previous dnsmasq fragment and catalog when listener activation 
             ->and(file_get_contents($harness->catalogPath()))
             ->toBe($previousCatalog)
             ->and(file_get_contents($harness->vpnFragmentPath()))
-            ->toBe($previousVpn);
+            ->toBe($previousVpn)
+            ->and($harness->confDirectoryEntries())
+            ->toEqualCanonicalizing(['orbit-records.conf', 'orbit-vpn.conf'])
+            ->and($harness->confDirectoryListenAddressFiles())
+            ->toBe([]);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('restores the previous working dnsmasq VPN fragment when the listener is not bound after cutover', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+    $previousRecords = "# Managed by Orbit.\nhost-record=gateway.orbit,10.44.0.1\n";
+    $previousCatalog = "{\"requesters\":{},\"records\":{\"gateway.orbit\":\"10.44.0.1\"},\"suffixes\":{},\"overrides\":{}}\n";
+    $previousVpn = "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\n";
+    $harness->putRecords($previousRecords);
+    $harness->putCatalog($previousCatalog);
+    $harness->putVpnFragment($previousVpn);
+    $harness->markActive();
+    $harness->failListenerBind();
+
+    try {
+        expect(fn () => $harness->listenerManager()->converge())
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(file_get_contents($harness->vpnFragmentPath()))
+            ->toBe($previousVpn)
+            ->and(file_get_contents($harness->recordsPath()))
+            ->toBe($previousRecords)
+            ->and(file_get_contents($harness->catalogPath()))
+            ->toBe($previousCatalog)
+            ->and($harness->serviceCalls())
+            ->toContain('enable --now orbit-private-dns.service')
+            ->toContain('restart dnsmasq')
+            ->and($harness->socketProbes())
+            ->toContain('-4 -ulpnH src 10.44.0.1:53')
+            ->and($harness->confDirectoryEntries())
+            ->toEqualCanonicalizing(['orbit-records.conf', 'orbit-vpn.conf'])
+            ->and($harness->confDirectoryListenAddressFiles())
+            ->toBe([]);
     } finally {
         $harness->cleanup();
     }
@@ -151,6 +214,94 @@ it('answers UDP and TCP from a file-backed catalog after a republish without res
             ->toBe('192.168.6.21');
     } finally {
         $server->stop();
+        $files->deleteDirectory($root);
+    }
+});
+
+it('retries bind after the previous holder releases the published address and answers UDP and TCP through the cutover', function (): void {
+    $root = sys_get_temp_dir().'/orbit-listener-cutover-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->makeDirectory($root, 0755, true);
+    $catalog = $root.'/catalog.json';
+    $files->put($catalog, json_encode([
+        'requesters' => [],
+        'records' => ['commander.test' => '10.44.0.7'],
+        'suffixes' => [],
+        'overrides' => [],
+    ], JSON_THROW_ON_ERROR));
+    $port = orb314_free_port();
+    $holder = new Process([
+        PHP_BINARY,
+        '-r',
+        ' $udp = stream_socket_server("udp://127.0.0.1:'.$port.'", $e, $m, STREAM_SERVER_BIND);'
+        .' $tcp = stream_socket_server("tcp://127.0.0.1:'.$port.'", $e, $m);'
+        .' fwrite(STDOUT, "held\n");'
+        .' usleep(400000);',
+    ]);
+    $listener = new Process([
+        PHP_BINARY,
+        '-r',
+        'require '.var_export(base_path('vendor/autoload.php'), true).';'
+        .'$server = (new App\Infrastructure\AppDev\PrivateDnsListenerFactory)->make('
+        .var_export($catalog, true).', "127.0.0.1", '.$port.', "127.0.0.55:1");'
+        .'(new App\Infrastructure\AppDev\PrivateDnsSocketBinder(8.0, 0.05))->bind($server);'
+        .'fwrite(STDOUT, "bound\n");'
+        .'while ($server->listening()) { $server->serveOnce(0.2); }',
+    ]);
+
+    try {
+        $holder->start();
+        expect(orb314_wait_until(static fn (): bool => str_contains($holder->getOutput(), 'held'), 2.0))->toBeTrue();
+        expect(orb314_port_refuses('127.0.0.1', $port))->toBeFalse();
+
+        $listener->start();
+        $bound = orb314_wait_until(static fn (): bool => str_contains($listener->getOutput(), 'bound'), 8.0);
+        expect($listener->getErrorOutput()."\n".$listener->getOutput())->toContain('bound');
+        expect($bound)->toBeTrue();
+        expect($holder->isRunning())->toBeFalse();
+        expect($listener->isRunning())->toBeTrue();
+
+        $udp = orb314_dig('127.0.0.1', $port, 'commander.test', 'udp');
+        $tcp = orb314_dig('127.0.0.1', $port, 'commander.test', 'tcp');
+
+        expect($udp)
+            ->toBe('10.44.0.7')
+            ->and($tcp)
+            ->toBe('10.44.0.7');
+    } finally {
+        if ($listener->isRunning()) {
+            $listener->stop(0.5);
+        }
+        if ($holder->isRunning()) {
+            $holder->stop(0.5);
+        }
+        $files->deleteDirectory($root);
+    }
+});
+
+it('does not treat a bind retry as success while the published address stays occupied', function (): void {
+    $root = sys_get_temp_dir().'/orbit-listener-busy-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->makeDirectory($root, 0755, true);
+    $catalog = $root.'/catalog.json';
+    $files->put($catalog, "{\"requesters\":{},\"records\":{\"commander.test\":\"10.44.0.7\"},\"suffixes\":{},\"overrides\":{}}\n");
+    $port = orb314_free_port();
+    $holderUdp = stream_socket_server('udp://127.0.0.1:'.$port, $udpError, $udpMessage, STREAM_SERVER_BIND);
+    $holderTcp = stream_socket_server('tcp://127.0.0.1:'.$port, $tcpError, $tcpMessage);
+    $server = new PrivateDnsListenerFactory()->make($catalog, '127.0.0.1', $port, '127.0.0.55:1');
+
+    try {
+        expect($holderUdp)->toBeResource()->and($holderTcp)->toBeResource();
+        expect(fn () => new PrivateDnsSocketBinder(timeoutSeconds: 0.2, intervalSeconds: 0.02)->bind($server))
+            ->toThrow(RuntimeException::class);
+        expect($server->listening())->toBeFalse();
+    } finally {
+        if (is_resource($holderUdp)) {
+            fclose($holderUdp);
+        }
+        if (is_resource($holderTcp)) {
+            fclose($holderTcp);
+        }
         $files->deleteDirectory($root);
     }
 });
@@ -257,4 +408,72 @@ function orb307_query(PrivateDnsTransportServer $server, string $source, string 
     $address = unpack('Nip', substr((string) $response, -4));
 
     return long2ip($address['ip'] ?? 0) ?: '';
+}
+
+function orb314_free_port(): int
+{
+    $socket = stream_socket_server('tcp://127.0.0.1:0');
+    expect($socket)->toBeResource();
+    $name = stream_socket_get_name($socket, false);
+    expect($name)->toBeString();
+    fclose($socket);
+
+    return (int) substr($name, strrpos($name, ':') + 1);
+}
+
+function orb314_wait_until(callable $ready, float $seconds): bool
+{
+    $deadline = microtime(true) + $seconds;
+    while (microtime(true) < $deadline) {
+        if ($ready()) {
+            return true;
+        }
+
+        usleep(50_000);
+    }
+
+    return $ready();
+}
+
+function orb314_port_refuses(string $address, int $port): bool
+{
+    $socket = @stream_socket_client('tcp://'.$address.':'.$port, $error, $message, 0.2);
+    if (is_resource($socket)) {
+        fclose($socket);
+
+        return false;
+    }
+
+    return $error === 111 || str_contains($message, 'Connection refused');
+}
+
+function orb314_port_answers(string $address, int $port): bool
+{
+    return ! orb314_port_refuses($address, $port);
+}
+
+function orb314_dig(string $server, int $port, string $name, string $transport): string
+{
+    $command = [
+        'dig',
+        '+time=2',
+        '+tries=1',
+        '+short',
+        '-p',
+        (string) $port,
+        '@'.$server,
+        $name,
+        'A',
+    ];
+    if ($transport === 'tcp') {
+        $command[] = '+tcp';
+    }
+
+    $process = new Process($command);
+    $process->run();
+    if (! $process->isSuccessful()) {
+        expect($process->getErrorOutput()."\n".$process->getOutput())->toBe('');
+    }
+
+    return trim($process->getOutput());
 }

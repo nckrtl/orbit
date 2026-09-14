@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Infrastructure\AppDev\PrivateDnsListenerFactory;
+use App\Infrastructure\AppDev\PrivateDnsSocketBinder;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -20,7 +21,7 @@ final class ServePrivateDnsCommand extends Command
     #[\Override]
     protected $description = 'Serve requester-aware Orbit VPN DNS answers from the published catalog.';
 
-    public function handle(PrivateDnsListenerFactory $factory): int
+    public function handle(PrivateDnsListenerFactory $factory, PrivateDnsSocketBinder $binder): int
     {
         $listen = $this->option('listen');
         $catalog = $this->option('catalog');
@@ -36,7 +37,7 @@ final class ServePrivateDnsCommand extends Command
         $server = $factory->make($catalog, $listen, (int) $port, $upstream);
 
         try {
-            $server->start();
+            $binder->bind($server);
             while ($server->listening()) {
                 $server->serveOnce(1.0);
             }
