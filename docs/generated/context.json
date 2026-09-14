@@ -1873,8 +1873,7 @@
                 "Route",
                 "Router",
                 "Schedule",
-                "Tool",
-                "Workspace"
+                "Tool"
             ],
             "governing_adrs": [
                 "0071"

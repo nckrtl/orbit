@@ -43,14 +43,12 @@ final readonly class CommandVocabulary
         'metrics' => ['status'],
         'process' => ['logs', 'restart', 'start', 'stop'],
         'schedule' => ['logs', 'run'],
-        'workspace' => ['new'],
     ];
 
     /** @var list<string> */
     public const array NOUN_ENDING_COMMANDS = [
         'metrics:credentials',
         'node:settings',
-        'workspace:php',
     ];
 
     public static function lastSegment(string $name): string
