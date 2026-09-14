@@ -10,6 +10,8 @@ use Illuminate\Support\Collection;
 
 final readonly class AppDevCaddyConfigRenderer
 {
+    public const string ORBIT_ROOT_CA_PATH = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt';
+
     public function __construct(
         private string $gatewayOrigin = 'https://gateway.orbit',
     ) {}
@@ -98,7 +100,7 @@ final readonly class AppDevCaddyConfigRenderer
         }
 
         $uri = '/api/v1/runtime-activations/app-instance/'.$id;
-        $root = $site->certificateDirectory().'/root.pem';
+        $root = self::ORBIT_ROOT_CA_PATH;
 
         return <<<CADDY
             @orbit_asleep {
@@ -108,7 +110,7 @@ final readonly class AppDevCaddyConfigRenderer
                 uri {$uri}
                 header_up Host {$host}
                 transport http {
-                    tls_trusted_ca_certs {$root}
+                    tls_trust_pool file {$root}
                     tls_server_name {$host}
                 }
             }

@@ -23,7 +23,9 @@ it('proxies the reserved development-server path to loopback on a development si
         ->toContain('not file /dev/shm/orbit/hibernation/app-instance-6.awake')
         ->toContain('uri /api/v1/runtime-activations/app-instance/6')
         ->toContain('output file /data/caddy/orbit/hibernation/app-instance-6.log')
-        ->toContain('tls_trusted_ca_certs /etc/caddy/orbit-certificates/app-instance-6/current/root.pem')
+        ->toContain('tls_trust_pool file /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('tls_trusted_ca_certs')
+        ->not->toContain('/etc/caddy/orbit-certificates/app-instance-6/current/root.pem')
         ->not->toContain('reverse_proxy https://');
     expect(mb_strpos($configuration, 'forward_auth'))
         ->toBeInt()
@@ -45,6 +47,8 @@ it('keeps two development sites isolated on the same loopback port', function ()
         ->and($configuration)
         ->toContain('root * /home/orbit/apps/alpha/public')
         ->toContain('root * /home/orbit/apps/beta/public')
+        ->toContain('tls_trust_pool file /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('current/root.pem')
         ->not->toContain('reverse_proxy https://');
 });
 

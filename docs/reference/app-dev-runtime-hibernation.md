@@ -30,7 +30,7 @@ A sweep that finds no recent HTTP activity stops each desired-running AppInstanc
 
 ## Wake
 
-Caddy on the AppInstance Node checks `/dev/shm/orbit/hibernation/app-instance-{id}.awake`. When that file is absent, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard and trusts the Orbit root CA already published with the site certificate.
+Caddy on the AppInstance Node checks `/dev/shm/orbit/hibernation/app-instance-{id}.awake`. When that file is absent, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard and trusts the Orbit root CA already published as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt`.
 
 The Gateway accepts that call only from the AppInstance's Node. It returns an HTML progress page with status 401 and a two-second refresh, then starts the desired-running AppInstance Processes after that response. Caddy shows that page and does not proxy the site.
 
