@@ -79,7 +79,7 @@ The CLI sends each deployment operation through the typed PHP SDK. It does not r
 | `orbit instance:deployment-config INSTANCE --file=PATH` | Reads one complete JSON configuration from `PATH` and replaces the stored branch and steps. Add `--json` to return the stored configuration and its `request_id` as one JSON object. |
 | `orbit instance:deploy INSTANCE` | Starts an explicit deployment and renders phase, output, and result events as they arrive. Add `--json` to write those same events as newline-delimited JSON (NDJSON), including a failed `result`. |
 | `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. Add `--json` to write those same events as NDJSON, including a failed `result`. |
-| `orbit instance:releases INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
+| `orbit instance:release:list INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
 
 The deployment configuration file uses the same `branch` and `steps` fields as the deployment API. It is a complete replacement, not a partial update.
 
@@ -111,7 +111,7 @@ The CLI uses the shared safe JSON error envelope as one line, and preserves the 
 | The Gateway or CLI refuses the command before the stream opens | One object with `error.code`, `error.message`, and `error.request_id`. |
 | The stream is malformed, truncated, or ends without a result | The validated events already written, then one error-envelope line. |
 
-`instance:deployment-config`, `instance:releases`, and `instance:prepare-deployment` write one JSON object and use that error envelope on failure.
+`instance:deployment-config`, `instance:release:list`, and `instance:prepare-deployment` write one JSON object and use that error envelope on failure.
 
 The command exit status identifies whether the streamed operation completed successfully.
 

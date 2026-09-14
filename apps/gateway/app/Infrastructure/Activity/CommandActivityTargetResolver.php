@@ -198,7 +198,7 @@ final readonly class CommandActivityTargetResolver
             'node:provision' => Node::query()->where('name', $request->input('name'))->first(),
             'doctor:run' => $this->doctorNode($request),
             'app:new' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
-            'instance:new' => AppInstance::query()
+            'instance:create' => AppInstance::query()
                 ->where('app_id', $request->integer('app_id'))
                 ->where('name', $request->input('name'))
                 ->first(),

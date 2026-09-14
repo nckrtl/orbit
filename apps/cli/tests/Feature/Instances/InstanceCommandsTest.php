@@ -11,9 +11,9 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -310,10 +310,10 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-describe('instance:new', function (): void {
+describe('instance:create', function (): void {
     it('documents the development and standalone production contract', function (): void {
         $this
-            ->artisan('help', ['command_name' => 'instance:new'])
+            ->artisan('help', ['command_name' => 'instance:create'])
             ->expectsOutputToContain('Create an AppInstance on an app-dev or standalone app-prod node.')
             ->expectsOutputToContain('default is reserved for the default development source')
             ->assertExitCode(0);
@@ -325,7 +325,7 @@ describe('instance:new', function (): void {
         ]);
 
         $this
-            ->artisan('instance:new', [
+            ->artisan('instance:create', [
                 'app' => '3',
                 'node' => '2',
                 'name' => 'dev',
@@ -350,7 +350,7 @@ describe('instance:new', function (): void {
         ]);
 
         $this
-            ->artisan('instance:new', [
+            ->artisan('instance:create', [
                 'app' => '3',
                 'node' => '2',
                 'name' => 'dev',
@@ -372,7 +372,7 @@ describe('instance:new', function (): void {
         ]);
 
         $this
-            ->artisan('instance:new', [
+            ->artisan('instance:create', [
                 'app' => '3',
                 'node' => '2',
                 'name' => 'dev',
@@ -394,7 +394,7 @@ describe('instance:new', function (): void {
         ]);
 
         $this
-            ->artisan('instance:new', [
+            ->artisan('instance:create', [
                 'app' => '3',
                 'node' => '2',
                 'name' => 'default',
@@ -416,7 +416,7 @@ describe('instance:new', function (): void {
         ]);
 
         $this
-            ->artisan('instance:new', [
+            ->artisan('instance:create', [
                 'app' => '3',
                 'node' => '2',
                 'name' => 'default',
@@ -432,7 +432,7 @@ describe('instance:new', function (): void {
         ]);
 
         $this
-            ->artisan('instance:new', [
+            ->artisan('instance:create', [
                 'app' => '3',
                 'node' => '2',
                 'name' => 'default',
@@ -446,7 +446,7 @@ describe('instance:new', function (): void {
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
 
         $this
-            ->artisan('instance:new', ['app' => '3', 'node' => '2', 'name' => 'dev'])
+            ->artisan('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev'])
             ->expectsOutput('Instance [dev] is active.')
             ->expectsOutput('Source layout: checkout')
             ->expectsOutput('Effective root: public')
@@ -471,7 +471,7 @@ describe('instance:new', function (): void {
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201, $payload)]);
 
         $this
-            ->artisan('instance:new', ['app' => '3', 'node' => '2', 'name' => 'dev'])
+            ->artisan('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev'])
             ->expectsOutput('Production user: orbit-app-3')
             ->expectsOutput('Production home: /home/orbit-app-3')
             ->expectsOutput('Effective root: /home/orbit-app-3/current/public')
@@ -643,12 +643,12 @@ describe('instance:show', function (): void {
     });
 });
 
-describe('instance:remove', function (): void {
+describe('instance:destroy', function (): void {
     it('removes an AppInstance in normal mode by default', function (): void {
-        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => removal_mock_response()]);
+        $mockClient = MockClient::global([DestroyAppInstanceRequest::class => removal_mock_response()]);
 
         $this
-            ->artisan('instance:remove', ['instance' => '5', '--json' => true])
+            ->artisan('instance:destroy', ['instance' => '5', '--json' => true])
             ->expectsOutput(removal_json())
             ->assertExitCode(0);
 
@@ -656,10 +656,10 @@ describe('instance:remove', function (): void {
     });
 
     it('transports explicit force and renders bounded progress', function (): void {
-        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => removal_mock_response(force: true)]);
+        $mockClient = MockClient::global([DestroyAppInstanceRequest::class => removal_mock_response(force: true)]);
 
         $this
-            ->artisan('instance:remove', ['instance' => '5', '--force' => true])
+            ->artisan('instance:destroy', ['instance' => '5', '--force' => true])
             ->expectsOutput('Instance [dev] removed.')
             ->expectsOutput('Mode: forced')
             ->expectsOutput('Progress: 1/1 completed; 0 remaining')
@@ -679,7 +679,7 @@ describe('instance:remove', function (): void {
             ],
         ];
         MockClient::global([
-            RemoveAppInstanceRequest::class => MockResponse::make(
+            DestroyAppInstanceRequest::class => MockResponse::make(
                 $failure,
                 502,
                 ['X-Orbit-Request-Id' => instance_request_id()],
@@ -687,7 +687,7 @@ describe('instance:remove', function (): void {
         ]);
 
         $this
-            ->artisan('instance:remove', ['instance' => '5'])
+            ->artisan('instance:destroy', ['instance' => '5'])
             ->expectsOutputToContain('AppInstance removal was accepted but remains incomplete.')
             ->expectsOutput('Mode: normal')
             ->expectsOutput('Progress: 0/1 completed; 1 remaining')
@@ -698,7 +698,7 @@ describe('instance:remove', function (): void {
 
         MockClient::destroyGlobal();
         MockClient::global([
-            RemoveAppInstanceRequest::class => MockResponse::make(
+            DestroyAppInstanceRequest::class => MockResponse::make(
                 $failure,
                 502,
                 ['X-Orbit-Request-Id' => instance_request_id()],
@@ -706,7 +706,7 @@ describe('instance:remove', function (): void {
         ]);
         $expected = json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $this
-            ->artisan('instance:remove', ['instance' => '5', '--json' => true])
+            ->artisan('instance:destroy', ['instance' => '5', '--json' => true])
             ->expectsOutput($expected)
             ->assertExitCode(1);
     });
@@ -723,8 +723,12 @@ it('rejects invalid Instance IDs before making an API request', function (string
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'show zero' => ['instance:show', '0'],
-    'remove negative' => ['instance:remove', '-1'],
+    'destroy negative' => ['instance:destroy', '-1'],
 ]);
+
+it('does not register replaced instance lifecycle names', function (): void {
+    expect(Artisan::all())->not->toHaveKeys(['instance:new', 'instance:remove']);
+});
 
 it('rejects invalid parent IDs before creating an AppInstance', function (
     string $appId,
@@ -734,7 +738,7 @@ it('rejects invalid parent IDs before creating an AppInstance', function (
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('instance:new', ['app' => $appId, 'node' => $nodeId, 'name' => 'dev'])
+        ->artisan('instance:create', ['app' => $appId, 'node' => $nodeId, 'name' => 'dev'])
         ->expectsOutputToContain($message)
         ->assertExitCode(1);
 

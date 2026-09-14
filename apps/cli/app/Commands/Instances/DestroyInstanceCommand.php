@@ -9,20 +9,20 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
 
-final class RemoveInstanceCommand extends GatewayCommand
+final class DestroyInstanceCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'instance:remove
+    protected $signature = 'instance:destroy
         {instance : Numeric instance ID}
         {--force : Delete dirty or unpublished source after identity checks}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove an instance.';
+    protected $description = 'Destroy an AppInstance.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -43,7 +43,7 @@ final class RemoveInstanceCommand extends GatewayCommand
         try {
             $response = $this->sendOrThrow(
                 $connector,
-                new RemoveAppInstanceRequest(
+                new DestroyAppInstanceRequest(
                     $instanceId,
                     force: $this->option('force') === true ? true : null,
                 ),

@@ -592,7 +592,7 @@ it('renders local validation failures through the exact json boundary', function
         'Firewall port must be from 1 to 65535 or an ordered range.',
     ],
     'instance name' => [
-        'instance:new',
+        'instance:create',
         ['app' => '1', 'node' => '1', 'name' => ''],
         'instance.name_required',
         'Instance name is required.',
@@ -702,7 +702,7 @@ it('renders local validation failures through the exact json boundary', function
         'Node ID must be a positive integer.',
     ],
     'multiple instance values fail at the first error' => [
-        'instance:new',
+        'instance:create',
         ['app' => 'validation-secret', 'node' => '0', 'name' => ''],
         'app.id_invalid',
         'App ID must be a positive integer.',

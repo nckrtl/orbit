@@ -5,9 +5,9 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRegistrationResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
@@ -271,11 +271,11 @@ describe('AppInstance requests', function (): void {
 
     it('removes an AppInstance and transports explicit force intent with bounded progress', function (): void {
         $mockClient = new MockClient([
-            RemoveAppInstanceRequest::class => MockResponse::make(removal_envelope()),
+            DestroyAppInstanceRequest::class => MockResponse::make(removal_envelope()),
         ]);
         $connector = instance_gateway_connector($mockClient);
 
-        $remove = new RemoveAppInstanceRequest(7, force: true);
+        $remove = new DestroyAppInstanceRequest(7, force: true);
         $response = $connector->send($remove)->dto();
         $request = $mockClient->getLastRequest();
 
@@ -292,9 +292,9 @@ describe('AppInstance requests', function (): void {
     });
 
     it('preserves force omission and explicit false', function (): void {
-        expect(new RemoveAppInstanceRequest(7)->body()->all())
+        expect(new DestroyAppInstanceRequest(7)->body()->all())
             ->toBeEmpty()
-            ->and(new RemoveAppInstanceRequest(7, force: false)->body()->all())
+            ->and(new DestroyAppInstanceRequest(7, force: false)->body()->all())
             ->toBe(['force' => false]);
     });
 
@@ -307,7 +307,7 @@ describe('AppInstance requests', function (): void {
         $failure['failed_step'] = 'runtime_cleanup';
         $failure['error_code'] = 'instance.runtime_interrupted';
         $mockClient = new MockClient([
-            RemoveAppInstanceRequest::class => MockResponse::make(
+            DestroyAppInstanceRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => 'instance.runtime_interrupted',
@@ -323,7 +323,7 @@ describe('AppInstance requests', function (): void {
         $connector = instance_gateway_connector($mockClient);
 
         try {
-            $connector->send(new RemoveAppInstanceRequest(7, force: true));
+            $connector->send(new DestroyAppInstanceRequest(7, force: true));
             $this->fail('Expected GatewayApiException.');
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())
