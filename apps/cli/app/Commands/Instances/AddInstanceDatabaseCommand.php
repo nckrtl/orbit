@@ -2,24 +2,25 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Database;
+namespace App\Commands\Instances;
 
+use App\Commands\Database\DatabaseAttachmentCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse;
 
-final class AttachDatabaseConnectionCommand extends DatabaseAttachmentCommand
+final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
 {
     #[\Override]
-    protected $signature = 'database:attach
+    protected $signature = 'instance:database:add
         {slug : Database connection slug}
         {--instance= : Positive AppInstance ID or exact Route hostname}
         {--prefix= : Environment key prefix; defaults to DB}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Attach a Database connection to an AppInstance and write stored environment keys.';
+    protected $description = 'Add a Database connection on an AppInstance and write stored environment keys.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -39,7 +40,7 @@ final class AttachDatabaseConnectionCommand extends DatabaseAttachmentCommand
 
         $attachment = $this->send(
             $connector,
-            new AttachDatabaseConnectionRequest(
+            new AddInstanceDatabaseRequest(
                 appInstance: $instance,
                 slug: $slug,
                 prefix: $prefix,
@@ -53,7 +54,7 @@ final class AttachDatabaseConnectionCommand extends DatabaseAttachmentCommand
 
         return $this->renderAttachment(
             $attachment,
-            "Database connection [{$attachment->slug}] attached to AppInstance [{$attachment->appInstanceId}].",
+            "Database connection [{$attachment->slug}] added to AppInstance [{$attachment->appInstanceId}].",
         );
     }
 }

@@ -102,6 +102,66 @@ it('records environment commands without submitted imported or rejected values',
         ->not->toContain($submitted, $imported);
 });
 
+it('records database create destroy add and remove command names and AppInstance targets', function (): void {
+    [$caller, $instance] = command_activity_environment_fixture();
+    $access = new CommandActivityEnvironmentAccess('');
+    app()->instance(AppInstanceOperationPreflight::class, $access);
+    app()->instance(AppInstanceEnvironmentReader::class, $access);
+    app()->instance(AppInstanceEnvironmentWriter::class, $access);
+
+    $create = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/database-connections', [
+            'slug' => 'app',
+            'driver' => 'sqlite',
+            'path' => '/tmp/app.sqlite',
+        ]);
+    $create->assertCreated();
+
+    $add = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->call(
+            'PUT',
+            "/api/v1/instances/{$instance->id}/database-connections/app",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        );
+    $add->assertOk();
+
+    $remove = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->call(
+            'DELETE',
+            "/api/v1/instances/{$instance->id}/database-connections/app",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        );
+    $remove->assertOk();
+
+    $destroy = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson('/api/v1/database-connections/app');
+    $destroy->assertOk();
+
+    expect(Activity::query()->where('request_id', $create->json('meta.request_id'))->sole())
+        ->command->toBe('database:create');
+
+    expect(Activity::query()->where('request_id', $add->json('meta.request_id'))->sole())
+        ->command->toBe('instance:database:add')
+        ->subject_type->toBe(AppInstance::class)
+        ->subject_id->toBe($instance->id)
+        ->target_node_id->toBe($instance->node_id);
+
+    expect(Activity::query()->where('request_id', $remove->json('meta.request_id'))->sole())
+        ->command->toBe('instance:database:remove')
+        ->subject_type->toBe(AppInstance::class)
+        ->subject_id->toBe($instance->id)
+        ->target_node_id->toBe($instance->node_id);
+
+    expect(Activity::query()->where('request_id', $destroy->json('meta.request_id'))->sole())
+        ->command->toBe('database:destroy');
+});
+
 it('records exactly one bounded doctor activity without report findings or diagnostics', function (): void {
     $requestId = (string) Str::uuid();
     $caller = command_activity_doctor_node('doctor-caller');

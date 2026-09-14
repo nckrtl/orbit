@@ -10,11 +10,11 @@ use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\RemoveDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
@@ -176,11 +176,11 @@ describe('repository guidance bootstrap', function (): void {
         $databaseRequests = [
             ListDatabaseConnectionsRequest::class,
             ShowDatabaseConnectionRequest::class,
-            AddDatabaseConnectionRequest::class,
+            CreateDatabaseConnectionRequest::class,
             UpdateDatabaseConnectionRequest::class,
-            RemoveDatabaseConnectionRequest::class,
-            AttachDatabaseConnectionRequest::class,
-            DetachDatabaseConnectionRequest::class,
+            DestroyDatabaseConnectionRequest::class,
+            AddInstanceDatabaseRequest::class,
+            RemoveInstanceDatabaseRequest::class,
         ];
         $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests);
         $expectedRequests = [

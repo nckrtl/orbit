@@ -6,11 +6,11 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
-use Orbit\Sdk\Requests\DatabaseConnections\RemoveDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Saloon\Http\Faking\MockClient;
@@ -35,11 +35,11 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-it('adds a mysql connection through the typed request and hides the password', function (): void {
-    $mockClient = database_cli_mock(AddDatabaseConnectionRequest::class, database_cli_gateway_data(), status: 201);
+it('creates a mysql connection through the typed request and hides the password', function (): void {
+    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, database_cli_gateway_data(), status: 201);
 
     $this
-        ->artisan('database:add', [
+        ->artisan('database:create', [
             'slug' => 'app',
             '--driver' => 'mysql',
             '--host' => 'db.example.test',
@@ -55,7 +55,7 @@ it('adds a mysql connection through the typed request and hides the password', f
     $request = $mockClient->getLastRequest();
 
     expect($request)
-        ->toBeInstanceOf(AddDatabaseConnectionRequest::class)
+        ->toBeInstanceOf(CreateDatabaseConnectionRequest::class)
         ->and($request?->body()->all())
         ->toBe([
             'slug' => 'app',
@@ -118,11 +118,11 @@ it('updates supplied fields and requires at least one option', function (): void
         ->assertExitCode(1);
 });
 
-it('attaches a connection through the typed request and hides the password', function (): void {
-    $mockClient = database_cli_mock(AttachDatabaseConnectionRequest::class, database_cli_attachment_data());
+it('adds a connection on an AppInstance through the typed request and hides the password', function (): void {
+    $mockClient = database_cli_mock(AddInstanceDatabaseRequest::class, database_cli_attachment_data());
 
     $this
-        ->artisan('database:attach', [
+        ->artisan('instance:database:add', [
             'slug' => 'app',
             '--instance' => '12',
             '--json' => true,
@@ -134,15 +134,15 @@ it('attaches a connection through the typed request and hides the password', fun
     $request = $mockClient->getLastRequest();
 
     expect($request)
-        ->toBeInstanceOf(AttachDatabaseConnectionRequest::class)
+        ->toBeInstanceOf(AddInstanceDatabaseRequest::class)
         ->and($request?->resolveEndpoint())
         ->toBe('/api/v1/instances/12/database-connections/app')
         ->and($request?->body()->all())
         ->toBe([]);
 });
 
-it('detaches a connection after --force', function (): void {
-    $mockClient = database_cli_mock(DetachDatabaseConnectionRequest::class, [
+it('removes a connection from an AppInstance after --force', function (): void {
+    $mockClient = database_cli_mock(RemoveInstanceDatabaseRequest::class, [
         ...database_cli_attachment_data(),
         'operation' => 'detach',
         'host' => null,
@@ -150,7 +150,7 @@ it('detaches a connection after --force', function (): void {
     ]);
 
     $this
-        ->artisan('database:detach', [
+        ->artisan('instance:database:remove', [
             'slug' => 'app',
             '--instance' => 'environment-api.test',
             '--prefix' => 'CACHE_DB',
@@ -161,18 +161,18 @@ it('detaches a connection after --force', function (): void {
         ->assertExitCode(0);
 
     expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(DetachDatabaseConnectionRequest::class)
+        ->toBeInstanceOf(RemoveInstanceDatabaseRequest::class)
         ->and($mockClient->getLastRequest()?->resolveEndpoint())
         ->toBe('/api/v1/instances/environment-api.test/database-connections/app')
         ->and($mockClient->getLastRequest()?->body()->all())
         ->toBe(['prefix' => 'CACHE_DB']);
 });
 
-it('refuses an invalid attach prefix before it contacts the Gateway', function (): void {
+it('refuses an invalid add prefix before it contacts the Gateway', function (): void {
     $mock = MockClient::global();
 
     $this
-        ->artisan('database:attach', [
+        ->artisan('instance:database:add', [
             'slug' => 'app',
             '--instance' => '12',
             '--prefix' => 'db',
@@ -183,23 +183,23 @@ it('refuses an invalid attach prefix before it contacts the Gateway', function (
     expect($mock->getLastPendingRequest())->toBeNull();
 });
 
-it('removes a connection after --force', function (): void {
-    $mockClient = database_cli_mock(RemoveDatabaseConnectionRequest::class, database_cli_gateway_data());
+it('destroys a connection after --force', function (): void {
+    $mockClient = database_cli_mock(DestroyDatabaseConnectionRequest::class, database_cli_gateway_data());
 
     $this
-        ->artisan('database:remove', ['slug' => 'app', '--force' => true, '--json' => true])
+        ->artisan('database:destroy', ['slug' => 'app', '--force' => true, '--json' => true])
         ->expectsOutput(database_cli_json())
         ->assertExitCode(0);
 
     expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(RemoveDatabaseConnectionRequest::class);
+        ->toBeInstanceOf(DestroyDatabaseConnectionRequest::class);
 });
 
-it('refuses mysql add without a password before it contacts the Gateway', function (): void {
+it('refuses mysql create without a password before it contacts the Gateway', function (): void {
     $mock = MockClient::global();
 
     $this
-        ->artisan('database:add', [
+        ->artisan('database:create', [
             'slug' => 'app',
             '--driver' => 'mysql',
             '--host' => 'db.example.test',

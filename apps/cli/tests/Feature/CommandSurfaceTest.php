@@ -42,11 +42,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'cluster:router:unset',
         'cluster:show',
         'cluster:update',
-        'database:add',
-        'database:attach',
-        'database:detach',
+        'database:create',
+        'database:destroy',
         'database:list',
-        'database:remove',
         'database:show',
         'database:update',
         'dns:resolve',
@@ -71,6 +69,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'herdr:session:show',
         'instance:clone',
         'instance:create',
+        'instance:database:add',
+        'instance:database:remove',
         'instance:deploy',
         'instance:deployment-config',
         'instance:destroy',
@@ -185,6 +185,15 @@ it('does not expose replaced instance lifecycle names', function (): void {
     ]);
 });
 
+it('does not expose replaced database connection names', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKeys([
+        'database:add',
+        'database:remove',
+        'database:attach',
+        'database:detach',
+    ]);
+});
+
 it('keeps the hidden Boost MCP entrypoint available to coding agents', function (): void {
     $commands = app(Kernel::class)->all();
     $codexConfig = file_get_contents(base_path('.codex/config.toml'));
@@ -257,7 +266,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['cluster'],
             ['name' => null, 'tld' => null, 'state' => null, 'json' => false],
         ],
-        'database:add' => [
+        'database:create' => [
             ['slug'],
             [
                 'driver' => null,
@@ -271,16 +280,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'database:attach' => [
-            ['slug'],
-            ['instance' => null, 'prefix' => null, 'json' => false],
-        ],
-        'database:detach' => [
-            ['slug'],
-            ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
-        ],
+        'database:destroy' => [['slug'], ['force' => false, 'json' => false]],
         'database:list' => [[], ['json' => false]],
-        'database:remove' => [['slug'], ['force' => false, 'json' => false]],
         'database:show' => [['slug'], ['json' => false]],
         'database:update' => [
             ['slug'],
@@ -354,6 +355,14 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'recover-source-profile' => false,
                 'json' => false,
             ],
+        ],
+        'instance:database:add' => [
+            ['slug'],
+            ['instance' => null, 'prefix' => null, 'json' => false],
+        ],
+        'instance:database:remove' => [
+            ['slug'],
+            ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
         ],
         'instance:deploy' => [['instance'], ['json' => false]],
         'instance:deployment-config' => [['instance'], ['file' => null, 'json' => false]],
@@ -612,7 +621,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'cluster:router:set' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
         'cluster:show' => [['cluster' => '1'], ...$profileMissing],
         'cluster:update' => [['cluster' => '1', '--state' => 'inactive'], ...$profileMissing],
-        'database:add' => [[
+        'database:create' => [[
             'slug' => 'app',
             '--driver' => 'mysql',
             '--host' => 'db.example.test',
@@ -620,17 +629,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--username' => 'app',
             '--password' => 'secret',
         ], ...$profileMissing],
-        'database:attach' => [[
-            'slug' => 'app',
-            '--instance' => '12',
-        ], ...$profileMissing],
-        'database:detach' => [[
-            'slug' => 'app',
-            '--instance' => '12',
-            '--force' => true,
-        ], ...$profileMissing],
+        'database:destroy' => [['slug' => 'app', '--force' => true], ...$profileMissing],
         'database:list' => [[], ...$profileMissing],
-        'database:remove' => [['slug' => 'app', '--force' => true], ...$profileMissing],
         'database:show' => [['slug' => 'app'], ...$profileMissing],
         'database:update' => [['slug' => 'app', '--host' => 'db.example.test'], ...$profileMissing],
         'dns:resolve' => [
@@ -690,6 +690,15 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ...$profileMissing,
         ],
         'instance:create' => [['app' => '1', 'node' => '1', 'name' => 'web'], ...$profileMissing],
+        'instance:database:add' => [[
+            'slug' => 'app',
+            '--instance' => '12',
+        ], ...$profileMissing],
+        'instance:database:remove' => [[
+            'slug' => 'app',
+            '--instance' => '12',
+            '--force' => true,
+        ], ...$profileMissing],
         'instance:deploy' => [['instance' => '1'], ...$profileMissing],
         'instance:deployment-config' => [['instance' => '1'], ...$profileMissing],
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],

@@ -9,7 +9,7 @@ use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-final class RemoveDatabaseConnectionRequest extends GatewayRequest
+final class DestroyDatabaseConnectionRequest extends GatewayRequest
 {
     #[\Override]
     protected Method $method = Method::DELETE;

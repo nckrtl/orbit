@@ -223,13 +223,13 @@ Route::prefix('v1')->group(function (): void {
             [DatabaseConnectionAttachmentsController::class, 'store'],
         )
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:attach');
+            ->name('instance:database:add');
         Route::delete(
             'instances/{instance}/database-connections/{database_connection}',
             [DatabaseConnectionAttachmentsController::class, 'destroy'],
         )
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:detach');
+            ->name('instance:database:remove');
         Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
         Route::post('routes', [RoutesController::class, 'store'])->name('route:create');
         Route::get('routes/{route}', [RoutesController::class, 'show'])
@@ -289,18 +289,18 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:destroy');
         Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
-            ->name('database-connection:list');
+            ->name('database:list');
         Route::post('database-connections', [DatabaseConnectionsController::class, 'store'])
-            ->name('database-connection:add');
+            ->name('database:create');
         Route::get('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'show'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:show');
+            ->name('database:show');
         Route::patch('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'update'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:update');
+            ->name('database:update');
         Route::delete('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'destroy'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->name('database-connection:remove');
+            ->name('database:destroy');
         Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
             ->name('herdr:session:list');
         Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])

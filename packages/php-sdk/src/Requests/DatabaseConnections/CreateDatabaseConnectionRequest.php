@@ -12,7 +12,7 @@ use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 use SensitiveParameter;
 
-final class AddDatabaseConnectionRequest extends GatewayRequest implements HasBody
+final class CreateDatabaseConnectionRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
