@@ -24,7 +24,12 @@ final class CreateInstanceCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create an AppInstance on an app-dev or standalone app-prod node.';
+    protected $description = 'Create a development AppInstance on an app-dev Node.';
+
+    #[\Override]
+    protected $help = <<<'HELP'
+Creates a development AppInstance. New production AppInstances require a candidate. Use instance:clone.
+HELP;
 
     public function handle(
         GatewayConfigRepository $repository,

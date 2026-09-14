@@ -312,11 +312,12 @@ afterEach(function (): void {
 });
 
 describe('instance:create', function (): void {
-    it('documents the development and standalone production contract', function (): void {
+    it('documents the development contract and directs production to instance:clone', function (): void {
         $this
             ->artisan('help', ['command_name' => 'instance:create'])
-            ->expectsOutputToContain('Create an AppInstance on an app-dev or standalone app-prod node.')
+            ->expectsOutputToContain('Create a development AppInstance on an app-dev Node.')
             ->expectsOutputToContain('default is reserved for the default development source')
+            ->expectsOutputToContain('New production AppInstances require a candidate. Use instance:clone.')
             ->assertExitCode(0);
     });
 

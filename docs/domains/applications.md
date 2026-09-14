@@ -85,29 +85,21 @@ By default, registering a checkout adopts only the caller's source. Orbit repair
 
 For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress binds original cleanup to the verified source directory identity and keeps one verified authoritative copy after interruption. An identical retry revalidates the canonical authoritative path, repository identity, checkout or worktree layout, and provisioning safety without requiring an unchanged source digest. After relocation, the CLI can retry from the managed primary source path while Orbit retains the original primary and complete requested set. It resumes the same App, AppInstances, Routes, and managed paths; conflicting input preserves the accepted registration.
 
-## Create a standalone production AppInstance
+## Create a production AppInstance
 
-Select one active standalone Node with an active app-prod role. The same command creates a production placement when the selected Node carries that role:
+The Gateway refuses new production placement on `instance:create` with `instance.candidate_required` before it changes a user, home, source, environment, or Route. The CLI reports that error and directs the caller to `instance:clone`. Clone from an eligible development or production candidate, as [AppInstance cloning](../reference/appinstance-cloning.md) describes.
 
 ```text
-orbit instance:create <app-id> <app-prod-node-id> primary [--branch=release] [--root=public] [--hostname=app.example.test]
+orbit instance:clone CANDIDATE NODE NAME --preview-name=shop.com
 ```
-
-The Gateway records one dedicated system user and `/home/<app-user>` home for the App on that Node. It prepares `releases/` in that home, keeps persistent files at the home root, and prepares initial repository source as a release before runtime or Route publication. An omitted branch selects the App `default_branch`, even when a remote branch matches the AppInstance name. An explicit branch must exist and remains independent from the AppInstance name.
-
-The response returns the recorded user, home, absolute effective root beneath the future `current` link, selected initial branch, exact starting commit, nullable branch override, and sole Route. The [production release-layout reference](../reference/deployments.md) describes the home paths, source selection, and safety boundary.
 
 A given App can have one production AppInstance per app-prod Node. The same App can use another app-prod Node, where it receives an independent user home and runtime. The recorded user and home do not change when the App slug changes.
 
-Production source preparation retains the same `reserved`, `checkout_prepared`, and `source_resolved` checkpoints. Creation stages the initial release beneath `releases/` and leaves `current` absent. An explicit first deployment selects code later. The Gateway records the complete staged-source profile before runtime work. A plain PHP source gets a dedicated PHP-FPM service, pool, socket, and OPcache instance for its recorded production user while sharing the installed version packages. A non-PHP source gets no PHP runtime. Detected Laravel source stops at its safely recorded initial-source checkpoint until the separate Laravel production contract is available; Orbit does not change Laravel files or publish its Route in this state.
+### Keep existing production AppInstances
 
-Production creation requires an explicit Route hostname or a TLD from the standalone Node. A Node in an active Cluster is outside this creation path. Both refusals happen before production source or runtime mutation.
+When an AppInstance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production AppInstance, the Gateway returns it without fetching or overwriting it.
 
-A standalone Node cannot accept a private production AppInstance while it still serves a provisioning or active legacy public production Instance. The Gateway returns `instance.legacy_production_conflict` with HTTP 409 before it reserves an AppInstance or changes a Route, source checkout, runtime, certificate, or firewall. Mark or remove the legacy Instance through its existing lifecycle, then repeat the production creation request.
-
-An identical retry resumes only incomplete Orbit-owned preparation, including its recorded production PHP service association. After creation succeeds, the same request returns the recorded result without running Git or changing source, refs, releases, deployment symlinks, local PHP-FPM tuning, or other operator content.
-
-An existing active production AppInstance can remain on its recorded flat source and shared PHP runtime. The operator explicitly converts that placement with `orbit instance:prepare-deployment`; the [production release-layout reference](../reference/deployments.md#convert-an-existing-production-home) describes its preflight, retained content, optional SQLite move, dedicated runtime, and retry boundary. Conversion does not require a candidate and does not run an application deployment.
+When an existing active production AppInstance still uses a recorded flat source and shared PHP runtime, the operator converts that placement with `orbit instance:prepare-deployment`. The [production release-layout reference](../reference/deployments.md#convert-an-existing-production-home) describes its preflight, retained content, optional SQLite move, dedicated runtime, and retry boundary. Conversion does not require a candidate and does not run an application deployment.
 
 Orbit owns later release preparation, activation, and explicit code rollback. The operating agent configures application steps and owns compatibility and recovery decisions. The [PHP runtime reference](../reference/php-runtime.md#production-cache-boundary) defines the separate cache boundary.
 
