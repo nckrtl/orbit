@@ -23,11 +23,11 @@ Both kinds accept the common definition fields below.
 
 A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity.
 
-A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. The Gateway accepts `command` and `timeout_seconds` under the same limits as an installed Schedule. For `calendar`, it accepts one nonempty printable ASCII line of at most 255 bytes. It does not run `systemd-analyze calendar` when it creates or replaces a definition, because a definition has no host Node. The target Node's `systemd-analyze calendar` accepts or rejects that stored calendar when Orbit copies the definition into an AppInstance Schedule or when an operator creates a Schedule. The [Schedules](schedules.md) page owns that host check. A definition does not select a target, host Node, execution identity, or timer state.
+A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. The Gateway accepts `command` and `timeout_seconds` under the same limits as an installed Schedule. For `calendar`, it accepts one nonempty printable ASCII line of at most 255 bytes. It does not run `systemd-analyze calendar` when it creates or updates a definition, because a definition has no host Node. The target Node's `systemd-analyze calendar` accepts or rejects that stored calendar when Orbit copies the definition into an AppInstance Schedule or when an operator creates a Schedule. The [Schedules](schedules.md) page owns that host check. A definition does not select a target, host Node, execution identity, or timer state.
 
-The API rejects unknown or duplicate members at every definition object and specification boundary. It also rejects a definition UUID that belongs to another App. Collection responses omit command content; an authorized item response returns the complete definition.
+The API rejects unknown or duplicate members at every definition object and specification boundary. Item operations select a definition by name within the App, and the Gateway rejects a name that belongs to another App. Collection responses omit command content; an authorized item response returns the complete definition, including its UUID.
 
-Creating, replacing, or deleting a definition changes only App-owned configuration. It makes no remote call and does not change a Process, Schedule, selected release, desired runtime state, or existing AppInstance copy. Removing an AppInstance retains the App's definitions, while removing an otherwise removable App deletes its definitions.
+Creating, updating, or destroying a definition changes only App-owned configuration. It makes no remote call and does not change a Process, Schedule, selected release, desired runtime state, or existing AppInstance copy. Removing an AppInstance retains the App's definitions, while removing an otherwise removable App deletes its definitions.
 
 ## Prepare production copies
 
@@ -39,56 +39,48 @@ Preparation records completed copies and resumes only unfinished installation af
 
 ## Manage definitions from the CLI
 
-The CLI lists each definition collection and uses one singular command per kind for create, show, replace, and remove operations. `APP` is a positive numeric App ID, and `UUID` is the definition ID returned by the Gateway.
+The process and schedule families select App-owned definitions with `--app`. `APP` is a positive numeric App ID. `NAME` is unique within that App and definition kind. `--for` names the environments the definition applies to. Because `--environment` already names Docker variables on `process:create`, `--for` is the only spelling for definition environments.
 
 | Command | Result |
 | --- | --- |
-| `orbit app:process-definitions APP` | List the App's process definitions. |
-| `orbit app:schedule-definitions APP` | List the App's Schedule definitions. |
-| `orbit app:process-definition APP --id=UUID` | Show one process definition. |
-| `orbit app:schedule-definition APP --id=UUID` | Show one Schedule definition. |
-| `orbit app:process-definition APP --file=PATH` | Create one process definition from a JSON file. |
-| `orbit app:schedule-definition APP --file=PATH` | Create one Schedule definition from a JSON file. |
-| `orbit app:process-definition APP --id=UUID --file=PATH` | Replace one process definition with the complete JSON file. |
-| `orbit app:schedule-definition APP --id=UUID --file=PATH` | Replace one Schedule definition with the complete JSON file. |
-| `orbit app:process-definition APP --id=UUID --remove` | Remove one process definition. |
-| `orbit app:schedule-definition APP --id=UUID --remove` | Remove one Schedule definition. |
+| `orbit process:create NAME --app=APP --for=ENV[,ENV] ...` | Record a process definition on the App with the runtime, command, image, working-directory, environment, port, volume, and restart options of an AppInstance target. |
+| `orbit process:list --app=APP` | List the App's process definitions. |
+| `orbit process:show NAME --app=APP` | Show one process definition by name. |
+| `orbit process:update NAME --app=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
+| `orbit process:destroy NAME --app=APP` | Destroy one process definition by name. |
+| `orbit schedule:create NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the App. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:list --app=APP` | List the App's Schedule definitions. |
+| `orbit schedule:show NAME --app=APP` | Show one Schedule definition by name. |
+| `orbit schedule:update NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
+| `orbit schedule:destroy NAME --app=APP` | Destroy one Schedule definition by name. |
 
-The singular commands refuse an empty operation, `--remove` without `--id`, `--remove` with `--file`, and every other option combination outside the table before they send an HTTP request. Every command also accepts `--json`. Human and JSON results include the Gateway request ID, and safe errors include that ID when the Gateway supplies it.
+`--for` is required with `--app` on create and update. The CLI refuses `--app` together with `--instance` or `--node`, and it refuses `--for` on an AppInstance or Node target, before it sends an HTTP request. Create refuses a name that another definition of that App and kind already uses. `process:start`, `process:stop`, `process:restart`, and `process:logs` do not accept `--app`. `schedule:run`, `schedule:logs`, and `schedule:enable` do not accept `--app`. Every command also accepts `--json`. Human and JSON results include the Gateway request ID, and safe errors include that ID when the Gateway supplies it.
 
-The CLI reads the selected file and sends its content as the Gateway request body. It does not execute a definition command or apply the definition to a machine. A process definition file can contain this complete systemd specification:
+The CLI sends the structured flags as the Gateway request body. It does not read a definition file, execute a definition command, or apply the definition to a machine. An operator can record a systemd process definition and a production Schedule definition like this:
 
-```json
-{
-    "name": "queue",
-    "environments": ["development", "production"],
-    "spec": {
-        "runtime": "systemd",
-        "command": ["/usr/bin/php", "artisan", "queue:work"],
-        "restart_policy": "on-failure"
-    }
-}
+```bash
+orbit process:create queue \
+  --app=1 \
+  --for=development,production \
+  --runtime=systemd \
+  --command=/usr/bin/php \
+  --command=artisan \
+  --command=queue:work \
+  --restart=on-failure
+
+orbit schedule:create hourly-report \
+  --app=1 \
+  --for=production \
+  --calendar=hourly \
+  --command="php artisan report:send" \
+  --timeout=3600
 ```
 
-A Schedule definition file can contain this complete specification:
-
-```json
-{
-    "name": "hourly-report",
-    "environments": ["production"],
-    "spec": {
-        "command": "php artisan report:send",
-        "calendar": "hourly",
-        "timeout_seconds": 3600
-    }
-}
-```
-
-List output omits each definition's command. Show, create, replace, and remove results contain the complete item returned by the Gateway. Changing an App definition affects later copies only. To change an existing copy, the operator explicitly destroys and creates the AppInstance-owned Process or Schedule.
+List output omits each definition's command. Show, create, update, and destroy results contain the complete item returned by the Gateway. Changing an App definition affects later copies only. To change an existing copy, the operator explicitly destroys and creates the AppInstance-owned Process or Schedule.
 
 ## Select the owner
 
-A Process has exactly one target: an AppInstance or a managed Node. The `process:create` and `process:list` commands require one selector, `--instance=ID` or `--node=ID-or-name`, and refuse both together. The public API and PHP software development kit (SDK) send the target token `instance` or `node` with a positive numeric ID. Every other process command accepts a positive Process ID and uses that record's owner.
+A Process has exactly one target: an AppInstance or a managed Node. The `process:create` and `process:list` commands require one selector: `--instance=ID` or `--node=ID-or-name` for a Process, or `--app=APP` for an App-owned definition. The CLI refuses more than one of those selectors together. The public API and PHP software development kit (SDK) send the Process target token `instance` or `node` with a positive numeric ID. Process start, stop, restart, and logs accept a positive Process ID and use that record's owner.
 
 Orbit accepts no Workspace Process target. It does not convert or adopt legacy Process records or runtime artifacts, and it does not create a synthetic AppInstance to host a Node-scoped service. A fleet operator owns any required legacy transition outside Orbit, and Orbit provides no migration command or compatibility selector.
 
@@ -137,13 +129,18 @@ The CLI exposes these Process operations through the Gateway.
 | --- | --- |
 | `orbit process:create NAME --instance=ID ...` | Install one stopped or initially running systemd service or Docker container on an AppInstance. |
 | `orbit process:create NAME --node=ID-or-name ...` | Install one stopped or initially running systemd service or Docker container on a managed Node. |
+| `orbit process:create NAME --app=APP --for=ENV[,ENV] ...` | Record one App-owned process definition. |
 | `orbit process:list --instance=ID` | List the Process records owned by one AppInstance with their desired and observed states. |
 | `orbit process:list --node=ID-or-name` | List the Process records owned by one Node with their desired and observed states. |
+| `orbit process:list --app=APP` | List the App's process definitions. |
+| `orbit process:show NAME --app=APP` | Show one process definition by name. |
+| `orbit process:update NAME --app=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
 | `orbit process:start PROCESS` | Start an installed Process and record the running desired state. |
 | `orbit process:stop PROCESS` | Stop an installed Process and record the stopped desired state. |
 | `orbit process:restart PROCESS` | Restart an installed Process and record the running desired state. |
 | `orbit process:logs PROCESS --lines=COUNT` | Return a non-streaming tail from 1 through 1,000 lines. |
 | `orbit process:destroy PROCESS` | Stop and remove the exact owned runtime artifacts, then delete the Process record. |
+| `orbit process:destroy NAME --app=APP` | Destroy one process definition by name. |
 
 Creating or starting an AppInstance Process requires an active, available AppInstance and reachable active Node. Creating or starting a Node Process requires a reachable active managed Node. Orbit refuses either operation before mutation when that target is unavailable or inactive. Cleanup can use the recorded placement of a failed or removing AppInstance while its Node remains reachable, and Node-owned cleanup can use an active Node.
 
@@ -171,6 +168,6 @@ When an operator removes an AppInstance, the Gateway runs source preflight befor
 
 When an operator removes a Node, the Gateway stops and removes every Node-owned Process before it tears down WireGuard. A cleanup failure keeps the Node and unfinished Process cleanup resumable. Offline decommissioning of an unreachable Node deletes those Process records without remote runtime cleanup. The [Node removal reference](node-provisioning.md#remove-a-node) describes that order.
 
-The AppInstance Process copy is independent. Changing or removing it does not change an App-owned definition, and creating, replacing, or deleting an App definition does not reconcile an existing copy or its runtime state.
+The AppInstance Process copy is independent. Changing or removing it does not change an App-owned definition, and creating, updating, or destroying an App definition does not reconcile an existing copy or its runtime state.
 
 An AppInstance Schedule is also an independent copy with its own identity, systemd artifacts, desired timer state, and removal lifecycle. The [Schedules reference](schedules.md) describes target context, stopped installation, explicit timer activation, manual execution, latest-run reporting, and cleanup. Process commands do not operate on Schedules.
