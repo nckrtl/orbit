@@ -30,7 +30,7 @@ it('copies independent encrypted values and resolves placeholders through the ex
     $source->environmentValues()->createMany([
         ['env_key' => 'APP_ENV', 'env_value' => '{{app_instance.environment}}'],
         ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
-        ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.hostname}}/path'],
+        ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.domain}}/path'],
     ]);
     $sourceCiphertext = DB::table('app_instance_environment_values')
         ->where('app_instance_id', $source->id)
@@ -58,7 +58,7 @@ it('copies independent encrypted values and resolves placeholders through the ex
         ->toBe([
             'APP_ENV' => '{{app_instance.environment}}',
             'APP_KEY' => 'base64:literal-key',
-            'APP_URL' => 'https://{{app_instance.hostname}}/path',
+            'APP_URL' => 'https://{{app_instance.domain}}/path',
         ])
         ->and(array_keys($targetCiphertext))
         ->toBe(array_keys($sourceCiphertext));
@@ -69,7 +69,7 @@ it('copies independent encrypted values and resolves placeholders through the ex
         ->toBe("APP_ENV=\"production\"\n"
             ."APP_KEY=\"base64:literal-key\"\n"
             ."APP_URL=\"https://preview.prod.orbit/path\"\n")
-        ->and($writer->context?->routeHostname)
+        ->and($writer->context?->routeDomain)
         ->toBe('preview.prod.orbit')
         ->and($writer->context?->routeId)
         ->toBe($target->routes()->sole()->id)
@@ -144,8 +144,8 @@ it('refuses a stale pending Route or target placement before copying values', fu
     'pending Route activates' => [static fn (AppInstance $target, Route $route) => $route->update([
         'status' => RouteStatus::Active,
     ])],
-    'pending Route hostname changes' => [static fn (AppInstance $target, Route $route) => $route->update([
-        'hostname' => 'changed.prod.orbit',
+    'pending Route domain changes' => [static fn (AppInstance $target, Route $route) => $route->update([
+        'domain' => 'changed.prod.orbit',
     ])],
     'target placement changes' => [static fn (AppInstance $target, Route $route) => $target->update([
         'production_home' => '/home/orbit-clone-target-moved',
@@ -199,7 +199,7 @@ function clone_environment_fixture(string $suffix = 'primary'): array
     $sourceRoute = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $sourceNode->id,
-        'hostname' => "source-{$suffix}.example.test",
+        'domain' => "source-{$suffix}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -220,13 +220,13 @@ function clone_environment_fixture(string $suffix = 'primary'): array
         'clone_candidate_id' => $source->id,
         'clone_candidate_commit' => str_repeat('a', 40),
         'clone_preview_name' => 'preview',
-        'clone_preview_hostname' => $previewHostname,
+        'clone_preview_domain' => $previewHostname,
         'status' => AppInstanceState::SourceResolved,
     ]);
     $targetRoute = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $targetNode->id,
-        'hostname' => $previewHostname,
+        'domain' => $previewHostname,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

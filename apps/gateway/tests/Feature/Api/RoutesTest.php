@@ -11,15 +11,14 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\RouteHostnameChangeDirection;
-use App\Domain\Routes\RouteHostnameChangeStep;
-use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
@@ -57,7 +56,7 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
     $requestId = (string) Str::uuid();
     $payload = [
         'app_id' => $this->orbitApp->id,
-        'hostname' => ' App.Example.Test ',
+        'domain' => ' App.Example.Test ',
         'publication' => 'private',
         'app_instance_id' => $this->target->id,
     ];
@@ -70,7 +69,7 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
         ->assertJsonPath('data.node_id', $this->node->id)
         ->assertJsonPath('data.cluster_id', null)
         ->assertJsonPath('data.generation_basis_node_id', null)
-        ->assertJsonPath('data.hostname', 'app.example.test')
+        ->assertJsonPath('data.domain', 'app.example.test')
         ->assertJsonPath('data.provenance', 'explicit')
         ->assertJsonPath('data.publication', 'private')
         ->assertJsonPath('data.status', 'pending')
@@ -95,11 +94,11 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
     $this->getJson("/api/v1/routes/{$routeId}")->assertOk()->assertJsonPath('data.id', $routeId);
     $this
         ->patchJson("/api/v1/routes/{$routeId}", [
-            'hostname' => 'next.example.test',
             'publication' => 'public',
         ])
         ->assertOk()
-        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.id', $routeId)
+        ->assertJsonPath('data.domain', 'app.example.test')
         ->assertJsonPath('data.publication', 'public')
         ->assertJsonPath('data.status', 'pending');
 
@@ -131,7 +130,7 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
 it('creates targetless exclusive Node and active Cluster scopes', function (): void {
     $nodeRoute = $this->postJson('/api/v1/routes', [
         'app_id' => $this->orbitApp->id,
-        'hostname' => 'node.example.test',
+        'domain' => 'node.example.test',
         'publication' => 'private',
         'node_id' => $this->node->id,
     ])->assertCreated();
@@ -141,7 +140,7 @@ it('creates targetless exclusive Node and active Cluster scopes', function (): v
     $this
         ->postJson('/api/v1/routes', [
             'app_id' => $this->orbitApp->id,
-            'hostname' => 'cluster.example.test',
+            'domain' => 'cluster.example.test',
             'publication' => 'public',
             'cluster_id' => $cluster->id,
         ])
@@ -189,7 +188,7 @@ it('returns 409 with both Routes when the requested target belongs to another Ro
     $existing = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $requested = $this->postJson('/api/v1/routes', [
         'app_id' => $this->orbitApp->id,
-        'hostname' => 'fixed.example.test',
+        'domain' => 'fixed.example.test',
         'publication' => 'private',
         'node_id' => $this->node->id,
     ])->assertCreated();
@@ -222,7 +221,7 @@ it('returns 409 with route.target_conflict when creating a Route for an AppInsta
     $this
         ->postJson('/api/v1/routes', [
             'app_id' => $this->orbitApp->id,
-            'hostname' => 'unused-host.example.test',
+            'domain' => 'unused-host.example.test',
             'publication' => 'private',
             'app_instance_id' => $this->target->id,
         ])
@@ -237,7 +236,7 @@ it('returns 409 with route.target_conflict when creating a Route for an AppInsta
         ->toBe($routesBefore)
         ->and(route_api_target_rows())
         ->toBe($targetRowsBefore)
-        ->and(Route::query()->where('hostname', 'unused-host.example.test')->exists())
+        ->and(Route::query()->where('domain', 'unused-host.example.test')->exists())
         ->toBeFalse();
 });
 
@@ -246,7 +245,7 @@ it('keeps every Route association unchanged for exact target no-ops', function (
     $targeted->update(['status' => 'active']);
     $empty = $this->postJson('/api/v1/routes', [
         'app_id' => $this->orbitApp->id,
-        'hostname' => 'empty.example.test',
+        'domain' => 'empty.example.test',
         'publication' => 'private',
         'node_id' => $this->node->id,
     ])->assertCreated();
@@ -321,7 +320,7 @@ it('leaves the complete Route unchanged for invalid target proposals', function 
     Route::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $collisionNode->id,
-        'hostname' => 'feature.acme.collision.test',
+        'domain' => 'feature.acme.collision.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
@@ -339,7 +338,7 @@ it('keeps legacy Instance and Workspace host identity unchanged through Route op
         'name' => 'legacy',
         'environment' => 'development',
         'checkout_path' => '/srv/orbit/legacy/acme',
-        'hostname' => 'legacy.example.test',
+        'domain' => 'legacy.example.test',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
     ]);
@@ -348,20 +347,20 @@ it('keeps legacy Instance and Workspace host identity unchanged through Route op
         'name' => 'preview',
         'branch' => 'preview',
         'checkout_path' => '/srv/orbit/legacy/acme/preview',
-        'hostname' => 'preview.example.test',
+        'domain' => 'preview.example.test',
         'status' => LifecycleStatus::Active,
     ]);
-    $legacyBefore = $legacy->only(['hostname', 'certificate_mode']);
-    $workspaceBefore = $workspace->only(['hostname']);
+    $legacyBefore = $legacy->only(['domain', 'certificate_mode']);
+    $workspaceBefore = $workspace->only(['domain']);
 
     $route = $this->postJson('/api/v1/routes', [
         'app_id' => $this->orbitApp->id,
-        'hostname' => 'route.example.test',
+        'domain' => 'route.example.test',
         'publication' => 'private',
         'node_id' => $this->node->id,
     ])->assertCreated();
     $routeId = $route->json('data.id');
-    $this->patchJson("/api/v1/routes/{$routeId}", ['hostname' => 'changed.example.test'])->assertOk();
+    $this->patchJson("/api/v1/routes/{$routeId}", ['domain' => 'changed.example.test'])->assertOk();
     $this->putJson("/api/v1/routes/{$routeId}/target", ['app_instance_id' => $this->target->id])->assertOk();
     $this->target->update(['status' => AppInstanceState::Reserved]);
     $this->deleteJson("/api/v1/routes/{$routeId}/target")->assertOk();
@@ -387,17 +386,17 @@ it('keeps legacy Instance and Workspace host identity unchanged through Route op
     ));
     $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
 
-    expect($legacy->refresh()->only(['hostname', 'certificate_mode']))
+    expect($legacy->refresh()->only(['domain', 'certificate_mode']))
         ->toBe($legacyBefore)
-        ->and($workspace->refresh()->only(['hostname']))
+        ->and($workspace->refresh()->only(['domain']))
         ->toBe($workspaceBefore);
 });
 
 it('rejects malformed input, caller-owned fields, arrays, and conflicting retries unchanged', function (): void {
-    foreach (['bad_name', '-bad.test', str_repeat('a', 254)] as $hostname) {
+    foreach (['bad_name', '-bad.test', str_repeat('a', 254)] as $domain) {
         $this->postJson('/api/v1/routes', [
             'app_id' => $this->orbitApp->id,
-            'hostname' => $hostname,
+            'domain' => $domain,
             'publication' => 'private',
             'node_id' => $this->node->id,
         ])->assertUnprocessable();
@@ -405,7 +404,7 @@ it('rejects malformed input, caller-owned fields, arrays, and conflicting retrie
 
     $this->postJson('/api/v1/routes', [
         'app_id' => $this->orbitApp->id,
-        'hostname' => 'safe.test',
+        'domain' => 'safe.test',
         'publication' => 'private',
         'node_id' => $this->node->id,
         'targets' => [$this->target->id],
@@ -424,24 +423,24 @@ it('rejects malformed input, caller-owned fields, arrays, and conflicting retrie
 
     $payload = [
         'app_id' => $this->orbitApp->id,
-        'hostname' => 'retry.test',
+        'domain' => 'retry.test',
         'publication' => 'private',
         'node_id' => $this->node->id,
     ];
     $this->postJson('/api/v1/routes', $payload)->assertCreated();
-    $before = Route::query()->where('hostname', 'retry.test')->sole()->toArray();
+    $before = Route::query()->where('domain', 'retry.test')->sole()->toArray();
     $this
         ->postJson('/api/v1/routes', [...$payload, 'publication' => 'public'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.retry_conflict');
-    expect(Route::query()->where('hostname', 'retry.test')->sole()->toArray())->toBe($before);
+    expect(Route::query()->where('domain', 'retry.test')->sole()->toArray())->toBe($before);
 });
 
-it('refuses invalid or occupied active explicit hostnames before Route or projection state changes', function (): void {
+it('refuses invalid or occupied active explicit domains before Route or projection state changes', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'active.example.test',
+        domain: 'active.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
@@ -451,12 +450,12 @@ it('refuses invalid or occupied active explicit hostnames before Route or projec
     Route::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
-        'hostname' => 'occupied.example.test',
+        'domain' => 'occupied.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
     ]);
-    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
@@ -464,20 +463,20 @@ it('refuses invalid or occupied active explicit hostnames before Route or projec
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
     $before = $route->fresh(['targets'])->toArray();
 
-    $this->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'bad_name'])
+    $this->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'bad_name'])
         ->assertUnprocessable();
     $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'occupied.example.test'])
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'occupied.example.test'])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'route.hostname_conflict');
+        ->assertJsonPath('error.code', 'route.domain_conflict');
 
     expect($route->fresh(['targets'])->toArray())->toBe($before);
 });
 
-it('returns 409 instance.source_profile_missing for an explicit hostname change without a recorded profile', function (): void {
+it('returns 409 instance.source_profile_missing for an explicit domain change without a recorded profile', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'active.example.test',
+        domain: 'active.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
@@ -485,7 +484,7 @@ it('returns 409 instance.source_profile_missing for an explicit hostname change 
     ))['route'];
     $route->update(['status' => 'active']);
     $this->target->update(['provisioning_step' => 'active']);
-    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
@@ -494,7 +493,7 @@ it('returns 409 instance.source_profile_missing for an explicit hostname change 
     $before = $route->fresh(['targets'])->toArray();
 
     $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.source_profile_missing')
         ->assertJsonPath(
@@ -505,18 +504,18 @@ it('returns 409 instance.source_profile_missing for an explicit hostname change 
     expect($route->fresh(['targets'])->toArray())->toBe($before);
 });
 
-it('updates an active explicit private development hostname through convergence', function (): void {
+it('updates an active explicit private development domain through a replacement Route', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'active.example.test',
+        domain: 'active.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
     $route->update(['status' => 'active']);
-    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector = Mockery::mock(RouteDomainProjector::class);
     $projector->shouldReceive('prepareWorkloadCertificate')->once();
     $projector->shouldReceive('prepareWorkloadCaddy')->once();
     $projector->shouldReceive('prepareRouterCertificate')->once();
@@ -525,111 +524,119 @@ it('updates an active explicit private development hostname through convergence'
     $projector->shouldReceive('prepareRouterCaddy')->once();
     $projector->shouldReceive('publishDns')->once();
     $projector->shouldReceive('cleanup')->once();
-    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
     );
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
 
-    $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+    $updated = $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
         ->assertOk()
-        ->assertJsonPath('data.hostname', 'next.example.test')
+        ->assertJsonPath('data.domain', 'next.example.test')
         ->assertJsonPath('data.status', 'active')
         ->assertJsonPath('data.failed_step', null)
-        ->assertJsonPath('data.hostname_change_target', null);
+        ->assertJsonPath('data.replaced_by_route_id', null);
 
-    expect($this->target->refresh()->status)->toBe(AppInstanceState::Active);
+    expect($updated->json('data.id'))
+        ->not->toBe($route->id)
+        ->and(Route::query()->whereKey($route->id)->exists())
+        ->toBeFalse()
+        ->and($this->target->refresh()->status)
+        ->toBe(AppInstanceState::Active);
 });
 
 it('keeps database cutover failures bounded through the Route update API', function (): void {
     $route = route_api_active_development_route($this->orbitApp, $this->target);
-    app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(rollback: true));
+    $before = $route->fresh()->only([
+        'id',
+        'domain',
+        'status',
+        'replaces_route_id',
+        'replaced_by_route_id',
+        'replacement_step',
+        'failed_step',
+        'error_code',
+    ]);
+    app()->instance(RouteDomainProjector::class, route_api_domain_projector(rollback: true));
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
     );
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
     DB::unprepared(<<<'SQL'
-        CREATE TRIGGER route_api_hostname_change_cutover_failure
-        BEFORE UPDATE OF hostname ON routes
-        WHEN NEW.hostname = 'next.example.test'
+        CREATE TRIGGER route_api_domain_change_cutover_failure
+        BEFORE UPDATE OF status ON routes
+        WHEN NEW.status = 'activating'
         BEGIN
             SELECT RAISE(ABORT, 'Injected database cutover failure.');
         END
         SQL);
 
     $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
         ->assertInternalServerError()
         ->assertJsonPath('error.code', 'gateway.unhandled');
 
-    expect($route
-        ->refresh()
-        ->only([
-            'hostname',
-            'hostname_change_previous',
-            'hostname_change_target',
-            'hostname_change_direction',
-            'hostname_change_step',
-            'failed_step',
-            'error_code',
-        ]))->toBe([
-            'hostname' => 'active.example.test',
-            'hostname_change_previous' => 'active.example.test',
-            'hostname_change_target' => 'next.example.test',
-            'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
-            'hostname_change_step' => RouteHostnameChangeStep::RolledBack,
-            'failed_step' => 'database-cutover',
-            'error_code' => 'route.hostname_change_failed',
-        ]);
+    expect($route->refresh()->only([
+        'id',
+        'domain',
+        'status',
+        'replaces_route_id',
+        'replaced_by_route_id',
+        'replacement_step',
+        'failed_step',
+        'error_code',
+    ]))
+        ->toBe($before)
+        ->and($route->isAuthoritative())
+        ->toBeTrue()
+        ->and(Route::query()->where('domain', 'next.example.test')->exists())
+        ->toBeFalse();
 });
 
 it('keeps final cleanup failures bounded through the Route update API', function (): void {
     $route = route_api_active_development_route($this->orbitApp, $this->target);
-    app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(cleanup: true));
+    app()->instance(RouteDomainProjector::class, route_api_domain_projector(cleanup: true));
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
     );
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
     DB::unprepared(<<<'SQL'
-        CREATE TRIGGER route_api_hostname_change_cleanup_failure
-        BEFORE UPDATE OF hostname_change_target ON routes
-        WHEN OLD.hostname_change_step = 'database-cutover' AND NEW.hostname_change_target IS NULL
+        CREATE TRIGGER route_api_domain_change_cleanup_failure
+        BEFORE DELETE ON routes
+        WHEN OLD.status = 'retiring'
         BEGIN
             SELECT RAISE(ABORT, 'Injected cleanup persistence failure.');
         END
         SQL);
 
     $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
         ->assertInternalServerError()
         ->assertJsonPath('error.code', 'gateway.unhandled');
 
-    expect($route
-        ->refresh()
-        ->only([
-            'hostname',
-            'hostname_change_previous',
-            'hostname_change_target',
-            'hostname_change_direction',
-            'hostname_change_step',
-            'failed_step',
-            'error_code',
-        ]))->toBe([
-            'hostname' => 'next.example.test',
-            'hostname_change_previous' => 'active.example.test',
-            'hostname_change_target' => 'next.example.test',
-            'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-            'hostname_change_step' => RouteHostnameChangeStep::DatabaseCutover,
-            'failed_step' => 'cleanup',
-            'error_code' => 'route.hostname_change_failed',
-        ]);
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
+
+    expect($replacement->status)
+        ->toBe(RouteStatus::Activating)
+        ->and($replacement->isAuthoritative())
+        ->toBeTrue()
+        ->and($replacement->replaces_route_id)
+        ->toBe($route->id)
+        ->and($replacement->failed_step)
+        ->toBe('cleanup')
+        ->and($replacement->error_code)
+        ->toBe('route.domain_change_failed')
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Retiring)
+        ->and($route->domain)
+        ->toBe('active.example.test');
 });
 
-it('updates an active explicit private production hostname on the same Route', function (): void {
+it('updates an active explicit private production domain through a replacement Route', function (): void {
     $this->target->update([
         'environment' => 'production',
         'source_is_laravel' => false,
@@ -637,14 +644,14 @@ it('updates an active explicit private production hostname on the same Route', f
     ]);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'production.example.test',
+        domain: 'production.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
     $route->update(['status' => 'active']);
-    app()->instance(RouteHostnameProjector::class, route_api_hostname_projector(cleanup: true));
+    app()->instance(RouteDomainProjector::class, route_api_domain_projector(cleanup: true));
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
@@ -653,26 +660,32 @@ it('updates an active explicit private production hostname on the same Route', f
     $targetId = $this->target->id;
     $environment = Mockery::mock(AppInstanceRouteEnvironmentSynchronizer::class);
     $environment
-        ->shouldReceive('synchronizeRouteHostname')
-        ->once()
+        ->shouldReceive('synchronizeRouteDomain')
+        ->twice()
         ->withArgs(static fn (
             AppInstance $instance,
-            AppInstanceEnvironmentRouteHostname $hostname,
+            AppInstanceEnvironmentRouteDomain $domain,
         ): bool => $instance->id === $targetId
-            && $hostname === AppInstanceEnvironmentRouteHostname::Candidate)
+            && $domain === AppInstanceEnvironmentRouteDomain::Candidate)
         ->andReturn(new AppInstanceEnvironmentResult($targetId, 'sync', true, 1));
     app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, $environment);
 
-    $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'next.example.test'])
+    $updated = $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
         ->assertOk()
-        ->assertJsonPath('data.id', $route->id)
-        ->assertJsonPath('data.hostname', 'next.example.test')
-        ->assertJsonPath('data.hostname_change_target', null);
+        ->assertJsonPath('data.domain', 'next.example.test')
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.replaced_by_route_id', null);
 
-    expect($route->fresh()->targets)
+    $replacement = Route::query()->findOrFail($updated->json('data.id'));
+
+    expect($replacement->id)
+        ->not->toBe($route->id)
+        ->and(Route::query()->whereKey($route->id)->exists())
+        ->toBeFalse()
+        ->and($replacement->targets)
         ->toHaveCount(1)
-        ->and($route->targets->sole()->app_instance_id)
+        ->and($replacement->targets->sole()->app_instance_id)
         ->toBe($targetId);
 });
 
@@ -732,7 +745,7 @@ function route_api_active_development_route(OrbitApp $app, AppInstance $target):
     ]);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $app->id,
-        hostname: 'active.example.test',
+        domain: 'active.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $target->id,
         nodeId: null,
@@ -743,9 +756,9 @@ function route_api_active_development_route(OrbitApp $app, AppInstance $target):
     return $route->refresh();
 }
 
-function route_api_hostname_projector(bool $rollback = false, bool $cleanup = false): RouteHostnameProjector
+function route_api_domain_projector(bool $rollback = false, bool $cleanup = false): RouteDomainProjector
 {
-    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector = Mockery::mock(RouteDomainProjector::class);
 
     foreach ([
         'prepareWorkloadCertificate',

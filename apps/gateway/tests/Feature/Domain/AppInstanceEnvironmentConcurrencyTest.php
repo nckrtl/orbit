@@ -10,16 +10,15 @@ use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteHostname;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\RouteHostnameChangeDirection;
-use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -187,21 +186,28 @@ it('refuses a stale update after the supported removal boundary enters removing'
         ->toBe(['EXISTING']);
 });
 
-it('refuses a stale import across the recorded Route hostname transition without a partial change', function (): void {
+it('refuses a stale import across the recorded Route domain transition without a partial change', function (): void {
     [$instance, $route] = orb207_concurrency_fixture();
     $instance->environmentValues()->create(['env_key' => 'EXISTING', 'env_value' => 'kept']);
     $context = app(AppInstanceEnvironmentContextResolver::class)->resolve($instance, true);
 
-    DB::transaction(function () use ($route): void {
-        Route::query()
-            ->lockForUpdate()
-            ->findOrFail($route->id)
-            ->update([
-                'hostname_change_previous' => $route->hostname,
-                'hostname_change_target' => 'next.example.test',
-                'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-                'hostname_change_step' => RouteHostnameChangeStep::Reserved,
-            ]);
+    DB::transaction(function () use ($route, $instance): void {
+        $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+        $replacement = Route::query()->create([
+            'app_id' => $locked->app_id,
+            'node_id' => $locked->node_id,
+            'domain' => 'next.example.test',
+            'provenance' => $locked->provenance,
+            'publication' => $locked->publication,
+            'status' => RouteStatus::Pending,
+            'replaces_route_id' => $locked->id,
+            'replacement_step' => RouteReplacementStep::Reserved,
+        ]);
+        $replacement->targets()->create([
+            'app_instance_id' => $instance->id,
+            'position' => 0,
+        ]);
+        $locked->update(['replaced_by_route_id' => $replacement->id]);
     });
 
     try {
@@ -224,7 +230,7 @@ it('refuses a stale import across the recorded Route hostname transition without
         ->toBe('kept');
 });
 
-it('renders stored production values for candidate and previous Route hostnames without changing storage', function (): void {
+it('renders stored production values for candidate and previous Route domains without changing storage', function (): void {
     [$instance, $route] = orb207_concurrency_fixture();
     $instance->update([
         'environment' => 'production',
@@ -233,19 +239,28 @@ it('renders stored production values for candidate and previous Route hostnames 
     ]);
     $instance->environmentValues()->createMany([
         ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
-        ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.hostname}}'],
+        ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.domain}}'],
         ['env_key' => 'OTHER', 'env_value' => 'literal'],
     ]);
-    $route->update([
-        'hostname_change_previous' => $route->hostname,
-        'hostname_change_target' => 'next.example.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::RouterCaddy,
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'node_id' => $route->node_id,
+        'domain' => 'next.example.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => RouteReplacementStep::RouterCaddy,
     ]);
+    $replacement->targets()->create([
+        'app_instance_id' => $instance->id,
+        'position' => 0,
+    ]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
     $preflight = new class implements AppInstanceOperationPreflight
     {
         /** @var list<string> */
-        public array $hostnames = [];
+        public array $domains = [];
 
         public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void {}
 
@@ -253,7 +268,7 @@ it('renders stored production values for candidate and previous Route hostnames 
             AppInstanceEnvironmentContext $context,
             int $requiredCapacityBytes,
         ): void {
-            $this->hostnames[] = $context->routeHostname;
+            $this->domains[] = $context->routeDomain;
         }
     };
     $writer = new class implements AppInstanceEnvironmentWriter
@@ -274,14 +289,10 @@ it('renders stored production values for candidate and previous Route hostnames 
     app()->instance(AppInstanceEnvironmentWriter::class, $writer);
     $synchronizer = app(SynchronizeAppInstanceEnvironmentAction::class);
 
-    $synchronizer->synchronizeRouteHostname($instance, AppInstanceEnvironmentRouteHostname::Candidate);
-    $route->update([
-        'hostname_change_direction' => RouteHostnameChangeDirection::Rollback,
-        'hostname_change_step' => RouteHostnameChangeStep::RollbackCertificates,
-    ]);
-    $synchronizer->synchronizeRouteHostname($instance, AppInstanceEnvironmentRouteHostname::Previous);
+    $synchronizer->synchronizeRouteDomain($instance, AppInstanceEnvironmentRouteDomain::Candidate);
+    $synchronizer->synchronizeRouteDomain($instance, AppInstanceEnvironmentRouteDomain::Authoritative);
 
-    expect($preflight->hostnames)
+    expect($preflight->domains)
         ->toBe(['next.example.test', 'concurrency.example.test'])
         ->and(Dotenv::parse($writer->contents[0]))
         ->toBe([
@@ -296,7 +307,7 @@ it('renders stored production values for candidate and previous Route hostnames 
             'OTHER' => 'literal',
         ])
         ->and($instance->environmentValues()->orderBy('env_key')->pluck('env_value')->all())
-        ->toBe(['base64:literal-key', 'https://{{app_instance.hostname}}', 'literal']);
+        ->toBe(['base64:literal-key', 'https://{{app_instance.domain}}', 'literal']);
 });
 
 it('marks every submitted and parsed value frame as sensitive', function (): void {
@@ -367,7 +378,7 @@ function orb207_concurrency_fixture(): array
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'concurrency.example.test',
+        'domain' => 'concurrency.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -474,7 +485,7 @@ function orb207_concurrency_worker_script(): string
             $route = App\Models\Route::query()->create([
                 'app_id' => $orbitApp->id,
                 'node_id' => $node->id,
-                'hostname' => 'concurrent-worker.example.test',
+                'domain' => 'concurrent-worker.example.test',
                 'provenance' => 'explicit',
                 'publication' => 'private',
                 'status' => 'pending',
@@ -627,7 +638,7 @@ function orb212_sync_concurrency_worker_script(): string
             $route = App\Models\Route::query()->create([
                 'app_id' => $orbitApp->id,
                 'node_id' => $node->id,
-                'hostname' => 'concurrent-sync-worker.example.test',
+                'domain' => 'concurrent-sync-worker.example.test',
                 'provenance' => 'explicit',
                 'publication' => 'private',
                 'status' => 'pending',

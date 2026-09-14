@@ -6,6 +6,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\AppInstance;
@@ -24,27 +25,13 @@ function production_route_target_set_migration(): Migration
     );
 }
 
-function route_hostname_change_migration(): Migration
-{
-    return require base_path(
-        'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
-    );
-}
-
-function production_route_hostname_change_migration(): Migration
-{
-    return require base_path(
-        'database/migrations/2026_09_12_090000_enable_production_route_hostname_changes.php',
-    );
-}
-
 it('stores exclusive Route scope, immutable provenance, basis, and pending lifecycle', function (): void {
     expect(Schema::hasColumns('routes', [
         'app_id',
         'node_id',
         'cluster_id',
         'generation_basis_node_id',
-        'hostname',
+        'domain',
         'provenance',
         'publication',
         'status',
@@ -61,7 +48,7 @@ it('stores exclusive Route scope, immutable provenance, basis, and pending lifec
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => 'acme.test',
+        'domain' => 'acme.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'generation_basis_node_id' => $node->id,
@@ -86,7 +73,7 @@ it('rejects duplicate target Nodes', function (): void {
     $explicit = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $nodeOne->id,
-        'hostname' => 'explicit.test',
+        'domain' => 'explicit.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
     ]);
@@ -100,166 +87,108 @@ it('rejects duplicate target Nodes', function (): void {
         ]))->toThrow(QueryException::class)->and($explicit->targets()->count())->toBe(1);
 });
 
-it('stores only complete and directionally valid active development hostname changes', function (): void {
-    $route = route_migration_hostname_change_route('validity');
-    $operation = route_migration_hostname_change_attributes('validity-next.example.test');
+it('keeps a persisted Route domain immutable', function (): void {
+    $route = route_migration_replacement_route('immutable');
 
-    foreach ([
-        ['hostname_change_previous' => $route->hostname],
-        array_diff_key($operation, ['hostname_change_direction' => true]),
-        array_diff_key($operation, ['hostname_change_step' => true]),
-        [...$operation, 'hostname_change_direction' => 'sideways'],
-        [...$operation, 'hostname_change_step' => 'unknown'],
-        [...$operation, 'hostname_change_direction' => 'forward', 'hostname_change_step' => 'rollback-dns'],
-        [...$operation, 'hostname_change_direction' => 'rollback', 'hostname_change_step' => 'workload-caddy'],
-    ] as $invalid) {
-        expect(fn () => DB::table('routes')->where('id', $route->id)->update($invalid))
-            ->toThrow(QueryException::class);
-    }
-
-    expect(fn () => DB::table('routes')->where('id', $route->id)->update($operation))
-        ->not
+    expect(fn () => DB::table('routes')->where('id', $route->id)->update(['domain' => 'other.example.test']))
         ->toThrow(QueryException::class)
-        ->and($route->refresh()->hostname_change_step?->value)
-        ->toBe('reserved');
+        ->and($route->refresh()->domain)
+        ->toBe('immutable.example.test');
 });
 
-it('requires paired failure evidence during an active hostname change', function (): void {
-    $route = route_migration_hostname_change_route('failure-pair');
-    DB::table('routes')
-        ->where('id', $route->id)
-        ->update(
-            route_migration_hostname_change_attributes('failure-pair-next.example.test'),
-        );
-
-    expect(fn () => DB::table('routes')->where('id', $route->id)->update(['failed_step' => 'workload-caddy']))
-        ->toThrow(QueryException::class)
-        ->and(fn () => DB::table('routes')->where('id', $route->id)->update(['error_code' => 'route.failed']))
-        ->toThrow(QueryException::class)
-        ->and(fn () => DB::table('routes')
-            ->where('id', $route->id)
-            ->update([
-                'failed_step' => 'workload-caddy',
-                'error_code' => 'route.failed',
-            ]))
-        ->not->toThrow(QueryException::class);
-});
-
-it('limits active hostname change state to eligible single targets and environment-specific checkpoints', function (): void {
-    $production = route_migration_hostname_change_route('production-operation', environment: 'production');
-    $unknown = route_migration_hostname_change_route('unknown-operation', sourceIsLaravel: null);
-    $development = route_migration_hostname_change_route('development-checkpoint');
-
-    expect(fn () => DB::table('routes')
-        ->where('id', $production->id)
-        ->update(route_migration_hostname_change_attributes(
-            'production-operation-next.example.test',
-            $production->hostname,
-        )))
-        ->not->toThrow(QueryException::class)
-        ->and(fn () => DB::table('routes')
-            ->where('id', $production->id)
-            ->update(['hostname_change_step' => 'environment-synchronized']))
-        ->not->toThrow(QueryException::class)
-        ->and(fn () => DB::table('routes')
-            ->where('id', $production->id)
-            ->update(['hostname_change_step' => 'laravel-url']))
-        ->toThrow(QueryException::class)
-        ->and(fn () => DB::table('routes')
-            ->where('id', $development->id)
-            ->update([
-                ...route_migration_hostname_change_attributes(
-                    'development-checkpoint-next.example.test',
-                    $development->hostname,
-                ),
-                'hostname_change_step' => 'environment-synchronized',
-            ]))
-        ->toThrow(QueryException::class)
-        ->and(fn () => DB::table('routes')
-            ->where('id', $unknown->id)
-            ->update(route_migration_hostname_change_attributes(
-                'unknown-operation-next.example.test',
-                $unknown->hostname,
-            )))
-        ->toThrow(QueryException::class);
-});
-
-it('refuses production hostname support rollback while recovery is unfinished', function (): void {
-    $route = route_migration_hostname_change_route('production-rollback', environment: 'production');
-    DB::table('routes')
-        ->where('id', $route->id)
-        ->update(route_migration_hostname_change_attributes(
-            'production-rollback-next.example.test',
-            $route->hostname,
-        ));
-    $schemaBefore = route_migration_hostname_change_schema();
-
-    expect(fn () => production_route_hostname_change_migration()->down())
-        ->toThrow(RuntimeException::class, "operations are unfinished: {$route->id}");
-
-    expect(route_migration_hostname_change_schema())
-        ->toBe($schemaBefore)
-        ->and($route->refresh()->hostname_change_target)
-        ->toBe('production-rollback-next.example.test');
-});
-
-it('keeps canonical and candidate hostname ownership exclusive across Routes', function (): void {
-    $first = route_migration_hostname_change_route('first-owner');
-    $second = route_migration_hostname_change_route('second-owner');
-
-    expect(fn () => DB::table('routes')
-        ->where('id', $first->id)
-        ->update(
-            route_migration_hostname_change_attributes($second->hostname, $first->hostname),
-        ))
-        ->toThrow(QueryException::class);
-
-    DB::table('routes')
-        ->where('id', $first->id)
-        ->update(
-            route_migration_hostname_change_attributes('candidate-owner.example.test', $first->hostname),
-        );
-
-    expect(fn () => Route::query()->create([
-        'app_id' => $second->app_id,
-        'node_id' => $second->node_id,
-        'hostname' => 'candidate-owner.example.test',
+it('allows a linked replacement pair to share the same AppInstance targets', function (): void {
+    [$current, $instance] = route_migration_replacement_pair('shared-target');
+    $replacement = Route::query()->create([
+        'app_id' => $current->app_id,
+        'node_id' => $current->node_id,
+        'domain' => 'shared-target-next.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
-    ]))
-        ->toThrow(QueryException::class);
+        'replaces_route_id' => $current->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+
+    $replacement->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $current->update(['replaced_by_route_id' => $replacement->id]);
+
+    expect($current->targets()->pluck('app_instance_id')->all())
+        ->toBe([$instance->id])
+        ->and($replacement->targets()->pluck('app_instance_id')->all())
+        ->toBe([$instance->id]);
 });
 
-it('refuses hostname change rollback before discarding unfinished recovery evidence', function (): void {
-    $route = route_migration_hostname_change_route('rollback-evidence');
-    DB::table('routes')
-        ->where('id', $route->id)
-        ->update([
-            ...route_migration_hostname_change_attributes(
-                'rollback-evidence-next.example.test',
-                $route->hostname,
-            ),
+it('refuses a third unrelated Route targeting the same AppInstance', function (): void {
+    [$current, $instance] = route_migration_replacement_pair('exclusive-target');
+    $replacement = Route::query()->create([
+        'app_id' => $current->app_id,
+        'node_id' => $current->node_id,
+        'domain' => 'exclusive-target-next.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $current->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    $replacement->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $unrelated = Route::query()->create([
+        'app_id' => $current->app_id,
+        'node_id' => $current->node_id,
+        'domain' => 'exclusive-target-other.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+
+    expect(fn () => $unrelated->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]))
+        ->toThrow(QueryException::class)
+        ->and($unrelated->targets()->count())
+        ->toBe(0);
+});
+
+it('enforces unique Route domains', function (): void {
+    $first = route_migration_replacement_route('unique-owner');
+
+    expect(fn () => Route::query()->create([
+        'app_id' => $first->app_id,
+        'node_id' => $first->node_id,
+        'domain' => $first->domain,
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]))->toThrow(QueryException::class);
+});
+
+it('accepts pending active activating retiring and failed Route statuses', function (): void {
+    $pending = route_migration_replacement_route('status-pending', activate: false);
+    $active = route_migration_replacement_route('status-active');
+    $activating = route_migration_replacement_route('status-activating');
+    $retiring = route_migration_replacement_route('status-retiring');
+    $failed = route_migration_replacement_route('status-failed');
+
+    expect($pending->status)
+        ->toBe(RouteStatus::Pending)
+        ->and(fn () => $active->update(['status' => RouteStatus::Active]))
+        ->not->toThrow(QueryException::class)
+        ->and(fn () => $activating->update(['status' => RouteStatus::Activating]))
+        ->not->toThrow(QueryException::class)
+        ->and(fn () => $retiring->update(['status' => RouteStatus::Retiring]))
+        ->not->toThrow(QueryException::class)
+        ->and(fn () => $failed->update([
+            'status' => RouteStatus::Failed,
             'failed_step' => 'workload-caddy',
-            'error_code' => 'route.test_failure',
-        ]);
-    $evidenceBefore = $route->refresh()->getAttributes();
-    $schemaBefore = route_migration_hostname_change_schema();
-
-    expect(fn () => route_hostname_change_migration()->down())
-        ->toThrow(RuntimeException::class, "operations are unfinished: {$route->id}");
-
-    expect(route_migration_hostname_change_schema())
-        ->toBe($schemaBefore)
-        ->and($route->refresh()->getAttributes())
-        ->toBe($evidenceBefore)
-        ->and(Schema::hasColumns('routes', [
-            'hostname_change_previous',
-            'hostname_change_target',
-            'hostname_change_direction',
-            'hostname_change_step',
+            'error_code' => 'route.domain_change_failed',
         ]))
-        ->toBeTrue();
+        ->not->toThrow(QueryException::class)
+        ->and(fn () => Route::query()->create([
+            'app_id' => $pending->app_id,
+            'node_id' => $pending->node_id,
+            'domain' => 'status-invalid.example.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => 'unknown',
+        ]))
+        ->toThrow(QueryException::class);
 });
 
 it('enforces multi-target storage with compatible Cluster-scoped production rows', function (): void {
@@ -280,7 +209,7 @@ it('enforces multi-target storage with compatible Cluster-scoped production rows
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'explicit.test',
+        'domain' => 'explicit.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
     ]);
@@ -302,7 +231,7 @@ it('enforces multi-target storage with compatible Cluster-scoped production rows
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
         'generation_basis_node_id' => $oneNode->id,
-        'hostname' => 'generated.test',
+        'domain' => 'generated.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
@@ -392,49 +321,46 @@ function route_migration_instance(
     ]);
 }
 
-function route_migration_hostname_change_route(
-    string $suffix,
-    string $environment = 'development',
-    ?bool $sourceIsLaravel = false,
-): Route {
+function route_migration_replacement_route(string $suffix, bool $activate = true): Route
+{
+    [$route] = route_migration_replacement_pair($suffix, $activate);
+
+    return $route;
+}
+
+/** @return array{Route, AppInstance} */
+function route_migration_replacement_pair(string $suffix, bool $activate = true): array
+{
     $app = App\Models\App::query()->create([
-        'name' => "Hostname {$suffix}",
-        'slug' => "hostname-{$suffix}",
-        'repository_url' => "https://example.test/hostname-{$suffix}.git",
+        'name' => "Domain {$suffix}",
+        'slug' => "domain-{$suffix}",
+        'repository_url' => "https://example.test/domain-{$suffix}.git",
     ]);
-    $node = route_migration_node("hostname-{$suffix}");
+    $node = route_migration_node("domain-{$suffix}");
     $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $suffix,
-        'environment' => $environment,
+        'environment' => 'development',
         'checkout_path' => "/srv/{$suffix}",
-        'source_is_laravel' => $sourceIsLaravel,
+        'source_is_laravel' => false,
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => "{$suffix}.example.test",
+        'domain' => "{$suffix}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
-    $route->update(['status' => RouteStatus::Active]);
 
-    return $route->refresh();
-}
+    if ($activate) {
+        $route->update(['status' => RouteStatus::Active]);
+    }
 
-/** @return array<string, string> */
-function route_migration_hostname_change_attributes(string $target, ?string $previous = null): array
-{
-    return [
-        'hostname_change_previous' => $previous ?? str_replace('-next', '', $target),
-        'hostname_change_target' => $target,
-        'hostname_change_direction' => 'forward',
-        'hostname_change_step' => 'reserved',
-    ];
+    return [$route->refresh(), $instance->refresh()];
 }
 
 /** @return array{Route, AppInstance, AppInstance} */
@@ -459,7 +385,7 @@ function route_migration_production_set(string $suffix, string $environment = 'p
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => "{$suffix}.example.test",
+        'domain' => "{$suffix}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -489,19 +415,6 @@ function route_migration_target_schema(): array
         FROM sqlite_master
         WHERE type IN ('table', 'index', 'trigger')
             AND tbl_name IN ('nodes', 'node_roles', 'routes', 'route_targets', 'active_app_prod_nodes')
-        ORDER BY type, name
-        SQL))
-        ->map(static fn (object $entry): array => (array) $entry)
-        ->all();
-}
-
-/** @return list<array<string, mixed>> */
-function route_migration_hostname_change_schema(): array
-{
-    return collect(DB::select(<<<'SQL'
-        SELECT type, name, tbl_name, sql
-        FROM sqlite_master
-        WHERE tbl_name = 'routes'
         ORDER BY type, name
         SQL))
         ->map(static fn (object $entry): array => (array) $entry)

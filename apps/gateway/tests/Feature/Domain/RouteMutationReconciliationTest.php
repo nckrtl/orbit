@@ -29,7 +29,7 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -58,18 +58,18 @@ beforeEach(function (): void {
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
 });
 
-it('converges an eligible active explicit development Route hostname', function (): void {
+it('converges an eligible active explicit development Route domain', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'active.example.test',
+        domain: 'active.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
     $route->update(['status' => RouteStatus::Active]);
-    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector = Mockery::mock(RouteDomainProjector::class);
 
     foreach ([
         'prepareWorkloadCertificate',
@@ -84,7 +84,7 @@ it('converges an eligible active explicit development Route hostname', function 
         $projector->shouldReceive($method)->once();
     }
 
-    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
@@ -96,18 +96,20 @@ it('converges an eligible active explicit development Route hostname', function 
         new UpdateRouteData(true, 'next.example.test', false, null),
     );
 
-    expect($updated->hostname)
+    expect($updated->domain)
         ->toBe('next.example.test')
         ->and($updated->status)
         ->toBe(RouteStatus::Active)
-        ->and($updated->hostname_change_target)
+        ->and($updated->id)
+        ->not->toBe($route->id)
+        ->and($updated->replaced_by_route_id)
         ->toBeNull();
 });
 
 it('reports association conflicts before active Route reconciliation refusals', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'active.example.test',
+        domain: 'active.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
@@ -136,7 +138,7 @@ it('reports association conflicts before active Route reconciliation refusals', 
 it('retains reconciliation refusals for active Route changes without association conflicts', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'active.example.test',
+        domain: 'active.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
@@ -175,7 +177,7 @@ it('retains hostname reconciliation refusals for generated Routes before project
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
 
-    app()->instance(RouteHostnameProjector::class, Mockery::mock(RouteHostnameProjector::class));
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
         DevelopmentAppInstanceConfigurator::class,
         Mockery::mock(DevelopmentAppInstanceConfigurator::class),
@@ -281,18 +283,18 @@ it('atomically reconciles attach, activation, TLD changes, deactivation, and det
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
     expect($route->refresh()->cluster_id)
         ->toBe($cluster->id)
-        ->and($route->hostname)
+        ->and($route->domain)
         ->toBe('feature.acme.dev.test')
         ->and($route->status->value)
         ->toBe('pending');
 
     $this->node->update(['tld' => null]);
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(tldProvided: true, tld: 'next.test'));
-    expect($route->refresh()->hostname)->toBe('feature.acme.next.test');
+    expect($route->refresh()->domain)->toBe('feature.acme.next.test');
 
     $this->node->update(['tld' => 'node.test']);
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Inactive));
-    expect($route->refresh()->node_id)->toBe($this->node->id)->and($route->hostname)->toBe('feature.acme.node.test');
+    expect($route->refresh()->node_id)->toBe($this->node->id)->and($route->domain)->toBe('feature.acme.node.test');
 
     app(DetachClusterNodeAction::class)->execute($cluster, $this->node);
     expect($this->node->refresh()->cluster_id)->toBeNull()->and($route->refresh()->node_id)->toBe($this->node->id);
@@ -401,9 +403,9 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
     sort($expected);
     expect($hydrated)
         ->toBe($expected)
-        ->and($targeted->refresh()->hostname)
+        ->and($targeted->refresh()->domain)
         ->toBe('feature.acme.next.test')
-        ->and($retained->refresh()->hostname)
+        ->and($retained->refresh()->domain)
         ->toBe('retained.acme.next.test')
         ->and($multiTarget->targets()->pluck('position')->all())
         ->toBe([0, 1])
@@ -423,7 +425,7 @@ it('uses provisioning baseline overrides to select retained generated Routes', f
         $this->node->id => ['tld' => 'dev.test'],
     ]);
 
-    expect($route->refresh()->hostname)
+    expect($route->refresh()->domain)
         ->toBe('feature.acme.next.test')
         ->and($route->generation_basis_node_id)
         ->toBe($this->node->id);
@@ -443,7 +445,7 @@ it('rejects a proposed hostname owned by an unaffected Route before any write', 
     expect(fn () => app(RouteMutationReconciler::class)->reconcile(nodeOverrides: [
         $this->node->id => ['tld' => 'next.test'],
     ]))->toThrow(function (ResourceOperationException $exception): void {
-        expect($exception->errorCode)->toBe('route.hostname_conflict');
+        expect($exception->errorCode)->toBe('route.domain_conflict');
     });
 
     expect($affected->fresh()->toArray())
@@ -496,7 +498,7 @@ it('reconciles a zero-target generated Route from its retained basis', function 
 
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(tldProvided: true, tld: 'new.test'));
 
-    expect($route->refresh()->hostname)
+    expect($route->refresh()->domain)
         ->toBe('feature.acme.new.test')
         ->and($route->generation_basis_node_id)
         ->toBe($this->node->id)
@@ -563,7 +565,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
         $observed = [
             'node_tld' => $node->fresh()->tld,
             'node_status' => $node->fresh()->status,
-            'route_hostname' => $route->fresh()->hostname,
+            'route_hostname' => $route->fresh()->domain,
             'route_status' => $route->fresh()->status,
         ];
     });
@@ -582,9 +584,9 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
             'route_hostname' => 'feature.acme.new.test',
             'route_status' => RouteStatus::Pending,
         ])
-        ->and($route->refresh()->only(['hostname', 'generation_basis_node_id', 'failed_step', 'error_code']))
+        ->and($route->refresh()->only(['domain', 'generation_basis_node_id', 'failed_step', 'error_code']))
         ->toBe([
-            'hostname' => 'feature.acme.new.test',
+            'domain' => 'feature.acme.new.test',
             'generation_basis_node_id' => $this->node->id,
             'failed_step' => null,
             'error_code' => null,
@@ -599,7 +601,7 @@ it('preserves a legacy default hostname and source during Route-only reconciliat
         'migration_required' => true,
     ]);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
-    $route->update(['hostname' => 'acme.dev.test']);
+    $route->update(['domain' => 'acme.dev.test']);
     $cluster = Cluster::query()->create([
         'name' => 'legacy-routing',
         'state' => ClusterState::Inactive,
@@ -633,7 +635,7 @@ it('preserves a legacy default hostname and source during Route-only reconciliat
 
     expect($this->target->fresh()->only(array_keys($sourceBefore)))
         ->toBe($sourceBefore)
-        ->and($route->refresh()->hostname)
+        ->and($route->refresh()->domain)
         ->toBe('acme.dev.test')
         ->and($route->cluster_id)
         ->toBe($cluster->id)
@@ -688,7 +690,7 @@ it('uses the active Cluster TLD when the retained basis Node TLD is cleared', fu
 
     expect($this->node->refresh()->tld)
         ->toBeNull()
-        ->and($route->refresh()->hostname)
+        ->and($route->refresh()->domain)
         ->toBe('feature.acme.cluster.test')
         ->and($route->cluster_id)
         ->toBe($cluster->id)
@@ -702,7 +704,7 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
     $this->target->delete();
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'production.example.test',
+        domain: 'production.example.test',
         publication: RoutePublication::Public,
         appInstanceId: null,
         nodeId: $this->node->id,
@@ -719,9 +721,9 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
 
     expect($this->node->refresh()->tld)
         ->toBeNull()
-        ->and($route->refresh()->only(['hostname', 'node_id', 'cluster_id', 'status', 'failed_step', 'error_code']))
+        ->and($route->refresh()->only(['domain', 'node_id', 'cluster_id', 'status', 'failed_step', 'error_code']))
         ->toBe([
-            'hostname' => 'production.example.test',
+            'domain' => 'production.example.test',
             'node_id' => $this->node->id,
             'cluster_id' => null,
             'status' => RouteStatus::Pending,
@@ -772,7 +774,7 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
     $memberTarget = reconciliation_instance($this->orbitApp, $member, 'member');
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
-        hostname: 'fixed.example.test',
+        domain: 'fixed.example.test',
         publication: RoutePublication::Private,
         appInstanceId: $this->target->id,
         nodeId: null,
@@ -891,7 +893,7 @@ function reconciliation_active_cluster(string $name, ?string $tld): Cluster
 
 function reconciliation_route(
     OrbitApp $app,
-    string $hostname,
+    string $domain,
     ?Node $node = null,
     ?Cluster $cluster = null,
     ?Node $basis = null,
@@ -901,7 +903,7 @@ function reconciliation_route(
         'node_id' => $node?->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $basis?->id,
-        'hostname' => $hostname,
+        'domain' => $domain,
         'provenance' => $basis === null ? RouteProvenance::Explicit : RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

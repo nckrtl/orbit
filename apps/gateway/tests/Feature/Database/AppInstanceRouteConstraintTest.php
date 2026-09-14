@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
@@ -80,17 +81,34 @@ it('permits activation only after one Route association exists', function (): vo
 it('enforces global AppInstance Route uniqueness at the database boundary', function (): void {
     [$instance, $first] = app_instance_route_constraint_fixture();
     $first->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
-    $second = Route::query()->create([
+    $unrelated = Route::query()->create([
         'app_id' => $instance->app_id,
         'node_id' => $instance->node_id,
-        'hostname' => 'second.example.test',
+        'domain' => 'second.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
 
-    expect(fn () => $second->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]))
+    expect(fn () => $unrelated->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]))
         ->toThrow(QueryException::class);
+
+    $replacement = Route::query()->create([
+        'app_id' => $instance->app_id,
+        'node_id' => $instance->node_id,
+        'domain' => 'replacement.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $first->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    $replacement->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+
+    expect($replacement->targets()->pluck('app_instance_id')->all())
+        ->toBe([$instance->id])
+        ->and($first->targets()->pluck('app_instance_id')->all())
+        ->toBe([$instance->id]);
 });
 
 it('does not let association deletion strand an active AppInstance', function (): void {
@@ -175,7 +193,7 @@ it('persists an ordered explicit production Route across distinct active app-pro
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'shared.example.test',
+        'domain' => 'shared.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -195,7 +213,7 @@ it('rejects gapped writes after production Route activation and permits atomic d
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'active-order.example.test',
+        'domain' => 'active-order.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -245,7 +263,7 @@ it('prevents an existing shared production target set from drifting through rela
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'stable.example.test',
+        'domain' => 'stable.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -282,7 +300,7 @@ it('refuses to activate a production target set with a position gap', function (
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'gap.example.test',
+        'domain' => 'gap.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -305,7 +323,7 @@ it('keeps generated and development Routes single-target', function (string $kin
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
         'generation_basis_node_id' => $kind === 'generated' ? $one->node_id : null,
-        'hostname' => "{$kind}.example.test",
+        'domain' => "{$kind}.example.test",
         'provenance' => $kind === 'generated' ? RouteProvenance::Generated : RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -337,7 +355,7 @@ it('refuses a shared production target on a wrong Cluster or inactive role', fun
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => "invalid-{$invalid}.example.test",
+        'domain' => "invalid-{$invalid}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -382,7 +400,7 @@ function app_instance_route_constraint_fixture(): array
         'app_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
-        'hostname' => 'constraint.test',
+        'domain' => 'constraint.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -451,12 +469,12 @@ function app_instance_route_preflight_instance(OrbitApp $app, Node $node, string
     ]);
 }
 
-function app_instance_route_preflight_route(OrbitApp $app, Node $node, string $hostname): Route
+function app_instance_route_preflight_route(OrbitApp $app, Node $node, string $domain): Route
 {
     return Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'hostname' => $hostname,
+        'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

@@ -17,11 +17,10 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
-use App\Domain\Routes\RouteHostnameChangeDirection;
-use App\Domain\Routes\RouteHostnameChangeStep;
-use App\Domain\Routes\RouteHostnameProjector;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -461,7 +460,7 @@ it('returns 409 before mutation when the App root conflicts with retained migrat
         'provisioning_step' => 'active',
         'migration_required' => true,
         ...registration_evidence_for_test($source),
-        'registration_route_hostname' => 'preserved.test',
+        'registration_route_domain' => 'preserved.test',
         'registration_route_provenance' => RouteProvenance::Explicit->value,
         'registration_relocation_state' => 'reserved',
         'registration_authoritative_path' => $source,
@@ -470,7 +469,7 @@ it('returns 409 before mutation when the App root conflicts with retained migrat
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -501,7 +500,7 @@ it('returns 409 before mutation when the App root conflicts with retained migrat
         ->toBe($before)
         ->and($instance->root)
         ->toBe('web')
-        ->and($route->refresh()->hostname)
+        ->and($route->refresh()->domain)
         ->toBe('preserved.test');
 });
 
@@ -516,7 +515,7 @@ it('retains explicit hostname intent before Route creation and rejects a changed
     $payload = [
         'source_path' => '/work/acme',
         'app_id' => $app->id,
-        'hostname' => 'original.test',
+        'domain' => 'original.test',
     ];
     $this->registrationSource->failRelocateOnce = true;
 
@@ -532,14 +531,14 @@ it('retains explicit hostname intent before Route creation and rejects a changed
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
             'app_id' => $app->id,
-            'hostname' => 'changed.test',
+            'domain' => 'changed.test',
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
 
     expect($instance->refresh()->getAttributes())
         ->toBe($before)
-        ->and($instance->registration_route_hostname)
+        ->and($instance->registration_route_domain)
         ->toBe('original.test')
         ->and($instance->registration_route_provenance)
         ->toBe(RouteProvenance::Explicit->value)
@@ -552,11 +551,11 @@ it('retains explicit hostname intent before Route creation and rejects a changed
         'app_id' => $app->id,
     ])->assertOk();
 
-    expect($identical->json('data.app_instance.route.hostname'))
+    expect($identical->json('data.app_instance.route.domain'))
         ->toBe('original.test')
         ->and($omitted->json('data.app_instance.route.id'))
         ->toBe($identical->json('data.app_instance.route.id'))
-        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->and($omitted->json('data.app_instance.route.domain'))
         ->toBe('original.test');
 });
 
@@ -571,7 +570,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
     $payload = [
         'source_path' => '/work/acme',
         'app_id' => $app->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
     ];
     $this->projection->fail = true;
 
@@ -589,7 +588,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
             'app_id' => $app->id,
-            'hostname' => 'changed.test',
+            'domain' => 'changed.test',
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
@@ -608,7 +607,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
 
     expect($omitted->json('data.app_instance.route.id'))
         ->toBe($route->id)
-        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->and($omitted->json('data.app_instance.route.domain'))
         ->toBe('preserved.test')
         ->and($identical->json('data.app_instance.route.id'))
         ->toBe($route->id);
@@ -639,14 +638,14 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
             'app_id' => $app->id,
-            'hostname' => 'changed.test',
+            'domain' => 'changed.test',
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
 
     expect($instance->refresh()->getAttributes())
         ->toBe($before)
-        ->and($instance->registration_route_hostname)
+        ->and($instance->registration_route_domain)
         ->toBeNull()
         ->and($instance->registration_route_provenance)
         ->toBe(RouteProvenance::Generated->value)
@@ -678,16 +677,17 @@ it('uses the current sole Route after publication for omitted, matching, and con
     ];
     $first = $this->postJson('/api/v1/instances/register', [
         ...$payload,
-        'hostname' => 'original.test',
+        'domain' => 'original.test',
     ])->assertOk();
     $instance = AppInstance::query()->sole();
     $route = Route::query()->sole();
-    bind_route_hostname_update_for_registration_test();
+    bind_route_domain_update_for_registration_test();
 
-    $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'changed.test'])
+    $updated = $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'changed.test'])
         ->assertOk()
-        ->assertJsonPath('data.hostname', 'changed.test');
+        ->assertJsonPath('data.domain', 'changed.test');
+    $route = Route::query()->findOrFail($updated->json('data.id'));
 
     if (! $registrationCompleted) {
         $instance->update(['registration_completed_at' => null]);
@@ -701,7 +701,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
 
     $matching = $this->postJson('/api/v1/instances/register', [
         ...$payload,
-        'hostname' => 'changed.test',
+        'domain' => 'changed.test',
     ])->assertOk();
 
     if (! $registrationCompleted) {
@@ -713,7 +713,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
     $this
         ->postJson('/api/v1/instances/register', [
             ...$payload,
-            'hostname' => 'original.test',
+            'domain' => 'original.test',
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
@@ -722,7 +722,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
         ->toBe($first->json('data.app_instance.id'))
         ->and($omitted->json('data.app_instance.route.id'))
         ->toBe($route->id)
-        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->and($omitted->json('data.app_instance.route.domain'))
         ->toBe('changed.test')
         ->and($matching->json('data.app_instance.id'))
         ->toBe($instance->id)
@@ -732,7 +732,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
         ->toBe($instanceBeforeConflict)
         ->and($route->refresh()->getAttributes())
         ->toBe($routeBeforeConflict)
-        ->and($instance->registration_route_hostname)
+        ->and($instance->registration_route_domain)
         ->toBe('original.test');
 })->with([
     'completed registration' => true,
@@ -761,7 +761,7 @@ it('switches a retained migration from initial intent to the current Route only 
         'provisioning_step' => 'active',
         'migration_required' => true,
         ...registration_evidence_for_test($source),
-        'registration_route_hostname' => 'original.test',
+        'registration_route_domain' => 'original.test',
         'registration_route_provenance' => RouteProvenance::Explicit->value,
         'registration_relocation_state' => 'reserved',
         'registration_authoritative_path' => $source,
@@ -770,7 +770,7 @@ it('switches a retained migration from initial intent to the current Route only 
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'hostname' => 'original.test',
+        'domain' => 'original.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -786,10 +786,11 @@ it('switches a retained migration from initial intent to the current Route only 
             ],
         ],
     ]);
-    bind_route_hostname_update_for_registration_test();
-    $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'changed.test'])
+    bind_route_domain_update_for_registration_test();
+    $updated = $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'changed.test'])
         ->assertOk();
+    $route = Route::query()->findOrFail($updated->json('data.id'));
 
     $prePublicationInstance = $instance->refresh()->getAttributes();
     $prePublicationRoute = $route->refresh()->getAttributes();
@@ -819,7 +820,7 @@ it('switches a retained migration from initial intent to the current Route only 
         ->postJson('/api/v1/instances/register', [
             'source_path' => $source,
             'app_id' => $app->id,
-            'hostname' => 'original.test',
+            'domain' => 'original.test',
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
@@ -835,24 +836,24 @@ it('switches a retained migration from initial intent to the current Route only 
     $matching = $this->postJson('/api/v1/instances/register', [
         'source_path' => $source,
         'app_id' => $app->id,
-        'hostname' => 'changed.test',
+        'domain' => 'changed.test',
     ])->assertOk();
 
     expect($omitted->json('data.app_instance.id'))
         ->toBe($instance->id)
         ->and($omitted->json('data.app_instance.route.id'))
         ->toBe($route->id)
-        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->and($omitted->json('data.app_instance.route.domain'))
         ->toBe('changed.test')
         ->and($matching->json('data.app_instance.id'))
         ->toBe($instance->id)
         ->and($matching->json('data.app_instance.route.id'))
         ->toBe($route->id)
-        ->and($instance->refresh()->registration_route_hostname)
+        ->and($instance->refresh()->registration_route_domain)
         ->toBe('original.test');
 });
 
-it('refuses registration while the authoritative Route hostname change is incomplete', function (): void {
+it('refuses registration while the authoritative Route domain change is incomplete', function (): void {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -863,17 +864,26 @@ it('refuses registration while the authoritative Route hostname change is incomp
     $payload = [
         'source_path' => '/work/acme',
         'app_id' => $app->id,
-        'hostname' => 'original.test',
+        'domain' => 'original.test',
     ];
     $this->postJson('/api/v1/instances/register', $payload)->assertOk();
     $instance = AppInstance::query()->sole();
     $route = Route::query()->sole();
-    $route->update([
-        'hostname_change_previous' => 'original.test',
-        'hostname_change_target' => 'changed.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::Reserved,
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'node_id' => $route->node_id,
+        'domain' => 'changed.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
     ]);
+    $replacement->targets()->create([
+        'app_instance_id' => $instance->id,
+        'position' => 0,
+    ]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
     $instanceBefore = $instance->refresh()->getAttributes();
     $routeBefore = $route->refresh()->getAttributes();
 
@@ -1028,7 +1038,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
             'registration_worktree_paths' => $fact->worktreePaths,
             'registration_relocation_state' => 'reserved',
             'registration_authoritative_path' => $fact->path,
-            'registration_route_hostname' => $index === 0 ? 'primary.test' : null,
+            'registration_route_domain' => $index === 0 ? 'primary.test' : null,
             'registration_route_provenance' => $index === 0
                 ? RouteProvenance::Explicit->value
                 : RouteProvenance::Generated->value,
@@ -1055,7 +1065,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
             'include_worktrees' => $includeWorktrees,
             'app_id' => $app->id,
             'instance_name' => 'intruder',
-            'hostname' => 'intruder.test',
+            'domain' => 'intruder.test',
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
@@ -1081,7 +1091,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
         'include_worktrees' => true,
         'app_id' => $app->id,
         'instance_name' => 'default',
-        'hostname' => 'primary.test',
+        'domain' => 'primary.test',
     ])->assertOk();
     $completed = collect($response->json('data.app_instances'))->keyBy('name');
 
@@ -1091,11 +1101,11 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
         ->toBe(2)
         ->and($completed['default']['id'])
         ->toBe($instances[0]->id)
-        ->and($completed['default']['route']['hostname'])
+        ->and($completed['default']['route']['domain'])
         ->toBe('primary.test')
         ->and($completed['feature']['id'])
         ->toBe($instances[1]->id)
-        ->and($completed['feature']['route']['hostname'])
+        ->and($completed['feature']['route']['domain'])
         ->toBe('feature.acme.test')
         ->and(Route::query()->count())
         ->toBe(2)
@@ -1171,7 +1181,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
             'app_id' => $app->id,
             'node_id' => $this->node->id,
             'generation_basis_node_id' => $index === 0 ? null : $this->node->id,
-            'hostname' => $index === 0 ? 'primary.test' : 'feature.acme.test',
+            'domain' => $index === 0 ? 'primary.test' : 'feature.acme.test',
             'provenance' => $index === 0 ? RouteProvenance::Explicit : RouteProvenance::Generated,
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
@@ -1187,7 +1197,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
         'source_path' => $destinations[0],
         'include_worktrees' => $includeWorktrees,
         'app_id' => $app->id,
-        'hostname' => 'primary.test',
+        'domain' => 'primary.test',
     ])->assertOk();
     $retried = collect($response->json('data.app_instances'))->keyBy('name');
     $instanceIds = $instances->mapWithKeys(
@@ -1253,7 +1263,7 @@ it('restores a failed default migration and completes the identical retry with s
         'app_id' => $app->id,
         'node_id' => $this->node->id,
         'generation_basis_node_id' => null,
-        'hostname' => 'acme.test',
+        'domain' => 'acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -1279,7 +1289,7 @@ it('restores a failed default migration and completes the identical retry with s
         'node_id',
         'cluster_id',
         'generation_basis_node_id',
-        'hostname',
+        'domain',
         'provenance',
         'publication',
         'status',
@@ -1319,7 +1329,7 @@ it('restores a failed default migration and completes the identical retry with s
         ->toBeFalse()
         ->and($instance->refresh()->selected_php_version)
         ->toBe('8.5')
-        ->and($route->refresh()->hostname)
+        ->and($route->refresh()->domain)
         ->toBe('acme.test')
         ->and(AppInstance::query()->count())
         ->toBe(1)
@@ -1377,7 +1387,7 @@ it('resumes a manual migration from the durable post-transition boundary', funct
         'app_id' => $app->id,
         'node_id' => $this->node->id,
         'generation_basis_node_id' => null,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -1402,7 +1412,7 @@ it('resumes a manual migration from the durable post-transition boundary', funct
             ],
             'route' => [
                 'id' => $route->id,
-                'hostname' => 'preserved.test',
+                'domain' => 'preserved.test',
                 'provenance' => RouteProvenance::Explicit->value,
             ],
         ],
@@ -1417,7 +1427,7 @@ it('resumes a manual migration from the durable post-transition boundary', funct
         ->toBe($instance->id)
         ->and($response->json('data.app_instance.route.id'))
         ->toBe($route->id)
-        ->and($response->json('data.app_instance.route.hostname'))
+        ->and($response->json('data.app_instance.route.domain'))
         ->toBe('preserved.test')
         ->and($instance->refresh()->registration_migration_recovery)
         ->toBeNull()
@@ -1470,7 +1480,7 @@ it('finishes the same published registration without downgrading its active prov
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -1487,14 +1497,14 @@ it('finishes the same published registration without downgrading its active prov
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
         'app_id' => $app->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
     ])->assertOk();
 
     expect($response->json('data.app_instance.id'))
         ->toBe($instance->id)
         ->and($response->json('data.app_instance.route.id'))
         ->toBe($route->id)
-        ->and($response->json('data.app_instance.route.hostname'))
+        ->and($response->json('data.app_instance.route.domain'))
         ->toBe('preserved.test')
         ->and($instance
             ->refresh()
@@ -1700,7 +1710,7 @@ it('resumes an interrupted manual migration through its validated planned destin
         'provisioning_step' => 'active',
         'migration_required' => true,
         ...registration_evidence_for_test($original),
-        'registration_route_hostname' => 'preserved.test',
+        'registration_route_domain' => 'preserved.test',
         'registration_route_provenance' => RouteProvenance::Explicit->value,
         'registration_relocation_state' => $state,
         'registration_authoritative_path' => $state === 'relocating' ? $original : $destination,
@@ -1709,7 +1719,7 @@ it('resumes an interrupted manual migration through its validated planned destin
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -1799,7 +1809,7 @@ it('migrates a marked default source independently of its original directory nam
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -1864,7 +1874,7 @@ it('returns 409 when retained default migration input conflicts with planned int
         'provisioning_step' => 'active',
         'migration_required' => true,
         ...registration_evidence_for_test($source),
-        'registration_route_hostname' => 'preserved.test',
+        'registration_route_domain' => 'preserved.test',
         'registration_route_provenance' => RouteProvenance::Explicit->value,
         'registration_relocation_state' => 'reserved',
         'registration_authoritative_path' => $source,
@@ -1873,7 +1883,7 @@ it('returns 409 when retained default migration input conflicts with planned int
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -1910,7 +1920,7 @@ it('returns 409 when retained default migration input conflicts with planned int
         ->toBe($expectedCalls);
 })->with([
     'different instance name' => [['instance_name' => 'other'], ['validate:/work/acme']],
-    'different explicit hostname' => [['hostname' => 'changed.test'], ['validate:/work/acme']],
+    'different explicit hostname' => [['domain' => 'changed.test'], ['validate:/work/acme']],
     'different source-set intent' => [['include_worktrees' => true], []],
 ]);
 
@@ -1948,7 +1958,7 @@ it('returns 409 when several retained migrations match one inspected repository 
         $route = Route::query()->create([
             'app_id' => $app->id,
             'node_id' => $this->node->id,
-            'hostname' => "{$name}.test",
+            'domain' => "{$name}.test",
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
@@ -2021,7 +2031,7 @@ it('refuses mismatched migration evidence at every managed recovery boundary wit
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'hostname' => 'preserved.test',
+        'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -2120,7 +2130,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
         'source_path' => $paths[0],
         'include_worktrees' => true,
         'app_id' => $app->id,
-        'hostname' => 'primary.test',
+        'domain' => 'primary.test',
     ])->assertOk();
 
     $instances = collect($response->json('data.app_instances'))->keyBy('name');
@@ -2128,13 +2138,13 @@ it('uses an explicit hostname only for the primary member of a requested source 
         'source_path' => $paths[0],
         'include_worktrees' => true,
         'app_id' => $app->id,
-        'hostname' => 'primary.test',
+        'domain' => 'primary.test',
     ])->assertOk();
     $retried = collect($retry->json('data.app_instances'))->keyBy('name');
     $retained = AppInstance::query()->get()->keyBy('name');
-    expect($instances['default']['route']['hostname'])
+    expect($instances['default']['route']['domain'])
         ->toBe('primary.test')
-        ->and($instances['feature']['route']['hostname'])
+        ->and($instances['feature']['route']['domain'])
         ->toBe('feature.acme.test')
         ->and($retried['default']['id'])
         ->toBe($instances['default']['id'])
@@ -2144,11 +2154,11 @@ it('uses an explicit hostname only for the primary member of a requested source 
         ->toBe($instances['feature']['id'])
         ->and($retried['feature']['route']['id'])
         ->toBe($instances['feature']['route']['id'])
-        ->and($retained['default']->registration_route_hostname)
+        ->and($retained['default']->registration_route_domain)
         ->toBe('primary.test')
         ->and($retained['default']->registration_route_provenance)
         ->toBe(RouteProvenance::Explicit->value)
-        ->and($retained['feature']->registration_route_hostname)
+        ->and($retained['feature']->registration_route_domain)
         ->toBeNull()
         ->and($retained['feature']->registration_route_provenance)
         ->toBe(RouteProvenance::Generated->value)
@@ -2264,7 +2274,7 @@ it('refuses a source nested in an AppInstance checkout and ignores leftover Inst
             'checkout_path' => '/managed/other',
             'document_root' => '/managed/other/public',
             'php_version' => '8.4',
-            'hostname' => 'other.test',
+            'domain' => 'other.test',
             'certificate_mode' => CertificateMode::OrbitCa,
             'status' => LifecycleStatus::Active,
         ]);
@@ -2277,7 +2287,7 @@ it('refuses a source nested in an AppInstance checkout and ignores leftover Inst
                 'branch' => 'feature',
                 'checkout_path' => '/managed/other',
                 'php_version' => '8.4',
-                'hostname' => 'workspace.test',
+                'domain' => 'workspace.test',
                 'status' => LifecycleStatus::Active,
             ]);
         }
@@ -2319,9 +2329,9 @@ it('refuses a source nested in an AppInstance checkout and ignores leftover Inst
         ->toBe('instance.source_conflict');
 })->with(['app-instance', 'legacy-instance', 'workspace']);
 
-function bind_route_hostname_update_for_registration_test(): void
+function bind_route_domain_update_for_registration_test(): void
 {
-    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector = Mockery::mock(RouteDomainProjector::class);
     $projector->shouldReceive([
         'prepareWorkloadCertificate' => null,
         'prepareWorkloadCaddy' => null,
@@ -2332,7 +2342,7 @@ function bind_route_hostname_update_for_registration_test(): void
         'publishDns' => null,
         'cleanup' => null,
     ]);
-    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(DevelopmentProjectionOperationLock::class, new class implements DevelopmentProjectionOperationLock
     {
         public function run(Closure $operation): mixed
@@ -2378,12 +2388,12 @@ function registration_evidence_for_test(string $source): array
         'registration_inferred_root' => 'public',
         'registration_common_repository_path' => $source.'/.git',
         'registration_worktree_paths' => [$source],
-        'registration_route_hostname' => null,
+        'registration_route_domain' => null,
         'registration_route_provenance' => RouteProvenance::Generated->value,
     ];
 }
 
-/** @return array{app_instance: array<string, mixed>, route: array{id: int, hostname: string, provenance: string}} */
+/** @return array{app_instance: array<string, mixed>, route: array{id: int, domain: string, provenance: string}} */
 function registration_migration_recovery(AppInstance $instance, Route $route): array
 {
     return [
@@ -2403,7 +2413,7 @@ function registration_migration_recovery(AppInstance $instance, Route $route): a
         ],
         'route' => [
             'id' => $route->id,
-            'hostname' => $route->hostname,
+            'domain' => $route->domain,
             'provenance' => $route->provenance->value,
         ],
     ];

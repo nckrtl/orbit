@@ -29,32 +29,32 @@ it('leaves leftover Instance and Workspace hostnames untouched while republishin
         $productionNode,
         'production-app',
         LifecycleStatus::Active,
-        hostname: 'production.example.com',
+        domain: 'production.example.com',
         certificateMode: 'acme',
     );
     $events = [];
 
     tld_converger_runtime($events)->converge($node);
 
-    expect($active->refresh()->hostname)
+    expect($active->refresh()->domain)
         ->toBe('active-app.old.test')
-        ->and($provisioning->refresh()->hostname)
+        ->and($provisioning->refresh()->domain)
         ->toBe('provisioning-app.old.test')
-        ->and($failed->refresh()->hostname)
+        ->and($failed->refresh()->domain)
         ->toBe('failed-app.old.test')
-        ->and($activeWorkspace->refresh()->hostname)
+        ->and($activeWorkspace->refresh()->domain)
         ->toBe('active.active-app.old.test')
-        ->and($provisioningWorkspace->refresh()->hostname)
+        ->and($provisioningWorkspace->refresh()->domain)
         ->toBe('provisioning.active-app.old.test')
-        ->and($failedWorkspace->refresh()->hostname)
+        ->and($failedWorkspace->refresh()->domain)
         ->toBe('failed.active-app.old.test')
-        ->and($failedParentWorkspace->refresh()->hostname)
+        ->and($failedParentWorkspace->refresh()->domain)
         ->toBe('active-child.failed-app.old.test')
-        ->and($unrelated->refresh()->hostname)
+        ->and($unrelated->refresh()->domain)
         ->toBe('unrelated-app.old.test')
-        ->and($unrelatedWorkspace->refresh()->hostname)
+        ->and($unrelatedWorkspace->refresh()->domain)
         ->toBe('unrelated.unrelated-app.old.test')
-        ->and($production->refresh()->hostname)
+        ->and($production->refresh()->domain)
         ->toBe('production.example.com')
         ->and($events)
         ->toBe([
@@ -74,9 +74,9 @@ it('repeats AppInstance publication without rewriting leftover hostnames', funct
     $converger->converge($node);
     $converger->converge($node);
 
-    expect($instance->refresh()->hostname)
+    expect($instance->refresh()->domain)
         ->toBe('shop.old.test')
-        ->and($workspace->refresh()->hostname)
+        ->and($workspace->refresh()->domain)
         ->toBe('preview.shop.old.test')
         ->and($events)
         ->toBe([
@@ -109,7 +109,7 @@ function tld_converger_instance(
     Node $node,
     string $slug,
     LifecycleStatus $status,
-    ?string $hostname = null,
+    ?string $domain = null,
     string $certificateMode = 'orbit-ca',
 ): Instance {
     $app = OrbitApp::query()->create([
@@ -124,7 +124,7 @@ function tld_converger_instance(
         'name' => 'main',
         'environment' => $certificateMode === 'acme' ? 'production' : 'development',
         'checkout_path' => "/srv/{$slug}",
-        'hostname' => $hostname ?? "{$slug}.old.test",
+        'domain' => $domain ?? "{$slug}.old.test",
         'certificate_mode' => $certificateMode,
         'status' => $status,
     ]);
@@ -134,14 +134,14 @@ function tld_converger_workspace(
     Instance $instance,
     string $name,
     LifecycleStatus $status,
-    ?string $hostname = null,
+    ?string $domain = null,
 ): Workspace {
     return Workspace::query()->create([
         'instance_id' => $instance->id,
         'name' => $name,
         'branch' => $name,
         'checkout_path' => "/srv/workspaces/{$instance->id}/{$name}",
-        'hostname' => $hostname ?? "{$name}.{$instance->hostname}",
+        'domain' => $domain ?? "{$name}.{$instance->domain}",
         'status' => $status,
     ]);
 }

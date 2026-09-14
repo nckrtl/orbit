@@ -9,10 +9,9 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\RouteHostnameChangeDirection;
-use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -63,7 +62,7 @@ it('uses one local workload site when Router and workload roles share a Node', f
             ->toHaveCount(1)
             ->and($nodeSites->sole()->isProxy())
             ->toBeFalse()
-            ->and(mb_substr_count($configuration, "https://{$route->hostname}"))
+            ->and(mb_substr_count($configuration, "https://{$route->domain}"))
             ->toBe(1)
             ->and($configuration)
             ->toContain("php_fastcgi unix//run/php/orbit-app-instance-{$appInstance->id}.sock")
@@ -91,7 +90,7 @@ it('renders old and candidate hostname sites with separate certificate scopes be
     $route->update(['status' => RouteStatus::Active]);
     $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node']);
     $candidate = clone $route;
-    $candidate->hostname = 'next.acme.test';
+    $candidate->domain = 'next.acme.test';
     $sites = new AppDevSiteRepository;
 
     $workloadSites = $sites->forNode($workload, additionalRoute: $candidate);
@@ -125,19 +124,27 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         'status' => AppInstanceState::Active,
         'source_is_laravel' => false,
     ]);
-    $route->update([
-        'status' => RouteStatus::Active,
-        'hostname_change_previous' => 'feature.acme.test',
-        'hostname_change_target' => 'next.acme.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::RouterCaddy,
-    ]);
+    $route->update(['status' => RouteStatus::Active]);
     $sites = new AppDevSiteRepository;
 
     expect($sites->forNode($workload)->pluck('hostname')->all())
         ->toBe(['feature.acme.test']);
 
-    $route->update(['hostname_change_step' => RouteHostnameChangeStep::LaravelUrl]);
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'next.acme.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => RouteReplacementStep::LaravelUrl,
+    ]);
+    $replacement->targets()->create([
+        'app_instance_id' => $appInstance->id,
+        'position' => 0,
+    ]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
 
     $workloadSites = $sites->forNode($workload);
     $routerSites = $sites->forNode($router);
@@ -148,7 +155,7 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         ->and($workloadSites->map->certificateDirectory()->all())
         ->toBe([
             "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
-            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}-hostname-change/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
         ])
         ->and($routerSites->pluck('hostname')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
@@ -158,10 +165,7 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
             "host-record=next.acme.test,{$router->wireguard_ip}",
         );
 
-    $candidate = clone $route->refresh();
-    $candidate->hostname = 'next.acme.test';
-
-    expect($sites->forNode($workload, additionalRoute: $candidate)->pluck('hostname')->all())
+    expect($sites->forNode($workload, additionalRoute: $replacement)->pluck('hostname')->all())
         ->toBe(['feature.acme.test', 'next.acme.test']);
 });
 
@@ -176,13 +180,22 @@ it('preserves production release sites at the environment synchronization checkp
         'status' => AppInstanceState::Active,
         'source_is_laravel' => true,
     ]);
-    $route->update([
-        'status' => RouteStatus::Active,
-        'hostname_change_previous' => 'feature.acme.test',
-        'hostname_change_target' => 'next.acme.test',
-        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
-        'hostname_change_step' => RouteHostnameChangeStep::EnvironmentSynchronized,
+    $route->update(['status' => RouteStatus::Active]);
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'next.acme.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => RouteReplacementStep::EnvironmentSynchronized,
     ]);
+    $replacement->targets()->create([
+        'app_instance_id' => $appInstance->id,
+        'position' => 0,
+    ]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
     $sites = new AppDevSiteRepository;
 
     $workloadSites = $sites->forNode($workload);
@@ -212,7 +225,7 @@ it('hydrates only requested workload and Router routes while global inventory st
     $activeRoute = Route::query()->create([
         'app_id' => $pendingInstance->app_id,
         'cluster_id' => $pendingRoute->cluster_id,
-        'hostname' => 'active.acme.test',
+        'domain' => 'active.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -232,7 +245,7 @@ it('hydrates only requested workload and Router routes while global inventory st
     $failedRoute = Route::query()->create([
         'app_id' => $pendingInstance->app_id,
         'cluster_id' => $pendingRoute->cluster_id,
-        'hostname' => 'failed.acme.test',
+        'domain' => 'failed.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -263,7 +276,7 @@ it('hydrates only requested workload and Router routes while global inventory st
     $unrelatedRoute = Route::query()->create([
         'app_id' => $pendingInstance->app_id,
         'node_id' => $unrelatedNode->id,
-        'hostname' => 'unrelated.acme.test',
+        'domain' => 'unrelated.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -292,7 +305,7 @@ it('hydrates only requested workload and Router routes while global inventory st
 
     $siteIdentity = static fn (AppDevSite $site): array => [
         $site->scope,
-        $site->hostname,
+        $site->domain,
         $site->nodeAddress,
         $site->upstreamAddresses,
     ];
@@ -302,7 +315,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         ->toHaveCount(2)
         ->toContain("app-instance-{$pendingInstance->id}", "app-instance-{$activeInstance->id}")
         ->and($workloadSites->pluck('hostname'))
-        ->not->toContain($failedRoute->hostname, $unrelatedRoute->hostname)->and($retrievedRoutes)->toContain(
+        ->not->toContain($failedRoute->domain, $unrelatedRoute->domain)->and($retrievedRoutes)->toContain(
             $pendingRoute->id,
             $activeRoute->id,
         )
@@ -311,11 +324,11 @@ it('hydrates only requested workload and Router routes while global inventory st
             $activeInstance->id,
         )
         ->not->toContain($failedInstance->id, $unrelatedInstance->id)->and($globalSites->pluck('hostname'))->toContain(
-            $pendingRoute->hostname,
-            $activeRoute->hostname,
-            $unrelatedRoute->hostname,
+            $pendingRoute->domain,
+            $activeRoute->domain,
+            $unrelatedRoute->domain,
         )
-        ->not->toContain($failedRoute->hostname);
+        ->not->toContain($failedRoute->domain);
 
     $routerSites = $sites->forNode($router, $pendingRoute);
 
@@ -380,14 +393,14 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
                 '-connect',
                 '10.10.0.10:443',
                 '-servername',
-                $route->hostname,
+                $route->domain,
                 '-verify_return_error',
             ])
             ->and($routerConfiguration)
             ->toContain(
                 'reverse_proxy https://10.10.0.10',
-                "header_up Host {$route->hostname}",
-                "tls_server_name {$route->hostname}",
+                "header_up Host {$route->domain}",
+                "tls_server_name {$route->domain}",
                 "tls /etc/caddy/orbit-certificates/route-{$route->id}-router/current/cert.pem",
             )
             ->and(collect($ssh->commands)
@@ -425,7 +438,7 @@ it('retains active workload and Router sites while publishing a second Route on 
     $secondRoute = Route::query()->create([
         'app_id' => $firstRoute->app_id,
         'cluster_id' => $firstRoute->cluster_id,
-        'hostname' => 'second.acme.test',
+        'domain' => 'second.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -656,7 +669,7 @@ function orb127_route_projection_models(
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,
-        'hostname' => 'feature.acme.test',
+        'domain' => 'feature.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -711,7 +724,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
     };
     $signer = new class implements LeafCertificateSigner
     {
-        public function sign(string $hostname, string $certificateRequest): string
+        public function sign(string $domain, string $certificateRequest): string
         {
             return "LEAF CERTIFICATE\n";
         }
