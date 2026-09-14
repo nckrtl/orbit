@@ -5,13 +5,13 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Schedules\ActivateScheduleRequest;
-use Orbit\Sdk\Requests\Schedules\AddScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\AppInstanceScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
-use Orbit\Sdk\Requests\Schedules\RemoveScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
@@ -24,13 +24,13 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 it('serializes distinct typed targets and preserves omitted versus explicit add values', function (): void {
-    $omitted = new AddScheduleRequest(
+    $omitted = new CreateScheduleRequest(
         target: new AppInstanceScheduleTarget(7),
         name: 'daily-report',
         calendar: 'daily',
         command: 'php artisan report:send',
     );
-    $explicit = new AddScheduleRequest(
+    $explicit = new CreateScheduleRequest(
         target: new NodeScheduleTarget(0),
         name: '',
         calendar: '',
@@ -64,7 +64,7 @@ it('serializes distinct typed targets and preserves omitted versus explicit add 
             'start' => false,
         ]);
 
-    $targetType = new ReflectionParameter([AddScheduleRequest::class, '__construct'], 'target')->getType();
+    $targetType = new ReflectionParameter([CreateScheduleRequest::class, '__construct'], 'target')->getType();
     expect($targetType)
         ->toBeInstanceOf(ReflectionUnionType::class)
         ->and(array_map(
@@ -101,8 +101,8 @@ it('maps every UUID operation to the exact method path query and body', function
         'run' => [new RunScheduleRequest($id), Method::POST, '/run', [], null],
         'logs with explicit invalid lines' => [new ScheduleLogsRequest($id, 0), Method::GET, '/logs', ['lines' => 0], null],
         'complete with explicit invalid status' => [new CompleteScheduleRequest($id, 'invalid'), Method::POST, '/complete', [], ['status' => 'invalid']],
-        'remove' => [new RemoveScheduleRequest($id), Method::DELETE, '', [], null],
-        'activate' => [new ActivateScheduleRequest($id), Method::POST, '/activate', [], null],
+        'remove' => [new DestroyScheduleRequest($id), Method::DELETE, '', [], null],
+        'activate' => [new EnableScheduleRequest($id), Method::POST, '/activate', [], null],
     ];
 });
 
@@ -112,8 +112,8 @@ it('omits the optional log line query and sends lifecycle requests without bodie
         new ShowScheduleRequest(schedule_request_uuid()),
         new RunScheduleRequest(schedule_request_uuid()),
         new ScheduleLogsRequest(schedule_request_uuid()),
-        new RemoveScheduleRequest(schedule_request_uuid()),
-        new ActivateScheduleRequest(schedule_request_uuid()),
+        new DestroyScheduleRequest(schedule_request_uuid()),
+        new EnableScheduleRequest(schedule_request_uuid()),
     ];
 
     foreach ($requests as $request) {
@@ -131,12 +131,12 @@ it('omits the optional log line query and sends lifecycle requests without bodie
 it('returns typed DTOs for the seven JSON envelopes', function (): void {
     $requests = [
         [new ListSchedulesRequest, SchedulesResponse::class, ['data' => [schedule_request_data(includeCommand: false)], 'meta' => ['request_id' => schedule_request_id()]]],
-        [new AddScheduleRequest(new NodeScheduleTarget(3), 'daily', 'daily', 'true'), ScheduleResponse::class, schedule_request_envelope()],
+        [new CreateScheduleRequest(new NodeScheduleTarget(3), 'daily', 'daily', 'true'), ScheduleResponse::class, schedule_request_envelope()],
         [new ShowScheduleRequest(schedule_request_uuid()), ScheduleResponse::class, schedule_request_envelope()],
         [new RunScheduleRequest(schedule_request_uuid()), ScheduleResponse::class, schedule_request_envelope()],
         [new ScheduleLogsRequest(schedule_request_uuid(), 25), ScheduleLogsResponse::class, schedule_logs_envelope()],
-        [new RemoveScheduleRequest(schedule_request_uuid()), ScheduleResponse::class, schedule_request_envelope()],
-        [new ActivateScheduleRequest(schedule_request_uuid()), ScheduleResponse::class, schedule_request_envelope()],
+        [new DestroyScheduleRequest(schedule_request_uuid()), ScheduleResponse::class, schedule_request_envelope()],
+        [new EnableScheduleRequest(schedule_request_uuid()), ScheduleResponse::class, schedule_request_envelope()],
     ];
 
     foreach ($requests as [$request, $expectedClass, $response]) {

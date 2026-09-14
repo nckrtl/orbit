@@ -79,7 +79,7 @@ it('adds and lists a systemd process through the minimal API contract', function
     $process = Process::query()->sole();
 
     $this->assertDatabaseHas('activity_log', [
-        'command' => 'process:add',
+        'command' => 'process:create',
         'subject_type' => AppInstance::class,
         'subject_id' => $this->instance->id,
         'target_node_id' => $this->node->id,
@@ -116,7 +116,7 @@ it('adds and lists a Node-targeted Docker process', function (): void {
         ->assertJsonMissingPath('data.node_id');
 
     $this->assertDatabaseHas('activity_log', [
-        'command' => 'process:add',
+        'command' => 'process:create',
         'subject_type' => Node::class,
         'subject_id' => $this->node->id,
         'target_node_id' => $this->node->id,
@@ -218,7 +218,7 @@ it('redacts Docker environment values from process responses without changing pe
             'DATABASE_URL' => 'postgres://orbit:password@example.test/orbit',
         ]);
 
-    $activity = Activity::query()->where('command', 'process:add')->sole();
+    $activity = Activity::query()->where('command', 'process:create')->sole();
     $activityProperties = json_encode($activity->properties, JSON_THROW_ON_ERROR);
 
     expect(data_get(target: $activity->properties, key: 'input.environment'))
@@ -266,7 +266,7 @@ it('keeps Docker environment values out of production exception diagnostics', fu
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'process.docker_converge_failed')
         ->assertJsonPath('error.message', 'Docker convergence failed.');
-    $activity = Activity::query()->where('command', 'process:add')->sole();
+    $activity = Activity::query()->where('command', 'process:create')->sole();
     $activityProperties = json_encode($activity->properties, JSON_THROW_ON_ERROR);
     $exception = $this->runtime->lastConvergeFailure;
 
@@ -508,6 +508,10 @@ it('starts stops restarts tails and removes one process', function (): void {
         ->toBe([25])
         ->and(Process::query()->count())
         ->toBe(0);
+    $this->assertDatabaseHas('activity_log', [
+        'command' => 'process:destroy',
+        'status' => 'succeeded',
+    ]);
 });
 
 it('redacts process logs before serializing them to the API response', function (): void {

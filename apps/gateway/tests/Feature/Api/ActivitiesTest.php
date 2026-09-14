@@ -39,7 +39,7 @@ describe('activity reads', function (): void {
         );
         $latest = activity_api_record(
             requestId: '22222222-2222-4222-8222-222222222222',
-            command: 'instance:new',
+            command: 'instance:create',
             status: 'failed',
             properties: ['method' => 'POST', 'path' => 'api/v1/instances', 'output_truncated' => false],
             errorCode: 'instance.provision_failed',
@@ -53,7 +53,7 @@ describe('activity reads', function (): void {
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $latest->id)
             ->assertJsonPath('data.0.request_id', '22222222-2222-4222-8222-222222222222')
-            ->assertJsonPath('data.0.command', 'instance:new')
+            ->assertJsonPath('data.0.command', 'instance:create')
             ->assertJsonPath('data.0.status', 'failed')
             ->assertJsonPath('data.0.error_code', 'instance.provision_failed')
             ->assertJsonPath('data.0.properties.output_truncated', false)
@@ -151,7 +151,7 @@ describe('activity access and redaction', function (): void {
         $invalidKeyCredential = 'sentinel-serialized-invalid-key';
         $activity = activity_api_record(
             requestId: '77777777-7777-4777-8777-777777777777',
-            command: 'process:add',
+            command: 'process:create',
             status: 'failed',
             properties: ['safe' => ['status' => 'failed']],
         );
@@ -204,7 +204,7 @@ describe('activity access and redaction', function (): void {
         $invalidKeyCredential = 'sentinel-invalid-property-key';
         $activity = activity_api_record(
             requestId: '88888888-8888-4888-8888-888888888888',
-            command: 'process:add',
+            command: 'process:create',
             status: 'failed',
             properties: activity_api_sensitive_properties($credential, $invalidKeyCredential),
             errorCode: 'process.create_failed',

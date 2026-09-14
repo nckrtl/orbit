@@ -32,11 +32,11 @@ prompting.
 
 ## Keep Schedule commands explicit and HTTP-only
 
-The public Schedule commands are `schedule:add`, `schedule:list`,
-`schedule:show`, `schedule:run`, `schedule:logs`, `schedule:remove`, and
-`schedule:activate`. They use typed PHP SDK requests and never execute SSH,
+The public Schedule commands are `schedule:create`, `schedule:list`,
+`schedule:show`, `schedule:run`, `schedule:logs`, `schedule:destroy`, and
+`schedule:enable`. They use typed PHP SDK requests and never execute SSH,
 systemd, `journalctl`, curl, or a shell on the operator machine.
-`schedule:add` requires exactly one positive `--node` or `--instance` ID in
+`schedule:create` requires exactly one positive `--node` or `--instance` ID in
 interactive, non-interactive, and JSON modes. It never discovers or prompts for
 a target. `--no-start` is AppInstance-only. Completion remains an internal
 Node-authenticated API and SDK transport; never expose `schedule:complete`.

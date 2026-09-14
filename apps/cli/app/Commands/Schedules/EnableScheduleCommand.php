@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Commands\Schedules;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Schedules\ActivateScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
 
-final class ActivateScheduleCommand extends ScheduleItemCommand
+final class EnableScheduleCommand extends ScheduleItemCommand
 {
     #[\Override]
-    protected $signature = 'schedule:activate
+    protected $signature = 'schedule:enable
         {schedule : Schedule UUID}
         {--json : Return machine-readable JSON}';
 
@@ -19,6 +19,6 @@ final class ActivateScheduleCommand extends ScheduleItemCommand
 
     protected function request(string $scheduleId): GatewayRequest
     {
-        return new ActivateScheduleRequest($scheduleId);
+        return new EnableScheduleRequest($scheduleId);
     }
 }

@@ -198,7 +198,7 @@ final readonly class CommandActivityTargetResolver
             'node:provision' => Node::query()->where('name', $request->input('name'))->first(),
             'doctor:run' => $this->doctorNode($request),
             'app:create' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
-            'instance:new' => AppInstance::query()
+            'instance:create' => AppInstance::query()
                 ->where('app_id', $request->integer('app_id'))
                 ->where('name', $request->input('name'))
                 ->first(),
@@ -278,7 +278,7 @@ final readonly class CommandActivityTargetResolver
     {
         $process = $request->route('process');
 
-        if (! $process instanceof OrbitProcess && $request->route()?->getName() === 'process:add') {
+        if (! $process instanceof OrbitProcess && $request->route()?->getName() === 'process:create') {
             $process = $this->createdProcess($request);
         }
 
@@ -322,7 +322,7 @@ final readonly class CommandActivityTargetResolver
             };
         }
 
-        if ($request->route()?->getName() !== 'schedule:add') {
+        if ($request->route()?->getName() !== 'schedule:create') {
             return null;
         }
 

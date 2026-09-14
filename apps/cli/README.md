@@ -53,19 +53,19 @@ unverifiable, or a transport failure.
 
 ## Schedules
 
-Add a Schedule with exactly one positive Node or AppInstance ID:
+Create a Schedule with exactly one positive Node or AppInstance ID:
 
 ```bash
-./orbit schedule:add daily-report --node=7 --calendar=daily --command='php report.php'
-./orbit schedule:add hourly-report --instance=12 --calendar=hourly --command='php artisan report:send' --no-start
+./orbit schedule:create daily-report --node=7 --calendar=daily --command='php report.php'
+./orbit schedule:create hourly-report --instance=12 --calendar=hourly --command='php artisan report:send' --no-start
 ```
 
-Use `schedule:list`, `schedule:show UUID`, `schedule:run UUID`, `schedule:logs UUID`, `schedule:remove UUID`, and `schedule:activate UUID` for the remaining operator actions. Add `--json` for machine-readable output. The CLI never prompts for a Schedule target. Schedule completion remains an internal Node-authenticated API and SDK operation.
+Use `schedule:list`, `schedule:show UUID`, `schedule:run UUID`, `schedule:logs UUID`, `schedule:destroy UUID`, and `schedule:enable UUID` for the remaining operator actions. Add `--json` for machine-readable output. The CLI never prompts for a Schedule target. Schedule completion remains an internal Node-authenticated API and SDK operation.
 
 ## JavaScript processes
 
 ```bash
-./orbit process:add vite \
+./orbit process:create vite \
     --instance=12 \
     --runtime=systemd \
     --command=/usr/local/bin/vp \

@@ -19,7 +19,7 @@ The Gateway stores one Schedule for exactly one Node or AppInstance target. The 
 | `last_run_at` | The nullable time when the Gateway last accepted a completion report. |
 | `last_run_status` | Nullable `success` or `error`. |
 
-An identical add retries or returns the same Schedule without changing its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict`. Orbit changes a specification only when the operator removes the Schedule and adds its replacement.
+An identical create retries or returns the same Schedule without changing its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict`. Orbit changes a specification only when the operator destroys the Schedule and creates its replacement.
 
 An App Schedule definition stores a calendar without host `systemd-analyze calendar` validation. The [App process and Schedule definitions](app-processes-and-schedules.md) page owns that write contract.
 
@@ -30,19 +30,19 @@ An active Gateway peer uses eight endpoints under `/api/v1/schedules`. Every end
 | Operation | Request | Result |
 | --- | --- | --- |
 | List | `GET /api/v1/schedules` | Returns authorized Schedule summaries without command text. |
-| Add | `POST /api/v1/schedules` | Accepts one complete Schedule specification and returns bounded Schedule data. |
+| Create | `POST /api/v1/schedules` | Accepts one complete Schedule specification and returns bounded Schedule data. |
 | Show | `GET /api/v1/schedules/{uuid}` | Returns bounded Schedule data, including command text, to an authorized caller. |
 | Run | `POST /api/v1/schedules/{uuid}/run` | Starts the installed service without changing the desired timer state and returns bounded Schedule data. |
 | Logs | `GET /api/v1/schedules/{uuid}/logs` | Returns bounded output for the exact service and reports whether older or incomplete output was removed. |
 | Complete | `POST /api/v1/schedules/{uuid}/complete` | Records the latest result from the installed Node and returns no content. |
-| Remove | `DELETE /api/v1/schedules/{uuid}` | Starts or resumes exact-owned cleanup and returns bounded Schedule data. |
-| Activate | `POST /api/v1/schedules/{uuid}/activate` | Accepts an empty body, enables an AppInstance timer, and returns bounded Schedule data. |
+| Destroy | `DELETE /api/v1/schedules/{uuid}` | Starts or resumes exact-owned cleanup and returns bounded Schedule data. |
+| Enable | `POST /api/v1/schedules/{uuid}/activate` | Accepts an empty body, enables an AppInstance timer, and returns bounded Schedule data. |
 
-Add accepts `target_type`, `target_id`, `name`, `calendar`, and `command`. It also accepts optional `timeout_seconds` and boolean `start`; the timeout defaults to 3,600 seconds, and `start` defaults to `true`. A Node target rejects `start: false`. An AppInstance target can install with its timer disabled.
+Create accepts `target_type`, `target_id`, `name`, `calendar`, and `command`. It also accepts optional `timeout_seconds` and boolean `start`; the timeout defaults to 3,600 seconds, and `start` defaults to `true`. A Node target rejects `start: false`. An AppInstance target can install with its timer disabled.
 
 List and show expose `desired_timer_state` as `enabled` or `disabled`, independent of the installation lifecycle `status`. A request for an unknown Schedule UUID with valid syntax returns `404`. A malformed JSON object, duplicate or escaped-duplicate member, unsupported member, or wrong member type returns `422` before the Gateway changes Schedule intent or host state.
 
-The Gateway records one sanitized Activity for list, add, show, run, logs, remove, and activate. Each record can identify the operation, Schedule UUID, target, result, and request, but it contains no command, calendar, journal line, output, path, runtime user, or systemd unit text. Completion creates no Activity.
+The Gateway records one sanitized Activity for list, create, show, run, logs, destroy, and enable. Each record can identify the operation, Schedule UUID, target, result, and request, but it contains no command, calendar, journal line, output, path, runtime user, or systemd unit text. Completion creates no Activity.
 
 ## Use the PHP software development kit
 
@@ -58,16 +58,16 @@ An operator uses seven Schedule commands from a machine with an active Gateway p
 
 | Command | Result |
 | --- | --- |
-| `orbit schedule:add NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Add a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
-| `orbit schedule:add NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Add a Schedule for one positive AppInstance ID. Add `--no-start` to install its timer disabled and stopped. |
+| `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive AppInstance ID. Add `--no-start` to install its timer disabled and stopped. |
 | `orbit schedule:list` | List authorized Schedule summaries without command text. |
 | `orbit schedule:show UUID` | Show one authorized Schedule. |
 | `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
 | `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
-| `orbit schedule:remove UUID` | Remove one Schedule through the Gateway. |
-| `orbit schedule:activate UUID` | Enable and start an installed AppInstance timer without replacing the Schedule. |
+| `orbit schedule:destroy UUID` | Destroy one Schedule through the Gateway. |
+| `orbit schedule:enable UUID` | Enable and start an installed AppInstance timer without replacing the Schedule. |
 
-`schedule:add` requires exactly one positive Node or AppInstance ID. Both selectors, no selector, a malformed or non-positive ID, and `--node` with the AppInstance-only `--no-start` option fail before the CLI sends an HTTP request. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target.
+`schedule:create` requires exactly one positive Node or AppInstance ID. Both selectors, no selector, a malformed or non-positive ID, and `--node` with the AppInstance-only `--no-start` option fail before the CLI sends an HTTP request. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target.
 
 Human output and `--json` output preserve the Gateway request ID. They show `desired_timer_state` separately from lifecycle `status`, and shared safe errors expose no command, log, credential, or remote execution detail.
 

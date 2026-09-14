@@ -6,13 +6,13 @@ namespace App\Commands\Processes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Processes\AddProcessRequest;
+use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
-final class AddProcessCommand extends TargetedProcessCommand
+final class CreateProcessCommand extends TargetedProcessCommand
 {
     #[\Override]
-    protected $signature = 'process:add
+    protected $signature = 'process:create
         {name : Process name}
         {--instance= : Positive AppInstance ID}
         {--node= : Node ID or registered name}
@@ -28,7 +28,7 @@ final class AddProcessCommand extends TargetedProcessCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Add one systemd service or Docker container process.';
+    protected $description = 'Create one systemd service or Docker container process.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -148,7 +148,7 @@ final class AddProcessCommand extends TargetedProcessCommand
 
         $process = $this->send(
             $connector,
-            new AddProcessRequest(
+            new CreateProcessRequest(
                 target: $target,
                 name: $name,
                 runtime: $runtime,

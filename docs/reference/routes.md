@@ -33,7 +33,7 @@ A generated Route derives its hostname from the target AppInstance identity, App
 | `default` | `<app>.test` |
 | Any other name | `<instance>.<app>.test` |
 
-An explicit source branch changes neither placement nor generated Route identity. For example, `instance:new <app> <node> default --branch=release` still generates `<app>.test`.
+An explicit source branch changes neither placement nor generated Route identity. For example, `instance:create <app> <node> default --branch=release` still generates `<app>.test`.
 
 An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. A standalone app-prod Node can remain valid without a TLD when production creation supplies an explicit Route hostname.
 

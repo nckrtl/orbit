@@ -175,13 +175,13 @@ Route::prefix('v1')->group(function (): void {
         });
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
-        Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:new');
+        Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:create');
         Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
         Route::post('instances/{candidate}/clone', [AppInstanceClonesController::class, 'store'])
             ->whereNumber('candidate')
             ->name('instance:clone');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
-            ->name('instance:remove');
+            ->name('instance:destroy');
         Route::get(
             'instances/{instance}/deployment-config',
             [AppInstanceDeploymentConfigsController::class, 'show'],
@@ -197,11 +197,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post(
             'instances/{instance}/deploy',
             [AppInstanceDeploymentsController::class, 'store'],
-        )->name('instance:deployment:store');
+        )->name('instance:deploy');
         Route::post(
             'instances/{instance}/rollback',
             [AppInstanceRollbacksController::class, 'store'],
-        )->name('instance:rollback:store');
+        )->name('instance:rollback');
         Route::get(
             'instances/{instance}/releases',
             [AppInstanceReleasesController::class, 'index'],
@@ -209,15 +209,15 @@ Route::prefix('v1')->group(function (): void {
         Route::post(
             'instances/{instance}/environment/import',
             [AppInstanceEnvironmentImportsController::class, 'store'],
-        )->name('instance:environment:import');
+        )->name('env:import');
         Route::post(
             'instances/{instance}/environment/sync',
             [AppInstanceEnvironmentSynchronizationsController::class, 'store'],
-        )->name('instance:environment:sync');
+        )->name('env:sync');
         Route::put(
             'instances/{instance}/environment/{key}',
             [AppInstanceEnvironmentValuesController::class, 'update'],
-        )->name('instance:environment:update');
+        )->name('env:update');
         Route::put(
             'instances/{instance}/database-connections/{database_connection}',
             [DatabaseConnectionAttachmentsController::class, 'store'],
@@ -258,7 +258,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('schedules', [SchedulesController::class, 'index'])
             ->name('schedule:list');
         Route::post('schedules', [SchedulesController::class, 'store'])
-            ->name('schedule:add');
+            ->name('schedule:create');
         Route::get('schedules/{schedule}/logs', [SchedulesController::class, 'logs'])
             ->whereUuid('schedule')
             ->name('schedule:logs');
@@ -267,19 +267,19 @@ Route::prefix('v1')->group(function (): void {
             ->name('schedule:run');
         Route::post('schedules/{schedule}/activate', [SchedulesController::class, 'activate'])
             ->whereUuid('schedule')
-            ->name('schedule:activate');
+            ->name('schedule:enable');
         Route::get('schedules/{schedule}', [SchedulesController::class, 'show'])
             ->whereUuid('schedule')
             ->name('schedule:show');
         Route::delete('schedules/{schedule}', [SchedulesController::class, 'destroy'])
             ->whereUuid('schedule')
-            ->name('schedule:remove');
+            ->name('schedule:destroy');
         Route::get('processes', [ProcessesController::class, 'index'])
             ->name('process:list');
         Route::get('processes/{process}/logs', [ProcessesController::class, 'logs'])
             ->name('process:logs');
         Route::post('processes', [ProcessesController::class, 'store'])
-            ->name('process:add');
+            ->name('process:create');
         Route::post('processes/{process}/start', [ProcessesController::class, 'start'])
             ->name('process:start');
         Route::post('processes/{process}/stop', [ProcessesController::class, 'stop'])
@@ -287,7 +287,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('processes/{process}/restart', [ProcessesController::class, 'restart'])
             ->name('process:restart');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
-            ->name('process:remove');
+            ->name('process:destroy');
         Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
             ->name('database-connection:list');
         Route::post('database-connections', [DatabaseConnectionsController::class, 'store'])
@@ -304,7 +304,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
             ->name('herdr:session:list');
         Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])
-            ->name('herdr:session:add');
+            ->name('herdr:session:create');
         Route::get('herdr/sessions/{session}', [HerdrSessionsController::class, 'show'])
             ->whereNumber('session')
             ->name('herdr:session:show');
@@ -313,7 +313,7 @@ Route::prefix('v1')->group(function (): void {
             ->name('herdr:session:restart');
         Route::delete('herdr/sessions/{session}', [HerdrSessionsController::class, 'destroy'])
             ->whereNumber('session')
-            ->name('herdr:session:remove');
+            ->name('herdr:session:destroy');
         Route::post('herdr/sessions/{session}/observation-grants', [HerdrSessionsController::class, 'storeGrant'])
             ->whereNumber('session')
             ->name('herdr:observe');

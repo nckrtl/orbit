@@ -12,7 +12,7 @@ use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 final class ListReleasesCommand extends DeploymentCommand
 {
     #[\Override]
-    protected $signature = 'instance:releases
+    protected $signature = 'instance:release:list
         {instance : Numeric instance ID}
         {--json : Return machine-readable JSON}';
 

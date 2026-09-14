@@ -182,7 +182,7 @@ describe('retained releases', function (): void {
         ]);
 
         $this
-            ->artisan('instance:releases', ['instance' => '17'])
+            ->artisan('instance:release:list', ['instance' => '17'])
             ->expectsOutput('Retained releases:')
             ->expectsOutput('- release-a')
             ->expectsOutput('- release-b (selected)')
@@ -202,7 +202,7 @@ describe('retained releases', function (): void {
         ]);
 
         $this
-            ->artisan('instance:releases', ['instance' => '17', '--json' => true])
+            ->artisan('instance:release:list', ['instance' => '17', '--json' => true])
             ->expectsOutput(json_encode([
                 'releases' => ['release-a', 'release-b'],
                 'selected_release' => 'release-b',
@@ -429,7 +429,11 @@ describe('deployment streams', function (): void {
         expect($commands['instance:deploy']->getSubscribedSignals())->toBe([])
             ->and($commands['instance:rollback']->getSubscribedSignals())->toBe([])
             ->and($commands['instance:deployment-config']->getSubscribedSignals())->toBe([])
-            ->and($commands['instance:releases']->getSubscribedSignals())->toBe([]);
+            ->and($commands['instance:release:list']->getSubscribedSignals())->toBe([]);
+    });
+
+    it('does not register the replaced release-list name', function (): void {
+        expect(Artisan::all())->not->toHaveKeys(['instance:releases']);
     });
 
     it('terminates promptly and disconnects before headers or during a blocked stream read', function (string $mode): void {

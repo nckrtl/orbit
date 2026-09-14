@@ -6,10 +6,10 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Herdr\AddHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\DestroyHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
-use Orbit\Sdk\Requests\Herdr\RemoveHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
@@ -35,11 +35,11 @@ afterEach(function (): void {
 it('adds a named Herdr session through the active gateway', function (): void {
     $mock = MockClient::global([
         ListNodesRequest::class => herdr_cli_nodes_response(),
-        AddHerdrSessionRequest::class => herdr_cli_session_response(201),
+        CreateHerdrSessionRequest::class => herdr_cli_session_response(201),
     ]);
 
     $this
-        ->artisan('herdr:session:add', [
+        ->artisan('herdr:session:create', [
             'session' => 'commander-tasks',
             '--node' => 'beast',
             '--user' => 'nckrtl',
@@ -49,7 +49,7 @@ it('adds a named Herdr session through the active gateway', function (): void {
         ->assertExitCode(0);
 
     expect($mock->getLastRequest())
-        ->toBeInstanceOf(AddHerdrSessionRequest::class)
+        ->toBeInstanceOf(CreateHerdrSessionRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe([
             'node_id' => 4,
@@ -132,11 +132,11 @@ it('removes a named session with accepted termination', function (): void {
             'data' => [herdr_cli_session_payload()],
             'meta' => ['request_id' => herdr_cli_request_id()],
         ]),
-        RemoveHerdrSessionRequest::class => herdr_cli_session_response(),
+        DestroyHerdrSessionRequest::class => herdr_cli_session_response(),
     ]);
 
     $this
-        ->artisan('herdr:session:remove', [
+        ->artisan('herdr:session:destroy', [
             'session' => 'commander-tasks',
             '--node' => '4',
             '--accept-termination' => true,
@@ -144,7 +144,7 @@ it('removes a named session with accepted termination', function (): void {
         ->assertExitCode(0);
 
     expect($mock->getLastRequest())
-        ->toBeInstanceOf(RemoveHerdrSessionRequest::class)
+        ->toBeInstanceOf(DestroyHerdrSessionRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe(['accept_termination' => true]);
 });

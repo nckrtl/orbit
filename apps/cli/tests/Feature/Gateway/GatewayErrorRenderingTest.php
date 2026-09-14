@@ -592,7 +592,7 @@ it('renders local validation failures through the exact json boundary', function
         'Firewall port must be from 1 to 65535 or an ordered range.',
     ],
     'instance name' => [
-        'instance:new',
+        'instance:create',
         ['app' => '1', 'node' => '1', 'name' => ''],
         'instance.name_required',
         'Instance name is required.',
@@ -622,19 +622,19 @@ it('renders local validation failures through the exact json boundary', function
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
     ],
     'process target selection' => [
-        'process:add',
+        'process:create',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
         'process.target_invalid',
         'The --instance or --node option is required.',
     ],
     'process target ID' => [
-        'process:add',
+        'process:create',
         ['name' => 'worker', '--instance' => 'validation-secret', '--command' => ['/usr/bin/php']],
         'process.target_id_invalid',
         'AppInstance ID must be a positive integer.',
     ],
     'process runtime' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -645,7 +645,7 @@ it('renders local validation failures through the exact json boundary', function
         'Process runtime must be systemd or docker.',
     ],
     'process restart policy' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -656,7 +656,7 @@ it('renders local validation failures through the exact json boundary', function
         'Invalid process restart policy.',
     ],
     'process environment' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -667,7 +667,7 @@ it('renders local validation failures through the exact json boundary', function
         'Invalid environment value. Use NAME=VALUE.',
     ],
     'process volume' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -702,7 +702,7 @@ it('renders local validation failures through the exact json boundary', function
         'Node ID must be a positive integer.',
     ],
     'multiple instance values fail at the first error' => [
-        'instance:new',
+        'instance:create',
         ['app' => 'validation-secret', 'node' => '0', 'name' => ''],
         'app.id_invalid',
         'App ID must be a positive integer.',

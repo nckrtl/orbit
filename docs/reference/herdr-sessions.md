@@ -4,17 +4,17 @@ This page tells an operator how Orbit manages a named Herdr session on a managed
 
 Orbit owns Process lifecycle, private DNS, Caddy, Orbit certificate authority (CA) Transport Layer Security (TLS), WireGuard publication, listener trust, discovery, and short-lived observation grants. Herdr owns terminal rendering, pane identity validation, and the WebSocket observation protocol.
 
-## Add a session
+## Create a session
 
 The operator names one session on one managed Node and records the Unix identity that must own the Herdr server and socket.
 
 ```bash
-orbit herdr:session:add commander-tasks --node=beast --user=nckrtl --publish-observer
+orbit herdr:session:create commander-tasks --node=beast --user=nckrtl --publish-observer
 ```
 
 The Gateway composes one node-targeted systemd Process for the headless Herdr server, publishes a private receive-only observer when `--publish-observer` is set, and stores the session identity. The Process runs as the Node's managed runtime user. The `--user` value must match that recorded user; the Gateway refuses a mismatch before it creates a Process.
 
-Repeating an identical add returns the same session. The Gateway does not replace or restart a compatible running Herdr server. A changed user, Process specification, or observer listen address with the same Node and session name returns `herdr.session_conflict` and leaves the running server in place.
+Repeating an identical create returns the same session. The Gateway does not replace or restart a compatible running Herdr server. A changed user, Process specification, or observer listen address with the same Node and session name returns `herdr.session_conflict` and leaves the running server in place.
 
 ## Stored identity
 
@@ -59,11 +59,11 @@ The CLI sends each operation through the Gateway.
 
 | Command | Result |
 | --- | --- |
-| `orbit herdr:session:add NAME --node=ID-or-name --user=USER [--publish-observer]` | Create or ensure one named session on a managed Node. |
+| `orbit herdr:session:create NAME --node=ID-or-name --user=USER [--publish-observer]` | Create or ensure one named session on a managed Node. |
 | `orbit herdr:session:list --node=ID-or-name` | List sessions on one Node with identity and health. |
 | `orbit herdr:session:show NAME --node=ID-or-name` | Show one session. |
 | `orbit herdr:session:restart NAME --node=ID-or-name [--handoff]` | Restart the server explicitly, using Herdr live handoff when the operator asks and Herdr reports support. |
-| `orbit herdr:session:remove NAME --node=ID-or-name [--accept-termination]` | Remove the session, Process, and private observer. |
+| `orbit herdr:session:destroy NAME --node=ID-or-name [--accept-termination]` | Destroy the session, Process, and private observer. |
 | `orbit herdr:observe NAME --node=ID-or-name --pane=PANE --terminal=TERMINAL --cols=COLS --rows=ROWS` | Issue one short-lived receive-only grant. |
 
 `--node` accepts a positive Node ID or the registered Node name. Every command also accepts `--json`.
@@ -112,7 +112,7 @@ Authorized callers use these resources.
 | `POST /api/v1/herdr/sessions/{session}/observation-grants` | Issue one observation grant. |
 | `GET /.well-known/jwks.json` | Publish the Orbit observe signing keys. |
 
-Add accepts `node_id`, `session`, `user`, and `publish_observer`. Restart accepts `handoff`. Remove accepts `accept_termination`. A grant accepts `pane`, `terminal`, `cols`, and `rows`.
+Create accepts `node_id`, `session`, `user`, and `publish_observer`. Restart accepts `handoff`. Destroy accepts `accept_termination`. A grant accepts `pane`, `terminal`, `cols`, and `rows`.
 
 ## Failure codes
 

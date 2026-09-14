@@ -13,7 +13,7 @@ use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 final class CreateInstanceCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'instance:new
+    protected $signature = 'instance:create
         {app : Numeric app ID}
         {node : Numeric node ID}
         {name : AppInstance name; default is reserved for the default development source}
