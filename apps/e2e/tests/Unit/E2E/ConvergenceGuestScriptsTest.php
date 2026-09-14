@@ -2880,7 +2880,7 @@ describe('convergence guest scripts', function () {
                 ->toHaveCount(0)
                 ->and(array_filter($commands, fn (string $command): bool => str_starts_with(
                     $command,
-                    'instance:create ',
+                    'instance:create --',
                 )))
                 ->toHaveCount(1)
                 ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'route:create ')))
@@ -3063,7 +3063,7 @@ describe('convergence guest scripts', function () {
                 ->toHaveCount(1)
                 ->and(array_filter($allCommands, fn (string $command): bool => str_starts_with(
                     $command,
-                    'instance:create ',
+                    'instance:create --',
                 )))
                 ->toHaveCount(1)
                 ->and(file_exists("{$fixture['root']}/app-before-cluster"))
