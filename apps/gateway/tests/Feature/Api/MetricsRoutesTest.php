@@ -16,6 +16,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\MetricsController;
+use App\Models\Activity;
 use App\Models\Node;
 use Illuminate\Routing\Route;
 
@@ -33,7 +34,7 @@ it('exposes the eight focused metrics routes with stable methods', function (): 
     expect($routes)->toBe([
         'metrics:grafana:authorize' => ['api/v1/metrics/grafana/authorize', ['GET', 'HEAD']],
         'metrics:enable' => ['api/v1/metrics', ['POST']],
-        'metrics:remove' => ['api/v1/metrics', ['DELETE']],
+        'metrics:disable' => ['api/v1/metrics', ['DELETE']],
         'metrics:status' => ['api/v1/metrics/status', ['GET', 'HEAD']],
         'metrics:credentials' => ['api/v1/metrics/credentials', ['GET', 'HEAD']],
         'metrics:credentials:reset' => ['api/v1/metrics/credentials/reset', ['POST']],
@@ -256,6 +257,9 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
         ->assertOk()
         ->assertJsonPath('data.status', 'removed')
         ->assertJsonPath('data.publication', 'uncleaned');
+
+    expect(Activity::query()->orderBy('id')->pluck('command')->all())
+        ->toBe(['metrics:enable', 'metrics:disable']);
 });
 
 it('rejects unauthorized metrics requests before reading credentials', function (): void {

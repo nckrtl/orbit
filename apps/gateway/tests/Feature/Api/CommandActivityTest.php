@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Metrics\MetricsMutationData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
@@ -12,6 +13,8 @@ use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\MetricsPublicationCleanup;
+use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
@@ -126,7 +129,7 @@ it('records exactly one bounded doctor activity without report findings or diagn
     expect($activity->request_id)
         ->toBe($requestId)
         ->and($activity->command)
-        ->toBe('doctor:run')
+        ->toBe('doctor')
         ->and($activity->status)
         ->toBe('succeeded')
         ->and($activity->error_code)
@@ -172,7 +175,7 @@ it('leaves doctor activity unattributed when node_id is omitted', function (): v
     $activity = Activity::query()->sole();
 
     expect($activity->command)
-        ->toBe('doctor:run')
+        ->toBe('doctor')
         ->and($activity->status)
         ->toBe('succeeded')
         ->and($activity->subject_type)
@@ -202,7 +205,7 @@ it('does not attribute doctor activity to a missing node on 404', function (): v
     $activity = Activity::query()->sole();
 
     expect($activity->command)
-        ->toBe('doctor:run')
+        ->toBe('doctor')
         ->and($activity->status)
         ->toBe('failed')
         ->and($activity->error_code)
@@ -238,7 +241,7 @@ it('attributes a failed doctor activity to an inaccessible node on 403', functio
     $activity = Activity::query()->sole();
 
     expect($activity->command)
-        ->toBe('doctor:run')
+        ->toBe('doctor')
         ->and($activity->status)
         ->toBe('failed')
         ->and($activity->subject_type)
@@ -275,7 +278,7 @@ it('does not persist rejected doctor request data in activity', function (string
     $activity = Activity::query()->sole();
 
     expect($activity->command)
-        ->toBe('doctor:run')
+        ->toBe('doctor')
         ->and($activity->status)
         ->toBe('failed')
         ->and($activity->error_code)
@@ -292,6 +295,30 @@ it('does not persist rejected doctor request data in activity', function (string
     'object family list' => ['{"families":{"chosen":"node"}}'],
     'numeric-keyed object family list' => ['{"families":{"0":"node"}}'],
 ]);
+
+it('records a metrics disable request as metrics:disable', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'metrics-disable-caller',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.1',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+    $this->markAsGateway($gateway);
+    $manager = Mockery::mock(MetricsRoleManager::class);
+    $manager
+        ->shouldReceive('remove')
+        ->once()
+        ->with(true, true)
+        ->andReturn(new MetricsMutationData($gateway->id, 'removed', MetricsPublicationCleanup::Uncleaned));
+    app()->instance(MetricsRoleManager::class, $manager);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
+        ->assertOk();
+
+    expect(Activity::query()->sole()->command)->toBe('metrics:disable');
+});
 
 it('records renamed App Cluster and Route lifecycle command names', function (): void {
     $this->fakeRepositoryBranches();

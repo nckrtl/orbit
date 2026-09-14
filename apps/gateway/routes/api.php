@@ -94,7 +94,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('cluster')
             ->name('cluster:router:unset');
         Route::post('doctor', [DoctorRunsController::class, 'store'])
-            ->name('doctor:run');
+            ->name('doctor');
         Route::get('nodes/{node}', [NodesController::class, 'show'])
             ->name('node:show');
         Route::get('nodes/{node}/roles', [NodeRolesController::class, 'index'])
@@ -331,7 +331,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('tool')
             ->name('tool:remove');
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
-        Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:remove');
+        Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
         Route::get('metrics/status', [MetricsController::class, 'status'])->name('metrics:status');
         Route::get('metrics/credentials', [MetricsController::class, 'credentials'])->name('metrics:credentials');
         Route::post('metrics/credentials/reset', [MetricsController::class, 'reset'])->name(
