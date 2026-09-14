@@ -2,15 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Data\Workspaces;
+// This inert path remains a prepared-state fingerprint input. AppInstance owns
+// the supported application schema and operations.
+return;
 
-final readonly class CreateWorkspaceData
-{
-    public function __construct(
-        public int $instanceId,
-        public string $name,
-        public string $branch,
-        public ?string $checkoutPath,
-        public ?string $phpVersion,
-    ) {}
-}

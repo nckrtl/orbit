@@ -26,14 +26,6 @@ final readonly class RemoveAppAction
 
         ($this->routes ?? app(RouteRemovalGuard::class))->assertAppRemovable($app);
 
-        if ($app->instances()->exists()) {
-            throw new ResourceOperationException(
-                errorCode: 'app.has_instances',
-                message: "App [{$app->slug}] still has instances.",
-                status: 409,
-            );
-        }
-
         $app->delete();
 
         return $app;

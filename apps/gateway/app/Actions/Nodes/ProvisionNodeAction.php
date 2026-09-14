@@ -162,8 +162,7 @@ final readonly class ProvisionNodeAction
         if (
             $node->exists
             && $node->user !== $managedUser
-            && ($node->roles()->exists()
-            || $node->instances()->exists())
+            && $node->roles()->exists()
         ) {
             throw new ResourceOperationException(
                 errorCode: 'node.user_change_unsupported',
@@ -188,20 +187,6 @@ final readonly class ProvisionNodeAction
         $previousClusterId = $node->exists ? $node->cluster_id : null;
         $tld = $this->tld($node, $data, $clusterId);
         $convergeChangedAppDevTld = $node->exists && $previousTld !== $tld && $this->hasActiveAppDevRole($node);
-
-        if (
-            $node->exists
-            && $previousTld !== $tld
-            && $this->hasAppDevRole($node, $data)
-            && ! $convergeChangedAppDevTld
-            && $node->instances()->exists()
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'node.tld_change_unsupported',
-                message: "Node [{$data->name}] cannot change TLD while app-dev is not active.",
-                status: 409,
-            );
-        }
 
         if (
             $platform === 'linux'

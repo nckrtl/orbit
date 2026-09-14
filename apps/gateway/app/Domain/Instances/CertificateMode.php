@@ -2,10 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Instances;
+// This inert path remains a prepared-state fingerprint input. AppInstance owns
+// the supported application schema and operations.
+return;
 
-enum CertificateMode: string
-{
-    case OrbitCa = 'orbit-ca';
-    case Acme = 'acme';
-}

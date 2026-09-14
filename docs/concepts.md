@@ -9,8 +9,6 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Repository identity** — The Git host and path, without a trailing `.git`. Equivalent SSH and HTTPS URLs identify the same repository and belong to one App. See [Apps](/reference/apps#keep-one-repository-owner).
 - **App instance** — One managed copy of an App on a Node. Development uses a checkout or worktree. New production instances require a candidate. Each active instance has one Route. See [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) and [Applications](/domains/applications).
 - **Web root** — The directory served by an App instance, with a relative path inherited from the App or overridden per instance. Production resolves it inside the selected release. See [Production release layout](/reference/deployments).
-- **Legacy Instance** — A leftover application row awaiting schema removal. Doctor, runtime publication, overlap checks, and App instance commands do not use it.
-- **Workspace** — A leftover Git worktree row owned by a Legacy Instance. Orbit exposes no Workspace command. Doctor does not inspect it.
 - **Route** — A hostname owned by an App. It sends traffic to App instances through one Node or active Cluster. Orbit records whether the hostname is generated or explicit. See [Routes](/reference/routes).
 - **Development-server endpoint** — The reserved path `/__orbit/vite` on an App instance Route hostname that carries live frontend assets and hot module replacement through Cluster HTTPS to the owning Node. See [Routes](/reference/routes#development-server-endpoint).
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.

@@ -16,7 +16,6 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\HerdrObservationNonce;
 use App\Models\HerdrSession;
-use App\Models\Instance;
 use App\Models\JwksKey;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -30,7 +29,6 @@ use App\Models\ScheduleDefinition;
 use App\Models\Setting;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
-use App\Models\Workspace;
 
 it('partitions every persisted model across doctor dispositions', function (): void {
     $familyModels = [
@@ -64,8 +62,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         HerdrObservationNonce::class,
-        Instance::class,
-        Workspace::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {
@@ -73,7 +69,16 @@ it('partitions every persisted model across doctor dispositions', function (): v
     }
     $modelFiles = array_values(array_filter(
         iterator_to_array(new FilesystemIterator(dirname($modelsDirectory))),
-        static fn (mixed $file): bool => $file instanceof SplFileInfo && $file->isFile(),
+        static function (mixed $file): bool {
+            if (! $file instanceof SplFileInfo || ! $file->isFile()) {
+                return false;
+            }
+
+            $contents = file_get_contents($file->getPathname());
+
+            return is_string($contents)
+                && preg_match('/\b(?:class|enum)\s+'.preg_quote($file->getBasename('.php'), '/').'\b/', $contents) === 1;
+        },
     ));
     $models = array_map(
         static fn (SplFileInfo $file): string => 'App\\Models\\'.$file->getBasename('.php'),
