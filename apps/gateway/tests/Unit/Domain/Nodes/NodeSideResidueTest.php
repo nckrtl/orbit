@@ -63,6 +63,7 @@ it('leaves nothing behind for the roles that cannot be removed', function (RoleN
     'gateway' => [RoleName::Gateway],
     'vpn' => [RoleName::Vpn],
     'ingress' => [RoleName::Ingress],
+    'database' => [RoleName::Database],
 ]);
 
 it('offers a follow-up that does not name a command Orbit may not ship', function (): void {

@@ -30,5 +30,7 @@ it('restricts production infrastructure roles to Resolute', function (): void {
         ->and(UbuntuRelease::forRole(RoleName::AppProd))
         ->toBe([UbuntuRelease::Resolute])
         ->and(UbuntuRelease::forRole(RoleName::AppDev))
+        ->toBe([UbuntuRelease::Resolute])
+        ->and(UbuntuRelease::forRole(RoleName::Database))
         ->toBe([UbuntuRelease::Resolute]);
 });

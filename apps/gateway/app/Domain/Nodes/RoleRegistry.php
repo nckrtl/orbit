@@ -17,6 +17,7 @@ final readonly class RoleRegistry
             RoleName::AppDev,
             RoleName::AppProd,
             RoleName::Metrics,
+            RoleName::Database,
         ];
     }
 
@@ -28,26 +29,28 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: false,
-                conflicts: [RoleName::AppDev, RoleName::AppProd],
+                conflicts: [RoleName::AppDev, RoleName::AppProd, RoleName::Database],
             ),
             RoleName::Vpn => new RoleDefinition(
                 name: $role,
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: false,
+                conflicts: [RoleName::Database],
             ),
             RoleName::Router => new RoleDefinition(
                 name: $role,
                 singleton: false,
                 assignableDuringProvisioning: false,
                 mutable: false,
+                conflicts: [RoleName::Database],
             ),
             RoleName::Ingress => new RoleDefinition(
                 name: $role,
                 singleton: false,
                 assignableDuringProvisioning: false,
                 mutable: true,
-                conflicts: [RoleName::AppDev],
+                conflicts: [RoleName::AppDev, RoleName::Database],
             ),
             RoleName::AppDev => new RoleDefinition(
                 name: $role,
@@ -61,13 +64,26 @@ final readonly class RoleRegistry
                 singleton: false,
                 assignableDuringProvisioning: true,
                 mutable: true,
-                conflicts: [RoleName::Gateway, RoleName::AppDev],
+                conflicts: [RoleName::Gateway, RoleName::AppDev, RoleName::Database],
             ),
             RoleName::Metrics => new RoleDefinition(
                 name: $role,
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: true,
+            ),
+            RoleName::Database => new RoleDefinition(
+                name: $role,
+                singleton: false,
+                assignableDuringProvisioning: true,
+                mutable: true,
+                conflicts: [
+                    RoleName::Gateway,
+                    RoleName::Vpn,
+                    RoleName::Router,
+                    RoleName::Ingress,
+                    RoleName::AppProd,
+                ],
             ),
         };
     }

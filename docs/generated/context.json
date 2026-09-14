@@ -13,6 +13,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -35,6 +36,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Herdr session",
@@ -74,6 +76,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
@@ -102,7 +105,8 @@
                 "0026",
                 "0042",
                 "0056",
-                "0069"
+                "0069",
+                "0070"
             ]
         },
         {
@@ -159,6 +163,7 @@
             ],
             "concepts": [
                 "App",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -211,6 +216,7 @@
             "components": [],
             "concepts": [
                 "App",
+                "Database",
                 "Gateway",
                 "Node",
                 "Workspace"
@@ -228,6 +234,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Effective web root",
                 "Gateway",
                 "Ingress",
@@ -304,6 +311,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Doctor",
                 "Effective web root",
                 "Gateway",
@@ -331,6 +339,7 @@
                 "apps/docs"
             ],
             "concepts": [
+                "Database",
                 "Route"
             ],
             "governing_adrs": [
@@ -367,6 +376,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Gateway",
                 "Ingress",
                 "Node",
@@ -435,6 +445,7 @@
             "concepts": [
                 "App",
                 "Cluster",
+                "Database",
                 "Gateway",
                 "Node",
                 "Process"
@@ -559,6 +570,7 @@
             ],
             "concepts": [
                 "App",
+                "Database",
                 "Gateway",
                 "Repository identity"
             ],
@@ -655,6 +667,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Gateway",
                 "Ingress",
                 "Route"
@@ -858,6 +871,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Gateway",
                 "Ingress",
                 "Route",
@@ -965,6 +979,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -1009,6 +1024,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Gateway",
                 "Ingress",
                 "Process"
@@ -1036,6 +1052,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Gateway",
                 "Ingress",
                 "Node",
@@ -1388,6 +1405,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Gateway",
                 "Route"
             ],
@@ -1410,6 +1428,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -1484,6 +1503,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -1495,6 +1515,29 @@
                 "0038",
                 "0048",
                 "0069"
+            ]
+        },
+        {
+            "path": "docs/decisions/0070-keep-the-database-role-as-a-docker-baseline.md",
+            "title": "ADR 0070: Keep the database role as a Docker baseline",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Process",
+                "Router",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0001",
+                "0069",
+                "0070"
             ]
         },
         {
@@ -1534,6 +1577,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Doctor",
                 "Effective web root",
                 "Gateway",
@@ -1576,6 +1620,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Development-server endpoint",
                 "Doctor",
                 "Gateway",
@@ -1604,6 +1649,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Gateway",
                 "Ingress",
                 "Node",
@@ -1628,6 +1674,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -1654,6 +1701,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Repository identity"
@@ -1665,6 +1713,27 @@
             ]
         },
         {
+            "path": "docs/reference/database-role.md",
+            "title": "Database role",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Process",
+                "Router",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0069",
+                "0070"
+            ]
+        },
+        {
             "path": "docs/reference/deployments.md",
             "title": "Production release layout",
             "kind": "reference",
@@ -1673,6 +1742,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Doctor",
                 "Effective web root",
                 "Gateway",
@@ -1692,6 +1762,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -1743,6 +1814,7 @@
             ],
             "concepts": [
                 "App",
+                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -1773,6 +1845,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Legacy Instance",
@@ -1931,6 +2004,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Database",
                 "Development-server endpoint",
                 "Doctor",
                 "Gateway",
@@ -1985,6 +2059,7 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Herdr session",
@@ -2010,6 +2085,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Node",

@@ -26,6 +26,8 @@ it('covers exact package and service matrices', function (): void {
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
         ->and($p->forRole($node, RoleName::AppProd))
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
+        ->and($p->forRole($node, RoleName::Database))
+        ->toBe(['docker.io'])
         ->and($s->forRole(RoleName::Gateway))
         ->toBe(['caddy', 'php8.5-fpm'])
         ->and($s->forRole(RoleName::Vpn))
@@ -35,7 +37,16 @@ it('covers exact package and service matrices', function (): void {
         ->and($s->forRole(RoleName::AppDev))
         ->toBe(['caddy', 'docker'])
         ->and($s->forRole(RoleName::AppProd))
-        ->toBe(['caddy', 'docker']);
+        ->toBe(['caddy', 'docker'])
+        ->and($s->forRole(RoleName::Database))
+        ->toBe(['docker']);
+});
+
+it('gives Database no firewall projection', function (): void {
+    $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
+
+    expect(new NodeFirewallRuleCatalog()->forRole($node, RoleName::Database))
+        ->toBe([]);
 });
 
 it('gives Ingress no package service or firewall projection', function (): void {

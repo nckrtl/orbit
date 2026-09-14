@@ -18,6 +18,7 @@ final class NodeRoleServiceCatalog
             RoleName::Ingress => [],
             RoleName::AppDev, RoleName::AppProd => ['caddy', 'docker'],
             RoleName::Metrics => ['docker'],
+            RoleName::Database => ['docker'],
         };
     }
 }

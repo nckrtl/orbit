@@ -26,6 +26,8 @@ it('uses fixed package lists for every role', function (): void {
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
         ->and(role_prerequisite_packages($factory->make(new Node, RoleName::Vpn, $account)))
         ->toBe(['dnsmasq', 'openssl'])
+        ->and(role_prerequisite_packages($factory->make(new Node, RoleName::Database, $account)))
+        ->toBe(['docker.io'])
         ->and($factory->make(new Node, RoleName::Gateway, $account)->arguments)
         ->toBe(['true']);
 });

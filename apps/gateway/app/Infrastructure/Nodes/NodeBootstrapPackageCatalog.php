@@ -34,6 +34,7 @@ final class NodeBootstrapPackageCatalog
                 'unzip',
             ],
             RoleName::Metrics => ['docker.io', 'openssl'],
+            RoleName::Database => ['docker.io'],
         };
     }
 }
