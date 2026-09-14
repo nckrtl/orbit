@@ -4,16 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Herdr;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\HerdrSession;
 use App\Models\Node;
 
 final readonly class HerdrObserveContract
 {
     public const string Executable = '/home/linuxbrew/.linuxbrew/bin/herdr';
-
-    public const string JwksUrl = 'https://gateway.orbit/.well-known/jwks.json';
-
-    public const string ObserveMode = 'read-only';
 
     public const string GrantAudience = 'herdr-observe';
 
@@ -26,6 +23,21 @@ final readonly class HerdrObserveContract
     public const int GrantTtlSeconds = 60;
 
     public const int DefaultProtocol = 22;
+
+    public function assertCompatible(HerdrSessionInspection $inspection): void
+    {
+        if ($inspection->protocol === self::DefaultProtocol) {
+            return;
+        }
+
+        $protocol = $inspection->protocol ?? 'unknown';
+
+        throw new ResourceOperationException(
+            errorCode: 'herdr.observer_unsupported',
+            message: "Herdr observe protocol [{$protocol}] is not supported. Expected protocol [".self::DefaultProtocol.'].',
+            status: 422,
+        );
+    }
 
     public function processName(string $session): string
     {
@@ -47,23 +59,14 @@ final readonly class HerdrObserveContract
     /**
      * @return list<string>
      */
-    public function serverCommand(string $session, int $port, bool $handoff = false): array
+    public function serverCommand(string $session): array
     {
-        $command = [
+        return [
             self::Executable,
             '--session',
             $session,
             'server',
-            '--observe-listen='.$this->listenAddress($port),
-            '--observe-mode='.self::ObserveMode,
-            '--observe-jwks='.self::JwksUrl,
         ];
-
-        if ($handoff) {
-            $command[] = '--handoff';
-        }
-
-        return $command;
     }
 
     public function listenAddress(int $port): string

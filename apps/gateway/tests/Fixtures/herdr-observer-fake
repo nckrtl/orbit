@@ -1,0 +1,62 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$arguments = array_slice($argv, 1);
+
+if ($arguments === ['--session', 'commander-tasks', 'api', 'snapshot']) {
+    echo json_encode([
+        'result' => [
+            'type' => 'session_snapshot',
+            'snapshot' => [
+                'version' => '0.8.2',
+                'protocol' => 20,
+                'panes' => [[
+                    'pane_id' => 'wH:p3',
+                    'terminal_id' => 'term_65b6c6719fb573',
+                ]],
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    exit(0);
+}
+
+if ($arguments === [
+    '--session',
+    'commander-tasks',
+    'terminal',
+    'session',
+    'observe',
+    'term_65b6c6719fb573',
+    '--cols',
+    '120',
+    '--rows',
+    '40',
+]) {
+    echo json_encode([
+        'bytes' => base64_encode("\033[32mreceive only\033[0m"),
+        'encoding' => 'ansi',
+        'full' => true,
+        'height' => 40,
+        'seq' => 1,
+        'type' => 'terminal.frame',
+        'width' => 120,
+    ], JSON_THROW_ON_ERROR)."\n";
+    echo json_encode([
+        'bytes' => base64_encode("\033[1;1Hstill receive only"),
+        'encoding' => 'ansi',
+        'full' => false,
+        'height' => 40,
+        'seq' => 2,
+        'type' => 'terminal.frame',
+        'width' => 120,
+    ], JSON_THROW_ON_ERROR)."\n";
+    echo json_encode(['type' => 'terminal.closed'], JSON_THROW_ON_ERROR)."\n";
+
+    exit(0);
+}
+
+fwrite(STDERR, 'Unexpected fake Herdr arguments.');
+exit(1);

@@ -367,7 +367,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep Schedule transport limited to typed Node and AppInstance targets and the eight shipped operations.',
             )
             ->toContain(
-                'Keep Herdr transport limited to a numeric Node ID, a numeric session ID for item operations, explicit session name and Unix user on add, optional observer publication and restart handoff flags, optional removal termination acceptance, and pane, terminal, columns, and rows for observation grants.',
+                'Keep Herdr transport limited to a numeric Node ID, a numeric session ID for item operations, explicit session name and Unix user on add, optional observer publication and restart handoff flags, optional removal termination acceptance, and pane, terminal, columns, rows, and an HTTPS browser origin for observation grants.',
             )
             ->toContain(
                 'Keep Database connection transport limited to slug identity, driver, optional Node ID, host, port, database name, sqlite path, username, and password.',

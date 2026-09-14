@@ -15,8 +15,14 @@ final class StoreObservationGrantRequest extends FormRequest
         return [
             'pane' => ['required', 'string', 'max:64', 'regex:/\A[A-Za-z0-9._:-]+\z/D'],
             'terminal' => ['required', 'string', 'max:64', 'regex:/\A[A-Za-z0-9._:-]+\z/D'],
-            'cols' => ['required', 'integer', 'min:1', 'max:500'],
-            'rows' => ['required', 'integer', 'min:1', 'max:200'],
+            'cols' => ['required', 'integer', 'min:20', 'max:400'],
+            'rows' => ['required', 'integer', 'min:5', 'max:200'],
+            'origin' => [
+                'required',
+                'string',
+                'max:255',
+                'regex:/\Ahttps:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[1-9][0-9]{0,4})?\z/D',
+            ],
         ];
     }
 
@@ -27,6 +33,7 @@ final class StoreObservationGrantRequest extends FormRequest
             terminal: (string) $this->validated('terminal'),
             cols: (int) $this->validated('cols'),
             rows: (int) $this->validated('rows'),
+            origin: (string) $this->validated('origin'),
         );
     }
 }

@@ -56,8 +56,8 @@ final readonly class EnsureHerdrSessionAction
         $session->process_id = $process->id;
         $session->save();
         $this->keepCompatibleProcess($process);
+        $this->inspectObserverCapability($session->refresh(), $node);
         $this->publishObserver($session->refresh(), $node);
-        $this->recordIdentity($session->refresh(), $node);
 
         $session->fill([
             'status' => LifecycleStatus::Active,
@@ -111,7 +111,7 @@ final readonly class EnsureHerdrSessionAction
 
     private function ensureProcess(HerdrSession $session, Node $node): Process
     {
-        $command = $this->contract->serverCommand($session->session, $session->observer_port);
+        $command = $this->contract->serverCommand($session->session);
         $name = $this->contract->processName($session->session);
         $existing = Process::query()
             ->where('owner_type', Node::class)
@@ -198,15 +198,42 @@ final readonly class EnsureHerdrSessionAction
         ]);
     }
 
-    private function recordIdentity(HerdrSession $session, Node $node): void
+    private function inspectObserverCapability(HerdrSession $session, Node $node): void
     {
         try {
             $inspection = $this->inspector->inspect($session, $node);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            if ($session->publish_observer) {
+                $this->recordObserverFailure($session, 'herdr.inspection_failed');
+
+                if ($exception instanceof ResourceOperationException) {
+                    throw $exception;
+                }
+
+                throw new ResourceOperationException(
+                    errorCode: 'herdr.inspection_failed',
+                    message: 'Herdr session inspection failed.',
+                    status: 422,
+                    previous: $exception,
+                );
+            }
+
             return;
         }
 
         $this->applyInspection($session, $inspection);
+
+        if (! $session->publish_observer) {
+            return;
+        }
+
+        try {
+            $this->contract->assertCompatible($inspection);
+        } catch (ResourceOperationException $exception) {
+            $this->recordObserverFailure($session, $exception->errorCode);
+
+            throw $exception;
+        }
     }
 
     private function applyInspection(HerdrSession $session, HerdrSessionInspection $inspection): void
@@ -215,6 +242,17 @@ final readonly class EnsureHerdrSessionAction
             'herdr_version' => $inspection->version,
             'protocol' => $inspection->protocol,
             'handoff_supported' => $inspection->handoffSupported,
+        ]);
+    }
+
+    private function recordObserverFailure(HerdrSession $session, string $errorCode): void
+    {
+        $session->update([
+            'observer_status' => 'failed',
+            'observer_error' => 'observer capability verification failed',
+            'status' => LifecycleStatus::Failed,
+            'failed_step' => 'observer',
+            'error_code' => $errorCode,
         ]);
     }
 }

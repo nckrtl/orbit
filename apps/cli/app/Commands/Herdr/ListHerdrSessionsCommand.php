@@ -23,6 +23,10 @@ final class ListHerdrSessionsCommand extends HerdrSessionCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
+        if (($failure = $this->guardExtension()) !== null) {
+            return $failure;
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {

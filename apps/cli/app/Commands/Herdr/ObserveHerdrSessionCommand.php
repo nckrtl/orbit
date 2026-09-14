@@ -19,6 +19,7 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
         {--terminal= : Expected terminal identity}
         {--cols= : Viewport columns}
         {--rows= : Viewport rows}
+        {--origin= : HTTPS browser origin allowed to use the grant}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -28,6 +29,10 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
+        if (($failure = $this->guardExtension()) !== null) {
+            return $failure;
+        }
+
         $name = $this->sessionName();
 
         if ($name === null) {
@@ -51,13 +56,15 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
             );
         }
 
-        $cols = filter_var($this->option('cols'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 500]]);
-        $rows = filter_var($this->option('rows'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 200]]);
+        $cols = filter_var($this->option('cols'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 20, 'max_range' => 400]]);
+        $rows = filter_var($this->option('rows'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 5, 'max_range' => 200]]);
+        $origin = $this->stringOption('origin');
 
-        if (! is_int($cols) || ! is_int($rows)) {
+        if (! is_int($cols) || ! is_int($rows) || $origin === null
+            || preg_match('/\Ahttps:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[1-9][0-9]{0,4})?\z/D', $origin) !== 1) {
             return $this->renderGatewayFailure(
                 'herdr.grant_invalid',
-                'Observation viewport columns and rows are required.',
+                'Observation viewport columns, rows, and a valid HTTPS origin are required.',
             );
         }
 
@@ -81,7 +88,7 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
 
         $response = $this->send(
             $connector,
-            new IssueObservationGrantRequest($listed->id, $pane, $terminal, $cols, $rows),
+            new IssueObservationGrantRequest($listed->id, $pane, $terminal, $cols, $rows, $origin),
             ObservationGrantResponse::class,
         );
 

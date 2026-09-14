@@ -73,7 +73,8 @@ operations. Keep the public API typed and small.
 - Keep Herdr transport limited to a numeric Node ID, a numeric session ID for
   item operations, explicit session name and Unix user on add, optional
   observer publication and restart handoff flags, optional removal termination
-  acceptance, and pane, terminal, columns, and rows for observation grants.
+  acceptance, and pane, terminal, columns, rows, and an HTTPS browser origin
+  for observation grants.
   Preserve omitted optional flags as explicit `false`. Observation grant URLs
   stay out of generic diagnostics. The Gateway owns session lifecycle,
   publication, trust, and grant policy.
