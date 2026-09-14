@@ -1,3 +1,8 @@
+---
+title: "Prove the verify-only Doctor on an Incus topology"
+description: "A repeatable way to prove that Doctor reports drift without repairing it, on disposable machines."
+---
+
 # Prove the verify-only Doctor on an Incus topology
 
 ## Problem

@@ -1,3 +1,8 @@
+---
+title: "Solutions"
+description: "Reusable implementation lessons: a proven approach, its failure mode, and the evidence behind it."
+---
+
 # Solutions
 
 Store reusable implementation lessons here. A solution note explains a proven

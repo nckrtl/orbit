@@ -1,3 +1,8 @@
+---
+title: "Implementation loop"
+description: "How a feature moves from a worktree through discovery or proof, local checks, review, merge, and closeout."
+---
+
 # Implementation loop
 
 This page is for contributors who prepare a candidate for review. It describes delivery flow selection, local checks, and the Git references that hold plans and development evidence. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs artifact storage; [proof plans](proof-plans.md) describes Incus evidence.

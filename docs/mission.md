@@ -1,3 +1,8 @@
+---
+title: "Mission"
+description: "Why Orbit exists, how the Gateway, CLI, and Nodes divide the work, and what Orbit manages for humans and coding agents."
+---
+
 # Mission
 
 Orbit is an AI-first, all-in-one tool for local app development, production

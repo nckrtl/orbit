@@ -1,3 +1,8 @@
+---
+title: "Metrics role"
+description: "What the metrics role runs, how to enable, inspect, and disable it, and how Grafana access is authorized."
+---
+
 # Metrics role
 
 This page tells an operator what the `metrics` role runs, how to enable, inspect, and disable it, and what each command answers. [ADR 0003](../decisions/0003-singleton-metrics-role.md) records the role contract, [ADR 0055](../decisions/0055-restrict-grafana-access-to-authorized-gateway-peers.md) records the Grafana access boundary, and [ADR 0057](../decisions/0057-limit-metrics-exporters-to-managed-nodes.md) limits exporter service management to eligible managed Nodes; this page states what the operator observes.

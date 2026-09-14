@@ -1,3 +1,8 @@
+---
+title: "Applications"
+description: "How Orbit creates or adopts, configures, and exposes an AppInstance on one Node, from App creation to removal."
+---
+
 # Applications
 
 This page tells an operator how Orbit creates or adopts, configures, and exposes an AppInstance on one manually selected application Node. An App stores shared source defaults, and each AppInstance owns one placement and one Route.

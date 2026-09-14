@@ -1,3 +1,9 @@
+---
+title: "ADR 0017: Make Cluster placement optional"
+sidebarTitle: "0017 Make Cluster placement optional"
+description: "Accepted on 2026-09-03."
+---
+
 # ADR 0017: Make Cluster placement optional
 
 ## Status

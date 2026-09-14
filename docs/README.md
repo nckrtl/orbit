@@ -1,7 +1,14 @@
+---
+title: "Orbit documentation"
+description: "A map of the maintained documentation corpus and the commands that keep it consistent."
+---
+
 # Orbit documentation
 
 These pages explain what Orbit can do, how its main parts work together, and
 how to use it.
+
+The same pages publish as the Orbit documentation site through Mintlify. `docs.json` holds the site navigation and theme, `style.css` holds the site styling, and the pages under `cli/` exist for the site only.
 
 If you are new to Orbit, start with the mission and architecture. Keep the
 concepts page nearby for any Orbit terms you do not know yet.
@@ -17,6 +24,7 @@ Choose a page based on what you want to learn:
 - [Tech stack](tech-stack.md) lists the main tools and technologies used by
   Orbit.
 - [Concepts](concepts.md) gives short explanations of common Orbit terms.
+- [Using the CLI](cli/overview.mdx) and the pages beside it document every `orbit` command family with each argument and option.
 - [Product areas](domains/README.md) groups feature documentation as it grows.
 - [Decisions](decisions/README.md) keeps the history behind important design
   choices.

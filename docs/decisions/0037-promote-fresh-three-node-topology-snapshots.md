@@ -1,3 +1,9 @@
+---
+title: "ADR 0037: Promote fresh three-node topology snapshots"
+sidebarTitle: "0037 Promote fresh three-node topology snapshots"
+description: "Accepted on 2026-09-06. Extends ADR 0036."
+---
+
 # ADR 0037: Promote fresh three-node topology snapshots
 
 In the context of replacing the legacy application samples in Orbit's shared development topology, facing a snapshot that carries unsupported state and a cold scenario that deletes its result, we decided for retaining and promoting an explicitly requested fresh three-node topology and against converting the old samples or rebuilding every issue topology from scratch, to give subsequent discovery and proof runs an AppInstance-only starting point, accepting the construction cost and retention of one replacement candidate through review.

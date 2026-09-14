@@ -1,3 +1,8 @@
+---
+title: "Product areas"
+description: "Feature guides grouped by the part of Orbit you want to use."
+---
+
 # Product Areas
 
 This section groups documentation by the part of Orbit you want to use. It will grow as Orbit gains more features.

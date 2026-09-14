@@ -1,3 +1,9 @@
+---
+title: "ADR 0019: Run disposable Incus scenario lanes"
+sidebarTitle: "0019 Run disposable Incus scenario lanes"
+description: "Accepted on 2026-09-03."
+---
+
 # ADR 0019: Run disposable Incus scenario lanes
 
 ## Status

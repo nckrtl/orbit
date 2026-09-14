@@ -1,3 +1,9 @@
+---
+title: "ADR 0055: Restrict Grafana access to authorized Gateway peers"
+sidebarTitle: "0055 Restrict Grafana access to authorized Gateway peers"
+description: "Accepted on 2026-09-10. Extends ADR 0003 from Metrics command authorization to Grafana access."
+---
+
 # ADR 0055: Restrict Grafana access to authorized Gateway peers
 
 In the context of private Metrics access, facing a conflict between unrestricted WireGuard connectivity and Gateway-owned Grafana publication, we decided for one authorized Gateway entry point and against direct access by every WireGuard peer, to make Gateway access govern the dashboard, accepting a Grafana exception to general private network trust.

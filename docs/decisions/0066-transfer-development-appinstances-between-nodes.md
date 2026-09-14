@@ -1,3 +1,9 @@
+---
+title: "ADR 0066: Transfer development AppInstances between Nodes"
+sidebarTitle: "0066 Transfer development AppInstances between Nodes"
+description: "Accepted on 2026-09-13. Extends ADR 0027, ADR 0038, ADR 0044, ADR 0063, and ADR 0065."
+---
+
 # ADR 0066: Transfer development AppInstances between Nodes
 
 In the context of development AppInstances that need another Node placement, facing remove-and-register workflows that lose managed identity and state, we decided for identity-preserving staged transfer between active Clusters and against source-layout preservation or live migration, to make placement moves recoverable, accepting explicit downtime and destination checkout conversion.

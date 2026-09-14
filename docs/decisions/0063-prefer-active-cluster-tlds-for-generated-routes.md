@@ -1,3 +1,9 @@
+---
+title: "ADR 0063: Prefer active Cluster TLDs for generated Routes"
+sidebarTitle: "0063 Prefer active Cluster TLDs for generated Routes"
+description: "Accepted on 2026-09-13. Supersedes ADR 0023 only where generated development Route hostnames prefer the Node TLD over the active Cluster TLD."
+---
+
 # ADR 0063: Prefer active Cluster TLDs for generated Routes
 
 In the context of generated development Route hostnames, facing Nodes whose own TLD keeps a Cluster member outside the Cluster namespace, we decided for explicit hostname, active Cluster TLD, then Node TLD precedence and against Node-first generation, to make active Cluster membership own the shared application namespace, accepting hostname reconciliation when Cluster authority changes.

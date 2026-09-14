@@ -1,3 +1,9 @@
+---
+title: "ADR 0005: Adopt a rolling Incus development topology"
+sidebarTitle: "0005 Adopt a rolling Incus development topology"
+description: "Accepted on 2026-08-29."
+---
+
 # ADR 0005: Adopt a rolling Incus development topology
 
 ## Status

@@ -1,3 +1,9 @@
+---
+title: "ADR 0035: Close out mutating proofs by refreshing the topology snapshot"
+sidebarTitle: "0035 Close out mutating proofs by refreshing the topology snapshot"
+description: "Accepted on 2026-09-06. Extends ADR 0015."
+---
+
 # ADR 0035: Close out mutating proofs by refreshing the topology snapshot
 
 In the context of merge closeout after an Incus proof whose plan declares `mutates: true`, facing a promoter that refuses the proved topology by design and a closeout contract that stops without a promotable proof, we decided for refreshing the topology snapshot from the current `main` that contains the merge and against a second candidate-convergence topology or a revert, to achieve unattended closeout that keeps the snapshot aligned with `main`, accepting that the snapshot after such a merge is converged from `main` rather than promoted from the proved topology.

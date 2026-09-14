@@ -1,3 +1,8 @@
+---
+title: "Routes"
+description: "What a Route records, how Orbit projects its private traffic path through a Node or Router, and which later changes it coordinates or refuses."
+---
+
 # Routes
 
 This page tells an operator what a Route records, how Orbit provisions its initial private traffic path, and which later changes Orbit coordinates or refuses. [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns hostname and scope selection, [ADR 0024](../decisions/0024-follow-generated-route-targets.md) owns generated target identity, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) requires one Route per active AppInstance, [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target deletion during AppInstance removal, and [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md) owns private Node trust.

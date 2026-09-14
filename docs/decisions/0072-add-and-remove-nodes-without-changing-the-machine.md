@@ -1,3 +1,9 @@
+---
+title: "ADR 0072: Add and remove Nodes without changing the machine"
+sidebarTitle: "0072 Add and remove Nodes without changing the machine"
+description: "Accepted on 2026-09-14. Extends ADR 0069 and ADR 0071."
+---
+
 # ADR 0072: Add and remove Nodes without changing the machine
 
 In the context of Node lifecycle commands, facing a removal that stops Processes, retracts observers, and restores a firewall rule on the machine, we decided for node:add as provision or converge and node:remove as a registry and VPN operation guarded by owned state and against a removal that cleans the machine, to keep the machine's state owned by explicit commands, accepting that an operator destroys Processes and Herdr sessions before removal.

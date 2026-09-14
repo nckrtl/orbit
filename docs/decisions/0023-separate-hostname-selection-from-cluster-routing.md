@@ -1,3 +1,9 @@
+---
+title: "ADR 0023: Separate hostname selection from Cluster routing"
+sidebarTitle: "0023 Separate hostname selection from Cluster routing"
+description: "Accepted on 2026-09-04. Extends ADR 0009, ADR 0011, and ADR 0016."
+---
+
 # ADR 0023: Separate hostname selection from Cluster routing
 
 In the context of standalone and clustered AppInstances, facing generated names that change merely because a Node joins a Cluster and Cluster Routes that still require workload Caddy, we decided for Route-owned hostnames with Node-first generation and routing scope derived independently from active Cluster membership, and against Cluster-first naming, AppInstance-owned hostnames, and public workload exposure, to preserve one hostname across direct private and routed paths, accepting coordinated Route reconciliation and duplicate derived Caddy projections.

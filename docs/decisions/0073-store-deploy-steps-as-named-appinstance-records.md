@@ -1,3 +1,9 @@
+---
+title: "ADR 0073: Store deploy steps as named AppInstance records"
+sidebarTitle: "0073 Store deploy steps as named AppInstance records"
+description: "Accepted on 2026-09-14. Extends ADR 0046 and ADR 0071."
+---
+
 # ADR 0073: Store deploy steps as named AppInstance records
 
 In the context of configuring production deployments, facing one replace-all document for the branch and steps and a layout conversion with no producer, we decided for deploy steps as named AppInstance-owned records with their own lifecycle, the branch as an AppInstance update, and clone as the sole producer of production AppInstances and against a replace-all document, a repeatable step flag, or keeping the conversion, to give each step the same lifecycle as every other resource, accepting one request per step when configuring a pipeline.

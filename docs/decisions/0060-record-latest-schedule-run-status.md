@@ -1,3 +1,9 @@
+---
+title: "ADR 0060: Record the latest Schedule run status"
+sidebarTitle: "0060 Record the latest Schedule run status"
+description: "Accepted on 2026-09-11. Supersedes ADR 0013 for Schedule projection generations and completion reporting."
+---
+
 # ADR 0060: Record the latest Schedule run status
 
 In the context of native Schedule execution, facing a need to show the latest outcome without tracking individual runs, we decided for one completion report that replaces the latest status and against retry, run identity, or projection generations, to keep Schedule reporting small, accepting that a failed report leaves stale metadata.

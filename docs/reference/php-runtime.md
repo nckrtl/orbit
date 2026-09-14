@@ -1,3 +1,8 @@
+---
+title: "PHP runtimes"
+description: "How Orbit selects, installs, and tunes the PHP-FPM runtime for development and production AppInstances."
+---
+
 # PHP runtimes
 
 Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a Unix socket. This page tells an operator or deployer how development and production services differ, where generated identity and local tuning live on a Node, and how to verify each runtime. [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) owns the shared package source and role defaults, while [ADR 0045](../decisions/0045-isolate-production-php-fpm-by-unix-user.md) owns production service isolation and tuning ownership.

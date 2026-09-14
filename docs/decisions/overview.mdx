@@ -1,0 +1,86 @@
+---
+title: "Architecture decisions"
+sidebarTitle: "Overview"
+description: "Every architecture decision record behind Orbit, with its status and the records it extends or amends."
+---
+
+An architecture decision record (ADR) explains why Orbit chose a significant product or technical direction: a cross-component contract, a durable architecture boundary, a security or ownership model, or a costly-to-reverse operational choice. Accepted records form an append-only history. A later direction becomes a new record that names the decision it extends, amends, or supersedes.
+
+A record is not an implementation task, an issue lifecycle rule, or an agent instruction. Reference pages state current behavior and link the record that owns each decision; the record itself holds the context, the decision, and the consequences.
+
+## Records
+
+| Record | Decision | Status |
+| --- | --- | --- |
+| [0001](/decisions/0001-tool-management) | Adopt the closed Tool Management contract | Accepted 2026-08-27 |
+| [0002](/decisions/0002-candidate-deployment-proof-boundary) | Keep proof resources task-owned and production separate | Accepted 2026-08-26 |
+| [0003](/decisions/0003-singleton-metrics-role) | Adopt the singleton Metrics role contract | Accepted 2026-08-28 |
+| [0004](/decisions/0004-verify-only-doctor-boundary) | Define the verify-only Doctor boundary | Accepted 2026-08-28 |
+| [0005](/decisions/0005-rolling-incus-development-topology) | Adopt a rolling Incus development topology | Accepted 2026-08-29 |
+| [0006](/decisions/0006-topology-led-feature-development) | Separate disposable discovery from immutable proof | Accepted 2026-08-29 |
+| [0008](/decisions/0008-typed-app-dev-node-storage-settings) | Define typed app-dev node storage settings | Accepted 2026-08-30 |
+| [0009](/decisions/0009-clustered-app-instance-routing) | Adopt clustered AppInstance routing | Accepted 2026-08-31 |
+| [0010](/decisions/0010-record-decisions-before-implementation-issues) | Record decisions before implementation issues | Accepted 2026-08-31 |
+| [0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) | Define clustered production ingress and app-prod placement | Accepted 2026-08-31 |
+| [0012](/decisions/0012-ubuntu-24-04-roleless-operator-clients) | Ubuntu 24.04 operator clients (no longer supported) | Accepted 2026-08-31 |
+| [0013](/decisions/0013-native-systemd-schedule-management) | Manage schedules with native systemd timers | Accepted 2026-08-31 |
+| [0014](/decisions/0014-maintain-verified-documentation-context) | Maintain verified documentation as implementation context | Accepted 2026-09-01 |
+| [0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence) | Retain Incus proof by recorded-input equivalence | Accepted 2026-09-02 |
+| [0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) | Reconcile App identity and source-default updates | Accepted 2026-09-02 |
+| [0017](/decisions/0017-optional-cluster-placement-and-tld-precedence) | Make Cluster placement optional | Accepted 2026-09-03 |
+| [0018](/decisions/0018-register-caller-local-development-worktrees) | Register caller-local development worktrees as AppInstances | Accepted 2026-09-03 |
+| [0019](/decisions/0019-run-disposable-incus-scenario-lanes) | Run disposable Incus scenario lanes | Accepted 2026-09-03 |
+| [0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) | Pin Sury PHP-FPM with OPcache profiles per role | Accepted 2026-09-03 |
+| [0022](/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge) | Track the issue workspace and delete it before merge | Accepted 2026-09-03 |
+| [0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) | Separate hostname selection from Cluster routing | Accepted 2026-09-04 |
+| [0024](/decisions/0024-follow-generated-route-targets) | Make generated Route identity follow its target | Accepted 2026-09-04 |
+| [0025](/decisions/0025-stabilize-the-default-appinstance-identity) | Stabilize the default AppInstance identity | Accepted 2026-09-05 |
+| [0026](/decisions/0026-identify-each-app-by-one-repository) | Identify each App by one repository | Accepted 2026-09-05 |
+| [0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) | Adopt local Git sources into AppInstance ownership | Accepted 2026-09-05 |
+| [0028](/decisions/0028-require-one-route-per-active-appinstance) | Require one Route per active AppInstance | Accepted 2026-09-05 |
+| [0029](/decisions/0029-manage-laravel-application-urls-through-orbit) | Manage Laravel application URLs through Orbit | Accepted 2026-09-05 |
+| [0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) | Complete AppInstance provisioning without application health gates | Accepted 2026-09-05 |
+| [0031](/decisions/0031-clone-initial-production-source-during-provisioning) | Clone initial production source during provisioning | Accepted 2026-09-05 |
+| [0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) | Preserve explicit AppInstance branch selection | Accepted 2026-09-05 |
+| [0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic) | Trust WireGuard members for private Node traffic | Accepted 2026-09-05 |
+| [0034](/decisions/0034-select-appinstance-php-from-composer-constraints) | Select AppInstance PHP from Composer constraints | Accepted 2026-09-05 |
+| [0035](/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot) | Close out mutating proofs by refreshing the topology snapshot | Accepted 2026-09-06 |
+| [0036](/decisions/0036-support-only-appinstances) | Support only AppInstances | Accepted 2026-09-06 |
+| [0037](/decisions/0037-promote-fresh-three-node-topology-snapshots) | Promote fresh three-node topology snapshots | Accepted 2026-09-06 |
+| [0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules) | Cascade AppInstance removal through processes and schedules | Accepted 2026-09-06 |
+| [0039](/decisions/0039-use-round-robin-for-production-route-pools) | Use round-robin for production Route pools | Accepted 2026-09-06 |
+| [0040](/decisions/0040-extend-issue-proof-with-one-app-prod-node) | Extend issue proof with one app-prod Node | Accepted 2026-09-06 |
+| [0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) | Delete an empty Route during AppInstance removal | Accepted 2026-09-07 |
+| [0042](/decisions/0042-provision-tool-managers-on-demand) | Provision Tool Managers on demand | Accepted 2026-09-08 |
+| [0043](/decisions/0043-manage-homebrew-core-formulae) | Manage Homebrew Core formulae | Accepted 2026-09-08 |
+| [0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) | Own AppInstance environment configuration in Orbit | Accepted 2026-09-09 |
+| [0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) | Isolate production PHP-FPM by Unix user | Accepted 2026-09-10 |
+| [0046](/decisions/0046-own-production-release-deployment-in-orbit) | Own production release deployment in Orbit | Accepted 2026-09-10 |
+| [0047](/decisions/0047-create-production-appinstances-from-candidates) | Create production AppInstances from candidates | Accepted 2026-09-10 |
+| [0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances) | Copy App process and schedule definitions into AppInstances | Accepted 2026-09-10 |
+| [0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) | Keep delivery artifacts off the merge head | Accepted 2026-09-10 |
+| [0050](/decisions/0050-release-successful-proof-resources-before-landing) | Release successful proof resources before landing | Accepted 2026-09-10 |
+| [0051](/decisions/0051-select-discovery-only-feature-delivery) | Select discovery-only feature delivery | Accepted 2026-09-10 |
+| [0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) | Seed worktrees from successful main test baselines | Accepted 2026-09-10 |
+| [0053](/decisions/0053-use-local-review-checks-for-feature-landing) | Use local review checks for feature landing | Accepted 2026-09-10 |
+| [0054](/decisions/0054-maintain-main-caches-asynchronously) | Maintain main caches asynchronously | Accepted 2026-09-10 |
+| [0055](/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers) | Restrict Grafana access to authorized Gateway peers | Accepted 2026-09-10 |
+| [0056](/decisions/0056-retain-proof-topologies-for-interactive-review) | Retain proof topologies for interactive review | Accepted 2026-09-10 |
+| [0057](/decisions/0057-limit-metrics-exporters-to-managed-nodes) | Limit Metrics exporters to managed Nodes | Accepted 2026-09-10 |
+| [0058](/decisions/0058-separate-incus-requirements-from-delivery-flow) | Separate Incus requirements from delivery flow | Accepted 2026-09-10 |
+| [0059](/decisions/0059-make-the-builder-own-the-candidate-quality-gate) | Make the Builder own the candidate quality gate | Accepted 2026-09-10 |
+| [0060](/decisions/0060-record-latest-schedule-run-status) | Record the latest Schedule run status | Accepted 2026-09-11 |
+| [0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) | Use VPN DNS by default on managed peers | Accepted 2026-09-12 |
+| [0062](/decisions/0062-select-cluster-router-dns-addresses-from-lan-intent) | Select Cluster Router DNS addresses from LAN intent | Accepted 2026-09-12 |
+| [0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes) | Prefer active Cluster TLDs for generated Routes | Accepted 2026-09-13 |
+| [0064](/decisions/0064-name-application-endpoints-as-domains) | Name application endpoints as domains | Accepted 2026-09-13 |
+| [0065](/decisions/0065-replace-routes-when-domains-change) | Replace Routes when domains change | Accepted 2026-09-13 |
+| [0066](/decisions/0066-transfer-development-appinstances-between-nodes) | Transfer development AppInstances between Nodes | Accepted 2026-09-13 |
+| [0067](/decisions/0067-serve-development-servers-on-the-route-origin) | Serve development servers on the Route origin | Accepted 2026-09-13 |
+| [0068](/decisions/0068-accept-only-apps-path-node-storage-setting) | Accept only apps.path as the node storage setting path | Accepted 2026-09-13 |
+| [0069](/decisions/0069-allow-node-process-targets) | Allow Process targets of AppInstance or managed Node | Accepted 2026-09-13 |
+| [0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) | Keep the database role as a Docker baseline | Accepted 2026-09-14 |
+| [0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) | Use one verb vocabulary across the CLI, route names, and SDK | Accepted 2026-09-14 |
+| [0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine) | Add and remove Nodes without changing the machine | Accepted 2026-09-14 |
+| [0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) | Store deploy steps as named AppInstance records | Accepted 2026-09-14 |
+| [0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes) | Hibernate idle app-dev AppInstance Processes | Accepted 2026-09-14 |

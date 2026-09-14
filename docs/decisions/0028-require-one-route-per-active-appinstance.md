@@ -1,3 +1,9 @@
+---
+title: "ADR 0028: Require one Route per active AppInstance"
+sidebarTitle: "0028 Require one Route per active AppInstance"
+description: "Accepted on 2026-09-05. Extends ADR 0023."
+---
+
 # ADR 0028: Require one Route per active AppInstance
 
 In the context of AppInstances that can be targeted by several Routes or remain active without a Route, facing applications that need one canonical URL, we decided for exactly one Route per active AppInstance and against multiple hostnames or unrouted active instances, to keep application identity and routing consistent, accepting coordinated activation, replacement, and removal.

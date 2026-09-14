@@ -1,3 +1,8 @@
+---
+title: "Proof plans"
+description: "The plan file, fixtures, phases, and captured result that prove one issue on one exact commit."
+---
+
 # Proof plans
 
 This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the separate candidate-bound artifact workspace, and the commands that run a plan are on the [Incus topology registry](incus-topologies.md).

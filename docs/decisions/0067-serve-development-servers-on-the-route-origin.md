@@ -1,3 +1,9 @@
+---
+title: "ADR 0067: Serve development servers on the Route origin"
+sidebarTitle: "0067 Serve development servers on the Route origin"
+description: "Accepted on 2026-09-13. Extends ADR 0009, ADR 0023, ADR 0028, and ADR 0033."
+---
+
 # ADR 0067: Serve development servers on the Route origin
 
 In the context of Cluster-routed development AppInstances that run a frontend toolchain on the workload Node, facing browser requests that follow Cluster DNS to the Router on a toolchain port, we decided for a reserved path on the existing Route hostname over HTTPS 443 and against a shared Cluster port, a second hostname, or direct Node access, to keep development assets and HMR inside Cluster routing and Orbit CA trust, accepting that applications must publish asset and HMR URLs on that path.

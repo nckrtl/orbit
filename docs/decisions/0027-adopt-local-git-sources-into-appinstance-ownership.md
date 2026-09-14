@@ -1,3 +1,9 @@
+---
+title: "ADR 0027: Adopt local Git sources into AppInstance ownership"
+sidebarTitle: "0027 Adopt local Git sources into AppInstance ownership"
+description: "Accepted on 2026-09-05. Extends ADR 0008, ADR 0009, ADR 0016, ADR 0025, and ADR 0026."
+---
+
 # ADR 0027: Adopt local Git sources into AppInstance ownership
 
 In the context of operators who already have usable Git checkouts and worktrees on app-dev Nodes, facing duplicate clones and a separate externally owned registration lifecycle, we decided for explicit adoption into the normal AppInstance lifecycle and against observation-only registration or a separate unregister command, to make creation, registration, and removal consistent, accepting relocation, Git repair, and cascade-removal complexity.

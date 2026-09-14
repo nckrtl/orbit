@@ -1,3 +1,8 @@
+---
+title: "Schedules"
+description: "How the Gateway stores a Schedule, projects it to a native systemd timer, reports its latest run, and removes its owned state."
+---
+
 # Schedules
 
 This page tells an operator how the Gateway stores a Schedule, projects it to native systemd execution, reports its latest result, and removes its owned state. [ADR 0013](../decisions/0013-native-systemd-schedule-management.md) owns native timer execution, [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns AppInstance cleanup, [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns stopped AppInstance installation and explicit activation, and [ADR 0060](../decisions/0060-record-latest-schedule-run-status.md) owns latest-run reporting.

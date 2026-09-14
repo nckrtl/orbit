@@ -1,0 +1,141 @@
+---
+title: "metrics"
+description: "Enable the Prometheus and Grafana role on one Node, select which Nodes run an exporter, read the Grafana credential, and disable or purge the role."
+---
+
+The `metrics` role runs Prometheus and Grafana as two Docker containers on one Node and the packaged `prometheus-node-exporter` unit on every selected Node. The `metrics` family enables the role, reports its status, manages exporter selection, shows the Grafana credential, and disables the role with or without its data.
+
+The [Metrics reference](/reference/metrics) owns placement, exporter eligibility, Grafana access, credential ownership, and the API surface.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`metrics:enable`](#orbit-metricsenable) | Enable Metrics on one Node. |
+| [`metrics:status`](#orbit-metricsstatus) | Show the assignment, container health, and exporter state. |
+| [`metrics:credentials`](#orbit-metricscredentials) | Show or reset the verified Grafana administrator credential. |
+| [`metrics:exporter:enable`](#orbit-metricsexporterenable) | Select one Node as an exporter target. |
+| [`metrics:exporter:disable`](#orbit-metricsexporterdisable) | Exclude one Node from exporter selection. |
+| [`metrics:disable`](#orbit-metricsdisable) | Disable Metrics, optionally purging its data. |
+
+Every command accepts `--json`, and a `node` argument accepts a numeric Node ID or a registered Node name. Every Metrics command requires exactly one active Gateway, and the Gateway authorizes the caller against that Gateway Node: the Gateway Node passes, and any other caller needs a directed access grant to the Gateway Node or receives `node_access.required`.
+
+## orbit metrics:enable
+
+Enable the Metrics role on one active Node.
+
+```bash
+orbit metrics:enable [node] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | in non-interactive calls | Node ID or name. An interactive terminal lists the eligible active Nodes and prompts when it is omitted; a `--json` or non-interactive call fails with `metrics.node_required`. |
+
+```bash
+orbit metrics:enable beast
+```
+
+The Gateway accepts the role on a Node that already carries another role and answers `node.role_conflict` to a second enable while an assignment exists on any Node. Retry a failed convergence with `orbit node:role:add <node> metrics --converge`; there is no separate Metrics convergence command.
+
+After enabling, Prometheus binds `127.0.0.1:9090` on the Metrics Node, Grafana binds the Node's WireGuard address on port 3000, and two role-owned UFW rules admit only the Gateway's WireGuard address to Grafana.
+
+## orbit metrics:status
+
+Show whether Metrics is enabled, the Grafana URL, the assignment with its Node and lifecycle status, any failed step and error code, and one row per exporter with its desired and actual state, selection reason, and degraded reason.
+
+```bash
+orbit metrics:status [--json]
+```
+
+## orbit metrics:credentials
+
+Show the verified Grafana administrator credential, or reset the password.
+
+```bash
+orbit metrics:credentials [--reset] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--reset` | Set a new password through Grafana's own API and return it after authenticated verification. |
+
+The username is `admin`. Human output prints the URL, username, password, and request ID; the response carries `Cache-Control: no-store`. The Gateway gives each Metrics Node one credential owner, so a concurrent read or reset waits within the command deadline and then either reads the owner's result or gets `metrics.credentials_busy` without changing credential state.
+
+<Note>
+Open Grafana at `https://metrics.orbit` from the active Gateway Node or from an active WireGuard peer that holds a directed access grant to the Gateway Node. The Gateway's Caddy identifies the caller from the connection address, refuses an alternate host or direct Gateway address, and proxies admitted traffic to Grafana over WireGuard. Grafana then asks for its own login with this credential.
+</Note>
+
+A reset that fails before or after apply keeps the encrypted pending password; the next reset authenticates that pending password first and promotes it without applying it again when Grafana already accepts it.
+
+## orbit metrics:exporter:enable
+
+Store an explicit exporter preference for one Node.
+
+```bash
+orbit metrics:exporter:enable <node> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or name. |
+
+The Gateway selects exporters only on active Nodes with a managed WireGuard address and Gateway-owned SSH management. Without a stored preference, a Node with an active or provisioning role is selected and a roleless Node is excluded; the Metrics Node is always selected.
+
+| Preference | Node state | Result |
+| --- | --- | --- |
+| absent | carries an active or provisioning role | selected |
+| absent | carries no role | excluded |
+| enabled | eligible Node with or without a role | selected |
+| disabled | eligible Node except the Metrics Node | excluded |
+| any value | ineligible record | excluded |
+
+The command answers `metrics.exporter_node_inactive` for a Node that is not active and `metrics.exporter_node_ineligible` for a Node outside Gateway-owned SSH management, before it saves the preference or starts remote work. A selected Node runs the exporter bound to its WireGuard address on port 9100, admitted only from the Metrics Node.
+
+## orbit metrics:exporter:disable
+
+Exclude one Node from exporter selection.
+
+```bash
+orbit metrics:exporter:disable <node> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or name. |
+
+The command answers `metrics.exporter_node_inactive` for a Node that is not active and `node.role_conflict` for the Metrics Node itself. A change in the selected exporters stops and replaces the Prometheus container; Grafana keeps running.
+
+## orbit metrics:disable
+
+Disable the Metrics role. Data stays unless you purge it.
+
+```bash
+orbit metrics:disable [--force] [--purge-data] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Skip the confirmation prompt. Required for a non-interactive or `--json` call, and required with `--purge-data`. |
+| `--purge-data` | Also delete the Prometheus and Grafana volumes and the stored Grafana passwords. |
+
+```bash
+orbit metrics:disable
+orbit metrics:disable --force --purge-data
+```
+
+An interactive call shows a preview and asks for confirmation. A non-interactive call without `--force` fails with `metrics.force_required`, and so does `--purge-data` without `--force`.
+
+After a disable, the Metrics Node runs neither container. The Gateway removes `/etc/orbit/metrics`, both Grafana firewall rules, every exporter drop-in and firewall rule on eligible Nodes, and the `metrics.orbit` Route, certificate, and DNS record. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored passwords, Docker, the installed packages, and every exporter preference stay, and a later `metrics:enable` reuses them.
+
+<Warning>
+`--purge-data` also deletes both volumes and the active and pending password settings, and nothing else. When a volume of either name lacks the Orbit ownership labels, the Gateway deletes neither volume nor password, leaves the assignment failed at `remove:baseline`, and answers `node_role.remove_failed`.
+</Warning>
+
+The result reports `publication` as `cleaned` when the Gateway removed the `metrics.orbit` Route, certificate, and DNS record, or `uncleaned` when no single active Gateway existed at that step and those three items remain on the Gateway host for an operator to remove.
+
+## Related
+
+- [`node`](/cli/node) retries a failed convergence with `node:role:add <node> metrics --converge` and removes the role with `node:role:remove`.
+- [`doctor`](/cli/doctor) expects the exporter unit and firewall rule only on eligible selected Nodes.
+- [`firewall`](/cli/firewall) adds operator rules beside the role-owned `orbit:` rules on the same Node.

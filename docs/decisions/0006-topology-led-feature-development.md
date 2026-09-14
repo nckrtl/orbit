@@ -1,3 +1,9 @@
+---
+title: "ADR 0006: Separate disposable discovery from immutable proof"
+sidebarTitle: "0006 Separate disposable discovery from immutable proof"
+description: "Accepted on 2026-08-29. This decision builds on ADR 0005 and supersedes the shared-live development-proof venue from ADR 0002."
+---
+
 # ADR 0006: Separate disposable discovery from immutable proof
 
 ## Status

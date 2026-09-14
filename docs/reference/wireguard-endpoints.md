@@ -1,3 +1,8 @@
+---
+title: "WireGuard endpoints"
+description: "Accepted endpoint forms, generated defaults, and recovery for an invalid stored WireGuard endpoint."
+---
+
 # WireGuard endpoints
 
 This page tells an operator which WireGuard endpoint forms the Gateway accepts during bootstrap and Node provisioning, how it builds an omitted endpoint, and how to recover from an invalid stored value.

@@ -1,3 +1,9 @@
+---
+title: "ADR 0056: Retain proof topologies for interactive review"
+sidebarTitle: "0056 Retain proof topologies for interactive review"
+description: "Accepted on 2026-09-10."
+---
+
 # ADR 0056: Retain proof topologies for interactive review
 
 In the context of issues that select proof delivery, facing reviewers who need to inspect and exercise the proved system, we decided for retained machines with interactive review and immutable captured evidence and against releasing successful machines before review or forbidding reviewer commands, to support direct acceptance assessment, accepting longer resource retention and live state that diverges from the recorded proof run.

@@ -1,3 +1,9 @@
+---
+title: "ADR 0015: Retain Incus proof by recorded-input equivalence"
+sidebarTitle: "0015 Retain Incus proof by recorded-input equivalence"
+description: "Accepted on 2026-09-02."
+---
+
 # ADR 0015: Retain Incus proof by recorded-input equivalence
 
 ## Status

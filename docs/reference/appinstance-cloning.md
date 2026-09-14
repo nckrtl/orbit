@@ -1,3 +1,8 @@
+---
+title: "AppInstance cloning"
+description: "How the Gateway creates a prepared production AppInstance from a development or production candidate, with an optional SQLite seed."
+---
+
 # AppInstance cloning
 
 This page tells an operating agent how the Gateway creates a prepared production AppInstance from an eligible development or production candidate. [ADR 0047](../decisions/0047-create-production-appinstances-from-candidates.md) owns candidate cloning, [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns private Route scope and Router projection, [ADR 0044](../decisions/0044-own-appinstance-environment-configuration-in-orbit.md) owns stored environment configuration, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns runtime-definition copies.

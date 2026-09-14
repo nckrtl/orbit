@@ -1,3 +1,9 @@
+---
+title: "ADR 0065: Replace Routes when domains change"
+sidebarTitle: "0065 Replace Routes when domains change"
+description: "Accepted on 2026-09-13. Extends ADR 0064."
+---
+
 # ADR 0065: Replace Routes when domains change
 
 In the context of Route domain changes that must coordinate database and machine state, facing duplicated transition values on one mutable Route, we decided for immutable domains and replacement Route records and against in-place domain mutation or one generic inactive state, to make authority and recovery explicit, accepting new Route identities and temporary non-authoritative associations.

@@ -1,0 +1,108 @@
+---
+title: "workspace"
+description: "Create, inspect, and remove Git worktrees owned by legacy Instances."
+---
+
+A Workspace is a Git worktree owned by a legacy Instance, the earlier runnable application record that Orbit retains for existing Workspace and Doctor behavior. The `workspace` family manages those worktrees and their PHP version.
+
+AppInstances do not use Workspaces. New development placements are AppInstances, and `instance:create` and `instance:register` neither read nor change Workspace source. Use the [`instance`](/cli/instance) family for AppInstance work and this family only for Instances that still own Workspaces.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`workspace:new`](#orbit-workspacenew) | Create a Workspace on a legacy Instance. |
+| [`workspace:list`](#orbit-workspacelist) | List Workspaces. |
+| [`workspace:show`](#orbit-workspaceshow) | Show one Workspace. |
+| [`workspace:php`](#orbit-workspacephp) | Change a Workspace PHP version. |
+| [`workspace:remove`](#orbit-workspaceremove) | Remove a Workspace. |
+
+Every command accepts `--json`.
+
+## orbit workspace:new
+
+Create one Workspace on a legacy Instance.
+
+```bash
+orbit workspace:new <instance> <name> [--branch=BRANCH] [--path=PATH] [--php=VERSION] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric legacy Instance ID. This is not an AppInstance ID. |
+| `name` | yes | Workspace name. |
+
+| Option | Meaning |
+| --- | --- |
+| `--branch=BRANCH` | Git branch for the worktree. |
+| `--path=PATH` | Absolute checkout path on the target Node. The CLI refuses a relative path, a path with `.` or `..` segments, or characters outside letters, digits, `.`, `_`, and `-` with `workspace.checkout_path_invalid`. |
+| `--php=VERSION` | PHP version override in `major.minor` form, for example `8.5`. Another form fails with `php.version_invalid`. |
+
+```bash
+orbit workspace:new 4 feature-search --branch=feature/search --php=8.5
+```
+
+Human output names the Workspace and its status, then prints the request ID.
+
+## orbit workspace:list
+
+List every Workspace with its Instance, Node, name, branch, status, effective PHP version, and hostname.
+
+```bash
+orbit workspace:list [--json]
+```
+
+## orbit workspace:show
+
+Show one Workspace, including its checkout path and, when provisioning stopped, the failed step and error code.
+
+```bash
+orbit workspace:show <workspace> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `workspace` | yes | Numeric Workspace ID. |
+
+## orbit workspace:php
+
+Change the PHP version of one Workspace.
+
+```bash
+orbit workspace:php <workspace> <version> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `workspace` | yes | Numeric Workspace ID. |
+| `version` | yes | PHP version in `major.minor` form. Another form fails with `php.version_invalid`. |
+
+```bash
+orbit workspace:php 9 8.5
+```
+
+## orbit workspace:remove
+
+Remove one Workspace.
+
+```bash
+orbit workspace:remove <workspace> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `workspace` | yes | Numeric Workspace ID. |
+
+<Warning>
+The command sends the removal request without a confirmation prompt. Check `workspace:show` first when you are unsure which Workspace the ID names.
+</Warning>
+
+## Doctor
+
+`orbit doctor --family=workspace` compares each Workspace with the Node and reports `workspace.lifecycle_not_active`, `workspace.checkout_missing`, `workspace.worktree_missing`, `workspace.branch_mismatch`, `workspace.document_root_missing`, `workspace.caddy_projection_mismatch`, `workspace.certificate_projection_mismatch`, `workspace.dns_projection_mismatch`, `workspace.php_fpm_projection_mismatch`, `workspace.node_unreachable`, or `workspace.inspection_failed` without changing anything.
+
+## Related
+
+- [`instance`](/cli/instance) manages AppInstances, the application model for new work.
+- [Concepts](/concepts) defines Legacy Instance and Workspace.
+- [`doctor`](/cli/doctor) lists every family and exit status.

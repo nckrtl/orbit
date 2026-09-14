@@ -1,3 +1,8 @@
+---
+title: "AppInstance removal"
+description: "How Orbit removes an AppInstance, what --force changes for development source, and how an interrupted removal resumes."
+---
+
 # AppInstance removal
 
 This page tells an operator how Orbit removes one AppInstance, what `--force` changes for development source, how owned Processes and Schedules are removed, and how an interrupted removal resumes. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns development source-removal safety, [ADR 0031](../decisions/0031-clone-initial-production-source-during-provisioning.md) owns retained production content, [ADR 0046](../decisions/0046-own-production-release-deployment-in-orbit.md) owns the production serving layout, [ADR 0045](../decisions/0045-isolate-production-php-fpm-by-unix-user.md) owns dedicated production runtime cleanup, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) owns the coordinated Route boundary, [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target Route deletion, and [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns child cleanup.

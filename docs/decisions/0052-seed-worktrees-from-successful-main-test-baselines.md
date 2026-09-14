@@ -1,3 +1,9 @@
+---
+title: "ADR 0052: Seed worktrees from successful main test baselines"
+sidebarTitle: "0052 Seed worktrees from successful main test baselines"
+description: "Accepted on 2026-09-10. Extends ADR 0051."
+---
+
 # ADR 0052: Seed worktrees from successful main test baselines
 
 In the context of feature worktrees with separate Composer projects, facing repeated test dependency recording in each new worktree, we decided for published main baselines and private worktree copies and against sharing writable caches or promoting feature caches, to reduce local test time, accepting background maintenance and occasional recording runs.

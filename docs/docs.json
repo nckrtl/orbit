@@ -1,42 +1,252 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "luma",
   "name": "Orbit",
-  "description": "AI-first tooling for local app development, production hosting, and fleet maintenance.",
+  "description": "Orbit turns the machines you already own into an always-on development network. Your agent provisions, routes, and repairs it.",
   "colors": {
-    "primary": "#0F766E",
-    "light": "#14B8A6",
-    "dark": "#0F766E"
+    "primary": "#20231f",
+    "light": "#f4f2ec",
+    "dark": "#20231f"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/logo/favicon.svg",
+  "appearance": {
+    "default": "system",
+    "strict": false
+  },
+  "background": {
+    "color": {
+      "light": "#f6f5f1",
+      "dark": "#050506"
+    }
+  },
+  "fonts": {
+    "family": "Space Grotesk",
+    "heading": {
+      "family": "Space Grotesk",
+      "weight": 500
+    },
+    "body": {
+      "family": "Space Grotesk",
+      "weight": 400
+    }
+  },
+  "styling": {
+    "codeblocks": "dark",
+    "eyebrows": "section"
   },
   "icons": {
     "library": "lucide"
   },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "claude",
+      "chatgpt"
+    ]
+  },
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Start here",
-        "pages": [
-          "index",
-          "mission",
-          "architecture",
-          "concepts",
-          "tech-stack"
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Start here",
+            "pages": [
+              "index",
+              "quickstart",
+              "mission",
+              "architecture",
+              "concepts",
+              "tech-stack"
+            ]
+          },
+          {
+            "group": "Applications",
+            "pages": [
+              "domains/applications",
+              "reference/apps",
+              "reference/routes",
+              "reference/environment-variables",
+              "reference/database-connections",
+              "reference/app-processes-and-schedules",
+              "reference/schedules",
+              "reference/app-dev-runtime-hibernation",
+              "reference/php-runtime",
+              "reference/appinstance-cloning",
+              "reference/deployments",
+              "reference/appinstance-removal"
+            ]
+          },
+          {
+            "group": "Fleet",
+            "pages": [
+              "reference/gateway-trust",
+              "reference/node-provisioning",
+              "reference/node-settings",
+              "reference/node-retarget",
+              "reference/wireguard-endpoints",
+              "reference/private-dns",
+              "reference/tools",
+              "reference/database-role",
+              "reference/metrics",
+              "reference/herdr-sessions"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "reference/implementation-loop",
+              "reference/incus-topologies",
+              "reference/proof-plans",
+              "reference/topology-snapshot"
+            ]
+          },
+          {
+            "group": "Solutions",
+            "pages": [
+              "solutions/doctor-incus-proof",
+              "solutions/vpn-dnsmasq-uplink-resolvers",
+              "solutions/remote-file-writes-on-uutils-coreutils"
+            ]
+          }
         ]
       },
       {
-        "group": "Applications",
-        "pages": [
-          "domains/applications",
-          "reference/apps",
-          "reference/routes"
+        "tab": "CLI",
+        "groups": [
+          {
+            "group": "Using the CLI",
+            "pages": [
+              "cli/overview"
+            ]
+          },
+          {
+            "group": "Fleet",
+            "pages": [
+              "cli/gateway",
+              "cli/node",
+              "cli/cluster",
+              "cli/firewall",
+              "cli/tool",
+              "cli/metrics",
+              "cli/dns"
+            ]
+          },
+          {
+            "group": "Applications",
+            "pages": [
+              "cli/app",
+              "cli/instance",
+              "cli/route",
+              "cli/env",
+              "cli/database",
+              "cli/process",
+              "cli/schedule"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "cli/doctor",
+              "cli/activity",
+              "cli/extension",
+              "cli/herdr",
+              "cli/workspace"
+            ]
+          }
         ]
       },
       {
-        "group": "Infrastructure",
-        "pages": [
-          "reference/node-provisioning",
-          "reference/private-dns",
-          "reference/metrics"
+        "tab": "Decisions",
+        "groups": [
+          {
+            "group": "About",
+            "pages": [
+              "decisions/overview"
+            ]
+          },
+          {
+            "group": "Records",
+            "pages": [
+              "decisions/0001-tool-management",
+              "decisions/0002-candidate-deployment-proof-boundary",
+              "decisions/0003-singleton-metrics-role",
+              "decisions/0004-verify-only-doctor-boundary",
+              "decisions/0005-rolling-incus-development-topology",
+              "decisions/0006-topology-led-feature-development",
+              "decisions/0008-typed-app-dev-node-storage-settings",
+              "decisions/0009-clustered-app-instance-routing",
+              "decisions/0010-record-decisions-before-implementation-issues",
+              "decisions/0011-clustered-production-ingress-and-app-prod-placement",
+              "decisions/0012-ubuntu-24-04-roleless-operator-clients",
+              "decisions/0013-native-systemd-schedule-management",
+              "decisions/0014-maintain-verified-documentation-context",
+              "decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
+              "decisions/0016-reconcile-app-identity-and-source-default-updates",
+              "decisions/0017-optional-cluster-placement-and-tld-precedence",
+              "decisions/0018-register-caller-local-development-worktrees",
+              "decisions/0019-run-disposable-incus-scenario-lanes",
+              "decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role",
+              "decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
+              "decisions/0023-separate-hostname-selection-from-cluster-routing",
+              "decisions/0024-follow-generated-route-targets",
+              "decisions/0025-stabilize-the-default-appinstance-identity",
+              "decisions/0026-identify-each-app-by-one-repository",
+              "decisions/0027-adopt-local-git-sources-into-appinstance-ownership",
+              "decisions/0028-require-one-route-per-active-appinstance",
+              "decisions/0029-manage-laravel-application-urls-through-orbit",
+              "decisions/0030-complete-appinstance-provisioning-without-application-health-gates",
+              "decisions/0031-clone-initial-production-source-during-provisioning",
+              "decisions/0032-preserve-explicit-appinstance-branch-selection",
+              "decisions/0033-trust-wireguard-members-for-private-node-traffic",
+              "decisions/0034-select-appinstance-php-from-composer-constraints",
+              "decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
+              "decisions/0036-support-only-appinstances",
+              "decisions/0037-promote-fresh-three-node-topology-snapshots",
+              "decisions/0038-cascade-appinstance-removal-through-processes-and-schedules",
+              "decisions/0039-use-round-robin-for-production-route-pools",
+              "decisions/0040-extend-issue-proof-with-one-app-prod-node",
+              "decisions/0041-delete-an-empty-route-during-appinstance-removal",
+              "decisions/0042-provision-tool-managers-on-demand",
+              "decisions/0043-manage-homebrew-core-formulae",
+              "decisions/0044-own-appinstance-environment-configuration-in-orbit",
+              "decisions/0045-isolate-production-php-fpm-by-unix-user",
+              "decisions/0046-own-production-release-deployment-in-orbit",
+              "decisions/0047-create-production-appinstances-from-candidates",
+              "decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances",
+              "decisions/0049-keep-delivery-artifacts-off-the-merge-head",
+              "decisions/0050-release-successful-proof-resources-before-landing",
+              "decisions/0051-select-discovery-only-feature-delivery",
+              "decisions/0052-seed-worktrees-from-successful-main-test-baselines",
+              "decisions/0053-use-local-review-checks-for-feature-landing",
+              "decisions/0054-maintain-main-caches-asynchronously",
+              "decisions/0055-restrict-grafana-access-to-authorized-gateway-peers",
+              "decisions/0056-retain-proof-topologies-for-interactive-review",
+              "decisions/0057-limit-metrics-exporters-to-managed-nodes",
+              "decisions/0058-separate-incus-requirements-from-delivery-flow",
+              "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
+              "decisions/0060-record-latest-schedule-run-status",
+              "decisions/0061-use-vpn-dns-by-default-on-managed-peers",
+              "decisions/0062-select-cluster-router-dns-addresses-from-lan-intent",
+              "decisions/0063-prefer-active-cluster-tlds-for-generated-routes",
+              "decisions/0064-name-application-endpoints-as-domains",
+              "decisions/0065-replace-routes-when-domains-change",
+              "decisions/0066-transfer-development-appinstances-between-nodes",
+              "decisions/0067-serve-development-servers-on-the-route-origin",
+              "decisions/0068-accept-only-apps-path-node-storage-setting",
+              "decisions/0069-allow-node-process-targets",
+              "decisions/0070-keep-the-database-role-as-a-docker-baseline",
+              "decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
+              "decisions/0072-add-and-remove-nodes-without-changing-the-machine",
+              "decisions/0073-store-deploy-steps-as-named-appinstance-records",
+              "decisions/0074-hibernate-idle-app-dev-appinstance-processes"
+            ]
+          }
         ]
       }
     ]
@@ -44,10 +254,14 @@
   "navbar": {
     "links": [
       {
-        "label": "GitHub",
-        "href": "https://github.com/nckrtl/orbit"
+        "label": "Website",
+        "href": "https://orbit-website.test"
       }
-    ]
+    ],
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/nckrtl/orbit"
+    }
   },
   "footer": {
     "socials": {

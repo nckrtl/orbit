@@ -1,3 +1,8 @@
+---
+title: "Architecture"
+description: "How a command travels from the CLI through the Gateway to a managed Node, and how web traffic takes a separate path through Routes."
+---
+
 # Architecture
 
 Orbit is built around one Gateway. You use the CLI to ask the Gateway to make changes, and the Gateway coordinates the machines managed by Orbit. These machines are called Nodes.

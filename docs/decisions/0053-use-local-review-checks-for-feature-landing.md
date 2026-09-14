@@ -1,3 +1,9 @@
+---
+title: "ADR 0053: Use local review checks for feature landing"
+sidebarTitle: "0053 Use local review checks for feature landing"
+description: "Accepted on 2026-09-10. Extends ADR 0052."
+---
+
 # ADR 0053: Use local review checks for feature landing
 
 In the context of feature review with reusable main test baselines, facing repeated full GitHub test runs after local verification, we decided for a local quality gate that reviewers run across all projects and against mandatory GitHub checks, to reduce merge delay, accepting reliance on the review host and test impact analysis.

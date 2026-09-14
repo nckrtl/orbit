@@ -1,3 +1,9 @@
+---
+title: "ADR 0010: Record decisions before implementation issues"
+sidebarTitle: "0010 Record decisions before implementation issues"
+description: "Accepted on 2026-08-31."
+---
+
 # ADR 0010: Record decisions before implementation issues
 
 ## Status

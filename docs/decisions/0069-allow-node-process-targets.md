@@ -1,3 +1,9 @@
+---
+title: "ADR 0069: Allow Process targets of AppInstance or managed Node"
+sidebarTitle: "0069 Allow Process targets of AppInstance or managed Node"
+description: "Accepted on 2026-09-13. Extends ADR 0036."
+---
+
 # ADR 0069: Allow Process targets of AppInstance or managed Node
 
 In the context of shared Node infrastructure that has no AppInstance owner, facing AppInstance-only Process targeting, we decided for AppInstance or managed Node Process targets and against Workspace targets or synthetic AppInstances, to give those services a Node lifecycle, accepting that Process commands must select exactly one target type.

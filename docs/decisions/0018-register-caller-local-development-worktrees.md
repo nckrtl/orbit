@@ -1,3 +1,9 @@
+---
+title: "ADR 0018: Register caller-local development worktrees as AppInstances"
+sidebarTitle: "0018 Register caller-local development worktrees as AppInstances"
+description: "Accepted on 2026-09-03."
+---
+
 # ADR 0018: Register caller-local development worktrees as AppInstances
 
 ## Status

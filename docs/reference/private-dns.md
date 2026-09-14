@@ -1,3 +1,8 @@
+---
+title: "Private DNS"
+description: "How a managed Node selects its resolver, how the Gateway answers Cluster Router addresses, and how to inspect and repair one peer."
+---
+
 # Private DNS
 
 This page tells an operator how a managed Linux Node selects a Domain Name System (DNS) resolver, how the Gateway selects a Cluster Router address, how to inspect those answers, and what remains unchanged when the Gateway converges DNS. [ADR 0061](../decisions/0061-use-vpn-dns-by-default-on-managed-peers.md) owns the default resolver policy.

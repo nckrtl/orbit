@@ -1,3 +1,9 @@
+---
+title: "ADR 0031: Clone initial production source during provisioning"
+sidebarTitle: "0031 Clone initial production source during provisioning"
+description: "Accepted on 2026-09-05. Extends ADR 0030 and ADR 0032."
+---
+
 # ADR 0031: Clone initial production source during provisioning
 
 In the context of production AppInstances created before their application files exist, facing a second provisioning call to align Laravel configuration after deployment, we decided for Orbit to clone the initial production source and against completing creation with an empty placement, to complete source, URL, and Route preparation in one flow, accepting repository access during production provisioning.

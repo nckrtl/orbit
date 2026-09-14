@@ -1,3 +1,8 @@
+---
+title: "App-dev runtime hibernation"
+description: "How Orbit stops idle development AppInstance Processes and wakes them on the next HTTP request."
+---
+
 # App-dev runtime hibernation
 
 This page tells an operator how Orbit stops idle development AppInstance Processes and starts them again on the next HTTP request. [ADR 0074](../decisions/0074-hibernate-idle-app-dev-appinstance-processes.md) owns the idle-halt boundary. [App processes and schedules](app-processes-and-schedules.md) owns Process add, start, stop, and removal. [Schedules](schedules.md) owns timer execution.

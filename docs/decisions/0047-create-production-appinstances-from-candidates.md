@@ -1,3 +1,9 @@
+---
+title: "ADR 0047: Create production AppInstances from candidates"
+sidebarTitle: "0047 Create production AppInstances from candidates"
+description: "Accepted on 2026-09-10. Supersedes ADR 0031 for direct production creation and initial source selection."
+---
+
 # ADR 0047: Create production AppInstances from candidates
 
 In the context of preparing a production AppInstance from a known application placement, facing configuration and data that a repository alone cannot supply, we decided for cloning a candidate AppInstance and against direct production creation from a repository or a complete filesystem copy, to reproduce selected application state without interrupting the source, accepting a required candidate and a separate first deployment.

@@ -1,3 +1,9 @@
+---
+title: "ADR 0071: Use one verb vocabulary across the CLI, route names, and SDK"
+sidebarTitle: "0071 Use one verb vocabulary across the CLI, route names, and SDK"
+description: "Accepted on 2026-09-14. Extends ADR 0036, ADR 0048, and ADR 0069."
+---
+
 # ADR 0071: Use one verb vocabulary across the CLI, route names, and SDK
 
 In the context of a CLI whose families create resources with new, add, install, provision, and attach and remove them with remove, detach, disable, and clear, facing agents and operators that compose a command from a family name and a verb, we decided for one verb vocabulary applied to CLI commands, Gateway route names, and SDK request classes and against a single universal verb pair or per-family verbs, to make every command predictable from its family and the ownership of its resource, accepting one hard rename with no aliases.

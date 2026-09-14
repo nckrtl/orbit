@@ -1,3 +1,9 @@
+---
+title: "ADR 0026: Identify each App by one repository"
+sidebarTitle: "0026 Identify each App by one repository"
+description: "Accepted on 2026-09-05. Extends ADR 0009 and ADR 0016."
+---
+
 # ADR 0026: Identify each App by one repository
 
 In the context of App records that store transport-specific Git URLs, facing automatic App resolution from an existing checkout, we decided for one canonical repository identity per App and against exact-URL matching or duplicate repository ownership, to make source registration deterministic, accepting explicit migration failures for existing conflicts.

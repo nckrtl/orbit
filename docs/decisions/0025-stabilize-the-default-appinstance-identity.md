@@ -1,3 +1,9 @@
+---
+title: "ADR 0025: Stabilize the default AppInstance identity"
+sidebarTitle: "0025 Stabilize the default AppInstance identity"
+description: "Accepted on 2026-09-05. Extends ADR 0009, ADR 0016, and ADR 0024."
+---
+
 # ADR 0025: Stabilize the default AppInstance identity
 
 In the context of AppInstance identity derived from a mutable Git branch name, facing directory and Route churn when that branch is renamed, we decided for a stable `default` AppInstance backed by an App `default_branch` setting and against branch-named default placement, to preserve placement and routing identity across branch changes, accepting coordinated migration and source reconciliation.

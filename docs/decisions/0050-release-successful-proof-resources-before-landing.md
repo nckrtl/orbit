@@ -1,3 +1,9 @@
+---
+title: "ADR 0050: Release successful proof resources before landing"
+sidebarTitle: "0050 Release successful proof resources before landing"
+description: "Accepted on 2026-09-10. Extends ADR 0015."
+---
+
 # ADR 0050: Release successful proof resources before landing
 
 In the context of concurrent feature delivery on one Incus host, facing proof virtual machines held throughout review and merge, we decided for captured acceptance evidence and early resource release with snapshot refresh from merged main and against retaining successful virtual machines until promotion, to free capacity during landing, accepting that snapshot convergence remains a separate closeout operation.

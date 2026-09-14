@@ -1,3 +1,9 @@
+---
+title: "ADR 0036: Support only AppInstances"
+sidebarTitle: "0036 Support only AppInstances"
+description: "Accepted on 2026-09-06. Supersedes ADR 0009 for staged legacy conversion and legacy compatibility during the transition."
+---
+
 # ADR 0036: Support only AppInstances
 
 In the context of replacing legacy Instances and Workspaces with AppInstances, facing continued product and harness dependencies on the old structure, we decided for AppInstance-only support and operator-owned fleet transitions and against Orbit-provided migration tooling or legacy compatibility, to keep one supported application model, accepting incompatible upgrades for fleets that still use legacy state.

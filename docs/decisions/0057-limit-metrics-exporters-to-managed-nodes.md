@@ -1,3 +1,9 @@
+---
+title: "ADR 0057: Limit Metrics exporters to managed Nodes"
+sidebarTitle: "0057 Limit Metrics exporters to managed Nodes"
+description: "Accepted on 2026-09-10. Supersedes ADR 0003 only where explicit exporter preference selects any active Node without a management eligibility check."
+---
+
 # ADR 0057: Limit Metrics exporters to managed Nodes
 
 In the context of Metrics exporter selection, facing a rule that allows any active Node while roleless operator clients receive no Gateway service management, we decided for exporter eligibility limited to Nodes managed over SSH and against installing exporters on operator clients, to preserve the client ownership boundary, accepting that Orbit supplies no managed host metrics for those clients.

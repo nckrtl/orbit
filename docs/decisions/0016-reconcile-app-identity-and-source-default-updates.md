@@ -1,3 +1,9 @@
+---
+title: "ADR 0016: Reconcile App identity and source-default updates"
+sidebarTitle: "0016 Reconcile App identity and source-default updates"
+description: "Accepted on 2026-09-02."
+---
+
 # ADR 0016: Reconcile App identity and source-default updates
 
 ## Status

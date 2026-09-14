@@ -1,25 +1,60 @@
 ---
 title: "Orbit documentation"
-description: "Learn how Orbit connects local development, production hosting, and fleet maintenance."
+sidebarTitle: "Overview"
+description: "Orbit turns the machines you already own into an always-on development network. Your agent provisions, routes, and repairs it."
 ---
 
-Orbit is an AI-first tool for local app development, production hosting, and day-to-day fleet maintenance. The Gateway coordinates the Nodes and applications that you manage through the Orbit command-line interface (CLI).
+Orbit is an AI-first tool for local app development, production hosting, and day-to-day fleet maintenance. One Gateway keeps the record of every machine and application you add. The `orbit` command line is how you, or the coding agent you already use, ask the Gateway to change them.
 
 <CardGroup cols={2}>
-  <Card title="Understand Orbit" icon="orbit" href="/mission">
-    Learn why Orbit exists and what it manages.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Bootstrap a Gateway, add a Node, and serve an App on its own hostname.
   </Card>
-  <Card title="Explore the architecture" icon="network" href="/architecture">
+  <Card title="CLI reference" icon="terminal" href="/cli/overview">
+    Every command family, with each argument, option, and guard.
+  </Card>
+  <Card title="Concepts" icon="book-open" href="/concepts">
+    Gateway, Node, Cluster, App, AppInstance, Route, and the other terms Orbit uses.
+  </Card>
+  <Card title="Architecture" icon="network" href="/architecture">
     Follow a command from the CLI through the Gateway to a managed Node.
-  </Card>
-  <Card title="Learn the concepts" icon="book-open" href="/concepts">
-    Find definitions for Gateway, Node, App, AppInstance, Route, and other Orbit terms.
-  </Card>
-  <Card title="Manage applications" icon="boxes" href="/domains/applications">
-    See how Apps, AppInstances, source, runtime configuration, and Routes fit together.
   </Card>
 </CardGroup>
 
-<Info>
-  The repository documentation is the source for this site. The initial navigation is intentionally small while the published information architecture develops.
-</Info>
+## How it fits together
+
+```text
+Human or AI agent
+        ↓
+       CLI
+        ↓
+      HTTP
+        ↓
+     Gateway
+        ↓
+       SSH
+        ↓
+  Managed Nodes
+```
+
+The Gateway stores Orbit's data in SQLite, authorizes each action, and applies it to Nodes over SSH. Nodes reach each other over a private WireGuard network. Web traffic takes a separate path through [Routes](/reference/routes).
+
+## Built for humans and agents
+
+Humans and agents use the same commands. Human output is readable in a terminal, and `--json` returns the same result as one structured document with the Gateway request ID. The Gateway records who ran what, so you can read what happened instead of guessing.
+
+Agents get focused, visible, and testable actions rather than unrestricted access. Orbit manages only the machines and resources you explicitly add.
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Applications" icon="boxes" href="/domains/applications">
+    Create or adopt an AppInstance, configure it, and expose it.
+  </Card>
+  <Card title="Fleet references" icon="server" href="/reference/node-provisioning">
+    Node provisioning, private DNS, Tools, Metrics, and Gateway trust.
+  </Card>
+  <Card title="Decisions" icon="git-branch" href="/decisions/overview">
+    The architecture decision records behind every durable boundary.
+  </Card>
+</CardGroup>

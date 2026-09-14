@@ -1,3 +1,8 @@
+---
+title: "App processes and Schedules"
+description: "How an App declares reusable process and Schedule definitions, and how Orbit runs independent Process copies for an AppInstance or a Node."
+---
+
 # App process and Schedule definitions and copies
 
 This page tells an operator how an App declares reusable process and Schedule definitions, how Orbit manages independent Process and Schedule copies for one AppInstance, and how a Process can target a managed Node for shared infrastructure. [ADR 0036](../decisions/0036-support-only-appinstances.md) owns the AppInstance-only application model, [ADR 0069](../decisions/0069-allow-node-process-targets.md) owns the AppInstance or Node Process-target boundary, [ADR 0038](../decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md) owns AppInstance child cleanup, and [ADR 0048](../decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances.md) owns App definitions and independent AppInstance copies.

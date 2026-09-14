@@ -1,3 +1,9 @@
+---
+title: "ADR 0039: Use round-robin for production Route pools"
+sidebarTitle: "0039 Use round-robin for production Route pools"
+description: "Accepted on 2026-09-06. Extends ADR 0028 and ADR 0030."
+---
+
 # ADR 0039: Use round-robin for production Route pools
 
 In the context of one production Route serving AppInstances on several Nodes, facing an unspecified backend-selection policy, we decided for equal-priority round-robin with temporary transport-failure exclusion and against backend affinity or automatic request replay, to distribute traffic without changing the public endpoint, accepting that requests can fail and application session state must be available across targets.

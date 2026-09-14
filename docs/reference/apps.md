@@ -1,3 +1,8 @@
+---
+title: "Apps"
+description: "How an App records one repository, its default branch, and the web root that AppInstances inherit."
+---
+
 # Apps
 
 An App is Orbit's stable record for one application. It owns the canonical [repository identity](../concepts.md#repository-identity), one supported repository access URL, a `default_branch`, and a relative web root that later AppInstances inherit as source defaults. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines the stable default-source identity, and [ADR 0026](../decisions/0026-identify-each-app-by-one-repository.md) defines repository ownership.

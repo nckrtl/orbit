@@ -1,3 +1,8 @@
+---
+title: "Node provisioning"
+description: "Which Linux user the Gateway connects as when node:add bootstraps a Node, how it records the machine architecture, and how node:remove hands the machine back."
+---
+
 # Node provisioning
 
 This page tells an operator which Linux user the Gateway connects as when `orbit node:add <name> [host]` bootstraps a Node, how the Gateway records the machine architecture of that Node, and how `orbit node:remove <node>` returns a machine to a state that a later provisioning can reach. It explains how each choice differs between a new Node and an existing Node, and which identity and architecture inputs the command accepts. The same request serves a first provisioning and a later change to a Node's TLD, roles, or settings.

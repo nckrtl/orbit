@@ -1,0 +1,85 @@
+---
+title: "app"
+description: "Create, inspect, and remove App records. An App owns one repository and the source defaults that AppInstances inherit."
+---
+
+An App is Orbit's stable record for one application. It owns one repository identity, one access URL, a default branch, and a relative web root. AppInstances, Routes, and process and Schedule definitions hang off the App.
+
+The [Apps reference](/reference/apps) owns repository identity, default-branch resolution, and idempotent creation. The [Applications guide](/domains/applications) shows how an App becomes a running AppInstance.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`app:create`](#orbit-appcreate) | Create an App from a slug and a Git repository URL. |
+| [`app:list`](#orbit-applist) | List Apps. |
+| [`app:show`](#orbit-appshow) | Show one App with its stored repository, default branch, and root. |
+| [`app:destroy`](#orbit-appdestroy) | Remove an App. |
+
+Every command accepts `--json`.
+
+## orbit app:create
+
+Create an App. The Gateway resolves the remote default branch once when `--default-branch` is omitted and stores the result.
+
+```bash
+orbit app:create <slug> <repository> [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Unique App slug. It names the checkout directory under the Node apps root. |
+| `repository` | yes | HTTPS or SSH Git repository URL. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--name=NAME` | the slug | Display name. |
+| `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
+| `--root=PATH` | `public` | Relative web root that AppInstances inherit. |
+
+```bash
+orbit app:create acme https://github.com/acme/site.git
+orbit app:create acme git@github.com:acme/site.git --default-branch=stable --root=web/public
+```
+
+Creation is idempotent. Repeating the command with the same values returns the existing App. A retry that changes any value fails with `app.identity_conflict`, and a second App for the same repository fails with `app.repository_identity_conflict`. Orbit exposes no App update command.
+
+A repository access failure or an unavailable remote default returns `app.default_branch_unavailable` without repository diagnostics or credentials.
+
+## orbit app:list
+
+List every App with its slug, repository, default branch, and root.
+
+```bash
+orbit app:list [--json]
+```
+
+## orbit app:show
+
+Show one App. Null `default_branch` or root values mean the source defaults are incomplete, and new AppInstance creation fails with `app.source_defaults_incomplete` until they exist.
+
+```bash
+orbit app:show <app> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `app` | yes | Numeric App ID. |
+
+## orbit app:destroy
+
+Remove an App. The Gateway refuses the request while the App still owns a Route, so remove its AppInstances first. Removing an App also deletes its process and Schedule definitions.
+
+```bash
+orbit app:destroy <app> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `app` | yes | Numeric App ID. |
+
+## Related
+
+- [`instance`](/cli/instance) creates a checkout or production release of an App on a Node.
+- [`process`](/cli/process) and [`schedule`](/cli/schedule) record App-owned definitions with `--app`.
+- [`route`](/cli/route) creates explicit hostnames owned by an App.
