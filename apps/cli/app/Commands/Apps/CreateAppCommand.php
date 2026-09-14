@@ -13,7 +13,7 @@ use Orbit\Sdk\Responses\Apps\AppResponse;
 final class CreateAppCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:new
+    protected $signature = 'app:create
         {slug : Unique app slug}
         {repository : Git repository URL}
         {--name= : Optional display name}

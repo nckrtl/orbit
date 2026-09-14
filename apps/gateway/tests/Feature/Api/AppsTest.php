@@ -71,7 +71,7 @@ describe('app creation', function (): void {
         expect(OrbitApp::query()->count())
             ->toBe(1)
             ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
-            ->toBe('app:new');
+            ->toBe('app:create');
 
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
@@ -385,12 +385,17 @@ describe('app lifecycle', function (): void {
             ->assertOk()
             ->assertJsonPath('data.slug', 'acme');
 
+        $requestId = (string) Str::uuid();
         $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
             ->deleteJson("/api/v1/apps/{$app->id}")
             ->assertOk()
             ->assertJsonPath('data.id', $app->id);
 
-        expect(OrbitApp::query()->count())->toBe(0);
+        expect(OrbitApp::query()->count())
+            ->toBe(0)
+            ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
+            ->toBe('app:destroy');
     });
 
     it('does not remove an app that still has instances', function (): void {

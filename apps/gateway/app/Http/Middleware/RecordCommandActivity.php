@@ -463,7 +463,7 @@ final readonly class RecordCommandActivity
     {
         $command = $request->route()?->getName();
 
-        if ($command === 'doctor:run') {
+        if ($command === 'doctor') {
             return $this->doctorInput($request);
         }
 

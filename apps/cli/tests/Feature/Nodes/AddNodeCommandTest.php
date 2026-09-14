@@ -7,7 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
+use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -79,7 +79,7 @@ it('sends node provisioning to the active gateway', function (): void {
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--role' => ['app-dev'],
@@ -100,7 +100,7 @@ it('sends node provisioning to the active gateway', function (): void {
     $request = $mockClient->getLastRequest();
 
     expect($request)
-        ->toBeInstanceOf(ProvisionNodeRequest::class)
+        ->toBeInstanceOf(AddNodeRequest::class)
         ->and($request?->body()->all())
         ->toBe([
             'name' => 'app-dev',
@@ -120,17 +120,23 @@ it('sends node provisioning to the active gateway', function (): void {
 });
 
 it('describes the architecture option as optional with the observed machine value as its default', function (): void {
-    $command = app(Kernel::class)->all()['node:provision'] ?? null;
+    $command = app(Kernel::class)->all()['node:add'] ?? null;
     $option = $command?->getDefinition()->getOption('architecture');
 
     expect($command)
         ->toBeInstanceOf(SymfonyCommand::class)
+        ->and($command?->getDescription())
+        ->toBe('Add a node to the fleet: provision a new machine or converge an existing one.')
         ->and($option?->getDefault())
         ->toBeNull()
         ->and($option?->isValueRequired())
         ->toBeFalse()
         ->and($option?->getDescription())
         ->toBe('Node machine architecture; defaults to the architecture observed on the machine and must match it when given');
+});
+
+it('does not keep node:provision as a command or alias', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKey('node:provision');
 });
 
 it('omits the bootstrap user when --user is not given', function (): void {
@@ -154,7 +160,7 @@ it('omits the bootstrap user when --user is not given', function (): void {
         ], 201),
     ]);
 
-    $this->artisan('node:provision', [
+    $this->artisan('node:add', [
         'name' => 'app-prod',
         '--tld' => 'prod',
     ])->assertExitCode(0);
@@ -190,7 +196,7 @@ it('passes bootstrap and managed users to the SDK', function (): void {
         ], 201),
     ]);
 
-    $this->artisan('node:provision', [
+    $this->artisan('node:add', [
         'name' => 'app-dev',
         '--user' => 'deployer',
         '--orbit-user' => 'nckrtl',
@@ -221,7 +227,7 @@ it('sends repeatable provision settings and rejects invalid setting input locall
         ], 201),
     ]);
 
-    $this->artisan('node:provision', [
+    $this->artisan('node:add', [
         'name' => 'app-dev',
         'host' => '94.237.40.75',
         '--setting' => [
@@ -238,7 +244,7 @@ it('sends repeatable provision settings and rejects invalid setting input locall
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--setting' => ['packages.path:/srv/a'],
@@ -260,7 +266,7 @@ it('rejects duplicate and malformed provision settings before making a request',
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--setting' => $settings,
@@ -296,7 +302,7 @@ it('accepts the deprecated WireGuard alias alone and equal dual values', functio
         ], 201),
     ]);
 
-    $this->artisan('node:provision', [
+    $this->artisan('node:add', [
         'name' => 'app-dev',
         'host' => '94.237.40.75',
         ...$options,
@@ -321,7 +327,7 @@ it('rejects conflicting WireGuard values before making a request', function (): 
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--wireguard-ip' => '10.44.0.2',
@@ -344,7 +350,7 @@ it('rejects malformed Cluster and network input before making a request', functi
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             ...$options,
@@ -368,7 +374,7 @@ it('rejects non-Linux platform input before making an API request', function (st
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--platform' => $platform,
@@ -397,7 +403,7 @@ it('rejects invalid SSH ports before making an API request', function (string $p
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--ssh-port' => $port,
@@ -424,7 +430,7 @@ it('rejects an invalid host key fingerprint before making an API request', funct
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--host-key-fingerprint' => 'sha256:not-valid',
@@ -460,7 +466,7 @@ it('prints the request ID for provisioning gateway API errors', function (): voi
     ]);
 
     $this
-        ->artisan('node:provision', [
+        ->artisan('node:add', [
             'name' => 'app-dev',
             'host' => '94.237.40.75',
         ])

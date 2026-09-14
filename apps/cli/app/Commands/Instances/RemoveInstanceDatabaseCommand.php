@@ -2,17 +2,18 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Database;
+namespace App\Commands\Instances;
 
+use App\Commands\Database\DatabaseAttachmentCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse;
 
-final class DetachDatabaseConnectionCommand extends DatabaseAttachmentCommand
+final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
 {
     #[\Override]
-    protected $signature = 'database:detach
+    protected $signature = 'instance:database:remove
         {slug : Database connection slug}
         {--instance= : Positive AppInstance ID or exact Route hostname}
         {--prefix= : Environment key prefix; defaults to DB}
@@ -20,7 +21,7 @@ final class DetachDatabaseConnectionCommand extends DatabaseAttachmentCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Detach a Database connection from an AppInstance and clear stored environment keys.';
+    protected $description = 'Remove a Database connection from an AppInstance and clear stored environment keys.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -44,7 +45,7 @@ final class DetachDatabaseConnectionCommand extends DatabaseAttachmentCommand
 
         $attachment = $this->send(
             $connector,
-            new DetachDatabaseConnectionRequest(
+            new RemoveInstanceDatabaseRequest(
                 appInstance: $instance,
                 slug: $slug,
                 prefix: $prefix,
@@ -58,7 +59,7 @@ final class DetachDatabaseConnectionCommand extends DatabaseAttachmentCommand
 
         return $this->renderAttachment(
             $attachment,
-            "Database connection [{$attachment->slug}] detached from AppInstance [{$attachment->appInstanceId}].",
+            "Database connection [{$attachment->slug}] removed from AppInstance [{$attachment->appInstanceId}].",
         );
     }
 
@@ -69,12 +70,12 @@ final class DetachDatabaseConnectionCommand extends DatabaseAttachmentCommand
         }
 
         if ($this->option('json') !== true && $this->input->isInteractive()) {
-            return $this->confirm('Confirm Database connection detach?', false);
+            return $this->confirm('Confirm Database connection removal from the AppInstance?', false);
         }
 
         $this->renderGatewayFailure(
             'database.confirmation_required',
-            'Use --force to confirm Database connection detach.',
+            'Use --force to confirm Database connection removal from the AppInstance.',
         );
 
         return false;

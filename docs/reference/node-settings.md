@@ -6,16 +6,16 @@ A Node owns one typed apps-root setting. [ADR 0008](../decisions/0008-typed-app-
 
 ## Set the apps root
 
-`node:provision` and `node:settings` accept repeatable `--setting=<setting-path>:<value>` options. The only known setting path is `apps.path`.
+`node:add` and `node:settings` accept repeatable `--setting=<setting-path>:<value>` options. The only known setting path is `apps.path`.
 
 ```bash
-orbit node:provision app-dev app-dev.example --role=app-dev --setting=apps.path:/srv/orbit/apps
+orbit node:add app-dev app-dev.example --role=app-dev --setting=apps.path:/srv/orbit/apps
 orbit node:settings app-dev --setting=apps.path:/mnt/apps
 ```
 
 The CLI splits each option at its first colon, so a value may contain additional colons. An empty value is the unset form: `--setting=apps.path:` sends a null apps path. The CLI does not trim or otherwise reinterpret a non-empty path.
 
-`node:settings` requires at least one `--setting` option. `node:provision` may omit `--setting` and then provisions the Node without a storage override.
+`node:settings` requires at least one `--setting` option. `node:add` may omit `--setting` and then provisions the Node without a storage override.
 
 The known setting path has this result.
 

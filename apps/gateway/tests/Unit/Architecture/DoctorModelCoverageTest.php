@@ -44,6 +44,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Process::class => DoctorFamily::Process,
         FirewallRule::class => DoctorFamily::Firewall,
         HerdrSession::class => DoctorFamily::Herdr,
+        DatabaseConnection::class => DoctorFamily::DatabaseConnection,
     ];
     $ownerInputs = [
         AppInstanceEnvironmentValue::class,
@@ -56,6 +57,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         ProcessDefinition::class,
         ScheduleDefinition::class,
         JwksKey::class,
+        DatabaseConnectionTarget::class,
     ];
     $excluded = [
         NodeAccess::class,
@@ -64,8 +66,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         HerdrObservationNonce::class,
-        DatabaseConnection::class,
-        DatabaseConnectionTarget::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

@@ -7,13 +7,13 @@ namespace App\Commands\Apps;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Apps\RemoveAppRequest;
+use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 
-final class RemoveAppCommand extends GatewayCommand
+final class DestroyAppCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:remove
+    protected $signature = 'app:destroy
         {app : Numeric app ID}
         {--json : Return machine-readable JSON}';
 
@@ -36,7 +36,7 @@ final class RemoveAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $app = $this->send($connector, new RemoveAppRequest($appId), AppResponse::class);
+        $app = $this->send($connector, new DestroyAppRequest($appId), AppResponse::class);
 
         if (! $app instanceof AppResponse) {
             return self::FAILURE;

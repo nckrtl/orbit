@@ -12,7 +12,7 @@ use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 final class CreateClusterCommand extends ClusterCommand
 {
     #[\Override]
-    protected $signature = 'cluster:new
+    protected $signature = 'cluster:create
         {name : Unique Cluster name}
         {--tld= : Optional development TLD}
         {--json : Return machine-readable JSON}';

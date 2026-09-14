@@ -6,13 +6,13 @@ namespace App\Commands\Database;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
 
-final class AddDatabaseConnectionCommand extends DatabaseCommand
+final class CreateDatabaseConnectionCommand extends DatabaseCommand
 {
     #[\Override]
-    protected $signature = 'database:add
+    protected $signature = 'database:create
         {slug : Database connection slug}
         {--driver= : Driver: mysql, pgsql, or sqlite}
         {--node= : Optional Node ID or registered name}
@@ -25,7 +25,7 @@ final class AddDatabaseConnectionCommand extends DatabaseCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Register a Database connection through the Gateway.';
+    protected $description = 'Create a Database connection through the Gateway.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -84,7 +84,7 @@ final class AddDatabaseConnectionCommand extends DatabaseCommand
 
         $connection = $this->send(
             $connector,
-            new AddDatabaseConnectionRequest(
+            new CreateDatabaseConnectionRequest(
                 slug: $slug,
                 driver: $driver,
                 nodeId: $nodeId,
@@ -103,6 +103,6 @@ final class AddDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        return $this->renderConnection($connection, "Database connection [{$connection->slug}] added.");
+        return $this->renderConnection($connection, "Database connection [{$connection->slug}] created.");
     }
 }
