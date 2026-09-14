@@ -105,7 +105,7 @@ The Gateway keeps a compatible running Herdr server in place unless the operator
 | `herdr:session:restart --handoff` | The current Herdr command contract reports no supported handoff, so the Gateway restarts the owned Process. |
 | Removal | For managed sessions, inspects live panes first and requires `--accept-termination` while a pane is live. For adopted sessions, retracts only Orbit state and never terminates the external service. |
 | Observer publication failure | Records listener health. It does not destroy or restart the Herdr session. |
-| Node removal | The Gateway refuses `node:remove` while the Node owns a Herdr session. [Node provisioning](node-provisioning.md#remove-a-node) owns that guard. |
+| Node removal | The Gateway refuses `node:remove` while the Node owns a Herdr session. [Node provisioning](/reference/node-provisioning#remove-a-node) owns that guard. |
 | Offline decommissioning of an unreachable Node | Deletes those session and Process records without remote cleanup. |
 
 ## Doctor
@@ -178,4 +178,4 @@ An observation grant is a JSON Web Token (JWT) that Orbit signs with RS256 and e
 
 Orbit proves this Commander contract with Gateway, CLI, and standalone adapter tests: two managed Nodes, two named sessions, scoped origin-bound grants, complete and incremental terminal frames, replay rejection across adapter restarts, and the absence of SSH or input capability. This repository does not run a disposable Incus topology that starts real Herdr sessions and streams panes into a browser.
 
-[App processes and schedules](app-processes-and-schedules.md) owns the node-targeted Process primitive. [Tools](tools.md) owns Herdr package installation. [Private DNS](private-dns.md) owns hostname answers. [ADR 0069](../decisions/0069-allow-node-process-targets.md) owns Process targeting. [ADR 0004](../decisions/0004-verify-only-doctor-boundary.md) owns Doctor.
+[App processes and schedules](/reference/app-processes-and-schedules) owns the node-targeted Process primitive. [Tools](/reference/tools) owns Herdr package installation. [Private DNS](/reference/private-dns) owns hostname answers. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Process targeting. [ADR 0004](/decisions/0004-verify-only-doctor-boundary) owns Doctor.

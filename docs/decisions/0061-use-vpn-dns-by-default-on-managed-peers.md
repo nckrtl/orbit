@@ -4,7 +4,7 @@ In the context of managed Nodes resolving private Route hostnames, facing missin
 
 ## Status
 
-Accepted on 2026-09-12. Extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md).
+Accepted on 2026-09-12. Extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing).
 
 ## Context
 
@@ -37,6 +37,6 @@ Managed peer DNS configuration selects private suffixes independently from Route
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md)
+- ADRs: extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing)
 - Detail: docs/reference/private-dns.md
 - Verify: `composer docs-lint`, managed peer DNS convergence tests, and ordinary resolver queries on disposable managed Nodes

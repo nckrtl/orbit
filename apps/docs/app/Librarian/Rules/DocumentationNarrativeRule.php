@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Librarian\Rules;
 
 use App\Documentation\BlockedPhrases;
+use App\Documentation\DocumentationRepository;
 use App\Documentation\MarkdownProse;
-use HardImpact\Librarian\Docs\MarkdownSnapshot;
 use HardImpact\Librarian\Linting\GroupedRule;
 
 /**
@@ -17,7 +17,7 @@ final readonly class DocumentationNarrativeRule implements GroupedRule
     public const string RULE = 'orbit.docs_narrative';
 
     public function __construct(
-        private MarkdownSnapshot $snapshot,
+        private DocumentationRepository $repository,
         private BlockedPhrases $phrases,
     ) {}
 
@@ -30,14 +30,14 @@ final readonly class DocumentationNarrativeRule implements GroupedRule
     {
         $findings = [];
 
-        foreach ($this->snapshot->capture() as $relativePath => $contents) {
-            if (str_starts_with($relativePath, 'decisions/') || str_starts_with($relativePath, 'generated/')) {
+        foreach ($this->repository->markdownDocuments() as $path => $contents) {
+            if (str_starts_with($path, 'docs/decisions/')) {
                 continue;
             }
 
             array_push($findings, ...$this->phrases->scan(
                 MarkdownProse::lines($contents),
-                "docs/{$relativePath}",
+                $path,
                 self::RULE,
             ));
         }

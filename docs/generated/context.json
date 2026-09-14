@@ -11,7 +11,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Gateway",
@@ -35,7 +35,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Doctor",
@@ -53,19 +53,7 @@
             "governing_adrs": [
                 "0004",
                 "0006",
-                "0009",
-                "0011",
-                "0014",
-                "0023",
-                "0024",
-                "0025",
-                "0027",
-                "0028",
-                "0029",
-                "0030",
-                "0032",
-                "0033",
-                "0034"
+                "0014"
             ]
         },
         {
@@ -75,14 +63,13 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Database connection",
                 "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
-                "Effective web root",
                 "Gateway",
                 "Herdr session",
                 "Ingress",
@@ -97,22 +84,14 @@
                 "Schedule",
                 "Tool",
                 "Tool Manager",
+                "Web root",
                 "Workspace"
             ],
             "governing_adrs": [
-                "0001",
                 "0004",
                 "0011",
-                "0023",
-                "0024",
-                "0026",
-                "0042",
                 "0047",
-                "0056",
-                "0069",
-                "0070",
-                "0074",
-                "0075"
+                "0056"
             ]
         },
         {
@@ -128,8 +107,7 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0001",
-                "2026"
+                "0001"
             ]
         },
         {
@@ -156,8 +134,7 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0003",
-                "2026"
+                "0003"
             ]
         },
         {
@@ -178,8 +155,7 @@
                 "Workspace"
             ],
             "governing_adrs": [
-                "0004",
-                "2026"
+                "0004"
             ]
         },
         {
@@ -238,10 +214,9 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
-                "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
@@ -250,6 +225,7 @@
                 "Route",
                 "Router",
                 "Schedule",
+                "Web root",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -274,14 +250,14 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
-                "Effective web root",
                 "Ingress",
                 "Node",
                 "Process",
                 "Route",
-                "Router"
+                "Router",
+                "Web root"
             ],
             "governing_adrs": [
                 "0009",
@@ -315,11 +291,10 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Doctor",
-                "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Node",
@@ -327,6 +302,7 @@
                 "Proof topology",
                 "Schedule",
                 "Tool",
+                "Web root",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -380,7 +356,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Gateway",
@@ -388,7 +364,8 @@
                 "Node",
                 "Repository identity",
                 "Route",
-                "Router"
+                "Router",
+                "Web root"
             ],
             "governing_adrs": [
                 "0009",
@@ -403,7 +380,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Gateway",
                 "Ingress",
@@ -427,14 +404,14 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Doctor",
-                "Effective web root",
                 "Gateway",
                 "Node",
                 "Route",
-                "Tool"
+                "Tool",
+                "Web root"
             ],
             "governing_adrs": [
                 "0009",
@@ -505,7 +482,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Gateway",
                 "Ingress",
@@ -532,7 +509,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Gateway",
                 "Node",
@@ -554,7 +531,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Route"
             ],
@@ -576,6 +553,7 @@
             ],
             "concepts": [
                 "App",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Repository identity"
@@ -597,7 +575,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Node",
                 "Route"
@@ -623,7 +601,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Gateway",
                 "Route"
@@ -646,7 +624,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Gateway",
                 "Ingress",
@@ -672,7 +650,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Ingress",
@@ -698,7 +676,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Ingress",
                 "Route"
@@ -721,7 +699,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Route"
             ],
@@ -767,7 +745,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Node"
             ],
@@ -805,7 +783,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Legacy Instance",
                 "Route",
@@ -825,7 +803,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Node",
                 "Proof topology",
@@ -850,7 +828,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Legacy Instance",
                 "Node",
@@ -875,7 +853,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Gateway",
@@ -919,7 +897,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Route"
             ],
@@ -984,7 +962,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Node",
@@ -1006,7 +984,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Ingress",
                 "Node"
@@ -1029,11 +1007,12 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Ingress",
-                "Process"
+                "Process",
+                "Web root"
             ],
             "governing_adrs": [
                 "0011",
@@ -1057,7 +1036,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Ingress",
@@ -1087,7 +1066,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Doctor",
                 "Gateway",
                 "Process",
@@ -1363,7 +1342,7 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Gateway",
                 "Node",
@@ -1384,7 +1363,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Gateway",
                 "Legacy Instance",
@@ -1410,7 +1389,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Route"
@@ -1432,7 +1411,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Gateway",
@@ -1459,7 +1438,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Development-server endpoint",
                 "Gateway",
@@ -1487,7 +1466,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Node"
             ],
@@ -1508,7 +1487,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Node",
@@ -1559,7 +1538,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Doctor",
                 "Gateway",
@@ -1589,6 +1568,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "App instance",
                 "Gateway",
                 "Herdr session",
                 "Node",
@@ -1611,7 +1591,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "AppInstance",
+                "App instance",
                 "Gateway"
             ],
             "governing_adrs": [
@@ -1629,7 +1609,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -1654,7 +1634,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Node",
                 "Process",
@@ -1684,12 +1664,12 @@
         },
         {
             "path": "docs/domains/README.md",
-            "title": "Product Areas",
+            "title": "Product areas",
             "kind": "domain",
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance"
+                "App instance"
             ],
             "governing_adrs": []
         },
@@ -1700,19 +1680,18 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Doctor",
-                "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
                 "Process",
-                "Repository identity",
                 "Route",
                 "Router",
+                "Web root",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -1726,14 +1705,27 @@
             ]
         },
         {
+            "path": "docs/index.mdx",
+            "title": "Orbit documentation",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/mission.md",
             "title": "Mission",
             "kind": "product",
             "components": [],
             "concepts": [
-                "App",
                 "Gateway",
-                "Tool"
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -1744,7 +1736,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -1763,7 +1755,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Database connection",
                 "Development-server endpoint",
@@ -1780,19 +1772,20 @@
                 "0036",
                 "0038",
                 "0048",
-                "0069"
+                "0069",
+                "3600"
             ]
         },
         {
             "path": "docs/reference/appinstance-cloning.md",
-            "title": "AppInstance cloning",
+            "title": "App instance cloning",
             "kind": "reference",
             "components": [
                 "apps/gateway"
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Gateway",
@@ -1812,12 +1805,12 @@
         },
         {
             "path": "docs/reference/appinstance-removal.md",
-            "title": "AppInstance removal",
+            "title": "App instance removal",
             "kind": "reference",
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Gateway",
@@ -1845,11 +1838,11 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
-                "Database",
+                "App instance",
                 "Doctor",
                 "Gateway",
-                "Repository identity"
+                "Repository identity",
+                "Web root"
             ],
             "governing_adrs": [
                 "0016",
@@ -1864,7 +1857,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Database connection",
                 "Doctor",
@@ -1909,15 +1902,15 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Doctor",
-                "Effective web root",
                 "Gateway",
                 "Node",
                 "Process",
-                "Route"
+                "Route",
+                "Web root"
             ],
             "governing_adrs": [
                 "0046",
@@ -1926,18 +1919,19 @@
         },
         {
             "path": "docs/reference/environment-variables.md",
-            "title": "AppInstance environment variables",
+            "title": "App instance environment variables",
             "kind": "reference",
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Process",
-                "Route"
+                "Route",
+                "Web root"
             ],
             "governing_adrs": [
                 "0044"
@@ -2014,7 +2008,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Doctor",
                 "Gateway",
@@ -2046,7 +2040,6 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Process",
                 "Route"
             ],
             "governing_adrs": [
@@ -2064,12 +2057,11 @@
             ],
             "concepts": [
                 "App",
+                "App instance",
                 "Gateway",
                 "Herdr session",
                 "Node",
-                "Process",
-                "Tool",
-                "Tool Manager"
+                "Process"
             ],
             "governing_adrs": [
                 "0072"
@@ -2095,7 +2087,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Gateway",
                 "Node"
             ],
@@ -2112,7 +2104,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Development-server endpoint",
                 "Doctor",
@@ -2174,7 +2166,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Development-server endpoint",
@@ -2186,6 +2178,7 @@
                 "Process",
                 "Route",
                 "Router",
+                "Web root",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -2210,7 +2203,7 @@
             "components": [],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -2222,7 +2215,8 @@
                 "0013",
                 "0038",
                 "0048",
-                "0060"
+                "0060",
+                "3600"
             ]
         },
         {
@@ -2256,7 +2250,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Database",
                 "Doctor",
                 "Gateway",
@@ -2264,6 +2258,7 @@
                 "Process",
                 "Proof topology",
                 "Route",
+                "Web root",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -2345,16 +2340,16 @@
         },
         {
             "path": "docs/tech-stack.md",
-            "title": "Tech Stack",
+            "title": "Tech stack",
             "kind": "product",
             "components": [
                 "apps/cli",
                 "apps/docs",
+                "apps/e2e",
                 "apps/gateway",
                 "packages/php-sdk"
             ],
             "concepts": [
-                "App",
                 "Gateway"
             ],
             "governing_adrs": []

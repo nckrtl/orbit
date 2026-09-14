@@ -4,11 +4,11 @@ In the context of Route-owned hostnames that can outlive their single target, fa
 
 ## Status
 
-Accepted on 2026-09-04. Extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md).
+Accepted on 2026-09-04. Extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing).
 
 ## Context
 
-[ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) makes a Route authoritative for its hostname and requires affected generated hostnames to reconcile with Node and Cluster mutations. A Route can keep its hostname after its target is cleared, but the decision does not identify which Node supplies the effective TLD after a target changes or disappears. The same missing identity leaves target replacement, basis-Node removal, and generated multi-target Routes ambiguous.
+[ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) makes a Route authoritative for its hostname and requires affected generated hostnames to reconcile with Node and Cluster mutations. A Route can keep its hostname after its target is cleared, but the decision does not identify which Node supplies the effective TLD after a target changes or disappears. The same missing identity leaves target replacement, basis-Node removal, and generated multi-target Routes ambiguous.
 
 ## Decision
 
@@ -38,6 +38,6 @@ Accepted on 2026-09-04. Extends [ADR 0023](0023-separate-hostname-selection-from
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md)
+- ADRs: extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing)
 - Detail: docs/reference/routes.md
 - Verify: `bin/test`

@@ -35,6 +35,11 @@ final readonly class DocumentationContextMetadataExtractor
 
     private function title(string $path, string $contents): string
     {
+        if (preg_match('/\A---\R(?<metadata>.*?)\R---(?:\R|$)/s', $contents, $frontmatter) === 1
+            && preg_match('/^title:\s*(?<title>[^\r\n]+)$/m', $frontmatter['metadata'], $matches) === 1) {
+            return trim($matches['title'], " \t\"'");
+        }
+
         if (preg_match('/^#\s+(?<title>.+?)\s*$/m', $contents, $matches) === 1) {
             return trim($matches['title']);
         }
@@ -76,7 +81,10 @@ final readonly class DocumentationContextMetadataExtractor
     {
         $concepts = [];
         foreach ($canonicalConcepts as $concept) {
-            $pattern = '/(?<![\pL\pN])'.preg_quote($concept, '/').'(?![\pL\pN])/iu';
+            // Keep model-name mentions in code and accepted ADRs discoverable
+            // under the reader-facing glossary term.
+            $term = $concept === 'App instance' ? 'App ?instances?' : preg_quote($concept, '/');
+            $pattern = '/(?<![\pL\pN])'.$term.'(?![\pL\pN])/iu';
             if (preg_match($pattern, $contents) === 1) {
                 $concepts[] = $concept;
             }
@@ -90,7 +98,7 @@ final readonly class DocumentationContextMetadataExtractor
     /** @return list<string> */
     private function governingAdrs(string $path, string $contents): array
     {
-        preg_match_all('/(?<![0-9])([0-9]{4})-[a-z0-9-]+\.md/', $contents, $matches);
+        preg_match_all('/(?<![0-9])([0-9]{4})-[a-z][a-z0-9-]+(?:\.mdx?)?(?=[#)\s]|$)/', $contents, $matches);
         $adrs = $matches[1];
 
         if (preg_match('#^docs/decisions/(?<adr>[0-9]{4})-#', $path, $ownMatch) === 1) {

@@ -4,7 +4,7 @@ In the context of Metrics exporter selection, facing a rule that allows any acti
 
 ## Status
 
-Accepted on 2026-09-10. Supersedes [ADR 0003](0003-singleton-metrics-role.md) only where explicit exporter preference selects any active Node without a management eligibility check. Extends [ADR 0012 (platform support withdrawn)](0012-ubuntu-24-04-roleless-operator-clients.md) to make its operator-client boundary explicit in Metrics selection and Doctor expectations. Retains ADR 0003's selection defaults and preference rules within the eligible managed fleet.
+Accepted on 2026-09-10. Supersedes [ADR 0003](/decisions/0003-singleton-metrics-role) only where explicit exporter preference selects any active Node without a management eligibility check. Extends [ADR 0012 (platform support withdrawn)](/decisions/0012-ubuntu-24-04-roleless-operator-clients) to make its operator-client boundary explicit in Metrics selection and Doctor expectations. Retains ADR 0003's selection defaults and preference rules within the eligible managed fleet.
 
 ## Context
 
@@ -35,6 +35,6 @@ ADR 0003 permits an explicit exporter preference on any active Node, including a
 ## Affects
 
 - Components: apps/gateway
-- ADRs: supersedes [ADR 0003](0003-singleton-metrics-role.md) for unrestricted exporter eligibility; extends [ADR 0012 (platform support withdrawn)](0012-ubuntu-24-04-roleless-operator-clients.md) for Metrics and Doctor scope
-- Detail: [Metrics role](../reference/metrics.md)
+- ADRs: supersedes [ADR 0003](/decisions/0003-singleton-metrics-role) for unrestricted exporter eligibility; extends [ADR 0012 (platform support withdrawn)](/decisions/0012-ubuntu-24-04-roleless-operator-clients) for Metrics and Doctor scope
+- Detail: [Metrics role](/reference/metrics)
 - Verify: Metrics selection, enablement, convergence, and Doctor tests covering managed roleless Nodes and operator clients; `composer docs-lint`

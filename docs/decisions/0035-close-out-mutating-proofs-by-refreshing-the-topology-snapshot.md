@@ -4,7 +4,7 @@ In the context of merge closeout after an Incus proof whose plan declares `mutat
 
 ## Status
 
-Accepted on 2026-09-06. Extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md). Supersedes [ADR 0006](0006-topology-led-feature-development.md) for the closeout of a proof whose plan mutates reusable node state.
+Accepted on 2026-09-06. Extends [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence). Supersedes [ADR 0006](/decisions/0006-topology-led-feature-development) for the closeout of a proof whose plan mutates reusable node state.
 
 ## Context
 
@@ -32,6 +32,6 @@ A proof plan that declares `mutates: true` changes reusable node state, so the p
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md); supersedes [ADR 0006](0006-topology-led-feature-development.md) for the closeout of a mutating proof
-- Detail: [docs/reference/topology-snapshot.md](../reference/topology-snapshot.md)
+- ADRs: extends [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence); supersedes [ADR 0006](/decisions/0006-topology-led-feature-development) for the closeout of a mutating proof
+- Detail: [docs/reference/topology-snapshot.md](/reference/topology-snapshot)
 - Verify: `bin/e2e-topology-snapshot status` reports the generation whose `main_sha` equals the `origin/main` commit the refresh used

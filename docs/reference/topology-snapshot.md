@@ -1,6 +1,6 @@
 # Topology snapshot
 
-This page is for the operator who maintains Orbit's one persistent topology snapshot. Ordinary proof and discovery topologies, and every snapshot-lane scenario, start from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, how an issue installs a declared cold replacement, and how to recover when the manifest and the host disagree. The disposable topologies and any issue-local extension are on the [Incus topology registry](incus-topologies.md).
+This page is for the operator who maintains Orbit's one persistent topology snapshot. Ordinary proof and discovery topologies, and every snapshot-lane scenario, start from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, how an issue installs a declared cold replacement, and how to recover when the manifest and the host disagree. The disposable topologies and any issue-local extension are on the [Incus topology registry](/reference/incus-topologies).
 
 ## Identity
 
@@ -31,7 +31,7 @@ Every command accepts `--json`, and `--main-sha=SHA` must be the full SHA of the
 
 ## Declared replacement
 
-An issue proof plan can declare `"snapshot_replacement": true` before proof construction. The harness then constructs the exact registered Gateway, app-dev, and app-prod recipe from the recorded generic base and exact candidate instead of copying this page's promoted generation. The attempt uses normal issue proof, input-manifest, capture, interactive review, and cleanup records. A cold scenario, ordinary refresh, `rebuild`, or `recover-legacy` has no declaration and cannot become replacement proof after construction. [ADR 0037](../decisions/0037-promote-fresh-three-node-topology-snapshots.md) governs this exception, and [ADR 0036](../decisions/0036-support-only-appinstances.md) requires its sample state to use AppInstances and App-owned Routes.
+An issue proof plan can declare `"snapshot_replacement": true` before proof construction. The harness then constructs the exact registered Gateway, app-dev, and app-prod recipe from the recorded generic base and exact candidate instead of copying this page's promoted generation. The attempt uses normal issue proof, input-manifest, capture, interactive review, and cleanup records. A cold scenario, ordinary refresh, `rebuild`, or `recover-legacy` has no declaration and cannot become replacement proof after construction. [ADR 0037](/decisions/0037-promote-fresh-three-node-topology-snapshots) governs this exception, and [ADR 0036](/decisions/0036-support-only-appinstances) requires its sample state to use App instances and App-owned Routes.
 
 The current promoted generation remains stopped and unchanged until proof, review, accepted merge, clean replacement construction, and verification succeed. Closeout never installs the retained proof machines because interactive review can change them. It reconstructs the replacement from accepted merged source and the recorded generic-base inputs, requires the exact three-Node inventory and native sample state, and only then starts installation.
 
@@ -41,7 +41,7 @@ After all three replacements and the promoted manifest agree, acquisition sees o
 
 ## Promote
 
-Feature closeout uses `refresh` from merged main while captured successful proof resources remain retained, under [ADR 0056](../decisions/0056-retain-proof-topologies-for-interactive-review.md). The explicit `promote` command remains available only for an ordinary unchanged retained live topology that has not received interactive reviewer access, and it verifies its plan selected from `.loop/proof/`. A plan with `snapshot_replacement: true` fails before Incus access because only verified closeout can install its clean reconstructed replacement. [ADR 0049](../decisions/0049-keep-delivery-artifacts-off-the-merge-head.md) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
+Feature closeout uses `refresh` from merged main while captured successful proof resources remain retained, under [ADR 0056](/decisions/0056-retain-proof-topologies-for-interactive-review). The explicit `promote` command remains available only for an ordinary unchanged retained live topology that has not received interactive reviewer access, and it verifies its plan selected from `.loop/proof/`. A plan with `snapshot_replacement: true` fails before Incus access because only verified closeout can install its clean reconstructed replacement. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) governs the artifact workspace that supplies that plan. The harness refuses, without touching Incus, in each of these cases.
 
 | Refusal | Condition |
 | --- | --- |
@@ -63,7 +63,7 @@ The failure reports that the new snapshot generation is already installed, the c
 
 ## Refresh
 
-`refresh` is the maintenance path when no proved topology exists and the ordinary closeout path for a retained successful proof after interactive review. A plan that normalizes to `mutates: true` also uses refresh under [ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md). An extended plan always takes this closeout path. A declared cold replacement uses the separate installation path above. Merge closeout never substitutes either path for missing or invalid proof or review evidence.
+`refresh` is the maintenance path when no proved topology exists and the ordinary closeout path for a retained successful proof after interactive review. A plan that normalizes to `mutates: true` also uses refresh under [ADR 0035](/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot). An extended plan always takes this closeout path. A declared cold replacement uses the separate installation path above. Merge closeout never substitutes either path for missing or invalid proof or review evidence.
 
 It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation.
 
@@ -75,7 +75,7 @@ Convergence prepares the sample resources and every product projection before ve
 
 Every convergence runs, in order, `converge-sample-app.sh reproject` on `app-dev`, `metrics-publication`, a wait until `instance:list --json` answers on `app-dev`, `hydrate` on the sample checkouts, and `prepare-node.sh permissions` on every role. Reproject runs `node:role:add --converge` for every app role. On the legacy `instances` envelope it then runs `instance:php` for every Instance, development last.
 
-On the typed `app_instances` envelope, sample convergence uses the Orbit CLI to keep `e2e-dev` associated with one explicit private Route named `e2e-dev.orbit`. It creates the Route when the association is absent, reuses only the exact sample App, target, scope, hostname, provenance, and publication, and refuses conflicting or multiple associations without editing the Gateway database directly. The topology verifier applies the active-AppInstance Route association rule from [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) to every active AppInstance.
+On the typed `app_instances` envelope, sample convergence uses the Orbit CLI to keep `e2e-dev` associated with one explicit private Route named `e2e-dev.orbit`. It creates the Route when the association is absent, reuses only the exact sample App, target, scope, hostname, provenance, and publication, and refuses conflicting or multiple associations without editing the Gateway database directly. The topology verifier applies the active-App instance Route association rule from [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) to every active App instance.
 
 The rendered pools, Caddy fragments, firewall rules, and DNS records then match the checkout. When `create-resources` returns no typed checkout path, `internal-tls` on `app-prod` runs before reproject and places the `local_certs` global block as `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version behind `/etc/caddy/Caddyfile`; the product publisher carries unmanaged fragments forward, so Doctor reports no Caddy drift.
 
@@ -83,7 +83,7 @@ The rendered pools, Caddy fragments, firewall rules, and DNS records then match 
 
 The sample adapter selects its production creation contract before it changes sample state. When the complete candidate-clone and explicit-deployment command set is available, it creates production from the development candidate and deploys it explicitly. Otherwise it uses direct production creation. A failure after selection stops convergence and never switches to the older contract.
 
-Hydration derives each checkout, persistent environment file, optional SQLite database, production user, and active release from the AppInstance's recorded placement. It imports and synchronizes environment configuration only when the complete public command set is available. A repeated convergence keeps stored and local environment keys, database contents, sample identities, and the selected release.
+Hydration derives each checkout, persistent environment file, optional SQLite database, production user, and active release from the App instance's recorded placement. It imports and synchronizes environment configuration only when the complete public command set is available. A repeated convergence keeps stored and local environment keys, database contents, sample identities, and the selected release.
 
 Verification accepts two exact production layouts during this compatibility period. A flat placement uses the recorded home and web root with the shared PHP-FPM service and socket. A release placement uses the recorded persistent paths and `current` release with the recorded dedicated service and socket. A missing or mismatched home, web root, environment file, database, service, socket, owner, or current target fails verification; the verifier does not substitute the flat expectation for a malformed release placement.
 
@@ -97,7 +97,7 @@ A manifest that names snapshots or VMs the host does not hold is stale, not corr
 
 ## Retire legacy resources
 
-The `legacy:inventory`, `legacy:quarantine`, `legacy:delete`, and `legacy:verify` commands keep the topology snapshot pool, base image, current namespace, and evidence outside legacy deletion. [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs this exact and reversible retirement boundary.
+The `legacy:inventory`, `legacy:quarantine`, `legacy:delete`, and `legacy:verify` commands keep the topology snapshot pool, base image, current namespace, and evidence outside legacy deletion. [ADR 0005](/decisions/0005-rolling-incus-development-topology) governs this exact and reversible retirement boundary.
 
 Every current retirement artifact uses schema 3. This version applies to the inventory, quarantine manifest, retirement result, and the quarantine and deletion journals that embed them. A quarantine or deletion retry accepts only a matching schema 3 journal with its exact inventory or quarantine digest, freeze evidence, targets, preserved references, acknowledgement, retention time, pending entry, and completed entries.
 

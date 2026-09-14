@@ -4,7 +4,7 @@ In the context of selectable feature delivery, facing a proof-named issue label 
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0051](0051-select-discovery-only-feature-delivery.md). Supersedes ADR 0051 for mandatory discovery topology use by automated-only issues.
+Accepted on 2026-09-10. Extends [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery). Supersedes ADR 0051 for mandatory discovery topology use by automated-only issues.
 
 ## Context
 
@@ -33,6 +33,6 @@ Issue labels identify acceptance that depends on a real operating system, servic
 ## Affects
 
 - Components: none
-- ADRs: extends [ADR 0051](0051-select-discovery-only-feature-delivery.md); supersedes ADR 0051 for mandatory discovery topology use by automated-only issues
-- Detail: [docs/reference/implementation-loop.md](../reference/implementation-loop.md)
+- ADRs: extends [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery); supersedes ADR 0051 for mandatory discovery topology use by automated-only issues
+- Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
 - Verify: issue label and flow review; `composer docs-lint`

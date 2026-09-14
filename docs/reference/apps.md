@@ -1,6 +1,6 @@
 # Apps
 
-An App is Orbit's stable record for one application. It owns the canonical [repository identity](../concepts.md#repository-identity), one supported repository access URL, a `default_branch`, and a relative web root that later AppInstances inherit as source defaults. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines the stable default-source identity, and [ADR 0026](../decisions/0026-identify-each-app-by-one-repository.md) defines repository ownership.
+An App stores one application's Git repository, access URL, default branch, and relative web root. New App instances inherit these source defaults. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity; [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
 
 ## Create an App
 
@@ -10,7 +10,7 @@ Use `app:create` with a slug and an HTTPS or SSH Git origin:
 orbit app:create acme https://github.com/acme/site.git
 ```
 
-The CLI sends `public` as the root unless `--root` supplies another normalized relative path. It asks the Gateway to resolve the repository's symbolic default branch when `--default-branch` is omitted. The Gateway performs that lookup once and stores the result; a later change to the remote default does not rewrite the App.
+The command-line interface (CLI) uses `public` as the web root unless you set `--root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the App.
 
 Both source defaults can be explicit:
 
@@ -35,9 +35,7 @@ SDK App responses and the `app:list` and `app:show` commands expose the stored r
 
 ## Keep one repository owner
 
-The Gateway derives repository identity from the repository host and path, independent of the supported SSH or HTTPS access form and an optional terminal `.git`. It stores this identity separately from the selected access URL.
-
-Creating another App for an owned identity fails with `app.repository_identity_conflict`. The Gateway creates or changes no App.
+The Git host and path identify a repository. Equivalent SSH and HTTPS URLs match, with or without a trailing `.git`. The Gateway stores this identity separately from the access URL. Creating a second App for the same repository returns `app.repository_identity_conflict` and changes nothing.
 
 Repository validation and failure details do not expose embedded credentials or unredacted Git output. A checkout-origin lookup uses the canonical identity and therefore resolves no more than one App across equivalent access forms.
 
@@ -45,9 +43,9 @@ During an upgrade, the Gateway checks every existing App before it makes reposit
 
 ## Resolve an App during registration
 
-Registration uses the verified checkout origin to find an App by canonical repository identity. The Gateway does not choose by URL transport or database order, and conflicting App or source identity stops registration before mutation.
+Registration finds the App from the checkout's verified Git origin. It matches the repository identity across URL formats. Conflicting App or source details stop registration before any changes.
 
-When no App owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its AppInstance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request. Non-interactive registration, including every `--json` call, refuses when a required value remains unresolved and sends no request. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
+When no App owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its App instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request. Non-interactive registration, including every `--json` call, refuses when a required value remains unresolved and sends no request. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
 
 Registration can infer these App values from unambiguous source evidence.
 
@@ -61,9 +59,9 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 ## Retry creation safely
 
-`app:create` is an idempotent creation command. Repeating it with the same name, slug, repository access URL, default branch, root, and defaults returns the existing App. An omitted branch is not resolved again during that retry.
+Repeating `app:create` with the same name, slug, repository access URL, default branch, root, and defaults returns the existing App. A retry does not look up an omitted branch again.
 
-A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL. Orbit exposes no App update operation. [ADR 0016](../decisions/0016-reconcile-app-identity-and-source-default-updates.md) defines the reconciliation boundary for a separate contract.
+A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL. Orbit exposes no App update operation. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) defines the reconciliation boundary for a separate contract.
 
 ## Incomplete source defaults
 

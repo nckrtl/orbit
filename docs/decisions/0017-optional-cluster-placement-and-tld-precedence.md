@@ -4,13 +4,13 @@
 
 Accepted on 2026-09-03.
 
-This decision supersedes [ADR 0009](0009-clustered-app-instance-routing.md)
+This decision supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing)
 where it requires every completed-model Node, AppInstance, and Route to belong
 to a Cluster, requires every application request to traverse a Cluster Router,
 and uses only a Cluster TLD for generated AppInstance hostnames. It extends
-[ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) with a
+[ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) with a
 standalone app-prod path and extends
-[ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md) with
+[ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) with
 Node-to-Cluster routing-scope reconciliation. Their remaining source,
 placement, routing, ingress, and safety boundaries stay in force.
 

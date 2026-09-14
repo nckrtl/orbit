@@ -8,7 +8,7 @@ acquire, dirty and clean sync, verify, prove, and release with verified
 absence). It is registered in `docs/reference/incus-topologies.md`.
 
 Amended on 2026-08-29 by
-[ADR 0006](0006-topology-led-feature-development.md). The rule "the host
+[ADR 0006](/decisions/0006-topology-led-feature-development). The rule "the host
 worktree is never mounted into a VM" now reads "proof never mounts host state;
 discovery mounts the feature worktree". Discovery attaches the worktree to the
 checkout roles with an Incus virtiofs disk device; proof still synchronizes

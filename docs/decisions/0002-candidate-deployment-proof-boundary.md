@@ -3,7 +3,7 @@
 ## Status
 
 Accepted on 2026-08-26. The former shared-live development-proof venue is
-superseded by [ADR 0006](0006-topology-led-feature-development.md). The resource
+superseded by [ADR 0006](/decisions/0006-topology-led-feature-development). The resource
 ownership and production-separation boundaries in this record remain accepted.
 
 ## Context

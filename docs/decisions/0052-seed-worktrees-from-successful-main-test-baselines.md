@@ -4,7 +4,7 @@ In the context of feature worktrees with separate Composer projects, facing repe
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0051](0051-select-discovery-only-feature-delivery.md).
+Accepted on 2026-09-10. Extends [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery).
 
 ## Context
 
@@ -35,6 +35,6 @@ Test impact analysis needs a recorded dependency graph before it can select affe
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0051](0051-select-discovery-only-feature-delivery.md)
-- Detail: [docs/reference/implementation-loop.md](../reference/implementation-loop.md)
+- ADRs: extends [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery)
+- Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
 - Verify: TIA cache lifecycle and worktree cleanup tests; `composer docs-lint`

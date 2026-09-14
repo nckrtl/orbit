@@ -4,7 +4,7 @@ In the context of hibernated development AppInstances that keep reconstructable 
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0074](0074-hibernate-idle-app-dev-appinstance-processes.md).
+Accepted on 2026-09-14. Extends [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes).
 
 ## Context
 
@@ -37,6 +37,6 @@ ADR 0074 stops idle app-dev AppInstance Processes and starts the desired-running
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0074](0074-hibernate-idle-app-dev-appinstance-processes.md)
-- Detail: [App-dev runtime hibernation](../reference/app-dev-runtime-hibernation.md)
+- ADRs: extends [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes)
+- Detail: [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation)
 - Verify: `composer docs-lint`; Gateway hibernation prune-gate and cold-wake tests

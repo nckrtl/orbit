@@ -4,7 +4,7 @@ In the context of App records that store transport-specific Git URLs, facing aut
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0009](0009-clustered-app-instance-routing.md) and [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md).
+Accepted on 2026-09-05. Extends [ADR 0009](/decisions/0009-clustered-app-instance-routing) and [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates).
 
 ## Context
 
@@ -36,6 +36,6 @@ The current App slug is unique, but its repository URL is not. Supported SSH and
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0009](0009-clustered-app-instance-routing.md) and [ADR 0016](0016-reconcile-app-identity-and-source-default-updates.md)
+- ADRs: extends [ADR 0009](/decisions/0009-clustered-app-instance-routing) and [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates)
 - Detail: docs/reference/apps.md
 - Verify: `bin/test`

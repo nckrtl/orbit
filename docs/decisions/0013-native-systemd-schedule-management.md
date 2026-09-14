@@ -5,10 +5,10 @@
 Accepted on 2026-08-31.
 
 If accepted, this ADR extends
-[ADR 0004](0004-verify-only-doctor-boundary.md) with the Schedule model and
+[ADR 0004](/decisions/0004-verify-only-doctor-boundary) with the Schedule model and
 Doctor family. It uses the AppInstance, Node, placement, and runtime ownership
-defined by [ADR 0009](0009-clustered-app-instance-routing.md) and
-[ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md).
+defined by [ADR 0009](/decisions/0009-clustered-app-instance-routing) and
+[ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).
 
 ## Context
 
@@ -288,7 +288,7 @@ release.
 
 A production rollout, recovery point, deployment, and post-deploy
 verification remain a separate release issue under
-[ADR 0002](0002-candidate-deployment-proof-boundary.md).
+[ADR 0002](/decisions/0002-candidate-deployment-proof-boundary).
 
 ## Consequences
 

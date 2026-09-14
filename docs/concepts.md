@@ -1,28 +1,28 @@
 # Concepts
 
-These are the common terms you will see throughout the Orbit documentation. Each entry defines its term on its own, and a link leads to the page or decision that owns the detail.
+These terms describe the parts of Orbit. Follow the links for commands and details.
 
-- **Gateway** — The central Orbit service. It stores every machine and application record, authorizes each action, and applies changes to machines over SSH. See [Architecture](architecture.md#gateway).
+- **Gateway** — The central Orbit service. It stores every machine and application record, authorizes each action, and applies changes to machines over SSH. See [Architecture](/architecture#gateway).
 - **Node** — A machine connected to Orbit. It runs one or more roles and reaches the Gateway over WireGuard. A Node outside a Cluster is standalone.
-- **Cluster** — An optional group of Nodes with one name and at most one development TLD. Active membership gives member Routes Cluster scope. The Cluster can have no TLD. See [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md).
-- **App** — Orbit's application record owning one repository identity and a relative web root inherited by AppInstances, with `default_branch` as branch fallback after explicit input and matching-name selection. See [Apps](reference/apps.md).
-- **Repository identity** — The transport-independent Git host and path that one App owns after optional terminal `.git` removal. See [Apps](reference/apps.md) and [ADR 0026](decisions/0026-identify-each-app-by-one-repository.md).
-- **AppInstance** — One managed placement of an App on one Node. Development owns a `checkout` or `worktree`. A new production AppInstance requires a candidate, as [ADR 0047](decisions/0047-create-production-appinstances-from-candidates.md) requires. An active AppInstance has one Route. See [Applications](domains/applications.md) and [AppInstance cloning](reference/appinstance-cloning.md).
-- **Effective web root** — The web root an AppInstance serves. An AppInstance override replaces the App root. Both are normalized relative paths, and production resolves the value beneath the selected release. See [Production release layout](reference/deployments.md).
-- **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use AppInstance.
-- **Workspace** — A Git worktree owned by a legacy Instance. AppInstance creation does not use or change Workspace source.
-- **Route** — An App-owned hostname with stored provenance and one Node or active Cluster scope. A generated Route follows its target Node. See [Routes](reference/routes.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md).
-- **Development-server endpoint** — The reserved path `/__orbit/vite` on an AppInstance Route hostname that carries live frontend assets and hot module replacement through Cluster HTTPS to the owning Node. See [Routes](reference/routes.md#development-server-endpoint).
+- **Cluster** — An optional group of Nodes that share routing. It has a name and may have a development top-level domain (TLD), such as `test`. See [Routes](/reference/routes).
+- **App** — An application record with one Git repository, a default branch, and a web root. App instances share these defaults. See [Apps](/reference/apps).
+- **Repository identity** — The Git host and path, without a trailing `.git`. Equivalent SSH and HTTPS URLs identify the same repository and belong to one App. See [Apps](/reference/apps#keep-one-repository-owner).
+- **App instance** — One managed copy of an App on a Node. Development uses a checkout or worktree. New production instances require a candidate. Each active instance has one Route. See [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) and [Applications](/domains/applications).
+- **Web root** — The directory served by an App instance, with a relative path inherited from the App or overridden per instance. Production resolves it inside the selected release. See [Production release layout](/reference/deployments).
+- **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use App instance.
+- **Workspace** — A Git worktree owned by a legacy Instance. App instance creation does not use or change Workspace source.
+- **Route** — A hostname owned by an App. It sends traffic to App instances through one Node or active Cluster. Orbit records whether the hostname is generated or explicit. See [Routes](/reference/routes).
+- **Development-server endpoint** — The reserved path `/__orbit/vite` on an App instance Route hostname that carries live frontend assets and hot module replacement through Cluster HTTPS to the owning Node. See [Routes](/reference/routes#development-server-endpoint).
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
-- **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
-- **Database** — The Node role that converges Docker on a Node for shared database Processes. See [Database role](reference/database-role.md) and [ADR 0070](decisions/0070-keep-the-database-role-as-a-docker-baseline.md).
-- **Database connection** — A Gateway-owned mysql, pgsql, or sqlite registry record with encrypted credentials that an operator can attach to an AppInstance. See [Database connections](reference/database-connections.md).
-- **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
-- **Process** — Gateway intent for one systemd service or Docker container owned by an AppInstance or a managed Node. See [App processes and schedules](reference/app-processes-and-schedules.md) and [ADR 0069](decisions/0069-allow-node-process-targets.md).
-- **Runtime hibernation** — The Gateway hibernates idle development AppInstance Processes and restores reconstructable checkout dependencies on wake. See [App-dev runtime hibernation](reference/app-dev-runtime-hibernation.md), [ADR 0074](decisions/0074-hibernate-idle-app-dev-appinstance-processes.md), and [ADR 0075](decisions/0075-prune-idle-app-dev-checkout-dependencies.md).
-- **Herdr session** — Named headless Herdr server on a managed Node, published through a private receive-only observer and observed with a short-lived `terminal.observe` grant. See [Herdr sessions](reference/herdr-sessions.md).
-- **Schedule** — Gateway intent for one recurring command owned by a Node or AppInstance and executed by a native systemd timer on its host Node. See [Schedules](reference/schedules.md).
-- **Tool** — One manager-native package that Orbit manages on one Node. Its identity is the Node, Tool Manager, and package. See [Tools](reference/tools.md) and [ADR 0001](decisions/0001-tool-management.md).
-- **Tool Manager** — A protected Node capability for Tool operations through one code-owned adapter. Managers are available on demand and independent of Node roles. See [Tools](reference/tools.md) and [ADR 0042](decisions/0042-provision-tool-managers-on-demand.md).
-- **Proof topology** — Disposable Incus machines for one issue and exact commit. The harness captures an immutable result before it may retain the machines for interactive review. See [Incus topologies](reference/incus-topologies.md) and [ADR 0056](decisions/0056-retain-proof-topologies-for-interactive-review.md).
+- **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).
+- **Database** — A Node role that installs and manages Docker for shared database processes. See [Database role](/reference/database-role).
+- **Database connection** — Saved MySQL, PostgreSQL, or SQLite credentials. Attaching a connection populates the App instance's stored environment. See [Database connections](/reference/database-connections).
+- **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](/decisions/0004-verify-only-doctor-boundary).
+- **Process** — A systemd service or Docker container that Orbit manages for an App instance or Node. See [App processes and schedules](/reference/app-processes-and-schedules).
+- **Runtime hibernation** — Pausing idle development processes and removing rebuildable dependencies after longer idle periods. An HTTP request restores dependencies and wakes configured processes. Keep-alive workers stay running. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
+- **Herdr session** — A named headless Herdr server on a Node. View its panes through a private, read-only connection with temporary access. See [Herdr sessions](/reference/herdr-sessions).
+- **Schedule** — A recurring command for a Node or App instance. A systemd timer runs it on the host Node. See [Schedules](/reference/schedules).
+- **Tool** — A package that Orbit manages on a Node through a specific package manager. See [Tools](/reference/tools).
+- **Tool Manager** — Orbit's adapter for a package manager on a Node. Orbit prepares it on demand, independently of Node roles. See [Tools](/reference/tools).
+- **Proof topology** — Disposable Incus machines for one issue and exact commit. The harness captures an immutable result before it may retain the machines for interactive review. See [Incus topologies](/reference/incus-topologies) and [ADR 0056](/decisions/0056-retain-proof-topologies-for-interactive-review).
 - **Documentation context** — The ordered list of pages that `composer docs-context` selects for a component or concept. A contributor or agent reads it before changing that part of Orbit.

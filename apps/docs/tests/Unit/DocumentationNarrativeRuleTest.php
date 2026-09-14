@@ -3,11 +3,9 @@
 declare(strict_types=1);
 
 use App\Documentation\BlockedPhrases;
+use App\Documentation\DocumentationRepository;
 use App\Documentation\MarkdownProse;
 use App\Librarian\Rules\DocumentationNarrativeRule;
-use HardImpact\Librarian\Docs\DocsConfig;
-use HardImpact\Librarian\Docs\DocsFilesystem;
-use HardImpact\Librarian\Docs\MarkdownSnapshot;
 use HardImpact\Librarian\Linting\Finding;
 use HardImpact\Librarian\Linting\FindingSeverity;
 use Illuminate\Filesystem\Filesystem;
@@ -19,7 +17,7 @@ beforeEach(function (): void {
     $files->makeDirectory($this->root.'/generated', 0777, true);
     $files->makeDirectory($this->root.'/reference', 0777, true);
     $this->rule = new DocumentationNarrativeRule(
-        new MarkdownSnapshot(new DocsFilesystem(new DocsConfig($this->root))),
+        new DocumentationRepository($this->root, $this->root.'/generated/context.json', []),
         new BlockedPhrases(['no longer', 'retired', 'deprecated']),
     );
 });
@@ -84,4 +82,26 @@ it('splits prose lines outside both fence styles', function (): void {
     $lines = MarkdownProse::lines("a\n```\nb\n```\nc\n~~~sh\nd\n~~~\ne");
 
     expect($lines)->toBe([1 => 'a', 5 => 'c', 9 => 'e']);
+});
+
+it('checks MDX prose while leaving frontmatter and code examples alone', function (): void {
+    file_put_contents($this->root.'/index.mdx', <<<'MDX'
+        ---
+        title: "Retired options"
+        ---
+
+        <Info>
+        This is no longer supported.
+        </Info>
+
+        ```md
+        This is deprecated.
+        ```
+        MDX);
+
+    $findings = $this->rule->check();
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->path)->toBe('docs/index.mdx')
+        ->and($findings[0]->line)->toBe(6);
 });

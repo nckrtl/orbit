@@ -4,7 +4,7 @@ In the context of a CLI whose families create resources with new, add, install, 
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0036](0036-support-only-appinstances.md), [ADR 0048](0048-copy-app-process-and-schedule-definitions-into-appinstances.md), and [ADR 0069](0069-allow-node-process-targets.md).
+Accepted on 2026-09-14. Extends [ADR 0036](/decisions/0036-support-only-appinstances), [ADR 0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances), and [ADR 0069](/decisions/0069-allow-node-process-targets).
 
 ## Context
 
@@ -43,6 +43,6 @@ The CLI exposes 106 commands in 21 families. Creation uses five verbs and remova
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0036](0036-support-only-appinstances.md), [ADR 0048](0048-copy-app-process-and-schedule-definitions-into-appinstances.md), and [ADR 0069](0069-allow-node-process-targets.md)
+- ADRs: extends [ADR 0036](/decisions/0036-support-only-appinstances), [ADR 0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances), and [ADR 0069](/decisions/0069-allow-node-process-targets)
 - Detail: docs/reference/cli-command-vocabulary.md
 - Verify: `composer docs-lint`; the CLI command-surface test that asserts every command verb belongs to the vocabulary and every Gateway route that serves a command carries its name

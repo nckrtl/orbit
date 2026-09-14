@@ -4,7 +4,7 @@ In the context of proving routing across two production workload Nodes, facing a
 
 ## Status
 
-Accepted on 2026-09-06. Extends [ADR 0006](0006-topology-led-feature-development.md), [ADR 0035](0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md), and [ADR 0037](0037-promote-fresh-three-node-topology-snapshots.md) for issue-owned topology extension while preserving the three-node shared snapshot.
+Accepted on 2026-09-06. Extends [ADR 0006](/decisions/0006-topology-led-feature-development), [ADR 0035](/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot), and [ADR 0037](/decisions/0037-promote-fresh-three-node-topology-snapshots) for issue-owned topology extension while preserving the three-node shared snapshot.
 
 ## Context
 
@@ -39,6 +39,6 @@ The shared topology has Gateway, app-dev, and app-prod Nodes. Gateway and app-de
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0006](0006-topology-led-feature-development.md), [ADR 0035](0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md), and [ADR 0037](0037-promote-fresh-three-node-topology-snapshots.md)
-- Detail: [Incus topologies](../reference/incus-topologies.md); [Topology snapshot](../reference/topology-snapshot.md)
+- ADRs: extends [ADR 0006](/decisions/0006-topology-led-feature-development), [ADR 0035](/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot), and [ADR 0037](/decisions/0037-promote-fresh-three-node-topology-snapshots)
+- Detail: [Incus topologies](/reference/incus-topologies); [Topology snapshot](/reference/topology-snapshot)
 - Verify: `composer docs-lint`; implementation conformance through declared extended-proof construction, retention, failure recovery, closeout, and exact-cleanup acceptance

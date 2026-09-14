@@ -4,7 +4,7 @@ In the context of independently reviewed feature candidates, facing worktree sta
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0052](0052-seed-worktrees-from-successful-main-test-baselines.md). Supersedes [ADR 0053](0053-use-local-review-checks-for-feature-landing.md) for refreshing main test baselines before worktree creation.
+Accepted on 2026-09-10. Extends [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines). Supersedes [ADR 0053](/decisions/0053-use-local-review-checks-for-feature-landing) for refreshing main test baselines before worktree creation.
 
 ## Context
 
@@ -37,6 +37,6 @@ Worktree creation waits for main test recording even when compatible successful 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0052](0052-seed-worktrees-from-successful-main-test-baselines.md); supersedes [ADR 0053](0053-use-local-review-checks-for-feature-landing.md) for refreshing main test baselines before worktree creation
-- Detail: [docs/reference/implementation-loop.md](../reference/implementation-loop.md)
+- ADRs: extends [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines); supersedes [ADR 0053](/decisions/0053-use-local-review-checks-for-feature-landing) for refreshing main test baselines before worktree creation
+- Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
 - Verify: maintenance queue, publication and worktree tests; `composer docs-lint`

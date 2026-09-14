@@ -1,10 +1,10 @@
 # Node provisioning
 
-This page tells an operator which Linux user the Gateway connects as when `orbit node:add <name> [host]` bootstraps a Node, how the Gateway records the machine architecture of that Node, and how `orbit node:remove <node>` returns a machine to a state that a later provisioning can reach. It explains how each choice differs between a new Node and an existing Node, and which identity and architecture inputs the command accepts. The same request serves a first provisioning and a later change to a Node's TLD, roles, or settings.
+Use `orbit node:add <name> [host]` to set up a Node or change its top-level domain (TLD), roles, or settings. The Gateway sets up SSH access and records the machine architecture. Use `orbit node:remove <node>` to remove the Node from Orbit and restore public SSH access.
 
 ## Bootstrap identity
 
-The Gateway opens one SSH session as the bootstrap user and runs the base bootstrap. The bootstrap installs the base packages and creates the managed user when it is missing. It installs the Gateway SSH key for that user and grants that user passwordless sudo. The Gateway then verifies SSH access as the managed user, and every later Gateway command on the Node runs as that user.
+The Gateway connects over SSH as the bootstrap user to install base packages and create the managed user if needed. It adds its SSH key and grants passwordless sudo. After verifying access as the managed user, the Gateway uses that account for all later commands.
 
 When the request names no bootstrap user, the Gateway selects it from the Node record.
 
@@ -13,7 +13,7 @@ When the request names no bootstrap user, the Gateway selects it from the Node r
 | New Node | `root` | Runs the base bootstrap directly. |
 | Existing Node | The Node's recorded managed user | Runs the same base bootstrap through passwordless sudo. |
 
-An explicit bootstrap user replaces this default for a new Node and for an existing Node. Name one when the host allows no root login. Name one when the recorded managed user cannot log in, for example after a first provisioning failed before the bootstrap created that user.
+Set an explicit bootstrap user if root login is disabled or the recorded managed user cannot log in. This overrides the default for both new and existing Nodes.
 
 ## Identity inputs
 
@@ -28,9 +28,9 @@ The Gateway console command `orbit:node-provision` applies the same defaults for
 
 ## Machine architecture
 
-The Gateway observes the machine architecture right after it verifies SSH access as the managed user. It runs `uname -m` on the Node and reads the reported value, for example `x86_64` or `aarch64`. A new Node records that observed value, so the request needs no architecture input. An existing Node keeps its recorded architecture whatever the request carries.
+After verifying managed SSH access, the Gateway runs `uname -m` to read the architecture, such as `x86_64` or `aarch64`. A new Node stores that value. An existing Node keeps its recorded architecture regardless of request input.
 
-When the request names an architecture for a new Node, the Gateway compares it with the observed value. The Gateway records an equal value. A different value stops the request with status `409` before the Gateway materializes a Tool Manager or converges a role. Each architecture failure leaves the Node record failed at the `machine-architecture` step.
+An explicit architecture for a new Node must match the observed value. A mismatch returns HTTP 409 before package-manager or role setup. Architecture failures mark the Node as failed at `machine-architecture`.
 
 | Input | Meaning |
 | --- | --- |
@@ -53,13 +53,13 @@ Each identity or architecture failure names the boundary that stopped the reques
 
 ## Public SSH after provisioning
 
-Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](node-retarget.md#two-boundaries) describes the same two boundaries.
+Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](/reference/node-retarget#two-boundaries) describes the same two boundaries.
 
 A later `node:add` of a roleless Node therefore connects over public SSH again and republishes the WireGuard peer. The Gateway finalizes that publication over the verified tunnel, because role convergence closes the public path during the same request.
 
 ## Remove a Node
 
-`orbit node:remove <node> [--offline] [--force]` deletes a Node record and its Gateway-side projections, restores the public SSH recovery rule, and leaves the machine reachable over its recorded public SSH target so an operator can provision it again or reach it for recovery. The Gateway refuses the request while the Node still owns AppInstances, instances, Orbit firewall rules, roles, Processes, or Herdr sessions, and it never removes a Node with the Gateway or VPN role or the Node that sends the request. The machine keeps the units, containers, and checkouts the operator left on it. [ADR 0072](../decisions/0072-add-and-remove-nodes-without-changing-the-machine.md) owns that boundary.
+`orbit node:remove <node> [--offline] [--force]` removes the Node record and Gateway configuration. Online removal restores public SSH so you can recover or provision the machine again. First remove its App instances, legacy instances, Orbit firewall rules, roles, processes, and Herdr sessions. Orbit refuses to remove the caller's Node or one with the Gateway or VPN role. Other units, containers, and checkouts stay on the machine. See [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine).
 
 The online removal runs these steps in order and reports success only after the last step completes.
 
@@ -74,7 +74,7 @@ The online removal runs these steps in order and reports success only after the 
 
 The Gateway skips the public SSH step for a Node without a WireGuard peer, because public SSH closes only after the peer exists.
 
-`--offline` is for a Node the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps the ordinary guards, so the flag never bypasses a guard on a reachable machine. The flag also skips the public SSH recovery step when the Node answers, so omit it for a reachable Node.
+Use `--offline` only for an unreachable Node. The Gateway probes it first and keeps all normal guards if it answers. The flag skips public SSH recovery even for a reachable Node, so omit it for online removal.
 
 For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Herdr session and Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, and Orbit UFW rules and the Metrics exporter stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
 
@@ -94,7 +94,7 @@ A failed step rolls the Gateway back and keeps the Node record active. Each fail
 | `node.persistence_failed` | `persistence` | The Node record is active again, and the WireGuard peer, DNS records, and Metrics selection are restored. |
 | `node.removal_rollback_failed` | `wireguard-rollback`, `persistence-rollback`, or `metrics-exporters-rollback` | The Node record is active again, but the named rollback did not complete. |
 
-Removing a Node's last role also restores the public SSH recovery rule; [Node retarget](node-retarget.md#two-boundaries) describes that boundary.
+Removing a Node's last role also restores the public SSH recovery rule; [Node retarget](/reference/node-retarget#two-boundaries) describes that boundary.
 
 Provisioning the machine again after removal writes a new tunnel configuration and restarts `wg-quick@orbit` while the earlier tunnel is still up. The configuration carries a `PostUp` hook that points the link at Orbit DNS and no `PreDown` hook: the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call, and systemd-resolved drops the link configuration when wg-quick deletes the interface.
 

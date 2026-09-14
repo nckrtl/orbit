@@ -2,7 +2,7 @@
 
 This reference is for operators who set the apps-root storage path on a Node and need the accepted setting path, inputs, outputs, and failure codes.
 
-A Node owns one typed apps-root setting. [ADR 0008](../decisions/0008-typed-app-dev-node-storage-settings.md) closes the settings contract, [ADR 0009](../decisions/0009-clustered-app-instance-routing.md) defines the single apps root, and [ADR 0068](../decisions/0068-accept-only-apps-path-node-storage-setting.md) names the public setting path.
+A Node owns one typed apps-root setting. [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) closes the settings contract, [ADR 0009](/decisions/0009-clustered-app-instance-routing) defines the single apps root, and [ADR 0068](/decisions/0068-accept-only-apps-path-node-storage-setting) names the public setting path.
 
 ## Set the apps root
 
@@ -41,11 +41,11 @@ Node responses return the raw apps override through the same shape. They return 
 
 When a checkout is created, the Gateway resolves the effective apps root as `settings.apps.path`, or a stored instance path when that override is absent, or `<managed-user-home>/apps` when neither exists.
 
-A new AppInstance checkout is `<apps-root>/<app-slug>/<instance-name>`. [Applications](../domains/applications.md) owns placement and identity. The Gateway records that path on the AppInstance and does not move, rewrite, or delete an existing checkout when the Node setting changes.
+A new App instance checkout is `<apps-root>/<app-slug>/<instance-name>`. [Applications](/domains/applications) owns placement and identity. The Gateway records that path on the App instance and does not move, rewrite, or delete an existing checkout when the Node setting changes.
 
 ## Validate before the root becomes stored
 
-The Gateway validates every configured path at the API boundary and again on the target Node before it persists a provisioning or settings mutation. [ADR 0008](../decisions/0008-typed-app-dev-node-storage-settings.md) owns the path, overlap, protected-path, and preparation rules. A failed mutation leaves stored settings unchanged.
+The Gateway validates every configured path at the API boundary and again on the target Node before it persists a provisioning or settings mutation. [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) owns the path, overlap, protected-path, and preparation rules. A failed mutation leaves stored settings unchanged.
 
 ## Failure codes
 

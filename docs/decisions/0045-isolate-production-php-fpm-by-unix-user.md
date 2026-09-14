@@ -4,7 +4,7 @@ In the context of production AppInstances that share a PHP-FPM master, facing ca
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for production runtime ownership. Supersedes [ADR 0021](0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) for production service scope, tuning ownership, and deployment cache refresh.
+Accepted on 2026-09-10. Extends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production runtime ownership. Supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh.
 
 ## Context
 
@@ -45,6 +45,6 @@ PHP-FPM pools under one Linux master share an OPcache instance. Selecting a pool
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0011](0011-clustered-production-ingress-and-app-prod-placement.md) for production runtime ownership; supersedes [ADR 0021](0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) for production service scope, tuning ownership, and deployment cache refresh
-- Detail: [PHP runtimes](../reference/php-runtime.md)
+- ADRs: extends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production runtime ownership; supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh
+- Detail: [PHP runtimes](/reference/php-runtime)
 - Verify: `composer docs-lint`; implementation conformance through Gateway runtime tests and issue-specific Incus proof

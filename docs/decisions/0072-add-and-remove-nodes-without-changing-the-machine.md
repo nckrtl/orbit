@@ -4,7 +4,7 @@ In the context of Node lifecycle commands, facing a removal that stops Processes
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0069](0069-allow-node-process-targets.md) and [ADR 0071](0071-use-one-verb-vocabulary-across-cli-routes-and-sdk.md). Supersedes [ADR 0069](0069-allow-node-process-targets.md) for Process cleanup during Node decommissioning.
+Accepted on 2026-09-14. Extends [ADR 0069](/decisions/0069-allow-node-process-targets) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). Supersedes [ADR 0069](/decisions/0069-allow-node-process-targets) for Process cleanup during Node decommissioning.
 
 ## Context
 
@@ -34,6 +34,6 @@ Node removal refuses a Node that owns AppInstances, roles, or firewall rules, th
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0069](0069-allow-node-process-targets.md) and [ADR 0071](0071-use-one-verb-vocabulary-across-cli-routes-and-sdk.md); supersedes [ADR 0069](0069-allow-node-process-targets.md) for Process cleanup during Node decommissioning
-- Detail: [Node provisioning](../reference/node-provisioning.md)
+- ADRs: extends [ADR 0069](/decisions/0069-allow-node-process-targets) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk); supersedes [ADR 0069](/decisions/0069-allow-node-process-targets) for Process cleanup during Node decommissioning
+- Detail: [Node provisioning](/reference/node-provisioning)
 - Verify: `composer docs-lint`; Gateway Node add and removal tests

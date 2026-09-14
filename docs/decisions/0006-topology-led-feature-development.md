@@ -3,9 +3,9 @@
 ## Status
 
 Accepted on 2026-08-29. This decision builds on
-[ADR 0005](0005-rolling-incus-development-topology.md) and supersedes the
+[ADR 0005](/decisions/0005-rolling-incus-development-topology) and supersedes the
 shared-live development-proof venue from
-[ADR 0002](0002-candidate-deployment-proof-boundary.md). ADR 0002's ownership
+[ADR 0002](/decisions/0002-candidate-deployment-proof-boundary). ADR 0002's ownership
 and production-separation principles remain in force.
 
 ## Context

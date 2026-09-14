@@ -5,10 +5,10 @@
 Accepted on 2026-09-02.
 
 If accepted, this decision amends the exact-candidate invalidation rule in
-[ADR 0006](0006-topology-led-feature-development.md). ADR 0006's separation of
+[ADR 0006](/decisions/0006-topology-led-feature-development). ADR 0006's separation of
 discovery and proof, immutable successful evidence, attempt ownership, and
 exact cleanup remain in force. The production-separation principles in
-[ADR 0002](0002-candidate-deployment-proof-boundary.md) also remain in force.
+[ADR 0002](/decisions/0002-candidate-deployment-proof-boundary) also remain in force.
 
 ## Context
 

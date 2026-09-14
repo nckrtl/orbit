@@ -5,7 +5,7 @@
 Accepted on 2026-09-01.
 
 This ADR extends
-[ADR 0010](0010-record-decisions-before-implementation-issues.md) by adding
+[ADR 0010](/decisions/0010-record-decisions-before-implementation-issues) by adding
 documentation reconciliation to issue shaping, implementation preflight,
 development, and review.
 

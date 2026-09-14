@@ -4,11 +4,11 @@ In the context of native Schedule execution, facing a need to show the latest ou
 
 ## Status
 
-Accepted on 2026-09-11. Supersedes [ADR 0013](0013-native-systemd-schedule-management.md) for Schedule projection generations and completion reporting.
+Accepted on 2026-09-11. Supersedes [ADR 0013](/decisions/0013-native-systemd-schedule-management) for Schedule projection generations and completion reporting.
 
 ## Context
 
-[ADR 0013](0013-native-systemd-schedule-management.md) gives systemd ownership of recurring execution and limits the Gateway to the latest completion metadata. Its callback fields cannot distinguish a repeated report from the next run with the same result, although it also requires duplicate and stale reports to be ignored. Orbit does not need that distinction because completion reporting is informational, Schedules cannot be changed in place, and the Node does not retry a report.
+[ADR 0013](/decisions/0013-native-systemd-schedule-management) gives systemd ownership of recurring execution and limits the Gateway to the latest completion metadata. Its callback fields cannot distinguish a repeated report from the next run with the same result, although it also requires duplicate and stale reports to be ignored. Orbit does not need that distinction because completion reporting is informational, Schedules cannot be changed in place, and the Node does not retry a report.
 
 ## Decision
 
@@ -39,6 +39,6 @@ Accepted on 2026-09-11. Supersedes [ADR 0013](0013-native-systemd-schedule-manag
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: supersedes [ADR 0013](0013-native-systemd-schedule-management.md) for Schedule projection generations and completion reporting
+- ADRs: supersedes [ADR 0013](/decisions/0013-native-systemd-schedule-management) for Schedule projection generations and completion reporting
 - Detail: docs/reference/schedules.md
 - Verify: Gateway Schedule lifecycle tests and `composer docs-lint`

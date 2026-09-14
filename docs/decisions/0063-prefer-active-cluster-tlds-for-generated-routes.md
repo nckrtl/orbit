@@ -4,11 +4,11 @@ In the context of generated development Route hostnames, facing Nodes whose own 
 
 ## Status
 
-Accepted on 2026-09-13. Supersedes [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) only where generated development Route hostnames prefer the Node TLD over the active Cluster TLD.
+Accepted on 2026-09-13. Supersedes [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) only where generated development Route hostnames prefer the Node TLD over the active Cluster TLD.
 
 ## Context
 
-[ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) gives a Node TLD precedence over its active Cluster TLD. A generated Route can therefore have Cluster routing scope while retaining a Node-specific namespace. Development AppInstances that move between Clusters need their generated hostname to identify the destination Cluster, while an operator-supplied hostname must remain independent from generated naming.
+[ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) gives a Node TLD precedence over its active Cluster TLD. A generated Route can therefore have Cluster routing scope while retaining a Node-specific namespace. Development AppInstances that move between Clusters need their generated hostname to identify the destination Cluster, while an operator-supplied hostname must remain independent from generated naming.
 
 ## Decision
 
@@ -36,6 +36,6 @@ Accepted on 2026-09-13. Supersedes [ADR 0023](0023-separate-hostname-selection-f
 ## Affects
 
 - Components: apps/gateway
-- ADRs: supersedes [ADR 0023](0023-separate-hostname-selection-from-cluster-routing.md) for generated development Route TLD precedence
-- Detail: [Routes](../reference/routes.md)
+- ADRs: supersedes [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) for generated development Route TLD precedence
+- Detail: [Routes](/reference/routes)
 - Verify: `composer docs-lint`, Gateway Route generation and reconciliation tests, and generated Route resolution across Node and Cluster TLD changes on disposable Nodes

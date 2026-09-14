@@ -40,7 +40,7 @@ final readonly class DocumentationRepository
 
         /** @var SplFileInfo $file */
         foreach ($iterator as $file) {
-            if (! $file->isFile() || strtolower($file->getExtension()) !== 'md') {
+            if (! $file->isFile() || ! in_array(strtolower($file->getExtension()), ['md', 'mdx'], true)) {
                 continue;
             }
 

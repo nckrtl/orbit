@@ -4,7 +4,7 @@ In the context of configuring production deployments, facing one replace-all doc
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0046](0046-own-production-release-deployment-in-orbit.md) and [ADR 0071](0071-use-one-verb-vocabulary-across-cli-routes-and-sdk.md). Supersedes [ADR 0046](0046-own-production-release-deployment-in-orbit.md) for the adoption of existing production homes.
+Accepted on 2026-09-14. Extends [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). Supersedes [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) for the adoption of existing production homes.
 
 ## Context
 
@@ -38,6 +38,6 @@ ADR 0046 gave a production AppInstance its branch and ordered steps, exposed as 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0046](0046-own-production-release-deployment-in-orbit.md) and [ADR 0071](0071-use-one-verb-vocabulary-across-cli-routes-and-sdk.md); supersedes [ADR 0046](0046-own-production-release-deployment-in-orbit.md) for the adoption of existing production homes
-- Detail: [Production release layout](../reference/deployments.md)
+- ADRs: extends [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk); supersedes [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) for the adoption of existing production homes
+- Detail: [Production release layout](/reference/deployments)
 - Verify: `composer docs-lint`; Gateway, PHP SDK, and CLI deploy-step tests
