@@ -106,7 +106,7 @@ A production systemd Process runs as the AppInstance's dedicated production user
 
 A prepared production home without `current` accepts a stopped Process installation for either runtime. An initial start requested by `process:create` and a later `process:start` both fail before the Process record or runtime changes until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
 
-A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an AppInstance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](database-role.md) can converge Docker on that Node, and a Node Process does not require that role. A named Herdr session also uses a Node Process; [Herdr sessions](herdr-sessions.md) owns that integration:
+A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an AppInstance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](database-role.md) can converge Docker on that Node, and a Node Process does not require that role. A managed Herdr session uses a Node Process; an adopted external session does not. [Herdr sessions](herdr-sessions.md) owns that integration:
 
 ```bash
 orbit process:create postgres \
@@ -115,7 +115,7 @@ orbit process:create postgres \
   --image=postgres:18
 ```
 
-The Herdr session commands compose their Node Process and observer service through the [Herdr sessions](herdr-sessions.md) contract. Operators do not add that observer as a generic Process.
+Managed Herdr session commands compose their Node Process and observer service through the [Herdr sessions](herdr-sessions.md) contract. Adoption composes only the observer around an existing external service. Operators do not add that observer as a generic Process.
 
 `--node` accepts a positive Node ID or the registered Node name. The CLI resolves a name through the node list before it sends the create request.
 

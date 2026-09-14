@@ -2,7 +2,7 @@
 
 This page tells an operator how Orbit manages or observes a named Herdr session on a managed Node and how Commander requests a private receive-only observation grant for one recorded pane.
 
-Orbit owns Process lifecycle, private DNS, Caddy, Orbit certificate authority (CA) Transport Layer Security (TLS), WireGuard publication, the receive-only WebSocket adapter, and short-lived observation grants. Herdr owns terminal rendering and the local snapshot and terminal-observation commands that the adapter consumes.
+Orbit owns Process lifecycle only for managed sessions. For adopted sessions, the service lifecycle stays external. Orbit owns private DNS, Caddy, Orbit certificate authority (CA) Transport Layer Security (TLS), WireGuard publication, the receive-only WebSocket adapter, and short-lived observation grants in both modes. Herdr owns terminal rendering and the local snapshot and terminal-observation commands that the adapter consumes.
 
 ## Create a session
 

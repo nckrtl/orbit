@@ -52,7 +52,7 @@ Legacy Instance and Workspace records remain available during staged conversion.
 
 ## Herdr sessions
 
-A Herdr session is a named headless Herdr server on a managed Node. The Gateway composes a node-targeted Process, publishes a private receive-only observer, and issues short-lived `terminal.observe` grants so Commander can watch recorded panes without SSH or terminal input. [Herdr sessions](reference/herdr-sessions.md) owns that contract.
+A Herdr session is a named headless Herdr server on a managed Node. For a managed session, the Gateway composes a node-targeted Process. It can instead adopt an existing server with an external lifecycle and no Orbit Process. In both modes, Orbit can publish a private receive-only observer and issue short-lived `terminal.observe` grants so Commander can watch recorded panes without SSH or terminal input. [Herdr sessions](reference/herdr-sessions.md) owns that contract.
 
 ## Database connections
 

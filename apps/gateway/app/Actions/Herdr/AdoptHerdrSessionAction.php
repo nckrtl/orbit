@@ -43,6 +43,8 @@ final readonly class AdoptHerdrSessionAction
             );
         }
 
+        $this->assertNoConflict($data, $node);
+
         $candidate = new HerdrSession([
             'node_id' => $node->id,
             'session' => $data->session,
@@ -89,6 +91,29 @@ final readonly class AdoptHerdrSessionAction
         ])->save();
 
         return ['session' => $session->refresh()->load(['node', 'process']), 'created' => $created];
+    }
+
+    private function assertNoConflict(AddHerdrSessionData $data, Node $node): void
+    {
+        $existing = HerdrSession::query()
+            ->where('node_id', $node->id)
+            ->where('session', $data->session)
+            ->first();
+
+        if ($existing instanceof HerdrSession
+            && ($existing->user !== $data->user || $existing->management !== HerdrSessionManagement::External)) {
+            throw $this->conflict($data->session);
+        }
+
+        $processExists = Process::query()
+            ->where('owner_type', Node::class)
+            ->where('owner_id', $node->id)
+            ->where('name', $this->contract->processName($data->session))
+            ->exists();
+
+        if ($processExists) {
+            throw $this->conflict($data->session);
+        }
     }
 
     /** @return array{0: HerdrSession, 1: bool} */
