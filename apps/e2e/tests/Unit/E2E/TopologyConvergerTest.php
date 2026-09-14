@@ -103,6 +103,8 @@ function task7_process_result(
     bool $typed = false,
     ?TopologyTarget $target = null,
     bool $typedProduction = false,
+    string $productionEndpointKey = 'hostname',
+    bool $invalidProductionDomain = false,
 ): ProcessResult {
     $command = $process->command;
     assert(is_array($command));
@@ -145,7 +147,15 @@ function task7_process_result(
             $nested = new PendingProcess(app(ProcessFactory::class));
             $nested->command = $argv;
             $nestedRecorded = [];
-            $result = task7_process_result($nested, $nestedRecorded, $typed, $target, $typedProduction);
+            $result = task7_process_result(
+                $nested,
+                $nestedRecorded,
+                $typed,
+                $target,
+                $typedProduction,
+                $productionEndpointKey,
+                $invalidProductionDomain,
+            );
             $results[] = [
                 'label' => $request['label'],
                 'stdout' => $result->output(),
@@ -185,7 +195,11 @@ function task7_process_result(
             'effective_root' => 'public',
         ];
         if ($typedProduction) {
-            $state['production'] = task7_production_placement();
+            $state['production'] = task7_production_placement($productionEndpointKey);
+            if ($invalidProductionDomain) {
+                $state['production']['domain'] = '';
+                $state['production']['hostname'] = 'e2e-prod.orbit.test';
+            }
         }
 
         return Process::result(json_encode($state, JSON_THROW_ON_ERROR)."\n");
@@ -255,9 +269,9 @@ function task7_process_result(
 }
 
 /** @return array<string, mixed> */
-function task7_production_placement(): array
+function task7_production_placement(string $endpointKey = 'hostname'): array
 {
-    return [
+    $placement = [
         'layout' => 'release',
         'instance_id' => 9,
         'user' => 'orbit-laravel',
@@ -269,8 +283,10 @@ function task7_production_placement(): array
         'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
         'socket' => '/run/php/orbit-laravel.sock',
         'current_target' => '/var/www/laravel/releases/20260910T120000Z',
-        'hostname' => 'e2e-prod.orbit.test',
     ];
+    $placement[$endpointKey] = 'e2e-prod.orbit.test';
+
+    return $placement;
 }
 
 describe('TopologyConverger', function () {
@@ -353,6 +369,59 @@ describe('TopologyConverger', function () {
                 .' app-prod '
                 .$encoded,
             );
+    });
+
+    it('normalizes a domain-shaped production placement to one hostname endpoint for hydration', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result(
+                $process,
+                $recorded,
+                typed: true,
+                typedProduction: true,
+                productionEndpointKey: 'domain',
+            );
+        });
+
+        $commit = str_repeat('b', 40);
+        new TopologyConverger(task7_host())->converge(
+            featureTarget('TST-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', $commit),
+        );
+
+        $commands = array_map(
+            static fn (array $command): string => implode(' ', array_map(strval(...), $command)),
+            $recorded,
+        );
+        $encoded = base64_encode(json_encode(task7_production_placement(), JSON_THROW_ON_ERROR));
+        expect($commands)
+            ->toContain(
+                'incus --project orbit exec lab:orbit-e2e-tst-123-aaaaaaaa-app-prod -- '
+                .'/usr/local/bin/converge-sample-app.sh hydrate '
+                .$commit
+                .' app-prod '
+                .$encoded,
+            );
+    });
+
+    it('refuses a present invalid production domain without falling back to hostname', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result(
+                $process,
+                $recorded,
+                typed: true,
+                typedProduction: true,
+                invalidProductionDomain: true,
+            );
+        });
+
+        expect(fn () => new TopologyConverger(task7_host())->converge(
+            featureTarget('TST-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        ))->toThrow(RuntimeException::class, 'invalid production placement');
     });
 
     it('provisions both app-prod Nodes but keeps the sole typed sample on app-dev', function (): void {
