@@ -25,13 +25,13 @@ An App can return null for `default_branch` and root when its source defaults ar
 Select one active Node with an active app-dev role. Use the reserved `default` name for the App's default development source:
 
 ```text
-orbit instance:new <app-id> <node-id> default
+orbit instance:create <app-id> <node-id> default
 ```
 
 Use another name for a named source, or use `--branch` when either identity must select a different existing remote branch:
 
 ```text
-orbit instance:new <app-id> <node-id> feature-one [--branch=release] [--hostname=feature.example.test]
+orbit instance:create <app-id> <node-id> feature-one [--branch=release] [--hostname=feature.example.test]
 ```
 
 The Gateway derives placement from the requested identity and the Node apps root, and it selects the branch independently. [Node settings](../reference/node-settings.md) owns the `apps.path` contract that supplies that root.
@@ -42,7 +42,7 @@ The Gateway derives placement from the requested identity and the Node apps root
 | Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
 | Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
 
-`instance:new` stores source layout `checkout`. The checkout has its own `.git` directory and does not use a Workspace or shared worktree administration.
+`instance:create` stores source layout `checkout`. The checkout has its own `.git` directory and does not use a Workspace or shared worktree administration.
 
 The API and PHP SDK accept the optional `branch` input. API, SDK, and CLI JSON responses return the resolved branch as `selected_branch`. They return the explicit input as nullable `branch_override`, including when it equals `default_branch`; inherited selection returns null. An explicit branch that does not exist returns `instance.branch_resolution_failed` without a fallback or an active AppInstance or Route.
 
@@ -90,7 +90,7 @@ For a cross-filesystem move, Orbit stages and verifies the complete source at th
 Select one active standalone Node with an active app-prod role. The same command creates a production placement when the selected Node carries that role:
 
 ```text
-orbit instance:new <app-id> <app-prod-node-id> primary [--branch=release] [--root=public] [--hostname=app.example.test]
+orbit instance:create <app-id> <app-prod-node-id> primary [--branch=release] [--root=public] [--hostname=app.example.test]
 ```
 
 The Gateway records one dedicated system user and `/home/<app-user>` home for the App on that Node. It prepares `releases/` in that home, keeps persistent files at the home root, and prepares initial repository source as a release before runtime or Route publication. An omitted branch selects the App `default_branch`, even when a remote branch matches the AppInstance name. An explicit branch must exist and remains independent from the AppInstance name.
@@ -162,7 +162,7 @@ The endpoint is available for an agent or operator to inspect and finish applica
 By default, an AppInstance inherits the App root. Use the root option to store a relative override:
 
 ```text
-orbit instance:new <app-id> <node-id> feature-one \
+orbit instance:create <app-id> <node-id> feature-one \
   --root=site/public
 ```
 
@@ -173,13 +173,13 @@ The effective root is the AppInstance root when set and the App root otherwise. 
 Remove clean, published source with:
 
 ```text
-orbit instance:remove <id>
+orbit instance:destroy <id>
 ```
 
 Use forced removal only when you intend to lose dirty or unpublished work:
 
 ```text
-orbit instance:remove <id> --force
+orbit instance:destroy <id> --force
 ```
 
 Production removal uses the same command without deleting application content. It retains a shared Route and republishes its surviving production targets, or deletes a final-target Route and releases its hostname. The [AppInstance removal reference](../reference/appinstance-removal.md) describes development source preflight, retained production content, Route cleanup, the `removing` state, bounded progress, refusals, and safe retry.
@@ -196,4 +196,4 @@ AppInstance creation and removal do not accept a repository, command, process, o
 
 The [Route reference](../reference/routes.md) defines initial private traffic projection and the refusal boundary for Route, Node, Cluster, and access changes that still need coordinated runtime and Laravel URL reconciliation.
 
-`instance:new` creates a new checkout. `instance:register` adopts a caller-local checkout or worktree and can complete the manual default-source migration. Both commands end in the same AppInstance provisioning and removal lifecycle.
+`instance:create` creates a new checkout. `instance:register` adopts a caller-local checkout or worktree and can complete the manual default-source migration. Both commands end in the same AppInstance provisioning and removal lifecycle.
