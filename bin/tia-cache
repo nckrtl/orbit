@@ -25,6 +25,11 @@ QUALITY = {
 COMMAND_LOG = None
 COMMAND_LOCK = None
 COMMAND_TIMEOUT = 1800
+ISOLATED_ENVIRONMENT_PREFIXES = ('APP_', 'DB_', 'ORBIT_')
+ISOLATED_ENVIRONMENT_NAMES = frozenset((
+    'CACHE_STORE', 'DATABASE_URL', 'QUEUE_CONNECTION', 'SESSION_DRIVER',
+    'TMPDIR', 'TMP', 'TEMP',
+))
 PHP_METADATA = r'''
 require $argv[1].'/vendor/autoload.php';
 echo json_encode([
@@ -46,10 +51,20 @@ class RecoveryNotExecuted(RuntimeError):
     pass
 
 
+def maintenance_environment():
+    environment = {
+        name: value for name, value in os.environ.items()
+        if name not in ISOLATED_ENVIRONMENT_NAMES
+        and not name.startswith(ISOLATED_ENVIRONMENT_PREFIXES)
+    }
+    environment['COMPOSER_PROCESS_TIMEOUT'] = '0'
+    return environment
+
+
 def run(root, *command, capture=True):
     options = {'cwd': root, 'text': True, 'start_new_session': True,
                'pass_fds': () if COMMAND_LOCK is None else (COMMAND_LOCK,),
-               'env': {**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'}}
+               'env': maintenance_environment()}
     def execute(**streams):
         # Descendants inherit maintenance ownership if the worker is interrupted.
         process = subprocess.Popen(command, **streams, **options)
@@ -585,7 +600,7 @@ def start_background(common, store, projects):
                     [sys.executable, str(runner), 'work', '--repository', str(common),
                      '--worker-fd', str(lock.fileno())],
                     cwd=common, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                    start_new_session=True, pass_fds=(lock.fileno(),),
+                    start_new_session=True, pass_fds=(lock.fileno(),), env=maintenance_environment(),
                 )
             print(f'Main cache refresh queued (pid {process.pid}); log: {log}')
         finally:

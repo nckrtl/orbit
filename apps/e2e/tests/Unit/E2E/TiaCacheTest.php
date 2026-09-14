@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('publishes caches and requires executed recovery before clearing TIA failures', function (): void {
+it('isolates background checks while preserving cache lifecycle and failure reporting', function (): void {
     $repository = dirname(__DIR__, 5);
     $environment = ['PYTHONDONTWRITEBYTECODE' => '1'];
     $evidenceDirectory = getenv('TIA_CACHE_EVIDENCE_DIR');
