@@ -49,8 +49,8 @@ it('uses the exact Doctor JSON transport contract', function (
     'explicit zero and empty list' => [0, [], '{"node_id":0,"families":[]}'],
     'all valid families' => [
         null,
-        ['node', 'role', 'app', 'instance', 'workspace', 'tool', 'process', 'firewall'],
-        '{"families":["node","role","app","instance","workspace","tool","process","firewall"]}',
+        ['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall'],
+        '{"families":["node","role","app","instance","schedule","tool","process","firewall"]}',
     ],
     'invalid members preserved for Gateway validation' => [
         null,

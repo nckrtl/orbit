@@ -48,7 +48,7 @@ browsers after a change so they do not reuse an existing connection.
 
 ```bash
 ./orbit doctor
-./orbit doctor --node=7 --family=instance --family=workspace
+./orbit doctor --node=7 --family=instance --family=schedule
 ./orbit doctor --family=firewall --json
 ```
 

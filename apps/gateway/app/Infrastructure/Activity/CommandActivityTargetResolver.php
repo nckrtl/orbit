@@ -11,13 +11,11 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\FirewallRule;
 use App\Models\HerdrSession;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Tool;
-use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -186,7 +184,6 @@ final readonly class CommandActivityTargetResolver
         foreach ([
             'firewallRule',
             'process',
-            'workspace',
             'instance',
             'route',
             'app',
@@ -210,10 +207,6 @@ final readonly class CommandActivityTargetResolver
                 ->first(),
             'route:create' => Route::query()
                 ->where('hostname', mb_strtolower(trim((string) $request->input('hostname'))))
-                ->first(),
-            'workspace:new' => Workspace::query()
-                ->where('instance_id', $request->integer('instance_id'))
-                ->where('name', $request->input('name'))
                 ->first(),
             default => null,
         };
@@ -352,7 +345,7 @@ final readonly class CommandActivityTargetResolver
             return $subject->exists ? $subject->id : null;
         }
 
-        if ($subject instanceof AppInstance || $subject instanceof Instance) {
+        if ($subject instanceof AppInstance) {
             return $subject->node_id;
         }
 
@@ -384,10 +377,6 @@ final readonly class CommandActivityTargetResolver
             return $owner instanceof Model ? $this->targetNodeId($owner) : null;
         }
 
-        if (! $subject instanceof Workspace) {
-            return null;
-        }
-
-        return $subject->instance()->first()?->node_id;
+        return null;
     }
 }

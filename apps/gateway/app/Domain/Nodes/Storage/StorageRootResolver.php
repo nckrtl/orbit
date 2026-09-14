@@ -37,12 +37,11 @@ final readonly class StorageRootResolver
 
     public function resolveApps(
         ?NodeSettingsData $settings,
-        ?LegacyNodeSettings $legacy,
         ManagedUserAccount $account,
     ): EffectiveStorageRoots {
-        $defaults = $this->resolve($legacy, $account);
+        $defaults = $this->resolve(null, $account);
         $normalized = $this->normalizer->normalize($settings);
-        $appsPath = $normalized?->appsPath() ?? $legacy?->instancePath;
+        $appsPath = $normalized?->appsPath();
         $apps = $appsPath === null ? $defaults->instance : StoragePath::parse($appsPath);
 
         return new EffectiveStorageRoots($apps, $defaults->worktree);

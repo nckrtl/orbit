@@ -78,7 +78,6 @@ final readonly class CreateAppInstanceAction
             $account = $this->accounts->resolve($requestedNode);
             $roots = $this->storageRoots->resolveApps(
                 $this->nodeSettings->fromStored($requestedNode->settings),
-                $this->nodeSettings->legacyFromStored($requestedNode->settings),
                 $account,
             );
             $checkout = $roots->instance->append($app->slug, $data->name);

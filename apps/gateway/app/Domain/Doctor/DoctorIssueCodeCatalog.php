@@ -14,8 +14,6 @@ final class DoctorIssueCodeCatalog
             DoctorFamily::App => AppDoctorIssueCode::tryFrom($code) ?? AppDoctorIssueCode::InspectionFailed,
             DoctorFamily::Instance => InstanceDoctorIssueCode::tryFrom($code)
                 ?? InstanceDoctorIssueCode::InspectionFailed,
-            DoctorFamily::Workspace => WorkspaceDoctorIssueCode::tryFrom($code)
-                ?? WorkspaceDoctorIssueCode::InspectionFailed,
             DoctorFamily::Schedule => ScheduleDoctorIssueCode::tryFrom($code)
                 ?? ScheduleDoctorIssueCode::InspectionFailed,
             DoctorFamily::Tool => ToolDoctorIssueCode::tryFrom($code) ?? ToolDoctorIssueCode::InspectionFailed,

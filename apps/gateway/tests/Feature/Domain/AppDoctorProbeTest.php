@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\AppDoctorProbe;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 
 it('returns a healthy empty report when no app projects a checkout on the node', function (): void {
@@ -171,17 +171,16 @@ function app_probe_app(): App
     ]);
 }
 
-function app_probe_projection(App $app, Node $node): Instance
+function app_probe_projection(App $app, Node $node): AppInstance
 {
-    return Instance::query()->create([
+    return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'development',
-        'environment' => 'development',
-        'checkout_path' => "/home/orbit/apps/{$app->slug}",
-        'hostname' => "{$app->slug}-{$node->id}.test",
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
+        'checkout_path' => "/home/orbit/apps/{$app->slug}/development",
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::Active,
     ]);
 }
 
