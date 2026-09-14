@@ -16,6 +16,7 @@ final readonly class DeploymentStepResponse implements JsonSerializable
         #[SensitiveParameter]
         public string $command,
         public int $timeoutSeconds,
+        public string $requestId = '',
     ) {}
 
     /** @return array{name: string, phase: string, command: string, timeout_seconds: int} */

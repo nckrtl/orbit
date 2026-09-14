@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DeploymentStepInput;
+use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentConfigRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateAppInstanceDeploymentConfigRequest;
+use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentConfigResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
@@ -18,7 +23,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe('deployment requests', function (): void {
-    it('uses the five exact Gateway methods and paths', function (): void {
+    it('uses the exact Gateway methods and paths', function (): void {
         $step = new DeploymentStepInput('migrate', 'before_activation', 'php artisan migrate', null);
         $cases = [
             [new ShowAppInstanceDeploymentConfigRequest(17), Method::GET, '/api/v1/instances/17/deployment-config'],
@@ -26,6 +31,11 @@ describe('deployment requests', function (): void {
             [new DeployAppInstanceRequest(17), Method::POST, '/api/v1/instances/17/deploy'],
             [new RollbackAppInstanceRequest(17, 'release-20260911'), Method::POST, '/api/v1/instances/17/rollback'],
             [new ListAppInstanceReleasesRequest(17), Method::GET, '/api/v1/instances/17/releases'],
+            [new ListInstanceDeployStepsRequest(17), Method::GET, '/api/v1/instances/17/deploy-steps'],
+            [new CreateInstanceDeployStepRequest(17, 'migrate', 'php artisan migrate'), Method::POST, '/api/v1/instances/17/deploy-steps'],
+            [new UpdateInstanceDeployStepRequest(17, 'migrate', hasCommand: true, command: 'php artisan migrate --force'), Method::PATCH, '/api/v1/instances/17/deploy-steps/migrate'],
+            [new DestroyInstanceDeployStepRequest(17, 'migrate'), Method::DELETE, '/api/v1/instances/17/deploy-steps/migrate'],
+            [new UpdateAppInstanceRequest(17, 'release'), Method::PATCH, '/api/v1/instances/17'],
         ];
 
         foreach ($cases as [$request, $method, $path]) {

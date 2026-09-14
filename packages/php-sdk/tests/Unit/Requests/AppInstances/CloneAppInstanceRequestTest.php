@@ -175,6 +175,7 @@ function clone_instance_envelope(): array
             'hostname' => 'shop.com.prod.orbit',
             'url' => 'https://shop.com.prod.orbit',
             'removal' => null,
+            'deploy_steps' => [],
         ],
         'meta' => ['request_id' => clone_instance_request_id()],
     ];

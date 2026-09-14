@@ -138,6 +138,7 @@ function deployment_layout_envelope(): array
             'hostname' => 'app.example.test',
             'url' => 'https://app.example.test',
             'removal' => null,
+            'deploy_steps' => [],
         ],
         'meta' => ['request_id' => deployment_layout_request_id()],
     ];
