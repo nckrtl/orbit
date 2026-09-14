@@ -1542,6 +1542,80 @@
             ]
         },
         {
+            "path": "docs/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk.md",
+            "title": "ADR 0071: Use one verb vocabulary across the CLI, route names, and SDK",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Legacy Instance",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0036",
+                "0048",
+                "0069",
+                "0071"
+            ]
+        },
+        {
+            "path": "docs/decisions/0072-add-and-remove-nodes-without-changing-the-machine.md",
+            "title": "ADR 0072: Add and remove Nodes without changing the machine",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0069",
+                "0071",
+                "0072"
+            ]
+        },
+        {
+            "path": "docs/decisions/0073-store-deploy-steps-as-named-appinstance-records.md",
+            "title": "ADR 0073: Store deploy steps as named AppInstance records",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0046",
+                "0071",
+                "0073"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
