@@ -17,10 +17,10 @@ to typed `orbit-php-sdk` requests and render gateway responses.
 - Local-only actions can make visible OS changes only when the command contract
   requires them, such as root-CA trust.
 - Preserve request IDs and structured errors end to end.
-- Keep the public Schedule surface to `schedule:add`, `schedule:list`,
-  `schedule:show`, `schedule:run`, `schedule:logs`, `schedule:remove`, and
-  `schedule:activate`. Require one explicit positive Node or AppInstance ID for
-  add, never prompt for a target, and keep completion internal.
+- Keep the public Schedule surface to `schedule:create`, `schedule:list`,
+  `schedule:show`, `schedule:run`, `schedule:logs`, `schedule:destroy`, and
+  `schedule:enable`. Require one explicit positive Node or AppInstance ID for
+  create, never prompt for a target, and keep completion internal.
 - Before adding command or OS-adapter behavior, inspect matching in-repository
   code and tests. The legacy project can provide optional research when it is
   available, but it is not a checkout dependency. Port only behavior that fits

@@ -233,7 +233,7 @@ final readonly class RecordCommandActivity
             return $attribute;
         }
 
-        if ($request->route()?->getName() !== 'instance:remove' || $response->getStatusCode() >= 400) {
+        if ($request->route()?->getName() !== 'instance:destroy' || $response->getStatusCode() >= 400) {
             return null;
         }
 
@@ -397,7 +397,7 @@ final readonly class RecordCommandActivity
             return $schedule;
         }
 
-        if ($request->route()?->getName() !== 'schedule:add') {
+        if ($request->route()?->getName() !== 'schedule:create') {
             return null;
         }
 
@@ -467,7 +467,7 @@ final readonly class RecordCommandActivity
             return $this->doctorInput($request);
         }
 
-        if ($command === 'instance:remove') {
+        if ($command === 'instance:destroy') {
             return $this->appInstanceRemovalInput($request);
         }
 
@@ -483,11 +483,11 @@ final readonly class RecordCommandActivity
             return $this->appInstanceDeploymentLayoutInput($request);
         }
 
-        if ($command === 'instance:environment:import') {
+        if ($command === 'env:import') {
             return $this->appInstanceEnvironmentImportInput($request);
         }
 
-        if ($command === 'instance:environment:update') {
+        if ($command === 'env:update') {
             return [];
         }
 
@@ -495,11 +495,11 @@ final readonly class RecordCommandActivity
             return [];
         }
 
-        if ($command === 'instance:deployment:store') {
+        if ($command === 'instance:deploy') {
             return [];
         }
 
-        if ($command === 'instance:rollback:store') {
+        if ($command === 'instance:rollback') {
             return $this->appInstanceRollbackInput($request);
         }
 
@@ -558,7 +558,7 @@ final readonly class RecordCommandActivity
             return $count <= 1000 ? ['lines' => $count] : [];
         }
 
-        if ($command !== 'schedule:add') {
+        if ($command !== 'schedule:create') {
             return [];
         }
 

@@ -8,10 +8,10 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
-use Orbit\Sdk\Requests\Processes\AddProcessRequest;
+use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
+use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
-use Orbit\Sdk\Requests\Processes\RemoveProcessRequest;
 use Orbit\Sdk\Requests\Processes\RestartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StopProcessRequest;
@@ -41,11 +41,11 @@ afterEach(function (): void {
 
 it('adds one explicit Docker process through the active gateway', function (): void {
     $mock = MockClient::global([
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'redis',
             '--instance' => '7',
             '--runtime' => 'docker',
@@ -83,11 +83,11 @@ it('adds one explicit Docker process through the active gateway', function (): v
 
 it('passes Gateway-owned process policy values through the typed SDK request', function (): void {
     $mock = MockClient::global([
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'Worker Name',
             '--instance' => '7',
             '--runtime' => 'docker',
@@ -101,7 +101,7 @@ it('passes Gateway-owned process policy values through the typed SDK request', f
         ->assertExitCode(0);
 
     expect($mock->getLastRequest())
-        ->toBeInstanceOf(AddProcessRequest::class)
+        ->toBeInstanceOf(CreateProcessRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe([
             'target_type' => 'instance',
@@ -121,11 +121,11 @@ it('passes Gateway-owned process policy values through the typed SDK request', f
 
 it('passes an empty Docker command and missing image to the Gateway for policy validation', function (): void {
     $mock = MockClient::global([
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'worker',
             '--instance' => '7',
             '--runtime' => 'docker',
@@ -133,7 +133,7 @@ it('passes an empty Docker command and missing image to the Gateway for policy v
         ->assertExitCode(0);
 
     expect($mock->getLastRequest())
-        ->toBeInstanceOf(AddProcessRequest::class)
+        ->toBeInstanceOf(CreateProcessRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe([
             'target_type' => 'instance',
@@ -148,11 +148,11 @@ it('passes an empty Docker command and missing image to the Gateway for policy v
 
 it('passes a relative systemd executable to the Gateway for policy validation', function (): void {
     $mock = MockClient::global([
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'worker',
             '--instance' => '7',
             '--command' => ['php', 'artisan'],
@@ -160,7 +160,7 @@ it('passes a relative systemd executable to the Gateway for policy validation', 
         ->assertExitCode(0);
 
     expect($mock->getLastRequest())
-        ->toBeInstanceOf(AddProcessRequest::class)
+        ->toBeInstanceOf(CreateProcessRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe([
             'target_type' => 'instance',
@@ -175,11 +175,11 @@ it('passes a relative systemd executable to the Gateway for policy validation', 
 
 it('preserves explicitly supplied empty process arrays', function (): void {
     $mock = MockClient::global([
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'worker',
             '--instance' => '7',
             '--environment' => [],
@@ -189,7 +189,7 @@ it('preserves explicitly supplied empty process arrays', function (): void {
         ->assertExitCode(0);
 
     expect($mock->getLastRequest())
-        ->toBeInstanceOf(AddProcessRequest::class)
+        ->toBeInstanceOf(CreateProcessRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe([
             'target_type' => 'instance',
@@ -207,7 +207,7 @@ it('preserves explicitly supplied empty process arrays', function (): void {
 
 it('omits Docker environment values from process JSON output', function (): void {
     MockClient::global([
-        AddProcessRequest::class => MockResponse::make([
+        CreateProcessRequest::class => MockResponse::make([
             'data' => process_cli_payload([
                 'runtime_config' => [
                     'image' => 'redis:8-alpine',
@@ -224,7 +224,7 @@ it('omits Docker environment values from process JSON output', function (): void
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'redis',
             '--instance' => '7',
             '--runtime' => 'docker',
@@ -239,11 +239,11 @@ it('omits Docker environment values from process JSON output', function (): void
 
 it('adds one node-targeted Docker process through the active gateway', function (): void {
     $mock = MockClient::global([
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'postgres',
             '--node' => '4',
             '--runtime' => 'docker',
@@ -269,11 +269,11 @@ it('resolves a node name before adding a node-targeted process', function (): vo
             'data' => [process_cli_node_payload()],
             'meta' => ['request_id' => process_cli_request_id()],
         ]),
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'postgres',
             '--node' => 'beast',
             '--runtime' => 'docker',
@@ -344,7 +344,7 @@ it('runs one process lifecycle action', function (
     'start' => ['process:start', StartProcessRequest::class, 'started'],
     'stop' => ['process:stop', StopProcessRequest::class, 'stopped'],
     'restart' => ['process:restart', RestartProcessRequest::class, 'restarted'],
-    'remove' => ['process:remove', RemoveProcessRequest::class, 'removed'],
+    'remove' => ['process:destroy', DestroyProcessRequest::class, 'removed'],
 ]);
 
 it('prints one bounded log tail without follow mode', function (): void {
@@ -376,11 +376,11 @@ it('prints one bounded log tail without follow mode', function (): void {
 
 it('redacts secret environment values from JSON process output', function (): void {
     MockClient::global([
-        AddProcessRequest::class => process_cli_secret_response(201),
+        CreateProcessRequest::class => process_cli_secret_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'redis',
             '--instance' => '7',
             '--runtime' => 'docker',
@@ -455,13 +455,13 @@ it('redacts credential-shaped values from every process JSON runtime field', fun
         ]],
     ];
     MockClient::global([
-        AddProcessRequest::class => MockResponse::make([
+        CreateProcessRequest::class => MockResponse::make([
             'data' => $payload,
             'meta' => ['request_id' => process_cli_request_id()],
         ], 201),
     ]);
 
-    $exitCode = Artisan::call('process:add', [
+    $exitCode = Artisan::call('process:create', [
         'name' => 'worker',
         '--instance' => '7',
         '--runtime' => 'docker',
@@ -502,13 +502,13 @@ it('redacts a malformed associative command response recursively', function (): 
     $sensitiveKey = implode('_', ['private', 'key']);
     $payload['runtime_config']['command'] = [$sensitiveKey => $secret];
     MockClient::global([
-        AddProcessRequest::class => MockResponse::make([
+        CreateProcessRequest::class => MockResponse::make([
             'data' => $payload,
             'meta' => ['request_id' => process_cli_request_id()],
         ], 201),
     ]);
 
-    $exitCode = Artisan::call('process:add', [
+    $exitCode = Artisan::call('process:create', [
         'name' => 'worker',
         '--instance' => '7',
         '--runtime' => 'docker',
@@ -667,11 +667,11 @@ it('normalizes upstream redaction markers in human process logs', function (): v
 
 it('passes every explicit systemd field through the typed SDK request', function (): void {
     $mock = MockClient::global([
-        AddProcessRequest::class => process_cli_response(201),
+        CreateProcessRequest::class => process_cli_response(201),
     ]);
 
     $this
-        ->artisan('process:add', [
+        ->artisan('process:create', [
             'name' => 'queue',
             '--instance' => '7',
             '--runtime' => 'systemd',
@@ -687,7 +687,7 @@ it('passes every explicit systemd field through the typed SDK request', function
         ->assertExitCode(0);
 
     expect($mock->getLastRequest())
-        ->toBeInstanceOf(AddProcessRequest::class)
+        ->toBeInstanceOf(CreateProcessRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
         ->toBe([
             'target_type' => 'instance',
@@ -730,7 +730,7 @@ it('rejects unbounded or unsafe process options without disclosure or gateway IO
         ...$options,
     ];
 
-    $exitCode = Artisan::call('process:add', $arguments);
+    $exitCode = Artisan::call('process:create', $arguments);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(1);
@@ -869,7 +869,7 @@ it('rejects unbounded or control-bearing Docker ports without disclosure or gate
         ],
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-    $exitCode = Artisan::call('process:add', [
+    $exitCode = Artisan::call('process:create', [
         'name' => 'queue',
         '--instance' => '7',
         '--runtime' => 'docker',
@@ -907,7 +907,7 @@ it('rejects invalid local process input before making a gateway request', functi
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
     'missing AppInstance' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'queue',
             '--command' => ['/usr/bin/php'],
@@ -915,7 +915,7 @@ it('rejects invalid local process input before making a gateway request', functi
         'The --instance or --node option is required.',
     ],
     'combined selectors' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'queue',
             '--instance' => '7',
@@ -939,9 +939,9 @@ it('rejects invalid local process input before making a gateway request', functi
 it('exposes AppInstance and Node selectors on targeted process commands', function (): void {
     $commands = Artisan::all();
 
-    expect($commands['process:add']->getDefinition()->hasOption('instance'))->toBeTrue()
-        ->and($commands['process:add']->getDefinition()->hasOption('node'))->toBeTrue()
-        ->and($commands['process:add']->getDefinition()->hasOption('workspace'))->toBeFalse()
+    expect($commands['process:create']->getDefinition()->hasOption('instance'))->toBeTrue()
+        ->and($commands['process:create']->getDefinition()->hasOption('node'))->toBeTrue()
+        ->and($commands['process:create']->getDefinition()->hasOption('workspace'))->toBeFalse()
         ->and($commands['process:list']->getDefinition()->hasOption('instance'))->toBeTrue()
         ->and($commands['process:list']->getDefinition()->hasOption('node'))->toBeTrue()
         ->and($commands['process:list']->getDefinition()->hasOption('workspace'))->toBeFalse();
@@ -953,7 +953,7 @@ it('does not disclose malformed environment values', function (string $environme
     $exitCode = null;
 
     try {
-        $exitCode = Artisan::call('process:add', [
+        $exitCode = Artisan::call('process:create', [
             'name' => 'queue',
             '--instance' => '7',
             '--command' => ['/usr/bin/php'],
@@ -983,7 +983,7 @@ it('does not disclose malformed volume values', function (string $volume): void 
     $exitCode = null;
 
     try {
-        $exitCode = Artisan::call('process:add', [
+        $exitCode = Artisan::call('process:create', [
             'name' => 'queue',
             '--instance' => '7',
             '--command' => ['/usr/bin/php'],

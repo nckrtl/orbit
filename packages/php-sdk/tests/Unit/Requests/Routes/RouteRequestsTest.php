@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Routes\ClearRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
+use Orbit\Sdk\Requests\Routes\DestroyRouteRequest;
 use Orbit\Sdk\Requests\Routes\ListRoutesRequest;
-use Orbit\Sdk\Requests\Routes\RemoveRouteRequest;
 use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\ShowRouteRequest;
+use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use Orbit\Sdk\Responses\Routes\RoutesResponse;
@@ -100,8 +100,8 @@ it('normalizes malformed Route error codes to null', function (mixed $errorCode)
 it('defines the exact update, target, clear, and remove transports', function (): void {
     $update = new UpdateRouteRequest(11, hostname: 'next.test', publication: 'public');
     $set = new SetRouteTargetRequest(11, 8);
-    $clear = new ClearRouteTargetRequest(11);
-    $remove = new RemoveRouteRequest(11);
+    $clear = new UnsetRouteTargetRequest(11);
+    $remove = new DestroyRouteRequest(11);
 
     expect($update->getMethod())
         ->toBe(Method::PATCH)
@@ -124,6 +124,13 @@ it('defines the exact update, target, clear, and remove transports', function ()
         ->and($remove->resolveEndpoint())
         ->toBe('/api/v1/routes/11');
 });
+
+it('does not keep replaced Route request class names', function (string $class): void {
+    expect(class_exists($class))->toBeFalse();
+})->with([
+    'Orbit\\Sdk\\Requests\\Routes\\RemoveRouteRequest',
+    'Orbit\\Sdk\\Requests\\Routes\\ClearRouteTargetRequest',
+]);
 
 /** @return array<string, mixed> */
 function route_envelope(): array

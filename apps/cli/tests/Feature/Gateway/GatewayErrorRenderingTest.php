@@ -93,7 +93,7 @@ it('renders validation field details in the json envelope', function (): void {
         ],
     ];
 
-    $exitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $exitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -112,7 +112,7 @@ it('prints each validation field message on its own line after the error message
         ]),
     ]);
 
-    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -135,11 +135,11 @@ it('renders a validation failure without details as before in both modes', funct
     ];
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $jsonExitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonExitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $humanExitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $humanExitCode = Artisan::call('app:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
     expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
@@ -169,7 +169,7 @@ it('keeps non-validation failure details out of human output', function (): void
         ),
     ]);
 
-    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -196,11 +196,11 @@ it('never prints secret-looking validation details in either mode', function ():
     ];
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $jsonExitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonExitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $humanExitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $humanExitCode = Artisan::call('app:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
     expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
@@ -246,7 +246,7 @@ it('bounds validation details to sanitized field messages', function (): void {
         ],
     ];
 
-    $exitCode = Artisan::call('app:new', [...gateway_validation_arguments(), '--json' => true]);
+    $exitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -266,7 +266,7 @@ it('caps validation details at fifty field messages', function (): void {
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
 
-    $exitCode = Artisan::call('app:new', gateway_validation_arguments());
+    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
     $lines = explode("\n", $output);
 
@@ -550,13 +550,13 @@ it('renders local validation failures through the exact json boundary', function
         'Activity ID must be a positive integer.',
     ],
     'string argument helper' => [
-        'app:new',
+        'app:create',
         ['slug' => '', 'repository' => 'https://example.test/repository.git'],
         'app.slug_required',
         'App slug is required.',
     ],
     'app slug' => [
-        'app:new',
+        'app:create',
         ['slug' => "validation\nsecret", 'repository' => 'https://example.test/repository.git'],
         'app.slug_invalid',
         'App slug is invalid.',
@@ -592,7 +592,7 @@ it('renders local validation failures through the exact json boundary', function
         'Firewall port must be from 1 to 65535 or an ordered range.',
     ],
     'instance name' => [
-        'instance:new',
+        'instance:create',
         ['app' => '1', 'node' => '1', 'name' => ''],
         'instance.name_required',
         'Instance name is required.',
@@ -622,19 +622,19 @@ it('renders local validation failures through the exact json boundary', function
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
     ],
     'process target selection' => [
-        'process:add',
+        'process:create',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
         'process.target_invalid',
         'The --instance or --node option is required.',
     ],
     'process target ID' => [
-        'process:add',
+        'process:create',
         ['name' => 'worker', '--instance' => 'validation-secret', '--command' => ['/usr/bin/php']],
         'process.target_id_invalid',
         'AppInstance ID must be a positive integer.',
     ],
     'process runtime' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -645,7 +645,7 @@ it('renders local validation failures through the exact json boundary', function
         'Process runtime must be systemd or docker.',
     ],
     'process restart policy' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -656,7 +656,7 @@ it('renders local validation failures through the exact json boundary', function
         'Invalid process restart policy.',
     ],
     'process environment' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -667,7 +667,7 @@ it('renders local validation failures through the exact json boundary', function
         'Invalid environment value. Use NAME=VALUE.',
     ],
     'process volume' => [
-        'process:add',
+        'process:create',
         [
             'name' => 'worker',
             '--instance' => '1',
@@ -702,7 +702,7 @@ it('renders local validation failures through the exact json boundary', function
         'Node ID must be a positive integer.',
     ],
     'multiple instance values fail at the first error' => [
-        'instance:new',
+        'instance:create',
         ['app' => 'validation-secret', 'node' => '0', 'name' => ''],
         'app.id_invalid',
         'App ID must be a positive integer.',
@@ -781,7 +781,7 @@ it('renders console input failures through the exact json boundary', function (a
     ],
     'app remove unknown force option' => [
         [
-            'command' => 'app:remove',
+            'command' => 'app:destroy',
             'app' => '1',
             '--json' => true,
             '--force' => true,

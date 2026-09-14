@@ -17,6 +17,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
@@ -76,7 +77,9 @@ it('updates missing existing and identical values without contacting the workloa
         ->and($this->access->preflights)
         ->toBe(0)
         ->and($this->access->reads)
-        ->toBe(0);
+        ->toBe(0)
+        ->and(Activity::query()->latest('id')->value('command'))
+        ->toBe('env:update');
 });
 
 it('imports by exact Route hostname and applies conflict and replacement semantics', function (): void {
@@ -110,6 +113,8 @@ it('imports by exact Route hostname and applies conflict and replacement semanti
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->postJson($url, ['replace' => true])
         ->assertJsonPath('data.changed', false);
+
+    expect(Activity::query()->latest('id')->value('command'))->toBe('env:import');
 });
 
 it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): void {
@@ -380,6 +385,8 @@ it('synchronizes by the existing selector with a narrow value-free result', func
         ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
         ->assertOk()
         ->assertJsonPath('data.changed', false);
+
+    expect(Activity::query()->latest('id')->value('command'))->toBe('env:sync');
 });
 
 it('keeps a release-layout production environment at the persistent home', function (): void {

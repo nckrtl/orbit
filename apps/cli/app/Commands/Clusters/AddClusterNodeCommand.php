@@ -6,20 +6,19 @@ namespace App\Commands\Clusters;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Clusters\DetachClusterNodeRequest;
+use Orbit\Sdk\Requests\Clusters\AddClusterNodeRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 
-final class DetachClusterNodeCommand extends ClusterCommand
+final class AddClusterNodeCommand extends ClusterCommand
 {
     #[\Override]
-    protected $signature = 'cluster:node:detach
+    protected $signature = 'cluster:node:add
         {cluster : Numeric Cluster ID}
         {node : Numeric Node ID}
-        {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Detach a Node from a Cluster.';
+    protected $description = 'Attach a Node to a Cluster.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -39,15 +38,9 @@ final class DetachClusterNodeCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $existing = $this->existingCluster($connector, $clusterId);
-
-        if ($existing === null || ! $this->confirmed('Node detachment')) {
-            return self::FAILURE;
-        }
-
         $cluster = $this->send(
             $connector,
-            new DetachClusterNodeRequest($clusterId, $nodeId, true),
+            new AddClusterNodeRequest($clusterId, $nodeId),
             ClusterResponse::class,
         );
 
@@ -55,6 +48,6 @@ final class DetachClusterNodeCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        return $this->renderCluster($cluster, "Node #{$nodeId} detached from Cluster [{$cluster->name}].");
+        return $this->renderCluster($cluster, "Node #{$nodeId} attached to Cluster [{$cluster->name}].");
     }
 }

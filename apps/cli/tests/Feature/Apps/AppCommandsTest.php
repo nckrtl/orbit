@@ -8,8 +8,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
-use Orbit\Sdk\Requests\Apps\RemoveAppRequest;
 use Orbit\Sdk\Requests\Apps\ShowAppRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
@@ -33,14 +33,14 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-describe('app:new', function (): void {
+describe('app:create', function (): void {
     it('creates an app through the active gateway as JSON', function (): void {
         $mockClient = MockClient::global([
             CreateAppRequest::class => app_mock_response(201),
         ]);
 
         $this
-            ->artisan('app:new', [
+            ->artisan('app:create', [
                 'slug' => 'orbit',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--name' => 'Orbit',
@@ -70,7 +70,7 @@ describe('app:new', function (): void {
         MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 
         $this
-            ->artisan('app:new', [
+            ->artisan('app:create', [
                 'slug' => 'orbit',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
             ])
@@ -85,7 +85,7 @@ describe('app:new', function (): void {
         ]);
 
         $this
-            ->artisan('app:new', [
+            ->artisan('app:create', [
                 'slug' => 'orbit',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--root' => 'web/public',
@@ -106,7 +106,7 @@ describe('app:new', function (): void {
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $exitCode = Artisan::call('app:new', [
+        $exitCode = Artisan::call('app:create', [
             'slug' => $slug,
             'repository' => 'git@github.com:nckrtl/orbit.git',
             '--json' => true,
@@ -130,7 +130,7 @@ describe('app:new', function (): void {
         ]);
 
         $this
-            ->artisan('app:new', [
+            ->artisan('app:create', [
                 'slug' => 'Orbit App',
                 'repository' => 'nckrtl/orbit',
             ])
@@ -147,7 +147,7 @@ describe('app:new', function (): void {
     });
 });
 
-describe('app:new repository boundary', function (): void {
+describe('app:create repository boundary', function (): void {
     it('rejects unsafe repository input without disclosure or gateway IO', function (string $repository): void {
         $mockClient = MockClient::global();
         $expected = json_encode([
@@ -158,7 +158,7 @@ describe('app:new repository boundary', function (): void {
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $exitCode = Artisan::call('app:new', [
+        $exitCode = Artisan::call('app:create', [
             'slug' => 'orbit',
             'repository' => $repository,
             '--json' => true,
@@ -192,7 +192,7 @@ describe('app:new repository boundary', function (): void {
         ]);
 
         $this
-            ->artisan('app:new', [
+            ->artisan('app:create', [
                 'slug' => 'orbit',
                 'repository' => $repository,
             ])
@@ -213,7 +213,7 @@ describe('app:new repository boundary', function (): void {
         ]);
 
         $this
-            ->artisan('app:new', [
+            ->artisan('app:create', [
                 'slug' => 'orbit',
                 'repository' => $repository,
             ])
@@ -398,14 +398,14 @@ describe('app:show', function (): void {
     });
 });
 
-describe('app:remove', function (): void {
+describe('app:destroy', function (): void {
     it('removes an app as JSON', function (): void {
         $mockClient = MockClient::global([
-            RemoveAppRequest::class => app_mock_response(),
+            DestroyAppRequest::class => app_mock_response(),
         ]);
 
         $this
-            ->artisan('app:remove', ['app' => '3', '--json' => true])
+            ->artisan('app:destroy', ['app' => '3', '--json' => true])
             ->expectsOutput(app_json())
             ->assertExitCode(0);
 
@@ -414,10 +414,10 @@ describe('app:remove', function (): void {
     });
 
     it('reports the removed app for humans', function (): void {
-        MockClient::global([RemoveAppRequest::class => app_mock_response()]);
+        MockClient::global([DestroyAppRequest::class => app_mock_response()]);
 
         $this
-            ->artisan('app:remove', ['app' => '3'])
+            ->artisan('app:destroy', ['app' => '3'])
             ->expectsOutput('App [orbit] removed.')
             ->expectsOutput('Request ID: '.app_request_id())
             ->assertExitCode(0);
@@ -436,7 +436,7 @@ it('rejects invalid app IDs before making an API request', function (string $com
 })->with([
     'show zero' => ['app:show', '0'],
     'show negative' => ['app:show', '-1'],
-    'remove non-numeric' => ['app:remove', 'orbit'],
+    'remove non-numeric' => ['app:destroy', 'orbit'],
 ]);
 
 /** @return array<string, int|string|array<string, string>> */

@@ -33,7 +33,7 @@ A generated Route derives its hostname from the target AppInstance identity, App
 | `default` | `<app>.test` |
 | Any other name | `<instance>.<app>.test` |
 
-An explicit source branch changes neither placement nor generated Route identity. For example, `instance:new <app> <node> default --branch=release` still generates `<app>.test`.
+An explicit source branch changes neither placement nor generated Route identity. For example, `instance:create <app> <node> default --branch=release` still generates `<app>.test`.
 
 An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. A standalone app-prod Node can remain valid without a TLD when production creation supplies an explicit Route hostname.
 
@@ -50,10 +50,10 @@ The API, PHP SDK, and CLI expose the same seven typed operations and return the 
 | Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, and target. |
 | Update | Change an explicit Route hostname or mutable publication intent without changing its App, provenance, generation basis, or scope. |
 | Target set | Add or replace the one AppInstance target when the change does not detach an active AppInstance from its sole Route. |
-| Target clear | Remove the target only when that does not leave an active AppInstance without a Route, unless the same operation removes that AppInstance. |
-| Remove | Delete the Route and only its Route-owned target rows when no active AppInstance depends on it. |
+| Target unset | Remove the target only when that does not leave an active AppInstance without a Route, unless the same operation removes that AppInstance. |
+| Destroy | Delete the Route and only its Route-owned target rows when no active AppInstance depends on it. |
 
-The CLI names these operations `route:new`, `route:list`, `route:show`, `route:update`, `route:target:set`, `route:target:clear`, and `route:remove`.
+The CLI names these operations `route:create`, `route:list`, `route:show`, `route:update`, `route:target:set`, `route:target:unset`, and `route:destroy`.
 
 ## Change or clear a target
 

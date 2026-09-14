@@ -23,7 +23,7 @@ Both kinds accept the common definition fields below.
 
 A process definition uses the same runtime inputs as an AppInstance Process: runtime, command arguments, optional working directory, restart policy, and the Docker-only image, environment, ports, and volumes. It does not accept a target, initial or desired start state, host Node, runtime user, home, or generated environment-file identity.
 
-A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. The Gateway accepts `command` and `timeout_seconds` under the same limits as an installed Schedule. For `calendar`, it accepts one nonempty printable ASCII line of at most 255 bytes. It does not run `systemd-analyze calendar` when it creates or replaces a definition, because a definition has no host Node. The target Node's `systemd-analyze calendar` accepts or rejects that stored calendar when Orbit copies the definition into an AppInstance Schedule or when an operator adds a Schedule. The [Schedules](schedules.md) page owns that host check. A definition does not select a target, host Node, execution identity, or timer state.
+A Schedule definition specification contains `command`, `calendar`, and `timeout_seconds`. The Gateway accepts `command` and `timeout_seconds` under the same limits as an installed Schedule. For `calendar`, it accepts one nonempty printable ASCII line of at most 255 bytes. It does not run `systemd-analyze calendar` when it creates or replaces a definition, because a definition has no host Node. The target Node's `systemd-analyze calendar` accepts or rejects that stored calendar when Orbit copies the definition into an AppInstance Schedule or when an operator creates a Schedule. The [Schedules](schedules.md) page owns that host check. A definition does not select a target, host Node, execution identity, or timer state.
 
 The API rejects unknown or duplicate members at every definition object and specification boundary. It also rejects a definition UUID that belongs to another App. Collection responses omit command content; an authorized item response returns the complete definition.
 
@@ -84,17 +84,17 @@ A Schedule definition file can contain this complete specification:
 }
 ```
 
-List output omits each definition's command. Show, create, replace, and remove results contain the complete item returned by the Gateway. Changing an App definition affects later copies only. To change an existing copy, the operator explicitly removes and adds the AppInstance-owned Process or Schedule.
+List output omits each definition's command. Show, create, replace, and remove results contain the complete item returned by the Gateway. Changing an App definition affects later copies only. To change an existing copy, the operator explicitly destroys and creates the AppInstance-owned Process or Schedule.
 
 ## Select the owner
 
-A Process has exactly one target: an AppInstance or a managed Node. The `process:add` and `process:list` commands require one selector, `--instance=ID` or `--node=ID-or-name`, and refuse both together. The public API and PHP software development kit (SDK) send the target token `instance` or `node` with a positive numeric ID. Every other process command accepts a positive Process ID and uses that record's owner.
+A Process has exactly one target: an AppInstance or a managed Node. The `process:create` and `process:list` commands require one selector, `--instance=ID` or `--node=ID-or-name`, and refuse both together. The public API and PHP software development kit (SDK) send the target token `instance` or `node` with a positive numeric ID. Every other process command accepts a positive Process ID and uses that record's owner.
 
 Orbit accepts no Workspace Process target. It does not convert or adopt legacy Process records or runtime artifacts, and it does not create a synthetic AppInstance to host a Node-scoped service. A fleet operator owns any required legacy transition outside Orbit, and Orbit provides no migration command or compatibility selector.
 
 A Node Process belongs to that Node. Its execution host, runtime user, and default working directory come from the Node. It stays in place when an AppInstance is removed, and Node decommissioning removes it. An AppInstance Process still follows the AppInstance lifecycle on this page.
 
-## Add a Process
+## Create a Process
 
 The operator selects one runtime and supplies its complete specification. For an AppInstance Process, Orbit derives the target Node and host execution user from the AppInstance; caller input cannot replace either value. For a Node Process, Orbit uses the Node as the execution host and the Node's managed runtime user.
 
@@ -109,25 +109,25 @@ A development systemd Process runs as the Node's managed runtime user. It reads 
 
 A production systemd Process runs as the AppInstance's dedicated production user. It reads the persistent environment file in the recorded production home and uses the `current` path as its default working directory. Orbit resolves the recorded Node, user, home, and current release when it performs an operation, independent of Node role co-location or certificate mode.
 
-A prepared production home without `current` accepts a stopped Process installation for either runtime. An initial start requested by `process:add` and a later `process:start` both fail before the Process record or runtime changes until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
+A prepared production home without `current` accepts a stopped Process installation for either runtime. An initial start requested by `process:create` and a later `process:start` both fail before the Process record or runtime changes until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
 
-A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an AppInstance environment file or receive development-server certificate or origin values. Adding or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](database-role.md) can converge Docker on that Node, and a Node Process does not require that role. A named Herdr session also uses a Node Process; [Herdr sessions](herdr-sessions.md) owns that integration:
+A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an AppInstance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](database-role.md) can converge Docker on that Node, and a Node Process does not require that role. A named Herdr session also uses a Node Process; [Herdr sessions](herdr-sessions.md) owns that integration:
 
 ```bash
-orbit process:add postgres \
+orbit process:create postgres \
   --node=beast \
   --runtime=docker \
   --image=postgres:18
 
-orbit process:add herdr-observer \
+orbit process:create herdr-observer \
   --node=beast \
   --runtime=systemd \
   --command=/usr/local/bin/herdr-observer
 ```
 
-`--node` accepts a positive Node ID or the registered Node name. The CLI resolves a name through the node list before it sends the add request.
+`--node` accepts a positive Node ID or the registered Node name. The CLI resolves a name through the node list before it sends the create request.
 
-Repeating an identical add returns the same Process and preserves its desired running or stopped state. A changed specification with the same owner and name returns `process.name_taken` and changes neither the record nor its runtime. To change a specification, remove that Process and add it again.
+Repeating an identical create returns the same Process and preserves its desired running or stopped state. A changed specification with the same owner and name returns `process.name_taken` and changes neither the record nor its runtime. To change a specification, destroy that Process and create it again.
 
 ## Operate a Process
 
@@ -135,25 +135,25 @@ The CLI exposes these Process operations through the Gateway.
 
 | Command | Result |
 | --- | --- |
-| `orbit process:add NAME --instance=ID ...` | Install one stopped or initially running systemd service or Docker container on an AppInstance. |
-| `orbit process:add NAME --node=ID-or-name ...` | Install one stopped or initially running systemd service or Docker container on a managed Node. |
+| `orbit process:create NAME --instance=ID ...` | Install one stopped or initially running systemd service or Docker container on an AppInstance. |
+| `orbit process:create NAME --node=ID-or-name ...` | Install one stopped or initially running systemd service or Docker container on a managed Node. |
 | `orbit process:list --instance=ID` | List the Process records owned by one AppInstance with their desired and observed states. |
 | `orbit process:list --node=ID-or-name` | List the Process records owned by one Node with their desired and observed states. |
 | `orbit process:start PROCESS` | Start an installed Process and record the running desired state. |
 | `orbit process:stop PROCESS` | Stop an installed Process and record the stopped desired state. |
 | `orbit process:restart PROCESS` | Restart an installed Process and record the running desired state. |
 | `orbit process:logs PROCESS --lines=COUNT` | Return a non-streaming tail from 1 through 1,000 lines. |
-| `orbit process:remove PROCESS` | Stop and remove the exact owned runtime artifacts, then delete the Process record. |
+| `orbit process:destroy PROCESS` | Stop and remove the exact owned runtime artifacts, then delete the Process record. |
 
-Adding or starting an AppInstance Process requires an active, available AppInstance and reachable active Node. Adding or starting a Node Process requires a reachable active managed Node. Orbit refuses either operation before mutation when that target is unavailable or inactive. Cleanup can use the recorded placement of a failed or removing AppInstance while its Node remains reachable, and Node-owned cleanup can use an active Node.
+Creating or starting an AppInstance Process requires an active, available AppInstance and reachable active Node. Creating or starting a Node Process requires a reachable active managed Node. Orbit refuses either operation before mutation when that target is unavailable or inactive. Cleanup can use the recorded placement of a failed or removing AppInstance while its Node remains reachable, and Node-owned cleanup can use an active Node.
 
 The Gateway holds one runtime owner for a Process while it re-reads the record, applies the remote systemd or Docker change, and writes the matching success, failure, or deletion. A competitor that cannot take that owner receives `process.runtime_lock_failed` and leaves desired state, errors, and lifecycle status unchanged.
 
-Add, start, and restart of an AppInstance Process also take a bounded AppInstance admission owner first. A competitor waits for at most 30 seconds or the remaining command deadline, then receives `process.operation_busy` before it mutates that AppInstance. The Gateway acquires the AppInstance admission owner before the Process runtime owner and does not take a second nested Process lock. Node-targeted add, start, and restart skip that AppInstance admission owner.
+Create, start, and restart of an AppInstance Process also take a bounded AppInstance admission owner first. A competitor waits for at most 30 seconds or the remaining command deadline, then receives `process.operation_busy` before it mutates that AppInstance. The Gateway acquires the AppInstance admission owner before the Process runtime owner and does not take a second nested Process lock. Node-targeted create, start, and restart skip that AppInstance admission owner.
 
 Node role cleanup uses the same Process runtime owner. It removes exact-owned runtime artifacts and leaves the Process row for the parent removal to delete after recovery. A delayed start or stop that lost the owner cannot rewrite that row after cleanup has finished.
 
-Repeating an identical add refreshes the surviving Process and its desired state. It does not create a second record.
+Repeating an identical create refreshes the surviving Process and its desired state. It does not create a second record.
 
 Every runtime mutation rechecks exact Orbit ownership. Systemd replacement uses a validated candidate and restores the previous owned unit when activation fails. Docker replacement retains or restores exact-owned canonical and rollback containers. Orbit does not overwrite, adopt, or delete a colliding unit, container, or recovery artifact.
 

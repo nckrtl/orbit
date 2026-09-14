@@ -42,12 +42,12 @@ it('exposes exactly eight UUID-keyed Schedule routes and returns 404 for unknown
         ->sortKeys();
 
     expect($routes->all())->toBe([
-        'schedule:activate' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/activate'],
-        'schedule:add' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules'],
         'schedule:complete' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/complete'],
+        'schedule:create' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules'],
+        'schedule:destroy' => ['methods' => ['DELETE'], 'uri' => 'api/v1/schedules/{schedule}'],
+        'schedule:enable' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/activate'],
         'schedule:list' => ['methods' => ['GET', 'HEAD'], 'uri' => 'api/v1/schedules'],
         'schedule:logs' => ['methods' => ['GET', 'HEAD'], 'uri' => 'api/v1/schedules/{schedule}/logs'],
-        'schedule:remove' => ['methods' => ['DELETE'], 'uri' => 'api/v1/schedules/{schedule}'],
         'schedule:run' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/run'],
         'schedule:show' => ['methods' => ['GET', 'HEAD'], 'uri' => 'api/v1/schedules/{schedule}'],
     ]);
@@ -263,12 +263,12 @@ it('records seven sanitized operator Activities and no completion Activity', fun
     $activities = Activity::query()->orderBy('id')->get();
     expect($activities->pluck('command')->all())->toBe([
         'schedule:list',
-        'schedule:add',
+        'schedule:create',
         'schedule:show',
         'schedule:run',
         'schedule:logs',
-        'schedule:activate',
-        'schedule:remove',
+        'schedule:enable',
+        'schedule:destroy',
     ]);
 
     $activityJson = json_encode($activities->map->getAttributes()->all(), JSON_THROW_ON_ERROR);

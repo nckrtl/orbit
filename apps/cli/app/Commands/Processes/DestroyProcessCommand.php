@@ -5,21 +5,21 @@ declare(strict_types=1);
 namespace App\Commands\Processes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Processes\RemoveProcessRequest;
+use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
 
-final class RemoveProcessCommand extends ProcessActionCommand
+final class DestroyProcessCommand extends ProcessActionCommand
 {
     #[\Override]
-    protected $signature = 'process:remove
+    protected $signature = 'process:destroy
         {process : Numeric process ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove one process.';
+    protected $description = 'Destroy one process.';
 
     protected function request(int $processId): GatewayRequest
     {
-        return new RemoveProcessRequest($processId);
+        return new DestroyProcessRequest($processId);
     }
 
     protected function pastTense(): string

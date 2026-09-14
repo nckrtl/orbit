@@ -762,6 +762,8 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe(AppInstanceSourceLayout::Checkout->value)
         ->and(AppInstance::query()->sole()->only(['selected_php_version', 'source_is_laravel']))
         ->toBe(['selected_php_version' => '8.5', 'source_is_laravel' => false])
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
+        ->toBe('instance:create')
         ->and(Activity::query()->where('request_id', $requestId)->sole()->subject_type)
         ->toBe(AppInstance::class)
         ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('source_layout'))
@@ -2637,7 +2639,7 @@ it('removes an active AppInstance through every durable checkpoint', function (b
         ->assertJsonPath('data.failed_step', null)
         ->assertJsonPath('data.error_code', null);
 
-    $activity = Activity::query()->where('command', 'instance:remove')->sole();
+    $activity = Activity::query()->where('command', 'instance:destroy')->sole();
     expect(AppInstance::query()->count())
         ->toBe(0)
         ->and(RouteTarget::query()->count())
@@ -2927,7 +2929,7 @@ it('retains bounded failed progress and resumes without recreating a deleted Rou
         ->assertJsonPath('data.status', 'removing')
         ->assertJsonPath('data.removal.failed_step', 'runtime_cleanup');
 
-    $failedActivity = Activity::query()->where('command', 'instance:remove')->latest('id')->firstOrFail();
+    $failedActivity = Activity::query()->where('command', 'instance:destroy')->latest('id')->firstOrFail();
     expect($failedActivity->status)
         ->toBe('failed')
         ->and($failedActivity->error_code)
@@ -3070,7 +3072,7 @@ it('returns current bounded progress when retry source revalidation is refused',
         ->assertJsonPath('error.details.removal.error_code', 'instance.removal_conflict');
 
     $operation = AppInstance::query()->findOrFail($id)->removalMember?->removal;
-    $activity = Activity::query()->where('command', 'instance:remove')->latest('id')->firstOrFail();
+    $activity = Activity::query()->where('command', 'instance:destroy')->latest('id')->firstOrFail();
     expect(AppInstance::query()->findOrFail($id)->status)
         ->toBe(AppInstanceState::Removing)
         ->and($operation?->current_step?->value)

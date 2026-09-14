@@ -35,6 +35,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -84,15 +85,15 @@ it('records environment commands without submitted imported or rejected values',
     expect($activities)
         ->toHaveCount(4)
         ->and($activities[0]->command)
-        ->toBe('instance:environment:update')
+        ->toBe('env:update')
         ->and($activities[0]->properties?->get('input'))
         ->toBe([])
         ->and($activities[1]->command)
-        ->toBe('instance:environment:import')
+        ->toBe('env:import')
         ->and($activities[1]->properties?->get('input'))
         ->toBe(['replace' => true])
         ->and($activities[2]->command)
-        ->toBe('instance:environment:sync')
+        ->toBe('env:sync')
         ->and($activities[2]->properties?->get('input'))
         ->toBe([])
         ->and($activities[3]->properties?->get('input'))
@@ -317,6 +318,75 @@ it('records a metrics disable request as metrics:disable', function (): void {
         ->assertOk();
 
     expect(Activity::query()->sole()->command)->toBe('metrics:disable');
+});
+
+it('records renamed App Cluster and Route lifecycle command names', function (): void {
+    $this->fakeRepositoryBranches();
+    $operator = Node::query()->create([
+        'name' => 'lifecycle-operator',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => '10.44.0.2',
+    ]);
+    $this->markAsGateway($operator);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+
+    $recorded = function (string $method, string $uri, array $data = []): string {
+        $requestId = (string) Str::uuid();
+        $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->json($method, $uri, $data)
+            ->assertSuccessful();
+
+        return Activity::query()->where('request_id', $requestId)->sole()->command;
+    };
+
+    expect($recorded('POST', '/api/v1/apps', [
+        'slug' => 'lifecycle',
+        'repository_url' => 'https://example.test/lifecycle.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]))->toBe('app:create');
+    $app = OrbitApp::query()->where('slug', 'lifecycle')->sole();
+    expect($recorded('DELETE', "/api/v1/apps/{$app->id}"))->toBe('app:destroy');
+
+    expect($recorded('POST', '/api/v1/clusters', ['name' => 'lifecycle']))->toBe('cluster:create');
+    $cluster = Cluster::query()->where('name', 'lifecycle')->sole();
+    $member = Node::query()->create([
+        'name' => 'lifecycle-member',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.10',
+        'wireguard_ip' => '10.44.0.10',
+    ]);
+    expect($recorded('PUT', "/api/v1/clusters/{$cluster->id}/nodes/{$member->id}"))
+        ->toBe('cluster:node:add');
+    expect($recorded('DELETE', "/api/v1/clusters/{$cluster->id}/nodes/{$member->id}", ['force' => true]))
+        ->toBe('cluster:node:remove');
+    expect($recorded('DELETE', "/api/v1/clusters/{$cluster->id}"))->toBe('cluster:destroy');
+
+    $app = OrbitApp::query()->create([
+        'name' => 'Lifecycle',
+        'slug' => 'lifecycle-route',
+        'repository_url' => 'https://example.test/lifecycle-route.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'lifecycle-route-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.12',
+        'wireguard_ip' => '10.44.0.12',
+        'tld' => 'test',
+    ]);
+    expect($recorded('POST', '/api/v1/routes', [
+        'app_id' => $app->id,
+        'hostname' => 'lifecycle.example.test',
+        'publication' => 'private',
+        'node_id' => $node->id,
+    ]))->toBe('route:create');
+    $route = Route::query()->where('hostname', 'lifecycle.example.test')->sole();
+    expect($recorded('DELETE', "/api/v1/routes/{$route->id}/target"))->toBe('route:target:unset');
+    expect($recorded('DELETE', "/api/v1/routes/{$route->id}"))->toBe('route:destroy');
 });
 
 it('records one completed activity for each API command', function (): void {

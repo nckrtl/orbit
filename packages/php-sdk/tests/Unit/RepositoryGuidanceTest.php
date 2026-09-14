@@ -1,14 +1,15 @@
 <?php
 
 declare(strict_types=1);
+
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\AppInstanceDeploymentLayoutRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
-use Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
+use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
@@ -25,17 +26,17 @@ use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Herdr\AddHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
+use Orbit\Sdk\Requests\Herdr\DestroyHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
-use Orbit\Sdk\Requests\Herdr\RemoveHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
-use Orbit\Sdk\Requests\Schedules\ActivateScheduleRequest;
-use Orbit\Sdk\Requests\Schedules\AddScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
-use Orbit\Sdk\Requests\Schedules\RemoveScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
@@ -156,20 +157,20 @@ describe('repository guidance bootstrap', function (): void {
         $preScheduleOperationCount = 89;
         $scheduleRequests = [
             ListSchedulesRequest::class,
-            AddScheduleRequest::class,
+            CreateScheduleRequest::class,
             ShowScheduleRequest::class,
             RunScheduleRequest::class,
             ScheduleLogsRequest::class,
             CompleteScheduleRequest::class,
-            RemoveScheduleRequest::class,
-            ActivateScheduleRequest::class,
+            DestroyScheduleRequest::class,
+            EnableScheduleRequest::class,
         ];
         $herdrRequests = [
             ListHerdrSessionsRequest::class,
-            AddHerdrSessionRequest::class,
+            CreateHerdrSessionRequest::class,
             ShowHerdrSessionRequest::class,
             RestartHerdrSessionRequest::class,
-            RemoveHerdrSessionRequest::class,
+            DestroyHerdrSessionRequest::class,
             IssueObservationGrantRequest::class,
         ];
         $databaseRequests = [
@@ -277,7 +278,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(CloneAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
-            ->toContain(RemoveAppInstanceRequest::class)
+            ->toContain(DestroyAppInstanceRequest::class)
             ->toContain(ImportAppInstanceEnvironmentRequest::class)
             ->toContain(UpdateAppInstanceEnvironmentRequest::class)
             ->toContain(SynchronizeAppInstanceEnvironmentRequest::class)
@@ -288,7 +289,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ListAppInstanceReleasesRequest::class)
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
-            ->toContain(ClearClusterRouterRequest::class);
+            ->toContain(UnsetClusterRouterRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,

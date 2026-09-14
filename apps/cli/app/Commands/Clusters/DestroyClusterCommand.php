@@ -6,13 +6,13 @@ namespace App\Commands\Clusters;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Clusters\RemoveClusterRequest;
+use Orbit\Sdk\Requests\Clusters\DestroyClusterRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 
-final class RemoveClusterCommand extends ClusterCommand
+final class DestroyClusterCommand extends ClusterCommand
 {
     #[\Override]
-    protected $signature = 'cluster:remove
+    protected $signature = 'cluster:destroy
         {cluster : Numeric Cluster ID}
         {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
@@ -40,7 +40,7 @@ final class RemoveClusterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->send($connector, new RemoveClusterRequest($clusterId), ClusterResponse::class);
+        $cluster = $this->send($connector, new DestroyClusterRequest($clusterId), ClusterResponse::class);
 
         if (! $cluster instanceof ClusterResponse) {
             return self::FAILURE;

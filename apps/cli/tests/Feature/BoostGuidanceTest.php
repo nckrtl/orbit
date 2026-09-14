@@ -223,13 +223,13 @@ it('defines the AppInstance environment command boundary', function (): void {
 
 it('defines the complete HTTP-only Schedule operator surface', function (): void {
     $scheduleCommands = [
-        'schedule:add',
+        'schedule:create',
         'schedule:list',
         'schedule:show',
         'schedule:run',
         'schedule:logs',
-        'schedule:remove',
-        'schedule:activate',
+        'schedule:destroy',
+        'schedule:enable',
     ];
     $commandRules = file_get_contents(base_path('.ai/rules/commands.md'));
     $developmentSkill = file_get_contents(base_path('.ai/skills/orbit-cli-development/SKILL.md'));

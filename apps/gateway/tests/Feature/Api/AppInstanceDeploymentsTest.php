@@ -29,7 +29,10 @@ it('rejects invalid deployment requests as ordinary JSON before invocation', fun
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertHeaderMissing('X-Accel-Buffering');
 
-    expect($this->fixture->deployment->invocations)->toBe(0);
+    expect($this->fixture->deployment->invocations)
+        ->toBe(0)
+        ->and(Activity::query()->latest('id')->value('command'))
+        ->toBe($endpoint === 'deploy' ? 'instance:deploy' : 'instance:rollback');
 })->with([
     'deploy missing body' => ['deploy', ''],
     'deploy array' => ['deploy', '[]'],
@@ -87,6 +90,8 @@ it('returns only retained names and the nullable current selection', function ()
         'meta' => ['request_id' => $response->headers->get('X-Orbit-Request-Id')],
     ]);
 
-    expect(Activity::query()->sole()->properties?->toArray())
+    expect(Activity::query()->sole()->command)
+        ->toBe('instance:release:list')
+        ->and(Activity::query()->sole()->properties?->toArray())
         ->not->toHaveKeys(['history', 'output', 'commit']);
 });
