@@ -79,6 +79,7 @@ use App\Domain\Herdr\ObservationGrantSigner;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
@@ -188,6 +189,7 @@ use App\Infrastructure\Herdr\HerdrObserverSitePublisher;
 use App\Infrastructure\Herdr\NativeHerdrSessionInspector;
 use App\Infrastructure\Herdr\OpenSslObservationGrantSigner;
 use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
+use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
@@ -328,6 +330,7 @@ final class AppServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
+        HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
         HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
         HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,
         HerdrSessionInspector::class => NativeHerdrSessionInspector::class,

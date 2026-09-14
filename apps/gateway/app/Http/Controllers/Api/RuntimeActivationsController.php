@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Hibernation\ActivateAppInstanceRuntimeAction;
-use App\Domain\Hibernation\HibernationException;
-use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Shared\ResourceOperationException;
+use App\Actions\Hibernation\ScheduleAppInstanceRuntimeWakeAction;
+use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -25,7 +24,9 @@ final class RuntimeActivationsController extends Controller
         Request $request,
         #[SensitiveParameter]
         AppInstance $instance,
-        ActivateAppInstanceRuntimeAction $activate,
+        AppDevHibernationPolicy $policy,
+        HibernationWakeFailureStore $failures,
+        ScheduleAppInstanceRuntimeWakeAction $schedule,
         RuntimeActivationPage $pages,
     ): Response {
         $caller = $request->user();
@@ -34,22 +35,15 @@ final class RuntimeActivationsController extends Controller
             return $pages->failed('Active WireGuard peer identity required.');
         }
 
-        try {
-            $activate->execute($instance);
-        } catch (HibernationException $exception) {
-            if ($exception->errorCode === 'process.operation_busy' || $exception->errorCode === 'process.runtime_lock_failed') {
-                return $pages->progress();
-            }
+        $instance->loadMissing('node');
 
-            return $pages->failed($exception->getMessage());
-        } catch (ProcessOperationException|ResourceOperationException $exception) {
-            if (in_array($exception->errorCode, ['process.operation_busy', 'process.runtime_lock_failed'], true)) {
-                return $pages->progress();
-            }
-
-            return $pages->failed($exception->getMessage());
+        if (! $policy->appliesToInstance($instance)) {
+            return $pages->failed("AppInstance [{$instance->name}] is not an app-dev development target.");
         }
 
-        return $pages->ready();
+        $failure = $failures->pull((int) $instance->getKey());
+        $schedule->afterResponse($instance);
+
+        return $failure === null ? $pages->progress() : $pages->failed($failure);
     }
 }

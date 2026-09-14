@@ -15,6 +15,8 @@ Development AppInstances install lifecycle Processes such as Vite on the app-dev
 - The Gateway must halt AppInstance Processes owned by a development AppInstance on a Node with the active `app-dev` role after the configured idle HTTP window.
 - The Gateway must start every desired-running AppInstance Process for that AppInstance when the next HTTP request arrives, and must leave desired-stopped Processes stopped.
 - The Gateway must hold that wake until every desired-running Process is running, and until a Vite development-server Process accepts connections on `127.0.0.1:5173`.
+- Caddy must not proxy the site until the awake marker exists.
+- The Gateway must return the Orbit progress page on an intercept request that starts or waits for wake, and must return the failed page when that wake failed.
 - The Gateway must not halt Node Processes, production AppInstance Processes, or Schedules.
 - The Gateway must not stop the shared PHP-FPM service or its pools.
 - The Gateway must not change PHP-FPM pool configuration or Caddy FastCGI socket paths for hibernation.
@@ -31,10 +33,11 @@ Development AppInstances install lifecycle Processes such as Vite on the app-dev
 - Restart policy as keep-alive: rejected because a restart policy only covers crash recovery while the unit is started; an exemption field is a separate Process contract.
 - `systemctl enable` for app-dev AppInstance Processes: rejected because host boot would start the group without an HTTP request.
 - Stop the shared PHP-FPM service or remove a per-site pool during idle: rejected because ADR 0021 shares one FPM master per PHP version across every site on the Node, and each pool already exits idle workers.
+- Return HTTP 200 on the intercept that starts Processes: rejected because Caddy would proxy that request before the operator sees the Orbit page.
 
 ## Consequences
 
-- The first HTTP request after idle or host reboot waits for desired-running Processes to start.
+- The first HTTP request after idle or host reboot receives the Orbit progress page. The browser refresh after the awake marker exists is the first application request.
 - Doctor reports desired running and observed stopped while a group is asleep.
 - Operators who want a Process to survive idle HTTP silence need a keep-alive contract outside this record.
 
