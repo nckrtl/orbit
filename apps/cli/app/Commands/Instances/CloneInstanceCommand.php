@@ -31,7 +31,7 @@ final class CloneInstanceCommand extends GatewayCommand
     protected $help = <<<'HELP'
 The candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
 
-Provision the production Node with node:provision --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure and deploy explicitly with instance:deployment-config and instance:deploy.
+Provision the production Node with node:provision --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.
 HELP;
 
     public function handle(
