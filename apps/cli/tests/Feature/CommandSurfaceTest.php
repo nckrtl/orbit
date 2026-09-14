@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Commands\GatewayCommand;
 use App\Commands\Schedules\ListSchedulesCommand;
 use App\Commands\Schedules\RunScheduleCommand;
+use App\Services\Extensions\LocalExtensionState;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -13,6 +14,41 @@ use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
+
+/**
+ * @return array{extensions: string|null, config: string|null}
+ */
+function commandSurfaceHomeSnapshot(string $home): array
+{
+    $extensions = $home.'/extensions.json';
+    $config = $home.'/config.json';
+
+    return [
+        'extensions' => is_file($extensions) ? file_get_contents($extensions) : null,
+        'config' => is_file($config) ? file_get_contents($config) : null,
+    ];
+}
+
+function replaceCommandSurfaceHome(string $home): void
+{
+    config()->set('orbit.home', $home);
+    app()->forgetInstance(LocalExtensionState::class);
+}
+
+beforeEach(function (): void {
+    $this->callerOrbitHome = rtrim((string) config('orbit.home'), '/');
+    $this->callerSnapshot = commandSurfaceHomeSnapshot($this->callerOrbitHome);
+    $this->orbitHome = sys_get_temp_dir().'/orbit-cli-command-surface-'.Str::uuid();
+    replaceCommandSurfaceHome($this->orbitHome);
+});
+
+afterEach(function (): void {
+    if ($this->orbitHome !== $this->callerOrbitHome) {
+        new Filesystem()->deleteDirectory($this->orbitHome);
+    }
+
+    expect(commandSurfaceHomeSnapshot($this->callerOrbitHome))->toBe($this->callerSnapshot);
+});
 
 it('exposes only the implemented Orbit product commands', function (): void {
     $visibleCommands = collect(app(Kernel::class)->all())
@@ -174,6 +210,70 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
             'herdr:session:restart',
             'herdr:session:show',
         ]);
+});
+
+it('keeps command-surface visibility independent of caller Herdr settings', function (bool $herdrEnabled): void {
+    $filesystem = new Filesystem();
+    $callerHome = sys_get_temp_dir().'/orbit-cli-command-surface-caller-'.Str::uuid();
+    mkdir($callerHome, 0700, true);
+    $sentinel = '{"sentinel":"orb-347-caller-config"}'.PHP_EOL;
+    file_put_contents($callerHome.'/config.json', $sentinel);
+    chmod($callerHome.'/config.json', 0600);
+
+    replaceCommandSurfaceHome($callerHome);
+
+    if ($herdrEnabled) {
+        app(LocalExtensionState::class)->enable('herdr');
+    }
+
+    $callerSnapshot = commandSurfaceHomeSnapshot($callerHome);
+
+    replaceCommandSurfaceHome($this->orbitHome);
+
+    expect(app(LocalExtensionState::class)->enabled('herdr'))->toBeFalse();
+    expect(collect(app(Kernel::class)->all())
+        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\Herdr\\'))
+        ->every(static fn (Command $command): bool => $command->isHidden()))
+        ->toBeTrue();
+    expect(collect(app(Kernel::class)->all())
+        ->reject(static fn (Command $command): bool => $command->isHidden())
+        ->keys()
+        ->all())
+        ->not->toContain('herdr:session:create')
+        ->not->toContain('herdr:observe');
+    expect(commandSurfaceHomeSnapshot($callerHome))->toBe($callerSnapshot)
+        ->and(commandSurfaceHomeSnapshot($this->callerOrbitHome))->toBe($this->callerSnapshot);
+
+    $filesystem->deleteDirectory($this->orbitHome);
+
+    expect(is_dir($this->orbitHome))->toBeFalse()
+        ->and(is_dir($callerHome))->toBeTrue()
+        ->and(commandSurfaceHomeSnapshot($callerHome))->toBe($callerSnapshot);
+
+    $filesystem->deleteDirectory($callerHome);
+})->with([
+    'Herdr disabled' => [false],
+    'Herdr enabled' => [true],
+]);
+
+it('removes only owned command-surface fixtures and leaves caller configuration intact', function (): void {
+    $filesystem = new Filesystem();
+    $callerHome = sys_get_temp_dir().'/orbit-cli-command-surface-caller-'.Str::uuid();
+    mkdir($callerHome, 0700, true);
+    mkdir($this->orbitHome, 0700, true);
+    $sentinel = '{"sentinel":"orb-347-caller-config"}'.PHP_EOL;
+    file_put_contents($callerHome.'/config.json', $sentinel);
+    chmod($callerHome.'/config.json', 0600);
+    file_put_contents($this->orbitHome.'/owned.json', '{"owned":true}'.PHP_EOL);
+
+    $filesystem->deleteDirectory($this->orbitHome);
+
+    expect(is_dir($this->orbitHome))->toBeFalse()
+        ->and(is_dir($callerHome))->toBeTrue()
+        ->and(file_get_contents($callerHome.'/config.json'))->toBe($sentinel)
+        ->and(commandSurfaceHomeSnapshot($this->callerOrbitHome))->toBe($this->callerSnapshot);
+
+    $filesystem->deleteDirectory($callerHome);
 });
 
 it('registers only the Orbit Schedule adapters', function (): void {
@@ -662,8 +762,6 @@ it('does not execute local or remote shell processes from command classes', func
 });
 
 it('renders one exact json failure envelope for every Orbit product command', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-cli-command-surface-'.Str::uuid();
-    config()->set('orbit.home', $orbitHome);
     $mock = MockClient::global();
     $profileMissing = [
         'code' => 'gateway.profile_missing',
@@ -894,5 +992,4 @@ it('renders one exact json failure envelope for every Orbit product command', fu
     }
 
     MockClient::destroyGlobal();
-    app(Filesystem::class)->deleteDirectory($orbitHome);
 });
