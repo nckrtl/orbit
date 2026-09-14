@@ -5,23 +5,21 @@ declare(strict_types=1);
 namespace App\Commands\Processes;
 
 use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\SelectsAppDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
-use Orbit\Sdk\Requests\Apps\CreateProcessDefinitionRequest;
-use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
+use Orbit\Sdk\Requests\Apps\UpdateProcessDefinitionRequest;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
-use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
-final class CreateProcessCommand extends TargetedProcessCommand
+final class UpdateProcessCommand extends ProcessCommand
 {
     use RendersAppRuntimeDefinitions;
+    use SelectsAppDefinitionTarget;
 
     #[\Override]
-    protected $signature = 'process:create
-        {name : Process name}
-        {--instance= : Positive AppInstance ID}
-        {--node= : Node ID or registered name}
+    protected $signature = 'process:update
+        {name : Process definition name}
         {--app= : Numeric App ID}
         {--for= : Comma-separated definition environments}
         {--runtime=systemd : systemd or docker}
@@ -32,30 +30,19 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--port=* : Docker HOST:CONTAINER[/tcp|udp]; repeat as needed}
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart=never : never, on-failure, always, or unless-stopped}
-        {--start : Start after adding}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create one systemd service, Docker container process, or App process definition.';
+    protected $description = 'Replace one App process definition.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $name = $this->stringArgument('name', 'Process name', 'process.name_required');
+        $name = $this->stringArgument('name', 'Process definition name', 'process.name_required');
 
         if ($name === null) {
             return self::FAILURE;
-        }
-
-        if (
-            strlen($name) > 63
-            || preg_match('/[\x00-\x1F\x7F]/', $name) === 1
-        ) {
-            return $this->renderGatewayFailure(
-                'process.name_invalid',
-                'Process name is invalid.',
-            );
         }
 
         $runtime = $this->stringOption('runtime');
@@ -96,31 +83,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         }
 
         $image = $this->stringOption('image');
-
-        if (
-            $image !== null
-            && (strlen($image) > 255
-            || preg_match('/[\x00-\x1F\x7F]/', $image) === 1)
-        ) {
-            return $this->renderGatewayFailure(
-                'process.image_invalid',
-                'Docker image is invalid.',
-            );
-        }
-
         $workingDirectory = $this->stringOption('working-directory');
-
-        if (
-            $workingDirectory !== null
-            && (strlen($workingDirectory) > 4096
-            || preg_match('/[\x00-\x1F\x7F]/', $workingDirectory) === 1)
-        ) {
-            return $this->renderGatewayFailure(
-                'process.working_directory_invalid',
-                'Process working directory is invalid.',
-            );
-        }
-
         $environmentWasProvided = $this->input->hasParameterOption('--environment');
         $environment = $this->environment();
 
@@ -140,107 +103,6 @@ final class CreateProcessCommand extends TargetedProcessCommand
 
         if ($ports === null) {
             return self::FAILURE;
-        }
-
-        $selector = $this->exclusiveProcessTarget();
-
-        if ($selector === null) {
-            return self::FAILURE;
-        }
-
-        if ($selector === 'app') {
-            return $this->createDefinition(
-                $repository,
-                $connectors,
-                $name,
-                $runtime,
-                $command,
-                $image,
-                $workingDirectory,
-                $environmentWasProvided ? $environment : null,
-                $portsWereProvided ? $ports : null,
-                $volumesWereProvided ? $volumes : null,
-                $restartPolicy,
-            );
-        }
-
-        if ($this->stringOption('for') !== null) {
-            return $this->renderGatewayFailure(
-                'process.option_invalid',
-                'The --for option requires --app.',
-            );
-        }
-
-        $connector = $this->gatewayConnector($repository, $connectors);
-
-        if ($connector === null) {
-            return self::FAILURE;
-        }
-
-        $target = $this->processTarget($connector);
-
-        if ($target === null) {
-            return self::FAILURE;
-        }
-
-        $process = $this->send(
-            $connector,
-            new CreateProcessRequest(
-                target: $target,
-                name: $name,
-                runtime: $runtime,
-                command: $command,
-                image: $image,
-                workingDirectory: $workingDirectory,
-                environment: $environmentWasProvided ? $environment : null,
-                ports: $portsWereProvided ? $ports : null,
-                volumes: $volumesWereProvided ? $volumes : null,
-                restartPolicy: $restartPolicy,
-                start: $this->option('start') === true,
-            ),
-            ProcessResponse::class,
-        );
-
-        if (! $process instanceof ProcessResponse) {
-            return self::FAILURE;
-        }
-
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedProcessPayload($process->toArray()));
-
-            return self::SUCCESS;
-        }
-
-        $this->info("Process [{$process->name}] is {$process->runtimeStatus}.");
-        $this->line("Request ID: {$process->requestId}");
-
-        return self::SUCCESS;
-    }
-
-    /**
-     * @param  list<string>  $command
-     * @param  array<string, string>|null  $environment
-     * @param  list<string>|null  $ports
-     * @param  list<array{source: string, target: string, read_only: bool}>|null  $volumes
-     */
-    private function createDefinition(
-        GatewayConfigRepository $repository,
-        GatewayConnectorFactory $connectors,
-        string $name,
-        string $runtime,
-        array $command,
-        ?string $image,
-        ?string $workingDirectory,
-        ?array $environment,
-        ?array $ports,
-        ?array $volumes,
-        string $restartPolicy,
-    ): int {
-        if ($this->option('start') === true) {
-            return $this->renderGatewayFailure(
-                'process.option_invalid',
-                'The --start option requires --instance or --node.',
-            );
         }
 
         $appId = $this->appIdOption();
@@ -276,15 +138,15 @@ final class CreateProcessCommand extends TargetedProcessCommand
             $spec['working_directory'] = $workingDirectory;
         }
 
-        if ($environment !== null) {
+        if ($environmentWasProvided) {
             $spec['environment'] = $environment;
         }
 
-        if ($ports !== null) {
+        if ($portsWereProvided) {
             $spec['ports'] = $ports;
         }
 
-        if ($volumes !== null) {
+        if ($volumesWereProvided) {
             $spec['volumes'] = $volumes;
         }
 
@@ -312,7 +174,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
 
         $response = $this->send(
             $connector,
-            new CreateProcessDefinitionRequest($appId, $definition),
+            new UpdateProcessDefinitionRequest($appId, $name, $definition),
             AppRuntimeDefinitionResponse::class,
         );
 

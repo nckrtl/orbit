@@ -167,4 +167,123 @@ abstract class ProcessCommand extends GatewayCommand
 
         return array_values(array_filter($values, is_string(...)));
     }
+
+    /** @return array<string, string>|null */
+    protected function environment(): ?array
+    {
+        $environment = [];
+        $values = $this->stringListOption('environment');
+
+        if (count($values) > 100) {
+            $this->renderInvalidEnvironment();
+
+            return null;
+        }
+
+        foreach ($values as $value) {
+            [$name, $item] = array_pad(explode('=', $value, limit: 2), length: 2, value: null);
+
+            if (
+                ! is_string($name)
+                || ! is_string($item)
+                || strlen($item) > 4096
+                || preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $name) !== 1
+                || preg_match('/[\x00\r\n]/', $value) === 1
+            ) {
+                $this->renderInvalidEnvironment();
+
+                return null;
+            }
+
+            $environment[$name] = $item;
+        }
+
+        return $environment;
+    }
+
+    /** @return list<array{source: string, target: string, read_only: bool}>|null */
+    protected function volumes(): ?array
+    {
+        $volumes = [];
+        $values = $this->stringListOption('volume');
+
+        if (count($values) > 100) {
+            $this->renderInvalidVolume();
+
+            return null;
+        }
+
+        foreach ($values as $value) {
+            $segments = explode(':', $value);
+            $readOnly = ($segments[2] ?? null) === 'ro';
+            $source = $segments[0];
+            $target = $segments[1] ?? '';
+
+            if (
+                preg_match('/[\x00\r\n]/', $value) === 1
+                || ! in_array(count($segments), [2, 3], strict: true)
+                || strlen($source) > 4096
+                || strlen($target) > 4096
+                || ($segments[2] ?? null) !== null
+                && ! $readOnly
+            ) {
+                $this->renderInvalidVolume();
+
+                return null;
+            }
+
+            $volumes[] = [
+                'source' => $segments[0],
+                'target' => $segments[1],
+                'read_only' => $readOnly,
+            ];
+        }
+
+        return $volumes;
+    }
+
+    /** @return list<string>|null */
+    protected function ports(): ?array
+    {
+        $ports = $this->stringListOption('port');
+
+        if (
+            count($ports) > 100
+            || array_any(
+                $ports,
+                static fn (string $port): bool => strlen($port) > 4096
+                || preg_match('/[\x00-\x1F\x7F]/', $port) === 1,
+            )
+        ) {
+            $this->renderInvalidPort();
+
+            return null;
+        }
+
+        return $ports;
+    }
+
+    private function renderInvalidEnvironment(): void
+    {
+        $this->renderGatewayFailure(
+            'process.environment_invalid',
+            'Invalid environment value. Use NAME=VALUE.',
+        );
+    }
+
+    private function renderInvalidPort(): void
+    {
+        $this->renderGatewayFailure(
+            'process.port_invalid',
+            'Process port value is invalid.',
+        );
+    }
+
+    private function renderInvalidVolume(): void
+    {
+        $this->renderGatewayFailure(
+            'process.volume_invalid',
+            'Invalid volume. Use SOURCE:TARGET[:ro].',
+        );
+    }
 }

@@ -4,19 +4,27 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
+use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\SelectsAppDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Orbit\Sdk\Requests\Apps\ListScheduleDefinitionsRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
+use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
 use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
 
 final class ListSchedulesCommand extends ScheduleCommand
 {
+    use RendersAppRuntimeDefinitions;
+    use SelectsAppDefinitionTarget;
+
     #[\Override]
     protected $signature = 'schedule:list
+        {--app= : Numeric App ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List authorized Schedules.';
+    protected $description = 'List authorized Schedules or App Schedule definitions.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -26,6 +34,24 @@ final class ListSchedulesCommand extends ScheduleCommand
 
         if ($connector === null) {
             return self::FAILURE;
+        }
+
+        $appId = $this->appIdOption();
+
+        if ($appId === false) {
+            return self::FAILURE;
+        }
+
+        if ($appId !== null) {
+            $response = $this->send(
+                $connector,
+                new ListScheduleDefinitionsRequest($appId),
+                AppRuntimeDefinitionsResponse::class,
+            );
+
+            return $response instanceof AppRuntimeDefinitionsResponse
+                ? $this->renderDefinitions($response)
+                : self::FAILURE;
         }
 
         $response = $this->send($connector, new ListSchedulesRequest, SchedulesResponse::class);

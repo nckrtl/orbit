@@ -625,7 +625,7 @@ it('renders local validation failures through the exact json boundary', function
         'process:create',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
         'process.target_invalid',
-        'The --instance or --node option is required.',
+        'The --app, --instance, or --node option is required.',
     ],
     'process target ID' => [
         'process:create',

@@ -330,7 +330,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Herdr: session list, add, show, restart, remove, and observation-grant.')
             ->toContain('- Database connection: list, show, add, update, remove, attach, and detach.')
             ->toContain(
-                '- App runtime definition: process and Schedule list, create, show, replace, and remove.',
+                '- App runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
                 '- AppInstance: list, show, create, register, clone, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
@@ -361,7 +361,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep AppInstance deployment transport limited to configuration read and replacement, explicit deploy and rollback streams, and retained-release inspection.',
             )
             ->toContain(
-                "Keep App runtime definition transport limited to a numeric App ID, a definition UUID for item operations, and the caller's exact JSON document for create and full replacement.",
+                "Keep App runtime definition transport limited to a numeric App ID, a definition name for item operations, and the caller's exact JSON document for create and full update.",
             )
             ->toContain(
                 'Keep Schedule transport limited to typed Node and AppInstance targets and the eight shipped operations.',
@@ -385,12 +385,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(
                 'The SDK exposes exactly 110 public Gateway operations.',
                 'The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records.',
-                'The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions.',
+                'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
                 'Doctor accepts the current Gateway family set, including Schedule, Herdr, and Database connection.',
                 'The SDK exposes typed list, add, show, restart, remove, and observation-grant requests for managed Herdr sessions.',
                 'Observation grant URLs stay out of generic diagnostics.',
-                "Create and replace requests send the caller's exact JSON document to the Gateway.",
+                "Create and update requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deployment-layout preparation for one AppInstance and an optional explicit SQLite source path.',
                 'The SDK exposes typed deployment configuration, deploy, rollback, and retained-release operations.',
                 'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',

@@ -145,33 +145,27 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:destroy');
         Route::prefix('apps/{app}/process-definitions')->scopeBindings()->group(function (): void {
             Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
-                ->name('process-definition:list');
+                ->name('process:list');
             Route::post('/', [AppRuntimeDefinitionsController::class, 'processStore'])
-                ->name('process-definition:new');
+                ->name('process:create');
             Route::get('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processShow'])
-                ->whereUuid('processDefinition')
-                ->name('process-definition:show');
+                ->name('process:show');
             Route::put('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processUpdate'])
-                ->whereUuid('processDefinition')
-                ->name('process-definition:update');
+                ->name('process:update');
             Route::delete('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processDestroy'])
-                ->whereUuid('processDefinition')
-                ->name('process-definition:remove');
+                ->name('process:destroy');
         });
         Route::prefix('apps/{app}/schedule-definitions')->scopeBindings()->group(function (): void {
             Route::get('/', [AppRuntimeDefinitionsController::class, 'scheduleIndex'])
-                ->name('schedule-definition:list');
+                ->name('schedule:list');
             Route::post('/', [AppRuntimeDefinitionsController::class, 'scheduleStore'])
-                ->name('schedule-definition:new');
+                ->name('schedule:create');
             Route::get('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleShow'])
-                ->whereUuid('scheduleDefinition')
-                ->name('schedule-definition:show');
+                ->name('schedule:show');
             Route::put('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleUpdate'])
-                ->whereUuid('scheduleDefinition')
-                ->name('schedule-definition:update');
+                ->name('schedule:update');
             Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
-                ->whereUuid('scheduleDefinition')
-                ->name('schedule-definition:remove');
+                ->name('schedule:destroy');
         });
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');

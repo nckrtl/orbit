@@ -16,7 +16,7 @@ remote execution behavior.
 
 ## App runtime definitions
 
-The SDK exposes typed list, create, show, replace, and remove requests for App process and Schedule definitions. Create and replace requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
+The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions. Create and update requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
 
 ## Schedules
 

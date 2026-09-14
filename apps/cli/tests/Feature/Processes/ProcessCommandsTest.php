@@ -7,6 +7,11 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Apps\CreateProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\DestroyProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\ListProcessDefinitionsRequest;
+use Orbit\Sdk\Requests\Apps\ShowProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\UpdateProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
@@ -912,7 +917,7 @@ it('rejects invalid local process input before making a gateway request', functi
             'name' => 'queue',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --instance or --node option is required.',
+        'The --app, --instance, or --node option is required.',
     ],
     'combined selectors' => [
         'process:create',
@@ -922,7 +927,48 @@ it('rejects invalid local process input before making a gateway request', functi
             '--node' => '4',
             '--command' => ['/usr/bin/php'],
         ],
-        'Use either --instance or --node, not both.',
+        'Use only one of --app, --instance, or --node.',
+    ],
+    'app with instance' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--instance' => '7',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'Use only one of --app, --instance, or --node.',
+    ],
+    'for without app' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--instance' => '7',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'The --for option requires --app.',
+    ],
+    'app without for' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'The --for option is required with --app.',
+    ],
+    'start with app' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+            '--start' => true,
+        ],
+        'The --start option requires --instance or --node.',
     ],
     'invalid AppInstance' => [
         'process:list',
@@ -936,16 +982,191 @@ it('rejects invalid local process input before making a gateway request', functi
     ],
 ]);
 
+it('renders one exact json envelope for App-target process refusals', function (
+    string $command,
+    array $arguments,
+    string $code,
+    string $message,
+): void {
+    $mock = MockClient::global();
+    $expectedPayload = [
+        'error' => [
+            'code' => $code,
+            'message' => $message,
+            'request_id' => null,
+        ],
+    ];
+    $expected = json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(1);
+    expect($output)->toBe($expected);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe($expectedPayload);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'update missing target' => [
+        'process:update',
+        ['name' => 'worker'],
+        'process.target_invalid',
+        'The --app option is required.',
+    ],
+    'create app with instance' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--instance' => '7',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.target_invalid',
+        'Use only one of --app, --instance, or --node.',
+    ],
+    'create app with node' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--node' => '4',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.target_invalid',
+        'Use only one of --app, --instance, or --node.',
+    ],
+    'create for without app' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--instance' => '7',
+            '--for' => 'development',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.option_invalid',
+        'The --for option requires --app.',
+    ],
+    'create app without for' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'process.option_invalid',
+        'The --for option is required with --app.',
+    ],
+    'create invalid app without for' => [
+        'process:create',
+        [
+            'name' => 'queue',
+            '--app' => 'abc',
+            '--command' => ['/usr/bin/php'],
+        ],
+        'app.id_invalid',
+        'App ID must be a positive integer.',
+    ],
+    'update app without for' => [
+        'process:update',
+        ['name' => 'worker', '--app' => '7'],
+        'process.option_invalid',
+        'The --for option is required with --app.',
+    ],
+]);
+
 it('exposes AppInstance and Node selectors on targeted process commands', function (): void {
     $commands = Artisan::all();
 
     expect($commands['process:create']->getDefinition()->hasOption('instance'))->toBeTrue()
         ->and($commands['process:create']->getDefinition()->hasOption('node'))->toBeTrue()
+        ->and($commands['process:create']->getDefinition()->hasOption('app'))->toBeTrue()
         ->and($commands['process:create']->getDefinition()->hasOption('workspace'))->toBeFalse()
         ->and($commands['process:list']->getDefinition()->hasOption('instance'))->toBeTrue()
         ->and($commands['process:list']->getDefinition()->hasOption('node'))->toBeTrue()
+        ->and($commands['process:list']->getDefinition()->hasOption('app'))->toBeTrue()
         ->and($commands['process:list']->getDefinition()->hasOption('workspace'))->toBeFalse();
 });
+
+it('records one App process definition through structured flags', function (): void {
+    $mock = MockClient::global([
+        CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201),
+    ]);
+
+    $this
+        ->artisan('process:create', [
+            'name' => 'queue',
+            '--app' => '7',
+            '--for' => 'development,production',
+            '--runtime' => 'systemd',
+            '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+            '--restart' => 'on-failure',
+            '--json' => true,
+        ])
+        ->expectsOutput(process_definition_cli_json())
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest())
+        ->toBeInstanceOf(CreateProcessDefinitionRequest::class)
+        ->and($mock->getLastPendingRequest()?->getUrl())
+        ->toBe('https://10.44.0.1/api/v1/apps/7/process-definitions')
+        ->and((string) $mock->getLastPendingRequest()?->body())
+        ->toBe('{"name":"queue","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure"}}');
+});
+
+it('lists shows updates and destroys App process definitions by name', function (
+    string $command,
+    array $arguments,
+    string $requestClass,
+    string $endpoint,
+): void {
+    $mock = MockClient::global([
+        ListProcessDefinitionsRequest::class => MockResponse::make(process_definition_cli_collection_envelope()),
+        ShowProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope()),
+        UpdateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope()),
+        DestroyProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope()),
+    ]);
+
+    $this
+        ->artisan($command, [...$arguments, '--json' => true])
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest())
+        ->toBeInstanceOf($requestClass)
+        ->and($mock->getLastPendingRequest()?->getUrl())
+        ->toBe("https://10.44.0.1{$endpoint}");
+})->with([
+    'list' => [
+        'process:list',
+        ['--app' => '7'],
+        ListProcessDefinitionsRequest::class,
+        '/api/v1/apps/7/process-definitions',
+    ],
+    'show' => [
+        'process:show',
+        ['name' => 'queue', '--app' => '7'],
+        ShowProcessDefinitionRequest::class,
+        '/api/v1/apps/7/process-definitions/queue',
+    ],
+    'update' => [
+        'process:update',
+        [
+            'name' => 'queue',
+            '--app' => '7',
+            '--for' => 'production',
+            '--command' => ['/usr/bin/php'],
+        ],
+        UpdateProcessDefinitionRequest::class,
+        '/api/v1/apps/7/process-definitions/queue',
+    ],
+    'destroy' => [
+        'process:destroy',
+        ['process' => 'queue', '--app' => '7'],
+        DestroyProcessDefinitionRequest::class,
+        '/api/v1/apps/7/process-definitions/queue',
+    ],
+]);
 
 it('does not disclose malformed environment values', function (string $environment): void {
     $mock = MockClient::global();
@@ -1128,4 +1349,49 @@ function process_cli_secret_value(): string
 function process_cli_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array<string, mixed> */
+function process_definition_cli_data(): array
+{
+    return [
+        'id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
+        'app_id' => 7,
+        'name' => 'queue',
+        'environments' => ['development', 'production'],
+        'spec' => [
+            'runtime' => 'systemd',
+            'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+            'restart_policy' => 'on-failure',
+        ],
+    ];
+}
+
+/** @return array<string, mixed> */
+function process_definition_cli_envelope(): array
+{
+    return [
+        'data' => process_definition_cli_data(),
+        'meta' => ['request_id' => process_cli_request_id()],
+    ];
+}
+
+/** @return array<string, mixed> */
+function process_definition_cli_collection_envelope(): array
+{
+    $item = process_definition_cli_data();
+    unset($item['spec']['command']);
+
+    return [
+        'data' => [$item],
+        'meta' => ['request_id' => process_cli_request_id()],
+    ];
+}
+
+function process_definition_cli_json(): string
+{
+    return json_encode([
+        ...process_definition_cli_data(),
+        'request_id' => process_cli_request_id(),
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

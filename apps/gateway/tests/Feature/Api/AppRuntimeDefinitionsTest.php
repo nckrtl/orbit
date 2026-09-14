@@ -50,14 +50,14 @@ it('provides complete process definition CRUD with command-safe collections', fu
     expect($listed->getContent())->not->toContain($command);
 
     $this
-        ->getJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/{$id}")
+        ->getJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/worker")
         ->assertOk()
         ->assertJsonPath('data.spec.command.0', $command);
 
     $replacement = runtime_definition_process_payload('web', '/usr/bin/new-command');
     $replacement['environments'] = ['development', 'production'];
     $this
-        ->putJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/{$id}", $replacement)
+        ->putJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/worker", $replacement)
         ->assertOk()
         ->assertJsonPath('data.id', $id)
         ->assertJsonPath('data.name', 'web')
@@ -73,7 +73,7 @@ it('provides complete process definition CRUD with command-safe collections', fu
         ->toMatchArray($replacement['spec']);
 
     $this
-        ->deleteJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/{$id}")
+        ->deleteJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/web")
         ->assertOk()
         ->assertJsonPath('data.id', $id);
     expect(ProcessDefinition::query()->count())->toBe(0);
@@ -102,7 +102,7 @@ it('provides complete Schedule definition CRUD with command-safe collections', f
     expect($listed->getContent())->not->toContain($command);
 
     $this
-        ->getJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/{$id}")
+        ->getJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/hourly")
         ->assertOk()
         ->assertJsonPath('data.spec.command', $command);
 
@@ -111,7 +111,7 @@ it('provides complete Schedule definition CRUD with command-safe collections', f
     $replacement['spec']['calendar'] = 'daily';
     $replacement['spec']['timeout_seconds'] = 30;
     $this
-        ->putJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/{$id}", $replacement)
+        ->putJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/hourly", $replacement)
         ->assertOk()
         ->assertJsonPath('data.id', $id)
         ->assertJsonPath('data.name', 'daily')
@@ -119,7 +119,7 @@ it('provides complete Schedule definition CRUD with command-safe collections', f
         ->assertJsonPath('data.spec.timeout_seconds', 30);
 
     $this
-        ->deleteJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/{$id}")
+        ->deleteJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/daily")
         ->assertOk();
     expect(ScheduleDefinition::query()->count())->toBe(0);
 });
@@ -156,12 +156,12 @@ it('keeps definition commands out of conflict logs', function (string $kind, str
 
     $this->postJson($endpoint, $payload)->assertCreated();
 
-    if ($operation === 'replace') {
+    if ($operation === 'update') {
         $target = $kind === 'process'
             ? runtime_definition_process_payload('replacement')
             : runtime_definition_schedule_payload('replacement');
-        $definitionId = $this->postJson($endpoint, $target)->assertCreated()->json('data.id');
-        $endpoint .= "/{$definitionId}";
+        $this->postJson($endpoint, $target)->assertCreated();
+        $endpoint .= '/replacement';
     }
 
     $payload = $kind === 'process'
@@ -193,9 +193,9 @@ it('keeps definition commands out of conflict logs', function (string $kind, str
         ->not->toContain($sentinel);
 })->with([
     'process create' => ['process', 'create'],
-    'process replace' => ['process', 'replace'],
+    'process update' => ['process', 'update'],
     'Schedule create' => ['schedule', 'create'],
-    'Schedule replace' => ['schedule', 'replace'],
+    'Schedule update' => ['schedule', 'update'],
 ]);
 
 it('applies Process specification limits to non-JSON content types', function (array $specification): void {
@@ -270,16 +270,15 @@ it('rejects literal dots and asterisks in Docker environment names', function (
     'plain-text name starting with a dot' => ['text/plain', '.A'],
 ]);
 
-it('uses the placed App operation boundary and rejects cross-App UUIDs', function (): void {
-    $created = $this->postJson(
+it('uses the placed App operation boundary and rejects cross-App names', function (): void {
+    $this->postJson(
         "/api/v1/apps/{$this->orbitApp->id}/process-definitions",
         runtime_definition_process_payload('worker'),
     )->assertCreated();
-    $id = $created->json('data.id');
     $otherApp = runtime_definition_app('other');
 
     $this
-        ->getJson("/api/v1/apps/{$otherApp->id}/process-definitions/{$id}")
+        ->getJson("/api/v1/apps/{$otherApp->id}/process-definitions/worker")
         ->assertNotFound()
         ->assertJsonPath('error.code', 'http.404');
 
@@ -306,12 +305,12 @@ it('uses the placed App operation boundary and rejects cross-App UUIDs', functio
     $caller->accessibleNodes()->attach($owner);
     $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
     $this
-        ->getJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/{$id}")
+        ->getJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/worker")
         ->assertOk();
 
     $caller->accessibleNodes()->detach($owner);
     $this
-        ->getJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/{$id}")
+        ->getJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions/worker")
         ->assertForbidden();
 });
 
@@ -368,14 +367,62 @@ it('keeps definition commands out of Activity and model debug output', function 
         ->assertCreated();
 
     $definition = ProcessDefinition::query()->sole();
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
 
-    expect(print_r(Activity::query()->where('request_id', $requestId)->sole()->toArray(), return: true))
+    expect($activity->command)
+        ->toBe('process:create')
+        ->and($activity->subject_type)
+        ->toBe(OrbitApp::class)
+        ->and($activity->subject_id)
+        ->toBe($this->orbitApp->id)
+        ->and(print_r($activity->toArray(), return: true))
         ->not->toContain($sentinel)
         ->and(print_r($definition, return: true))
         ->not->toContain($sentinel)
         ->and($definition->spec['command'][0])
         ->toBe($sentinel);
 });
+
+it('records each definition command name against the App', function (
+    string $method,
+    string $path,
+    ?array $payload,
+    string $command,
+): void {
+    $this->postJson(
+        "/api/v1/apps/{$this->orbitApp->id}/process-definitions",
+        runtime_definition_process_payload('worker'),
+    )->assertCreated();
+    $this->postJson(
+        "/api/v1/apps/{$this->orbitApp->id}/schedule-definitions",
+        runtime_definition_schedule_payload('hourly'),
+    )->assertCreated();
+    Activity::query()->delete();
+    $requestId = (string) Str::uuid();
+
+    $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->json($method, "/api/v1/apps/{$this->orbitApp->id}/{$path}", $payload ?? [])
+        ->assertSuccessful();
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    expect($activity->command)
+        ->toBe($command)
+        ->and($activity->subject_type)
+        ->toBe(OrbitApp::class)
+        ->and($activity->subject_id)
+        ->toBe($this->orbitApp->id);
+})->with([
+    'process list' => ['GET', 'process-definitions', null, 'process:list'],
+    'process show' => ['GET', 'process-definitions/worker', null, 'process:show'],
+    'process update' => ['PUT', 'process-definitions/worker', runtime_definition_process_payload('worker'), 'process:update'],
+    'process destroy' => ['DELETE', 'process-definitions/worker', null, 'process:destroy'],
+    'schedule list' => ['GET', 'schedule-definitions', null, 'schedule:list'],
+    'schedule show' => ['GET', 'schedule-definitions/hourly', null, 'schedule:show'],
+    'schedule update' => ['PUT', 'schedule-definitions/hourly', runtime_definition_schedule_payload('hourly'), 'schedule:update'],
+    'schedule destroy' => ['DELETE', 'schedule-definitions/hourly', null, 'schedule:destroy'],
+]);
 
 function runtime_definition_app(string $slug): OrbitApp
 {

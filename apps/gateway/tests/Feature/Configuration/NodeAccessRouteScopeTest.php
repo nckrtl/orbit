@@ -43,10 +43,18 @@ it('declares node access scope on every active-peer API route', function (): voi
             ->toBe(1, "Route [{$route->getName()}] must declare exactly one RequiresNodeAccess attribute.");
 
         $attribute = $methodAttributes[0] ?? $classAttributes[0];
-        $actualScopes[$route->getName()] = $attribute->newInstance()->servingNode;
+        $actualScopes[$route->getName()][] = $attribute->newInstance()->servingNode;
     }
 
     ksort($actualScopes);
+    $actualScopes = array_map(static function (array $scopes): ServingNode|array {
+        usort(
+            $scopes,
+            static fn (ServingNode $left, ServingNode $right): int => $left->name <=> $right->name,
+        );
+
+        return count($scopes) === 1 ? $scopes[0] : $scopes;
+    }, $actualScopes);
 
     $expectedScopes = [
         'activity:list' => ServingNode::Gateway,
@@ -115,18 +123,15 @@ it('declares node access scope on every active-peer API route', function (): voi
         'node:role:remove' => ServingNode::RoleMutation,
         'node:settings' => ServingNode::Target,
         'node:show' => ServingNode::Target,
-        'process-definition:list' => ServingNode::AppOwning,
-        'process-definition:new' => ServingNode::AppOwning,
-        'process-definition:remove' => ServingNode::AppOwning,
-        'process-definition:show' => ServingNode::AppOwning,
-        'process-definition:update' => ServingNode::AppOwning,
-        'process:create' => ServingNode::ProcessOwning,
-        'process:destroy' => ServingNode::ProcessOwning,
-        'process:list' => ServingNode::ProcessOwning,
+        'process:create' => [ServingNode::AppOwning, ServingNode::ProcessOwning],
+        'process:destroy' => [ServingNode::AppOwning, ServingNode::ProcessOwning],
+        'process:list' => [ServingNode::AppOwning, ServingNode::ProcessOwning],
         'process:logs' => ServingNode::ProcessOwning,
         'process:restart' => ServingNode::ProcessOwning,
+        'process:show' => ServingNode::AppOwning,
         'process:start' => ServingNode::ProcessOwning,
         'process:stop' => ServingNode::ProcessOwning,
+        'process:update' => ServingNode::AppOwning,
         'route:create' => ServingNode::RouteOwning,
         'route:destroy' => ServingNode::RouteOwning,
         'route:list' => ServingNode::Collection,
@@ -134,19 +139,15 @@ it('declares node access scope on every active-peer API route', function (): voi
         'route:target:set' => ServingNode::RouteOwning,
         'route:target:unset' => ServingNode::RouteOwning,
         'route:update' => ServingNode::RouteOwning,
-        'schedule-definition:list' => ServingNode::AppOwning,
-        'schedule-definition:new' => ServingNode::AppOwning,
-        'schedule-definition:remove' => ServingNode::AppOwning,
-        'schedule-definition:show' => ServingNode::AppOwning,
-        'schedule-definition:update' => ServingNode::AppOwning,
         'schedule:complete' => ServingNode::ScheduleHost,
-        'schedule:create' => ServingNode::ScheduleOwning,
-        'schedule:destroy' => ServingNode::ScheduleOwning,
+        'schedule:create' => [ServingNode::AppOwning, ServingNode::ScheduleOwning],
+        'schedule:destroy' => [ServingNode::AppOwning, ServingNode::ScheduleOwning],
         'schedule:enable' => ServingNode::ScheduleOwning,
-        'schedule:list' => ServingNode::Collection,
+        'schedule:list' => [ServingNode::AppOwning, ServingNode::Collection],
         'schedule:logs' => ServingNode::ScheduleOwning,
         'schedule:run' => ServingNode::ScheduleOwning,
-        'schedule:show' => ServingNode::ScheduleOwning,
+        'schedule:show' => [ServingNode::AppOwning, ServingNode::ScheduleOwning],
+        'schedule:update' => ServingNode::AppOwning,
         'tool:install' => ServingNode::ToolOwning,
         'tool:list' => ServingNode::ToolOwning,
         'tool:manager:list' => ServingNode::ToolOwning,

@@ -16,12 +16,12 @@ final class ShowProcessDefinitionRequest extends GatewayRequest
 
     public function __construct(
         private readonly int $appId,
-        private readonly string $definitionId,
+        private readonly string $name,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/process-definitions/".rawurlencode($this->definitionId);
+        return "/api/v1/apps/{$this->appId}/process-definitions/".rawurlencode($this->name);
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppRuntimeDefinitionResponse

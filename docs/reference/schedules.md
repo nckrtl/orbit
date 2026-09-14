@@ -54,20 +54,25 @@ The typed Doctor report accepts the Gateway's complete current family set, inclu
 
 ## Manage Schedules from the CLI
 
-An operator uses seven Schedule commands from a machine with an active Gateway profile. Each command sends one typed PHP SDK request to the Gateway and never runs SSH, systemd, `journalctl`, a shell, or Schedule commands on the operator machine.
+An operator uses Schedule commands from a machine with an active Gateway profile. Each command sends one typed PHP SDK request to the Gateway and never runs SSH, systemd, `journalctl`, a shell, or Schedule commands on the operator machine.
 
 | Command | Result |
 | --- | --- |
 | `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive AppInstance ID. Add `--no-start` to install its timer disabled and stopped. |
+| `orbit schedule:create NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the App. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:list` | List authorized Schedule summaries without command text. |
+| `orbit schedule:list --app=APP` | List the App's Schedule definitions. |
 | `orbit schedule:show UUID` | Show one authorized Schedule. |
+| `orbit schedule:show NAME --app=APP` | Show one Schedule definition by name. |
+| `orbit schedule:update NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
 | `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
 | `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
 | `orbit schedule:destroy UUID` | Destroy one Schedule through the Gateway. |
+| `orbit schedule:destroy NAME --app=APP` | Destroy one Schedule definition by name. |
 | `orbit schedule:enable UUID` | Enable and start an installed AppInstance timer without replacing the Schedule. |
 
-`schedule:create` requires exactly one positive Node or AppInstance ID. Both selectors, no selector, a malformed or non-positive ID, and `--node` with the AppInstance-only `--no-start` option fail before the CLI sends an HTTP request. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target.
+`schedule:create` requires exactly one of `--node`, `--instance`, or `--app`. Combined selectors, no selector, a malformed or non-positive ID, `--node` with the AppInstance-only `--no-start` option, and `--for` without `--app` fail before the CLI sends an HTTP request. `--for` is required with `--app` on create and update. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target. The [App process and Schedule definitions](app-processes-and-schedules.md) page owns the App target.
 
 Human output and `--json` output preserve the Gateway request ID. They show `desired_timer_state` separately from lifecycle `status`, and shared safe errors expose no command, log, credential, or remote execution detail.
 
