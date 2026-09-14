@@ -2229,7 +2229,7 @@ it('refuses retained source identity replacement before activation', function ()
     expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
 });
 
-it('refuses a source nested in each existing managed checkout type before relocation', function (string $owner): void {
+it('refuses a source nested in an AppInstance checkout and ignores leftover Instance or Workspace paths', function (string $owner): void {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -2300,15 +2300,23 @@ it('refuses a source nested in each existing managed checkout type before reloca
         sourceDigest: $facts->sourceDigest,
     )];
 
-    $this
-        ->postJson('/api/v1/instances/register', [
-            'source_path' => $source,
-            'app_id' => $app->id,
-        ])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.source_conflict');
+    $response = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $source,
+        'app_id' => $app->id,
+    ]);
 
-    expect($this->registrationSource->calls)->toBe(['inspect']);
+    if ($owner === 'app-instance') {
+        $response
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'instance.source_conflict');
+        expect($this->registrationSource->calls)->toBe(['inspect']);
+
+        return;
+    }
+
+    expect($response->json('error.code'))
+        ->not
+        ->toBe('instance.source_conflict');
 })->with(['app-instance', 'legacy-instance', 'workspace']);
 
 function bind_route_hostname_update_for_registration_test(): void

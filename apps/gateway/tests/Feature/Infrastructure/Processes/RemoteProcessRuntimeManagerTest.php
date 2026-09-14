@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -1465,8 +1463,6 @@ it('shares the process runtime owner with role-dependent cleanup', function (): 
     try {
         $cleaner = new NativeNodeRoleDependentCleaner(
             processes: $this->manager,
-            appDev: Mockery::mock(AppDevRuntimeConverger::class),
-            appProd: Mockery::mock(AppProdRuntimeConverger::class),
         );
 
         expect(fn () => $cleaner->clean(new NodeRoleDependencySet(

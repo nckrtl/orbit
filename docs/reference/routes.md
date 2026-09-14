@@ -145,7 +145,7 @@ Active WireGuard membership trusts a Node to reach every other active WireGuard 
 
 Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. A standalone production Route is private and terminates Orbit-CA TLS on its workload Node. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 
-Legacy production Instances with ACME certificates still use direct public HTTP and HTTPS on an app-prod Node. Orbit keeps those firewall rules while such an Instance is provisioning or active and the Node has no private production App instance. New private production creation refuses that coexistence before mutation. When no live legacy public Instance remains, the next app-prod firewall convergence removes the public rules. If legacy and private records already coexist, private publication takes priority and convergence removes the public rules.
+App-prod role convergence retires Orbit-owned public HTTP and HTTPS workload rules and does not republish them. Ingress keeps public HTTP and HTTPS publication. Unrelated firewall rules stay in place. A retry after a failed cleanup uses the same owned-rule set.
 
 ### Publication ownership
 
@@ -211,6 +211,6 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 ## Compatibility and limits
 
-Route operations do not change legacy Instance hostname or certificate fields, Workspace hostnames, App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
+Route operations do not change leftover Legacy Instance hostname or certificate fields, Workspace hostnames, App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
 This contract projects private Routes and changes a development or production Route hostname when the Route is active, explicit, private, and has one target. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal. It does not implement generated or multi-target hostname changes, other later Route reconciliation or removal, public Ingress, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.

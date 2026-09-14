@@ -246,7 +246,7 @@ it('retires only Orbit-owned public app production rules and preserves operator 
         ->each->toBe('nckrtl');
 });
 
-it('keeps public app production rules while a live legacy ACME footprint is alone', function (): void {
+it('retires public app production rules even when a leftover ACME Instance row remains', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $node = orb197_persisted_firewall_node('legacy-public');
     orb197_firewall_legacy_instance($node, LifecycleStatus::Active);
@@ -255,6 +255,7 @@ it('keeps public app production rules while a live legacy ACME footprint is alon
     role_firewall_manager($ssh)->converge($node, RoleName::AppProd, 'nckrtl');
 
     expect($ssh->comments())
+        ->not
         ->toContain(
             'orbit:app-prod-http',
             'orbit:app-prod-https',

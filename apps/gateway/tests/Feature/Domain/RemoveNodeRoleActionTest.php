@@ -3,9 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeRoleAction;
-use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -390,8 +388,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and($cleaner->observedStatuses)
             ->toBe([
                 LifecycleStatus::Removing,
-                LifecycleStatus::Removing,
-                LifecycleStatus::Removing,
             ])
             ->and(NodeRole::query()->whereKey($assignment->id)->exists())
             ->toBeFalse();
@@ -561,95 +557,54 @@ describe(RemoveNodeRoleAction::class, function (): void {
         'role baseline' => 'baseline',
     ]);
 
-    it('stops finalization when a new dependent appears and removes it on retry', function (): void {
+    it('removes an app-dev role without deleting leftover Instance or Workspace rows', function (): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
         $inspector = app(NodeRoleDependencyInspector::class);
         $cleaner = new RemovalCleanerFake;
-        $cleaner->afterClean = function () use ($dependencies): void {
-            $instance = Instance::query()->findOrFail($dependencies->instanceIds[0]);
-            removal_process(owner: $instance, name: 'late-process', status: LifecycleStatus::Active);
-        };
         $baseline = new RemovalBaselineFake;
         $action = removal_action($inspector, $cleaner, $baseline);
 
-        expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false))
-            ->toThrow(NodeRoleOperationException::class);
-
-        expect($assignment->refresh()->failed_step)
-            ->toBe('remove:dependency-race')
-            ->and(removal_dependency_rows_exist($dependencies))
-            ->toBeTrue();
-
-        $cleaner->afterClean = null;
         $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
 
         expect($node->roles()->where('role', RoleName::AppDev->value)->exists())
             ->toBeFalse()
+            ->and(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
             ->and($node->instances()->exists())
-            ->toBeFalse();
+            ->toBeTrue()
+            ->and(Workspace::query()->whereIn('id', $dependencies->workspaceIds)->exists())
+            ->toBeTrue()
+            ->and(Process::query()->whereIn('id', $dependencies->processIds)->exists())
+            ->toBeTrue();
     });
 
-    it('records the exact failure on the dependent that could not be cleaned', function (string $stage): void {
+    it('records the exact failure on a Process that could not be cleaned', function (): void {
         [, , $dependencies] = removal_role_fixture(withDependents: true);
         Process::query()->whereIn('id', $dependencies->processIds)->update(['status' => LifecycleStatus::Removing]);
-        Workspace::query()->whereIn('id', $dependencies->workspaceIds)->update(['status' => LifecycleStatus::Removing]);
-        Instance::query()->whereIn('id', $dependencies->instanceIds)->update(['status' => LifecycleStatus::Removing]);
         $processes = Mockery::mock(ProcessRuntimeManager::class);
         $processes
             ->shouldReceive('remove')
             ->once()
-            ->andReturnUsing(function () use ($stage): void {
-                if ($stage === 'process-runtime') {
-                    throw new ProcessOperationException('stop', 'process.stop_failed', 'stop failed');
-                }
-            });
-        $appDev = Mockery::mock(AppDevRuntimeConverger::class);
-        $appDev
-            ->shouldReceive('unpublishWorkspace')
-            ->times($stage === 'process-runtime' ? 0 : 1)
-            ->andReturnUsing(function () use ($stage): void {
-                if ($stage === 'workspace-runtime') {
-                    throw new RuntimeConvergenceException(
-                        'private-dns',
-                        'app-dev.dns_config_failed',
-                        'DNS failed',
-                    );
-                }
-            });
-        $appDev
-            ->shouldReceive('unpublishInstance')
-            ->times($stage === 'instance-runtime' ? 1 : 0)
-            ->andThrow(new RuntimeConvergenceException(
-                'certificate',
-                'app-dev.certificate_remove_failed',
-                'Certificate failed',
-            ));
+            ->andThrow(new ProcessOperationException('stop', 'process.stop_failed', 'stop failed'));
         $cleaner = new NativeNodeRoleDependentCleaner(
             processes: $processes,
-            appDev: $appDev,
-            appProd: Mockery::mock(AppProdRuntimeConverger::class),
         );
 
         expect(fn () => $cleaner->clean($dependencies))->toThrow(NodeRoleOperationException::class);
 
-        $failed = match ($stage) {
-            'process-runtime' => Process::query()->findOrFail($dependencies->processIds[0]),
-            'workspace-runtime' => Workspace::query()->findOrFail($dependencies->workspaceIds[0]),
-            'instance-runtime' => Instance::query()->findOrFail($dependencies->instanceIds[0]),
-        };
-        $expected = match ($stage) {
-            'process-runtime' => ['stop', 'process.stop_failed'],
-            'workspace-runtime' => ['private-dns', 'app-dev.dns_config_failed'],
-            'instance-runtime' => ['certificate', 'app-dev.certificate_remove_failed'],
-        };
+        $failed = Process::query()->findOrFail($dependencies->processIds[0]);
 
         expect($failed->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($failed->failed_step)
-            ->toBe($expected[0])
+            ->toBe('stop')
             ->and($failed->error_code)
-            ->toBe($expected[1]);
-    })->with(['process-runtime', 'workspace-runtime', 'instance-runtime']);
+            ->toBe('process.stop_failed')
+            ->and(Workspace::query()->findOrFail($dependencies->workspaceIds[0])->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and(Instance::query()->findOrFail($dependencies->instanceIds[0])->status)
+            ->toBe(LifecycleStatus::Active);
+    });
 
     it('sheds a role from an unreachable node without attempting anything on it', function (): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
@@ -1075,8 +1030,6 @@ final class RemovalCleanerFake implements NodeRoleDependentCleaner
         if ($dependencies->processIds !== []) {
             $this->observedStatuses = [
                 Process::query()->findOrFail($dependencies->processIds[0])->status,
-                Workspace::query()->findOrFail($dependencies->workspaceIds[0])->status,
-                Instance::query()->findOrFail($dependencies->instanceIds[0])->status,
             ];
         }
 

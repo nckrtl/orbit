@@ -44,7 +44,7 @@ When an App instance is idle on an active `app-dev` Node, it can [hibernate](/re
 
 See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and hostname changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [App instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
 
-Legacy Instance and Workspace records remain available during conversion. New instance commands manage App instances. Route changes leave legacy hostname and certificate fields untouched.
+App instance commands manage App instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use App instances and Routes only. Doctor can still inspect leftover Legacy Instance and Workspace rows.
 
 ## Herdr sessions
 
