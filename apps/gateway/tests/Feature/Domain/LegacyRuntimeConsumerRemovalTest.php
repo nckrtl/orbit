@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -17,48 +16,37 @@ use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
-use App\Models\Workspace;
-use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
 
-it('lists AppInstance Route sites without reading leftover Instance or Workspace rows', function (): void {
-    [$node, $app, $legacy, $workspace] = leftover_runtime_models();
+it('lists AppInstance Route sites without leftover Instance or Workspace tables', function (): void {
+    [$node, $app] = leftover_runtime_models();
     $appInstance = leftover_runtime_app_instance($node, $app);
     leftover_runtime_route($appInstance, 'shop.app-dev.orbit');
-    $retrieved = ['instance' => [], 'workspace' => []];
-    Event::listen('eloquent.retrieved: '.Instance::class, function (Instance $row) use (&$retrieved): void {
-        $retrieved['instance'][] = $row->id;
-    });
-    Event::listen('eloquent.retrieved: '.Workspace::class, function (Workspace $row) use (&$retrieved): void {
-        $retrieved['workspace'][] = $row->id;
-    });
 
     $sites = new AppDevSiteRepository()->forNode($node);
 
     expect($sites->pluck('scope')->all())
         ->toBe(["app-instance-{$appInstance->id}"])
-        ->and($retrieved)
-        ->toBe(['instance' => [], 'workspace' => []])
-        ->and($legacy->refresh()->checkout_path)
-        ->toBe('/srv/legacy/acme')
-        ->and($workspace->refresh()->checkout_path)
-        ->toBe('/srv/legacy/acme/feature');
+        ->and(Schema::hasTable('instances'))
+        ->toBeFalse()
+        ->and(Schema::hasTable('workspaces'))
+        ->toBeFalse();
 });
 
 it('treats leftover Instance and Workspace checkouts as unmanaged for overlap and production inventory', function (): void {
-    [$node, $app, $legacy, $workspace] = leftover_runtime_models();
+    [$node] = leftover_runtime_models();
 
     new ManagedCheckoutOverlap()->assertAvailable(
         $node->id,
-        StoragePath::parse($legacy->checkout_path),
+        StoragePath::parse('/srv/legacy/acme'),
         'instance.path_taken',
     );
     new ManagedCheckoutOverlap()->assertAvailable(
         $node->id,
-        StoragePath::parse($workspace->checkout_path),
+        StoragePath::parse('/srv/legacy/acme/feature'),
         'instance.path_taken',
     );
 
@@ -68,14 +56,14 @@ it('treats leftover Instance and Workspace checkouts as unmanaged for overlap an
         ->toBeFalse()
         ->and(new AppProdSiteRepository()->requiresPublicFirewall($node))
         ->toBeFalse()
-        ->and($legacy->refresh()->exists)
-        ->toBeTrue()
-        ->and($workspace->refresh()->exists)
-        ->toBeTrue();
+        ->and(Schema::hasTable('instances'))
+        ->toBeFalse()
+        ->and(Schema::hasTable('workspaces'))
+        ->toBeFalse();
 });
 
 it('retires Orbit-owned public app-prod 80/443 rules and ignores leftover runtime dependents', function (): void {
-    [$node] = leftover_runtime_models(certificateMode: CertificateMode::Acme);
+    [$node] = leftover_runtime_models();
     $node->roles()->create([
         'role' => RoleName::AppProd,
         'status' => LifecycleStatus::Active,
@@ -114,9 +102,9 @@ it('keeps AppInstance-owned Processes independent of leftover Instance owners', 
 });
 
 /**
- * @return array{Node, OrbitApp, Instance, Workspace}
+ * @return array{Node, OrbitApp}
  */
-function leftover_runtime_models(CertificateMode $certificateMode = CertificateMode::OrbitCa): array
+function leftover_runtime_models(): array
 {
     $node = Node::query()->create([
         'name' => 'leftover-runtime',
@@ -137,26 +125,8 @@ function leftover_runtime_models(CertificateMode $certificateMode = CertificateM
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $legacy = Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'legacy',
-        'environment' => $certificateMode === CertificateMode::Acme ? 'production' : 'development',
-        'checkout_path' => '/srv/legacy/acme',
-        'hostname' => 'legacy.app-dev.orbit',
-        'certificate_mode' => $certificateMode,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $workspace = Workspace::query()->create([
-        'instance_id' => $legacy->id,
-        'name' => 'feature',
-        'branch' => 'feature',
-        'checkout_path' => '/srv/legacy/acme/feature',
-        'hostname' => 'feature.legacy.app-dev.orbit',
-        'status' => LifecycleStatus::Active,
-    ]);
 
-    return [$node, $app, $legacy, $workspace];
+    return [$node, $app];
 }
 
 function leftover_runtime_app_instance(Node $node, OrbitApp $app): AppInstance

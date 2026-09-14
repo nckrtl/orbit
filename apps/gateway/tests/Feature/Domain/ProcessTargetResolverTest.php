@@ -12,7 +12,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
@@ -189,14 +188,13 @@ it('allows inspection of a Node Process when the Node is inactive', function ():
     expect(app(ProcessTargetResolver::class)->forInspection($process)->node->id)->toBe($node->id);
 });
 
-it('rejects a legacy Process owner before target resolution', function (): void {
-    $instance = process_target_legacy_instance();
+it('rejects a leftover Process owner before target resolution', function (): void {
     $process = Process::query()->create([
-        'owner_type' => Instance::class,
-        'owner_id' => $instance->id,
+        'owner_type' => 'App\\Models\\Instance',
+        'owner_id' => 999_999,
         'name' => 'legacy',
         'runtime' => 'systemd',
-        'working_directory' => $instance->checkout_path,
+        'working_directory' => '/srv/legacy',
         'runtime_config' => ['command' => ['/usr/bin/true']],
         'restart_policy' => 'never',
         'desired_state' => 'stopped',
@@ -244,32 +242,6 @@ function process_target_process(AppInstance $instance): Process
         'runtime_config' => ['command' => ['/usr/bin/true']],
         'restart_policy' => 'never',
         'desired_state' => 'stopped',
-        'status' => LifecycleStatus::Active,
-    ]);
-}
-
-function process_target_legacy_instance(): Instance
-{
-    $app = OrbitApp::query()->create([
-        'name' => 'Legacy',
-        'slug' => 'legacy',
-        'repository_url' => 'https://example.test/legacy.git',
-    ]);
-    $node = Node::query()->create([
-        'name' => 'legacy-node',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.11',
-    ]);
-
-    return Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'legacy',
-        'environment' => 'development',
-        'checkout_path' => '/srv/legacy',
-        'hostname' => 'legacy.example.test',
-        'certificate_mode' => 'orbit-ca',
         'status' => LifecycleStatus::Active,
     ]);
 }

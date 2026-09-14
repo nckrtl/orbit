@@ -2,23 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\AppDevCaddyManager;
-use App\Domain\AppDev\AppDevCertificateManager;
-use App\Domain\AppDev\AppDevPhpFpmManager;
-use App\Domain\AppDev\AppDevSourceManager;
-use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
-use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -32,13 +23,10 @@ use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
-use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
-use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
-use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -55,12 +43,10 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\Workspace;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -200,8 +186,8 @@ it('keeps the default resolver policy during an app development TLD convergence'
 });
 
 it('renders isolated pools and private Caddy listeners for every active AppInstance Route', function (): void {
-    [$node, $instance, $workspace] = app_dev_runtime_models();
-    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    [$node, $app] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
     $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $sites = new AppDevSiteRepository()->forNode($node);
     $fpm = new AppDevPhpFpmConfigRenderer()->render($sites, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
@@ -237,8 +223,8 @@ it('renders isolated pools and private Caddy listeners for every active AppInsta
         )
         ->not->toContain(
             ':80',
-            $instance->hostname === $route->hostname ? 'unused' : "https://{$instance->hostname}",
-            "https://{$workspace->hostname}",
+            'https://legacy.acme.app-dev.orbit',
+            'https://feature.acme.app-dev.orbit',
             'php_fastcgi unix//run/php/orbit-instance-1.sock',
         );
 
@@ -252,8 +238,8 @@ it('renders isolated pools and private Caddy listeners for every active AppInsta
 });
 
 it('hydrates only AppInstance Route sites and never reads leftover Instance or Workspace rows', function (): void {
-    [$node, $instance, $workspace] = app_dev_runtime_models();
-    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    [$node, $app] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
     $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $unrelatedNode = Node::query()->create([
         'name' => 'unrelated-app-dev',
@@ -262,43 +248,11 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
         'public_ssh_host' => '192.0.2.40',
         'wireguard_ip' => '10.44.0.40',
     ]);
-    $unrelatedApp = app_dev_supported_app_instance($unrelatedNode, $instance->app_id, 'unrelated');
+    $unrelatedApp = app_dev_supported_app_instance($unrelatedNode, $app->id, 'unrelated');
     $unrelatedRoute = app_dev_supported_route($unrelatedApp, 'unrelated.app-dev.orbit');
-    Instance::query()->create([
-        'app_id' => $instance->app_id,
-        'node_id' => $unrelatedNode->id,
-        'name' => 'unrelated',
-        'environment' => 'development',
-        'checkout_path' => '/home/orbit/apps/unrelated',
-        'hostname' => 'legacy-unrelated.app-dev.orbit',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
-    ]);
-    Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => 'failed',
-        'branch' => 'failed',
-        'checkout_path' => '/home/orbit/.orbit/worktrees/acme/failed',
-        'hostname' => 'failed.acme.app-dev.orbit',
-        'status' => LifecycleStatus::Failed,
-    ]);
     $sites = new AppDevSiteRepository;
     $globalSites = $sites->all();
     $globalDns = new AppDevDnsConfigRenderer($sites)->render();
-    $retrievedInstances = collect();
-    $retrievedWorkspaces = collect();
-    Event::listen(
-        'eloquent.retrieved: '.Instance::class,
-        static function (Instance $retrieved) use ($retrievedInstances): void {
-            $retrievedInstances->push($retrieved->id);
-        },
-    );
-    Event::listen(
-        'eloquent.retrieved: '.Workspace::class,
-        static function (Workspace $retrieved) use ($retrievedWorkspaces): void {
-            $retrievedWorkspaces->push($retrieved->id);
-        },
-    );
 
     $nodeSites = $sites->forNode($node);
 
@@ -314,1389 +268,23 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
         ->toBe(["app-instance-{$appInstance->id}"])
         ->and($nodeSites->sole()->phpVersion)
         ->toBe($appInstance->selected_php_version)
-        ->and($retrievedInstances->all())
-        ->toBe([])
-        ->and($retrievedWorkspaces->all())
-        ->toBe([])
+        ->and(Schema::hasTable('instances'))
+        ->toBeFalse()
+        ->and(Schema::hasTable('workspaces'))
+        ->toBeFalse()
         ->and($globalDns)
         ->toContain(
             "host-record={$route->hostname},{$node->wireguard_ip}",
             "host-record={$unrelatedRoute->hostname},{$unrelatedNode->wireguard_ip}",
         )
-        ->not->toContain($instance->hostname, $workspace->hostname);
-});
-
-it('uses only generated instance paths and registered Git worktrees for source removal', function (): void {
-    [, $instance, $workspace] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-
-    $manager->convergeInstance($instance);
-    $manager->convergeWorkspace($workspace);
-    $manager->removeWorkspace($workspace);
-    $manager->removeInstance($instance);
-
-    expect($ssh->commands)
-        ->toHaveCount(4)
-        ->and($ssh->commands[0]->arguments)
-        ->toContain('git@github.com:acme/site.git', '/home/orbit/apps/acme', 'public', '/home')
-        ->and($ssh->commands[0]->input)
-        ->toContain(
-            'git -C "$checkout" remote get-url origin',
-            'realpath -e "$existing_parent"',
-            'test ! -L "$current"',
-            'setfacl -P -R -m u:caddy:--- "$checkout_root"',
-            'find -P "$checkout_root" -type d -exec setfacl -m d:u:caddy:--- -- {} +',
-            'prepare_traversal_paths',
-            'user.orbit.caddy_traversal',
-            'create_missing_directory',
-            'setfacl -m u:caddy:--x "$checkout"',
-            'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
-            'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
-            'acl() {',
-            'sudo -n "$@"',
-            'u:$managed_user:$user_perms',
-        )
-        ->not->toContain('sudo setfacl')->and($ssh->commands[1]->input)->toContain(
-            'git -C "$checkout" symbolic-ref --quiet --short HEAD',
-            'realpath -e "$existing_parent"',
-            'test ! -L "$current"',
-            'test ! -L "$checkout"',
-            'case "$segment" in',
-            "''|.|..|*[!A-Za-z0-9._-]*) return 1",
-            'setfacl -P -R -m u:caddy:--- "$checkout_root"',
-            'find -P "$checkout_root" -type d -exec setfacl -m d:u:caddy:--- -- {} +',
-            'setfacl -m u:caddy:--x "$checkout"',
-            'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
-            'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
-        )
-        ->not->toContain('sudo setfacl')->and($ssh->commands[2]->input)->toContain(
-            'worktree list --porcelain',
-            'worktree remove --force -- "$checkout"',
-            'if [ -L "$checkout" ]; then',
-            'assert_recorded_parents',
-            '%U:%G',
-            'preflight_derived_grouping',
-            'branch=$4',
-            'test "$(git -C "$instance" remote get-url origin)" = "$repository"',
-            'test "$(realpath -e "$checkout")" = "$(git -C "$checkout" rev-parse --show-toplevel)"',
-            'test "$(git -C "$checkout" remote get-url origin)" = "$repository"',
-            'test "$(git -C "$checkout" symbolic-ref --quiet --short HEAD)" = "$branch"',
-            'rev-parse --git-common-dir',
-        )->and($ssh->commands[3]->input)->toContain(
-            'if [ -L "$checkout" ]; then',
-            'assert_recorded_parents',
-            'release_traversal_paths',
-            'test ! -L "$checkout"',
-            'git -C "$checkout" rev-parse --show-toplevel',
-            '%U:%G',
-            'test "$(git -C "$checkout" remote get-url origin)" = "$repository"',
-            'rm -rf -- "$checkout"',
-            'tail -n +4 "$state" | acl setfacl --set-file=- "$path"',
-        )->and($ssh->commands[2]->arguments)->toContain(
-            'git@github.com:acme/site.git',
-        )->and($ssh->commands[3]->arguments)->toContain('git@github.com:acme/site.git');
-});
-
-it('rejects a dangling instance checkout symlink instead of treating the path as absent', function (): void {
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->removeInstance($instance);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-instance-dangling-'.Str::uuid();
-    $checkout = "{$root}/apps/acme";
-
-    try {
-        $filesystem->makeDirectory(dirname($checkout), mode: 0o755, recursive: true);
-        symlink('/missing-orbit-checkout', $checkout);
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())
-            ->toBeFalse($removed->stderr)
-            ->and(is_link($checkout))
-            ->toBeTrue();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('fails closed when a derived grouping directory has an unexpected sibling', function (): void {
-    [, $instance, $workspace] = app_dev_runtime_models();
-    $workspace->update([
-        'checkout_path' => '/home/orbit/.orbit/worktrees/acme/feature',
-        'checkout_path_origin' => 'derived',
-    ]);
-    [$manager, $ssh] = source_manager();
-    $manager->removeWorkspace($workspace);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-grouping-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $grouping = "{$root}/.orbit/worktrees/acme";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o755, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($grouping, mode: 0o755, recursive: true);
-        $filesystem->put("{$grouping}/UNEXPECTED", 'nope');
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())
-            ->toBeFalse($removed->stderr)
-            ->and($filesystem->exists("{$grouping}/UNEXPECTED"))
-            ->toBeTrue();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('restores a pre-existing instance traversal ACL after the last dependent checkout is removed', function (): void {
-    if (
-        ! is_executable('/usr/bin/setfacl')
-        || ! is_executable('/usr/bin/setfattr')
-        || posix_getpwnam('nobody') === false
-    ) {
-        $this->markTestSkipped('The ACL behavior test requires ACL, xattr, and the nobody account.');
-    }
-
-    [, $instance] = app_dev_runtime_models();
-    $instance->update(['checkout_path' => '/home/orbit/instances/acme']);
-    [$manager, $ssh] = source_manager();
-    $manager->convergeInstance($instance);
-    $manager->removeInstance($instance);
-    $converge = $ssh->commands[0];
-    $remove = $ssh->commands[1];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-instance-acl-'.Str::uuid();
-    $instances = "{$root}/instances";
-    $checkout = "{$instances}/acme";
-
-    try {
-        $filesystem->makeDirectory($instances, mode: 0o700, recursive: true);
-        setfacl_for(user: 'nobody', permissions: 'r-x', path: $instances);
-        $originalAcl = acl_for($instances);
-        $filesystem->makeDirectory("{$checkout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$checkout}/public/index.php", '<?php');
-        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
-
-        $converged = run_app_dev_command_locally($converge, $root);
-        expect($converged->succeeded())->toBeTrue($converged->stderr);
-        expect(acl_for($instances))->toContain('user:nobody:r-x');
-
-        $removed = run_app_dev_command_locally($remove, $root);
-        expect($removed->succeeded())
-            ->toBeTrue($removed->stderr)
-            ->and(acl_for($instances))
-            ->toBe($originalAcl)
-            ->and($filesystem->exists($checkout))
-            ->toBeFalse();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('does not change the mode of a pre-existing instance root while creating a checkout', function (): void {
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeInstance($instance);
-    $manager->removeInstance($instance);
-    $converge = $ssh->commands[0];
-    $remove = $ssh->commands[1];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-instance-mode-'.Str::uuid();
-    $apps = "{$root}/apps";
-    $checkout = "{$apps}/acme";
-
-    try {
-        $filesystem->makeDirectory($apps, mode: 0o750, recursive: true);
-        chmod(filename: $apps, permissions: 0o750);
-        $filesystem->makeDirectory("{$checkout}/public", mode: 0o755, recursive: true);
-        $filesystem->put("{$checkout}/public/index.php", '<?php');
-        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
-
-        $converged = run_app_dev_command_locally($converge, $root);
-        expect($converged->succeeded())
-            ->toBeTrue($converged->stderr)
-            ->and(decoct(fileperms($apps) & 0o777))
-            ->toBe('750');
-
-        $removed = run_app_dev_command_locally($remove, $root);
-        expect($removed->succeeded())
-            ->toBeTrue($removed->stderr)
-            ->and(decoct(fileperms($apps) & 0o777))
-            ->toBe('750')
-            ->and($filesystem->exists($checkout))
-            ->toBeFalse();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('preserves and restores Caddy ACLs on managed-home traversal ancestors', function (): void {
-    if (
-        ! is_executable('/usr/bin/setfacl')
-        || ! is_executable('/usr/bin/setfattr')
-        || posix_getpwnam('nobody') === false
-    ) {
-        $this->markTestSkipped('The ACL behavior test requires ACL, xattr, and the nobody account.');
-    }
-
-    [, $instance, $first] = app_dev_runtime_models();
-    $second = Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => 'second',
-        'branch' => 'second',
-        'checkout_path' => '/home/orbit/.orbit/worktrees/acme/second',
-        'hostname' => 'second.acme.app-dev.orbit',
-        'status' => LifecycleStatus::Active,
-    ]);
-    [$manager, $ssh] = source_manager();
-    $manager->convergeInstance($instance);
-    $manager->convergeWorkspace($first);
-    $manager->convergeWorkspace($second);
-    $convergeInstance = $ssh->commands[0];
-    $convergeFirst = $ssh->commands[1];
-    $convergeSecond = $ssh->commands[2];
-    $filesystem = new Filesystem;
-    $sandbox = sys_get_temp_dir().'/orbit-home-ancestor-acl-'.Str::uuid();
-    $homeParent = "{$sandbox}/home";
-    $root = "{$homeParent}/orbit";
-    $apps = "{$root}/apps";
-    $orbit = "{$root}/.orbit";
-    $worktrees = "{$orbit}/worktrees";
-    $instanceCheckout = "{$apps}/acme";
-    $firstCheckout = "{$worktrees}/acme/feature";
-    $secondCheckout = "{$worktrees}/acme/second";
-
-    try {
-        $filesystem->makeDirectory($homeParent, mode: 0o755, recursive: true);
-        $filesystem->makeDirectory($apps, mode: 0o700, recursive: true);
-        $filesystem->makeDirectory($worktrees, mode: 0o700, recursive: true);
-        $originalHomeParent = acl_for($homeParent);
-        chmod(filename: $root, permissions: 0o700);
-        chmod(filename: $orbit, permissions: 0o700);
-        setfacl_for(user: 'nobody', permissions: 'r-x', path: $root);
-        setfacl_for(user: 'nobody', permissions: 'r-x', path: $apps);
-        setfacl_for(user: 'nobody', permissions: 'r-x', path: $orbit);
-        setfacl_for(user: 'nobody', permissions: 'r-x', path: $worktrees);
-        $originalHome = acl_for($root);
-        $originalApps = acl_for($apps);
-        $originalOrbit = acl_for($orbit);
-        $originalWorktrees = acl_for($worktrees);
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        add_acl_test_worktree($instanceCheckout, $firstCheckout, 'feature');
-        add_acl_test_worktree($instanceCheckout, $secondCheckout, 'second');
-
-        expect(run_app_dev_command_locally($convergeInstance, $root, includeManagedHomeAncestor: true)->succeeded())
-            ->toBeTrue();
-        expect(run_app_dev_command_locally($convergeFirst, $root, includeManagedHomeAncestor: true)->succeeded())
-            ->toBeTrue();
-        expect(run_app_dev_command_locally($convergeSecond, $root, includeManagedHomeAncestor: true)->succeeded())
-            ->toBeTrue();
-        expect(access_acl_permissions_for(user: 'nobody', path: $homeParent))->toBe('--x');
-        expect(acl_for($root))->toContain('user:nobody:r-x');
-        expect(acl_for($apps))->toContain('user:nobody:r-x');
-        expect(acl_for($orbit))->toContain('user:nobody:r-x');
-        expect(acl_for($worktrees))->toContain('user:nobody:r-x');
-
-        $ssh->commands = [];
-        $manager->removeWorkspace($first);
-        $removedFirst = run_app_dev_command_locally($ssh->commands[0], $root, includeManagedHomeAncestor: true);
-        expect($removedFirst->succeeded())->toBeTrue($removedFirst->stderr);
-        expect(acl_for($worktrees))->toContain('user:nobody:r-x');
-        expect(acl_for($orbit))->toContain('user:nobody:r-x');
-        expect(access_acl_permissions_for(user: 'nobody', path: $homeParent))->toBe('--x');
-        expect(acl_for($root))->toContain('user:nobody:r-x');
-        expect(acl_for($apps))->toContain('user:nobody:r-x');
-        $first->delete();
-
-        $ssh->commands = [];
-        $manager->removeWorkspace($second);
-        $removedSecond = run_app_dev_command_locally($ssh->commands[0], $root, includeManagedHomeAncestor: true);
-        expect($removedSecond->succeeded())->toBeTrue($removedSecond->stderr);
-        expect(acl_for($worktrees))->toBe($originalWorktrees);
-        expect(acl_for($orbit))->toBe($originalOrbit);
-        expect(acl_for($root))->toContain('user:nobody:r-x');
-        expect(acl_for($apps))->toContain('user:nobody:r-x');
-        expect(access_acl_permissions_for(user: 'nobody', path: $homeParent))->toBe('--x');
-        $second->delete();
-
-        $ssh->commands = [];
-        $manager->removeInstance($instance);
-        $removedInstance = run_app_dev_command_locally(
-            $ssh->commands[0],
-            $root,
-            includeManagedHomeAncestor: true,
-        );
-        expect($removedInstance->succeeded())->toBeTrue($removedInstance->stderr);
-        expect(acl_for($root))->toBe($originalHome);
-        expect(acl_for($apps))->toBe($originalApps);
-        expect(acl_for($homeParent))->toBe($originalHomeParent);
-    } finally {
-        $filesystem->deleteDirectory($sandbox);
-    }
-});
-
-it('uses a nondefault managed home for source converge and removal commands', function (): void {
-    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
-    [, $instance, $workspace] = app_dev_runtime_models(account: $account);
-    [$manager, $ssh] = source_manager(account: $account);
-
-    $manager->convergeInstance($instance);
-    $manager->convergeWorkspace($workspace);
-    $manager->removeWorkspace($workspace);
-    $manager->removeInstance($instance);
-
-    expect($ssh->commands)
-        ->toHaveCount(4)
-        ->and($ssh->commands[0]->arguments)
-        ->toContain(
-            '/srv/users/nckrtl/apps/acme',
-            'public',
-            'nckrtl',
-            '/srv/users/nckrtl',
-            '/srv/users',
-            '/srv',
-        )
-        ->and($ssh->commands[0]->input)
-        ->toContain(
-            'managed_user=$4',
-            'managed_group=$5',
-            'managed_home=$6',
-            'case "$parent" in',
-            'prepare_traversal_paths',
-            'setfacl -m u:caddy:--x "$checkout"',
-        )
-        ->not->toContain('/home/orbit')->and($ssh->commands[1]->arguments)->toContain(
-            '/srv/users/nckrtl/apps/acme',
-            '/srv/users/nckrtl/.orbit/worktrees/acme/feature',
-            '/srv/users/nckrtl',
-        )->and($ssh->commands[1]->input)->toContain(
-            'managed_home=$8',
-            'state_directory="$managed_home/.orbit/caddy-traversal-state"',
-        )
-        ->not->toContain('/home/orbit')->and($ssh->commands[2]->arguments)->toContain(
-            '/srv/users/nckrtl/.orbit/worktrees/acme/feature',
-        )->and($ssh->commands[3]->arguments)->toContain(
-            '/srv/users/nckrtl/apps/acme',
-            '/srv/users/nckrtl',
-        )->and($ssh->commands[3]->input)->toContain('managed_home=$5')
-        ->not->toContain('/home/orbit');
-});
-
-it('accounts Caddy traversal for ancestors above a configured root outside managed home', function (): void {
-    [, $instance] = app_dev_runtime_models();
-    $instance->update(['checkout_path' => '/srv/restricted/root/acme']);
-    [$manager, $ssh] = source_manager();
-
-    $manager->convergeInstance($instance);
-
-    expect($ssh->commands[0]->arguments)
-        ->toContain('/srv', '/srv/restricted', '/srv/restricted/root')
-        ->not
-        ->toContain('/home')
-        ->and($ssh->commands[0]->input)
-        ->toContain('sudo -n "$@"', 'acl setfacl');
-});
-
-it('rejects an unsafe stored repository origin before app-dev SSH execution', function (): void {
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $sentinel = 'sentinel-app-dev-password';
-    $instance
-        ->app
-        ->forceFill([
-            'repository_url' => "ssh://git:{$sentinel}@example.test/acme/site.git",
-        ])
-        ->save();
-    $exception = null;
-
-    try {
-        $manager->convergeInstance($instance);
-    } catch (InvalidArgumentException $caught) {
-        $exception = $caught;
-    }
-
-    $appOwnedTrace = array_values(array_filter(
-        $exception?->getTrace() ?? [],
-        static fn (array $frame): bool => (
-            is_string($frame['class'] ?? null) && str_starts_with($frame['class'], 'App\\')
-        ),
-    ));
-    $debugOutput = json_encode([
-        'message' => $exception?->getMessage(),
-        'trace' => $appOwnedTrace,
-    ], JSON_THROW_ON_ERROR);
-
-    expect($exception)
-        ->toBeInstanceOf(InvalidArgumentException::class)
-        ->and($exception?->getMessage())
-        ->toBe('The Git repository origin is invalid.')
-        ->and($debugOutput)
-        ->not
-        ->toContain($sentinel)
-        ->and($ssh->commands)
-        ->toBeEmpty();
-});
-
-it('rejects a foreign primary repository before workspace converge or removal changes a worktree', function (): void {
-    [, , $workspace] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-origin-drift-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $workspaceCheckout = "{$root}/.orbit/worktrees/acme/feature";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:foreign/site.git');
-
-        $manager->convergeWorkspace($workspace);
-        $converge = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($converge->succeeded())
-            ->toBeFalse()
-            ->and(file_exists($workspaceCheckout))
-            ->toBeFalse();
-
-        $ssh->commands = [];
-        $manager->removeWorkspace($workspace);
-        $remove = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($remove->succeeded())
-            ->toBeFalse()
-            ->and(is_dir($instanceCheckout))
-            ->toBeTrue();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('preserves a still-registered replaced workspace checkout and fails closed', function (): void {
-    [, , $workspace] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->removeWorkspace($workspace);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-registered-decoy-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $workspaceCheckout = "{$root}/.orbit/worktrees/acme/feature";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o755, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        add_acl_test_worktree($instanceCheckout, $workspaceCheckout, 'feature');
-        expect($filesystem->deleteDirectory($workspaceCheckout))->toBeTrue();
-        $filesystem->makeDirectory($workspaceCheckout, mode: 0o755, recursive: true);
-        $filesystem->put("{$workspaceCheckout}/KEEP", "decoy\n");
-        initialise_acl_test_repository($workspaceCheckout, repository: 'git@github.com:foreign/decoy.git');
-        expect(worktree_list_for($instanceCheckout))
-            ->toContain("worktree {$workspaceCheckout}");
-
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())
-            ->toBeFalse($removed->stderr)
-            ->and($filesystem->exists("{$workspaceCheckout}/KEEP"))
-            ->toBeTrue();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('preserves a still-registered branch-drifted workspace checkout and fails closed', function (): void {
-    [, , $workspace] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->removeWorkspace($workspace);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-branch-drift-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $workspaceCheckout = "{$root}/.orbit/worktrees/acme/feature";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o755, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        add_acl_test_worktree($instanceCheckout, $workspaceCheckout, 'feature');
-        $drifted = new NativeProcessRunner()->run(new ProcessInvocation([
-            'git',
-            '-C',
-            $workspaceCheckout,
-            'checkout',
-            '-b',
-            'drifted',
-        ]));
-        expect($drifted->succeeded())
-            ->toBeTrue($drifted->stderr)
-            ->and(worktree_list_for($instanceCheckout))
-            ->toContain("worktree {$workspaceCheckout}");
-
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())
-            ->toBeFalse($removed->stderr)
-            ->and(is_dir($workspaceCheckout))
-            ->toBeTrue();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('reconciles exact document-root ACLs and refuses symlink drift', function (): void {
-    if (! is_executable('/usr/bin/setfacl') || posix_getpwnam('nobody') === false) {
-        $this->markTestSkipped('The ACL behavior test requires setfacl and the nobody account.');
-    }
-
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeInstance($instance);
-    $command = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-acl-'.Str::uuid();
-    $checkout = "{$root}/apps/acme";
-
-    try {
-        $filesystem->makeDirectory("{$checkout}/public/build", mode: 0o700, recursive: true);
-        $filesystem->makeDirectory("{$checkout}/storage/app/public", mode: 0o700, recursive: true);
-        $filesystem->makeDirectory("{$checkout}/web", mode: 0o700, recursive: true);
-        $filesystem->put("{$checkout}/.env", 'APP_KEY=secret');
-        $filesystem->put("{$checkout}/storage/app/public/upload.txt", 'upload');
-        symlink('../storage/app/public', "{$checkout}/public/storage");
-        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
-        chmod(filename: $root, permissions: 0o711);
-        chmod(filename: "{$root}/apps", permissions: 0o711);
-
-        $first = run_app_dev_command_locally($command, $root);
-
-        expect($first->succeeded())
-            ->toBeTrue($first->stderr)
-            ->and(acl_for("{$checkout}/public"))
-            ->toContain('user:nobody:r-x', 'default:user:nobody:r-x')
-            ->and(acl_for("{$checkout}/public/build"))
-            ->toContain('user:nobody:r-x', 'default:user:nobody:r-x')
-            ->and(acl_for("{$checkout}/.env"))
-            ->toContain('user:nobody:---')
-            ->and(acl_for("{$checkout}/storage/app/public"))
-            ->toContain('user:nobody:r-x', 'default:user:nobody:r-x')
-            ->and(acl_for("{$checkout}/storage/app/public/upload.txt"))
-            ->toContain('user:nobody:r--');
-
-        $filesystem->put("{$checkout}/public/build/manifest.json", '{}');
-
-        expect(acl_for("{$checkout}/public/build/manifest.json"))
-            ->toContain('user:nobody:r-x', '#effective:r--');
-
-        $instance->document_root = 'web';
-        $ssh->commands = [];
-        $manager->convergeInstance($instance);
-        $second = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($second->succeeded())
-            ->toBeTrue($second->stderr)
-            ->and(access_acl_permissions_for(user: 'nobody', path: "{$checkout}/public"))
-            ->toBe('---')
-            ->and(acl_for("{$checkout}/public"))
-            ->toContain('default:user:nobody:---')
-            ->and(acl_for("{$checkout}/web"))
-            ->toContain('user:nobody:r-x', 'default:user:nobody:r-x');
-
-        $outside = "{$root}/outside";
-        $filesystem->makeDirectory($outside, mode: 0o755, recursive: true);
-        $filesystem->put("{$outside}/outside.txt", 'outside');
-        chmod(filename: "{$outside}/outside.txt", permissions: 0o644);
-        symlink($outside, "{$checkout}/public/outside");
-        $instance->document_root = 'public';
-        $ssh->commands = [];
-        $manager->convergeInstance($instance);
-        $externalLink = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($externalLink->succeeded())
-            ->toBeFalse()
-            ->and(access_acl_permissions_for(user: 'nobody', path: "{$checkout}/public"))
-            ->toBe('---')
-            ->and(acl_for("{$checkout}/public"))
-            ->toContain('default:user:nobody:---')
-            ->and(acl_for("{$outside}/outside.txt"))
-            ->not->toContain('user:nobody:');
-
-        unlink("{$checkout}/public/outside");
-        $external = "{$root}/external-repository";
-        $filesystem->makeDirectory("{$external}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$external}/outside.txt", 'outside');
-        initialise_acl_test_repository($external, repository: 'git@github.com:acme/site.git');
-        $filesystem->moveDirectory($checkout, "{$root}/retired-checkout");
-        symlink($external, $checkout);
-
-        $blocked = run_app_dev_command_locally($command, $root);
-
-        expect($blocked->succeeded())
-            ->toBeFalse()
-            ->and(acl_for("{$external}/outside.txt"))
-            ->not->toContain('user:nobody:');
-    } finally {
-        if (is_link($checkout)) {
-            unlink($checkout);
-        }
-
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('rejects source links to private checkout files before granting Caddy access', function (): void {
-    if (! is_executable('/usr/bin/setfacl') || posix_getpwnam('nobody') === false) {
-        $this->markTestSkipped('The ACL behavior test requires setfacl and the nobody account.');
-    }
-
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeInstance($instance);
-    $command = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-private-link-'.Str::uuid();
-    $checkout = "{$root}/apps/acme";
-
-    try {
-        $filesystem->makeDirectory("{$checkout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$checkout}/.env", 'APP_KEY=secret');
-        symlink('../.env', "{$checkout}/public/environment");
-        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
-        chmod(filename: $root, permissions: 0o711);
-        chmod(filename: "{$root}/apps", permissions: 0o711);
-
-        $result = run_app_dev_command_locally($command, $root);
-
-        expect($result->succeeded())
-            ->toBeFalse()
-            ->and(access_acl_permissions_for(user: 'nobody', path: "{$checkout}/public"))
-            ->toBe('---')
-            ->and(acl_for("{$checkout}/public"))
-            ->toContain('default:user:nobody:---')
-            ->and(acl_for("{$checkout}/.env"))
-            ->toContain('user:nobody:---');
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('revokes checkout access before rejecting a replaced document root', function (): void {
-    if (! is_executable('/usr/bin/setfacl') || posix_getpwnam('nobody') === false) {
-        $this->markTestSkipped('The ACL behavior test requires setfacl and the nobody account.');
-    }
-
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeInstance($instance);
-    $command = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-document-root-link-'.Str::uuid();
-    $checkout = "{$root}/apps/acme";
-    $outside = "{$root}/outside";
-
-    try {
-        $filesystem->makeDirectory("{$checkout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$checkout}/public/index.php", '<?php');
-        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($outside, mode: 0o755, recursive: true);
-        $filesystem->put("{$outside}/outside.txt", 'outside');
-        chmod(filename: $root, permissions: 0o711);
-        chmod(filename: "{$root}/apps", permissions: 0o711);
-
-        $first = run_app_dev_command_locally($command, $root);
-        expect($first->succeeded())
-            ->toBeTrue($first->stderr)
-            ->and(acl_for($checkout))
-            ->toContain('user:nobody:--x');
-
-        $filesystem->deleteDirectory("{$checkout}/public");
-        symlink($outside, "{$checkout}/public");
-
-        $replaced = run_app_dev_command_locally($command, $root);
-
-        expect($replaced->succeeded())
-            ->toBeFalse()
-            ->and(access_acl_permissions_for(user: 'nobody', path: $checkout))
-            ->toBe('---')
-            ->and(acl_for($checkout))
-            ->toContain('default:user:nobody:---')
-            ->and(acl_for($outside))
-            ->not->toContain('user:nobody:');
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('rejects nested links inside Laravel public storage before granting Caddy access', function (): void {
-    if (! is_executable('/usr/bin/setfacl') || posix_getpwnam('nobody') === false) {
-        $this->markTestSkipped('The ACL behavior test requires setfacl and the nobody account.');
-    }
-
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeInstance($instance);
-    $command = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-nested-link-'.Str::uuid();
-    $checkout = "{$root}/apps/acme";
-    $outside = "{$root}/outside";
-
-    try {
-        $filesystem->makeDirectory("{$checkout}/public", mode: 0o700, recursive: true);
-        $filesystem->makeDirectory("{$checkout}/storage/app/public", mode: 0o700, recursive: true);
-        $filesystem->makeDirectory($outside, mode: 0o755, recursive: true);
-        $filesystem->put("{$outside}/outside.txt", 'outside');
-        symlink('../storage/app/public', "{$checkout}/public/storage");
-        symlink($outside, "{$checkout}/storage/app/public/outside");
-        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
-        chmod(filename: $root, permissions: 0o711);
-        chmod(filename: "{$root}/apps", permissions: 0o711);
-
-        $result = run_app_dev_command_locally($command, $root);
-
-        expect($result->succeeded())
-            ->toBeFalse()
-            ->and(access_acl_permissions_for(user: 'nobody', path: "{$checkout}/public"))
-            ->toBe('---')
-            ->and(acl_for("{$checkout}/public"))
-            ->toContain('default:user:nobody:---')
-            ->and(access_acl_permissions_for(user: 'nobody', path: "{$checkout}/storage/app/public"))
-            ->toBe('---')
-            ->and(acl_for("{$checkout}/storage/app/public"))
-            ->toContain('default:user:nobody:---');
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('grants and releases traversal for a private custom workspace parent', function (): void {
-    if (
-        ! is_executable('/usr/bin/setfacl')
-        || ! is_executable('/usr/bin/setfattr')
-        || posix_getpwnam('nobody') === false
-    ) {
-        $this->markTestSkipped('The ACL behavior test requires ACL, xattr, and the nobody account.');
-    }
-
-    [, $instance, $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/projects/acme-feature';
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeWorkspace($workspace);
-    $command = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-acl-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $projects = "{$root}/projects";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-        setfacl_for(user: 'nobody', permissions: 'r-x', path: $projects);
-        setfacl_for(user: 'www-data', permissions: 'r-x', path: $projects);
-        $mask = new NativeProcessRunner()->run(new ProcessInvocation([
-            'setfacl',
-            '-n',
-            '-m',
-            'm::--x',
-            $projects,
-        ]));
-        expect($mask->succeeded())->toBeTrue($mask->stderr);
-        $originalAcl = acl_for($projects);
-
-        $converged = run_app_dev_command_locally($command, $root);
-        $statePath = traversal_state_file($root, $projects);
-        $stateLines = explode("\n", $filesystem->get($statePath));
-        $marker = xattr_for($projects);
-
-        expect($converged->succeeded())
-            ->toBeTrue($converged->stderr)
-            ->and(acl_for($projects))
-            ->toContain('user:nobody:r-x', 'other::---')
-            ->and(effective_access_acl_permissions_for(user: 'www-data', path: $projects))
-            ->toBe('r-x')
-            ->and(acl_for("{$root}/projects/acme-feature/public"))
-            ->toContain('user:nobody:r-x')
-            ->and($marker)
-            ->toMatch('/\A[0-9a-f]{64}\z/')
-            ->and($stateLines[2] ?? null)
-            ->toBe($marker);
-
-        $ssh->commands = [];
-        $manager->removeWorkspace($workspace);
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())
-            ->toBeTrue($removed->stderr)
-            ->and(acl_for($projects))
-            ->toBe($originalAcl)
-            ->and(xattr_for($projects))
-            ->toBeNull();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('completes traversal cleanup after the ACL was restored before state removal', function (): void {
-    if (
-        ! is_executable('/usr/bin/setfacl')
-        || ! is_executable('/usr/bin/setfattr')
-        || posix_getpwnam('nobody') === false
-    ) {
-        $this->markTestSkipped('The ACL behavior test requires ACL, xattr, and the nobody account.');
-    }
-
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/projects/acme-feature';
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeWorkspace($workspace);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-cleanup-recovery-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $projects = "{$root}/projects";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-        $originalAcl = acl_for($projects);
-
-        $converged = run_app_dev_command_locally($ssh->commands[0], $root);
-        expect($converged->succeeded())->toBeTrue($converged->stderr);
-
-        $statePath = traversal_state_file($root, $projects);
-        $stateLines = explode("\n", $filesystem->get($statePath));
-        $restore = new NativeProcessRunner()->run(new ProcessInvocation(
-            arguments: ['setfacl', '--set-file=-', $projects],
-            input: implode("\n", array_slice(array: $stateLines, offset: 3)),
-        ));
-        $removeMarker = new NativeProcessRunner()->run(new ProcessInvocation([
-            'setfattr',
-            '-x',
-            'user.orbit.caddy_traversal',
-            '--',
-            $projects,
-        ]));
-        expect($restore->succeeded())
-            ->toBeTrue($restore->stderr)
-            ->and($removeMarker->succeeded())
-            ->toBeTrue($removeMarker->stderr);
-
-        $ssh->commands = [];
-        $manager->removeWorkspace($workspace);
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())
-            ->toBeTrue($removed->stderr)
-            ->and(acl_for($projects))
-            ->toBe($originalAcl)
-            ->and($filesystem->exists(traversal_state_file($root, $projects)))
-            ->toBeFalse();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('rejects replacement of a custom traversal directory without applying stale ACL state', function (): void {
-    if (! is_executable('/usr/bin/setfacl') || posix_getpwnam('nobody') === false) {
-        $this->markTestSkipped('The ACL behavior test requires setfacl and the nobody account.');
-    }
-
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/projects/acme-feature';
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeWorkspace($workspace);
-    $command = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-replacement-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $projects = "{$root}/projects";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-
-        $first = run_app_dev_command_locally($command, $root);
-        expect($first->succeeded())
-            ->toBeTrue(
-                "exit={$first->exitCode}\nstdout={$first->stdout}\nstderr={$first->stderr}",
-            );
-
-        expect($filesystem->deleteDirectory($projects))
-            ->toBeTrue()
-            ->and(is_dir($projects))
-            ->toBeFalse();
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-        $statePath = traversal_state_file($root, $projects);
-        $stateLines = explode("\n", $filesystem->get($statePath));
-        $identity = stat($projects);
-        expect($identity)->toBeArray();
-        $stateLines[1] = "{$identity['dev']}:{$identity['ino']}";
-        $filesystem->put($statePath, implode("\n", $stateLines));
-        chmod(filename: $statePath, permissions: 0o600);
-
-        $replacement = run_app_dev_command_locally($command, $root);
-
-        expect($replacement->succeeded())
-            ->toBeFalse()
-            ->and(acl_for($projects))
-            ->not->toContain('user:nobody:');
-
-        setfacl_for(user: 'nobody', permissions: '--x', path: $projects);
-        set_xattr(path: $projects, value: str_repeat(string: 'f', times: 64));
-        $ssh->commands = [];
-        $manager->removeWorkspace($workspace);
-        $removal = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removal->succeeded())
-            ->toBeFalse()
-            ->and(access_acl_permissions_for(user: 'nobody', path: $projects))
-            ->toBe('--x')
-            ->and(xattr_for($projects))
-            ->toBe(str_repeat(string: 'f', times: 64));
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('recovers an orphan traversal marker before first convergence', function (): void {
-    if (
-        ! is_executable('/usr/bin/setfacl')
-        || ! is_executable('/usr/bin/setfattr')
-        || posix_getpwnam('nobody') === false
-    ) {
-        $this->markTestSkipped('The ACL behavior test requires ACL, xattr, and the nobody account.');
-    }
-
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/projects/acme-feature';
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeWorkspace($workspace);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-orphan-marker-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $projects = "{$root}/projects";
-    $orphan = str_repeat(string: 'a', times: 64);
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-        set_xattr(path: $projects, value: $orphan);
-
-        $converged = run_app_dev_command_locally($ssh->commands[0], $root);
-        $statePath = traversal_state_file($root, $projects);
-        $stateLines = explode("\n", $filesystem->get($statePath));
-        $marker = xattr_for($projects);
-
-        expect($converged->succeeded())
-            ->toBeTrue($converged->stderr)
-            ->and($marker)
-            ->toMatch('/\A[0-9a-f]{64}\z/')
-            ->not
-            ->toBe($orphan)
-            ->and($stateLines[2] ?? null)
-            ->toBe($marker);
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('rejects a managed traversal marker when its state file is missing', function (): void {
-    if (
-        ! is_executable('/usr/bin/setfacl')
-        || ! is_executable('/usr/bin/setfattr')
-        || posix_getpwnam('nobody') === false
-    ) {
-        $this->markTestSkipped('The ACL behavior test requires ACL, xattr, and the nobody account.');
-    }
-
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/projects/acme-feature';
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeWorkspace($workspace);
-    $command = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-missing-state-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $projects = "{$root}/projects";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-
-        $first = run_app_dev_command_locally($command, $root);
-        expect($first->succeeded())->toBeTrue($first->stderr);
-        $marker = xattr_for($projects);
-        $statePath = traversal_state_file($root, $projects);
-        expect($filesystem->delete($statePath))->toBeTrue();
-
-        $drift = run_app_dev_command_locally($command, $root);
-
-        expect($drift->succeeded())
-            ->toBeFalse()
-            ->and(xattr_for($projects))
-            ->toBe($marker)
-            ->and($filesystem->exists($statePath))
-            ->toBeFalse();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('retires saved traversal state when the original custom directory is gone', function (): void {
-    if (! is_executable('/usr/bin/setfacl') || posix_getpwnam('nobody') === false) {
-        $this->markTestSkipped('The ACL behavior test requires setfacl and the nobody account.');
-    }
-
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/projects/acme-feature';
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->convergeWorkspace($workspace);
-    $converge = $ssh->commands[0];
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-missing-parent-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $projects = "{$root}/projects";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-
-        $first = run_app_dev_command_locally($converge, $root);
-        expect($first->succeeded())->toBeTrue($first->stderr);
-        $projectsState = traversal_state_file($root, $projects);
-        expect($filesystem->exists($projectsState))
-            ->toBeTrue()
-            ->and($filesystem->deleteDirectory($projects))
-            ->toBeTrue();
-
-        $ssh->commands = [];
-        $manager->removeWorkspace($workspace);
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())->toBeTrue($removed->stderr);
-        expect($filesystem->exists($projectsState))->toBeFalse();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('removes a never-converged workspace without requiring traversal state', function (string $checkoutPath): void {
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = $checkoutPath;
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->removeWorkspace($workspace);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-never-converged-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $localCheckoutPath = str_replace('/home/orbit', $root, $checkoutPath);
-        $filesystem->makeDirectory(dirname($localCheckoutPath), mode: 0o700, recursive: true);
-
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())->toBeTrue($removed->stderr);
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-})->with([
-    'default path' => '/home/orbit/.orbit/worktrees/acme/feature',
-    'custom path' => '/home/orbit/projects/acme-feature',
-]);
-
-it('removes an orphan traversal marker for a never-converged workspace', function (): void {
-    if (! is_executable('/usr/bin/setfattr')) {
-        $this->markTestSkipped('The traversal marker recovery test requires xattr tools.');
-    }
-
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/projects/acme-feature';
-    $workspace->save();
-    [$manager, $ssh] = source_manager();
-    $manager->removeWorkspace($workspace);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-workspace-orphan-removal-'.Str::uuid();
-    $instanceCheckout = "{$root}/apps/acme";
-    $projects = "{$root}/projects";
-
-    try {
-        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o700, recursive: true);
-        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
-        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
-        $filesystem->makeDirectory($projects, mode: 0o700, recursive: true);
-        set_xattr(path: $projects, value: str_repeat(string: 'a', times: 64));
-
-        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
-
-        expect($removed->succeeded())
-            ->toBeTrue($removed->stderr)
-            ->and(xattr_for($projects))
-            ->toBeNull();
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-it('rejects a corrupted workspace path before SSH or protected-path creation', function (): void {
-    [, , $workspace] = app_dev_runtime_models();
-    $workspace->checkout_path = '/home/orbit/custom/../.ssh/feature';
-    [$manager, $ssh] = source_manager();
-
-    expect(fn () => $manager->convergeWorkspace($workspace))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('workspace.checkout_path_unsafe');
-        })
-        ->and($ssh->commands)
-        ->toBeEmpty();
-});
-
-it('releases a shared custom traversal ACL only after the last workspace is removed', function (): void {
-    [, $instance, $first] = app_dev_runtime_models();
-    $first->update(['checkout_path' => '/home/orbit/projects/first']);
-    $second = Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => 'second',
-        'branch' => 'second',
-        'checkout_path' => '/home/orbit/projects/second',
-        'hostname' => 'second.acme.app-dev.orbit',
-        'status' => LifecycleStatus::Active,
-    ]);
-    [$manager, $ssh] = source_manager();
-
-    $manager->removeWorkspace($first);
-
-    expect($ssh->commands[0]->arguments)->not->toContain('/home/orbit/projects');
-
-    $first->delete();
-    $ssh->commands = [];
-    $manager->removeWorkspace($second);
-
-    expect($ssh->commands[0]->arguments)
-        ->toContain('/home/orbit/projects');
-});
-
-it('locks instance removal before calculating shared traversal releases and mutating remote state', function (): void {
-    [, $instance] = app_dev_runtime_models();
-    $instance->update(['checkout_path' => '/home/orbit/projects/team/acme']);
-    $ssh = new AppDevFakeSshExecutor;
-    $lock = new class($instance, $ssh) implements AppDevSourceOperationLock
-    {
-        public int $calls = 0;
-
-        /** @var list<int> */
-        public array $nodeIds = [];
-
-        public bool $remoteMutationStartedBeforeLock = false;
-
-        public bool $remoteMutationCompletedBeforeRelease = false;
-
-        public function __construct(
-            private readonly Instance $instance,
-            private readonly AppDevFakeSshExecutor $ssh,
-        ) {}
-
-        public function synchronized(int $nodeId, Closure $operation): mixed
-        {
-            $this->calls++;
-            $this->nodeIds[] = $nodeId;
-            $this->remoteMutationStartedBeforeLock = $this->ssh->commands !== [];
-            $app = OrbitApp::query()->create([
-                'name' => 'Concurrent',
-                'slug' => 'concurrent',
-                'repository_url' => 'git@github.com:acme/concurrent.git',
-            ]);
-            Instance::query()->create([
-                'app_id' => $app->id,
-                'node_id' => $this->instance->node_id,
-                'name' => 'concurrent',
-                'environment' => 'development',
-                'checkout_path' => '/home/orbit/projects/team/other',
-                'hostname' => 'concurrent.acme.app-dev.orbit',
-                'certificate_mode' => CertificateMode::OrbitCa,
-                'status' => LifecycleStatus::Provisioning,
-            ]);
-
-            $result = $operation();
-            $this->remoteMutationCompletedBeforeRelease = count($this->ssh->commands) === 1;
-
-            return $result;
-        }
-    };
-    [$manager] = source_manager($lock, $ssh);
-
-    $manager->removeInstance($instance);
-
-    expect($lock->calls)
-        ->toBe(1)
-        ->and($lock->nodeIds)
-        ->toBe([$instance->node_id])
-        ->and($lock->remoteMutationStartedBeforeLock)
-        ->toBeFalse()
-        ->and($lock->remoteMutationCompletedBeforeRelease)
-        ->toBeTrue()
-        ->and($ssh->commands[0]->arguments)
-        ->not->toContain('/home/orbit/projects');
-});
-
-it('locks workspace removal before calculating shared traversal releases and mutating remote state', function (): void {
-    [, $instance, $workspace] = app_dev_runtime_models();
-    $workspace->update(['checkout_path' => '/home/orbit/projects/first']);
-    $ssh = new AppDevFakeSshExecutor;
-    $lock = new class($instance, $ssh) implements AppDevSourceOperationLock
-    {
-        public int $calls = 0;
-
-        /** @var list<int> */
-        public array $nodeIds = [];
-
-        public bool $remoteMutationStartedBeforeLock = false;
-
-        public bool $remoteMutationCompletedBeforeRelease = false;
-
-        public function __construct(
-            private readonly Instance $instance,
-            private readonly AppDevFakeSshExecutor $ssh,
-        ) {}
-
-        public function synchronized(int $nodeId, Closure $operation): mixed
-        {
-            $this->calls++;
-            $this->nodeIds[] = $nodeId;
-            $this->remoteMutationStartedBeforeLock = $this->ssh->commands !== [];
-            Workspace::query()->create([
-                'instance_id' => $this->instance->id,
-                'name' => 'concurrent',
-                'branch' => 'concurrent',
-                'checkout_path' => '/home/orbit/projects/concurrent',
-                'hostname' => 'concurrent.acme.app-dev.orbit',
-                'status' => LifecycleStatus::Provisioning,
-            ]);
-
-            $result = $operation();
-            $this->remoteMutationCompletedBeforeRelease = count($this->ssh->commands) === 1;
-
-            return $result;
-        }
-    };
-    [$manager] = source_manager($lock, $ssh);
-
-    $manager->removeWorkspace($workspace);
-
-    expect($lock->calls)
-        ->toBe(1)
-        ->and($lock->nodeIds)
-        ->toBe([$workspace->instance->node_id])
-        ->and($lock->remoteMutationStartedBeforeLock)
-        ->toBeFalse()
-        ->and($lock->remoteMutationCompletedBeforeRelease)
-        ->toBeTrue()
-        ->and($ssh->commands[0]->arguments)
-        ->not
-        ->toContain('/home/orbit/projects')
-        ->and(substr_count(
-            haystack: $ssh->commands[0]->input ?? '',
-            needle: 'test ! -L "$instance"',
-        ))
-        ->toBe(1);
-});
-
-it('keeps the per-node source file lock held across nested synchronization', function (): void {
-    $filesystem = new Filesystem;
-    $directory = sys_get_temp_dir().'/orbit-source-reentrant-lock-'.Str::uuid();
-    $lock = new NativeAppDevSourceOperationLock($directory);
-    $contenderAcquired = null;
-
-    try {
-        $result = $lock->synchronized(42, function () use ($lock, $directory, &$contenderAcquired): string {
-            $nested = $lock->synchronized(42, static fn (): string => 'nested');
-            $contender = fopen(filename: "{$directory}/node-42.lock", mode: 'c+');
-
-            if ($contender === false) {
-                throw new RuntimeException('Could not open the source lock contender.');
-            }
-
-            try {
-                $contenderAcquired = flock($contender, LOCK_EX | LOCK_NB);
-
-                return $nested;
-            } finally {
-                if ($contenderAcquired === true) {
-                    flock($contender, LOCK_UN);
-                }
-
-                fclose($contender);
-            }
-        });
-
-        expect($result)
-            ->toBe('nested')
-            ->and($contenderAcquired)
-            ->toBeFalse();
-    } finally {
-        $filesystem->deleteDirectory($directory);
-    }
-});
-
-it('stores per-node source locks outside mutable checkouts with private modes', function (): void {
-    $filesystem = new Filesystem;
-    $directory = sys_get_temp_dir().'/orbit-source-lock-'.Str::uuid();
-
-    try {
-        $result = new NativeAppDevSourceOperationLock($directory)->synchronized(
-            nodeId: 42,
-            operation: static fn (): string => 'locked',
-        );
-
-        expect($result)
-            ->toBe('locked')
-            ->and(fileperms($directory) & 0o777)
-            ->toBe(0o700)
-            ->and(fileperms("{$directory}/node-42.lock") & 0o777)
-            ->toBe(0o600);
-    } finally {
-        $filesystem->deleteDirectory($directory);
-    }
-});
-
-it('rejects a corrupted instance checkout path before SSH or recursive removal', function (): void {
-    [, $instance] = app_dev_runtime_models();
-    [$manager, $ssh] = source_manager();
-    $instance->checkout_path = '/etc';
-
-    expect(fn () => $manager->removeInstance($instance))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('instance.checkout_path_unsafe');
-        })
-        ->and($ssh->commands)
-        ->toBeEmpty();
+        ->not->toContain('acme.app-dev.orbit.legacy', 'feature.acme.app-dev.orbit');
 });
 
 it('retires previous app-dev pools before activating their lower PHP version', function (): void {
-    [$node, $instance] = app_dev_runtime_models();
-    $moving = app_dev_supported_app_instance($node, $instance->app_id, 'moving');
+    [$node, $app] = app_dev_runtime_models();
+    $moving = app_dev_supported_app_instance($node, $app->id, 'moving');
     app_dev_supported_route($moving, 'moving.app-dev.orbit');
-    $stable = app_dev_supported_app_instance($node, $instance->app_id, 'stable');
+    $stable = app_dev_supported_app_instance($node, $app->id, 'stable');
     app_dev_supported_route($stable, 'stable.app-dev.orbit');
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
@@ -1736,10 +324,10 @@ it('retires previous app-dev pools before activating their lower PHP version', f
 });
 
 it('restores the previous app-dev pools when lower PHP activation fails', function (): void {
-    [$node, $instance] = app_dev_runtime_models();
-    $moving = app_dev_supported_app_instance($node, $instance->app_id, 'moving');
+    [$node, $app] = app_dev_runtime_models();
+    $moving = app_dev_supported_app_instance($node, $app->id, 'moving');
     app_dev_supported_route($moving, 'moving.app-dev.orbit');
-    $stable = app_dev_supported_app_instance($node, $instance->app_id, 'stable');
+    $stable = app_dev_supported_app_instance($node, $app->id, 'stable');
     app_dev_supported_route($stable, 'stable.app-dev.orbit');
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
@@ -1780,10 +368,10 @@ it('restores the previous app-dev pools when lower PHP activation fails', functi
 });
 
 it('removes a newly activated app-dev pool when later PHP activation fails', function (): void {
-    [$node, $instance] = app_dev_runtime_models();
-    $lower = app_dev_supported_app_instance($node, $instance->app_id, 'lower');
+    [$node, $app] = app_dev_runtime_models();
+    $lower = app_dev_supported_app_instance($node, $app->id, 'lower');
     app_dev_supported_route($lower, 'lower.app-dev.orbit');
-    $higher = app_dev_supported_app_instance($node, $instance->app_id, 'higher');
+    $higher = app_dev_supported_app_instance($node, $app->id, 'higher');
     app_dev_supported_route($higher, 'higher.app-dev.orbit');
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
@@ -1828,10 +416,10 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
 });
 
 it('installs selected PHP versions and validates a complete staged FPM configuration before publication', function (): void {
-    [$node, $instance] = app_dev_runtime_models();
-    $php84 = app_dev_supported_app_instance($node, $instance->app_id, 'php84', '8.4');
+    [$node, $app] = app_dev_runtime_models();
+    $php84 = app_dev_supported_app_instance($node, $app->id, 'php84', '8.4');
     app_dev_supported_route($php84, 'php84.app-dev.orbit');
-    $php85 = app_dev_supported_app_instance($node, $instance->app_id, 'php85', '8.5');
+    $php85 = app_dev_supported_app_instance($node, $app->id, 'php85', '8.5');
     app_dev_supported_route($php85, 'php85.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\n", '', 1, false),
@@ -1923,8 +511,8 @@ it('installs selected PHP versions and validates a complete staged FPM configura
 
 it('renders and publishes AppDev FPM pools with the nondefault managed account', function (): void {
     $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
-    [$node, $instance] = app_dev_runtime_models(account: $account);
-    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    [$node, $app] = app_dev_runtime_models(account: $account);
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
     app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $sites = new AppDevSiteRepository()->forNode($node);
     $rendered = new AppDevPhpFpmConfigRenderer()->render($sites, $account);
@@ -1963,8 +551,8 @@ it('renders and publishes AppDev FPM pools with the nondefault managed account',
 });
 
 it('restores the exact AppDev FPM file before the recovery reload when activation fails', function (): void {
-    [$node, $instance] = app_dev_runtime_models();
-    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    [$node, $app] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
     app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $harness = new FpmPublishHarness;
     $managed = $harness->prepare('8.5', 'orbit-scopes.conf', "previous app-dev pool\n");
@@ -2004,8 +592,8 @@ it('restores the exact AppDev FPM file before the recovery reload when activatio
 });
 
 it('rejects an unsupported PHP version before target discovery or installation', function (): void {
-    [$node, $instance] = app_dev_runtime_models();
-    $unsupported = app_dev_supported_app_instance($node, $instance->app_id, 'unsupported', '8.3');
+    [$node, $app] = app_dev_runtime_models();
+    $unsupported = app_dev_supported_app_instance($node, $app->id, 'unsupported', '8.3');
     app_dev_supported_route($unsupported, 'unsupported.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor;
     $manager = new RemoteAppDevPhpFpmManager(
@@ -2025,7 +613,9 @@ it('rejects an unsupported PHP version before target discovery or installation',
 });
 
 it('keeps leaf private keys on the target while publishing a gateway-signed certificate', function (): void {
-    [, $instance] = app_dev_runtime_models();
+    [$node, $app] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
+    $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
     ]);
@@ -2048,7 +638,7 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
     };
     $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
 
-    $manager->convergeInstance($instance);
+    $manager->convergeAppInstance($appInstance, $route);
 
     expect($ssh->commands)
         ->toHaveCount(2)
@@ -2094,11 +684,11 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
 
 it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {
     $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
-    [, $instance, $workspace] = app_dev_runtime_models(account: $account);
+    [$node, $app] = app_dev_runtime_models(account: $account);
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
+    $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
     ]);
     $signer = new class implements LeafCertificateSigner
@@ -2115,22 +705,20 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
     };
     $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver($account));
 
-    $manager->convergeInstance($instance);
-    $manager->removeInstance($instance);
-    $manager->convergeWorkspace($workspace);
-    $manager->removeWorkspace($workspace);
+    $manager->convergeAppInstance($appInstance, $route);
+    $manager->removeAppInstance($appInstance);
 
     expect($ssh->commands)
-        ->toHaveCount(6)
+        ->toHaveCount(3)
         ->and($ssh->commands[0]->arguments)
-        ->toContain('instance-1', 'acme.app-dev.orbit', 'nckrtl', '/srv/users/nckrtl')
+        ->toContain("app-instance-{$appInstance->id}", 'acme.app-dev.orbit', 'nckrtl', '/srv/users/nckrtl')
         ->and($ssh->commands[0]->input)
         ->toContain('managed_home=$7', 'root="$managed_home/.orbit/certificates/$scope"')
         ->not->toContain('/home/orbit/.orbit/certificates')->and($ssh->commands[2]->arguments)->toBe([
             'bash',
             '-seu',
             '--',
-            'instance-1',
+            "app-instance-{$appInstance->id}",
             'nckrtl',
             'nckrtl',
             '/srv/users/nckrtl',
@@ -2140,25 +728,7 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
             'managed_home=$4',
             'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
         )
-        ->not->toContain('/home/orbit/.orbit/certificates')->and($ssh->commands[3]->arguments)->toContain(
-            'workspace-1',
-            'feature.acme.app-dev.orbit',
-            'nckrtl',
-            '/srv/users/nckrtl',
-        )->and($ssh->commands[5]->arguments)->toBe([
-            'bash',
-            '-seu',
-            '--',
-            'workspace-1',
-            'nckrtl',
-            'nckrtl',
-            '/srv/users/nckrtl',
-        ])->and($ssh->commands[5]->input)->toContain(
-            'managed_user=$2',
-            'managed_group=$3',
-            'managed_home=$4',
-            'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
-        );
+        ->not->toContain('/home/orbit/.orbit/certificates');
 });
 
 it('reuses only current app-dev leaves with the exact RSA extension policy', function (
@@ -2166,7 +736,9 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
     string $keyAlgorithm,
     string $expectedDecision,
 ): void {
-    [, $instance] = app_dev_runtime_models();
+    [$node, $app] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
+    $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "CURRENT\n", '', 1, false),
     ]);
@@ -2174,8 +746,8 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
     $root = sys_get_temp_dir().'/orbit-app-dev-certificate-policy-'.(string) Str::uuid();
     $rootCertificate = create_app_dev_certificate_reuse_fixture(
         root: $root,
-        scope: "instance-{$instance->id}",
-        hostname: $instance->hostname,
+        scope: "app-instance-{$appInstance->id}",
+        hostname: $route->hostname,
         keyUsage: $keyUsage,
         keyAlgorithm: $keyAlgorithm,
     );
@@ -2200,7 +772,7 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
     $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
 
     try {
-        $manager->convergeInstance($instance);
+        $manager->convergeAppInstance($appInstance, $route);
         $result = run_app_dev_certificate_probe_locally($ssh->commands[0], $root);
         $decision = trim($result->stdout) === 'CURRENT' ? 'reuse' : 'reissue';
 
@@ -2229,10 +801,10 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
 ]);
 
 it('publishes private Caddy and DNS configurations through complete preserved validation aggregates', function (): void {
-    [$node, $instance] = app_dev_runtime_models();
-    $appInstance = app_dev_supported_app_instance($node, $instance->app_id);
+    [$node, $app] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
     app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
-    $feature = app_dev_supported_app_instance($node, $instance->app_id, 'feature');
+    $feature = app_dev_supported_app_instance($node, $app->id, 'feature');
     app_dev_supported_route($feature, 'feature.acme.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor;
     $caddyRenderer = new AppDevCaddyConfigRenderer;
@@ -2864,9 +1436,8 @@ it('keeps the live DNS fragment untouched when effective validation fails', func
         );
 });
 
-/** @return array{Node, Instance, Workspace} */
+/** @return array{Node, OrbitApp} */
 function app_dev_runtime_models(
-    string $instancePhp = '8.5',
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
 ): array {
     $node = Node::query()->create([
@@ -2883,26 +1454,6 @@ function app_dev_runtime_models(
         'slug' => 'acme',
         'repository_url' => 'git@github.com:acme/site.git',
     ]);
-    $instance = Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'dev',
-        'environment' => 'development',
-        'checkout_path' => "{$account->home}/apps/acme",
-        'document_root' => 'public',
-        'php_version' => $instancePhp,
-        'hostname' => 'acme.app-dev.orbit',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $workspace = Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => 'feature',
-        'branch' => 'feature',
-        'checkout_path' => "{$account->home}/.orbit/worktrees/acme/feature",
-        'hostname' => 'feature.acme.app-dev.orbit',
-        'status' => LifecycleStatus::Active,
-    ]);
     $gateway = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
@@ -2912,7 +1463,7 @@ function app_dev_runtime_models(
     ]);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 
-    return [$node, $instance, $workspace];
+    return [$node, $app];
 }
 
 function app_dev_supported_app_instance(
@@ -3032,137 +1583,6 @@ function orb173_dns_projection_route(
     }
 
     return $route;
-}
-
-/** @return array{RemoteAppDevSourceManager, AppDevFakeSshExecutor} */
-function source_manager(
-    ?AppDevSourceOperationLock $lock = null,
-    ?AppDevFakeSshExecutor $ssh = null,
-    ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-): array {
-    $ssh ??= new AppDevFakeSshExecutor;
-    $lock ??= new class implements AppDevSourceOperationLock
-    {
-        public function synchronized(int $nodeId, Closure $operation): mixed
-        {
-            return $operation();
-        }
-    };
-
-    return [
-        new RemoteAppDevSourceManager(
-            app_dev_ssh($ssh),
-            $lock,
-            app_dev_account_resolver($account),
-            new CheckoutRemovalBoundary(new ProtectedPathCatalog),
-        ),
-        $ssh,
-    ];
-}
-
-function traversal_state_file(string $root, string $path): string
-{
-    return "{$root}/.orbit/caddy-traversal-state/".hash('sha256', $path);
-}
-
-function add_acl_test_worktree(string $instanceCheckout, string $workspaceCheckout, string $branch): void
-{
-    $add = new NativeProcessRunner()->run(new ProcessInvocation([
-        'git',
-        '-C',
-        $instanceCheckout,
-        'worktree',
-        'add',
-        '-b',
-        $branch,
-        '--',
-        $workspaceCheckout,
-        'HEAD',
-    ]));
-
-    expect($add->succeeded())->toBeTrue($add->stderr);
-}
-
-function worktree_list_for(string $instanceCheckout): string
-{
-    $listed = new NativeProcessRunner()->run(new ProcessInvocation([
-        'git',
-        '-C',
-        $instanceCheckout,
-        'worktree',
-        'list',
-        '--porcelain',
-    ]));
-
-    expect($listed->succeeded())->toBeTrue($listed->stderr);
-
-    return $listed->stdout;
-}
-
-function initialise_acl_test_repository(string $path, string $repository): void
-{
-    $runner = new NativeProcessRunner;
-    $initialise = $runner->run(new ProcessInvocation(['git', '-C', $path, 'init']));
-    $remote = $runner->run(new ProcessInvocation(['git', '-C', $path, 'remote', 'add', 'origin', $repository]));
-    $stage = $runner->run(new ProcessInvocation(['git', '-C', $path, 'add', '.']));
-    $commit = $runner->run(new ProcessInvocation([
-        'git',
-        '-C',
-        $path,
-        '-c',
-        'user.name=Orbit Test',
-        '-c',
-        'user.email=orbit@example.test',
-        'commit',
-        '--allow-empty',
-        '-m',
-        'Initial test commit',
-    ]));
-
-    expect($initialise->succeeded())
-        ->toBeTrue($initialise->stderr)
-        ->and($remote->succeeded())
-        ->toBeTrue($remote->stderr)
-        ->and($stage->succeeded())
-        ->toBeTrue($stage->stderr)
-        ->and($commit->succeeded())
-        ->toBeTrue($commit->stderr);
-}
-
-function run_app_dev_command_locally(
-    RemoteCommand $command,
-    string $root,
-    bool $includeManagedHomeAncestor = false,
-): CommandResult {
-    $identity = posix_getpwuid(posix_geteuid());
-    $runtimeUser = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
-    $arguments = array_values(array_filter(
-        array_map(
-            static function (string $argument) use ($root, $runtimeUser, $includeManagedHomeAncestor): ?string {
-                if ($argument === '/home') {
-                    return $includeManagedHomeAncestor ? dirname($root) : null;
-                }
-
-                $argument = str_replace('/home/orbit', $root, $argument);
-
-                return $argument === 'orbit' ? $runtimeUser : $argument;
-            },
-            $command->arguments,
-        ),
-        static fn (?string $argument): bool => $argument !== null,
-    ));
-    $input = str_replace('/home/orbit', $root, $command->input ?? '');
-    $input = str_replace('sudo -n ', '', $input);
-    $input = str_replace(
-        ['u:caddy:', 'user:caddy:', 'named_execute caddy'],
-        ['u:nobody:', 'user:nobody:', 'named_execute nobody'],
-        $input,
-    );
-
-    return new NativeProcessRunner()->run(new ProcessInvocation(
-        arguments: $arguments,
-        input: $input,
-    ));
 }
 
 function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $root): CommandResult
@@ -3315,190 +1735,6 @@ function app_dev_test_openssl_binary(): string
 {
     return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
 }
-
-function acl_for(string $path): string
-{
-    return new NativeProcessRunner()->run(new ProcessInvocation(['getfacl', '-cp', $path]))->stdout;
-}
-
-function access_acl_permissions_for(string $user, string $path): ?string
-{
-    $matched = preg_match(
-        '/^user:'.preg_quote(str: $user, delimiter: '/').':([rwx-]{3})/m',
-        acl_for($path),
-        $matches,
-    );
-
-    return $matched === 1 ? $matches[1] : null;
-}
-
-function effective_access_acl_permissions_for(string $user, string $path): ?string
-{
-    $matched = preg_match(
-        '/^user:'.preg_quote(str: $user, delimiter: '/').':([rwx-]{3})(?:\s+#effective:([rwx-]{3}))?/m',
-        acl_for($path),
-        $matches,
-    );
-
-    if ($matched !== 1) {
-        return null;
-    }
-
-    return $matches[2] ?? $matches[1];
-}
-
-function setfacl_for(string $user, string $permissions, string $path): void
-{
-    $result = new NativeProcessRunner()->run(new ProcessInvocation([
-        'setfacl',
-        '-m',
-        "u:{$user}:{$permissions}",
-        $path,
-    ]));
-
-    expect($result->succeeded())->toBeTrue($result->stderr);
-}
-
-function xattr_for(string $path): ?string
-{
-    $result = new NativeProcessRunner()->run(new ProcessInvocation([
-        'getfattr',
-        '--only-values',
-        '-n',
-        'user.orbit.caddy_traversal',
-        '--',
-        $path,
-    ]));
-
-    return $result->succeeded() ? trim($result->stdout) : null;
-}
-
-function set_xattr(string $path, string $value): void
-{
-    $result = new NativeProcessRunner()->run(new ProcessInvocation([
-        'setfattr',
-        '-n',
-        'user.orbit.caddy_traversal',
-        '-v',
-        $value,
-        '--',
-        $path,
-    ]));
-
-    expect($result->succeeded())->toBeTrue($result->stderr);
-}
-
-it('unpublishes app-dev runtime repeatedly without removing source', function (): void {
-    [, $instance, $workspace] = app_dev_runtime_models();
-    $calls = [];
-    $source = new class($calls) implements AppDevSourceManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function convergeInstance(Instance $instance): void {}
-
-        public function removeInstance(Instance $instance): void
-        {
-            $this->calls[] = 'source:instance';
-        }
-
-        public function convergeWorkspace(Workspace $workspace): void {}
-
-        public function removeWorkspace(Workspace $workspace): void
-        {
-            $this->calls[] = 'source:workspace';
-        }
-    };
-    $fpm = new class($calls) implements AppDevPhpFpmManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Node $node): void
-        {
-            $this->calls[] = 'fpm';
-        }
-    };
-    $certificates = new class($calls) implements AppDevCertificateManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function convergeInstance(Instance $instance): void {}
-
-        public function removeInstance(Instance $instance): void
-        {
-            $this->calls[] = 'certificate:instance';
-        }
-
-        public function convergeWorkspace(Workspace $workspace): void {}
-
-        public function removeWorkspace(Workspace $workspace): void
-        {
-            $this->calls[] = 'certificate:workspace';
-        }
-    };
-    $caddy = new class($calls) implements AppDevCaddyManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Node $node): void
-        {
-            $this->calls[] = 'caddy';
-        }
-
-        public function remove(Node $node): void {}
-    };
-    $dns = new class($calls) implements PrivateDnsManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(?Node $pendingNode = null): void
-        {
-            $this->calls[] = 'dns';
-        }
-    };
-    $runtime = new NativeAppDevRuntimeConverger($source, $fpm, $certificates, $caddy, $dns);
-
-    $runtime->unpublishWorkspace($workspace);
-    $runtime->unpublishWorkspace($workspace);
-    $runtime->unpublishInstance($instance);
-    $runtime->unpublishInstance($instance);
-
-    expect($calls)
-        ->toBe([
-            'caddy',
-            'fpm',
-            'dns',
-            'certificate:workspace',
-            'caddy',
-            'fpm',
-            'dns',
-            'certificate:workspace',
-            'caddy',
-            'fpm',
-            'dns',
-            'certificate:instance',
-            'caddy',
-            'fpm',
-            'dns',
-            'certificate:instance',
-        ])
-        ->not->toContain('source:workspace', 'source:instance');
-});
 
 it('removes only the app development Caddy fragment through an atomic preserved aggregate', function (): void {
     expect(method_exists(AppDevCaddyPublisher::class, 'removeCommand'))->toBeTrue();

@@ -26,7 +26,6 @@ use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -469,23 +468,13 @@ it('uses the node managed user and AppInstance certificate scope for app-dev tar
     expect($removalTarget->user)->toBe('nckrtl');
 });
 
-it('rejects legacy Process owners before runtime removal', function (): void {
-    $legacy = Instance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'legacy',
-        'environment' => 'development',
-        'checkout_path' => '/home/orbit/apps/legacy',
-        'hostname' => 'legacy.app-dev.orbit',
-        'certificate_mode' => 'orbit-ca',
-        'status' => LifecycleStatus::Active,
-    ]);
+it('rejects leftover Process owners before runtime removal', function (): void {
     $process = Process::query()->create([
-        'owner_type' => Instance::class,
-        'owner_id' => $legacy->id,
+        'owner_type' => 'App\\Models\\Instance',
+        'owner_id' => 999_999,
         'name' => 'legacy',
         'runtime' => ProcessRuntime::Systemd,
-        'working_directory' => $legacy->checkout_path,
+        'working_directory' => '/home/orbit/apps/legacy',
         'runtime_config' => ['command' => ['/bin/true']],
         'restart_policy' => 'never',
         'desired_state' => 'stopped',
