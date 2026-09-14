@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -16,6 +17,7 @@ use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -38,7 +40,7 @@ it('creates target and targetless Routes while transporting policy values', func
 
     $this->artisan('route:create', [
         'app' => '3',
-        'hostname' => 'Odd_Value',
+        'domain' => 'Odd_Value',
         '--publication' => 'future-policy',
         '--target' => '7',
         '--json' => true,
@@ -46,14 +48,14 @@ it('creates target and targetless Routes while transporting policy values', func
 
     expect($mock->getLastRequest()?->body()->all())->toBe([
         'app_id' => 3,
-        'hostname' => 'Odd_Value',
+        'domain' => 'Odd_Value',
         'publication' => 'future-policy',
         'app_instance_id' => 7,
     ]);
 
     $this->artisan('route:create', [
         'app' => '3',
-        'hostname' => 'node.test',
+        'domain' => 'node.test',
         '--node' => '4',
     ])->assertExitCode(0);
 
@@ -68,7 +70,7 @@ it('transports explicit private and public publication intents unchanged', funct
 
     $this->artisan('route:create', [
         'app' => '3',
-        'hostname' => 'app.test',
+        'domain' => 'app.test',
         '--publication' => $publication,
         '--cluster' => '5',
         '--json' => true,
@@ -76,7 +78,7 @@ it('transports explicit private and public publication intents unchanged', funct
 
     expect($mock->getLastRequest()?->body()->all())->toBe([
         'app_id' => 3,
-        'hostname' => 'app.test',
+        'domain' => 'app.test',
         'publication' => $publication,
         'cluster_id' => 5,
     ]);
@@ -112,11 +114,11 @@ it('refuses a missing publication value before transport', function (
         ->assertExitCode(1);
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'create without value' => ['route:create', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => null, '--cluster' => '1']],
-    'create with empty value' => ['route:create', ['app' => '1', 'hostname' => 'pubtest.orbit', '--publication' => '', '--cluster' => '1']],
+    'create without value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => null, '--cluster' => '1']],
+    'create with empty value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => '', '--cluster' => '1']],
     'update without value' => ['route:update', ['route' => '11', '--publication' => null]],
     'update with empty value' => ['route:update', ['route' => '11', '--publication' => '']],
-    'update with hostname and no publication value' => ['route:update', ['route' => '11', '--hostname' => 'next.test', '--publication' => null]],
+    'update with domain and no publication value' => ['route:update', ['route' => '11', '--domain' => 'next.test', '--publication' => null]],
 ]);
 
 it('refuses the reported shell shape of a bare --publication flag', function (string $command): void {
@@ -147,7 +149,7 @@ it('rejects impossible create shapes before transport', function (array $argumen
     'missing scope' => [
         [
             'app' => '3',
-            'hostname' => 'app.test',
+            'domain' => 'app.test',
             '--json' => true,
         ],
         'route.scope_required',
@@ -155,7 +157,7 @@ it('rejects impossible create shapes before transport', function (array $argumen
     'both scopes' => [
         [
             'app' => '3',
-            'hostname' => 'app.test',
+            'domain' => 'app.test',
             '--node' => '4',
             '--cluster' => '5',
             '--json' => true,
@@ -165,7 +167,7 @@ it('rejects impossible create shapes before transport', function (array $argumen
     'target and scope' => [
         [
             'app' => '3',
-            'hostname' => 'app.test',
+            'domain' => 'app.test',
             '--target' => '7',
             '--node' => '4',
             '--json' => true,
@@ -175,7 +177,7 @@ it('rejects impossible create shapes before transport', function (array $argumen
     'invalid target' => [
         [
             'app' => '3',
-            'hostname' => 'app.test',
+            'domain' => 'app.test',
             '--target' => 'many',
             '--json' => true,
         ],
@@ -184,12 +186,21 @@ it('rejects impossible create shapes before transport', function (array $argumen
     'publication without value' => [
         [
             'app' => '3',
-            'hostname' => 'app.test',
+            'domain' => 'app.test',
             '--node' => '4',
             '--publication' => null,
             '--json' => true,
         ],
         'route.publication_invalid',
+    ],
+    'missing domain' => [
+        [
+            'app' => '3',
+            'domain' => '',
+            '--node' => '4',
+            '--json' => true,
+        ],
+        'route.domain_required',
     ],
 ]);
 
@@ -218,7 +229,7 @@ it('renders only the first invalid input as one JSON document', function (
         'route:create',
         [
             'app' => 'invalid',
-            'hostname' => '',
+            'domain' => '',
             '--publication' => null,
             '--target' => 'invalid',
             '--node' => 'invalid',
@@ -250,13 +261,33 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
 
     $this->artisan('route:list', ['--json' => true])->assertExitCode(0);
     $this->artisan('route:show', ['route' => '11'])->assertExitCode(0);
-    $this->artisan('route:update', ['route' => '11', '--hostname' => 'next.test'])->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['hostname' => 'next.test']);
+    $this->artisan('route:update', ['route' => '11', '--domain' => 'next.test'])->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['domain' => 'next.test']);
     $this->artisan('route:target:set', ['route' => '11', 'target' => '8'])->assertExitCode(0);
     expect($mock->getLastRequest()?->body()->all())->toBe(['app_instance_id' => 8]);
     $this->artisan('route:target:unset', ['route' => '11'])->assertExitCode(0);
     $this->artisan('route:destroy', ['route' => '11'])->assertExitCode(0);
 });
+
+it('rejects the removed hostname argument and option', function (string $command, array $arguments, string $message): void {
+    $mock = MockClient::global();
+    $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+
+    expect($tester->execute($arguments, ['interactive' => false]))->toBe(1);
+    expect(trim($tester->getDisplay()))->toContain($message);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'create hostname argument' => [
+        'route:create',
+        ['app' => '3', 'hostname' => 'app.test', '--node' => '4', '--json' => true],
+        'The "hostname" argument does not exist.',
+    ],
+    'update hostname option' => [
+        'route:update',
+        ['route' => '11', '--hostname' => 'next.test', '--json' => true],
+        'The "--hostname" option does not exist.',
+    ],
+]);
 
 it('rejects an empty update and invalid IDs before transport', function (): void {
     $mock = MockClient::global();
@@ -288,16 +319,15 @@ function route_payload(): array
         'node_id' => 4,
         'cluster_id' => null,
         'generation_basis_node_id' => null,
-        'hostname' => 'app.test',
+        'domain' => 'app.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,
-        'hostname_change_previous' => null,
-        'hostname_change_target' => null,
-        'hostname_change_direction' => null,
-        'hostname_change_step' => null,
+        'replaces_route_id' => null,
+        'replaced_by_route_id' => null,
+        'replacement_step' => null,
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
     ];
 }

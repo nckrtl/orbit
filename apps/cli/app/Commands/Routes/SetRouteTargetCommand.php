@@ -39,7 +39,7 @@ final class SetRouteTargetCommand extends RouteCommand
         $route = $this->send($connector, new SetRouteTargetRequest($routeId, $targetId), RouteResponse::class);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->hostname}] target updated.")
+            ? $this->renderRoute($route, "Route [{$route->domain}] target updated.")
             : self::FAILURE;
     }
 }

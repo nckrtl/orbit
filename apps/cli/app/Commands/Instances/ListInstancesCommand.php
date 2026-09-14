@@ -56,7 +56,7 @@ final class ListInstancesCommand extends GatewayCommand
                 $instance->selectedBranch ?? '-',
                 $instance->branchOverride ?? '-',
                 $instance->migrationRequired ? 'yes' : 'no',
-                $instance->hostname ?? '-',
+                $instance->domain ?? '-',
                 $instance->url ?? '-',
                 $instance->status,
                 $instance->removal === null
@@ -77,7 +77,7 @@ final class ListInstancesCommand extends GatewayCommand
                 'Selected branch',
                 'Branch override',
                 'Migration required',
-                'Route hostname',
+                'Route domain',
                 'URL',
                 'Status',
                 'Removal',

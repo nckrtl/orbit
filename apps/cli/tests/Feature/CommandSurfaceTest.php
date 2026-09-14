@@ -559,7 +559,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['app', 'node', 'name'],
             [
                 'root' => null,
-                'hostname' => null,
+                'domain' => null,
                 'branch' => null,
                 'recover-source-profile' => false,
                 'json' => false,
@@ -611,7 +611,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'default-branch' => null,
                 'name' => null,
                 'root' => null,
-                'hostname' => null,
+                'domain' => null,
                 'json' => false,
             ],
         ],
@@ -704,7 +704,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'route:list' => [[], ['json' => false]],
         'route:create' => [
-            ['app', 'hostname'],
+            ['app', 'domain'],
             [
                 'publication' => 'private',
                 'target' => null,
@@ -717,7 +717,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'route:show' => [['route'], ['json' => false]],
         'route:target:unset' => [['route'], ['json' => false]],
         'route:target:set' => [['route', 'target'], ['json' => false]],
-        'route:update' => [['route'], ['hostname' => null, 'publication' => null, 'json' => false]],
+        'route:update' => [['route'], ['domain' => null, 'publication' => null, 'json' => false]],
         'schedule:enable' => [['schedule'], ['json' => false]],
         'schedule:create' => [[
             'name',
@@ -982,7 +982,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--command' => ['/usr/bin/php'],
         ], ...$profileMissing],
         'route:list' => [[], ...$profileMissing],
-        'route:create' => [['app' => '1', 'hostname' => 'app.test', '--node' => '1'], ...$profileMissing],
+        'route:create' => [['app' => '1', 'domain' => 'app.test', '--node' => '1'], ...$profileMissing],
         'route:destroy' => [['route' => '1'], ...$profileMissing],
         'route:show' => [['route' => '1'], ...$profileMissing],
         'route:target:unset' => [['route' => '1'], ...$profileMissing],

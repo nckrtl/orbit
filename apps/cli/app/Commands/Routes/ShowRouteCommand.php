@@ -30,7 +30,7 @@ final class ShowRouteCommand extends RouteCommand
         $route = $this->send($connector, new ShowRouteRequest($id), RouteResponse::class);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "{$route->hostname} (#{$route->id})")
+            ? $this->renderRoute($route, "{$route->domain} (#{$route->id})")
             : self::FAILURE;
     }
 }

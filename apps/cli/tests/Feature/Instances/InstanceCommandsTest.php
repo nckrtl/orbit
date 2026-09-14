@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
 use App\Services\Git\NativeGitRegistrationDiscovery;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -18,6 +19,7 @@ use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
@@ -226,7 +228,7 @@ describe('instance:register', function (): void {
                 '--app' => '3',
                 '--include-worktrees' => true,
                 '--name' => 'feature',
-                '--hostname' => 'feature.test',
+                '--domain' => 'feature.test',
                 '--json' => true,
                 '--no-interaction' => true,
             ])
@@ -238,8 +240,21 @@ describe('instance:register', function (): void {
             'include_worktrees' => true,
             'app_id' => 3,
             'instance_name' => 'feature',
-            'hostname' => 'feature.test',
+            'domain' => 'feature.test',
         ]);
+    });
+
+    it('rejects the removed hostname option', function (): void {
+        $mockClient = MockClient::global();
+        $tester = new CommandTester(app(Kernel::class)->all()['instance:register']);
+
+        expect($tester->execute([
+            '--hostname' => 'feature.test',
+            '--json' => true,
+            '--no-interaction' => true,
+        ], ['interactive' => false]))->toBe(1);
+        expect(trim($tester->getDisplay()))->toContain('The "--hostname" option does not exist.');
+        expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 });
 
@@ -368,7 +383,7 @@ describe('instance:create', function (): void {
         ]);
     });
 
-    it('transports an optional Route hostname without local policy validation', function (): void {
+    it('transports an optional Route domain without local policy validation', function (): void {
         $mockClient = MockClient::global([
             CreateAppInstanceRequest::class => instance_mock_response(201),
         ]);
@@ -378,7 +393,7 @@ describe('instance:create', function (): void {
                 'app' => '3',
                 'node' => '2',
                 'name' => 'dev',
-                '--hostname' => 'Odd_Value',
+                '--domain' => 'Odd_Value',
             ])
             ->assertExitCode(0);
 
@@ -386,8 +401,23 @@ describe('instance:create', function (): void {
             'app_id' => 3,
             'node_id' => 2,
             'name' => 'dev',
-            'hostname' => 'Odd_Value',
+            'domain' => 'Odd_Value',
         ]);
+    });
+
+    it('rejects the removed hostname option', function (): void {
+        $mockClient = MockClient::global();
+        $tester = new CommandTester(app(Kernel::class)->all()['instance:create']);
+
+        expect($tester->execute([
+            'app' => '3',
+            'node' => '2',
+            'name' => 'dev',
+            '--hostname' => 'Odd_Value',
+            '--json' => true,
+        ], ['interactive' => false]))->toBe(1);
+        expect(trim($tester->getDisplay()))->toContain('The "--hostname" option does not exist.');
+        expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 
     it('transports an optional branch without local policy validation', function (): void {
@@ -455,7 +485,7 @@ describe('instance:create', function (): void {
             ->expectsOutput('Selected branch: dev')
             ->expectsOutput('Branch override: -')
             ->expectsOutput('Migration required: no')
-            ->expectsOutput('Route hostname: dev.orbit.test')
+            ->expectsOutput('Route domain: dev.orbit.test')
             ->expectsOutput('URL: https://dev.orbit.test')
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
@@ -526,7 +556,7 @@ describe('instance:list', function (): void {
                     'Selected branch',
                     'Branch override',
                     'Migration required',
-                    'Route hostname',
+                    'Route domain',
                     'URL',
                     'Status',
                     'Removal',
@@ -625,7 +655,7 @@ describe('instance:show', function (): void {
             ->expectsOutput('Branch override: -')
             ->expectsOutput('Migration required: no')
             ->expectsOutput('Starting commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-            ->expectsOutput('Route hostname: dev.orbit.test')
+            ->expectsOutput('Route domain: dev.orbit.test')
             ->expectsOutput('URL: https://dev.orbit.test')
             ->expectsOutput('Deploy steps:')
             ->expectsOutput('- none')

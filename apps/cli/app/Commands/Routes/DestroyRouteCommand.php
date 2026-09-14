@@ -30,7 +30,7 @@ final class DestroyRouteCommand extends RouteCommand
         $route = $this->send($connector, new DestroyRouteRequest($id), RouteResponse::class);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->hostname}] removed.")
+            ? $this->renderRoute($route, "Route [{$route->domain}] removed.")
             : self::FAILURE;
     }
 }

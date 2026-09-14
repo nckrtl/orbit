@@ -165,7 +165,7 @@ describe('instance:clone output', function (): void {
             ->expectsOutput('Production AppInstance [production] cloned.')
             ->expectsOutput('Target ID: 29')
             ->expectsOutput('Configured branch: release')
-            ->expectsOutput('Preview hostname: shop.com.prod.orbit')
+            ->expectsOutput('Preview domain: shop.com.prod.orbit')
             ->expectsOutput('Selected release: -')
             ->expectsOutput('Clone request ID: '.clone_cli_request_id())
             ->expectsOutput('Release request ID: '.clone_cli_release_request_id())
@@ -190,7 +190,7 @@ describe('instance:clone output', function (): void {
             ->toBe(json_encode([
                 'target_id' => 29,
                 'configured_branch' => 'release',
-                'preview_hostname' => 'shop.com.prod.orbit',
+                'preview_domain' => 'shop.com.prod.orbit',
                 'selected_release' => null,
                 'request_ids' => [
                     'clone' => clone_cli_request_id(),
@@ -202,7 +202,7 @@ describe('instance:clone output', function (): void {
     it('refuses a clone response without its sole preview Route', function (): void {
         $payload = clone_cli_payload();
         $payload['route'] = null;
-        $payload['hostname'] = null;
+        $payload['domain'] = null;
         $payload['url'] = null;
         $mock = MockClient::global([
             CloneAppInstanceRequest::class => MockResponse::make([
@@ -275,7 +275,7 @@ describe('instance:clone help and execution boundary', function (): void {
                 'instance:deploy-step:create and deploy with instance:deploy',
             )
             ->and($commands['node:add']->getDefinition()->getOption('tld')->getDescription())
-            ->toContain('required for production clone preview hostnames');
+            ->toContain('required for production clone preview domains');
     });
 
     it('depends only on typed Gateway transport and contains no execution adapter', function (): void {
@@ -331,7 +331,7 @@ function clone_cli_payload(): array
             'node_id' => 7,
             'cluster_id' => null,
             'generation_basis_node_id' => null,
-            'hostname' => 'shop.com.prod.orbit',
+            'domain' => 'shop.com.prod.orbit',
             'provenance' => 'explicit',
             'publication' => 'private',
             'status' => 'active',
@@ -339,7 +339,7 @@ function clone_cli_payload(): array
             'error_code' => null,
             'target' => ['id' => 51, 'app_instance_id' => 29, 'position' => 1],
         ],
-        'hostname' => 'shop.com.prod.orbit',
+        'domain' => 'shop.com.prod.orbit',
         'url' => 'https://shop.com.prod.orbit',
         'removal' => null,
         'deploy_steps' => [],
