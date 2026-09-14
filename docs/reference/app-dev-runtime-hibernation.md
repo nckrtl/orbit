@@ -51,6 +51,21 @@ The Gateway reads last HTTP activity from the more recent of the AppInstance Cad
 
 A sweep that finds no recent HTTP activity stops each desired-running AppInstance Process that is not keep-alive without changing `desired_state`, then removes the awake marker. Keep-alive Processes stay running. When every desired-running Process is keep-alive, the Gateway does not mark the AppInstance asleep. Schedules on that AppInstance keep their timer state.
 
+## Host directories
+
+App-dev Caddy publish and each awake-marker write create the hibernation directories on the AppInstance Node before Caddy reloads or reads a marker. The `caddy` user must traverse every ancestor, write the access log, and read the awake marker.
+
+| Path | Owner | Mode | Use |
+| --- | --- | --- | --- |
+| `/dev/shm/orbit` | unchanged | `0755` | Lets `caddy` reach the marker directory. |
+| `/dev/shm/orbit/hibernation` | `root:caddy` | `0755` | Holds `app-instance-{id}.awake` markers. |
+| `/data/caddy` | unchanged | `0755` | Lets `caddy` reach the log directory. |
+| `/data/caddy/orbit` | unchanged | `0755` | Lets `caddy` reach the log directory. |
+| `/data/caddy/orbit/hibernation` | `root:caddy` | `2775` | Lets `caddy` write `app-instance-{id}.log`. |
+| `app-instance-{id}.awake` | `root` | `0644` | Lets `caddy` skip wake when the marker exists. |
+
+The publish lock uses `umask 0077`. The Gateway sets each ancestor to `0755` so the `caddy` user can reach the leaf.
+
 ## Wake
 
 Caddy on the AppInstance Node looks for `app-instance-{id}.awake` under `/dev/shm/orbit/hibernation` with a file matcher that names that directory as its root. A matching request enters a `handle` that runs before the Vite and application handles. When the marker is absent, that handle calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard. The transport trusts the Orbit root CA already published as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` with `tls_trusted_ca_certs`, a Caddy 2.6 directive. Caddy 2.6 is the fleet floor for the Ubuntu `caddy` package Orbit installs. A Node may run a newer Caddy.
