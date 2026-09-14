@@ -68,6 +68,8 @@ it('uses one local workload site when Router and workload roles share a Node', f
             ->and($configuration)
             ->toContain("php_fastcgi unix//run/php/orbit-app-instance-{$appInstance->id}.sock")
             ->toContain('reverse_proxy 127.0.0.1:5173')
+            ->toContain('forward_auth')
+            ->toContain('/api/v1/runtime-activations/app-instance/'.$appInstance->id)
             ->not->toContain('reverse_proxy https://')->and($arguments)->toContain("app-instance-{$appInstance->id}")
             ->not->toContain("route-{$route->id}-router", 'ufw', 's_client')->and($processes->invocations)->toHaveCount(
                 1,

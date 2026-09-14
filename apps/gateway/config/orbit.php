@@ -25,4 +25,9 @@ return [
         characters: '.',
     ),
     'command_timeout' => 900.0,
+    'hibernation' => [
+        'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),
+        'sweep_seconds' => max(60, (int) env('ORBIT_HIBERNATION_SWEEP_SECONDS', 600)),
+        'wake_timeout_seconds' => max(5, (int) env('ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS', 60)),
+    ],
 ];

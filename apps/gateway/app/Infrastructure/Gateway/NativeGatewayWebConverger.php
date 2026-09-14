@@ -6,6 +6,7 @@ namespace App\Infrastructure\Gateway;
 
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Infrastructure\Files\ProtectedFileWriter;
 
 final readonly class NativeGatewayWebConverger implements GatewayWebConverger
@@ -21,6 +22,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private NativeGatewayCaddyConverger $caddy,
         private string $orbitHome,
         private string $checkoutPath,
+        private RuntimeHibernatorConverger $hibernator,
     ) {}
 
     public function converge(string $hostname, string $wireguardIp): void
@@ -43,5 +45,6 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         $this->certificatePublisher->publish($certificate);
         $this->fpm->converge($generatedFpmPool);
         $this->caddy->converge($generatedCaddy);
+        $this->hibernator->converge();
     }
 }

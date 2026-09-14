@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
+use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\ToolManagersController;
@@ -60,6 +61,14 @@ Route::prefix('v1')->group(function (): void {
         ->whereUuid('schedule')
         ->withoutMiddleware(RecordCommandActivity::class)
         ->name('schedule:complete');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
+    ])->get('runtime-activations/app-instance/{instance}', [RuntimeActivationsController::class, 'show'])
+        ->whereNumber('instance')
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('runtime-activation:app-instance');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,

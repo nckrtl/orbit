@@ -133,7 +133,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
             ['sudo', 'systemctl', 'disable', '--now', $unit],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
-            ['sudo', 'systemctl', 'enable', '--now', $unit],
+            ['sudo', 'systemctl', 'start', $unit],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
             ['sudo', 'systemctl', 'disable', '--now', $unit],
@@ -293,12 +293,11 @@ it('keeps the systemd backup until a desired-running replacement restarts succes
         ['sudo', 'cp', '--preserve=mode,ownership,timestamps', '--', $path, $backup],
         ['sudo', 'mv', '--', $candidate, $path],
         ['sudo', 'systemctl', 'daemon-reload'],
-        ['sudo', 'systemctl', 'enable', $unit],
         ['sudo', 'systemctl', 'restart', $unit],
         ['sudo', 'systemctl', 'disable', '--now', $unit],
         ['sudo', 'mv', '--', $backup, $path],
         ['sudo', 'systemctl', 'daemon-reload'],
-        ['sudo', 'systemctl', 'enable', '--now', $unit],
+        ['sudo', 'systemctl', 'start', $unit],
     ]);
 });
 

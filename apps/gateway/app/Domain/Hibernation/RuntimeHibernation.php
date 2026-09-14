@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Hibernation;
+
+use InvalidArgumentException;
+
+final readonly class RuntimeHibernation
+{
+    public const string MarkerDirectory = '/dev/shm/orbit/hibernation';
+
+    public const string AccessLogDirectory = '/data/caddy/orbit/hibernation';
+
+    public const int DefaultIdleSeconds = 3_600;
+
+    public const int DefaultSweepSeconds = 600;
+
+    public const int DefaultWakeTimeoutSeconds = 60;
+
+    public const string ActivationType = 'app-instance';
+
+    public static function key(int $appInstanceId): string
+    {
+        if ($appInstanceId < 1) {
+            throw new InvalidArgumentException('A hibernation key needs a positive AppInstance ID.');
+        }
+
+        return 'app-instance-'.$appInstanceId;
+    }
+
+    public static function parseAppInstanceId(string $key): int
+    {
+        if (preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $key, $matches) !== 1) {
+            throw new InvalidArgumentException('A hibernation key must be app-instance-{id}.');
+        }
+
+        return (int) $matches[1];
+    }
+
+    public static function awakePath(string $key): string
+    {
+        self::parseAppInstanceId($key);
+
+        return self::MarkerDirectory.'/'.$key.'.awake';
+    }
+
+    public static function accessLogPath(string $key): string
+    {
+        self::parseAppInstanceId($key);
+
+        return self::AccessLogDirectory.'/'.$key.'.log';
+    }
+}

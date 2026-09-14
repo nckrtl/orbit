@@ -62,7 +62,7 @@ final readonly class DockerProcessRenderer
             '--label',
             'orbit.process.spec='.$this->specHash($process, $target),
             '--restart',
-            $this->restartPolicy($process),
+            $this->restartPolicy($process, $target),
             '--workdir',
             $process->working_directory,
         ];
@@ -210,14 +210,20 @@ final readonly class DockerProcessRenderer
         return $volume['read_only'] ? "{$mount},readonly" : $mount;
     }
 
-    private function restartPolicy(#[SensitiveParameter] Process $process): string
+    private function restartPolicy(#[SensitiveParameter] Process $process, ProcessTarget $target): string
     {
-        return match ($process->restart_policy) {
+        $policy = match ($process->restart_policy) {
             'never' => 'no',
             'on-failure' => 'on-failure',
             'always' => 'always',
             'unless-stopped' => 'unless-stopped',
             default => throw new InvalidArgumentException('Unsupported Docker restart policy.'),
         };
+
+        if ($target->onDemandHostStart && $policy === 'always') {
+            return 'unless-stopped';
+        }
+
+        return $policy;
     }
 }
