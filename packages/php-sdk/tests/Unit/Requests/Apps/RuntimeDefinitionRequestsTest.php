@@ -6,14 +6,14 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Apps\CreateProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Apps\CreateScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\DestroyProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\DestroyScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Apps\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Requests\Apps\ListScheduleDefinitionsRequest;
-use Orbit\Sdk\Requests\Apps\RemoveProcessDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\RemoveScheduleDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\ReplaceProcessDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\ReplaceScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Apps\ShowProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Apps\ShowScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\UpdateProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Apps\UpdateScheduleDefinitionRequest;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
 use Saloon\Enums\Method;
@@ -62,15 +62,15 @@ describe('App runtime definition requests', function (): void {
         'Schedules' => [ListScheduleDefinitionsRequest::class, '/api/v1/apps/7/schedule-definitions'],
     ]);
 
-    it('submits exact JSON content for create and full replacement', function (
+    it('submits exact JSON content for create and full update', function (
         string $requestClass,
-        bool $replacement,
+        bool $update,
         Method $method,
         string $endpoint,
     ): void {
         $definition = runtime_definition_json();
-        $request = $replacement
-            ? new $requestClass(7, runtime_definition_id(), $definition)
+        $request = $update
+            ? new $requestClass(7, runtime_definition_name(), $definition)
             : new $requestClass(7, $definition);
         $mock = new MockClient([
             $request::class => MockResponse::make(runtime_definition_envelope(), $method === Method::POST ? 201 : 200),
@@ -100,11 +100,11 @@ describe('App runtime definition requests', function (): void {
             Method::POST,
             '/api/v1/apps/7/process-definitions',
         ],
-        'replace process' => [
-            ReplaceProcessDefinitionRequest::class,
+        'update process' => [
+            UpdateProcessDefinitionRequest::class,
             true,
             Method::PUT,
-            '/api/v1/apps/7/process-definitions/'.runtime_definition_id(),
+            '/api/v1/apps/7/process-definitions/'.runtime_definition_name(),
         ],
         'create Schedule' => [
             CreateScheduleDefinitionRequest::class,
@@ -112,20 +112,20 @@ describe('App runtime definition requests', function (): void {
             Method::POST,
             '/api/v1/apps/7/schedule-definitions',
         ],
-        'replace Schedule' => [
-            ReplaceScheduleDefinitionRequest::class,
+        'update Schedule' => [
+            UpdateScheduleDefinitionRequest::class,
             true,
             Method::PUT,
-            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_id(),
+            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_name(),
         ],
     ]);
 
-    it('maps show and remove to bodyless typed item requests', function (
+    it('maps show and destroy to bodyless typed item requests', function (
         string $requestClass,
         Method $method,
         string $endpoint,
     ): void {
-        $request = new $requestClass(7, runtime_definition_id());
+        $request = new $requestClass(7, runtime_definition_name());
         $mock = new MockClient([
             $request::class => MockResponse::make(runtime_definition_envelope()),
         ]);
@@ -149,30 +149,41 @@ describe('App runtime definition requests', function (): void {
         'show process' => [
             ShowProcessDefinitionRequest::class,
             Method::GET,
-            '/api/v1/apps/7/process-definitions/'.runtime_definition_id(),
+            '/api/v1/apps/7/process-definitions/'.runtime_definition_name(),
         ],
-        'remove process' => [
-            RemoveProcessDefinitionRequest::class,
+        'destroy process' => [
+            DestroyProcessDefinitionRequest::class,
             Method::DELETE,
-            '/api/v1/apps/7/process-definitions/'.runtime_definition_id(),
+            '/api/v1/apps/7/process-definitions/'.runtime_definition_name(),
         ],
         'show Schedule' => [
             ShowScheduleDefinitionRequest::class,
             Method::GET,
-            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_id(),
+            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_name(),
         ],
-        'remove Schedule' => [
-            RemoveScheduleDefinitionRequest::class,
+        'destroy Schedule' => [
+            DestroyScheduleDefinitionRequest::class,
             Method::DELETE,
-            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_id(),
+            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_name(),
         ],
     ]);
 
-    it('encodes definition identifiers exactly once as route segments', function (): void {
+    it('encodes definition names exactly once as route segments', function (): void {
         expect(new ShowProcessDefinitionRequest(7, 'blue/green')->resolveEndpoint())
             ->toBe('/api/v1/apps/7/process-definitions/blue%2Fgreen')
-            ->and(new RemoveScheduleDefinitionRequest(7, 'blue%2Fgreen')->resolveEndpoint())
+            ->and(new DestroyScheduleDefinitionRequest(7, 'blue%2Fgreen')->resolveEndpoint())
             ->toBe('/api/v1/apps/7/schedule-definitions/blue%252Fgreen');
+    });
+
+    it('does not keep replaced definition request class names', function (): void {
+        expect(class_exists('Orbit\\Sdk\\Requests\\Apps\\ReplaceProcessDefinitionRequest'))
+            ->toBeFalse()
+            ->and(class_exists('Orbit\\Sdk\\Requests\\Apps\\ReplaceScheduleDefinitionRequest'))
+            ->toBeFalse()
+            ->and(class_exists('Orbit\\Sdk\\Requests\\Apps\\RemoveProcessDefinitionRequest'))
+            ->toBeFalse()
+            ->and(class_exists('Orbit\\Sdk\\Requests\\Apps\\RemoveScheduleDefinitionRequest'))
+            ->toBeFalse();
     });
 
     it('bounds malformed item fields to immutable typed values', function (): void {
@@ -231,7 +242,7 @@ describe('App runtime definition requests', function (): void {
 
         try {
             runtime_definition_connector($mock)
-                ->send(new ShowProcessDefinitionRequest(7, runtime_definition_id()))
+                ->send(new ShowProcessDefinitionRequest(7, runtime_definition_name()))
                 ->dto();
             $this->fail('Expected GatewayApiException.');
         } catch (GatewayApiException $exception) {
@@ -252,9 +263,9 @@ describe('App runtime definition requests', function (): void {
         expect($parameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
     })->with([
         CreateProcessDefinitionRequest::class,
-        ReplaceProcessDefinitionRequest::class,
+        UpdateProcessDefinitionRequest::class,
         CreateScheduleDefinitionRequest::class,
-        ReplaceScheduleDefinitionRequest::class,
+        UpdateScheduleDefinitionRequest::class,
     ]);
 });
 
@@ -312,6 +323,11 @@ JSON;
 function runtime_definition_id(): string
 {
     return '0199cc58-b87b-7c45-9e52-e2b7fc495114';
+}
+
+function runtime_definition_name(): string
+{
+    return 'worker';
 }
 
 function runtime_definition_request_id(): string

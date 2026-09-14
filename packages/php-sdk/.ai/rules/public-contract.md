@@ -7,7 +7,7 @@ The SDK models exactly 110 concrete public Gateway API operations:
 - Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, and remove.
-- App runtime definition: process and Schedule list, create, show, replace, and remove.
+- App runtime definition: process and Schedule list, create, show, update, and destroy.
 - AppInstance: list, show, create, register, clone, remove, deployment-layout preparation, deployment configuration read and replace, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Workspace: list, show, create, remove, and update PHP.
@@ -61,8 +61,8 @@ operations. Keep the public API typed and small.
 - Preserve explicitly supplied process fields for every runtime. The Gateway
   owns cross-field policy.
 - Keep App runtime definition transport limited to a numeric App ID, a
-  definition UUID for item operations, and the caller's exact JSON document for
-  create and full replacement. The Gateway owns definition validation and
+  definition name for item operations, and the caller's exact JSON document for
+  create and full update. The Gateway owns definition validation and
   persistence. Collection responses omit commands.
 - Keep Schedule transport limited to typed Node and AppInstance targets and the
   eight shipped operations. Preserve caller-supplied optional values, bounded

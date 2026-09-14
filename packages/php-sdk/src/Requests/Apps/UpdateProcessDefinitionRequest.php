@@ -12,7 +12,7 @@ use Saloon\Http\Response;
 use Saloon\Traits\Body\HasStringBody;
 use SensitiveParameter;
 
-final class ReplaceScheduleDefinitionRequest extends GatewayRequest implements HasBody
+final class UpdateProcessDefinitionRequest extends GatewayRequest implements HasBody
 {
     use HasStringBody;
 
@@ -21,14 +21,14 @@ final class ReplaceScheduleDefinitionRequest extends GatewayRequest implements H
 
     public function __construct(
         private readonly int $appId,
-        private readonly string $definitionId,
+        private readonly string $name,
         #[SensitiveParameter]
         private readonly string $definition,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/schedule-definitions/".rawurlencode($this->definitionId);
+        return "/api/v1/apps/{$this->appId}/process-definitions/".rawurlencode($this->name);
     }
 
     protected function defaultHeaders(): array
