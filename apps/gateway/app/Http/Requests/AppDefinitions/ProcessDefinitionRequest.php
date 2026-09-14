@@ -75,6 +75,7 @@ final class ProcessDefinitionRequest extends FormRequest
                 'sometimes',
                 Rule::in(['never', 'on-failure', 'always', 'unless-stopped']),
             ],
+            'spec.keep_alive' => ['sometimes', 'boolean'],
         ];
     }
 

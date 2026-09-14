@@ -73,6 +73,7 @@ it('adds and lists a systemd process through the minimal API contract', function
         ->assertJsonPath('data.target_id', $this->instance->id)
         ->assertJsonPath('data.runtime', 'systemd')
         ->assertJsonPath('data.desired_state', 'running')
+        ->assertJsonPath('data.keep_alive', false)
         ->assertJsonPath('data.runtime_status', 'running')
         ->assertJsonMissingPath('data.node_id')
         ->assertJsonStructure(['meta' => ['request_id']]);
@@ -93,6 +94,25 @@ it('adds and lists a systemd process through the minimal API contract', function
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.name', 'queue')
         ->assertJsonPath('data.0.runtime_status', 'running');
+});
+
+it('stores keep-alive independently of restart policy', function (): void {
+    $this
+        ->postJson('/api/v1/processes', [
+            'target_type' => 'instance',
+            'target_id' => $this->instance->id,
+            'name' => 'queue',
+            'runtime' => 'systemd',
+            'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+            'restart_policy' => 'never',
+            'keep_alive' => true,
+            'start' => true,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.keep_alive', true)
+        ->assertJsonPath('data.restart_policy', 'never');
+
+    expect(Process::query()->sole()->keep_alive)->toBeTrue();
 });
 
 it('adds and lists a Node-targeted Docker process', function (): void {

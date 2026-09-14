@@ -30,6 +30,7 @@ final class UpdateProcessCommand extends ProcessCommand
         {--port=* : Docker HOST:CONTAINER[/tcp|udp]; repeat as needed}
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart=never : never, on-failure, always, or unless-stopped}
+        {--keep-alive : Keep running through app-dev idle hibernation}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -128,6 +129,7 @@ final class UpdateProcessCommand extends ProcessCommand
             'runtime' => $runtime,
             'command' => $command,
             'restart_policy' => $restartPolicy,
+            'keep_alive' => $this->option('keep-alive') === true,
         ];
 
         if ($image !== null) {

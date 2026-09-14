@@ -71,6 +71,11 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
         return $times === [] ? null : max($times);
     }
 
+    public function isAwake(Node $node, string $key): bool
+    {
+        return $this->mtime($node, RuntimeHibernation::awakePath($key)) !== null;
+    }
+
     private function mtime(Node $node, string $path): ?int
     {
         $result = $this->ssh->execute(

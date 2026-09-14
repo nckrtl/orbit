@@ -10,6 +10,9 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ProcessInspectionData;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
+use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
@@ -253,6 +256,68 @@ it('selects only AppInstance processes on the exact target Node', function (): v
     expect($report->checked)->toBe(1)->and($report->issues)->toBeEmpty();
 });
 
+it('does not treat a sleeping non-keep-alive Process as drift', function (): void {
+    [$node, $instance] = doctor_app_dev_instance();
+    $vite = doctor_owned_process($instance, name: 'vite');
+    $markers = new DoctorFakeHibernationMarkerStore;
+    $runtime = Mockery::mock(ProcessStateInspector::class);
+    $runtime
+        ->shouldReceive('inspect')
+        ->once()
+        ->with(Mockery::on(fn (Process $process): bool => $process->is($vite)))
+        ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
+
+    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+        ->inspect(doctor_process_context($node));
+
+    expect($report->checked)
+        ->toBe(1)
+        ->and($report->issues)
+        ->toBeEmpty();
+});
+
+it('still reports a keep-alive Process that is down while the group is asleep', function (): void {
+    [$node, $instance] = doctor_app_dev_instance();
+    $queue = doctor_owned_process($instance, name: 'queue', keepAlive: true);
+    $markers = new DoctorFakeHibernationMarkerStore;
+    $runtime = Mockery::mock(ProcessStateInspector::class);
+    $runtime
+        ->shouldReceive('inspect')
+        ->once()
+        ->with(Mockery::on(fn (Process $process): bool => $process->is($queue)))
+        ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
+
+    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+        ->inspect(doctor_process_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('process.state_mismatch')
+        ->and($report->issues[0]->resourceId)
+        ->toBe($queue->id);
+});
+
+it('reports a non-keep-alive Process that is down while the AppInstance is awake', function (): void {
+    [$node, $instance] = doctor_app_dev_instance();
+    $vite = doctor_owned_process($instance, name: 'vite');
+    $markers = new DoctorFakeHibernationMarkerStore;
+    $markers->awake[RuntimeHibernation::key((int) $instance->id)] = true;
+    $runtime = Mockery::mock(ProcessStateInspector::class);
+    $runtime
+        ->shouldReceive('inspect')
+        ->once()
+        ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
+
+    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+        ->inspect(doctor_process_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('process.state_mismatch');
+});
+
 function doctor_process_node(): Node
 {
     static $address = 30;
@@ -308,4 +373,70 @@ function doctor_process(
         'desired_state' => $desired,
         'status' => LifecycleStatus::Active,
     ]);
+}
+
+/** @return array{0: Node, 1: AppInstance} */
+function doctor_app_dev_instance(): array
+{
+    $node = doctor_process_node();
+    $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Docs',
+        'slug' => fake()->unique()->slug(),
+        'repository_url' => 'git@example.test:docs.git',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'main',
+        'environment' => 'development',
+        'checkout_path' => '/home/orbit/apps/docs',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+
+    return [$node, $instance];
+}
+
+function doctor_owned_process(AppInstance $instance, string $name, bool $keepAlive = false): Process
+{
+    return Process::query()->create([
+        'owner_type' => AppInstance::class,
+        'owner_id' => $instance->id,
+        'name' => $name,
+        'runtime' => ProcessRuntime::Systemd,
+        'working_directory' => $instance->checkout_path,
+        'runtime_config' => ['command' => ['/usr/bin/true']],
+        'restart_policy' => 'always',
+        'keep_alive' => $keepAlive,
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
+}
+
+final class DoctorFakeHibernationMarkerStore implements HibernationMarkerStore
+{
+    /** @var array<string, bool> */
+    public array $awake = [];
+
+    public function markAwake(Node $node, string $key): void
+    {
+        $this->awake[$key] = true;
+    }
+
+    public function markAsleep(Node $node, string $key): void
+    {
+        $this->awake[$key] = false;
+    }
+
+    public function lastActivityUnix(Node $node, string $key): ?int
+    {
+        return null;
+    }
+
+    public function isAwake(Node $node, string $key): bool
+    {
+        return $this->awake[$key] ?? false;
+    }
 }

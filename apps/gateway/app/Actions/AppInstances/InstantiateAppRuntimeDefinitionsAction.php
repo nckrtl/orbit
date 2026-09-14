@@ -221,6 +221,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
             volumes: $volumes,
             restartPolicy: $specification['restart_policy'] ?? 'never',
             start: false,
+            keepAlive: ($specification['keep_alive'] ?? false) === true,
         );
     }
 

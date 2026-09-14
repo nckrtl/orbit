@@ -14,6 +14,9 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
+use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Models\AppInstance;
@@ -24,6 +27,8 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
         private ProcessStateInspector $inspector,
+        private AppDevHibernationPolicy $policy = new AppDevHibernationPolicy,
+        private ?HibernationMarkerStore $markers = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -77,6 +82,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         }
 
         $issues = [];
+        $asleep = [];
         foreach ($processes as $process) {
             try {
                 $inspection = $this->inspector->inspect($process);
@@ -105,7 +111,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 continue;
             }
 
-            if ($this->isHealthy($process, $observed)) {
+            if ($this->isHealthy($process, $observed, $asleep)) {
                 continue;
             }
 
@@ -121,8 +127,13 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, $processes->count(), $issues);
     }
 
-    private function isHealthy(Process $process, ProcessInspectionStatus $observed): bool
+    /** @param array<int, bool> $asleep */
+    private function isHealthy(Process $process, ProcessInspectionStatus $observed, array &$asleep): bool
     {
+        if ($this->isExpectedHibernation($process, $observed, $asleep)) {
+            return true;
+        }
+
         return match ($process->desired_state) {
             DesiredProcessState::Running => $observed
                 === (
@@ -138,6 +149,44 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                     strict: true,
                 ),
         };
+    }
+
+    /** @param array<int, bool> $asleep */
+    private function isExpectedHibernation(Process $process, ProcessInspectionStatus $observed, array &$asleep): bool
+    {
+        if ($process->keep_alive || $process->desired_state !== DesiredProcessState::Running) {
+            return false;
+        }
+
+        if (! $this->isObservedStopped($process, $observed) || ! $this->policy->appliesToProcess($process)) {
+            return false;
+        }
+
+        $owner = $process->owner;
+
+        if (! $owner instanceof AppInstance) {
+            return false;
+        }
+
+        $instanceId = (int) $owner->id;
+
+        if (! array_key_exists($instanceId, $asleep)) {
+            $markers = $this->markers ?? app(HibernationMarkerStore::class);
+            $asleep[$instanceId] = ! $markers->isAwake($owner->node, RuntimeHibernation::key($instanceId));
+        }
+
+        return $asleep[$instanceId];
+    }
+
+    private function isObservedStopped(Process $process, ProcessInspectionStatus $observed): bool
+    {
+        return $process->runtime === ProcessRuntime::Systemd
+            ? $observed === ProcessInspectionStatus::Inactive
+            : in_array(
+                $observed,
+                [ProcessInspectionStatus::Created, ProcessInspectionStatus::Exited],
+                strict: true,
+            );
     }
 
     private function failure(Process $process): DoctorIssueData

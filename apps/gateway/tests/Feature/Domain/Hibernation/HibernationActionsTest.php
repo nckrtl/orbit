@@ -135,6 +135,50 @@ it('halts idle desired-running Processes without changing desired state or Sched
         ->toBe('enabled');
 });
 
+it('leaves keep-alive Processes running while it hibernates the rest of the group', function (): void {
+    $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    $queue = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);
+    $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(3_601)->getTimestamp();
+
+    $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($halted)
+        ->toBe(1)
+        ->and($this->runtime->stopped)
+        ->toBe([$vite->id])
+        ->and($queue->fresh()->desired_state)
+        ->toBe(DesiredProcessState::Running)
+        ->and($vite->fresh()->desired_state)
+        ->toBe(DesiredProcessState::Running)
+        ->and($this->markers->asleep)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
+it('does not mark an AppInstance asleep when every desired-running Process is keep-alive', function (): void {
+    hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);
+
+    $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($halted)
+        ->toBe(0)
+        ->and($this->runtime->stopped)
+        ->toBe([])
+        ->and($this->markers->asleep)
+        ->toBe([]);
+});
+
+it('starts a desired-running keep-alive Process on wake when it is down', function (): void {
+    $queue = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);
+    $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+
+    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+
+    expect($this->runtime->started)
+        ->toBe([$queue->id, $vite->id])
+        ->and($this->markers->awake)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
 it('halts desired-running Processes that have no recorded HTTP activity', function (): void {
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
 
@@ -202,6 +246,7 @@ function hibernation_action_process(
     string $name,
     DesiredProcessState $desired,
     string $restartPolicy = 'on-failure',
+    bool $keepAlive = false,
 ): Process {
     return Process::query()->create([
         'owner_type' => AppInstance::class,
@@ -211,6 +256,7 @@ function hibernation_action_process(
         'working_directory' => $instance->checkout_path,
         'runtime_config' => ['command' => ['/usr/bin/true']],
         'restart_policy' => $restartPolicy,
+        'keep_alive' => $keepAlive,
         'desired_state' => $desired,
         'status' => 'active',
     ]);
@@ -250,5 +296,10 @@ final class HibernationFakeMarkerStore implements HibernationMarkerStore
     public function lastActivityUnix(Node $node, string $key): ?int
     {
         return $this->activity[$key] ?? null;
+    }
+
+    public function isAwake(Node $node, string $key): bool
+    {
+        return in_array($key, $this->awake, true) && ! in_array($key, $this->asleep, true);
     }
 }

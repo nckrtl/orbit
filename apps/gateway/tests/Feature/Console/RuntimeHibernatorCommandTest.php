@@ -27,6 +27,11 @@ it('reports how many idle AppInstance groups the hibernator halted', function ()
         {
             return Carbon::now()->subSeconds(3_601)->getTimestamp();
         }
+
+        public function isAwake(Node $node, string $key): bool
+        {
+            return false;
+        }
     };
     app()->instance(ProcessRuntimeManager::class, $runtime);
     app()->instance(HibernationMarkerStore::class, $markers);

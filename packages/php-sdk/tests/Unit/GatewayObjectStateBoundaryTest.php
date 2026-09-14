@@ -238,6 +238,7 @@ describe('gateway object-state boundary', function (): void {
             'command' => ['php', 'artisan', 'queue:work'],
             'restart_policy' => 'unless-stopped',
             'start' => true,
+            'keep_alive' => false,
             'environment' => $environment,
             'image' => 'orbit-worker:latest',
         ];

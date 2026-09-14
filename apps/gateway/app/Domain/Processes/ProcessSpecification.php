@@ -10,7 +10,7 @@ use SensitiveParameter;
 
 final readonly class ProcessSpecification
 {
-    /** @return array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string} */
+    /** @return array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} */
     public function attributes(#[SensitiveParameter] AddProcessData $data, ProcessTarget $target): array
     {
         $workingDirectory =
@@ -34,10 +34,11 @@ final readonly class ProcessSpecification
             'working_directory' => $workingDirectory,
             'runtime_config' => $this->canonicalRuntimeConfig($data->runtime, $runtimeConfig),
             'restart_policy' => $data->restartPolicy,
+            'keep_alive' => $data->keepAlive,
         ];
     }
 
-    /** @param array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string} $attributes */
+    /** @param array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} $attributes */
     public function matches(
         #[SensitiveParameter]
         Process $process,
@@ -49,7 +50,8 @@ final readonly class ProcessSpecification
             && $process->working_directory === $attributes['working_directory']
             && $this->canonicalRuntimeConfig($process->runtime, $process->runtime_config)
             === $attributes['runtime_config']
-            && $process->restart_policy === $attributes['restart_policy'];
+            && $process->restart_policy === $attributes['restart_policy']
+            && $process->keep_alive === $attributes['keep_alive'];
     }
 
     /**

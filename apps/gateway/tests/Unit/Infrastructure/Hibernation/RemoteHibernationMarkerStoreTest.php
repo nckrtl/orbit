@@ -55,6 +55,29 @@ it('uses the later of the access log and awake marker as last activity', functio
         ]);
 });
 
+it('treats a present awake marker as awake and a missing marker as asleep', function (): void {
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "200\n", '', 1, false),
+        new CommandResult(1, '', 'missing', 1, false),
+    ]);
+    $store = new RemoteHibernationMarkerStore(
+        ssh: $ssh,
+        keys: new HibernationFakeSshKeyProvider,
+        knownHosts: new HibernationFakeKnownHostsStore,
+    );
+    $node = hibernation_marker_node();
+
+    expect($store->isAwake($node, RuntimeHibernation::key(6)))
+        ->toBeTrue()
+        ->and($store->isAwake($node, RuntimeHibernation::key(6)))
+        ->toBeFalse()
+        ->and(array_map(static fn ($command): array => $command->arguments, $ssh->commands))
+        ->toBe([
+            ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::awakePath('app-instance-6')],
+            ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::awakePath('app-instance-6')],
+        ]);
+});
+
 it('treats a missing log and missing awake marker as no activity', function (): void {
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(1, '', 'missing', 1, false),

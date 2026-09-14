@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property string $working_directory
  * @property array<string, mixed> $runtime_config
  * @property string $restart_policy
+ * @property bool $keep_alive
  * @property DesiredProcessState $desired_state
  * @property LifecycleStatus $status
  * @property string|null $failed_step
@@ -39,6 +40,7 @@ final class Process extends Model
         'working_directory',
         'runtime_config',
         'restart_policy',
+        'keep_alive',
         'desired_state',
         'status',
         'failed_step',
@@ -69,6 +71,7 @@ final class Process extends Model
         return [
             'runtime' => ProcessRuntime::class,
             'runtime_config' => 'array',
+            'keep_alive' => 'boolean',
             'desired_state' => DesiredProcessState::class,
             'status' => LifecycleStatus::class,
         ];
