@@ -158,4 +158,4 @@ Responses, activity records, errors, and debug output omit environment values an
 
 ## Restore stored environment
 
-Run `orbit database:attach SLUG --instance=SELECTOR` with the same prefix. The Gateway re-projects stored keys from the registry using the same attach rules, including same-node Docker host `127.0.0.1` and the published host port, sqlite path keys, and leftover host or port removal on prefix reuse. Doctor does not write those keys. The workload `.env` stays unchanged until the operator runs `orbit env:sync`.
+Run `orbit instance:database:add SLUG --instance=SELECTOR` with the same prefix. The Gateway re-projects stored keys from the registry using the same rules as the first add, including same-node Docker host `127.0.0.1` and the published host port, sqlite path keys, and leftover host or port removal on prefix reuse. Doctor does not write those keys. The workload `.env` stays unchanged until the operator runs `orbit env:sync`.
