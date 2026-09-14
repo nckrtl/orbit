@@ -12,7 +12,7 @@ use Orbit\Sdk\Responses\Routes\RouteResponse;
 final class CreateRouteCommand extends RouteCommand
 {
     #[\Override]
-    protected $signature = 'route:new
+    protected $signature = 'route:create
         {app : Numeric App ID}
         {hostname : Route hostname}
         {--publication=private : Publication intent}

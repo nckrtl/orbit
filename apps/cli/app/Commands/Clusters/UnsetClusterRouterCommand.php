@@ -6,29 +6,25 @@ namespace App\Commands\Clusters;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Clusters\AttachClusterNodeRequest;
+use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 
-final class AttachClusterNodeCommand extends ClusterCommand
+final class UnsetClusterRouterCommand extends ClusterCommand
 {
     #[\Override]
-    protected $signature = 'cluster:node:attach
+    protected $signature = 'cluster:router:unset
         {cluster : Numeric Cluster ID}
-        {node : Numeric Node ID}
+        {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Attach a Node to a Cluster.';
+    protected $description = 'Clear the Router from an inactive Cluster.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $clusterId = $this->clusterId();
-        if ($clusterId === null) {
-            return self::FAILURE;
-        }
 
-        $nodeId = $this->nodeId();
-        if ($nodeId === null) {
+        if ($clusterId === null) {
             return self::FAILURE;
         }
 
@@ -38,9 +34,15 @@ final class AttachClusterNodeCommand extends ClusterCommand
             return self::FAILURE;
         }
 
+        $existing = $this->existingCluster($connector, $clusterId);
+
+        if ($existing === null || ! $this->confirmed('Router clearing')) {
+            return self::FAILURE;
+        }
+
         $cluster = $this->send(
             $connector,
-            new AttachClusterNodeRequest($clusterId, $nodeId),
+            new UnsetClusterRouterRequest($clusterId, true),
             ClusterResponse::class,
         );
 
@@ -48,6 +50,6 @@ final class AttachClusterNodeCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        return $this->renderCluster($cluster, "Node #{$nodeId} attached to Cluster [{$cluster->name}].");
+        return $this->renderCluster($cluster, "Router cleared from Cluster [{$cluster->name}].");
     }
 }

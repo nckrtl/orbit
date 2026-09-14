@@ -9,19 +9,18 @@ use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-final class AttachClusterNodeRequest extends GatewayRequest
+final class DestroyClusterRequest extends GatewayRequest
 {
     #[\Override]
-    protected Method $method = Method::PUT;
+    protected Method $method = Method::DELETE;
 
     public function __construct(
         private readonly int $clusterId,
-        private readonly int $nodeId,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/clusters/{$this->clusterId}/nodes/{$this->nodeId}";
+        return "/api/v1/clusters/{$this->clusterId}";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ClusterResponse

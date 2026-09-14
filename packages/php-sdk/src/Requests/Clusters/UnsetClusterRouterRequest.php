@@ -6,25 +6,36 @@ namespace Orbit\Sdk\Requests\Clusters;
 
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
+use Saloon\Traits\Body\HasJsonBody;
 
-final class RemoveClusterRequest extends GatewayRequest
+final class UnsetClusterRouterRequest extends GatewayRequest implements HasBody
 {
+    use HasJsonBody;
+
     #[\Override]
     protected Method $method = Method::DELETE;
 
     public function __construct(
         private readonly int $clusterId,
+        private readonly bool $force,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/clusters/{$this->clusterId}";
+        return "/api/v1/clusters/{$this->clusterId}/router";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ClusterResponse
     {
         return ClusterResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+    }
+
+    /** @return array{force: bool} */
+    protected function defaultBody(): array
+    {
+        return ['force' => $this->force];
     }
 }

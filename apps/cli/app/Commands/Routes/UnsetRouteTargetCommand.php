@@ -6,16 +6,16 @@ namespace App\Commands\Routes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Routes\RemoveRouteRequest;
+use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
-final class RemoveRouteCommand extends RouteCommand
+final class UnsetRouteTargetCommand extends RouteCommand
 {
     #[\Override]
-    protected $signature = 'route:remove {route : Numeric Route ID} {--json : Return machine-readable JSON}';
+    protected $signature = 'route:target:unset {route : Numeric Route ID} {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove a Route.';
+    protected $description = 'Clear the configured Route target.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -27,10 +27,10 @@ final class RemoveRouteCommand extends RouteCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $route = $this->send($connector, new RemoveRouteRequest($id), RouteResponse::class);
+        $route = $this->send($connector, new UnsetRouteTargetRequest($id), RouteResponse::class);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->hostname}] removed.")
+            ? $this->renderRoute($route, "Route [{$route->hostname}] target cleared.")
             : self::FAILURE;
     }
 }
