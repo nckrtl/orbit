@@ -19,7 +19,7 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Database connection** — Saved MySQL, PostgreSQL, or SQLite credentials. Attaching a connection populates the App instance's stored environment. See [Database connections](/reference/database-connections).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](/decisions/0004-verify-only-doctor-boundary).
 - **Process** — A systemd service or Docker container that Orbit manages for an App instance or Node. See [App processes and schedules](/reference/app-processes-and-schedules).
-- **Runtime hibernation** — Stopping idle development processes until the next HTTP request. Keep-alive processes stay running. Orbit wakes only processes configured to run. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
+- **Runtime hibernation** — Pausing idle development processes and removing rebuildable dependencies after longer idle periods. An HTTP request restores dependencies and wakes configured processes. Keep-alive workers stay running. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
 - **Herdr session** — A named headless Herdr server on a Node. View its panes through a private, read-only connection with temporary access. See [Herdr sessions](/reference/herdr-sessions).
 - **Schedule** — A recurring command for a Node or App instance. A systemd timer runs it on the host Node. See [Schedules](/reference/schedules).
 - **Tool** — A package that Orbit manages on a Node through a specific package manager. See [Tools](/reference/tools).

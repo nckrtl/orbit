@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -11,9 +12,8 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Tests\Support\AppDevFakeSshExecutor;
 
-it('writes the awake marker after creating the tmpfs and log directories', function (): void {
+it('writes the awake marker after creating traversable tmpfs and log directories', function (): void {
     $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
@@ -26,10 +26,19 @@ it('writes the awake marker after creating the tmpfs and log directories', funct
 
     $store->markAwake(hibernation_marker_node(), RuntimeHibernation::key(6));
 
-    expect(array_map(static fn ($command): array => $command->arguments, $ssh->commands))
+    expect($ssh->commands[0]->arguments)
         ->toBe([
-            ['sudo', 'install', '-d', '-o', 'root', '-g', 'caddy', '-m', '0755', RuntimeHibernation::MarkerDirectory],
-            ['sudo', 'install', '-d', '-o', 'root', '-g', 'caddy', '-m', '2775', RuntimeHibernation::AccessLogDirectory],
+            'sudo',
+            'bash',
+            '-seu',
+            '--',
+            RuntimeHibernation::MarkerDirectory,
+            RuntimeHibernation::AccessLogDirectory,
+        ])
+        ->and($ssh->commands[0]->input)
+        ->toBe(HibernationDirectoryEnsure::script())
+        ->and(array_map(static fn ($command): array => $command->arguments, array_slice($ssh->commands, 1)))
+        ->toBe([
             ['sudo', 'touch', '--', RuntimeHibernation::awakePath('app-instance-6')],
             ['sudo', 'chmod', '0644', '--', RuntimeHibernation::awakePath('app-instance-6')],
         ]);
@@ -52,6 +61,36 @@ it('uses the later of the access log and awake marker as last activity', functio
         ->toBe([
             ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::accessLogPath('app-instance-6')],
             ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::awakePath('app-instance-6')],
+        ]);
+});
+
+it('writes the durable cold marker under the access-log directory', function (): void {
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+    ]);
+    $store = new RemoteHibernationMarkerStore(
+        ssh: $ssh,
+        keys: new HibernationFakeSshKeyProvider,
+        knownHosts: new HibernationFakeKnownHostsStore,
+    );
+
+    $store->markCold(hibernation_marker_node(), RuntimeHibernation::key(6));
+
+    expect($ssh->commands[0]->arguments)
+        ->toBe([
+            'sudo',
+            'bash',
+            '-seu',
+            '--',
+            RuntimeHibernation::MarkerDirectory,
+            RuntimeHibernation::AccessLogDirectory,
+        ])
+        ->and(array_map(static fn ($command): array => $command->arguments, array_slice($ssh->commands, 1)))
+        ->toBe([
+            ['sudo', 'touch', '--', RuntimeHibernation::coldPath('app-instance-6')],
+            ['sudo', 'chmod', '0644', '--', RuntimeHibernation::coldPath('app-instance-6')],
         ]);
 });
 

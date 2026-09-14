@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Processes\DesiredProcessState;
@@ -12,6 +13,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Carbon;
+use Tests\Support\FakeAppInstanceCheckoutInspector;
 use Tests\Support\FakeAppInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -23,6 +25,10 @@ it('reports how many idle AppInstance groups the hibernator halted', function ()
 
         public function markAsleep(Node $node, string $key): void {}
 
+        public function markCold(Node $node, string $key): void {}
+
+        public function clearCold(Node $node, string $key): void {}
+
         public function lastActivityUnix(Node $node, string $key): ?int
         {
             return Carbon::now()->subSeconds(3_601)->getTimestamp();
@@ -32,10 +38,16 @@ it('reports how many idle AppInstance groups the hibernator halted', function ()
         {
             return false;
         }
+
+        public function isCold(Node $node, string $key): bool
+        {
+            return false;
+        }
     };
     app()->instance(ProcessRuntimeManager::class, $runtime);
     app()->instance(HibernationMarkerStore::class, $markers);
     app()->instance(AppInstanceRuntimeReadiness::class, new FakeAppInstanceRuntimeReadiness);
+    app()->instance(AppInstanceCheckoutInspector::class, new FakeAppInstanceCheckoutInspector);
 
     $node = Node::query()->create([
         'name' => 'app-dev',
@@ -76,6 +88,7 @@ it('reports how many idle AppInstance groups the hibernator halted', function ()
 
     $this->artisan('orbit:runtime-hibernator')
         ->expectsOutput('Halted [1] idle app-dev AppInstance runtime groups.')
+        ->expectsOutput('Pruned [0] cold app-dev AppInstance dependency trees.')
         ->assertSuccessful();
 
     expect($runtime->stopped)->toHaveCount(1);

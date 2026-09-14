@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Actions\Hibernation\ActivateAppInstanceRuntimeAction;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\RuntimeDependencyState;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
@@ -18,6 +22,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Schedule;
 use Illuminate\Support\Carbon;
+use Tests\Support\FakeAppInstanceCheckoutInspector;
 use Tests\Support\FakeAppInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -25,9 +30,12 @@ beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
     $this->markers = new HibernationFakeMarkerStore;
     $this->readiness = new FakeAppInstanceRuntimeReadiness;
+    $this->checkouts = new FakeAppInstanceCheckoutInspector;
+    $this->checkouts->runtime = $this->runtime;
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
     app()->instance(HibernationMarkerStore::class, $this->markers);
     app()->instance(AppInstanceRuntimeReadiness::class, $this->readiness);
+    app()->instance(AppInstanceCheckoutInspector::class, $this->checkouts);
 
     $this->node = Node::query()->create([
         'name' => 'app-dev',
@@ -54,6 +62,17 @@ beforeEach(function (): void {
         'provisioning_step' => 'active',
         'status' => 'active',
     ]);
+});
+
+it('defaults the soft idle window to one hour and the dependency idle window to seven days', function (): void {
+    expect(config('orbit.hibernation.idle_seconds'))
+        ->toBe(3_600)
+        ->and(config('orbit.hibernation.dependency_idle_seconds'))
+        ->toBe(604_800)
+        ->and(config('orbit.hibernation.wake_timeout_seconds'))
+        ->toBe(60)
+        ->and(config('orbit.hibernation.cold_wake_timeout_seconds'))
+        ->toBe(1_800);
 });
 
 it('does not converge PHP-FPM when it wakes or halts AppInstance Processes', function (): void {
@@ -123,7 +142,7 @@ it('halts idle desired-running Processes without changing desired state or Sched
 
     $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
 
-    expect($halted)
+    expect($halted->halted)
         ->toBe(1)
         ->and($this->runtime->stopped)
         ->toBe([$running->id])
@@ -142,7 +161,7 @@ it('leaves keep-alive Processes running while it hibernates the rest of the grou
 
     $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
 
-    expect($halted)
+    expect($halted->halted)
         ->toBe(1)
         ->and($this->runtime->stopped)
         ->toBe([$vite->id])
@@ -159,7 +178,7 @@ it('does not mark an AppInstance asleep when every desired-running Process is ke
 
     $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
 
-    expect($halted)
+    expect($halted->halted)
         ->toBe(0)
         ->and($this->runtime->stopped)
         ->toBe([])
@@ -184,7 +203,7 @@ it('halts desired-running Processes that have no recorded HTTP activity', functi
 
     $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
 
-    expect($halted)
+    expect($halted->halted)
         ->toBe(1)
         ->and($this->runtime->stopped)
         ->toBe([$running->id]);
@@ -231,7 +250,7 @@ it('leaves recent HTTP activity and Node or production Processes running', funct
 
     $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
 
-    expect($halted)
+    expect($halted->halted)
         ->toBe(0)
         ->and($this->runtime->stopped)
         ->toBe([])
@@ -239,6 +258,151 @@ it('leaves recent HTTP activity and Node or production Processes running', funct
         ->toBe(DesiredProcessState::Running)
         ->and($nodeProcess->fresh()->desired_state)
         ->toBe(DesiredProcessState::Running);
+});
+
+it('prunes reconstructable checkout dependencies after the dependency idle window', function (): void {
+    $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_age_process($process);
+    $this->markers->asleep[] = RuntimeHibernation::key((int) $this->instance->id);
+    $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(604_801)->getTimestamp();
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result->pruned)
+        ->toBe(1)
+        ->and($this->checkouts->pruned)
+        ->toBe([(string) $this->instance->id])
+        ->and($this->markers->cold)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
+it('skips prune while the AppInstance is still awake', function (): void {
+    $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_age_process($process);
+    $key = RuntimeHibernation::key((int) $this->instance->id);
+    $this->markers->awake[] = $key;
+    $this->markers->activity[$key] = Carbon::now()->subSeconds(604_801)->getTimestamp();
+
+    $result = new SweepIdleAppDevRuntimesAction(
+        policy: app(AppDevHibernationPolicy::class),
+        admissions: app(ProcessAdmissionLock::class),
+        runtime: $this->runtime,
+        markers: $this->markers,
+        checkouts: $this->checkouts,
+        idleSeconds: 10_000_000,
+        dependencyIdleSeconds: RuntimeHibernation::DefaultDependencyIdleSeconds,
+    )->execute(Carbon::now());
+
+    expect($result->halted)
+        ->toBe(0)
+        ->and($result->pruned)
+        ->toBe(0)
+        ->and($this->checkouts->pruned)
+        ->toBe([]);
+});
+
+it('skips prune when the AppInstance is already cold or still inside an activity window', function (string $reason): void {
+    $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_age_process($process);
+    $key = RuntimeHibernation::key((int) $this->instance->id);
+    $this->markers->activity[$key] = Carbon::now()->subSeconds(604_801)->getTimestamp();
+
+    match ($reason) {
+        'cold' => $this->markers->cold[] = $key,
+        'http' => $this->markers->activity[$key] = Carbon::now()->subMinutes(5)->getTimestamp(),
+        'process' => $process->forceFill(['updated_at' => Carbon::now()])->save(),
+        'source' => $this->checkouts->state = new RuntimeDependencyState(
+            vendorReconstructable: true,
+            vendorPresent: true,
+            nodeModulesReconstructable: true,
+            nodeModulesPresent: true,
+            sourceTreeLastActivityUnix: Carbon::now()->getTimestamp(),
+        ),
+        'deps' => $this->checkouts->state = new RuntimeDependencyState(
+            vendorReconstructable: false,
+            vendorPresent: true,
+            nodeModulesReconstructable: false,
+            nodeModulesPresent: true,
+        ),
+        default => null,
+    };
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result->pruned)
+        ->toBe(0)
+        ->and($this->checkouts->pruned)
+        ->toBe([]);
+})->with(['cold', 'http', 'process', 'source', 'deps']);
+
+it('skips prune when any keep-alive desired-running Process exists', function (): void {
+    $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);
+    hibernation_age_process($vite);
+    $this->markers->asleep[] = RuntimeHibernation::key((int) $this->instance->id);
+    $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(604_801)->getTimestamp();
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result->pruned)
+        ->toBe(0)
+        ->and($this->checkouts->pruned)
+        ->toBe([]);
+});
+
+it('wakes a soft AppInstance without restoring checkout dependencies', function (): void {
+    $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+
+    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+
+    expect($this->checkouts->restored)
+        ->toBe([])
+        ->and($this->runtime->started)
+        ->toBe([$running->id])
+        ->and($this->markers->awake)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
+it('restores cold checkout dependencies before it starts Processes', function (): void {
+    $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    $this->markers->cold[] = RuntimeHibernation::key((int) $this->instance->id);
+    $this->checkouts->state = new RuntimeDependencyState(
+        vendorReconstructable: true,
+        vendorPresent: false,
+        nodeModulesReconstructable: true,
+        nodeModulesPresent: false,
+    );
+
+    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+
+    expect($this->checkouts->startedBeforeRestore)
+        ->toBe([])
+        ->and($this->checkouts->restored)
+        ->toBe([(string) $this->instance->id])
+        ->and($this->runtime->started)
+        ->toBe([$running->id])
+        ->and($this->markers->cold)
+        ->toBe([])
+        ->and($this->markers->awake)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
+it('keeps the cold marker and skips the awake marker when restore fails', function (): void {
+    hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    $this->markers->cold[] = RuntimeHibernation::key((int) $this->instance->id);
+    $this->checkouts->restoreFailure = new HibernationException(
+        errorCode: 'hibernation.checkout_restore_failed',
+        message: 'Composer install failed.',
+    );
+
+    expect(fn () => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance))
+        ->toThrow(HibernationException::class);
+    expect($this->runtime->started)
+        ->toBe([])
+        ->and($this->markers->cold)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)])
+        ->and($this->markers->awake)
+        ->toBe([]);
 });
 
 function hibernation_action_process(
@@ -262,6 +426,13 @@ function hibernation_action_process(
     ]);
 }
 
+function hibernation_age_process(Process $process): void
+{
+    $process->forceFill([
+        'updated_at' => Carbon::now()->subSeconds(604_801),
+    ])->save();
+}
+
 final class HibernationRecordingPhpFpmManager implements AppDevPhpFpmManager
 {
     public int $converges = 0;
@@ -283,14 +454,29 @@ final class HibernationFakeMarkerStore implements HibernationMarkerStore
     /** @var array<string, int> */
     public array $activity = [];
 
+    /** @var list<string> */
+    public array $cold = [];
+
     public function markAwake(Node $node, string $key): void
     {
         $this->awake[] = $key;
+        $this->asleep = array_values(array_filter($this->asleep, static fn (string $item): bool => $item !== $key));
     }
 
     public function markAsleep(Node $node, string $key): void
     {
         $this->asleep[] = $key;
+        $this->awake = array_values(array_filter($this->awake, static fn (string $item): bool => $item !== $key));
+    }
+
+    public function markCold(Node $node, string $key): void
+    {
+        $this->cold[] = $key;
+    }
+
+    public function clearCold(Node $node, string $key): void
+    {
+        $this->cold = array_values(array_filter($this->cold, static fn (string $item): bool => $item !== $key));
     }
 
     public function lastActivityUnix(Node $node, string $key): ?int
@@ -301,5 +487,10 @@ final class HibernationFakeMarkerStore implements HibernationMarkerStore
     public function isAwake(Node $node, string $key): bool
     {
         return in_array($key, $this->awake, true) && ! in_array($key, $this->asleep, true);
+    }
+
+    public function isCold(Node $node, string $key): bool
+    {
+        return in_array($key, $this->cold, true);
     }
 }

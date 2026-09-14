@@ -11,6 +11,12 @@ it('names per-AppInstance marker and access-log paths', function (): void {
         ->toBe('/dev/shm/orbit/hibernation/app-instance-12.awake')
         ->and(RuntimeHibernation::accessLogPath('app-instance-12'))
         ->toBe('/data/caddy/orbit/hibernation/app-instance-12.log')
+        ->and(RuntimeHibernation::coldPath('app-instance-12'))
+        ->toBe('/data/caddy/orbit/hibernation/app-instance-12.cold')
+        ->and(RuntimeHibernation::DefaultIdleSeconds)
+        ->toBe(3_600)
+        ->and(RuntimeHibernation::DefaultDependencyIdleSeconds)
+        ->toBe(604_800)
         ->and(RuntimeHibernation::parseAppInstanceId('app-instance-12'))
         ->toBe(12);
 });

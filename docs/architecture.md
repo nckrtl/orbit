@@ -40,7 +40,7 @@ An App stores shared source defaults and owns Routes. An App instance is one cop
 
 A development App instance owns one Git checkout or worktree. A standalone production App instance has a dedicated user, home, deployment branch, and application steps. Orbit prepares and activates releases; the operator or agent starts deployments and chooses application commands. The Gateway selects any required PHP runtime and prepares one Route per active App instance.
 
-When an App instance is idle on an active `app-dev` Node, it can [hibernate](/reference/app-dev-runtime-hibernation). Orbit stops processes configured to run unless they have keep-alive enabled. The next HTTP request starts the group configured to run.
+When an App instance is idle on an active `app-dev` Node, it can [hibernate](/reference/app-dev-runtime-hibernation). Orbit stops processes configured to run unless they have keep-alive enabled. After a longer idle period, it removes dependencies that can be rebuilt from lockfiles. The next HTTP request restores those dependencies and starts the group configured to run.
 
 See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and hostname changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [App instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
 
@@ -48,7 +48,7 @@ Legacy Instance and Workspace records remain available during conversion. New in
 
 ## Herdr sessions
 
-A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server on a Node. The Gateway manages its process and grants Commander temporary, read-only access to recorded panes through `terminal.observe`.
+A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server on a Node. Orbit can manage its process or adopt an existing server whose lifecycle stays external. Both modes let Commander view recorded panes through temporary, read-only `terminal.observe` access.
 
 ## Database connections
 

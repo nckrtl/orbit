@@ -98,7 +98,7 @@ The two runtimes accept these values.
 | systemd | Process name and absolute executable with argv | Absolute working directory, restart policy, keep-alive, and initial start | The App instance development checkout, the production home's `current` path, or `/home/{user}` on a Node target |
 | Docker | Process name, image, and command argv | Container working directory, environment, published ports, volumes, restart policy, keep-alive, and initial start | `/app` |
 
-A development systemd Process on a Node with the active `app-dev` role installs without host-boot start intent. The Gateway starts it with `systemctl start` and does not `systemctl enable` the unit. After host reboot the Process stays down until `process:start` or the next HTTP wake. `--keep-alive` stores `keep_alive=true` and does not change restart policy. The [hibernation page](/reference/app-dev-runtime-hibernation) states idle halt, keep-alive exemption, wake, and Doctor reporting.
+A development systemd Process on a Node with the active `app-dev` role installs without host-boot start intent. The Gateway starts it with `systemctl start` and does not `systemctl enable` the unit. After host reboot the Process stays down until `process:start` or the next HTTP wake. `--keep-alive` stores `keep_alive=true` and does not change restart policy. The [hibernation page](/reference/app-dev-runtime-hibernation) states idle halt, keep-alive exemption, cold dependency prune, wake, and Doctor reporting.
 
 A development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the App instance Route hostname from that user's certificate projection. When the App instance has a Route, the unit also receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` so the frontend toolchain publishes assets and hot module replacement on the [development-server endpoint](/reference/routes#development-server-endpoint).
 
@@ -106,7 +106,7 @@ A production systemd Process runs as the App instance's dedicated production use
 
 A prepared production home without `current` accepts a stopped Process installation for either runtime. An initial start requested by `process:create` and a later `process:start` both fail before the Process record or runtime changes until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
 
-A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an App instance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](/reference/database-role) can converge Docker on that Node, and a Node Process does not require that role. A named Herdr session also uses a Node Process; [Herdr sessions](/reference/herdr-sessions) owns that integration:
+A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an App instance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](/reference/database-role) can converge Docker on that Node, and a Node Process does not require that role. A managed Herdr session uses a Node Process; an adopted external session does not. [Herdr sessions](/reference/herdr-sessions) owns that integration:
 
 ```bash
 orbit process:create postgres \
@@ -115,7 +115,7 @@ orbit process:create postgres \
   --image=postgres:18
 ```
 
-The Herdr session commands compose their Node Process and observer service through the [Herdr sessions](/reference/herdr-sessions) contract. Operators do not add that observer as a generic Process.
+Managed Herdr session commands compose their Node Process and observer service through the [Herdr sessions](/reference/herdr-sessions) contract. Adoption composes only the observer around an existing external service. Operators do not add that observer as a generic Process.
 
 `--node` accepts a positive Node ID or the registered Node name. The CLI resolves a name through the node list before it sends the create request.
 

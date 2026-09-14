@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 115 concrete public Gateway API operations:
+The SDK models exactly 116 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -16,7 +16,7 @@ The SDK models exactly 115 concrete public Gateway API operations:
 - Firewall: list, allow, deny, and remove.
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
-- Herdr: session list, add, show, restart, remove, and observation-grant.
+- Herdr: session list, add, adopt, show, restart, remove, and observation-grant.
 - Database connection: list, show, add, update, remove, attach, and detach.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
@@ -72,11 +72,11 @@ operations. Keep the public API typed and small.
   no response body. The Gateway owns target resolution, validation, execution,
   and lifecycle policy.
 - Keep Herdr transport limited to a numeric Node ID, a numeric session ID for
-  item operations, explicit session name and Unix user on add, optional
+  item operations, explicit session name and Unix user on add or adopt, optional
   observer publication and restart handoff flags, optional removal termination
   acceptance, and pane, terminal, columns, rows, and an HTTPS browser origin
   for observation grants.
-  Preserve omitted optional flags as explicit `false`. Observation grant URLs
+  Preserve omitted optional flags as explicit `false` and the returned managed or external lifecycle mode. Observation grant URLs
   stay out of generic diagnostics. The Gateway owns session lifecycle,
   publication, trust, and grant policy.
 - Keep Database connection transport limited to slug identity, driver, optional

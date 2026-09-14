@@ -77,6 +77,7 @@ use App\Domain\Herdr\HerdrObserverPublisher;
 use App\Domain\Herdr\HerdrSessionInspector;
 use App\Domain\Herdr\ObservationGrantSigner;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
@@ -191,6 +192,7 @@ use App\Infrastructure\Herdr\OpenSslObservationGrantSigner;
 use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
+use App\Infrastructure\Hibernation\RemoteAppInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
@@ -330,6 +332,7 @@ final class AppServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
+        AppInstanceCheckoutInspector::class => RemoteAppInstanceCheckoutInspector::class,
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
         HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
         HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,
@@ -358,7 +361,9 @@ final class AppServiceProvider extends ServiceProvider
                 admissions: $app->make(ProcessAdmissionLock::class),
                 runtime: $app->make(ProcessRuntimeManager::class),
                 markers: $app->make(HibernationMarkerStore::class),
+                checkouts: $app->make(AppInstanceCheckoutInspector::class),
                 idleSeconds: (int) config('orbit.hibernation.idle_seconds'),
+                dependencyIdleSeconds: (int) config('orbit.hibernation.dependency_idle_seconds'),
             ),
         );
         $this->app->bind(
@@ -376,6 +381,16 @@ final class AppServiceProvider extends ServiceProvider
                 keys: $app->make(SshKeyProvider::class),
                 knownHosts: $app->make(KnownHostsStore::class),
                 timeoutSeconds: (int) config('orbit.hibernation.wake_timeout_seconds'),
+            ),
+        );
+        $this->app->bind(
+            RemoteAppInstanceCheckoutInspector::class,
+            static fn ($app): RemoteAppInstanceCheckoutInspector => new RemoteAppInstanceCheckoutInspector(
+                ssh: $app->make(SshExecutor::class),
+                keys: $app->make(SshKeyProvider::class),
+                knownHosts: $app->make(KnownHostsStore::class),
+                accounts: $app->make(ManagedUserAccountResolver::class),
+                restoreTimeoutSeconds: (int) config('orbit.hibernation.cold_wake_timeout_seconds'),
             ),
         );
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
@@ -529,6 +544,7 @@ final class AppServiceProvider extends ServiceProvider
                 vpn: app(GatewayVpnConverger::class),
                 web: app(GatewayWebConverger::class),
                 selfAccess: app(GatewaySelfAccessConverger::class),
+                dns: app(PrivateDnsManager::class),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
             ),
         );

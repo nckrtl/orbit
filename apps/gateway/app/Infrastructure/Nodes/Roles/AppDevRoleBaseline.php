@@ -40,6 +40,7 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
             $account,
             $this->storagePaths->validateEffective($settings, $node, $account),
         );
+        $this->dns->converge($node);
         $this->ssh->execute(
             $node,
             $this->commands->make($node, RoleName::AppDev, $account),
@@ -48,7 +49,6 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
         );
         $this->caddy->converge($node);
         $this->firewall->converge($node, RoleName::AppDev, $node->user);
-        $this->dns->converge($node);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void

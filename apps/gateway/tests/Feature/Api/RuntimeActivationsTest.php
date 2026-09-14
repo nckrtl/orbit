@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -14,6 +15,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use Tests\Support\FakeAppInstanceCheckoutInspector;
 use Tests\Support\FakeAppInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -31,6 +33,10 @@ beforeEach(function (): void {
 
         public function markAsleep(Node $node, string $key): void {}
 
+        public function markCold(Node $node, string $key): void {}
+
+        public function clearCold(Node $node, string $key): void {}
+
         public function lastActivityUnix(Node $node, string $key): ?int
         {
             return null;
@@ -40,10 +46,16 @@ beforeEach(function (): void {
         {
             return in_array($key, $this->awake, true);
         }
+
+        public function isCold(Node $node, string $key): bool
+        {
+            return false;
+        }
     };
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
     app()->instance(HibernationMarkerStore::class, $this->markers);
     app()->instance(AppInstanceRuntimeReadiness::class, new FakeAppInstanceRuntimeReadiness);
+    app()->instance(AppInstanceCheckoutInspector::class, new FakeAppInstanceCheckoutInspector);
 
     $this->node = Node::query()->create([
         'name' => 'app-dev',

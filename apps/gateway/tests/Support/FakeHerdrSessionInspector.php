@@ -24,10 +24,14 @@ final class FakeHerdrSessionInspector implements HerdrSessionInspector
 
     public int $handoffs = 0;
 
+    public int $inspections = 0;
+
     public ?Throwable $failure = null;
 
     public function inspect(HerdrSession $session, Node $node): HerdrSessionInspection
     {
+        $this->inspections++;
+
         if ($this->failure instanceof Throwable) {
             throw $this->failure;
         }

@@ -9,6 +9,7 @@ use App\Domain\Herdr\HerdrObserveContract;
 use App\Domain\Herdr\HerdrObserverPublisher;
 use App\Domain\Herdr\HerdrSessionInspection;
 use App\Domain\Herdr\HerdrSessionInspector;
+use App\Domain\Herdr\HerdrSessionManagement;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\HerdrSession;
@@ -27,6 +28,15 @@ final readonly class RestartHerdrSessionAction
     public function execute(HerdrSession $session, bool $handoff): HerdrSession
     {
         $session->loadMissing('node', 'process');
+
+        if ($session->management === HerdrSessionManagement::External) {
+            throw new ResourceOperationException(
+                errorCode: 'herdr.session_external',
+                message: "Herdr session [{$session->session}] has an external lifecycle and cannot be restarted by Orbit.",
+                status: 409,
+            );
+        }
+
         $this->requireTool->execute($session->node);
 
         if ($session->process === null) {

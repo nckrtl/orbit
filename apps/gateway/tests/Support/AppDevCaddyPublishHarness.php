@@ -32,9 +32,15 @@ final class AppDevCaddyPublishHarness
         return $path.'/'.$suffix;
     }
 
+    public function rootPath(): string
+    {
+        return $this->root;
+    }
+
     public function run(
         AppDevCaddyPublisher|AppProdCaddyPublisher $publisher,
         AppDevCaddyPublishScenario $scenario,
+        ?callable $beforePublish = null,
     ): AppDevCaddyPublishResult {
         $this->resetFilesystem();
 
@@ -42,6 +48,10 @@ final class AppDevCaddyPublishHarness
         $versionsDirectory = $this->etcCaddyPath('orbit-versions');
         $this->prepareLiveConfiguration($scenario, $liveMainPath, $versionsDirectory);
         $this->writeShims($scenario);
+
+        if ($beforePublish !== null) {
+            $beforePublish();
+        }
 
         $command = $publisher->command("# Managed by Orbit.\n", 'test-version');
         $process = new Process(array_slice(array: $command->arguments, offset: 1), $this->root, [

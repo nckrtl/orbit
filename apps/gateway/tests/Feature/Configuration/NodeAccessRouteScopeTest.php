@@ -86,6 +86,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'firewall:list' => ServingNode::Target,
         'firewall:remove' => ServingNode::Target,
         'herdr:observe' => ServingNode::HerdrSessionOwning,
+        'herdr:session:adopt' => ServingNode::HerdrSessionOwning,
         'herdr:session:create' => ServingNode::HerdrSessionOwning,
         'herdr:session:destroy' => ServingNode::HerdrSessionOwning,
         'herdr:session:list' => ServingNode::HerdrSessionOwning,

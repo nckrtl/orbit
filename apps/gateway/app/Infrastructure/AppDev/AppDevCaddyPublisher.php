@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 
@@ -84,8 +85,7 @@ final readonly class AppDevCaddyPublisher
                 previous_main="\$versions/.previous-main.\$version"
                 trap 'rm -rf -- "\$candidate"; rm -f -- "\$candidate_link" "\$rollback_link" "\$rollback_file" "\$previous_main"' EXIT
                 install -d -o root -g caddy -m 0750 -- "\$versions" "\$candidate/fragments"
-                install -d -o root -g caddy -m 0755 -- "\$hibernation_markers"
-                install -d -o root -g caddy -m 2775 -- "\$hibernation_logs"
+                {$this->hibernationDirectoryScript()}
                 source_main=\$(readlink -f "\$live_caddyfile")
                 test -f "\$source_main"
                 cp -a -- "\$source_main" "\$previous_main"
@@ -158,6 +158,11 @@ final readonly class AppDevCaddyPublisher
                 fi
                 BASH,
         );
+    }
+
+    private function hibernationDirectoryScript(): string
+    {
+        return HibernationDirectoryEnsure::script('"$hibernation_markers"', '"$hibernation_logs"');
     }
 
     public function removeCommand(string $version): RemoteCommand

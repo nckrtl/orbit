@@ -25,30 +25,19 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
     public function markAwake(Node $node, string $key): void
     {
         $path = RuntimeHibernation::awakePath($key);
-        $this->run($node, 'prepare-awake-dir', [
-            'sudo',
-            'install',
-            '-d',
-            '-o',
-            'root',
-            '-g',
-            'caddy',
-            '-m',
-            '0755',
-            RuntimeHibernation::MarkerDirectory,
-        ]);
-        $this->run($node, 'prepare-log-dir', [
-            'sudo',
-            'install',
-            '-d',
-            '-o',
-            'root',
-            '-g',
-            'caddy',
-            '-m',
-            '2775',
-            RuntimeHibernation::AccessLogDirectory,
-        ]);
+        $this->run(
+            $node,
+            'prepare-dirs',
+            [
+                'sudo',
+                'bash',
+                '-seu',
+                '--',
+                RuntimeHibernation::MarkerDirectory,
+                RuntimeHibernation::AccessLogDirectory,
+            ],
+            HibernationDirectoryEnsure::script(),
+        );
         $this->run($node, 'mark-awake', ['sudo', 'touch', '--', $path]);
         $this->run($node, 'mark-awake-mode', ['sudo', 'chmod', '0644', '--', $path]);
     }
@@ -56,6 +45,31 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
     public function markAsleep(Node $node, string $key): void
     {
         $this->run($node, 'mark-asleep', ['sudo', 'rm', '-f', '--', RuntimeHibernation::awakePath($key)]);
+    }
+
+    public function markCold(Node $node, string $key): void
+    {
+        $path = RuntimeHibernation::coldPath($key);
+        $this->run(
+            $node,
+            'prepare-dirs',
+            [
+                'sudo',
+                'bash',
+                '-seu',
+                '--',
+                RuntimeHibernation::MarkerDirectory,
+                RuntimeHibernation::AccessLogDirectory,
+            ],
+            HibernationDirectoryEnsure::script(),
+        );
+        $this->run($node, 'mark-cold', ['sudo', 'touch', '--', $path]);
+        $this->run($node, 'mark-cold-mode', ['sudo', 'chmod', '0644', '--', $path]);
+    }
+
+    public function clearCold(Node $node, string $key): void
+    {
+        $this->run($node, 'clear-cold', ['sudo', 'rm', '-f', '--', RuntimeHibernation::coldPath($key)]);
     }
 
     public function lastActivityUnix(Node $node, string $key): ?int
@@ -74,6 +88,11 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
     public function isAwake(Node $node, string $key): bool
     {
         return $this->mtime($node, RuntimeHibernation::awakePath($key)) !== null;
+    }
+
+    public function isCold(Node $node, string $key): bool
+    {
+        return $this->mtime($node, RuntimeHibernation::coldPath($key)) !== null;
     }
 
     private function mtime(Node $node, string $path): ?int
@@ -97,9 +116,9 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
     }
 
     /** @param non-empty-list<string> $arguments */
-    private function run(Node $node, string $step, array $arguments): void
+    private function run(Node $node, string $step, array $arguments, ?string $input = null): void
     {
-        $result = $this->ssh->execute($this->connection($node), new RemoteCommand($arguments));
+        $result = $this->ssh->execute($this->connection($node), new RemoteCommand($arguments, $input));
 
         if ($result->succeeded()) {
             return;
