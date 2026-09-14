@@ -1,0 +1,136 @@
+---
+title: "gateway"
+description: "Register Gateway profiles on the operator machine, select the active one, pin the Gateway root certificate, and check Gateway status."
+---
+
+Every other command sends its request to the active Gateway. The `gateway` family manages the local profiles that name a Gateway, pins its root certificate authority (CA), installs that certificate in the operating-system trust store, and shows whether the Gateway answers.
+
+Profiles live in `$HOME/.orbit/config.json`; set `ORBIT_HOME` to move that directory. Pinned certificates live under `$ORBIT_HOME/gateways/<profile>-<hash>/ca/`. The [Gateway trust reference](/reference/gateway-trust) owns the trust sequence, the profile guard, and recovery when a profile changes during a trust command.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`gateway:add`](#orbit-gatewayadd) | Add a profile, trust the Gateway root CA, and optionally make the profile active. |
+| [`gateway:use`](#orbit-gatewayuse) | Select the active profile. |
+| [`gateway:status`](#orbit-gatewaystatus) | Show the status and version of the active Gateway. |
+| [`gateway:trust`](#orbit-gatewaytrust) | Trust or re-verify the active Gateway root CA. |
+| [`gateway:remove`](#orbit-gatewayremove) | Remove a profile and its pinned certificate. |
+
+Every command accepts `--json`. `gateway:add`, `gateway:use`, and `gateway:remove` change only local configuration; `gateway:status` and `gateway:trust` contact the Gateway named by the active profile.
+
+## orbit gateway:add
+
+Add a Gateway profile. The CLI fetches the Gateway root CA, verifies its fingerprint, repeats the request with the certificate pinned, installs it in the operating-system trust store, and then saves the profile.
+
+```bash
+orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--use]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `gateway` | yes | Gateway IPv4 or IPv6 address, or an HTTPS origin. The CLI turns a bare address into `https://<address>` and refuses any other scheme. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--name=NAME` | `default` | Local profile name. Adding a profile with an existing name replaces it. |
+| `--ca=PATH` | none | Absolute path to a Gateway root CA certificate that the fetched certificate must match. The CLI refuses a different certificate with `gateway.ca_changed`. |
+| `--use` | off | Make the profile active after registration. |
+
+```bash
+orbit gateway:add 10.70.0.1 --use
+orbit gateway:add https://gateway.example.com --name=production --ca=/etc/orbit/production-root.pem
+```
+
+The operating-system trust step can ask for local administrator privileges. The JSON result includes the profile, whether it is active, the `trust_status` (`trusted` or `already_trusted`), the certificate `sha256` fingerprint, and the Gateway `request_id`.
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.profile_invalid` | The name, URL, or CA path is not accepted; the URL must be a safe HTTPS origin and the CA path must be absolute. |
+| `gateway.ca_unavailable`, `gateway.ca_fetch_failed` | The CLI could not reach or safely fetch the root CA endpoint. |
+| `gateway.ca_invalid` | The Gateway returned invalid certificate material or a fingerprint that does not match. |
+| `gateway.ca_changed` | The fetched certificate differs from the `--ca` pin. |
+| `gateway.ca_verification_failed` | The pinned HTTPS verification did not return the same certificate. |
+| `gateway.ca_install_failed` | The operating-system trust store could not be inspected or updated. |
+| `gateway.ca_profile_update_failed` | The certificate was trusted, but the profile could not be saved. |
+
+## orbit gateway:use
+
+Select an existing profile as the active Gateway. The command changes no certificate pin and no trust store.
+
+```bash
+orbit gateway:use <name>
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Local profile name. |
+
+```bash
+orbit gateway:use production
+```
+
+An unknown name returns `gateway.profile_not_found`.
+
+## orbit gateway:status
+
+Show the status and version reported by the active Gateway, with the profile name and URL.
+
+```bash
+orbit gateway:status [--json]
+```
+
+```bash
+orbit gateway:status
+```
+
+The command returns `gateway.profile_missing` when no profile is active and `gateway.unreachable` when the Gateway does not answer.
+
+## orbit gateway:trust
+
+Trust the root CA of the active Gateway in the local operating-system trust store, or confirm that it is already trusted.
+
+```bash
+orbit gateway:trust [--accept-ca-change]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--accept-ca-change` | Accept a fetched certificate that differs from the profile's current pin. Use it only after you verify the new fingerprint. |
+
+The CLI fetches the certificate, verifies it with a pinned request, installs it when it is missing, and saves the private certificate path on the profile only when the profile still has the name, URL, and pin that the command started with. Without `--accept-ca-change`, a pinned Gateway that presents another certificate exits with `gateway.ca_changed` before any installation.
+
+```bash
+orbit gateway:trust
+orbit gateway:trust --accept-ca-change
+```
+
+<Note>
+Operating-system trust and the local profile are separate stores. When the guarded profile save fails with `gateway.ca_profile_update_failed`, the trust store change is already complete; inspect the active profile and run `gateway:trust` again.
+</Note>
+
+## orbit gateway:remove
+
+Remove a profile from the local configuration and delete its pinned certificate file when one exists. The operating-system trust store stays unchanged.
+
+```bash
+orbit gateway:remove <name> [--force]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Local profile name. |
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Remove the active profile and clear the active selection. Without it, the CLI refuses the active profile with `gateway.profile_active`. |
+
+```bash
+orbit gateway:remove staging
+orbit gateway:remove default --force
+```
+
+## Related
+
+- [`node`](/cli/node) registers the machines that the active Gateway manages.
+- [`activity`](/cli/activity) lists the requests that the active Gateway authorized.

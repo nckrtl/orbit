@@ -1,0 +1,84 @@
+---
+title: "Using the API"
+sidebarTitle: "Overview"
+description: "How a client reaches the Gateway API over WireGuard, how the Gateway identifies the caller, and how every request and response is shaped."
+---
+
+The Gateway exposes one versioned HTTP API under `/api/v1`. The `orbit` command line and the [PHP SDK](/api/php-sdk) are clients of this API and add nothing to it: every CLI command on the [CLI pages](/cli/overview) is one of the endpoints in this reference.
+
+## Reach the Gateway
+
+The API listens on HTTPS on the Gateway's WireGuard address. Orbit private DNS resolves `gateway.orbit` to that address for every WireGuard peer, so a client uses `https://gateway.orbit` as its base URL, or the WireGuard IP that `orbit gateway:add` stored in the profile.
+
+The Gateway presents a certificate from the Orbit root certificate authority (CA). `GET /api/v1/ca/root` returns that certificate and its fingerprint without authentication so a new client can pin it; `orbit gateway:add` and `orbit gateway:trust` do this for you and install the certificate in the operating-system trust store. A client that already trusts the certificate passes it as its CA bundle, for example with `curl --cacert`.
+
+Redirects are never followed. The Gateway answers JSON for every endpoint except the two deployment streams, which answer newline-delimited JSON, and the runtime activation page, which answers HTML for Caddy.
+
+## Identify the caller
+
+There is no token. The Gateway identifies a caller by the WireGuard address that delivered the request and requires that address to belong to an active Node. A request from any other source receives HTTP 403 with the code `peer.identity_unknown`. Two endpoints are public: `GET /api/v1/gateway/status` and `GET /api/v1/ca/root`.
+
+The identified Node must also hold Node access to the Node that the request acts on. A Node always has access to itself; an operator grants other edges with [`node:access:add`](/cli/node#orbit-nodeaccessadd). A request without the required edge receives HTTP 403 with `node_access.required` and, in `details`, the consumer and serving Node identities. Collection endpoints such as `GET /api/v1/nodes` return only the records the caller may address.
+
+Three endpoints are called by Nodes and Caddy rather than operators: the Schedule completion callback, the Grafana authorization check, and the app-dev runtime activation page. The API sidebar groups them under Node callbacks.
+
+## Send a request
+
+Send JSON with `Content-Type: application/json` and `Accept: application/json`. The body must be one JSON object with unique top-level keys; the Gateway rejects duplicate or unknown members and a non-object body with HTTP 422 before it changes anything.
+
+Two request headers are optional.
+
+| Header | Meaning |
+| --- | --- |
+| `X-Orbit-Request-Id` | A UUID that the Gateway records as the request ID. Send one to correlate a request with its Activity and its response; the Gateway generates one otherwise. |
+| `X-Orbit-Client` | A short client name, such as `cli`, recorded with the Activity. |
+
+Path parameters are numeric IDs except where noted: Schedules use their UUID, Database connections use their slug, deploy steps and definitions use their name, and the environment endpoints accept either a positive AppInstance ID or the exact Route hostname of the AppInstance.
+
+## Read a response
+
+Every JSON success response is one envelope.
+
+```json
+{
+  "data": { "id": 7, "name": "beast", "status": "active" },
+  "meta": { "request_id": "9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81" }
+}
+```
+
+`data` is the record, or an array of records for a collection. `meta.request_id` repeats the request ID, which the Gateway also returns in the `X-Orbit-Request-Id` response header. Creation endpoints answer HTTP 201; everything else answers 200, and the two Node callbacks that carry no body answer 204.
+
+Responses never contain a password, an environment value, a certificate private key, a command line, or raw remote output. Credential-shaped values are replaced with `[REDACTED]`.
+
+## Read an error
+
+Every refusal is one error envelope with a stable code.
+
+```json
+{
+  "error": {
+    "code": "route.target_conflict",
+    "message": "AppInstance 12 already belongs to Route 4.",
+    "details": { "requested_route_id": 9, "existing_route_id": 4 },
+    "request_id": "9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81"
+  }
+}
+```
+
+| Status | Meaning |
+| --- | --- |
+| `403` | `peer.identity_unknown` or `node_access.required`. |
+| `404` | No record matches the path. |
+| `409` | A guard refused the change and the Gateway changed nothing. The code names the guard, for example `node.has_roles`, `cluster.router_required`, or `env.operation_busy`. |
+| `422` | The body failed validation: `validation.failed` with the failed rule in `details`, or a family code such as `env.configuration_invalid`. |
+| `503` | A dependency is unavailable, for example `ca.unavailable`. |
+
+Codes are namespaced by family. The [CLI pages](/cli/overview) and the reference pages list each family's codes and what the Gateway leaves in place after a refusal.
+
+## Follow a request
+
+The Gateway records one Activity for every request it authorizes, with the operation, caller, target, result, and request ID, and never the body. Read it with `GET /api/v1/activities` or [`orbit activity:list --request-id=<uuid>`](/cli/activity).
+
+## Stream a deployment
+
+`POST /api/v1/instances/{instance}/deploy` and `POST /api/v1/instances/{instance}/rollback` answer `application/x-ndjson`. Each line is one event with `type`, a monotonically increasing `sequence`, and the `request_id`: `phase` events name the phase and step, `output` events carry at most 16 KiB of base64-encoded stdout or stderr, and exactly one final `result` event reports `succeeded` or `failed` with the selected release. A client closes the connection to cancel; the Gateway never replays events. The [production release layout](/reference/deployments#use-the-deployment-api) describes the phases and limits.

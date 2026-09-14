@@ -1,3 +1,9 @@
+---
+title: "ADR 0041: Delete an empty Route during AppInstance removal"
+sidebarTitle: "0041 Delete an empty Route during AppInstance removal"
+description: "Accepted on 2026-09-07. Extends ADR 0039."
+---
+
 # ADR 0041: Delete an empty Route during AppInstance removal
 
 In the context of AppInstance removal from single-target development Routes and shared production Route pools, facing a requirement that a removed AppInstance must not leave a retained zero-target Route, we decided to delete a Route when removal leaves it with no targets and against retaining unavailable Routes after their final AppInstance is removed, to release the hostname and preserve Route ownership, accepting that a failure after Route deletion cannot restore the deleted Route.

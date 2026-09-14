@@ -1,0 +1,81 @@
+---
+title: "extension"
+description: "Enable or disable optional command families on the operator machine."
+---
+
+An extension is a command family that stays hidden until you enable it locally. Extension state lives on the operator machine and composes only that client's command surface. Enabling one changes nothing on the Gateway, and Gateway routes for an extension stay registered whether or not any client enables it.
+
+The CLI stores the enabled set in `$ORBIT_HOME/extensions.json`, next to the Gateway profiles in `config.json`. The file is private to your user; the CLI refuses to read or write it when it is a symlink, is not a regular file, or is readable by other users.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`extension:list`](#orbit-extensionlist) | List optional Orbit CLI extensions and their state. |
+| [`extension:enable`](#orbit-extensionenable) | Enable an extension and reveal its commands. |
+| [`extension:disable`](#orbit-extensiondisable) | Disable an extension and hide its commands. |
+
+Every command accepts `--json`.
+
+## Available extensions
+
+| Extension | Commands it reveals |
+| --- | --- |
+| `herdr` | The [`herdr`](/cli/herdr) family: named Herdr sessions and observation grants. |
+
+## orbit extension:list
+
+List every known extension with its local state.
+
+```bash
+orbit extension:list [--json]
+```
+
+```bash
+orbit extension:list
+```
+
+Human output is one table with the columns Extension and State. JSON output returns an `extensions` array with `extension` and `enabled` for each entry.
+
+## orbit extension:enable
+
+Enable one extension. Its commands appear in `orbit list` and run on the next invocation.
+
+```bash
+orbit extension:enable <extension> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `extension` | yes | Extension slug, for example `herdr`. |
+
+```bash
+orbit extension:enable herdr
+```
+
+An unknown slug fails with `extension.unknown`. A configuration file that is malformed or not private fails with `extension.config_invalid` and leaves the file unchanged.
+
+## orbit extension:disable
+
+Disable one extension. Its commands disappear from `orbit list`, and running one directly fails with `extension.disabled`.
+
+```bash
+orbit extension:disable <extension> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `extension` | yes | Extension slug. |
+
+```bash
+orbit extension:disable herdr
+```
+
+<Note>
+Disabling an extension does not stop, remove, or change anything the extension created on a Node. A Herdr session keeps running after you disable the `herdr` extension; use `herdr:session:destroy` first if you want it gone.
+</Note>
+
+## Related
+
+- [`herdr`](/cli/herdr) is the one extension family.
+- [Using the CLI](/cli/overview#select-a-gateway) describes `ORBIT_HOME` and the local configuration directory.

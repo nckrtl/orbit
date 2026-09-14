@@ -1,3 +1,9 @@
+---
+title: "ADR 0051: Select discovery-only feature delivery"
+sidebarTitle: "0051 Select discovery-only feature delivery"
+description: "Accepted on 2026-09-10. Extends ADR 0049."
+---
+
 # ADR 0051: Select discovery-only feature delivery
 
 In the context of feature delivery on a shared Incus host, facing repeated proof and base-integration work during review, we decided for selectable discovery-only delivery alongside the proof flow and against requiring retained proof for every feature, to shorten delivery, accepting that discovery-only delivery provides no isolated acceptance proof.

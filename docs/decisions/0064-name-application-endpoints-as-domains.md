@@ -1,3 +1,9 @@
+---
+title: "ADR 0064: Name application endpoints as domains"
+sidebarTitle: "0064 Name application endpoints as domains"
+description: "Accepted on 2026-09-13. Extends ADR 0044."
+---
+
 # ADR 0064: Name application endpoints as domains
 
 In the context of application endpoints and machine identities both being called hostnames, facing a coordinated cross-component migration before AppInstance transfers, we decided for application domains and against hostname aliases, to give application routing one unambiguous canonical term, accepting a forward-only hard cutover.

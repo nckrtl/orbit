@@ -1,0 +1,106 @@
+---
+title: "Quickstart"
+description: "Bootstrap a Gateway, connect an operator machine, add an app-dev Node, and serve your first App on its own hostname."
+---
+
+This page walks through the commands that bring an App online at `https://<app>.test`. Start with [Install from source](/reference/installation) for the complete fresh-machine prerequisites and account setup. You or your coding agent can follow the same workflow.
+
+You need two Ubuntu 26.04 machines that you can reach over SSH as `root`: one becomes the Gateway, and one becomes your first app-dev Node. PHP 8.5 and Composer 2 are required where Orbit's own code runs. The first CLI can run on the Gateway; a separate operator Node is optional.
+
+<Steps>
+  <Step title="Bootstrap the Gateway">
+    The Gateway runs directly on Linux behind Caddy and PHP-FPM. Follow [the installation guide](/reference/installation#prepare-the-gateway-machine) to prepare the `orbit` account, install dependencies, configure the checkout and state paths, and initialize the database. Then, as `orbit`, bootstrap it with your machine's reachable address:
+
+    ```bash
+    cd /home/orbit/orbit/apps/gateway
+    php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>'
+    ```
+
+    The bootstrap creates the Gateway SSH key, WireGuard key, and root certificate authority, registers the Gateway as the first Node with the `gateway` and `vpn` roles, and publishes `gateway.orbit` on the Gateway WireGuard address. The defaults use WireGuard subnet `10.44.0.0/24`, Gateway address `10.44.0.1`, and UDP port `51820`; pass `--wireguard-subnet`, `--wireguard-ip`, `--wireguard-port`, `--wireguard-endpoint`, or `--private-interface` to change them.
+  </Step>
+
+  <Step title="Connect your operator machine">
+    Run the first CLI on the Gateway as `orbit`. Its active Node identity has fleet authority:
+
+    ```bash
+    export PATH="/home/orbit/orbit/apps/cli:$PATH"
+    orbit gateway:add 10.44.0.1 --name=alpha --use \
+      --ca=/home/orbit/.orbit/ca/root.pem
+    orbit gateway:status
+    orbit node:list
+    ```
+
+    To use a separate Linux operator machine, follow [Connect the CLI](/reference/installation#connect-the-cli). Provision its WireGuard peer from the Gateway, using its verified SSH fingerprint and the Gateway public key. Grant the operator access from the Gateway CLI with `orbit node:access:add <operator-id> <gateway-id>` before running fleet commands there. Access to the Gateway grants fleet-wide authority.
+
+    `gateway:add` fetches the Gateway root certificate, pins it, and installs it in the operating-system trust store, so it can ask for administrator privileges. Profiles live in `$HOME/.orbit/config.json`. The [gateway family](/cli/gateway) explains profiles and trust recovery.
+  </Step>
+
+  <Step title="Add an app-dev Node">
+    Authorize the Gateway public SSH key on the fresh machine and verify its host fingerprint through the provider console, as [Your first app](/reference/first-app#add-the-development-node) describes. Give the machine the `app-dev` role and a development TLD; generated hostnames use that TLD.
+
+    ```bash
+    orbit node:add beast 203.0.113.30 \
+      --role=app-dev \
+      --tld=test \
+      --host-key-fingerprint='SHA256:<fingerprint>'
+    ```
+
+    The Gateway connects as `root`, creates the managed `orbit` user, installs its SSH key, joins the machine to WireGuard, and converges the role. Once a role converges, public SSH closes and the Gateway reaches the Node over WireGuard only. Run `orbit node:list` to see its ID and status. The [node family](/cli/node) and [Node provisioning](/reference/node-provisioning) cover every option and failure code.
+  </Step>
+
+  <Step title="Create an App and an AppInstance">
+    An App records one repository. An AppInstance is a checkout of that App on one Node with its own hostname.
+
+    ```bash
+    orbit app:create acme https://github.com/acme/site.git
+    orbit instance:create <app-id> <node-id> default
+    ```
+
+    The Gateway resolves the default branch, clones the repository under the Node apps root, selects a PHP runtime when the source needs one, sets a Laravel `APP_URL`, and publishes the Route. The response prints the URL, `https://acme.test` for this example. The reserved name `default` gives the App its `<app>.test` hostname; another name gives `<name>.<app>.test`.
+
+    Open the URL from a WireGuard peer. Orbit VPN DNS resolves it, and the Orbit root certificate that `gateway:add` installed makes the connection trusted. A DNS override alone does not provide network access or trust. A Mac must also have a route to the private Node and trust the Gateway root certificate; [`orbit dns:resolve`](/cli/dns) configures only its resolver override.
+
+    <Note>
+    Active means Orbit prepared the source, runtime, and Route. Application setup such as `composer install`, an application key, or a database is yours or your agent's next step; the [Applications guide](/domains/applications) explains the boundary.
+    </Note>
+  </Step>
+
+  <Step title="Run a Process and keep an eye on the fleet">
+    Long-running services belong to the AppInstance. Record a Vite development server as a systemd Process and start it:
+
+    ```bash
+    orbit process:create vite \
+      --instance=<instance-id> \
+      --runtime=systemd \
+      --command=/usr/local/bin/vp --command=run --command=dev --command=--host=0.0.0.0 \
+      --restart=always \
+      --start
+    ```
+
+    Idle development Processes hibernate after an hour without HTTP traffic and wake on the next request; add `--keep-alive` to a queue worker that must keep running. Verify the whole fleet at any time without changing anything:
+
+    ```bash
+    orbit doctor
+    orbit activity:list
+    ```
+
+    Doctor exits `1` when a Node drifts from what the Gateway expects. Activity shows who ran what, including your agent.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Register an existing checkout" icon="git-branch" href="/cli/instance#orbit-instanceregister">
+    Adopt a repository that already lives on the Node instead of cloning it again.
+  </Card>
+  <Card title="Ship to production" icon="rocket" href="/reference/deployments">
+    Clone a candidate into a production AppInstance, configure deploy steps, and deploy.
+  </Card>
+  <Card title="Attach a database" icon="database" href="/cli/database">
+    Register a connection once and write its keys into any AppInstance.
+  </Card>
+  <Card title="Every command" icon="terminal" href="/cli/overview">
+    The conventions shared by all families, and the family pages.
+  </Card>
+</CardGroup>

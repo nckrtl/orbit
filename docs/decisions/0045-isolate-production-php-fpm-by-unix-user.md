@@ -1,3 +1,9 @@
+---
+title: "ADR 0045: Isolate production PHP-FPM by Unix user"
+sidebarTitle: "0045 Isolate production PHP-FPM by Unix user"
+description: "Accepted on 2026-09-10. Extends ADR 0011 for production runtime ownership."
+---
+
 # ADR 0045: Isolate production PHP-FPM by Unix user
 
 In the context of production AppInstances that share a PHP-FPM master, facing cache resets that affect other applications, we decided for one master per production Unix user with tuning kept on the Node and against shared production masters and Gateway-owned tuning, to isolate runtime operations, accepting separate cache allocations and configuration maintained on each Node.

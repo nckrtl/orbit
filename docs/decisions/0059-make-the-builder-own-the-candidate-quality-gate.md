@@ -1,3 +1,9 @@
+---
+title: "ADR 0059: Make the Builder own the candidate quality gate"
+sidebarTitle: "0059 Make the Builder own the candidate quality gate"
+description: "Accepted on 2026-09-10. Extends ADR 0053."
+---
+
 # ADR 0059: Make the Builder own the candidate quality gate
 
 In the context of local feature delivery, facing deterministic quality failures that consume independent review rounds, we decided for a candidate quality gate that the Builder runs and the reviewer validates and against repeating the same gate during review, to shorten correction and landing time, accepting that review relies on the repository-produced receipt from the Builder's host.

@@ -1,3 +1,9 @@
+---
+title: "ADR 0048: Copy App process and schedule definitions into AppInstances"
+sidebarTitle: "0048 Copy App process and schedule definitions into AppInstances"
+description: "Accepted on 2026-09-10. Extends ADR 0047 for process and schedule selection and ADR 0038 for ownership of instantiated copies."
+---
+
 # ADR 0048: Copy App process and schedule definitions into AppInstances
 
 In the context of cloning production AppInstances with workers and scheduled commands, facing candidate customizations that do not describe the intended production setup, we decided for App-owned definitions copied into independent AppInstance records and against copying candidate overrides or maintaining live inheritance, to make target preparation follow declared application intent, accepting explicit updates to existing instances.

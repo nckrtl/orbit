@@ -1,3 +1,8 @@
+---
+title: "Production release layout"
+description: "How a production AppInstance stores deploy steps, separates releases from persistent files, deploys a branch, and rolls back retained code."
+---
+
 # Production release layout
 
 This page tells an operator how a production App instance stores named deploy steps and changes its deployment branch. It describes how that App instance separates replaceable code from persistent environment configuration and optional SQLite data. It covers deployment of the recorded branch and rollback of retained code. Cloning produces each production App instance, and the first deployment produces the release layout. [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) owns the production release and serving-layout boundary. [ADR 0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) owns deploy-step records and the branch update.

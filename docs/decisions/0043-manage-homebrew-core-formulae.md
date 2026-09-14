@@ -1,3 +1,9 @@
+---
+title: "ADR 0043: Manage Homebrew Core formulae"
+sidebarTitle: "0043 Manage Homebrew Core formulae"
+description: "Accepted on 2026-09-08. Extends ADR 0001 and ADR 0042."
+---
+
 # ADR 0043: Manage Homebrew Core formulae
 
 In the context of machine-level Tools unavailable through Orbit's existing managers, facing a requirement to install Homebrew packages without accepting caller-controlled software sources or builds, we decided for a Homebrew scope that Orbit owns and limits to bottled Homebrew Core formulae and against taps, casks, source builds, and generic Brew input, to add broad Linux Tool coverage, accepting a smaller package set than Homebrew itself supports.

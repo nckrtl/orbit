@@ -1,0 +1,35 @@
+name: Bug report
+description: Report an Orbit problem with steps to reproduce it.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove secrets and personal data before sharing output. Never attach `.env`, private keys, tokens, or a Gateway state backup.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Version and environment
+      description: Include the Orbit source commit, CLI version, Gateway version, OS versions, architecture, and relevant Node roles.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include exact commands with secrets replaced by placeholders.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include redacted output, stable error codes, and request IDs if available.
+    validations:
+      required: true

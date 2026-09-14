@@ -1,3 +1,9 @@
+---
+title: "ADR 0042: Provision Tool Managers on demand"
+sidebarTitle: "0042 Provision Tool Managers on demand"
+description: "Accepted on 2026-09-08. Extends ADR 0001."
+---
+
 # ADR 0042: Provision Tool Managers on demand
 
 In the context of Tool operations on Gateway-managed Nodes, facing a requirement to use supported managers without tying them to application roles or installing every manager everywhere, we decided for retained on-demand Node capabilities and against role-owned or universally preinstalled managers, to make Tools available wherever the Gateway owns SSH management, accepting setup latency on first use.

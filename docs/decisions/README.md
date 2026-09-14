@@ -1,3 +1,8 @@
+---
+title: "Architecture decisions"
+description: "What an architecture decision record is, when Orbit writes one, and how an accepted record stays immutable."
+---
+
 # Architecture decisions
 
 Architecture decision records explain why Orbit chose a significant product or

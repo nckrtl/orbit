@@ -1,3 +1,8 @@
+---
+title: "Node settings"
+description: "The apps.path storage setting on a Node: accepted input, effective root, validation, and failure codes."
+---
+
 # Node settings
 
 This reference is for operators who set the apps-root storage path on a Node and need the accepted setting path, inputs, outputs, and failure codes.

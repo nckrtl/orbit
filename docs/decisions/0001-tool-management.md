@@ -1,3 +1,9 @@
+---
+title: "ADR 0001: Adopt the closed Tool Management contract"
+sidebarTitle: "0001 Adopt the closed Tool Management contract"
+description: "Accepted on 2026-08-27."
+---
+
 # ADR 0001: Adopt the closed Tool Management contract
 
 ## Status

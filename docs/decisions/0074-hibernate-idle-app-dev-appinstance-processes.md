@@ -1,3 +1,9 @@
+---
+title: "ADR 0074: Hibernate idle app-dev AppInstance Processes"
+sidebarTitle: "0074 Hibernate idle app-dev AppInstance Processes"
+description: "Accepted on 2026-09-14. Extends ADR 0036 and ADR 0069."
+---
+
 # ADR 0074: Hibernate idle app-dev AppInstance Processes
 
 In the context of development AppInstances that keep Vite and other lifecycle Processes running without HTTP traffic, facing wasted CPU and memory on app-dev Nodes, we decided for idle HTTP halt and first-request wake of AppInstance Processes on Nodes with the active app-dev role and against Workspace scopes, Schedule pauses, or treating restart policy as keep-alive, to keep development runtimes on demand, accepting that a cold first request waits for those Processes to start.

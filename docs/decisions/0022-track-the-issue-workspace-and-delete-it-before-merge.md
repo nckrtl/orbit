@@ -1,3 +1,9 @@
+---
+title: "ADR 0022: Track the issue workspace and delete it before merge"
+sidebarTitle: "0022 Track the issue workspace and delete it before merge"
+description: "Accepted on 2026-09-03. Amends ADR 0015 where a proof plan declares another issue's fixtures."
+---
+
 # ADR 0022: Track the issue workspace and delete it before merge
 
 In the context of the plan, the proof plan, and the fixtures that describe how one issue is built and proved, facing a plan no reviewer reads from the pull request and twenty-five proof plans that stay on `main` once their issues close, we decided for tracking all of it under `.loop/` on the issue's branch and deleting that directory in one commit before the merge, and against ignoring it or leaving it on `main`, to achieve one reviewable workspace per issue and a `main` that carries none of it, accepting that every issue takes a second approval.

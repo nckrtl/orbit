@@ -1,3 +1,8 @@
+---
+title: "Private DNS"
+description: "How a managed Node selects its resolver, how the Gateway answers Cluster Router addresses, and how to inspect and repair one peer."
+---
+
 # Private DNS
 
 Managed Linux Nodes use Orbit's Domain Name System (DNS) server over the VPN by default. This page explains resolver selection, Cluster Router addresses, and how to inspect or repair one peer. [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) defines the default policy.

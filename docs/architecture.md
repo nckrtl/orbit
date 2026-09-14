@@ -1,3 +1,8 @@
+---
+title: "Architecture"
+description: "How a command travels from the CLI through the Gateway to a managed Node, and how web traffic takes a separate path through Routes."
+---
+
 # Architecture
 
 Orbit has one active Gateway. The command-line interface (CLI) sends it requests, and it coordinates changes on managed machines called Nodes.

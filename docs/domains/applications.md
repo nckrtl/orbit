@@ -1,3 +1,8 @@
+---
+title: "Applications"
+description: "How Orbit creates or adopts, configures, and exposes an AppInstance on one Node, from App creation to removal."
+---
+
 # Applications
 
 Create an App instance on a Node you choose, or register an existing checkout. The App stores shared source defaults. Each App instance has its own location and Route. The supported App instance commands are `instance:create`, `instance:list`, `instance:show`, and `instance:destroy`. Those commands resolve App instances owned by their App and Node. The fleet operator prepares incompatible legacy deployments outside Orbit. Orbit provides no conversion command, API, or SDK operation.

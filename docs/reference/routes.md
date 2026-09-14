@@ -1,3 +1,8 @@
+---
+title: "Routes"
+description: "What a Route records, how Orbit projects its private traffic path through a Node or Router, and which later changes it coordinates or refuses."
+---
+
 # Routes
 
 A Route gives an App instance a hostname and directs private traffic to it. This page explains hostname selection, traffic setup, and supported changes. Each active App instance has exactly one Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires.

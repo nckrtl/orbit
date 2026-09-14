@@ -1,3 +1,8 @@
+---
+title: "Tech stack"
+description: "The PHP projects, managed-machine platform, data stores, and development tools that make up Orbit."
+---
+
 # Tech stack
 
 Orbit contains separate PHP projects in one repository. Each has its own dependencies, tests, and Composer lock file.

@@ -1,0 +1,986 @@
+#!/usr/bin/env python3
+"""Generate docs/openapi.json from the Gateway routes, form requests, data classes, the PHP SDK, and the CLI.
+
+Run from any directory:
+
+    bin/docs-openapi
+
+The script reads the Gateway route table through `php apps/gateway/artisan route:list --json`, parses the
+controllers, form requests, data classes, and enums under apps/gateway/app, the request and response classes
+under packages/php-sdk/src, and the command descriptions from `php apps/cli/orbit list --format=json`. It writes
+docs/openapi.json, which docs/docs.json references for the API tab of the Mintlify site.
+"""
+
+import json
+import pathlib
+import re
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+GW = ROOT / 'apps/gateway'
+SDK = ROOT / 'packages/php-sdk/src'
+DOCS = ROOT / 'docs'
+OUTPUT = DOCS / 'openapi.json'
+
+
+# ---------------------------------------------------------------- source parsing
+def snake(name):
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
+
+def block(s, start):
+    j = s.find('{', start)
+    depth = 0
+    k = j
+    while k < len(s):
+        if s[k] == '{':
+            depth += 1
+        elif s[k] == '}':
+            depth -= 1
+            if depth == 0:
+                return s[j + 1:k]
+        k += 1
+    return ''
+
+
+def run_json(args, cwd):
+    out = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
+def load_routes():
+    rows = run_json(['php', 'artisan', 'route:list', '--json', '--path=api'], GW)
+    routes = []
+    for r in rows:
+        if not r['uri'].startswith('api/'):
+            continue
+        routes.append({
+            'method': r['method'].split('|')[0],
+            'uri': r['uri'],
+            'name': r.get('name'),
+            'action': r['action'].split('\\')[-1],
+        })
+    return routes
+
+
+def load_commands():
+    rows = run_json(['php', 'orbit', 'list', '--format=json'], ROOT / 'apps/cli')['commands']
+    return {c['name']: c for c in rows}
+
+
+def load_controllers():
+    ctrl = {}
+    for f in sorted((GW / 'app/Http/Controllers/Api').glob('*.php')):
+        s = f.read_text()
+        for m in re.finditer(r'public function (\w+)\((.*?)\)\s*:\s*([\w|\\]+)', s, re.S):
+            params = re.sub(r'\s+', ' ', m.group(2))
+            body = block(s, s.find(')', m.end(2)))
+            ctrl[f'{f.stem}@{m.group(1)}'] = {
+                'requests': re.findall(r'(\w+Request) \$', params),
+                'data': sorted({a or b for a, b in re.findall(r'(\w+Data)::fromModel|(\w+Data)::from\w*\(', body)}),
+                'created': bool(re.search(r'\],\s*201\)', body)),
+            }
+    return ctrl
+
+
+def load_form_requests():
+    reqs = {}
+    for f in sorted((GW / 'app/Http/Requests').rglob('*.php')):
+        s = f.read_text()
+        i = s.find('function rules(')
+        if i < 0:
+            continue
+        reqs[f.stem] = block(s, i)
+    return reqs
+
+
+def load_data_classes():
+    data = {}
+    for f in sorted((GW / 'app/Data').rglob('*.php')):
+        s = f.read_text()
+        m = re.search(r'class (\w+)', s)
+        if not m:
+            continue
+        ctor = re.search(r'function __construct\((.*?)\)\s*\{', s, re.S)
+        docs = {n: t for t, n in re.findall(r'@param\s+((?:[^\s<]|<[^>]*>)+)\s+\$(\w+)', s)}
+        props = []
+        if ctor:
+            for pm in re.finditer(r'public\s+(?:readonly\s+)?([\w|?\\]+)\s+\$(\w+)(\s*=\s*[^,)]+)?', ctor.group(1)):
+                props.append({'name': pm.group(2), 'type': pm.group(1), 'doc': docs.get(pm.group(2))})
+        data[m.group(1)] = {'props': props, 'snake': 'SnakeCaseMapper' in s}
+    return data
+
+
+def load_enums():
+    enums = {}
+    for f in sorted((GW / 'app').rglob('*.php')):
+        s = f.read_text()
+        m = re.search(r'enum (\w+)(?::\s*string)?\s*(?:implements [\w, \\]+)?\s*\{', s)
+        if not m:
+            continue
+        cases = re.findall(r"case \w+\s*=\s*'([^']+)'", s)
+        if cases:
+            enums[m.group(1)] = cases
+    return enums
+
+
+def load_sdk_requests():
+    out = []
+    files = {f.stem: f for f in (SDK / 'Requests').rglob('*.php')}
+
+    def parse(f):
+        s = f.read_text()
+        m = re.search(r'(?:final |abstract )?class (\w+)', s)
+        if not m or 'abstract class' in s:
+            return None
+        method = re.search(r'Method::(\w+)', s)
+        ep = re.search(r'function resolveEndpoint\(\): string\s*\{\s*return\s*(.+?);', s, re.S)
+        ctor = re.search(r'function __construct\((.*?)\)\s*\{', s, re.S)
+        body = re.search(r'function defaultBody\(\): array\s*\{(.*?)\n    \}', s, re.S)
+        query = re.search(r'function defaultQuery\(\): array\s*\{(.*?)\n    \}', s, re.S)
+        row = {
+            'file': str(f.relative_to(SDK / 'Requests')),
+            'class': m.group(1),
+            'method': method.group(1) if method else None,
+            'endpoint': re.sub(r'\s+', ' ', ep.group(1)) if ep else None,
+            'ctor': re.sub(r'\s+', ' ', ctor.group(1)).strip() if ctor else '',
+            'body': re.sub(r'\s+', ' ', body.group(1)).strip() if body else None,
+            'query': re.sub(r'\s+', ' ', query.group(1)).strip() if query else None,
+        }
+        if not row['endpoint']:
+            parent = re.search(r'extends (\w+)', s)
+            action = re.search(r"function action\(\): string\s*\{\s*return '(\w+)'", s)
+            if parent and action and parent.group(1) in files:
+                psrc = files[parent.group(1)].read_text()
+                pep = re.search(r'function resolveEndpoint\(\): string\s*\{\s*return\s*(.+?);', psrc, re.S)
+                pm = re.search(r'Method::(\w+)', psrc)
+                pctor = re.search(r'function __construct\((.*?)\)\s*\{', psrc, re.S)
+                pbody = re.search(r'function defaultBody\(\): array\s*\{(.*?)\n    \}', psrc, re.S)
+                if pep:
+                    row['endpoint'] = pep.group(1).replace('{$this->action()}', action.group(1))
+                    row['method'] = row['method'] or (pm.group(1) if pm else None)
+                    row['ctor'] = row['ctor'] or (re.sub(r'\s+', ' ', pctor.group(1)).strip() if pctor else '')
+                    row['body'] = row['body'] or (re.sub(r'\s+', ' ', pbody.group(1)).strip() if pbody else None)
+        return row
+
+    for f in sorted(files.values()):
+        row = parse(f)
+        if row:
+            out.append(row)
+    return out
+
+
+def load_sdk_responses():
+    out = {}
+    for f in sorted((SDK / 'Responses').rglob('*.php')):
+        s = f.read_text()
+        m = re.search(r'(?:class|interface|enum) (\w+)', s)
+        if not m:
+            continue
+        ctor = re.search(r'function __construct\((.*?)\)\s*\{', s, re.S)
+        props = []
+        if ctor:
+            for pm in re.finditer(r'public\s+(?:readonly\s+)?([\w|?\\]+)\s+\$(\w+)', ctor.group(1)):
+                props.append((pm.group(2), pm.group(1)))
+        out[m.group(1)] = props
+    return out
+
+
+routes = load_routes()
+commands = load_commands()
+controllers = load_controllers()
+form_requests = load_form_requests()
+gdata = load_data_classes()
+enums = load_enums()
+sdk = load_sdk_requests()
+sdkres = load_sdk_responses()
+
+INPUT_PREFIX = re.compile(r'^(Create|Add(?!ed)|Update|Provision|Remove(?!d)|Register|Clone|Prepare|Store|Install|Issue|Bootstrap|Retarget|AppDefinitionInput)')
+
+# ---------------------------------------------------------------- families, summaries
+TAGS = [
+    ('gateway', 'Gateway', 'Status and trust of the active Gateway.'),
+    ('node', 'Nodes', 'Machines in the fleet, their roles, access grants, and storage settings.'),
+    ('cluster', 'Clusters', 'Groups of Nodes with one Router and one development TLD.'),
+    ('firewall', 'Firewall', 'Named UFW rules on one Node.'),
+    ('tool', 'Tools', 'Packages that Orbit installs on a Node through a Tool Manager.'),
+    ('metrics', 'Metrics', 'The Prometheus and Grafana role and its exporters.'),
+    ('app', 'Apps', 'Application records with one repository each.'),
+    ('instance', 'AppInstances', 'Development checkouts and production releases of an App on one Node.'),
+    ('env', 'Environment', 'Stored AppInstance environment configuration and its .env projection.'),
+    ('route', 'Routes', 'Hostnames that reach an AppInstance.'),
+    ('database', 'Database connections', 'The registry of mysql, pgsql, and sqlite connections.'),
+    ('process', 'Processes', 'systemd services and Docker containers owned by an AppInstance, a Node, or an App definition.'),
+    ('schedule', 'Schedules', 'Recurring commands run by native systemd timers.'),
+    ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
+    ('activity', 'Activities', 'The Gateway log of authorized commands.'),
+    ('herdr', 'Herdr sessions', 'Named Herdr terminal sessions and observation grants.'),
+    ('workspace', 'Workspaces', 'Git worktrees owned by legacy Instances.'),
+    ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
+]
+TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
+INTERNAL = {'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance'}
+DEFINITION_ROUTES = {
+    'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
+    'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
+    'AppRuntimeDefinitionsController@processShow': 'Show a process definition',
+    'AppRuntimeDefinitionsController@processUpdate': 'Replace a process definition',
+    'AppRuntimeDefinitionsController@processDestroy': 'Remove a process definition',
+    'AppRuntimeDefinitionsController@scheduleIndex': 'List Schedule definitions',
+    'AppRuntimeDefinitionsController@scheduleStore': 'Create a Schedule definition',
+    'AppRuntimeDefinitionsController@scheduleShow': 'Show a Schedule definition',
+    'AppRuntimeDefinitionsController@scheduleUpdate': 'Replace a Schedule definition',
+    'AppRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
+}
+SUMMARIES = {
+    'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate',
+    'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
+    'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
+    'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
+    'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
+    'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
+    'firewall:list': 'List firewall rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
+    'tool:manager:list': 'List Tool Managers', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
+    'metrics:enable': 'Enable Metrics', 'metrics:disable': 'Disable Metrics', 'metrics:status': 'Show Metrics status', 'metrics:credentials': 'Show Metrics credentials', 'metrics:credentials:reset': 'Reset Metrics credentials',
+    'metrics:exporter:enable': 'Enable an exporter', 'metrics:exporter:disable': 'Disable an exporter', 'metrics:grafana:authorize': 'Authorize Grafana access',
+    'app:list': 'List Apps', 'app:show': 'Show an App', 'app:create': 'Create an App', 'app:destroy': 'Remove an App',
+    'instance:list': 'List AppInstances', 'instance:show': 'Show an AppInstance', 'instance:create': 'Create an AppInstance', 'instance:register': 'Register an AppInstance', 'instance:update': 'Update the deployment branch', 'instance:destroy': 'Remove an AppInstance',
+    'instance:clone': 'Clone an AppInstance', 'instance:deployment-layout:prepare': 'Prepare the deployment layout', 'instance:deploy-step:list': 'List deploy steps', 'instance:deploy-step:create': 'Create a deploy step', 'instance:deploy-step:update': 'Update a deploy step', 'instance:deploy-step:destroy': 'Remove a deploy step',
+    'instance:deployment-config:show': 'Show the deployment configuration', 'instance:deployment-config:update': 'Replace the deployment configuration', 'instance:deploy': 'Deploy an AppInstance', 'instance:release:list': 'List retained releases', 'instance:rollback': 'Roll back an AppInstance',
+    'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
+    'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
+    'route:list': 'List Routes', 'route:show': 'Show a Route', 'route:create': 'Create a Route', 'route:update': 'Update a Route', 'route:destroy': 'Remove a Route', 'route:target:set': 'Set the Route target', 'route:target:unset': 'Clear the Route target',
+    'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'process:destroy': 'Remove a Process',
+    'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
+    'doctor': 'Run Doctor', 'activity:list': 'List Activities', 'activity:show': 'Show an Activity',
+    'herdr:session:list': 'List Herdr sessions', 'herdr:session:show': 'Show a Herdr session', 'herdr:session:create': 'Create a Herdr session', 'herdr:session:restart': 'Restart a Herdr session', 'herdr:session:destroy': 'Remove a Herdr session', 'herdr:observe': 'Issue an observation grant',
+    'workspace:list': 'List Workspaces', 'workspace:show': 'Show a Workspace', 'workspace:new': 'Create a Workspace', 'workspace:php': 'Change the Workspace PHP version', 'workspace:remove': 'Remove a Workspace',
+    'runtime-activation:app-instance': 'Wake an AppInstance',
+}
+DESCRIPTIONS = {
+    'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
+    'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
+    'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
+    'schedule:complete': 'The installed Schedule callback on the host Node reports the latest run. The Gateway accepts it only from the Schedule\'s recorded host Node and records `last_run_at` and `last_run_status`.',
+    'runtime-activation:app-instance': 'Caddy on the AppInstance Node calls this endpoint when the awake marker is absent. The Gateway returns an HTML progress page and starts the desired-running Processes.',
+    'instance:deployment-config:show': 'Returns the recorded deployment branch and the deploy steps in phase and placement order as one document.',
+    'instance:deployment-config:update': 'Atomically replaces the branch and the complete deploy-step set from one document without fetching source or starting a deployment.',
+    'instance:deployment-layout:prepare': 'Converts an existing production AppInstance that serves code from its home into the release layout with `releases/` and `current`.',
+}
+
+
+def tag_for(route):
+    if route['name'] in INTERNAL:
+        return 'Node callbacks'
+    return TAG_BY_PREFIX[route['name'].split(':')[0]]
+
+
+def summary_for(route):
+    if route['action'] in DEFINITION_ROUTES:
+        return DEFINITION_ROUTES[route['action']]
+    return SUMMARIES.get(route['name'], route['name'])
+
+
+def description_for(route):
+    if route['name'] in DESCRIPTIONS:
+        return DESCRIPTIONS[route['name']]
+    if route['action'] in DEFINITION_ROUTES:
+        return 'App-owned definitions carry the runtime specification that production preparation copies into a new AppInstance. Changing a definition changes App configuration only.'
+    c = commands.get(route['name'])
+    if not c:
+        return None
+    text = c['description']
+    if c.get('help') and c['help'] != c['description']:
+        text += '\n\n' + c['help']
+    return text
+
+
+# ---------------------------------------------------------------- path parameters
+PARAM_RENAME = {'firewallRule:name': 'firewall_rule', 'servingNode': 'serving_node', 'consumerNode': 'consumer_node', 'processDefinition': 'process_definition', 'scheduleDefinition': 'schedule_definition'}
+PARAM_SCHEMAS = {
+    'node': ({'type': 'integer', 'minimum': 1}, 'Numeric Node ID.'),
+    'serving_node': ({'type': 'integer', 'minimum': 1}, 'Numeric ID of the Node that receives commands.'),
+    'consumer_node': ({'type': 'integer', 'minimum': 1}, 'Numeric ID of the Node that sends commands.'),
+    'cluster': ({'type': 'integer', 'minimum': 1}, 'Numeric Cluster ID.'),
+    'app': ({'type': 'integer', 'minimum': 1}, 'Numeric App ID.'),
+    'instance': ({'type': 'integer', 'minimum': 1}, 'Numeric AppInstance ID.'),
+    'candidate': ({'type': 'integer', 'minimum': 1}, 'Numeric ID of the candidate AppInstance.'),
+    'route': ({'type': 'integer', 'minimum': 1}, 'Numeric Route ID.'),
+    'activity': ({'type': 'integer', 'minimum': 1}, 'Numeric Activity ID.'),
+    'tool': ({'type': 'integer', 'minimum': 1}, 'Numeric Tool ID.'),
+    'workspace': ({'type': 'integer', 'minimum': 1}, 'Numeric Workspace ID.'),
+    'process': ({'type': 'integer', 'minimum': 1}, 'Numeric Process ID.'),
+    'session': ({'type': 'integer', 'minimum': 1}, 'Numeric Herdr session ID.'),
+    'schedule': ({'type': 'string', 'format': 'uuid'}, 'Schedule UUID.'),
+    'step': ({'type': 'string', 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'}, 'Deploy step name.'),
+    'key': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,254}$'}, 'Environment key.'),
+    'database_connection': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database connection slug.'),
+    'process_definition': ({'type': 'string'}, 'Process definition name, unique within the App.'),
+    'schedule_definition': ({'type': 'string'}, 'Schedule definition name, unique within the App.'),
+    'firewall_rule': ({'type': 'string'}, 'Firewall rule name, unique on the Node.'),
+}
+ENV_INSTANCE = ({'type': 'string'}, 'Positive AppInstance ID or the exact Route hostname of the AppInstance.')
+EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'app': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
+
+
+def openapi_path(route):
+    params = []
+
+    def repl(m):
+        name = PARAM_RENAME.get(m.group(1), m.group(1))
+        params.append(name)
+        return '{' + name + '}'
+
+    return re.sub(r'\{([^}]+)\}', repl, '/' + route['uri']), params
+
+
+# ---------------------------------------------------------------- validation rules -> JSON schema
+def strip_closures(text):
+    out = ''
+    i = 0
+    pattern = re.compile(r'(static\s+)?(function|fn)\s*\(')
+    while i < len(text):
+        m = pattern.search(text, i)
+        if not m:
+            out += text[i:]
+            break
+        out += text[i:m.start()]
+        j = text.find('{', m.end())
+        k = text.find('=>', m.end())
+        if m.group(2) == 'fn' or (k != -1 and (j == -1 or k < j)):
+            depth = 0
+            p = m.end()
+            while p < len(text):
+                if text[p] in '([{':
+                    depth += 1
+                elif text[p] in ')]}':
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif text[p] == ',' and depth == 0:
+                    break
+                p += 1
+            i = p
+            continue
+        depth = 0
+        p = j
+        while p < len(text):
+            if text[p] == '{':
+                depth += 1
+            elif text[p] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            p += 1
+        i = p + 1
+    return out
+
+
+def parse_rule_entries(text):
+    arr = text[text.find('return'):]
+    j = arr.find('[')
+    depth = 0
+    k = j
+    entries = {}
+    key = None
+    vstart = None
+    while k < len(arr):
+        c = arr[k]
+        if c == "'" and depth >= 1:
+            e = k + 1
+            while e < len(arr) and not (arr[e] == "'" and arr[e - 1] != '\\'):
+                e += 1
+            if depth == 1 and key is None:
+                m = re.match(r"'([^']+)'\s*=>", arr[k:])
+                if m:
+                    key = m.group(1)
+                    k += len(m.group(0))
+                    vstart = k
+                    continue
+            k = e + 1
+            continue
+        if c in '[({':
+            depth += 1
+        elif c in '])}':
+            depth -= 1
+            if depth == 0:
+                if key is not None:
+                    entries[key] = arr[vstart:k]
+                break
+        elif c == ',' and depth == 1 and key is not None:
+            entries[key] = arr[vstart:k]
+            key = None
+            vstart = None
+        k += 1
+    return entries
+
+
+def tokens_for(value):
+    v = strip_closures(value)
+    toks = []
+    for m in re.finditer(r'Rule::enum\((\w+)::class\)', v):
+        toks.append(('enum', m.group(1)))
+    for m in re.finditer(r'Rule::in\(\[(.*?)\]\)', v, re.S):
+        toks.append(('in', re.findall(r"'([^']*)'", m.group(1))))
+    if 'Rule::requiredIf' in v or 'required_if' in v:
+        toks.append(('requiredIf', None))
+    v2 = re.sub(r'Rule::\w+\(.*?\)(?=\s*[,\]])', '', v, flags=re.S)
+    for m in re.finditer(r"'((?:[^'\\]|\\.)*)'", v2):
+        s = m.group(1)
+        parts = [s] if not ('|' in s and ':' not in s.split('|')[0] and not s.startswith('regex')) else s.split('|')
+        for t in parts:
+            toks.append(('rule', t))
+    return toks
+
+
+TYPE_RULES = {'string': 'string', 'integer': 'integer', 'int': 'integer', 'numeric': 'number', 'boolean': 'boolean', 'bool': 'boolean', 'array': 'array', 'list': 'array', 'uuid': 'string', 'ipv4': 'string', 'ipv6': 'string', 'ip': 'string', 'email': 'string', 'url': 'string', 'json': 'string', 'alpha_dash': 'string', 'lowercase': 'string', 'ascii': 'string'}
+
+
+def schema_from_tokens(toks):
+    sch = {}
+    required = False
+    nullable = False
+    notes = []
+    type_ = None
+    for kind, t in toks:
+        if kind == 'enum':
+            sch['enum'] = enums.get(t, [])
+            type_ = type_ or 'string'
+        elif kind == 'in':
+            sch['enum'] = t
+            type_ = type_ or 'string'
+        elif kind == 'requiredIf':
+            notes.append('Conditionally required.')
+        elif kind == 'rule':
+            base, _, arg = t.partition(':')
+            if base in TYPE_RULES and type_ is None:
+                type_ = TYPE_RULES[base]
+            if base in ('uuid', 'ipv4', 'ipv6', 'email'):
+                sch['format'] = base
+            elif base == 'url':
+                sch['format'] = 'uri'
+            elif base == 'required':
+                required = True
+            elif base == 'nullable':
+                nullable = True
+            elif base == 'alpha_dash':
+                sch['pattern'] = '^[A-Za-z0-9_-]+$'
+            elif base == 'max':
+                sch['_max'] = arg
+            elif base == 'min':
+                sch['_min'] = arg
+            elif base == 'between':
+                a, b = arg.split(',')
+                sch['_min'] = a
+                sch['_max'] = b
+            elif base == 'in':
+                sch['enum'] = arg.split(',')
+            elif base == 'regex':
+                pat = arg
+                if pat and not pat[0].isalnum() and pat[0] not in '^(':
+                    pat = pat[1:pat.rfind(pat[0])]
+                sch['pattern'] = pat.replace('\\A', '^').replace('\\z', '$')
+            elif base == 'required_without':
+                notes.append(f'Required when `{arg}` is absent.')
+            elif base == 'prohibited':
+                notes.append('Must be absent.')
+    type_ = type_ or 'string'
+    mx, mn = sch.pop('_max', None), sch.pop('_min', None)
+    if type_ == 'string':
+        if mx:
+            sch['maxLength'] = int(mx)
+        if mn:
+            sch['minLength'] = int(mn)
+    elif type_ in ('integer', 'number'):
+        if mx:
+            sch['maximum'] = int(mx)
+        if mn:
+            sch['minimum'] = int(mn)
+    elif type_ == 'array':
+        if mx:
+            sch['maxItems'] = int(mx)
+        if mn:
+            sch['minItems'] = int(mn)
+    sch = {'type': [type_, 'null'] if nullable else type_, **sch}
+    if notes:
+        sch['description'] = ' '.join(notes)
+    return sch, required
+
+
+def clean_schema(s):
+    if isinstance(s, dict):
+        if s.get('required') == []:
+            s.pop('required')
+        if s.get('type') == 'object' and s.get('properties') == {}:
+            s.pop('properties')
+        for v in s.values():
+            clean_schema(v)
+    elif isinstance(s, list):
+        for v in s:
+            clean_schema(v)
+    return s
+
+
+def rules_to_schema(rules_text):
+    root = {'type': 'object', 'properties': {}, 'required': []}
+    for key, value in parse_rule_entries(rules_text).items():
+        sch, req = schema_from_tokens(tokens_for(value))
+        parts = key.split('.')
+        node = root
+        for idx, part in enumerate(parts):
+            last = idx == len(parts) - 1
+            if part == '*':
+                node.setdefault('type', 'array')
+                if last:
+                    node['items'] = {**sch, **node.get('items', {})} if isinstance(node.get('items'), dict) else sch
+                else:
+                    items = node.get('items')
+                    node['items'] = items if isinstance(items, dict) and items.get('type') == 'object' else {'type': 'object', 'properties': {}, 'required': []}
+                    node = node['items']
+            else:
+                node.setdefault('properties', {})
+                node.setdefault('required', [])
+                if last:
+                    existing = node['properties'].get(part, {})
+                    merged = dict(sch)
+                    if existing.get('type') == 'array' and sch['type'] != 'array':
+                        merged = existing
+                    for k2 in ('items', 'properties', 'required'):
+                        if k2 in existing:
+                            merged[k2] = existing[k2]
+                    node['properties'][part] = merged
+                    if req and part not in node['required']:
+                        node['required'].append(part)
+                else:
+                    child = node['properties'].setdefault(part, {'type': 'object', 'properties': {}, 'required': []})
+                    if parts[idx + 1] == '*':
+                        child['type'] = 'array'
+                    else:
+                        child['type'] = 'object'
+                        for drop in ('items', 'maxItems', 'minItems'):
+                            child.pop(drop, None)
+                    node = child
+    return clean_schema(root)
+
+
+# ---------------------------------------------------------------- data classes -> component schemas
+components = {}
+DOC_LIST = re.compile(r'^(?:list|array)<(?:int,\s*)?([\w\\]+)>$')
+SCALARS = {'string': 'string', 'int': 'integer', 'bool': 'boolean', 'float': 'number'}
+
+
+def comp_name(cls):
+    return cls[:-4] if cls.endswith('Data') else cls
+
+
+def ref(cls):
+    name = comp_name(cls)
+    if name not in components:
+        components[name] = None
+        d = gdata[cls]
+        props = {}
+        for p in d['props']:
+            props[snake(p['name']) if d['snake'] else p['name']] = prop_schema(p)
+        components[name] = {'type': 'object', 'properties': props}
+    return {'$ref': f'#/components/schemas/{name}'}
+
+
+def prop_schema(p):
+    t = p['type'].replace('\\', '')
+    doc = (p['doc'] or '').replace('\\', '')
+    nullable = t.startswith('?') or '|null' in t or 'null|' in t
+    t = t.lstrip('?').replace('|null', '').replace('null|', '')
+    if t in SCALARS:
+        sch = {'type': SCALARS[t]}
+    elif t == 'mixed':
+        sch = {}
+    elif t == 'array':
+        m = DOC_LIST.match(doc)
+        if m and m.group(1) in gdata:
+            sch = {'type': 'array', 'items': ref(m.group(1))}
+        elif m and m.group(1) in SCALARS:
+            sch = {'type': 'array', 'items': {'type': SCALARS[m.group(1)]}}
+        elif doc.startswith('array<string'):
+            sch = {'type': 'object', 'additionalProperties': True}
+        elif doc.startswith(('list<', 'array<int')):
+            sch = {'type': 'array', 'items': {'type': 'object'}}
+        else:
+            sch = {'type': 'object', 'additionalProperties': True}
+    elif t in gdata:
+        sch = ref(t)
+    elif t in enums:
+        sch = {'type': 'string', 'enum': enums[t]}
+    elif 'Carbon' in t or 'DateTime' in t:
+        sch = {'type': 'string', 'format': 'date-time'}
+    else:
+        sch = {'type': 'string'}
+    if nullable:
+        if '$ref' in sch:
+            sch = {'oneOf': [sch, {'type': 'null'}]}
+        elif 'type' in sch:
+            sch = {**sch, 'type': [sch['type'], 'null']}
+    return sch
+
+
+def sdk_schema(cls):
+    props = {}
+    for name, t in sdkres.get(cls, []):
+        if name == 'requestId':
+            continue
+        nullable = t.startswith('?')
+        t = t.lstrip('?')
+        if t in SCALARS:
+            sch = {'type': SCALARS[t]}
+        elif t == 'array':
+            sch = {'type': 'array', 'items': {}}
+        elif t in sdkres:
+            sch = sdk_schema(t)
+        else:
+            sch = {'type': 'object'}
+        if nullable and 'type' in sch:
+            sch['type'] = [sch['type'], 'null']
+        props[snake(name)] = sch
+    return {'type': 'object', 'properties': props}
+
+
+# ---------------------------------------------------------------- SDK request matching and code samples
+def norm_sdk_endpoint(ep):
+    if not ep:
+        return None
+    e = ep
+    e = re.sub(r'\{\$this->\w+\}', '{}', e)
+    e = re.sub(r"'\s*\.\s*rawurlencode\((?:[^()]|\([^()]*\))*\)\s*\.?\s*'?", '{}', e)
+    e = re.sub(r"\.\s*rawurlencode\((?:[^()]|\([^()]*\))*\)", '{}', e)
+    e = re.sub(r"'\s*\.\s*\$this->\w+", '{}', e)
+    e = re.sub(r"\.\s*\$this->\w+", '{}', e)
+    e = e.replace('"', '').replace("'", '').replace(' ', '').replace('.', '')
+    return re.sub(r'\{\}+', '{}', e)
+
+
+sdk_by_key = {}
+for r in sdk:
+    n = norm_sdk_endpoint(r['endpoint'])
+    if n and r['method']:
+        sdk_by_key[(r['method'], n)] = r
+
+
+def route_key(route):
+    return (route['method'], '/' + re.sub(r'\{[^}]+\}', '{}', route['uri']))
+
+
+NAME_BY_TAG = {'Nodes': 'beast', 'Apps': 'acme', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Herdr sessions': 'commander-tasks', 'Workspaces': 'feature-search', 'AppInstances': 'default'}
+EXAMPLE_BY_NAME = {
+    'slug': 'acme', 'hostname': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
+    'public_ssh_host': 'beast.example.com', 'public_ssh_port': 22, 'user': 'root', 'orbit_user': 'orbit', 'platform': 'linux', 'architecture': 'x86_64', 'tld': 'test', 'roles': ['app-dev'], 'role': 'app-dev',
+    'cluster_id': 3, 'node_id': 7, 'app_id': 4, 'app_instance_id': 12, 'target_id': 12, 'wireguard_ip': '10.44.0.7', 'lan_ip': '192.168.6.20', 'branch': 'main', 'preview_name': 'shop.com',
+    'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'prefix': 'DB',
+    'runtime': 'systemd', 'command': ['/usr/bin/php', 'artisan', 'queue:work'], 'restart_policy': 'on-failure', 'keep_alive': True, 'start': True, 'image': 'postgres:18', 'working_directory': '/app',
+    'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
+    'session': 'commander-tasks', 'pane': 'w1:p1', 'terminal': 'term-abc', 'cols': 120, 'rows': 40, 'origin': 'https://tasks.example.test', 'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
+    'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
+    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'handoff': False, 'accept_termination': True, 'publish_observer': True, 'include_worktrees': False, 'recover_source_profile': False,
+    'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
+}
+PHP_EXAMPLES = {
+    'nodeId': 7, 'appId': 4, 'appInstanceId': 12, 'appInstance': 12, 'clusterId': 3, 'routeId': 9, 'toolId': 41, 'processId': 41, 'workspaceId': 9, 'activityId': 481, 'sessionId': 2, 'candidateId': 12, 'instanceId': 4,
+    'servingNodeId': 7, 'consumerNodeId': 3, 'scheduleId': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'slug': 'acme', 'session': 'commander-tasks', 'user': 'orbit', 'role': 'app-dev', 'driver': 'mysql',
+    'hostname': 'app.example.test', 'repositoryUrl': 'https://github.com/acme/site.git', 'publication': 'private', 'key': 'MAIL_MAILER', 'value': 'log', 'branch': 'main', 'release': '20260914T101500Z', 'manager': 'vp',
+    'package': '@openai/codex', 'calendar': 'daily', 'command': 'php artisan report:send', 'phpVersion': '8.5', 'tld': 'test', 'pane': 'w1:p1', 'terminal': 'term-abc', 'cols': 120, 'rows': 40, 'origin': 'https://tasks.example.test',
+    'status': 'success', 'sourcePath': '/srv/orbit/apps/acme/main', 'publicSshHost': 'beast.example.com', 'previewName': 'shop.com', 'lines': 100, 'limit': 25, 'phase': 'before_activation', 'timeoutSeconds': 300,
+    'prefix': 'DB', 'port': 3306, 'host': 'db.example.test', 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'source': '10.6.0.0/24', 'protocol': 'tcp',
+    'definition': '{"name": "queue", "environments": ["production"], "spec": {"runtime": "systemd", "command": ["/usr/bin/php", "artisan", "queue:work"]}}', 'families': ['node'], 'environments': ['production'], 'roles': ['app-dev'],
+    'runtime': 'systemd', 'image': 'postgres:18', 'restartPolicy': 'on-failure', 'force': True,
+}
+
+
+def php_literal(v):
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, list):
+        return '[' + ', '.join(php_literal(x) for x in v) + ']'
+    if isinstance(v, dict):
+        return '[' + ', '.join(f"'{k}' => {php_literal(x)}" for k, x in v.items()) + ']'
+    return "'" + str(v).replace("'", "\\'") + "'"
+
+
+def php_sample(sdkreq, stream, tag):
+    ns = 'Orbit\\Sdk\\Requests\\' + sdkreq['file'].replace('.php', '').replace('/', '\\')
+    imports = ['Orbit\\Sdk\\GatewayConnector', ns]
+    ctor = re.sub(r'#\[[^\]]*\]', '', sdkreq['ctor'])
+    args = []
+    for part in [p.strip() for p in re.split(r',(?![^(]*\))', ctor) if p.strip()]:
+        m = re.match(r'(?:private|public|protected)?\s*(?:readonly)?\s*([\w|?\\]+)\s+\$(\w+)(\s*=\s*(.+))?$', part, re.S)
+        if not m:
+            continue
+        t, name, has_default = m.group(1), m.group(2), m.group(3)
+        if has_default:
+            continue
+        if 'Target' in t:
+            first = t.split('|')[0]
+            imports.append(f'Orbit\\Sdk\\Requests\\{sdkreq["file"].split("/")[0]}\\{first}')
+            args.append(f'{name}: new {first}({12 if "AppInstance" in first else 7})')
+            continue
+        if name == 'name':
+            val = NAME_BY_TAG.get(tag, 'example')
+        elif t == 'array' and name == 'command':
+            val = ['/usr/bin/php', 'artisan', 'queue:work']
+        elif name in PHP_EXAMPLES:
+            val = PHP_EXAMPLES[name]
+        elif t.startswith('?'):
+            continue
+        elif t in ('int', 'int|string'):
+            val = 1
+        elif t == 'bool':
+            val = True
+        elif t == 'array':
+            val = []
+        elif t == 'string':
+            val = 'value'
+        else:
+            continue
+        args.append(f'{name}: {php_literal(val)}')
+    call = f'new {sdkreq["class"]}(' + ', '.join(args) + ')'
+    if len(', '.join(args)) > 60:
+        call = f'new {sdkreq["class"]}(\n    ' + ',\n    '.join(args) + ',\n)'
+    lines = ['<?php', ''] + [f'use {i};' for i in dict.fromkeys(imports)] + ['', '$connector = new GatewayConnector(', "    baseUrl: 'https://gateway.orbit',", "    caPemPath: '/path/to/orbit-root-ca.pem',", ');', '']
+    if stream:
+        lines += [f'$stream = $connector->send({call})->dto();', '', 'foreach ($stream as $event) {', '    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent', '}']
+    else:
+        lines += [f'$response = $connector->send({call})->dto();']
+    return '\n'.join(lines) + '\n'
+
+
+def example_from_schema(sch, name, tag, depth=0):
+    if not isinstance(sch, dict):
+        return None
+    if '$ref' in sch:
+        return {}
+    t = sch.get('type')
+    t = t[0] if isinstance(t, list) else t
+    if name == 'name' and tag in NAME_BY_TAG:
+        return NAME_BY_TAG[tag]
+    if name in EXAMPLE_BY_NAME:
+        return EXAMPLE_BY_NAME[name]
+    if sch.get('enum'):
+        return sch['enum'][0]
+    if t == 'object':
+        out = {}
+        props = sch.get('properties') or {}
+        for k, v in props.items():
+            if k in (sch.get('required') or []) or (depth == 0 and len(props) <= 4):
+                out[k] = example_from_schema(v, k, tag, depth + 1)
+        return out
+    if t == 'array':
+        return [example_from_schema(sch.get('items', {}), None, tag, depth + 1)] if sch.get('items') else []
+    if t == 'integer':
+        return sch.get('minimum', 1)
+    if t == 'number':
+        return 1
+    if t == 'boolean':
+        return True
+    if sch.get('format') == 'uuid':
+        return '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b'
+    return 'example'
+
+
+def bash_sample(route, path, body_schema, query, tag):
+    url = 'https://gateway.orbit' + re.sub(r'\{(\w+)\}', lambda m: str(EXAMPLE_PATH.get(m.group(1), 1)), path)
+    if query:
+        url += '?' + '&'.join(f'{q}={EXAMPLE_BY_NAME.get(q, 1)}' for q in query)
+    method = '' if route['method'] == 'GET' else f'-X {route["method"]} '
+    lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
+    if body_schema is not None:
+        lines[-1] += ' \\'
+        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(example_from_schema(body_schema, None, tag) or {}) + "'"]
+    return '\n'.join(lines) + '\n'
+
+
+# ---------------------------------------------------------------- responses
+def envelope(data_schema, description):
+    return {'description': description, 'content': {'application/json': {'schema': {'type': 'object', 'properties': {'data': data_schema, 'meta': {'$ref': '#/components/schemas/Meta'}}, 'required': ['data', 'meta']}}}}
+
+
+def error_response(desc):
+    return {'description': desc, 'content': {'application/json': {'schema': {'$ref': '#/components/schemas/Error'}}}}
+
+
+RESPONSE_OVERRIDES = {
+    'RootCaCertificatesController@show': {'type': 'object', 'properties': {'root_ca': {'type': 'string', 'description': 'PEM-encoded root certificate.'}, 'sha256': {'type': 'string', 'description': 'SHA-256 fingerprint of the certificate.'}}},
+    'ProcessesController@logs': {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'name': {'type': 'string'}, 'lines': {'type': 'integer'}, 'logs': {'type': 'array', 'items': {'type': 'string'}}}},
+}
+CTRL_DATA_OVERRIDES = {
+    'SchedulesController@index': ('ScheduleData', True), 'SchedulesController@show': ('ScheduleData', False), 'SchedulesController@run': ('ScheduleData', False), 'SchedulesController@activate': ('ScheduleData', False), 'SchedulesController@destroy': ('ScheduleData', False), 'SchedulesController@logs': ('ScheduleLogsData', False),
+    'ToolManagersController@index': ('ToolManagerData', True), 'DoctorRunsController@store': ('DoctorReportData', False), 'GatewayStatusesController@show': ('GatewayStatusData', False),
+    'MetricsController@store': ('MetricsMutationData', False), 'MetricsController@destroy': ('MetricsMutationData', False), 'MetricsController@enableExporter': ('MetricsMutationData', False), 'MetricsController@disableExporter': ('MetricsMutationData', False), 'MetricsController@status': ('MetricsStatusData', False), 'MetricsController@credentials': ('MetricsCredentialsData', False), 'MetricsController@reset': ('MetricsCredentialsData', False),
+    'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
+    'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
+    'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False),
+    'HerdrSessionsController@storeGrant': ('ObservationGrantData', False),
+}
+SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'AppInstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'AppInstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'AppInstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
+NDJSON_SCHEMA = {'oneOf': [
+    {'title': 'Phase event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'phase'], 'properties': {'type': {'type': 'string', 'enum': ['phase']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'phase': {'type': 'string', 'enum': ['source_preparation', 'environment_sync', 'before_activation', 'activation', 'php_refresh', 'after_activation', 'rollback']}, 'step_name': {'type': ['string', 'null']}}},
+    {'title': 'Output event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'stream', 'data_base64'], 'properties': {'type': {'type': 'string', 'enum': ['output']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'stream': {'type': 'string', 'enum': ['stdout', 'stderr']}, 'data_base64': {'type': 'string', 'description': 'At most 16 KiB of decoded bytes, base64-encoded.'}}},
+    {'title': 'Result event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'status'], 'properties': {'type': {'type': 'string', 'enum': ['result']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'status': {'type': 'string', 'enum': ['succeeded', 'failed']}, 'failed_step': {'type': ['string', 'null']}, 'error_code': {'type': ['string', 'null']}, 'selected_release': {'type': ['string', 'null']}}},
+]}
+
+
+def data_schema_for(route):
+    action = route['action']
+    if action in RESPONSE_OVERRIDES:
+        return RESPONSE_OVERRIDES[action], False
+    if action in CTRL_DATA_OVERRIDES:
+        cls, is_list = CTRL_DATA_OVERRIDES[action]
+        return ref(cls), is_list
+    if action in SDK_RESPONSE_FALLBACK:
+        return sdk_schema(SDK_RESPONSE_FALLBACK[action]), False
+    cands = [c for c in controllers.get(action, {}).get('data', []) if not INPUT_PREFIX.match(c) and c in gdata]
+    is_list = action.endswith(('@index', '@processIndex', '@scheduleIndex'))
+    if not cands:
+        return {'type': 'object'}, is_list
+    if action == 'NodesController@show':
+        return {'allOf': [ref('NodeData'), {'type': 'object', 'properties': {'access': ref('NodeAccessData')}}]}, False
+    return ref(cands[0]), is_list
+
+
+# ---------------------------------------------------------------- build the document
+spec = {
+    'openapi': '3.1.0',
+    'info': {
+        'title': 'Orbit Gateway API',
+        'version': 'v1',
+        'description': 'The HTTP API of the active Orbit Gateway. The CLI and the PHP SDK send every fleet command through these endpoints over WireGuard. See [Using the API](/api/overview) for transport, authentication, envelopes, and errors.',
+    },
+    'servers': [{'url': 'https://gateway.orbit', 'description': 'The active Gateway on the private WireGuard network, resolved by Orbit private DNS.'}],
+    'security': [],
+    'tags': [{'name': t, 'description': d} for _, t, d in TAGS],
+    'paths': {},
+    'components': {'schemas': {
+        'Meta': {'type': 'object', 'properties': {'request_id': {'type': 'string', 'format': 'uuid', 'description': 'The request ID the Gateway assigned or accepted; the same value is in the `X-Orbit-Request-Id` response header and in the Activity record.'}}, 'required': ['request_id']},
+        'Error': {'type': 'object', 'properties': {'error': {'type': 'object', 'properties': {'code': {'type': 'string', 'description': 'Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`.'}, 'message': {'type': 'string', 'description': 'Safe message without credentials, environment values, or remote output.'}, 'details': {'type': 'object', 'additionalProperties': True, 'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule.'}, 'request_id': {'type': 'string', 'format': 'uuid'}}, 'required': ['code', 'message']}}, 'required': ['error']},
+    }},
+}
+BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'include_worktrees', 'start', 'keep_alive'}
+nav_pages = {t: [] for _, t, _ in TAGS}
+unmatched = []
+
+for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
+    path, params = openapi_path(route)
+    method = route['method'].lower()
+    action = route['action']
+    tag = tag_for(route)
+    op_id = route['name'].replace(':', '-')
+    if '-definitions' in route['uri']:
+        op_id = 'app-' + op_id + '-definition'
+    op = {'operationId': op_id, 'summary': summary_for(route), 'tags': [tag], 'parameters': []}
+    description = description_for(route)
+    if description:
+        op['description'] = description
+    env_route = '/environment/' in path or ('/database-connections/' in path and '/instances/' in path)
+    for p in params:
+        sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
+        if p == 'instance' and env_route:
+            sch, desc = ENV_INSTANCE
+        op['parameters'].append({'name': p, 'in': 'path', 'required': True, 'schema': sch, 'description': desc})
+    rules_text = next((form_requests[rc] for rc in controllers.get(action, {}).get('requests', []) if rc in form_requests), None)
+    sdkreq = sdk_by_key.get(route_key(route))
+    if sdkreq is None and route['name'] not in INTERNAL:
+        unmatched.append(f'{route["method"]} {route["uri"]}')
+    body_schema = None
+    query = []
+    cmd = commands.get(route['name'])
+    if rules_text:
+        sch = rules_to_schema(rules_text)
+        if route['method'] == 'GET':
+            for k, v in (sch.get('properties') or {}).items():
+                op['parameters'].append({'name': k, 'in': 'query', 'required': k in sch.get('required', []), 'schema': v})
+                query.append(k)
+        else:
+            body_schema = sch
+    elif route['method'] == 'GET' and sdkreq and sdkreq.get('query'):
+        for k in re.findall(r"'([a-z_]+)'\s*=>", sdkreq['query']):
+            op['parameters'].append({'name': k, 'in': 'query', 'required': True, 'schema': {'type': 'integer' if k.endswith('_id') else 'string'}})
+            query.append(k)
+    elif route['method'] != 'GET' and sdkreq and sdkreq.get('body'):
+        keys = re.findall(r"'([a-z_]+)'\s*=>", sdkreq['body'])
+        if keys:
+            body_schema = {'type': 'object', 'properties': {k: {'type': 'boolean' if k in BOOLEAN_FIELDS else 'string'} for k in keys}}
+    if body_schema and cmd:
+        def items(x):
+            return list(x.items()) if isinstance(x, dict) else [(o.get('name'), o) for o in x]
+        opts = {k.replace('-', '_'): o['description'] for k, o in items(cmd['definition']['options'])}
+        args = {k.replace('-', '_'): a['description'] for k, a in items(cmd['definition']['arguments'])}
+        for k, v in (body_schema.get('properties') or {}).items():
+            d = opts.get(k) or args.get(k)
+            if d and 'description' not in v:
+                v['description'] = d
+    if body_schema is not None:
+        body_schema['additionalProperties'] = False
+        op['requestBody'] = {'required': bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
+    stream = route['name'] in ('instance:deploy', 'instance:rollback')
+    responses = {}
+    if stream:
+        responses['200'] = {'description': 'Newline-delimited JSON events: `phase` and `output` events while the Gateway works, then exactly one final `result` event. A failed operation still ends with a `result` event.', 'content': {'application/x-ndjson': {'schema': NDJSON_SCHEMA}}}
+        if body_schema is None:
+            body = {'type': 'object', 'additionalProperties': False}
+            if route['name'] == 'instance:rollback':
+                body = {'type': 'object', 'properties': {'release': {'type': 'string', 'description': 'Retained release name to select.'}}, 'required': ['release'], 'additionalProperties': False}
+            op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': body}}}
+    elif route['name'] == 'schedule:complete':
+        responses['204'] = {'description': 'The Gateway recorded the latest run.'}
+    elif route['name'] == 'metrics:grafana:authorize':
+        responses['204'] = {'description': 'The caller may reach Grafana.'}
+    elif route['name'] == 'runtime-activation:app-instance':
+        responses['200'] = {'description': 'Not used: Caddy proxies the site once the awake marker exists and never calls this endpoint for an awake AppInstance.'}
+        responses['401'] = {'description': 'An HTML progress page with a two-second refresh while the Gateway starts the desired-running Processes.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
+        responses['503'] = {'description': 'An HTML failure page with a five-second retry after a failed start.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
+    else:
+        data, is_list = data_schema_for(route)
+        if is_list:
+            data = {'type': 'array', 'items': data}
+        status = '201' if controllers.get(action, {}).get('created') else '200'
+        responses[status] = envelope(data, 'Created.' if status == '201' else 'The request succeeded.')
+        if route['name'] == 'gateway:trust':
+            responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+    if route['name'] not in ('gateway:status', 'gateway:trust'):
+        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).')
+    if params and not stream and route['name'] not in INTERNAL:
+        responses['404'] = error_response('No record matches the path parameters.')
+    if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
+        responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
+    if body_schema is not None or stream:
+        responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
+    op['responses'] = responses
+    request_schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema') if (stream or body_schema is not None) else None
+    samples = [{'lang': 'bash', 'label': 'curl', 'source': bash_sample(route, path, request_schema, query, tag)}]
+    if sdkreq:
+        samples.append({'lang': 'php', 'label': 'PHP SDK', 'source': php_sample(sdkreq, stream, tag)})
+    op['x-codeSamples'] = samples
+    if not op['parameters']:
+        op.pop('parameters')
+    spec['paths'].setdefault(path, {})[method] = op
+    nav_pages[tag].append(f'{route["method"]} {path}')
+
+spec['components']['schemas'].update({k: v for k, v in components.items() if v is not None})
+OUTPUT.write_text(json.dumps(spec, indent=2) + '\n')
+
+# keep docs.json navigation in sync with the operations
+config_path = DOCS / 'docs.json'
+config = json.loads(config_path.read_text())
+for tab in config['navigation']['tabs']:
+    if tab['tab'] != 'API':
+        continue
+    groups = [g for g in tab['groups'] if 'openapi' not in g]
+    for _, t, _ in TAGS:
+        if nav_pages[t]:
+            groups.append({'group': t, 'openapi': '/openapi.json', 'pages': nav_pages[t]})
+    tab['groups'] = groups
+config_path.write_text(json.dumps(config, indent=2) + '\n')
+
+print(f'wrote {OUTPUT.relative_to(ROOT)}: {sum(len(v) for v in spec["paths"].values())} operations, {len(spec["components"]["schemas"])} schemas')
+if unmatched:
+    print('routes without a PHP SDK request:', ', '.join(unmatched), file=sys.stderr)
