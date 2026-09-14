@@ -7,6 +7,7 @@ use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -61,6 +62,10 @@ it('reports typed gateway provisioning failures without leaking command output',
             {
                 return 'SHA256:gateway';
             }
+        },
+        dns: new class implements PrivateDnsManager
+        {
+            public function converge(?Node $pendingNode = null): void {}
         },
         orbitHome: $orbitHome,
     ));
@@ -128,6 +133,10 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
             {
                 return 'SHA256:gateway';
             }
+        },
+        dns: new class implements PrivateDnsManager
+        {
+            public function converge(?Node $pendingNode = null): void {}
         },
         orbitHome: $orbitHome,
     ));
