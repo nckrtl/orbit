@@ -6,6 +6,7 @@ use App\Commands\GatewayCommand;
 use App\Commands\Schedules\ListSchedulesCommand;
 use App\Commands\Schedules\RunScheduleCommand;
 use App\Services\Extensions\LocalExtensionState;
+use App\Support\CommandVocabulary;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -161,6 +162,70 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:show',
         'tool:update',
     ]);
+});
+
+describe('command vocabulary', function (): void {
+    it('rejects a command whose last segment is outside the vocabulary and family-specific actions', function (): void {
+        expect(CommandVocabulary::allowsCommand('app:create'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('node:settings'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('doctor'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('app:new'))->toBeFalse();
+        expect(CommandVocabulary::allowsCommand('app:frobnicate'))->toBeFalse();
+        expect(CommandVocabulary::allowsCommand('cluster:attach'))->toBeFalse();
+    });
+
+    it('accepts every registered Orbit command last segment', function (): void {
+        foreach (orbitProductCommandNames() as $name) {
+            expect(CommandVocabulary::allowsCommand($name))->toBeTrue();
+        }
+    });
+
+    it('rejects a named Gateway API route that matches a CLI family without a command', function (): void {
+        $commands = ['app:create', 'metrics:enable', 'metrics:status'];
+
+        expect(CommandVocabulary::routeRequiresMatchingCommand('metrics:list', $commands))->toBeTrue();
+        expect($commands)->not->toContain('metrics:list');
+        expect(CommandVocabulary::routeRequiresMatchingCommand('schedule:complete', $commands))->toBeFalse();
+        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:deployment-config:show', $commands))->toBeFalse();
+    });
+
+    it('requires a matching command for every named Gateway API route that matches a CLI family', function (): void {
+        $commands = orbitProductCommandNames();
+        $contents = file_get_contents(base_path('../gateway/routes/api.php'));
+
+        expect($contents)->toBeString();
+
+        $routes = CommandVocabulary::namedRoutesFromApiFile($contents);
+
+        expect($routes)->not->toBeEmpty();
+
+        foreach ($routes as $route) {
+            if (CommandVocabulary::routeRequiresMatchingCommand($route, $commands)) {
+                expect($commands)->toContain($route);
+            }
+        }
+    });
+
+    it('documents every vocabulary verb family-specific action and noun-ending command', function (): void {
+        $page = file_get_contents(base_path('../../docs/reference/cli-command-vocabulary.md'));
+
+        expect($page)->toBeString();
+
+        foreach (CommandVocabulary::VERBS as $verb) {
+            expect($page)->toContain('`'.$verb.'`');
+        }
+
+        foreach (CommandVocabulary::FAMILY_ACTIONS as $actions) {
+            foreach ($actions as $action) {
+                expect($page)->toContain('`'.$action.'`');
+            }
+        }
+
+        foreach (CommandVocabulary::NOUN_ENDING_COMMANDS as $command) {
+            expect($page)->toContain('`'.$command.'`');
+        }
+    });
 });
 
 it('rejects each replaced App Cluster and Route lifecycle name as an unknown command', function (string $command): void {
@@ -986,3 +1051,16 @@ it('renders one exact json failure envelope for every Orbit product command', fu
 
     MockClient::destroyGlobal();
 });
+
+/**
+ * @return list<string>
+ */
+function orbitProductCommandNames(): array
+{
+    return collect(app(Kernel::class)->all())
+        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'))
+        ->keys()
+        ->sort()
+        ->values()
+        ->all();
+}

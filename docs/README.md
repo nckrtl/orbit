@@ -14,6 +14,9 @@ Choose a page based on what you want to learn:
   make easier.
 - [Architecture](/architecture) shows how the CLI, Gateway, and managed
   machines work together.
+- [CLI command vocabulary](/reference/cli-command-vocabulary) lists the verbs
+  every command uses and how ownership selects create and destroy or add and
+  remove.
 - [Tech stack](/tech-stack) lists the main tools and technologies used by
   Orbit.
 - [Concepts](/concepts) gives short explanations of common Orbit terms.
