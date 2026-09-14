@@ -1880,6 +1880,20 @@
             ]
         },
         {
+            "path": "docs/reference/cli-ux.md",
+            "title": "CLI design standard",
+            "kind": "reference",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Process"
+            ],
+            "governing_adrs": [
+                "0071"
+            ]
+        },
+        {
             "path": "docs/reference/database-connections.md",
             "title": "Database connections",
             "kind": "reference",

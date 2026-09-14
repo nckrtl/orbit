@@ -38,6 +38,13 @@
           "reference/private-dns",
           "reference/metrics"
         ]
+      },
+      {
+        "group": "Contributors",
+        "pages": [
+          "reference/cli-command-vocabulary",
+          "reference/cli-ux"
+        ]
       }
     ]
   },
