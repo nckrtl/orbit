@@ -104,7 +104,7 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
     }
 })->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs and the Caddy service account.');
 
-it('restores prior ACLs when granting the Web root fails', function (): void {
+it('restores prior ACLs or retains its snapshot when recovery also fails', function (bool $failRecovery): void {
     $root = development_caddy_access_fixture();
 
     try {
@@ -117,18 +117,35 @@ it('restores prior ACLs when granting the Web root fails', function (): void {
             exec /usr/bin/setfacl "$@"
             BASH);
         chmod("$root/bin/setfacl", 0o700);
+        if ($failRecovery) {
+            file_put_contents("$root/bin/sudo", <<<'BASH'
+                #!/bin/bash
+                for argument in "$@"; do
+                    case "$argument" in --restore=*) exit 1 ;; esac
+                done
+                exec /usr/bin/sudo "$@"
+                BASH);
+            chmod("$root/bin/sudo", 0o700);
+        }
         $before = new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput();
         $command = new DevelopmentCaddyAccessCommand()->command(collect([
             development_caddy_access_site("$root/checkout", 'web/site'),
         ]));
 
-        expect(new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')])
+        expect(new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH'), 'TMPDIR' => $root])
             ->setInput($command->input)->run())->not->toBe(0);
+        if ($failRecovery) {
+            $snapshots = new Filesystem()->glob("$root/tmp.*");
+            expect($snapshots)->toHaveCount(1);
+            expect(fileperms($snapshots[0]) & 0o777)->toBe(0o600);
+            new Process(['sudo', '-n', 'setfacl', '--restore='.$snapshots[0]])->mustRun();
+            unlink($snapshots[0]);
+        }
         expect(new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput())->toBe($before);
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-})->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs and the Caddy service account.');
+})->with([false, true])->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs and the Caddy service account.');
 
 function development_caddy_access_fixture(): string
 {

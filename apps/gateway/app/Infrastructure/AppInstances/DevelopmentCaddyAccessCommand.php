@@ -70,7 +70,10 @@ final readonly class DevelopmentCaddyAccessCommand
                     result=$?
                     trap - EXIT
                     if [ "$result" != 0 ] && [ "$changed" = 1 ]; then
-                        sudo -n setfacl --restore="$snapshot" || result=1
+                        if ! sudo -n setfacl --restore="$snapshot"; then
+                            printf 'Caddy access recovery failed; retained ACL snapshot: %s\n' "$snapshot" >&2
+                            exit 1
+                        fi
                     fi
                     rm -f -- "$snapshot"
                     exit "$result"
