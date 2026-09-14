@@ -1860,7 +1860,7 @@
             ],
             "concepts": [
                 "App",
-                "AppInstance",
+                "App instance",
                 "Cluster",
                 "Database",
                 "Database connection",
