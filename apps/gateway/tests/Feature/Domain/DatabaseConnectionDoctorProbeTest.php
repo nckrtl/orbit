@@ -6,6 +6,7 @@ use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Doctor\DatabaseConnectionDoctorProbe;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorNodeContext;
@@ -26,11 +27,36 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
-use Illuminate\Support\Facades\Schema;
 
 const DATABASE_CONNECTION_DOCTOR_SECRET = 'db-doctor-secret-3f91';
 
-it('reports distinct missing, unhealthy, and env-mismatch codes without exposing the password', function (): void {
+it('reports a missing registry connection for an attachment without a loaded record', function (): void {
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $connection = database_connection_doctor_mysql($node, 'app');
+    $attachment = DatabaseConnectionTarget::query()->create([
+        'database_connection_id' => $connection->id,
+        'app_instance_id' => $instance->id,
+        'prefix' => 'CACHE',
+    ]);
+    $attachment->database_connection_id = 999_999;
+
+    $issues = database_connection_doctor_inspection()->attachment($attachment);
+    $encoded = json_encode($issues, JSON_THROW_ON_ERROR);
+
+    expect(array_map(static fn ($issue): string => $issue->code, $issues))
+        ->toBe([DatabaseConnectionDoctorIssueCode::Missing->value])
+        ->and($issues[0]->expected)
+        ->toBe('present')
+        ->and($issues[0]->observed)
+        ->toBe('absent')
+        ->and($encoded)
+        ->not->toContain(DATABASE_CONNECTION_DOCTOR_SECRET)
+        ->and(print_r($connection, true))
+        ->not->toContain(DATABASE_CONNECTION_DOCTOR_SECRET);
+});
+
+it('reports distinct unhealthy and env-mismatch codes without exposing the password', function (): void {
     $node = database_connection_doctor_node();
     $instance = database_connection_doctor_instance($node);
     $healthy = database_connection_doctor_mysql($node, 'healthy');
@@ -55,25 +81,16 @@ it('reports distinct missing, unhealthy, and env-mismatch codes without exposing
         'password' => null,
     ]);
 
-    Schema::disableForeignKeyConstraints();
-    DatabaseConnectionTarget::query()->create([
-        'database_connection_id' => 999_999,
-        'app_instance_id' => $instance->id,
-        'prefix' => 'CACHE',
-    ]);
-    Schema::enableForeignKeyConstraints();
-
     $report = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
     $encoded = json_encode($report, JSON_THROW_ON_ERROR);
 
     expect($report->family)
         ->toBe(DoctorFamily::DatabaseConnection)
         ->and($report->checked)
-        ->toBe(3)
+        ->toBe(2)
         ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))
         ->toBe([
             DatabaseConnectionDoctorIssueCode::EnvMismatch->value,
-            DatabaseConnectionDoctorIssueCode::Missing->value,
             DatabaseConnectionDoctorIssueCode::Unhealthy->value,
         ])
         ->and($encoded)
@@ -215,9 +232,14 @@ it('keeps a healthy attachment silent and omits the password from doctor activit
         ->toBe('doctor:run');
 });
 
+function database_connection_doctor_inspection(): DatabaseConnectionDoctorInspection
+{
+    return new DatabaseConnectionDoctorInspection(new DatabaseConnectionEnvProjection);
+}
+
 function database_connection_doctor_probe(): DatabaseConnectionDoctorProbe
 {
-    return new DatabaseConnectionDoctorProbe(new DatabaseConnectionEnvProjection);
+    return new DatabaseConnectionDoctorProbe(database_connection_doctor_inspection());
 }
 
 function database_connection_doctor_context(Node $node): DoctorNodeContext
