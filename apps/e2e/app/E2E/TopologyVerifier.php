@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Value\ApplicationEndpoint;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\SourceState;
@@ -344,22 +345,30 @@ final readonly class TopologyVerifier
      */
     private function productionPlacement(mixed $placement): array
     {
+        $baseKeys = [
+            'layout',
+            'instance_id',
+            'user',
+            'home',
+            'checkout_path',
+            'effective_root',
+            'environment_path',
+            'database_path',
+            'service',
+            'socket',
+            'current_target',
+        ];
+
+        try {
+            $endpoint = is_array($placement) ? ApplicationEndpoint::fromRecord($placement) : null;
+        } catch (InvalidArgumentException) {
+            $endpoint = null;
+        }
+
         if (
             ! is_array($placement)
-            || array_keys($placement) !== [
-                'layout',
-                'instance_id',
-                'user',
-                'home',
-                'checkout_path',
-                'effective_root',
-                'environment_path',
-                'database_path',
-                'service',
-                'socket',
-                'current_target',
-                'hostname',
-            ]
+            || ! ApplicationEndpoint::placementKeysMatch($baseKeys, $placement)
+            || $endpoint === null
             || ! in_array($placement['layout'] ?? null, ['flat', 'release'], true)
             || ! is_int($placement['instance_id'] ?? null)
             || $placement['instance_id'] < 1
@@ -383,8 +392,6 @@ final readonly class TopologyVerifier
             || $placement['current_target'] !== null
             && (! is_string($placement['current_target'])
             || ! $this->isAbsolutePlacementPath($placement['current_target']))
-            || ! is_string($placement['hostname'] ?? null)
-            || preg_match('/\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\z/D', $placement['hostname']) !== 1
             || $placement['layout'] === 'flat'
             && $placement['current_target'] !== null
             || $placement['layout'] === 'release'
@@ -405,7 +412,7 @@ final readonly class TopologyVerifier
             'service' => $placement['service'],
             'socket' => $placement['socket'],
             'current_target' => $placement['current_target'],
-            'hostname' => $placement['hostname'],
+            'hostname' => $endpoint,
         ];
     }
 
