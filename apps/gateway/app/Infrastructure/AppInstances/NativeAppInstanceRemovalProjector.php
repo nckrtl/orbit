@@ -54,6 +54,13 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             );
         }
 
+        if (
+            $route->publication === RoutePublication::Public
+            && $route->targets->count() <= 1
+        ) {
+            $this->removePublicEdge($route);
+        }
+
         $removedTarget = (bool) DB::transaction(function () use ($route, $appInstance): bool {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $target = $locked->targets()->where('app_instance_id', $appInstance->id)->first();
@@ -98,7 +105,6 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             $this->dns->convergeUnavailableRoute($route, $appInstance);
         }
 
-        $this->removePublicEdge($route);
         $this->removeRouteProjection($route, $appInstance);
 
         DB::transaction(function () use ($route): void {
@@ -175,7 +181,10 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             return;
         }
 
-        $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+        if ($route->targets->isNotEmpty()) {
+            $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+        }
+
         $this->publicEdge()->removePublicEdge($route);
     }
 

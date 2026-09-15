@@ -812,23 +812,26 @@ function orb181_coordinator_instance(
     string $environment = 'development',
     string $layout = AppInstanceSourceLayout::Checkout->value,
 ): AppInstance {
+    static $sequence = 0;
+    $sequence++;
+    $slug = "acme-{$sequence}";
     $app = OrbitApp::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'https://example.test/acme.git',
+        'name' => "Acme {$sequence}",
+        'slug' => $slug,
+        'repository_url' => "https://example.test/{$slug}.git",
         'default_branch' => 'main',
         'root' => 'public',
     ]);
     $cluster = $environment === 'production'
-        ? Cluster::query()->create(['name' => 'production', 'state' => 'active'])
+        ? Cluster::query()->create(['name' => "production-{$sequence}", 'state' => 'active'])
         : null;
     $node = Node::query()->create([
         'cluster_id' => $cluster?->id,
-        'name' => 'app-dev',
+        'name' => "app-dev-{$sequence}",
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.50',
-        'wireguard_ip' => '10.44.0.50',
+        'public_ssh_host' => '192.0.2.'.(50 + $sequence),
+        'wireguard_ip' => '10.44.0.'.(50 + $sequence),
     ]);
     $node->roles()->create([
         'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
@@ -840,7 +843,7 @@ function orb181_coordinator_instance(
         'name' => 'dev',
         'environment' => $environment,
         'source_layout' => $layout,
-        'checkout_path' => '/srv/orbit/apps/acme/dev',
+        'checkout_path' => "/srv/orbit/apps/{$slug}/dev",
         'branch' => 'dev',
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::SourceResolved,
@@ -850,7 +853,7 @@ function orb181_coordinator_instance(
         'node_id' => $environment === 'production' ? null : $node->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $environment === 'production' ? null : $node->id,
-        'domain' => 'dev.acme.test',
+        'domain' => "dev-{$sequence}.acme.test",
         'provenance' => $environment === 'production' ? RouteProvenance::Explicit : RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

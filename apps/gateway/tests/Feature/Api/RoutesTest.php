@@ -5,13 +5,6 @@ declare(strict_types=1);
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\Routes\CreateRouteData;
-use App\Domain\Routes\PublicRouteEdgeProjector;
-use App\Domain\Routes\RoutePublicPublication;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Routes\IngressSiteRepository;
-use Tests\Support\FakePublicRouteEdgeProjector;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -20,10 +13,16 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
+use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -33,6 +32,7 @@ use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\FakePublicRouteEdgeProjector;
 
 beforeEach(function (): void {
     $this->gateway = Node::query()->create([
@@ -650,17 +650,8 @@ it('keeps public publication inactive without artifacts for a Node-scoped Route,
         ->and($edge->calls)
         ->toBe([]);
 
-    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $active = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
-        domain: 'active-public.example.test',
-        publication: RoutePublication::Public,
-        appInstanceId: $this->target->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
+    $active = Route::query()->findOrFail($nodeScoped->json('data.id'));
     $active->update(['status' => RouteStatus::Active]);
-
     $published = app(PublishPublicRouteAction::class)->execute($active, RoutePublication::Public);
 
     expect($published->id)
@@ -670,16 +661,28 @@ it('keeps public publication inactive without artifacts for a Node-scoped Route,
         ->and($edge->calls)
         ->toBe([]);
 
-    [$cluster] = route_cluster('inactive-public', 'inactive.test');
+    [$cluster, , , , , $clusterRoute] = route_public_topology(
+        $this->orbitApp,
+        domain: 'inactive-cluster.example.test',
+        name: 'inactive-public',
+    );
     $cluster->update(['state' => ClusterState::Inactive]);
-    $clusterRoute = $this->postJson('/api/v1/routes', [
+    $inactiveCluster = app(PublishPublicRouteAction::class)->execute($clusterRoute, RoutePublication::Public);
+
+    expect($inactiveCluster->public_publication)
+        ->toBe(RoutePublicPublication::Inactive)
+        ->and($edge->calls)
+        ->toBe([]);
+
+    [$missingIngress] = route_cluster('missing-ingress', 'missing.test');
+    $missing = $this->postJson('/api/v1/routes', [
         'app_id' => $this->orbitApp->id,
-        'domain' => 'inactive-cluster.example.test',
+        'domain' => 'missing-ingress.example.test',
         'publication' => 'public',
-        'cluster_id' => $cluster->id,
+        'cluster_id' => $missingIngress->id,
     ])->assertCreated();
 
-    expect($clusterRoute->json('data.public_publication'))->toBe('inactive')->and($edge->calls)->toBe([]);
+    expect($missing->json('data.public_publication'))->toBe('inactive')->and($edge->calls)->toBe([]);
 });
 
 it('creates and shows a public Route without a Node public-IP field', function (): void {
@@ -812,8 +815,14 @@ it('composes one public Caddy site when Ingress shares a Node and uses LAN witho
         ->toContain("reverse_proxy https://{$workload->lan_ip}")
         ->not->toContain('reverse_proxy https://127.0.0.1');
 
-    $broken = new IngressSiteRepository()->forRoute($route->refresh());
-    expect($broken->routerUpstream)->toBe('10.10.0.40');
+    $colocatedUpstream = new IngressSiteRepository()->forRoute($route->refresh());
+    expect($colocatedUpstream->routerUpstream)->toBe('127.0.0.1');
+
+    $colocated->roles()->where('role', RoleName::Ingress)->update(['node_id' => $ingress->id, 'cluster_id' => $cluster->id]);
+    $colocated->roles()->where('role', RoleName::Router)->update(['node_id' => $router->id, 'cluster_id' => $cluster->id]);
+    $router->update(['lan_ip' => null]);
+    expect(new IngressSiteRepository()->forRoute($route->refresh())->routerUpstream)
+        ->toBe($router->wireguard_ip);
 });
 
 function route_node(string $name, string $wireguardIp, ?string $tld): Node
@@ -971,8 +980,10 @@ function route_public_topology(
 /** @return array{Cluster, Node} */
 function route_cluster(string $name, ?string $tld): array
 {
+    static $octet = 100;
+    $octet++;
     $cluster = Cluster::query()->create(['name' => $name, 'tld' => $tld, 'state' => ClusterState::Active]);
-    $router = route_node("{$name}-router", '10.44.0.20', null);
+    $router = route_node("{$name}-router", "10.45.0.{$octet}", null);
     $router->update(['cluster_id' => $cluster->id]);
     $router
         ->roles()

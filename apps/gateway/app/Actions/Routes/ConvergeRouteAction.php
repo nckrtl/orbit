@@ -63,8 +63,7 @@ final readonly class ConvergeRouteAction
         string $domain,
         array $expectedTargetIds,
         ?RoutePublication $publication = null,
-    ): Route
-    {
+    ): Route {
         $route = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
             ->findOrFail($routeId);
@@ -102,11 +101,17 @@ final readonly class ConvergeRouteAction
 
             $this->assertTargetsUnchanged($route, $expectedTargetIds);
 
-            return $this->cleanup(
-                $replacement,
-                $route,
-                $this->eligibleTargets($route, allowRetiring: true),
-            );
+            if (
+                $replacement->publication !== RoutePublication::Public
+                || $this->forwardRank($replacement->replacement_step)
+                    >= $this->forwardRank(RouteReplacementStep::IngressFirewall)
+            ) {
+                return $this->cleanup(
+                    $replacement,
+                    $route,
+                    $this->eligibleTargets($route, allowRetiring: true),
+                );
+            }
         }
 
         $this->assertTargetsUnchanged($route, $expectedTargetIds);
@@ -115,7 +120,11 @@ final readonly class ConvergeRouteAction
             return $route;
         }
 
-        $targets = $this->eligibleTargets($route, publication: $publication ?? $route->publication);
+        $targets = $this->eligibleTargets(
+            $route,
+            allowRetiring: $route->status === RouteStatus::Retiring,
+            publication: $publication ?? $route->publication,
+        );
         $replacement = $this->reserve($route, $domain, $publication);
 
         if (
@@ -327,8 +336,7 @@ final readonly class ConvergeRouteAction
         Route $route,
         bool $allowRetiring = false,
         ?RoutePublication $publication = null,
-    ): array
-    {
+    ): array {
         $targets = $route->targets
             ->map(static fn ($row) => $row->appInstance)
             ->filter(static fn ($instance): bool => $instance instanceof AppInstance)

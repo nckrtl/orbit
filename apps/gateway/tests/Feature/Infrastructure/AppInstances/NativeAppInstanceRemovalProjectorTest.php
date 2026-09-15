@@ -17,7 +17,6 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
-use Tests\Support\FakePublicRouteEdgeProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
@@ -49,6 +48,7 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\FakePublicRouteEdgeProjector;
 
 afterEach(function (): void {
     if (is_string($this->orb181ProjectorHome ?? null)) {
@@ -235,13 +235,13 @@ it('deletes a final production Route after cleanup without publishing developmen
 it('removes a final public Route edge before deleting the Route and refreshes a surviving public Route', function (): void {
     [$member, $route, $departing, $survivor] = orb183_projector_production_member(shared: false);
     $survivorRoute = orb181_projector_route($departing->app, null, $route->cluster, 'survivor.production.test');
-    $survivor->update(['status' => AppInstanceState::Active]);
     $survivorRoute->targets()->create(['app_instance_id' => $survivor->id, 'position' => 0]);
     $survivorRoute->update([
         'status' => RouteStatus::Active,
         'publication' => RoutePublication::Public,
         'public_publication' => RoutePublicPublication::Active,
     ]);
+    $survivor->update(['status' => AppInstanceState::Active]);
     $route->update([
         'publication' => RoutePublication::Public,
         'public_publication' => RoutePublicPublication::Active,
