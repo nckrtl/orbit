@@ -676,7 +676,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'instance:release:list' => [['instance'], ['json' => false]],
         'instance:rollback' => [['instance'], ['release' => null, 'json' => false]],
-        'instance:dependencies:scan' => [[], ['app' => null, 'json' => false]],
+        'instance:dependencies:scan' => [[], ['app' => null, 'all' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
         'instance:transfer' => [
             ['instance', 'node'],

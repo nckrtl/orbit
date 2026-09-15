@@ -205,4 +205,18 @@ The Gateway compares the canonical absolute path with registered development che
 
 The response contains only `instance_id`, `app_id`, `node_id`, and `environment`, with standard request correlation. The SDK validates the bounded raw envelope, duplicate keys, ownership types, and correlation. Directory selection asserts the caller's canonical path; it does not inspect remote files or prove the process working directory. Later operations recheck authorization, lifecycle, and source state.
 
-`DependencyInstanceSelector::select` gives an explicit App domain precedence over local discovery. All-instance selection returns no local target and does not inspect the working directory. Combining an explicit App with all-instance selection fails before HTTP. This reusable hook does not add scan or update commands.
+`DependencyInstanceSelector::select` gives an explicit App domain precedence over local discovery. All-instance selection returns no local target and does not inspect the working directory. Combining an explicit App with all-instance selection fails before HTTP.
+
+## All-instance CLI scanning
+
+`instance:dependencies:scan --all` uses `ListAppInstancesRequest` to capture the authorized instance set, then `ScanInstanceDependenciesRequest` for each captured ID in that list order. The CLI does not filter, reorder, or invent targets locally. Listing authorization remains the Gateway list contract; each scan still rechecks access and lifecycle.
+
+### Listing envelope
+
+The fleet scan requires a complete listing envelope before it captures targets. The envelope must be a JSON object. `data` must be present as a JSON array, not a JSON object. A missing `data` field, `null`, a scalar, `{}`, or a numeric-key object raises a safe `GatewayApiException` and starts no scans.
+
+Each array member must be a JSON object with a positive `id`, `app_id`, `node_id`, non-empty `name`, and supported `environment`. Empty objects, array members, missing or invalid identity fields, and a malformed row after a valid row fail the entire listing. The command does not skip invalid rows or default a missing collection to an empty authorized set. A valid empty `data` array is a successful zero-target result.
+
+A listing transport or structured error envelope returns the ordinary CLI `error` envelope and starts no scans. Each scan outcome is recorded even when that instance fails. Later captured targets still run. HTTP 200 inventory results keep the typed composer and JavaScript graphs. Authorization, unavailability, timeout, and other request failures become a per-instance error without a successful empty graph. SIGINT or SIGTERM during a scan stops remaining targets, preserves attempted outcomes, and marks unattempted IDs as skipped rather than complete.
+
+`--json` returns `{succeeded, summary, instances, request_id}`. `summary` counts attempted, succeeded, failed, and skipped targets. `request_id` is the listing correlation. Instance rows include `instance_id`, `app_id`, `node_id`, `name`, `environment`, and `domain`. The command does not update packages or deploy.

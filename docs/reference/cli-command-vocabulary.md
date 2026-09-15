@@ -79,6 +79,6 @@ Three commands keep a noun as their last segment.
 
 ## Gateway route names
 
-`instance:dependencies:show` is a stored-inventory API and SDK operation without a CLI adapter. The single-instance CLI exposes `instance:dependencies:scan`, as described in [App instance dependencies](/reference/instance-dependencies).
+`instance:dependencies:show` is a stored-inventory API and SDK operation without a CLI adapter. The CLI exposes `instance:dependencies:scan` for directory, domain, and `--all` fleet scans, as described in [App instance dependencies](/reference/instance-dependencies).
 
 A named Gateway API route whose prefix matches a CLI command family and whose last segment is a vocabulary verb, a family-specific action, or a noun-ending command carries the same name as the CLI command. The Gateway lives in `apps/gateway` and records that route name as the activity command.
