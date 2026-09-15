@@ -270,7 +270,8 @@ it('converges a same-domain Cluster scope change on one Route and restores after
             'workload-verify',
         ]);
 
-    $route->update(['node_id' => $route->targets->sole()->appInstance->node_id, 'cluster_id' => null]);
+    $nodeId = $route->targets->sole()->appInstance->node_id;
+    $route->refresh()->update(['node_id' => $nodeId, 'cluster_id' => null]);
     $this->events->values = [];
     $this->projector->failures['router-caddy'] = 1;
 
