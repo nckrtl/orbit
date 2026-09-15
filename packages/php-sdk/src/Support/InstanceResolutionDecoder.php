@@ -7,6 +7,7 @@ namespace Orbit\Sdk\Support;
 use JsonException;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\AppInstances\ResolvedAppInstanceResponse;
+use Orbit\Sdk\Responses\AppInstances\ResolvedDirectoryInstanceResponse;
 use SensitiveParameter;
 use stdClass;
 
@@ -29,6 +30,25 @@ final class InstanceResolutionDecoder
         #[SensitiveParameter] string $domain,
         #[SensitiveParameter] mixed $headerRequestId,
     ): ResolvedAppInstanceResponse {
+        [$data, $requestId] = self::envelope($body, $headerRequestId, ['domain', 'instance_id', 'app_id', 'node_id', 'environment']);
+
+        return ResolvedAppInstanceResponse::fromGatewayData($data, $domain, $requestId);
+    }
+
+    public static function decodeDirectory(
+        #[SensitiveParameter] string $body,
+        #[SensitiveParameter] mixed $headerRequestId,
+    ): ResolvedDirectoryInstanceResponse {
+        [$data, $requestId] = self::envelope($body, $headerRequestId, ['instance_id', 'app_id', 'node_id', 'environment']);
+
+        return ResolvedDirectoryInstanceResponse::fromGatewayData($data, $requestId);
+    }
+
+    /** @param list<string> $fields
+     * @return array{array<string, mixed>, string}
+     */
+    private static function envelope(#[SensitiveParameter] string $body, #[SensitiveParameter] mixed $headerRequestId, array $fields): array
+    {
         self::guardBody($body, $headerRequestId);
         $decoder = new self(GatewayRequestId::fromTransport($headerRequestId));
 
@@ -47,9 +67,9 @@ final class InstanceResolutionDecoder
             $decoder->invalid();
         }
         $decoder->requestId = $requestId;
-        $data = $decoder->object($envelope->data, ['domain', 'instance_id', 'app_id', 'node_id', 'environment']);
+        $data = $decoder->object($envelope->data, $fields);
 
-        return ResolvedAppInstanceResponse::fromGatewayData(get_object_vars($data), $domain, $requestId);
+        return [get_object_vars($data), $requestId];
     }
 
     /** @param list<string> $fields */

@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RealtimeAuthController;
 use App\Http\Controllers\Api\RealtimeConfigController;
 use App\Http\Controllers\Api\ResolveDependencyInstanceController;
+use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
@@ -196,6 +197,7 @@ Route::prefix('v1')->group(function (): void {
             Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
                 ->name('schedule:destroy');
         });
+        Route::get('instances/resolve-directory', [ResolveDirectoryInstanceController::class, '__invoke'])->name('instance:resolve-directory');
         Route::get('instances/resolve', [ResolveDependencyInstanceController::class, '__invoke'])->name('instance:resolve');
         Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
         Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');

@@ -196,3 +196,13 @@ A unique target must be active, outside removal and free of a required source mi
 The SDK exposes `ResolveAppInstanceRequest` and `ResolvedAppInstanceResponse`. It accepts at most 4096 bytes of response JSON and requires the exact success envelope and ownership fields. Duplicate JSON keys, including escaped equivalents, are rejected. The body must contain a valid request ID that agrees with a valid response-header request ID when present. Malformed responses raise a safe `GatewayApiException` without returning a target or raw response data.
 
 The CLI's `DependencyInstanceSelector::resolveDomain` provides a shared SDK call for subsequent scan and update commands. It preserves the domain input and structured errors, without local Route filtering or directory detection. No dependency command or package mutation is added by this resolver.
+
+## Current-directory selection
+
+`GET /api/v1/instances/resolve-directory?directory=CANONICAL_PATH` selects one registered instance on the authenticated caller Node. The request has no body and accepts no Node override. The CLI resolves the current directory with `realpath` before sending it. Symlinked directories therefore use their physical location. A missing or unreadable local directory fails before HTTP.
+
+The Gateway compares the canonical absolute path with registered development checkout roots and production homes. A root and its descendants match at directory boundaries. Matching paths on other Nodes never qualify, even with fleet access. Multiple matching roots, including nested roots, return `dependencies.target_ambiguous`; the resolver never chooses the longest prefix. A missing or inaccessible match returns `dependencies.target_not_found`. Unavailable or migrating instances cannot be selected.
+
+The response contains only `instance_id`, `app_id`, `node_id`, and `environment`, with standard request correlation. The SDK validates the bounded raw envelope, duplicate keys, ownership types, and correlation. Directory selection asserts the caller's canonical path; it does not inspect remote files or prove the process working directory. Later operations recheck authorization, lifecycle, and source state.
+
+`DependencyInstanceSelector::select` gives an explicit App domain precedence over local discovery. All-instance selection returns no local target and does not inspect the working directory. Combining an explicit App with all-instance selection fails before HTTP. This reusable hook does not add scan or update commands.

@@ -1,0 +1,17 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Data\AppInstances\Dependencies;
+
+use Spatie\LaravelData\Data;
+
+final class ResolvedDirectoryInstanceData extends Data
+{
+    public function __construct(
+        public readonly int $instance_id,
+        public readonly int $app_id,
+        public readonly int $node_id,
+        public readonly string $environment,
+    ) {}
+}
