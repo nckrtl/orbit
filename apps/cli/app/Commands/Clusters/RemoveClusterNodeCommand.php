@@ -41,14 +41,15 @@ final class RemoveClusterNodeCommand extends ClusterCommand
 
         $existing = $this->existingCluster($connector, $clusterId);
 
-        if ($existing === null || ! $this->confirmed('Node detachment')) {
+        if ($existing === null || ! $this->confirmed('Node detachment', $existing, $nodeId)) {
             return self::FAILURE;
         }
 
-        $cluster = $this->send(
+        $cluster = $this->sendWithProgress(
             $connector,
             new RemoveClusterNodeRequest($clusterId, $nodeId, true),
             ClusterResponse::class,
+            ['Detach Node', 'Detaching Node', 'Detached Node'],
         );
 
         if (! $cluster instanceof ClusterResponse) {

@@ -44,10 +44,11 @@ final class CreateClusterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->send(
+        $cluster = $this->sendWithProgress(
             $connector,
             new CreateClusterRequest($name, is_string($tld) && $tld !== '' ? $tld : null),
             ClusterResponse::class,
+            ['Create Cluster', 'Creating Cluster', 'Created Cluster'],
         );
 
         if (! $cluster instanceof ClusterResponse) {

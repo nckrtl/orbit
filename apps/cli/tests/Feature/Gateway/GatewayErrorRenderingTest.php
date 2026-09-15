@@ -123,7 +123,7 @@ it('prints each validation field message on its own line after the error message
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
-    expect($output)->toBe(implode("\n", [
+    expect(gateway_failed_create_diagnostic($output))->toBe(implode("\n", [
         'The request data is invalid.',
         'slug: The slug field must only contain letters, numbers, dashes, and underscores.',
         'slug: The slug has already been taken.',
@@ -155,7 +155,7 @@ it('renders a validation failure without details as before in both modes', funct
         ->not->toContain('details');
     expect(json_decode($jsonOutput, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
     expect($humanExitCode)->toBe(SymfonyCommand::FAILURE);
-    expect($humanOutput)->toBe("The request data is invalid.\nRequest ID: ".gateway_error_request_id());
+    expect(gateway_failed_create_diagnostic($humanOutput))->toBe("The request data is invalid.\nRequest ID: ".gateway_error_request_id());
 })->with([
     'empty details' => [[]],
     'no details key' => [null],
@@ -180,7 +180,7 @@ it('keeps non-validation failure details out of human output', function (): void
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
-    expect($output)
+    expect(gateway_failed_create_diagnostic($output))
         ->toBe("Gateway is unavailable.\nRequest ID: ".gateway_error_request_id())
         ->not->toContain('fixture-secret');
 });
@@ -217,7 +217,7 @@ it('never prints secret-looking validation details in either mode', function ():
         ->not->toContain('abc123');
     expect(json_decode($jsonOutput, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
     expect($humanExitCode)->toBe(SymfonyCommand::FAILURE);
-    expect($humanOutput)
+    expect(gateway_failed_create_diagnostic($humanOutput))
         ->toBe(implode("\n", [
             'The request data is invalid.',
             'password: [REDACTED]',
@@ -275,7 +275,7 @@ it('caps validation details at fifty field messages', function (): void {
 
     $exitCode = Artisan::call('app:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
-    $lines = explode("\n", $output);
+    $lines = explode("\n", gateway_failed_create_diagnostic($output));
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
     expect($lines)->toHaveCount(52);
@@ -925,4 +925,15 @@ function gateway_validation_failure(?array $details): MockResponse
         422,
         ['X-Orbit-Request-Id' => gateway_error_request_id()],
     );
+}
+
+function gateway_failed_create_diagnostic(string $output): string
+{
+    $prefix = "Creating App...\n\n┌  Create App\n│\n├  ● Creating App\n│\n└  Operation failed.\n\n";
+
+    expect($output)->toStartWith($prefix)
+        ->not->toContain('Created App', "\e[");
+    expect(substr_count($output, 'Operation failed.'))->toBe(1);
+
+    return substr($output, strlen($prefix));
 }

@@ -14,12 +14,15 @@ use App\Support\Console\ConsoleMode;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\HumanRenderer;
 use App\Support\Console\ProgressDisplay;
+use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
 use App\Support\Console\SpinnerDisplay;
+use App\Support\Console\TerminalText;
 use App\Support\GatewayFailureRenderer;
 use InvalidArgumentException;
 use JsonException;
+use Laravel\Prompts\ConfirmPrompt;
 use LaravelZero\Framework\Commands\Command;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
@@ -225,6 +228,77 @@ abstract class GatewayCommand extends Command
             'php.version_invalid',
             'PHP version must use major.minor format, for example 8.5.',
         );
+
+        return false;
+    }
+
+    protected function writeHumanMessage(string $message): void
+    {
+        if (! $this->consoleMode()->machine) {
+            ConsoleWriter::write($this->output, implode("\n", TerminalText::wrap(
+                TerminalText::safe($message),
+                $this->consoleMode()->columns,
+            ))."\n");
+        }
+    }
+
+    /** @param array{string, string, string} $labels Waiting, running and completed labels. */
+    protected function sendWithProgress(
+        GatewayConnector $connector,
+        GatewayRequest $request,
+        string $responseClass,
+        array $labels,
+    ): ?object {
+        [$waiting, $running, $completed] = $labels;
+        $progress = $this->progressDisplay($waiting);
+        $progress->admit('request', $waiting, $running, $completed);
+
+        try {
+            $response = $progress->during('request', fn (): object => $this->sendOrThrow($connector, $request, $responseClass));
+        } catch (GatewayApiException $exception) {
+            $code = $exception->errorCode() ?? 'gateway.request_failed';
+            $this->renderGatewayFailure(
+                $code,
+                $exception->getMessage(),
+                $exception->requestId(),
+                details: GatewayFailureRenderer::safeDetails($code, $exception->details()),
+            );
+
+            return null;
+        }
+
+        $progress->complete('request', ProgressState::Success);
+        $progress->finish($completed.'.');
+
+        return $response;
+    }
+
+    protected function confirmAction(
+        string $label,
+        string $cancelledMessage,
+        string $option = 'yes',
+        string $requiredCode = 'input.confirmation_required',
+        ?string $requiredMessage = null,
+    ): bool {
+        if ($this->option($option) === true) {
+            return true;
+        }
+
+        if (! $this->consoleMode()->mayPrompt) {
+            $this->renderGatewayFailure($requiredCode, $requiredMessage ?? "Supply --{$option} to confirm this operation.");
+
+            return false;
+        }
+
+        try {
+            if ($this->commandPrompts()->run(fn (): ConfirmPrompt => new ConfirmPrompt(TerminalText::safe($label), default: false)) === true) {
+                return true;
+            }
+        } catch (PromptAborted|ConsoleInterrupted) {
+            // Cancellation is handled below before the caller admits a mutation.
+        }
+
+        $this->renderGatewayFailure('input.cancelled', $cancelledMessage);
 
         return false;
     }

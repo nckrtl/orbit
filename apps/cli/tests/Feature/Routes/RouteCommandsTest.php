@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\TerminalText;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -271,10 +272,9 @@ it('transports a combined domain and publication update and renders public publi
         'publication' => 'public',
     ]);
 
-    $this
-        ->artisan('route:show', ['route' => '11'])
-        ->expectsOutputToContain('Public publication: active')
-        ->assertExitCode(0);
+    expect(Artisan::call('route:show', ['route' => '11']))->toBe(0);
+    expect(Artisan::output())->toContain('Public publication')
+        ->toContain('active');
 });
 
 it('lists, shows, updates, targets, clears, and removes through exact requests', function (): void {
@@ -310,8 +310,8 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
             ['app_instance_id' => 11, 'remove' => true],
         ],
     ]);
-    $this->artisan('route:target:unset', ['route' => '11'])->assertExitCode(0);
-    $this->artisan('route:destroy', ['route' => '11'])->assertExitCode(0);
+    $this->artisan('route:target:unset', ['route' => '11', '--yes' => true])->assertExitCode(0);
+    $this->artisan('route:destroy', ['route' => '11', '--yes' => true])->assertExitCode(0);
 });
 
 it('rejects the removed hostname argument and option', function (string $command, array $arguments, string $message): void {
@@ -390,3 +390,140 @@ function route_request_id(): string
 {
     return '0198e15d-16c4-7855-8eb2-182b53ad28ba';
 }
+
+it('resolves destructive subjects but refuses automation without independent consent', function (
+    string $command,
+    string $running,
+    bool $json,
+): void {
+    $mock = MockClient::global([ShowRouteRequest::class => route_mock_response()]);
+    $arguments = ['route' => '3', '--no-interaction' => true];
+
+    if ($json) {
+        $arguments['--json'] = true;
+    }
+
+    expect(Artisan::call($command, $arguments))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain('Supply --yes to confirm this operation.')
+        ->not->toContain($running, "\e[");
+    expect($mock->getLastRequest())->toBeInstanceOf(ShowRouteRequest::class)
+        ->and($mock->getRecordedResponses())->toHaveCount(1);
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.confirmation_required',
+                'message' => 'Supply --yes to confirm this operation.',
+                'request_id' => null,
+            ],
+        ]);
+    }
+})->with([
+    'route:destroy' => ['route:destroy', 'Removing Route'],
+    'route:target:unset' => ['route:target:unset', 'Clearing Route target'],
+])->with([false, true]);
+
+it('preserves lookup failures before destructive consent without sending a mutation', function (
+    string $command,
+    string $running,
+    bool $json,
+): void {
+    $mock = MockClient::global([
+        ShowRouteRequest::class => MockResponse::make([
+            'error' => ['code' => 'http.404', 'message' => 'Resource not found.', 'details' => []],
+        ], 404),
+    ]);
+    $arguments = ['route' => '3', '--no-interaction' => true];
+
+    if ($json) {
+        $arguments['--json'] = true;
+    }
+
+    expect(Artisan::call($command, $arguments))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain('Resource not found.')
+        ->not->toContain('Supply --yes', $running, "\e[");
+    expect($mock->getLastRequest())->toBeInstanceOf(ShowRouteRequest::class)
+        ->and($mock->getRecordedResponses())->toHaveCount(1);
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => ['code' => 'http.404', 'message' => 'Resource not found.', 'request_id' => null],
+        ]);
+    }
+})->with([
+    'route:destroy' => ['route:destroy', 'Removing Route'],
+    'route:target:unset' => ['route:target:unset', 'Clearing Route target'],
+])->with([false, true]);
+
+it('renders an explicit empty list and preserves the empty machine collection', function (bool $json): void {
+    MockClient::global([
+        ListRoutesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => route_request_id()]]),
+    ]);
+
+    expect(Artisan::call('route:list', ['--json' => $json]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->not->toContain("\e[");
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'routes' => [], 'request_id' => route_request_id(),
+        ]);
+    } else {
+        expect($output)->toContain('No Routes found.', route_request_id())->not->toContain('Operation failed.');
+    }
+})->with([false, true]);
+
+it('keeps every ordered target in human list and detail output at narrow widths', function (int $columns): void {
+    $original = getenv('COLUMNS');
+    putenv('COLUMNS='.$columns);
+    $payload = [...route_payload(), 'targets' => [
+        ['id' => 12, 'app_instance_id' => 712, 'position' => 0],
+        ['id' => 13, 'app_instance_id' => 934, 'position' => 1],
+        ['id' => 14, 'app_instance_id' => 856, 'position' => 2],
+    ]];
+    MockClient::global([
+        ShowRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]]),
+        ListRoutesRequest::class => MockResponse::make(['data' => [$payload], 'meta' => ['request_id' => route_request_id()]]),
+    ]);
+
+    try {
+        foreach (['route:list' => [], 'route:show' => ['route' => '11']] as $command => $arguments) {
+            expect(Artisan::call($command, $arguments))->toBe(0);
+            $output = Artisan::output();
+            expect($output)->toContain('712', '934', '856')->not->toContain("\e[");
+            expect(strpos($output, '712'))->toBeLessThan(strpos($output, '934'));
+            expect(strpos($output, '934'))->toBeLessThan(strpos($output, '856'));
+
+            foreach (explode("\n", $output) as $line) {
+                expect(TerminalText::width($line))->toBeLessThanOrEqual($columns);
+            }
+        }
+    } finally {
+        putenv($original === false ? 'COLUMNS' : 'COLUMNS='.$original);
+    }
+})->with([24, 80, 160]);
+
+it('renders Route replacement and failed-step metadata without claiming publication success', function (): void {
+    $payload = [...route_payload(),
+        'generation_basis_node_id' => 42,
+        'replaces_route_id' => 45,
+        'replaced_by_route_id' => 46,
+        'replacement_step' => 'publish_replacement',
+        'target_set_step' => 'apply_targets',
+        'failed_step' => 'configure_ingress',
+        'error_code' => 'route.ingress_failed',
+        'status' => 'failed',
+    ];
+    MockClient::global([
+        ShowRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]]),
+    ]);
+
+    expect(Artisan::call('route:show', ['route' => '11']))->toBe(0);
+    expect(Artisan::output())->toContain(
+        'Generation basis Node', '42', 'Replaces Route', '45', 'Replaced by Route', '46',
+        'Replacement step', 'publish_replacement', 'Target set step', 'apply_targets',
+        'Failed step', 'configure_ingress', 'route.ingress_failed', 'failed',
+    )->not->toContain('Published Route');
+});

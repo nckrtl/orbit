@@ -77,7 +77,7 @@ describe('app:create', function (): void {
                 'repository' => 'git@github.com:nckrtl/orbit.git',
             ])
             ->expectsOutput('App [orbit] created.')
-            ->expectsOutput('Request ID: '.app_request_id())
+            ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
 
@@ -263,14 +263,12 @@ describe('app:list', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('app:list')
-            ->expectsTable(
-                ['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Root'],
-                [[3, 'Orbit', 'orbit', 'git@github.com:nckrtl/orbit.git', 'main', 'public']],
-            )
-            ->expectsOutput('Request ID: '.app_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('app:list'))->toBe(0);
+        expect(Artisan::output())->toContain('NAME')
+            ->toContain('SLUG')
+            ->toContain('REPOSITORY')
+            ->toContain('WEB ROOT')
+            ->toContain(app_request_id());
     });
 
     it('fails clearly when no gateway profile is active', function (): void {
@@ -370,14 +368,15 @@ describe('app:show', function (): void {
     it('shows app details for humans', function (): void {
         MockClient::global([ShowAppRequest::class => app_mock_response()]);
 
-        $this
-            ->artisan('app:show', ['app' => '3'])
-            ->expectsOutput('Orbit [orbit] (#3)')
-            ->expectsOutput('Repository: git@github.com:nckrtl/orbit.git')
-            ->expectsOutput('Default branch: main')
-            ->expectsOutput('Root: public')
-            ->expectsOutput('Request ID: '.app_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('app:show', ['app' => '3']))->toBe(0);
+        expect(Artisan::output())->toContain('App: orbit')
+            ->toContain('Orbit')
+            ->toContain('git@github.com:nckrtl/orbit.git')
+            ->toContain('Default branch')
+            ->toContain('main')
+            ->toContain('Web root')
+            ->toContain('public')
+            ->toContain(app_request_id());
     });
 
     it('returns legacy null source defaults unchanged', function (): void {
@@ -441,7 +440,7 @@ describe('app:update', function (): void {
                 '--slug' => 'orbit',
             ])
             ->expectsOutput('App [orbit] updated.')
-            ->expectsOutput('Request ID: '.app_request_id())
+            ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
 
@@ -473,7 +472,7 @@ describe('app:destroy', function (): void {
         ]);
 
         $this
-            ->artisan('app:destroy', ['app' => '3', '--json' => true])
+            ->artisan('app:destroy', ['app' => '3', '--yes' => true, '--json' => true])
             ->expectsOutput(app_json())
             ->assertExitCode(0);
 
@@ -485,9 +484,9 @@ describe('app:destroy', function (): void {
         MockClient::global([DestroyAppRequest::class => app_mock_response()]);
 
         $this
-            ->artisan('app:destroy', ['app' => '3'])
+            ->artisan('app:destroy', ['app' => '3', '--yes' => true])
             ->expectsOutput('App [orbit] removed.')
-            ->expectsOutput('Request ID: '.app_request_id())
+            ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
 });
@@ -547,3 +546,85 @@ function app_cli_secret(): string
 {
     return implode('-', ['repository', 'secret']);
 }
+
+it('resolves destructive subjects but refuses automation without independent consent', function (
+    string $command,
+    string $running,
+    bool $json,
+): void {
+    $mock = MockClient::global([ShowAppRequest::class => app_mock_response()]);
+    $arguments = ['app' => '3', '--no-interaction' => true];
+
+    if ($json) {
+        $arguments['--json'] = true;
+    }
+
+    expect(Artisan::call($command, $arguments))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain('Supply --yes to confirm this operation.')
+        ->not->toContain($running, "\e[");
+    expect($mock->getLastRequest())->toBeInstanceOf(ShowAppRequest::class)
+        ->and($mock->getRecordedResponses())->toHaveCount(1);
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.confirmation_required',
+                'message' => 'Supply --yes to confirm this operation.',
+                'request_id' => null,
+            ],
+        ]);
+    }
+})->with([
+    'app:destroy' => ['app:destroy', 'Removing App'],
+])->with([false, true]);
+
+it('preserves lookup failures before destructive consent without sending a mutation', function (
+    string $command,
+    string $running,
+    bool $json,
+): void {
+    $mock = MockClient::global([
+        ShowAppRequest::class => MockResponse::make([
+            'error' => ['code' => 'http.404', 'message' => 'Resource not found.', 'details' => []],
+        ], 404),
+    ]);
+    $arguments = ['app' => '3', '--no-interaction' => true];
+
+    if ($json) {
+        $arguments['--json'] = true;
+    }
+
+    expect(Artisan::call($command, $arguments))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain('Resource not found.')
+        ->not->toContain('Supply --yes', $running, "\e[");
+    expect($mock->getLastRequest())->toBeInstanceOf(ShowAppRequest::class)
+        ->and($mock->getRecordedResponses())->toHaveCount(1);
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => ['code' => 'http.404', 'message' => 'Resource not found.', 'request_id' => null],
+        ]);
+    }
+})->with([
+    'app:destroy' => ['app:destroy', 'Removing App'],
+])->with([false, true]);
+
+it('renders an explicit empty list and preserves the empty machine collection', function (bool $json): void {
+    MockClient::global([
+        ListAppsRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+    ]);
+
+    expect(Artisan::call('app:list', ['--json' => $json]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->not->toContain("\e[");
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'apps' => [], 'request_id' => app_request_id(),
+        ]);
+    } else {
+        expect($output)->toContain('No Apps found.', app_request_id())->not->toContain('Operation failed.');
+    }
+})->with([false, true]);

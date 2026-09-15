@@ -36,11 +36,11 @@ final class DestroyClusterCommand extends ClusterCommand
 
         $existing = $this->existingCluster($connector, $clusterId);
 
-        if ($existing === null || ! $this->confirmed('removal')) {
+        if ($existing === null || ! $this->confirmed('removal', $existing)) {
             return self::FAILURE;
         }
 
-        $cluster = $this->send($connector, new DestroyClusterRequest($clusterId), ClusterResponse::class);
+        $cluster = $this->sendWithProgress($connector, new DestroyClusterRequest($clusterId), ClusterResponse::class, ['Remove Cluster', 'Removing Cluster', 'Removed Cluster']);
 
         if (! $cluster instanceof ClusterResponse) {
             return self::FAILURE;

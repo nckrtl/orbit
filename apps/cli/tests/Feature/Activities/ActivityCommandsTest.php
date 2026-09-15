@@ -70,22 +70,13 @@ describe('activity:list', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('activity:list')
-            ->expectsTable(
-                ['ID', 'Time', 'Command', 'Status', 'Caller', 'Target', 'Error'],
-                [[
-                    42,
-                    '2026-08-25T12:00:00+00:00',
-                    'process:start',
-                    'failed',
-                    '2',
-                    '3',
-                    'process.start_failed',
-                ]],
-            )
-            ->expectsOutput('Request ID: '.activity_cli_gateway_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('activity:list'))->toBe(0);
+        expect(Artisan::output())->toContain('COMMAND')
+            ->toContain('STATUS')
+            ->toContain('CALLER')
+            ->toContain('TARGET')
+            ->toContain('ERROR')
+            ->toContain(activity_cli_gateway_request_id());
     });
 
     it('rejects an invalid limit before sending a gateway request', function (string $limit): void {
@@ -196,13 +187,13 @@ describe('activity:show', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('activity:show', ['activity' => '42'])
-            ->expectsOutput('Activity #42: process:start [failed]')
-            ->expectsOutput('Activity request ID: 33333333-3333-4333-8333-333333333333')
-            ->expectsOutput('Error: process.start_failed')
-            ->expectsOutput('Request ID: '.activity_cli_gateway_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('activity:show', ['activity' => '42']))->toBe(0);
+        expect(Artisan::output())->toContain('Activity: 42')
+            ->toContain('process:start')
+            ->toContain('failed')
+            ->toContain('33333333-3333-4333-8333-333333333333')
+            ->toContain('process.start_failed')
+            ->toContain(activity_cli_gateway_request_id());
     });
 
     it('rejects an invalid activity ID before sending a gateway request', function (): void {
@@ -242,3 +233,21 @@ function activity_cli_gateway_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('renders an explicit empty list and preserves the empty machine collection', function (bool $json): void {
+    MockClient::global([
+        ListActivitiesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => activity_cli_gateway_request_id()]]),
+    ]);
+
+    expect(Artisan::call('activity:list', ['--json' => $json]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->not->toContain("\e[");
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'activities' => [], 'request_id' => activity_cli_gateway_request_id(),
+        ]);
+    } else {
+        expect($output)->toContain('No activities found.', activity_cli_gateway_request_id())->not->toContain('Operation failed.');
+    }
+})->with([false, true]);

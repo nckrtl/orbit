@@ -42,10 +42,10 @@ final class UpdateRouteCommand extends RouteCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $route = $this->send($connector, new UpdateRouteRequest($id, domain: $domain, publication: $publication), RouteResponse::class);
+        $route = $this->sendWithProgress($connector, new UpdateRouteRequest($id, domain: $domain, publication: $publication), RouteResponse::class, ['Update Route', 'Updating Route', 'Updated Route']);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->domain}] updated.")
+            ? $this->renderRoute($route)
             : self::FAILURE;
     }
 }

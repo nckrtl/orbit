@@ -66,7 +66,7 @@ final class UpdateAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $app = $this->send(
+        $app = $this->sendWithProgress(
             $connector,
             new UpdateAppRequest(
                 appId: $appId,
@@ -76,6 +76,7 @@ final class UpdateAppCommand extends GatewayCommand
                 root: $root,
             ),
             AppResponse::class,
+            ['Update App', 'Updating App', 'Updated App'],
         );
 
         if (! $app instanceof AppResponse) {
@@ -88,8 +89,8 @@ final class UpdateAppCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("App [{$app->slug}] updated.");
-        $this->line("Request ID: {$app->requestId}");
+        $this->writeHumanMessage("App [{$app->slug}] updated.");
+        $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;
     }

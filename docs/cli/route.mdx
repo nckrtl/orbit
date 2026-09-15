@@ -19,7 +19,7 @@ The [Routes reference](/reference/routes) owns the Route record, domain generati
 | [`route:target:unset`](#orbit-routetargetunset) | Clear the configured target. |
 | [`route:destroy`](#orbit-routedestroy) | Remove a Route. |
 
-Every command accepts `--json`. Route, App, App instance, Node, and Cluster arguments are numeric IDs. Human output prints the Route scope, target, status, and the Gateway request ID.
+Every command accepts `--json`. Route, App, App instance, Node, and Cluster arguments are numeric IDs. Human lists use uppercase table headers and include every target in an ordered pool. One Route uses a detail tree with identity, scope, targets, publication, lifecycle and replacement metadata. Requests show progress while waiting and retain the Gateway request ID.
 
 ## orbit route:create
 
@@ -144,7 +144,7 @@ A single target with no pool options sends `app_instance_id`. Pool options send 
 Clear the configured target while keeping the Route, its domain, scope, and publication intent.
 
 ```bash
-orbit route:target:unset <route>
+orbit route:target:unset <route> [--yes]
 ```
 
 Clearing an already empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active App instance without a Route.
@@ -154,7 +154,7 @@ Clearing an already empty Route returns it unchanged. The Gateway returns `route
 Remove an untargeted private Route and its managed traffic configuration. The Gateway completes projection cleanup before deleting the record. See [Route removal](/reference/routes#remove-an-untargeted-private-route) for refusal and retry rules.
 
 ```bash
-orbit route:destroy <route>
+orbit route:destroy <route> [--yes]
 ```
 
 | Argument | Required | Meaning |
@@ -164,6 +164,8 @@ orbit route:destroy <route>
 <Warning>
 The Gateway refuses removal with `route.target_conflict` while an active App instance depends on the Route. Remove the App instance with `instance:destroy` instead; that removal clears the target and deletes a final-target Route as part of its own lifecycle.
 </Warning>
+
+Route removal and target clearing ask for confirmation with No selected. Supply `--yes` for automation, including `--json`. The CLI resolves the Route before asking; declining, Ctrl-C or EOF returns `input.cancelled` without sending the mutation. A valid noninteractive call without `--yes` returns `input.confirmation_required`. Existing targeting and removal restrictions still apply.
 
 ## Related
 
