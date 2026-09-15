@@ -43,12 +43,6 @@ final class App extends Model
             ->first();
     }
 
-    /** @return HasMany<Instance, $this> */
-    public function instances(): HasMany
-    {
-        return $this->hasMany(Instance::class);
-    }
-
     /** @return HasMany<AppInstance, $this> */
     public function appInstances(): HasMany
     {

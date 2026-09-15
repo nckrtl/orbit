@@ -42,7 +42,7 @@ The instance name and Node's [apps root](/reference/node-settings) determine the
 | Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
 | Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
 
-`instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory, without a Workspace or shared worktree metadata.
+`instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory and no shared worktree metadata.
 
 The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route.
 
@@ -97,7 +97,7 @@ A given App can have one production App instance per app-prod Node. The same App
 
 ### Keep existing production App instances
 
-When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it. App instance commands do not remove leftover Legacy Instance or Workspace rows or their source directories.
+When an App instance is already active in production, the Gateway still shows, deploys, routes, inspects, and removes it without candidate metadata. When the same `instance:create` request matches that completed production App instance, the Gateway returns it without fetching or overwriting it.
 
 Cloning produces each production App instance, and the first deployment produces the release layout. See [App instance cloning](/reference/appinstance-cloning) and [Production release layout](/reference/deployments).
 
@@ -176,7 +176,7 @@ Production removal uses the same command without deleting application content. I
 
 The removal reference also describes worktree preflight, forced fixed-set cascades, retained branches, ordered cleanup, and transient unavailable traffic.
 
-`instance:destroy` removes an App instance owned by its App and Node. It does not remove leftover Legacy Instance or Workspace rows or their source directories.
+`instance:destroy` removes an App instance owned by its App and Node. Development removal deletes the recorded source checkout or worktree. Production removal retains application content in the production home.
 
 ## Move an App instance
 

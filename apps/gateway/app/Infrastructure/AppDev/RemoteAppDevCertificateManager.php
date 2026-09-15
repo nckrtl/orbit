@@ -4,53 +4,22 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
-use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\Workspace;
 
-final readonly class RemoteAppDevCertificateManager implements AppDevCertificateManager
+final readonly class RemoteAppDevCertificateManager
 {
     public function __construct(
         private AppDevSshExecutor $ssh,
         private LeafCertificateSigner $signer,
         private ManagedUserAccountResolver $accounts,
     ) {}
-
-    public function convergeInstance(Instance $instance): void
-    {
-        $instance->loadMissing('node');
-        $this->converge($instance->node, "instance-{$instance->id}", $instance->domain);
-    }
-
-    public function removeInstance(Instance $instance): void
-    {
-        $instance->loadMissing('node');
-        $this->remove($instance->node, "instance-{$instance->id}");
-    }
-
-    public function convergeWorkspace(Workspace $workspace): void
-    {
-        $workspace->loadMissing('instance.node');
-        $this->converge(
-            $workspace->instance->node,
-            "workspace-{$workspace->id}",
-            $workspace->domain,
-        );
-    }
-
-    public function removeWorkspace(Workspace $workspace): void
-    {
-        $workspace->loadMissing('instance.node');
-        $this->remove($workspace->instance->node, "workspace-{$workspace->id}");
-    }
 
     public function convergeAppInstance(AppInstance $appInstance, Route $route): void
     {

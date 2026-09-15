@@ -9,11 +9,9 @@ use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\FirewallRule;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Tool;
-use App\Models\Workspace;
 use DateTimeInterface;
 
 final readonly class ActivityData
@@ -115,8 +113,6 @@ final readonly class ActivityData
             Node::class => 'node',
             OrbitApp::class => 'app',
             AppInstance::class => 'instance',
-            Instance::class => 'instance',
-            Workspace::class => 'workspace',
             OrbitProcess::class => 'process',
             FirewallRule::class => 'firewall_rule',
             Tool::class => 'tool',

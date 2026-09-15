@@ -1539,13 +1539,13 @@ describe(ProvisionNodeAction::class, function (): void {
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
         ]);
-        $node->instances()->create([
+        $appInstance = AppInstance::query()->create([
             'app_id' => $app->id,
+            'node_id' => $node->id,
             'name' => 'main',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit/main',
-            'domain' => 'main.old.orbit',
-            'certificate_mode' => 'orbit-ca',
+            'status' => AppInstanceState::Active,
         ]);
         $converger = new class implements AppDevTldConverger
         {
@@ -1564,82 +1564,19 @@ describe(ProvisionNodeAction::class, function (): void {
             tld: 'new.orbit',
         )))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)
-                ->toBe('node.tld_change_unsupported')
+                ->toBe('node.has_app_instances')
                 ->and($exception->status)
                 ->toBe(409);
         });
 
         expect($node->refresh()->tld)->toBe('old.orbit');
-        expect($node->instances()->first()->domain)->toBe('main.old.orbit');
+        expect($appInstance->refresh()->checkout_path)->toBe('/home/orbit/apps/orbit/main');
         expect($nodeConverger->calls)->toBe(0);
         expect($converger->calls)->toBe(0);
     })->with([
         'provisioning assignment' => LifecycleStatus::Provisioning,
         'failed assignment' => LifecycleStatus::Failed,
     ]);
-
-    it('converges populated instances when changing an active app-dev TLD', function (): void {
-        app()->instance(NodeConverger::class, new class implements NodeConverger
-        {
-            public function converge(
-                Node $node,
-                NodeProvisioningIdentity $identity,
-                ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
-            ): NodeObservation {
-                return new NodeObservation('x86_64');
-            }
-        });
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'architecture' => 'x86_64',
-            'tld' => 'app-dev.orbit',
-            'public_ssh_host' => '192.0.2.20',
-            'wireguard_ip' => '10.44.0.3',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-        $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-        $app = App::query()->create([
-            'name' => 'Orbit',
-            'slug' => 'orbit',
-            'repository_url' => 'git@example.test:orbit.git',
-        ]);
-        $node->instances()->create([
-            'app_id' => $app->id,
-            'name' => 'main',
-            'environment' => 'development',
-            'checkout_path' => '/home/orbit/apps/orbit/main',
-            'domain' => 'main.app-dev.orbit',
-            'certificate_mode' => 'orbit-ca',
-        ]);
-
-        $tldConverger = new class implements AppDevTldConverger
-        {
-            public array $nodes = [];
-
-            public function converge(Node $node): void
-            {
-                $this->nodes[] = $node->tld;
-                $node->instances()->update(['domain' => "main.{$node->tld}"]);
-            }
-        };
-        app()->instance(AppDevTldConverger::class, $tldConverger);
-
-        $result = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
-            name: 'app-dev',
-            publicSshHost: '192.0.2.20',
-            tld: 'changed.orbit',
-        ));
-
-        expect($result->tld)
-            ->toBe('changed.orbit')
-            ->and($node->refresh()->instances()->first()->domain)
-            ->toBe('main.changed.orbit')
-            ->and($tldConverger->nodes)
-            ->toBe(['changed.orbit']);
-    });
 
     it('converges app development projections before activating a changed TLD', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger
@@ -1754,7 +1691,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(['new.orbit', 'old.orbit']);
     });
 
-    it('rejects a managed user change while the node owns instances', function (): void {
+    it('rejects a managed user change while the node owns AppInstances', function (): void {
         $converger = new class implements NodeConverger
         {
             public int $calls = 0;
@@ -1786,13 +1723,13 @@ describe(ProvisionNodeAction::class, function (): void {
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
         ]);
-        $node->instances()->create([
+        AppInstance::query()->create([
             'app_id' => $app->id,
+            'node_id' => $node->id,
             'name' => 'main',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit/main',
-            'domain' => 'main.app-dev.orbit',
-            'certificate_mode' => 'orbit-ca',
+            'status' => AppInstanceState::Active,
         ]);
 
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
@@ -1801,11 +1738,9 @@ describe(ProvisionNodeAction::class, function (): void {
             orbitUser: 'deploy',
         )))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)
-                ->toBe('node.user_change_unsupported')
+                ->toBe('node.has_app_instances')
                 ->and($exception->status)
-                ->toBe(409)
-                ->and($exception->getMessage())
-                ->toBe('Node [app-dev] cannot change managed user while it owns roles or instances.');
+                ->toBe(409);
         });
 
         expect($node->refresh()->user)

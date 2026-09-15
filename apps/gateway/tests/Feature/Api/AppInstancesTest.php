@@ -32,7 +32,6 @@ use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -49,12 +48,10 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteTarget;
-use App\Models\Workspace;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -2368,45 +2365,6 @@ it('rejects inactive Node role and unsupported platform placement before mutatio
         ->toBeEmpty();
 })->with(['node', 'role', 'platform']);
 
-it('does not treat leftover Instance or Workspace checkouts as AppInstance overlap', function (string $owner): void {
-    $legacy = Instance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'legacy',
-        'environment' => 'development',
-        'checkout_path' => $owner === 'instance'
-            ? '/srv/orbit/apps/acme'
-            : '/srv/orbit/legacy/acme',
-        'domain' => 'legacy.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    if ($owner === 'workspace') {
-        Workspace::query()->create([
-            'instance_id' => $legacy->id,
-            'name' => 'dev',
-            'branch' => 'dev',
-            'checkout_path' => '/srv/orbit/apps/acme/dev',
-            'domain' => 'dev.example.test',
-            'status' => LifecycleStatus::Active,
-        ]);
-    }
-
-    $this
-        ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
-            'node_id' => $this->node->id,
-            'name' => 'dev',
-        ])
-        ->assertCreated();
-
-    expect(AppInstance::query()->count())
-        ->toBe(1)
-        ->and($legacy->refresh()->checkout_path)
-        ->toBe($owner === 'instance' ? '/srv/orbit/apps/acme' : '/srv/orbit/legacy/acme');
-})->with(['instance', 'workspace']);
-
 it('keeps the first checkout immutable when a later AppInstance uses a changed apps root', function (): void {
     $first = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
@@ -2620,52 +2578,6 @@ it('rejects repository execution and unsupported transport keys', function (): v
         ->toBe(0)
         ->and($this->source->calls)
         ->toBeEmpty();
-});
-
-it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint domains', function (): void {
-    $appInstance = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-    ])->assertCreated();
-    $legacy = Instance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'legacy',
-        'environment' => 'development',
-        'checkout_path' => '/srv/orbit/legacy/acme',
-        'domain' => 'legacy.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $workspace = Workspace::query()->create([
-        'instance_id' => $legacy->id,
-        'name' => 'workspace',
-        'branch' => 'workspace',
-        'checkout_path' => '/srv/orbit/workspaces/acme/workspace',
-        'domain' => 'workspace.example.test',
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    expect($appInstance->json('data.id'))->toBe($legacy->id);
-    $this
-        ->getJson("/api/v1/instances/{$legacy->id}")
-        ->assertOk()
-        ->assertJsonPath('data.name', 'dev')
-        ->assertJsonPath('data.source_layout', 'checkout')
-        ->assertJsonMissingPath('data.certificate_mode')
-        ->assertJsonMissingPath('data.document_root')
-        ->assertJsonMissingPath('data.php_version')
-        ->assertJsonMissingPath('data.instance_id');
-    $this
-        ->getJson("/api/v1/workspaces/{$workspace->id}")
-        ->assertNotFound();
-    expect($workspace->refresh()->only(['instance_id', 'name', 'checkout_path']))
-        ->toBe([
-            'instance_id' => $legacy->id,
-            'name' => 'workspace',
-            'checkout_path' => '/srv/orbit/workspaces/acme/workspace',
-        ]);
 });
 
 it('removes an active AppInstance through every durable checkpoint', function (bool $force): void {
