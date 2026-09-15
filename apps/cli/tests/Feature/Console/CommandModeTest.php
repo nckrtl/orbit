@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Support\Console\ConsoleMode;
+use App\Support\Console\InvocationFormatter;
 use App\Support\Console\OutputContext;
+use Illuminate\Console\OutputStyle;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -11,6 +14,21 @@ use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Process\Process;
 
 describe('invocation console modes', function (): void {
+    it('preserves live decoration when the framework creates its plain internal buffer', function (): void {
+        $formatter = new InvocationFormatter(new OutputFormatter(true), true);
+        $output = new BufferedOutput(decorated: true, formatter: $formatter);
+        $style = new OutputStyle(new ArrayInput([]), $output);
+
+        expect($style->isDecorated())->toBeTrue()
+            ->and($formatter->isDecorated())->toBeTrue();
+        $copy = clone $formatter;
+        $copy->setDecorated(false);
+        expect($formatter->isDecorated())->toBeTrue();
+        $formatter->setDecorated(false);
+        $copy->setDecorated(true);
+        expect($formatter->isDecorated())->toBeFalse();
+    });
+
     it('separates prompt admission from terminal decoration and repainting', function (): void {
         $input = new ArgvInput(['orbit', 'list']);
         $output = new BufferedOutput(decorated: true);
