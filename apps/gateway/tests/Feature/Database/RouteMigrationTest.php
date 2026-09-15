@@ -180,6 +180,20 @@ it('accepts pending active activating retiring and failed Route statuses', funct
             'error_code' => 'route.domain_change_failed',
         ]))
         ->not->toThrow(QueryException::class)
+        ->and(fn () => $active->update([
+            'failed_step' => 'dns-publication',
+            'error_code' => 'route.domain_change_failed',
+        ]))
+        ->toThrow(QueryException::class);
+
+    $active->refresh();
+
+    expect(fn () => $active->update([
+        'replacement_step' => RouteReplacementStep::DnsPublished,
+        'failed_step' => 'dns-publication',
+        'error_code' => 'route.domain_change_failed',
+    ]))
+        ->not->toThrow(QueryException::class)
         ->and(fn () => DB::table('routes')->insert([
             'app_id' => $pending->app_id,
             'node_id' => $pending->node_id,

@@ -12,6 +12,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Routes\RouteMutationReconciler;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
@@ -85,6 +86,10 @@ final readonly class UpdateClusterAction
         }
 
         try {
+            if ($stateChanging && ! $tldChanging) {
+                $this->convergeActivePrivateRoutes($current, $proposedState, $proposedTld);
+            }
+
             /**
              * @var Cluster $updated
              */
@@ -159,6 +164,25 @@ final readonly class UpdateClusterAction
             baselineClusterOverrides: [$cluster->id => ['tld' => $previousTld, 'state' => $cluster->state]],
         ) as $change) {
             $this->convergeRoute()->execute($change['route'], $change['domain'], allowGenerated: true);
+        }
+    }
+
+    private function convergeActivePrivateRoutes(
+        Cluster $cluster,
+        ClusterState $proposedState,
+        ?string $proposedTld,
+    ): void {
+        $overrides = [$cluster->id => ['tld' => $proposedTld, 'state' => $proposedState]];
+        $reconciler = $this->routeReconciler();
+        $reconciler->validate(clusterOverrides: $overrides);
+
+        foreach ($reconciler->activePrivatePlacementChanges(clusterOverrides: $overrides) as $change) {
+            $this->convergeRoute()->execute(
+                $change['route'],
+                $change['domain'],
+                allowGenerated: $change['route']->provenance === RouteProvenance::Generated,
+                placement: $change['placement'],
+            );
         }
     }
 

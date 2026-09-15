@@ -215,6 +215,6 @@ The Gateway reserves `<destination-apps-root>/<app-slug>/<instance-name>`, copie
 
 App instance creation and removal do not accept a repository, command, process, or shell input. Registration accepts bounded source facts for independent Gateway verification; it does not accept a command, process, shell input, or caller-selected Node. The App owns the repository, and the optional creation branch selects source without changing placement or Route identity. Orbit does not install application dependencies as part of framework detection.
 
-The [Route reference](/reference/routes) defines initial private traffic projection, Node and Cluster TLD reconciliation for generated private Routes, and the refusal boundary for Route, Cluster, and access changes that still need coordinated runtime and Laravel URL reconciliation.
+The [Route reference](/reference/routes) defines initial private traffic projection, Node and Cluster TLD reconciliation, and Cluster activation and deactivation reconciliation. It also states the refusal boundary for Route, membership, and access changes that still need coordinated runtime and Laravel URL work.
 
 `instance:create` creates a new checkout. `instance:register` adopts a caller-local checkout or worktree and can complete the manual default-source migration. Both commands end in the same App instance provisioning and removal lifecycle.
