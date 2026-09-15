@@ -11,8 +11,6 @@ use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Models\AppInstance;
 use App\Models\Node;
-use App\Models\Process;
-use App\Models\Schedule;
 
 final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTransferRuntime
 {

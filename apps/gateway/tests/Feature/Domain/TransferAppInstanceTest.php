@@ -211,7 +211,7 @@ it('keeps an explicit Route identity while moving its scope', function (): void 
 });
 
 it('refuses ineligible sources and destinations before source mutation', function (
-    \Closure $mutate,
+    Closure $mutate,
     string $code,
 ): void {
     $mutate($this);

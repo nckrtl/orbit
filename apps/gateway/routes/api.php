@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
-use App\Http\Controllers\Api\AppInstanceTransfersController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
 use App\Http\Controllers\Api\AppInstanceDeployStepsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
@@ -13,6 +12,7 @@ use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\AppInstanceReleasesController;
 use App\Http\Controllers\Api\AppInstanceRollbacksController;
 use App\Http\Controllers\Api\AppInstancesController;
+use App\Http\Controllers\Api\AppInstanceTransfersController;
 use App\Http\Controllers\Api\AppRuntimeDefinitionsController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;

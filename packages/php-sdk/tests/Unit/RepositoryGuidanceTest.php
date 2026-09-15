@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
 use Orbit\Sdk\Requests\Apps\UpdateAppRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
