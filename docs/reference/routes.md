@@ -149,6 +149,28 @@ Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not ex
 
 When the Gateway converges the app-prod role, it retires the Orbit-owned public HTTP and HTTPS workload rules and does not republish them. Ingress keeps public HTTP and HTTPS publication. Unrelated firewall rules stay in place. A retry after a failed cleanup uses the same owned-rule set.
 
+### Inspect private projections with Doctor
+
+Doctor instance checks compare each active private Route and its target with the expected routing scope, Router and workload Caddy, Route-scoped certificate, private DNS, role-owned firewall, and detected Laravel URL. They stay in the existing `instance` family, remain verify-only, and change no Route, Node, service, certificate, DNS, firewall, Laravel file, lifecycle state, or lock.
+
+Missing, stale, malformed, and unreachable observations become bounded drift or unverifiable findings. Reports, Activity, errors, and diagnostics expose no command, path, configuration contents, address, credential, or exception text.
+
+A valid serving configuration stays healthy when the application returns HTTP 500. Doctor does not use application health to classify Orbit provisioning.
+
+Related-node checks use only caller-authorized selected nodes. An unavailable Router observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+
+| Doctor issue code | Difference |
+| --- | --- |
+| `instance.private_routing_scope_mismatch` | The Route Node or Cluster scope differs from the target's expected placement. |
+| `instance.router_caddy_mismatch` | Router Caddy does not match the private Route. |
+| `instance.workload_caddy_mismatch` | Workload Caddy does not match the private Route. |
+| `instance.private_certificate_mismatch` | A Route-scoped certificate is missing or stale. |
+| `instance.private_dns_mismatch` | Private DNS does not answer the Route domain with the expected address. |
+| `instance.private_firewall_mismatch` | Role-owned firewall policy differs from the Route's expected rules. |
+| `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain. |
+| `instance.related_node_unverifiable` | A required related Node is outside the selected inspection set. |
+| `instance.inspection_failed` | A required observation is missing, malformed, or unreachable. |
+
 ## Publish a public Route
 
 A public Route terminates HTTPS on the Cluster Ingress, forwards privately through the Cluster Router, and reaches the app-prod workload without exposing placement or workload listeners. Role ownership follows [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement). Only Ingress may be the public boundary; [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) records that rule.

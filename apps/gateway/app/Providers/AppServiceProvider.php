@@ -54,6 +54,7 @@ use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
@@ -152,6 +153,7 @@ use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
@@ -286,6 +288,7 @@ final class AppServiceProvider extends ServiceProvider
         HostKeyScanner::class => SshHostKeyScanner::class,
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
         PublicRouteEdgeInspector::class => NativePublicRouteEdgeInspector::class,
+        PrivateRouteProjectionInspector::class => NativePrivateRouteProjectionInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
         MetricsCredentialRuntime::class => MetricsSshExecutor::class,
