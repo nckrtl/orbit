@@ -249,6 +249,20 @@ Failure before publication restores the previous Cluster TLD, Route records, inf
 
 Old projections are removed only after the replacement domain is authoritative.
 
+### Replace a Cluster Router
+
+The Gateway inventories every Cluster-owned Route and prepares the new Router's composed Caddy sites, separate Route keys, role-owned firewall policy, and exact DNS projections before the Router assignment becomes authoritative. Publication then moves every Router site and exact DNS record to the new Router.
+
+Route identity stays on the same Route. Domains, targets, scopes, workload projections, Laravel URLs, and App instance placement stay unchanged. The replacement does not create a replacement Route.
+
+When Router and workload roles share the old or new Node, the composed Caddy service uses the local next hop and never proxies back into its own HTTPS listener.
+
+Failure before publication restores the previous Router and infrastructure intent. Each preparation, publication, database, cleanup, or rollback failure records `failed_step` and `error_code` on the Cluster Router candidate with durable completed-step evidence. Retry revalidates that evidence and resumes from the earliest unverified step under the Cluster Router owner. The Gateway refuses a conflicting transition and does not delete another transition's live candidate or activate against stale Router state. After publication, retry continues forward.
+
+A valid serving configuration succeeds even when the application returns HTTP 500. Application health does not change App instance or Route lifecycle.
+
+Clearing a Router that would leave Cluster-owned Routes without a serving path still returns `route.reconciliation_required`.
+
 ### Change an explicit private domain
 
 The Gateway can change a development or production Route domain when the Route is active, explicit, and private. A shared production Route keeps its complete ordered target pool on one replacement. This is the operation that replaces a production clone's preview domain with its intended private domain.
@@ -271,7 +285,9 @@ A failure before cutover leaves the old Route authoritative. Successful cleanup 
 
 A failure after cutover keeps the replacement authoritative. Retry continues forward until the replacement is `active`, every old projection is removed, the retiring Route is deleted, and its domain becomes available.
 
-The reconciliation guard still returns `route.reconciliation_required` for operator-requested generated Route domain changes and for active Route target changes. A publication-only change on an active Route publishes or withdraws the public Ingress edge on that Route ID. The guard also refuses Node WireGuard, LAN, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation or deactivation and Router replacement or clearing. A Node or Cluster TLD set, change, or clear is not this refusal; it reconciles the generated private Routes that depend on that TLD.
+The reconciliation guard still returns `route.reconciliation_required` for operator-requested generated Route domain changes and for active Route target changes. A publication-only change on an active Route publishes or withdraws the public Ingress edge on that Route ID. The guard also refuses Node WireGuard, LAN, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation or deactivation and Router clearing.
+
+A Node or Cluster TLD set, change, or clear is not this refusal; it reconciles the generated private Routes that depend on that TLD. Router replacement is not this refusal; it moves private Router sites and exact DNS to the new Router.
 
 Deployment, code rollback, clone finalization, App instance removal, environment import, stored environment updates, environment synchronization, and a domain replacement share the target App instance's bounded operation owner. A competitor waits or returns `env.operation_busy` before mutation. The domain replacement also holds the shared private projection owner through its Caddy and DNS work. It does not change source, the selected production release, SQLite data, or local PHP tuning.
 
@@ -279,7 +295,9 @@ Route and App instance removal keep their coordinated removal contract. Setting 
 
 App instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted App instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its domain before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [App instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
 
-During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. A Node or Cluster TLD change fully reconciles those generated private Routes. Other active Route, Cluster, and Router mutations keep the separate reconciliation refusal.
+During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged.
+
+A Node or Cluster TLD change fully reconciles those generated private Routes. Router replacement moves private Router projections without changing Route identity. Other active Route, Cluster, and Router-clearing mutations keep the separate reconciliation refusal.
 
 ### Remove an untargeted private Route
 
@@ -318,6 +336,6 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 Route operations do not change App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects private Routes and publishes public Routes through Cluster Ingress. It changes a development or production Route domain by reserving a replacement Route when the current Route is active and explicit, and it removes an already untargeted private Route with its Route-owned projections. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal.
+This contract projects private Routes and publishes public Routes through Cluster Ingress. It changes a development or production Route domain by reserving a replacement Route when the current Route is active and explicit. It removes an already untargeted private Route with its Route-owned projections, and it moves private Router sites and exact DNS when a Cluster Router is replaced. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal.
 
 It does not implement generated domain changes outside replacement reservation, other later Route reconciliation, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.
