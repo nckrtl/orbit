@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Clusters\AttachClusterNodeAction;
+use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\DetachClusterNodeAction;
 use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\UpdateClusterAction;
@@ -29,7 +30,9 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Routes\RouteProvenance;
@@ -46,6 +49,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeClusterRouterReplacementProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakeToolManagerMaterializer;
 
@@ -259,29 +263,41 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
         ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
         ->toContain('expand')
         ->toContain('prune');
+});
 
-    $replacement = reconciliation_node('router-replacement-refusal', null);
+it('does not return reconciliation_required after Router replacement and still refuses Router removal', function (): void {
+    $cluster = reconciliation_active_cluster('router-replaced', 'cluster.test');
+    $workload = reconciliation_node('router-replaced-workload', null);
+    $workload->update(['cluster_id' => $cluster->id]);
+    $target = reconciliation_instance($this->orbitApp, $workload, 'replaced');
+    $route = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $route->update(['status' => RouteStatus::Active]);
+    $replacement = reconciliation_node('router-replaced-next', null);
     $replacement->update(['cluster_id' => $cluster->id]);
-    $assignmentsBefore = NodeRole::query()
-        ->where('cluster_id', $cluster->id)
-        ->get()
-        ->map
-        ->getAttributes()
-        ->all();
+    bind_cluster_router_replacement();
+    $before = $route->fresh(['targets'])->toArray();
 
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($route->fresh(['targets'])->toArray())
+        ->toMatchArray([
+            'id' => $before['id'],
+            'domain' => $before['domain'],
+            'cluster_id' => $before['cluster_id'],
+            'node_id' => $before['node_id'],
+        ])
+        ->and(fn () => app(ClearClusterRouterAction::class)->execute($cluster))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.reconciliation_required');
-        });
-    expect(
-        NodeRole::query()
-            ->where('cluster_id', $cluster->id)
-            ->get()
-            ->map
-            ->getAttributes()
-            ->all(),
-    )
-        ->toBe($assignmentsBefore);
+        })
+        ->and($route->fresh(['targets'])->toArray())
+        ->toMatchArray([
+            'id' => $before['id'],
+            'domain' => $before['domain'],
+            'cluster_id' => $before['cluster_id'],
+        ]);
 });
 
 it('atomically reconciles attach, activation, TLD changes, deactivation, and detach', function (): void {
@@ -1274,6 +1290,22 @@ function reconciliation_node(string $name, ?string $tld): Node
         'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 20),
         'user' => 'orbit',
     ]);
+}
+
+function bind_cluster_router_replacement(): FakeClusterRouterReplacementProjector
+{
+    $projector = new FakeClusterRouterReplacementProjector;
+    app()->instance(ClusterRouterReplacementProjector::class, $projector);
+    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+    {
+        public function converge(Node $node, NodeRole $assignment): void {}
+
+        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    });
+
+    return $projector;
 }
 
 function bind_cluster_tld_projection(): NodeTldProjectionEvents

@@ -23,31 +23,43 @@ final readonly class AppDevSiteRepository
         private IngressSiteRepository $ingressSites = new IngressSiteRepository,
     ) {}
 
-    /** @return Collection<int, AppDevSite> */
+    /**
+     * @param  array<int, int>  $routerOverrides
+     * @return Collection<int, AppDevSite>
+     */
     public function forNode(
         Node $node,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
         ?Route $additionalRoute = null,
+        array $routerOverrides = [],
     ): Collection {
-        return $this->sites($node, $pendingRoute, $unavailableInstance, $additionalRoute);
+        return $this->sites($node, $pendingRoute, $unavailableInstance, $additionalRoute, $routerOverrides);
     }
 
-    /** @return Collection<int, AppDevSite> */
+    /**
+     * @param  array<int, int>  $routerOverrides
+     * @return Collection<int, AppDevSite>
+     */
     public function all(
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
         ?Route $additionalRoute = null,
+        array $routerOverrides = [],
     ): Collection {
-        return $this->sites(null, $pendingRoute, $unavailableInstance, $additionalRoute);
+        return $this->sites(null, $pendingRoute, $unavailableInstance, $additionalRoute, $routerOverrides);
     }
 
-    /** @return Collection<int, AppDevSite> */
+    /**
+     * @param  array<int, int>  $routerOverrides
+     * @return Collection<int, AppDevSite>
+     */
     private function sites(
         ?Node $node,
         ?Route $pendingRoute,
         ?AppInstance $unavailableInstance,
         ?Route $additionalRoute,
+        array $routerOverrides = [],
     ): Collection {
         /** @var Collection<int, AppDevSite> $sites */
         $sites = collect();
@@ -80,15 +92,21 @@ final readonly class AppDevSiteRepository
 
         if ($node instanceof Node) {
             $nodeId = $node->id;
+            $overrideClusterIds = array_keys(array_filter(
+                $routerOverrides,
+                static fn (int $routerId): bool => $routerId === $nodeId,
+            ));
             $routeQuery->where(static function (Builder $query) use (
                 $nodeId,
                 $pendingRoute,
                 $unavailableInstance,
+                $overrideClusterIds,
             ): void {
                 $query->where(static function (Builder $query) use (
                     $nodeId,
                     $pendingRoute,
                     $unavailableInstance,
+                    $overrideClusterIds,
                 ): void {
                     $query
                         ->whereHas(
@@ -103,6 +121,10 @@ final readonly class AppDevSiteRepository
                             'cluster.ingressAssignment',
                             static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
                         );
+
+                    if ($overrideClusterIds !== []) {
+                        $query->orWhereIn('cluster_id', $overrideClusterIds);
+                    }
 
                     if (
                         $pendingRoute instanceof Route
@@ -133,7 +155,7 @@ final readonly class AppDevSiteRepository
                     ),
                 )
                 ->values();
-            $router = $route->cluster?->routerAssignment?->node;
+            $router = $this->routerFor($route, $routerOverrides);
             $ingress = $route->cluster !== null
                 ? $this->eligibility->activeIngress($route->cluster)
                 : null;
@@ -189,7 +211,7 @@ final readonly class AppDevSiteRepository
             $additionalRoute instanceof Route
             && $sites->every(static fn (AppDevSite $site): bool => $site->domain !== $additionalRoute->domain)
         ) {
-            $this->appendDomainChangeSites($sites, $additionalRoute);
+            $this->appendDomainChangeSites($sites, $additionalRoute, $routerOverrides);
         }
 
         if ($node instanceof Node) {
@@ -199,8 +221,11 @@ final readonly class AppDevSiteRepository
         return $sites->values();
     }
 
-    /** @param Collection<int, AppDevSite> $sites */
-    private function appendDomainChangeSites(Collection $sites, Route $route): void
+    /**
+     * @param  Collection<int, AppDevSite>  $sites
+     * @param  array<int, int>  $routerOverrides
+     */
+    private function appendDomainChangeSites(Collection $sites, Route $route, array $routerOverrides = []): void
     {
         $route->loadMissing([
             'targets.appInstance.app',
@@ -212,7 +237,7 @@ final readonly class AppDevSiteRepository
             ->map(static fn ($targetRow) => $targetRow->appInstance)
             ->filter(static fn ($target): bool => $target instanceof AppInstance)
             ->values();
-        $router = $route->cluster?->routerAssignment?->node;
+        $router = $this->routerFor($route, $routerOverrides);
 
         foreach ($targets as $target) {
             $sites->push($this->appInstanceSite($target, $route, domainChange: true));
@@ -230,6 +255,22 @@ final readonly class AppDevSiteRepository
                 domainChange: true,
             ));
         }
+    }
+
+    /**
+     * @param  array<int, int>  $routerOverrides
+     */
+    private function routerFor(Route $route, array $routerOverrides): ?Node
+    {
+        $clusterId = $route->cluster_id;
+
+        if (is_int($clusterId) && array_key_exists($clusterId, $routerOverrides)) {
+            $router = Node::query()->find($routerOverrides[$clusterId]);
+
+            return $router instanceof Node ? $router : null;
+        }
+
+        return $route->cluster?->routerAssignment?->node;
     }
 
     private function appInstanceSite(

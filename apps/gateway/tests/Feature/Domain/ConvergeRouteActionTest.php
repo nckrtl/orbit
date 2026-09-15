@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Actions\Routes\CreateRouteAction;
@@ -9,6 +10,7 @@ use App\Actions\Routes\RemoveRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
@@ -16,7 +18,9 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
@@ -30,9 +34,11 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeClusterRouterReplacementProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
@@ -171,6 +177,61 @@ it('records Cluster TLD generated Route failure, restores the old Cluster TLD an
         ->and(Route::query()->find($route->id))
         ->toBeNull();
 });
+
+it('records Router replacement failure, restores the old Router, and retries the same candidate', function (
+    string $failure,
+): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $projector->failures = [$failure => 1];
+    $routeBefore = $route->fresh(['targets'])->toArray();
+    $memberBefore = $member->fresh()->toArray();
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeConvergenceException::class, "Injected {$failure} failure.");
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($current->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($candidate->failed_step)
+        ->toBe($failure)
+        ->and($route->fresh(['targets'])->toArray())
+        ->toBe($routeBefore)
+        ->and($member->fresh()->toArray())
+        ->toBe($memberBefore)
+        ->and($projector->events)
+        ->toContain('restore');
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $current))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+        });
+
+    $projector->failures = [];
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($route->refresh()->only(['id', 'domain', 'cluster_id', 'status']))
+        ->toBe([
+            'id' => $route->id,
+            'domain' => $route->domain,
+            'cluster_id' => $cluster->id,
+            'status' => RouteStatus::Active,
+        ]);
+})->with([
+    'router-certificate',
+    'firewall-policy',
+    'workload-verify',
+    'router-caddy',
+    'dns-publication',
+]);
 
 it('records generated Route failure, restores the old URL, and refuses a conflicting mutation', function (): void {
     $route = route_domain_change_route(laravel: true, generated: true);
@@ -727,6 +788,43 @@ it('refuses a conflicting publication request without changing recorded intent',
 });
 
 /** @return array{Cluster, Route, Node} */
+function bind_cluster_router_replacement_projection(): FakeClusterRouterReplacementProjector
+{
+    $projector = new FakeClusterRouterReplacementProjector;
+    app()->instance(ClusterRouterReplacementProjector::class, $projector);
+    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+    {
+        public function converge(Node $node, NodeRole $assignment): void {}
+
+        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    });
+
+    return $projector;
+}
+
+/**
+ * @return array{0: Cluster, 1: Route, 2: Node, 3: Node, 4: Node}
+ */
+function cluster_router_replacement_route(): array
+{
+    [$cluster, $route, $member] = cluster_tld_generated_route();
+    $current = $cluster->routerAssignment()->sole()->node;
+    $replacement = Node::query()->create([
+        'name' => 'cluster-router-next',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.82',
+        'wireguard_ip' => '10.44.0.82',
+        'user' => 'orbit',
+    ]);
+
+    return [$cluster, $route, $member, $current, $replacement];
+}
+
 function cluster_tld_generated_route(): array
 {
     $cluster = Cluster::query()->create([
