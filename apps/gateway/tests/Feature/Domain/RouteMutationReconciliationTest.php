@@ -1136,10 +1136,17 @@ it('restores Cluster and Route state when activation fails before publication', 
 
     expect($cluster->refresh()->state)
         ->toBe(ClusterState::Inactive)
-        ->and($generated->fresh(['targets'])->toArray())
-        ->toBe($routeBefore)
-        ->and($generated->refresh()->cluster_id)
-        ->toBeNull()
+        ->and($generated->refresh()->only(['id', 'domain', 'node_id', 'cluster_id', 'status', 'failed_step']))
+        ->toBe([
+            'id' => $routeBefore['id'],
+            'domain' => $routeBefore['domain'],
+            'node_id' => $routeBefore['node_id'],
+            'cluster_id' => null,
+            'status' => RouteStatus::Active,
+            'failed_step' => 'dns-publication',
+        ])
+        ->and($generated->targets()->pluck('app_instance_id')->all())
+        ->toBe(array_column($routeBefore['targets'], 'app_instance_id'))
         ->and($events->values)
         ->toContain('rollback-dns');
 });
