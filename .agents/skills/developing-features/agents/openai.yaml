@@ -1,4 +1,4 @@
 interface:
   display_name: "Developing Features"
-  short_description: "Implement and check the selected delivery flow"
-  default_prompt: "Use $developing-features to implement an eligible Todo or In Progress Orbit issue under its bin/loop-flow selection, push the candidate, and return the complete pull-request body and evidence without mutating GitHub."
+  short_description: "Guide an Orbit feature to a complete pull request"
+  default_prompt: "Use $developing-features to prepare architecture and documentation, implement and verify this Orbit feature, and prepare a complete PR."

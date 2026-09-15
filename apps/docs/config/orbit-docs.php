@@ -53,7 +53,7 @@ return [
     ],
 
     // Architecture decision records numbered at or above `from_number` must
-    // follow the template in .agents/skills/recording-decisions/template.md and
+    // follow .agents/skills/writing-documentation/templates/adr.md and
     // avoid the blocked phrases. Earlier accepted records are immutable and
     // exempt. `orbit:issue-lint` applies the same phrases to an issue draft.
     'decision_records' => [

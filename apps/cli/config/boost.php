@@ -29,6 +29,9 @@ return [
         'exclude' => [
             'infer-conventions',
             'spatie-javascript',
+            'spatie-version-control',
+            'spatie-security',
+            'spatie-laravel-php',
         ],
     ],
 ];

@@ -8,8 +8,7 @@ paths:
 ## Use the shared CLI design standard
 
 Use [the root standard](../../../../docs/reference/cli-ux.md) for interaction and
-rendering, [designing-cli-commands](../../../../.agents/skills/designing-cli-commands/SKILL.md)
-for design and audit, and [verifying-cli-output](../../../../.agents/skills/verifying-cli-output/SKILL.md)
+rendering, and [verifying-cli-output](../../../../.agents/skills/verifying-cli-output/SKILL.md)
 for terminal evidence. Preserve the current product contracts below.
 
 ## Keep operator commands thin and HTTP-only

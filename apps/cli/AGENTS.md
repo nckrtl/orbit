@@ -4,8 +4,7 @@ Laravel Zero 13 client for Orbit.
 
 - Use PHP 8.5 with strict types.
 - Keep the CLI stateless except for explicit files under `$ORBIT_HOME`.
-- Use the [shared CLI design standard](../../docs/reference/cli-ux.md) and root
-  [design skill](../../.agents/skills/designing-cli-commands/SKILL.md). Verify
+- Use the [shared CLI design standard](../../docs/reference/cli-ux.md). Verify
   terminal behavior with [PTY evidence](../../.agents/skills/verifying-cli-output/SKILL.md).
 - Send operational commands through `nckrtl/orbit-php-sdk`.
 - Do not execute remote infrastructure commands in the CLI.
@@ -49,16 +48,8 @@ the project rule set.
 
 ## Verification
 
-- Use `composer test:affected` for Pest 5 development checks. The Builder runs root `composer check` across all projects with TIA; `composer test` also uses TIA.
+- Use `composer test:affected` for Pest 5 development checks. CI runs checks across all projects; `composer test` also uses TIA.
 - Run `composer check` before delivery. Pint, Larastan, and Rector are the configured PHP quality tools.
-
-=== .ai/spatie rules ===
-
-# Spatie Guidelines
-
-- Activate `spatie-laravel-php` for Laravel and PHP code.
-- Activate `spatie-security` for security-sensitive work.
-- Activate `spatie-version-control` for Git and version-control work.
 
 === boost rules ===
 

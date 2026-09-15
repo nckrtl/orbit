@@ -51,7 +51,7 @@ intent, or manager state implicitly during role removal.
 
 ## Required Guidance Bootstrap
 
-`AGENTS.md`, `.ai/guidelines`, `.ai/rules`, `.ai/skills`, `.agents/skills`,
+`AGENTS.md`, `.ai/rules`, `.agents/skills`,
 `.codex/config.toml`, `boost.json`, and `config/boost.php` are required repository state.
 Run `composer guidance:check` before planning or editing. Missing, unreadable,
 empty, malformed, incomplete, or out-of-sync guidance is an incomplete checkout
@@ -85,15 +85,6 @@ workflows unchanged.
 ===
 
 <laravel-boost-guidelines>
-=== .ai/spatie rules ===
-
-# Project Coding Guidelines
-
-- This codebase follows Spatie's coding guidelines.
-- Always activate the `spatie-laravel-php` skill when writing, editing, reviewing, or formatting Laravel or PHP code.
-- Always activate the `spatie-version-control` skill when creating commits, branches, or managing Git operations.
-- Always activate the `spatie-security` skill when configuring security, signing commits, reviewing authentication, or setting up servers and databases.
-
 === foundation rules ===
 
 # Laravel Boost Guidelines

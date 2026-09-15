@@ -21,4 +21,4 @@ paths:
 - Run Pest through `composer test` or `composer test:affected`; TIA selects the affected tests.
 - Rerun a test after each change to it.
 - Do not pass a test path, filter, group, or suite. Pest disables TIA for partial runs even when `--tia` is present.
-- After the TIA tests pass, run `composer check` locally and hand off to an independent reviewer who runs root `composer check` across all projects with TIA.
+- After the TIA tests pass, run `composer check` locally and follow the root contributor guide for CI and independent review.

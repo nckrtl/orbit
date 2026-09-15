@@ -12,11 +12,6 @@
     "sail": false,
     "skills": [
         "laravel-best-practices",
-        "testing-best-practices",
-        "spatie-laravel-php",
-        "spatie-security",
-        "spatie-version-control",
-        "orbit-gateway-development",
-        "pest-testing"
+        "testing-best-practices"
     ]
 }

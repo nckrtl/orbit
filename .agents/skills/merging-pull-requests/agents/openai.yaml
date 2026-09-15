@@ -1,4 +1,4 @@
 interface:
-  display_name: "Closing Out Pull Requests"
-  short_description: "Verify the merge and clean the selected flow"
-  default_prompt: "Use $merging-pull-requests after the external orchestrator merges the exact approved candidate to verify lineage and evidence under its delivery flow, then clean up; snapshot refresh applies only to proof flow."
+  display_name: "Merging Pull Requests"
+  short_description: "Check approval, merge the PR, and clean up"
+  default_prompt: "Use $merging-pull-requests to check CI, independent review, and maintainer approval, then merge this PR and clean up."

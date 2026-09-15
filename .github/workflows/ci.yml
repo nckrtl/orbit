@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -56,6 +59,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes acl attr wireguard-tools
           brew install caddy openssl@3
+          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       - name: Prepare application environment
@@ -63,26 +67,30 @@ jobs:
         run: cp .env.example .env
 
       - name: Install dependencies
+        if: matrix.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
+
+      - name: Install all project dependencies for E2E integration tests
+        if: matrix.directory == 'apps/e2e'
+        working-directory: .
+        run: bin/bootstrap
 
       - name: Validate Composer metadata
         run: composer validate --strict
 
-      - name: Verify repository guidance
-        run: composer guidance:check
+      - name: Run project quality checks
+        run: composer check
 
-      - name: Lint maintained documentation
-        if: matrix.directory == 'apps/docs'
-        run: composer docs:lint
-
-      - name: Run impacted tests in parallel
+      - name: Run affected tests
         run: vendor/bin/pest --parallel --processes=2 --tia --compact
 
-      - name: Check Rector
-        run: vendor/bin/rector process --dry-run
-
-      - name: Check formatting
-        run: composer format:check
-
-      - name: Analyse
-        run: composer analyse
+  required:
+    name: Required checks
+    if: always()
+    needs: [project]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every project to pass
+        env:
+          PROJECT_RESULT: ${{ needs.project.result }}
+        run: test "$PROJECT_RESULT" = success
