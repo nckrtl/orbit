@@ -72,6 +72,14 @@ The Gateway authorizes each target and reads source on its owning Node. A scan d
 
 Human output identifies each instance, its scan result, and counts by ecosystem. `--json` returns machine-readable results without prompts or terminal decoration. The all-instance result includes every attempted target and a final summary.
 
+### Single-instance CLI output
+
+The single-instance command supports directory detection and `--app=FULL_DOMAIN`. It shows target resolution and one scan step while the Gateway works. It never prompts. Fleet execution is a separate delivery step; this command does not yet accept `--all`.
+
+Human results identify the instance, App, Node, and environment. Each ecosystem shows its freshness state, resolution and requirement counts, observation time, latest attempt time, and stable failure code. Counts for stale data describe the retained observation. Unknown counts appear as an em dash; verified absence has zero counts. Resolution counts include separate versions and contexts of the same package.
+
+`--json` emits one SDK inventory object with `instance_id`, `succeeded`, `composer`, `javascript`, and `request_id`. The ecosystem objects retain full graphs, source provenance, timestamps, and failure codes as described in the [dependency contracts](/reference/instance-dependency-contracts). Selection and transport failures use the ordinary `error` envelope with nullable `error.request_id`. Exit status is zero only when both ecosystems succeed; partial, stale, unknown, invalid-target, and transport failures return one. No package installation or application file change occurs.
+
 ## Refresh and failures
 
 Each ecosystem has a last successful observation and a latest scan outcome. A successful scan replaces that ecosystem's observation atomically, including removal of dependencies absent from the new result. Repeated scans do not accumulate duplicate usage records.

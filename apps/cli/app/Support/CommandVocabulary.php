@@ -38,6 +38,7 @@ final readonly class CommandVocabulary
             'deploy',
             'register',
             'rollback',
+            'scan',
             'transfer',
         ],
         'metrics' => ['status'],
@@ -113,6 +114,10 @@ final readonly class CommandVocabulary
      */
     public static function routeRequiresMatchingCommand(string $routeName, array $commandNames): bool
     {
+        if ($routeName === 'instance:dependencies:show') {
+            return false;
+        }
+
         $prefix = self::prefix($routeName);
 
         if ($prefix === null) {

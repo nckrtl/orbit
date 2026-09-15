@@ -57,7 +57,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
-| `instance` | `clone`, `deploy`, `register`, `rollback`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance. |
+| `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance, or scans its dependencies. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
@@ -78,5 +78,7 @@ Three commands keep a noun as their last segment.
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
 
 ## Gateway route names
+
+`instance:dependencies:show` is a stored-inventory API and SDK operation without a CLI adapter. The single-instance CLI exposes `instance:dependencies:scan`, as described in [App instance dependencies](/reference/instance-dependencies).
 
 A named Gateway API route whose prefix matches a CLI command family and whose last segment is a vocabulary verb, a family-specific action, or a noun-ending command carries the same name as the CLI command. The Gateway lives in `apps/gateway` and records that route name as the activity command.
