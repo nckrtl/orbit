@@ -62,7 +62,7 @@ A failure before cutover restores the source Route, environment, processes, and 
 
 Once cutover makes the destination authoritative, retry proceeds only forward. The Gateway never restarts source execution, completes Route publication and runtime activation, and resumes exact old-placement cleanup without copying source again.
 
-For a pending transfer to the same destination, the CLI asks to resume the transfer and names its original source Node, including after cutover.
+For a pending transfer to the same destination, the CLI asks to retry the transfer and names its original source Node, including after cutover. The Gateway still checks that the request matches the pending transfer.
 
 ## Finish cleanup
 

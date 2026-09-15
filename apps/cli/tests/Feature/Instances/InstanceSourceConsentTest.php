@@ -115,7 +115,7 @@ it('requires default-No native consent and restores the terminal before returnin
 it('names the original source when confirming a transfer retry after cutover', function (bool $accepted): void {
     $case = instance_source_consent_case('transfer');
     $case['arguments'][] = '--no-ansi';
-    $case['prompt'] = 'Resume transfer of App instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
+    $case['prompt'] = 'Retry transfer of App instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
     $case['replies'][0]['body']['data']['node_id'] = 8;
     $case['replies'][0]['body']['data']['transfer'] = [
         'source_node_id' => 2, 'destination_node_id' => 8,
@@ -134,6 +134,32 @@ it('names the original source when confirming a transfer retry after cutover', f
             ->and($result['requests'][2]['body'])->toBe(['node_id' => 8]);
     }
 })->with([false, true]);
+
+it('leaves changed transfer retry options to Gateway identity validation', function (string $option, string $field, string $value): void {
+    $case = instance_source_consent_case('transfer');
+    $case['arguments'] = [...$case['arguments'], '--no-ansi', $option.'='.$value];
+    $case['prompt'] = 'Retry transfer of App instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
+    $case['replies'][0]['body']['data']['node_id'] = 8;
+    $case['replies'][0]['body']['data']['transfer'] = [
+        'source_node_id' => 2, 'destination_node_id' => 8,
+        'cutover_completed' => true, 'cleanup_completed' => false,
+    ];
+    $message = 'Only the identical transfer request can resume this AppInstance.';
+    $case['replies'][2] = ['class' => TransferAppInstanceRequest::class, 'status' => 409,
+        'body' => ['error' => ['code' => 'instance.transfer_retry_conflict', 'message' => $message]]];
+
+    $result = run_instance_source_consent($case, ['y', "\r"]);
+
+    expect($result['status'])->toBe(1)
+        ->and($result['prompt_seen'])->toBeTrue()
+        ->and($result['restored'])->toBeTrue()
+        ->and($result['output'])->toContain($case['prompt'], $message)
+        ->and($result['requests'])->toHaveCount(3)
+        ->and($result['requests'][2]['body'])->toBe(['node_id' => 8, $field => $value]);
+})->with([
+    ['--name', 'name', 'other'],
+    ['--sqlite-source-path', 'sqlite_source_path', '/work/other.sqlite'],
+]);
 
 it('keeps JSON and noninteractive mode separate from explicit consent', function (string $family, bool $json, bool $consent): void {
     $case = instance_source_consent_case($family);

@@ -73,7 +73,7 @@ HELP;
                 && ! $source->transfer->cleanupCompleted
                 && $source->transfer->destinationNodeId === $nodeId
                 && $source->transfer->sourceNodeId > 0;
-            $action = $resuming ? 'Resume transfer of' : 'Transfer';
+            $action = $resuming ? 'Retry transfer of' : 'Transfer';
             $sourceNodeId = $resuming ? $source->transfer->sourceNodeId : $source->nodeId;
             if (! $destination instanceof NodeResponse || ! $this->confirmAction(
                 "{$action} App instance [{$source->name}] (#{$source->id}) from Node #{$sourceNodeId} to Node [{$destination->name}] (#{$destination->id}) with downtime and deletion of the old placement?",
