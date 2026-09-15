@@ -1,6 +1,6 @@
 # CLI command vocabulary
 
-This page tells an operator or agent which last segment a CLI command uses, how ownership selects `create` and `destroy` or `add` and `remove`, which family-specific actions exist, and which commands keep a noun as their last segment. [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) owns the naming decision. The CLI lives in `apps/cli`.
+This page tells an operator or agent which last segment a CLI command uses, how ownership selects `create` and `destroy` or `add` and `remove`, which family-specific actions exist, and which commands keep a noun as their last segment. [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) owns the naming decision. The CLI lives in `apps/cli`. The [CLI design standard](/reference/cli-ux) owns input and output presentation.
 
 Each command is one noun family and one last segment. The last segment is a verb from the pairs below, a family-specific action listed for that family, or one of the two noun-ending commands.
 
@@ -32,7 +32,7 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `herdr:session` | `create` and `destroy` | A [Herdr session](/reference/herdr-sessions) |
 | `instance` | `create` and `destroy` | An AppInstance |
 | `instance:database` | `add` and `remove` | A Database connection on an AppInstance |
-| `instance:deploy-step` | `create` and `destroy` | A named deploy step |
+| `instance:deploy-step` | `create` and `destroy` | A named [deploy step](/reference/deployments) |
 | `node` | `add` and `remove` | A Node in the fleet |
 | `node:access` | `add` and `remove` | An access grant between Nodes |
 | `node:role` | `add` and `remove` | A role on a Node |

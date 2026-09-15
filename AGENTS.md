@@ -39,6 +39,9 @@ orchestrator assigns the formal reviewers and coordinates phase transitions.
 - `planning-features` — audit and write the issue's documentation, then prepare or correct the plan for one issue.
 - `reviewing-feature-plans` — independently review one issue's plan and documentation commits.
 - `developing-features` — implement and prove one issue.
+- `designing-cli-commands` — design, implement, and audit CLI behavior against
+  [the shared standard](docs/reference/cli-ux.md).
+- `verifying-cli-output` — record and inspect real PTY interaction and rendering.
 - `reviewing-pull-requests` — independently review one pushed head and inspect
   its exact retained proof.
 - `merging-pull-requests` — deterministic merge, promotion, and cleanup steps.

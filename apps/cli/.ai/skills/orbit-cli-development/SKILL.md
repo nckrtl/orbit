@@ -29,7 +29,8 @@ to typed `orbit-php-sdk` requests and render gateway responses.
 
 ## Required Skills
 
-- Read `command-designer` before changing command behavior.
+- Read `command-designer` before changing command behavior. It routes to the
+  root design and terminal-verification skills; keep generic UX rules there.
 - Read `spatie-laravel-php` for PHP and Laravel Zero changes.
 - Read `pest-testing` before changing tests.
 - Read `spatie-security` for configuration, credentials, certificates, local

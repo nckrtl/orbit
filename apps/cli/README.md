@@ -6,6 +6,11 @@ managed nodes through SSH.
 
 ## Development
 
+Use the [CLI design standard](../../docs/reference/cli-ux.md),
+[command design skill](../../.agents/skills/designing-cli-commands/SKILL.md), and
+[terminal verification skill](../../.agents/skills/verifying-cli-output/SKILL.md)
+when changing command behavior or output.
+
 From the monorepo root, install every project:
 
 ```bash

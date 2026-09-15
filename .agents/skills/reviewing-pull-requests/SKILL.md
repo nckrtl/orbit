@@ -15,6 +15,16 @@ The external orchestrator assigns the formal reviewer independently of the
 implementation lead and its helpers. Advisory checks within implementation do
 not replace this review or approve the candidate.
 
+## CLI interaction and output
+
+Review CLI behavior using [designing-cli-commands](../designing-cli-commands/SKILL.md)
+and the [shared standard](../../../docs/reference/cli-ux.md). Use
+[verifying-cli-output](../verifying-cli-output/SKILL.md) for evidence involving
+prompts, dimensions, color, cursor state, streaming, or liveness. Require the
+applicable command/mode adoption rows and record justified exceptions against
+current contracts. The standard alone does not establish command compliance.
+These skills operate within this role and its selected delivery flow.
+
 ## Delivery flow
 
 Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
