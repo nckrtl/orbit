@@ -1124,8 +1124,10 @@ it('transfers an App instance from another Route and leaves a vacated Route serv
     expect($router)->not->toBeNull();
     $sites = new AppDevSiteRepository()->forNode($router, additionalRoute: $other);
     $rendered = new AppDevCaddyConfigRenderer()->render($sites);
-    expect($rendered)
-        ->toContain('vacated.example.test')
+    $vacatedSite = collect(preg_split('/\n\n/', $rendered) ?: [])
+        ->first(static fn (string $block): bool => str_contains($block, 'vacated.example.test'));
+    expect($vacatedSite)
+        ->toBeString()
         ->toContain('Orbit Route unavailable')
         ->toContain('respond "Orbit Route unavailable\n" 503')
         ->not->toContain('10.10.0.62');

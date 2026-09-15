@@ -232,6 +232,8 @@ it('allows target-set failure evidence and empty explicit Cluster Routes', funct
         'status' => RouteStatus::Pending,
     ]);
 
+    $empty->update(['target_set_step' => 'reserved']);
+
     expect(fn () => $empty->update(['status' => RouteStatus::Active]))
         ->not->toThrow(QueryException::class)
         ->and($empty->refresh()->status)

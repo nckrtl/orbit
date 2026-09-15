@@ -11,6 +11,7 @@ use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
@@ -210,6 +211,10 @@ final readonly class AppDevSiteRepository
                 $targets->isEmpty()
                 && $router instanceof Node
                 && in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
+                && ! AppInstanceRemovalMember::query()
+                    ->where('route_id', $route->id)
+                    ->whereNull('row_deleted_at')
+                    ->exists()
             ) {
                 $sites->push($this->unavailableRouteSite($route, $router));
             }

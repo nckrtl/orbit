@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
@@ -15,6 +14,7 @@ use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
@@ -1261,12 +1261,19 @@ it('refuses a competing target-set intent and treats an identical completed chan
 
 it('invokes authorized App instance removal after the replacement pool is recorded', function (): void {
     [$route, $first, $second] = route_target_set_expandable_pool();
-    $removed = Mockery::mock(RemoveAppInstanceAction::class);
-    $removed->shouldReceive('execute')
-        ->once()
-        ->withArgs(static fn (AppInstance $instance, bool $force): bool => $instance->id === $first->id && $force)
-        ->andReturn(Mockery::mock(AppInstanceRemoval::class));
-    app()->instance(RemoveAppInstanceAction::class, $removed);
+    $removed = new class implements AppInstanceRemover
+    {
+        /** @var list<array{0: int, 1: bool}> */
+        public array $calls = [];
+
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $this->calls[] = [$instance->id, $force];
+
+            return new AppInstanceRemoval;
+        }
+    };
+    app()->instance(AppInstanceRemover::class, $removed);
 
     $updated = app(ConvergeRouteTargetSetAction::class)->execute(
         $route,
@@ -1277,6 +1284,8 @@ it('invokes authorized App instance removal after the replacement pool is record
 
     expect($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
         ->toContain($second->id)
+        ->and($removed->calls)
+        ->toBe([[$first->id, true]])
         ->and($this->events->values)
         ->toContain('router-caddy');
 });

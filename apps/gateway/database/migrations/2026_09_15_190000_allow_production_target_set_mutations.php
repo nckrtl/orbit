@@ -9,6 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        DB::statement('DROP INDEX IF EXISTS route_targets_route_id_position_unique');
         DB::statement('DROP TRIGGER IF EXISTS routes_contract_update');
         DB::statement('DROP TRIGGER IF EXISTS route_targets_contract_update');
 
@@ -40,7 +41,11 @@ return new class extends Migration
                     AND (
                         SELECT COUNT(*) FROM route_targets WHERE route_id = NEW.id
                     ) = 0
-                    AND NOT (NEW.provenance = 'explicit' AND NEW.cluster_id IS NOT NULL)
+                    AND NOT (
+                        NEW.provenance = 'explicit'
+                        AND NEW.cluster_id IS NOT NULL
+                        AND NEW.target_set_step IS NOT NULL
+                    )
                 )
                 OR ((SELECT COUNT(*) FROM route_targets WHERE route_id = NEW.id) > 1 AND (
                     NEW.provenance <> 'explicit'

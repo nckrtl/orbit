@@ -107,7 +107,8 @@ final readonly class AppDevCaddyConfigRenderer
                     fail_duration 10s
                 CADDY
                 : '';
-            $unavailable = <<<'CADDY'
+            $unavailable = count($site->proxyAddresses()) > 1
+                ? <<<'CADDY'
 
                 handle_errors {
                     @orbit_unavailable `{err.status_code} == 502`
@@ -117,7 +118,8 @@ final readonly class AppDevCaddyConfigRenderer
                         respond "Orbit Route unavailable\n" 503
                     }
                 }
-                CADDY;
+                CADDY
+                : '';
 
             return <<<CADDY
                 reverse_proxy {$upstreams} {

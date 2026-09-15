@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\AppInstances\SynchronizeAppInstanceEnvironmentAction;
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
@@ -21,6 +22,7 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceCloneCandidateInspector;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\Deployment\ProductionDeployment;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
@@ -277,6 +279,7 @@ final class AppServiceProvider extends ServiceProvider
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentAppInstanceSourceRemoval::class => RemoteDevelopmentAppInstanceSourceRemoval::class,
         ProductionAppInstanceContentRetention::class => RecordedProductionAppInstanceContentRetention::class,
+        AppInstanceRemover::class => RemoveAppInstanceAction::class,
         AppInstanceRemovalProjector::class => NativeAppInstanceRemovalProjector::class,
         DevelopmentAppInstanceConfigurator::class => RemoteDevelopmentAppInstanceConfigurator::class,
         AppUpdateSourceMutator::class => RemoteAppUpdateSourceMutator::class,

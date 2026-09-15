@@ -204,7 +204,7 @@ it('publishes a production pool with round-robin, no replay, a 10s cooldown, and
         ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
         ->toContain('@orbit_unavailable `{err.status_code} == 502`')
         ->toContain('respond "Orbit Route unavailable\n" 503')
-        ->not->toContain('https://pool.example.test {')
+        ->toContain('https://pool.example.test {')
         ->not->toContain('least_conn')
         ->not->toContain('{err.status_code} == 500');
 });

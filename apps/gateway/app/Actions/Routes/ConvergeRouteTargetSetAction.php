@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Routes;
 
-use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
@@ -30,7 +30,7 @@ final readonly class ConvergeRouteTargetSetAction
         private AppInstanceRouteEnvironmentSynchronizer $routeEnvironment,
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
-        private RemoveAppInstanceAction $removals,
+        private AppInstanceRemover $removals,
     ) {}
 
     public function execute(Route $route, SetRouteTargetsData $proposal): Route
@@ -61,6 +61,7 @@ final readonly class ConvergeRouteTargetSetAction
         }
 
         $this->guard->assertCompatibleIntent($route, $proposal);
+        $this->guard->assertMutable($route);
 
         if ($this->isCompletedNoop($route, $proposal)) {
             return $route;
