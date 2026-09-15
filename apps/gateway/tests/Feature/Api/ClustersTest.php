@@ -273,7 +273,7 @@ describe('Cluster lifecycle', function (): void {
             ->and($withoutTld->refresh()->tld)
             ->toBeNull()
             ->and(array_column($dns->events, 'phase'))
-            ->toBe(['expand', 'prune', 'expand', 'prune']);
+            ->toBe(['expand', 'prune']);
     });
 
     it('validates combined updates against their proposed final state', function (): void {

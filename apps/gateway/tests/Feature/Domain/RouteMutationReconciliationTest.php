@@ -238,7 +238,7 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
         ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
         ->toBe(['expand', 'prune']);
 
-    $workload = reconciliation_node('cluster-workload-refusal', null);
+    $workload = reconciliation_node('cluster-workload-refusal', 'workload.test');
     $workload->update(['cluster_id' => $cluster->id]);
     $clusterTarget = reconciliation_instance($this->orbitApp, $workload, 'cluster-target');
     $clusterRoute = app(CreateRouteAction::class)->ensureForAppInstance($clusterTarget, null);
@@ -248,7 +248,7 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
 
     expect(fn () => app(UpdateClusterAction::class)->execute(
         $cluster,
-        reconciliation_update(tldProvided: true, tld: 'next-cluster.test'),
+        reconciliation_update(state: ClusterState::Inactive),
     ))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('route.reconciliation_required');
     });
@@ -978,6 +978,240 @@ it('does not return reconciliation_required after a Node TLD change and still re
         ->toBe($before);
 });
 
+it('inventories Cluster TLD changes and refuses an occupied generated domain before any write', function (): void {
+    $cluster = reconciliation_active_cluster('cluster-occupied', 'cluster.test');
+    $workload = reconciliation_node('cluster-occupied-workload', null);
+    $workload->update(['cluster_id' => $cluster->id]);
+    $target = reconciliation_instance($this->orbitApp, $workload, 'occupied');
+    $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $owner = reconciliation_node('cluster-occupied-owner', 'owner.test');
+    reconciliation_route($this->orbitApp, 'occupied.acme.next-cluster.test', node: $owner);
+    $events = [];
+    Route::updating(static function () use (&$events): void {
+        $events[] = 'route';
+    });
+    Cluster::updating(static function () use (&$events): void {
+        $events[] = 'cluster';
+    });
+    $clusterBefore = $cluster->fresh()->toArray();
+    $memberBefore = $workload->fresh()->toArray();
+    $routerBefore = $cluster->routerAssignment()->get()->map->getAttributes()->all();
+    bind_cluster_tld_projection();
+
+    expect(fn () => app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: 'next-cluster.test'),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.domain_conflict');
+    });
+
+    expect($generated->fresh()->domain)
+        ->toBe('occupied.acme.cluster.test')
+        ->and($cluster->fresh()->toArray())
+        ->toBe($clusterBefore)
+        ->and($workload->fresh()->toArray())
+        ->toBe($memberBefore)
+        ->and($cluster->routerAssignment()->get()->map->getAttributes()->all())
+        ->toBe($routerBefore)
+        ->and($events)
+        ->toBe([])
+        ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
+        ->toBe([]);
+});
+
+it('prepares generated private projections before publishing a Cluster TLD change', function (): void {
+    $cluster = reconciliation_active_cluster('cluster-prepare', 'cluster.test');
+    $workload = reconciliation_node('cluster-prepare-workload', null);
+    $workload->update(['cluster_id' => $cluster->id]);
+    $target = reconciliation_instance($this->orbitApp, $workload, 'prepared');
+    $target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $events = bind_cluster_tld_projection();
+
+    $updated = app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: 'next-cluster.test'),
+    );
+    $replaced = reconciliation_route_by_domain('prepared.acme.next-cluster.test');
+
+    expect($events->values)
+        ->toBe([
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'url:https://prepared.acme.next-cluster.test',
+            'dns-publication',
+            'cleanup',
+            'url:https://prepared.acme.next-cluster.test',
+            'workload-verify',
+        ])
+        ->and($updated->tld)
+        ->toBe('next-cluster.test')
+        ->and($updated->state)
+        ->toBe(ClusterState::Active)
+        ->and($replaced->id)
+        ->not->toBe($generated->id)
+        ->and($replaced->status)
+        ->toBe(RouteStatus::Active)
+        ->and($replaced->provenance)
+        ->toBe(RouteProvenance::Generated)
+        ->and($replaced->cluster_id)
+        ->toBe($cluster->id)
+        ->and($replaced->node_id)
+        ->toBeNull()
+        ->and($workload->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and(Route::query()->find($generated->id))
+        ->toBeNull()
+        ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
+        ->toBe(['expand', 'prune']);
+});
+
+it('keeps an explicit Route domain fixed when the Cluster TLD changes', function (): void {
+    $cluster = reconciliation_active_cluster('cluster-explicit', 'cluster.test');
+    $workload = reconciliation_node('cluster-explicit-workload', null);
+    $workload->update(['cluster_id' => $cluster->id]);
+    $target = reconciliation_instance($this->orbitApp, $workload, 'explicit');
+    $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'fixed.cluster.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $explicit->update(['status' => RouteStatus::Active]);
+    bind_cluster_tld_projection();
+
+    app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: 'next-cluster.test'),
+    );
+
+    expect($explicit->refresh()->domain)
+        ->toBe('fixed.cluster.example.test')
+        ->and($explicit->cluster_id)
+        ->toBe($cluster->id)
+        ->and($explicit->node_id)
+        ->toBeNull()
+        ->and($cluster->refresh()->tld)
+        ->toBe('next-cluster.test')
+        ->and($workload->refresh()->cluster_id)
+        ->toBe($cluster->id);
+});
+
+it('clears a Cluster TLD onto the member Node TLD and keeps Cluster routing', function (): void {
+    $cluster = reconciliation_active_cluster('cluster-clear', 'cluster.test');
+    $workload = reconciliation_node('cluster-clear-workload', 'node.test');
+    $workload->update(['cluster_id' => $cluster->id]);
+    $target = reconciliation_instance($this->orbitApp, $workload, 'cleared');
+    $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $routerBefore = $cluster->routerAssignment()->get()->map->getAttributes()->all();
+    bind_cluster_tld_projection();
+
+    app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: null),
+    );
+
+    expect($generated->refresh()->domain)
+        ->toBe('cleared.acme.node.test')
+        ->and($generated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($generated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($generated->node_id)
+        ->toBeNull()
+        ->and($cluster->refresh()->tld)
+        ->toBeNull()
+        ->and($cluster->refresh()->state)
+        ->toBe(ClusterState::Active)
+        ->and($workload->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($cluster->routerAssignment()->get()->map->getAttributes()->all())
+        ->toBe($routerBefore);
+});
+
+it('refuses clearing a Cluster TLD that would leave a generated Route without an effective TLD', function (): void {
+    $cluster = reconciliation_active_cluster('cluster-stranded', 'cluster.test');
+    $workload = reconciliation_node('cluster-stranded-workload', null);
+    $workload->update(['cluster_id' => $cluster->id]);
+    $target = reconciliation_instance($this->orbitApp, $workload, 'stranded');
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $clusterBefore = $cluster->fresh()->toArray();
+    $routeBefore = $generated->fresh(['targets'])->toArray();
+    $memberBefore = $workload->fresh()->toArray();
+    bind_cluster_tld_projection();
+
+    expect(fn () => app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: null),
+    ))->toThrow(ResourceOperationException::class, 'requires a Node TLD or active Cluster TLD');
+
+    expect($generated->fresh(['targets'])->toArray())
+        ->toBe($routeBefore)
+        ->and($cluster->fresh()->toArray())
+        ->toBe($clusterBefore)
+        ->and($workload->fresh()->toArray())
+        ->toBe($memberBefore);
+});
+
+it('does not return reconciliation_required after a Cluster TLD change and still refuses membership mutations', function (): void {
+    $cluster = reconciliation_active_cluster('cluster-reconciled', 'cluster.test');
+    $workload = reconciliation_node('cluster-reconciled-workload', null);
+    $workload->update(['cluster_id' => $cluster->id]);
+    $target = reconciliation_instance($this->orbitApp, $workload, 'reconciled');
+    $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    bind_cluster_tld_projection();
+
+    app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: 'next-cluster.test'),
+    );
+    $first = reconciliation_route_by_domain('reconciled.acme.next-cluster.test');
+
+    app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(tldProvided: true, tld: 'later-cluster.test'),
+    );
+    $second = reconciliation_route_by_domain('reconciled.acme.later-cluster.test');
+    $outsider = reconciliation_node('cluster-still-refused', 'outsider.test');
+    $outsiderTarget = reconciliation_instance($this->orbitApp, $outsider, 'outsider');
+    $outsiderRoute = app(CreateRouteAction::class)->ensureForAppInstance($outsiderTarget, null);
+    $outsiderRoute->update(['status' => RouteStatus::Active]);
+    $before = $second->fresh(['targets'])->toArray();
+    $outsiderBefore = $outsiderRoute->fresh(['targets'])->toArray();
+
+    expect($first->id)
+        ->not->toBe($generated->id)
+        ->and($second->id)
+        ->not->toBe($first->id)
+        ->and($cluster->refresh()->tld)
+        ->toBe('later-cluster.test')
+        ->and(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $outsider))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        })
+        ->and($second->fresh(['targets'])->toArray())
+        ->toBe($before)
+        ->and($outsiderRoute->fresh(['targets'])->toArray())
+        ->toBe($outsiderBefore)
+        ->and($workload->refresh()->cluster_id)
+        ->toBe($cluster->id);
+});
+
 it('requires a Router only after a TLD-less active Cluster owns a Route', function (): void {
     $cluster = Cluster::query()->create(['name' => 'tldless', 'state' => ClusterState::Active, 'tld' => null]);
     $member = reconciliation_node('member', 'member.test');
@@ -1042,12 +1276,19 @@ function reconciliation_node(string $name, ?string $tld): Node
     ]);
 }
 
-function bind_node_tld_projection(): NodeTldProjectionEvents
+function bind_cluster_tld_projection(): NodeTldProjectionEvents
 {
     $events = new NodeTldProjectionEvents;
     app()->instance(RouteDomainProjector::class, new NodeTldRouteProjector($events));
     app()->instance(DevelopmentAppInstanceConfigurator::class, new NodeTldRouteConfigurator($events));
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
+
+    return $events;
+}
+
+function bind_node_tld_projection(): NodeTldProjectionEvents
+{
+    $events = bind_cluster_tld_projection();
     app()->instance(AppDevTldConverger::class, new class($events) implements AppDevTldConverger
     {
         public function __construct(
