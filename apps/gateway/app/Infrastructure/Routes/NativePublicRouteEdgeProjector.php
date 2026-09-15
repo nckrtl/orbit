@@ -169,7 +169,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
                     'sudo',
                     'rm',
                     '-f',
-                    "--",
+                    '--',
                     "/etc/caddy/orbit-versions/staged/route-{$route->id}-ingress.caddy",
                 ],
             ),

@@ -360,10 +360,6 @@ final readonly class ConvergeRouteAction
         if (
             ! $statusAllowed
             || $route->provenance !== RouteProvenance::Explicit
-            || (
-                $effectivePublication !== RoutePublication::Private
-                && $effectivePublication !== RoutePublication::Public
-            )
             || ($effectivePublication === RoutePublication::Public && $environments !== ['production'])
             || array_diff($environments, ['development', 'production']) !== []
             || (count($targets) > 1 && $environments !== ['production'])
