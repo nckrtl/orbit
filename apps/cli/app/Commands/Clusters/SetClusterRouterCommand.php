@@ -38,10 +38,11 @@ final class SetClusterRouterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->send(
+        $cluster = $this->sendWithProgress(
             $connector,
             new SetClusterRouterRequest($clusterId, $nodeId),
             ClusterResponse::class,
+            ['Set Cluster Router', 'Setting Cluster Router', 'Set Cluster Router'],
         );
 
         if (! $cluster instanceof ClusterResponse) {

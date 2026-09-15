@@ -7,6 +7,8 @@ description: "How an App records one repository, its default branch, and the web
 
 An App stores one application's Git repository, access URL, default branch, and relative web root. New App instances inherit these source defaults. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity; [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
 
+App removal requires default-No interactive confirmation or explicit `--yes`. JSON and piped calls never imply consent. Inputs remain explicit; human requests show progress and preserve request IDs.
+
 ## Create an App
 
 Use `app:create` with a slug and an HTTPS or SSH Git origin:

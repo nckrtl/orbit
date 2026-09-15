@@ -21,7 +21,9 @@ The [Routes reference](/reference/routes) owns domain generation, routing scope,
 | [`cluster:router:unset`](#orbit-clusterrouterunset) | Clear the Router from an inactive Cluster. |
 | [`cluster:destroy`](#orbit-clusterdestroy) | Remove an empty Cluster. |
 
-Every command accepts `--json`. Cluster and Node arguments are numeric IDs.
+Every command accepts `--json`. Cluster and Node arguments are explicit numeric IDs. Human lists use uppercase table headers, and one Cluster uses a detail tree. TLDs display with a leading dot; missing values display an em dash. Requests show progress while waiting and retain their Gateway request ID.
+
+Destructive Cluster commands keep `--force` as their existing consent option. The confirmation names the resolved Cluster and the affected Node when detaching a member. Interactive confirmation starts at No. Declining, Ctrl-C or EOF stops before mutation. A pipe or `--json` never supplies consent and requires `--force`.
 
 A new Cluster is `inactive`. Membership, name, and TLD can be prepared while it is inactive without changing any traffic. Activating a Cluster that has a TLD, or giving an active Cluster a TLD, is the routing cutover: it requires exactly one active Router and reconciles every affected Route before the change becomes authoritative.
 

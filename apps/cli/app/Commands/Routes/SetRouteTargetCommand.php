@@ -80,10 +80,10 @@ final class SetRouteTargetCommand extends RouteCommand
             ? new SetRouteTargetRequest($routeId, $targetId)
             : new SetRouteTargetRequest($routeId, targetIds: [$targetId, ...$additional], dispositions: $dispositions);
 
-        $route = $this->send($connector, $request, RouteResponse::class);
+        $route = $this->sendWithProgress($connector, $request, RouteResponse::class, ['Set Route targets', 'Setting Route targets', 'Set Route targets']);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->domain}] target updated.")
+            ? $this->renderRoute($route)
             : self::FAILURE;
     }
 }

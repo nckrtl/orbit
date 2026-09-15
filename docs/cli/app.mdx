@@ -19,6 +19,8 @@ The [Apps reference](/reference/apps) owns repository identity, default-branch r
 
 Every command accepts `--json`.
 
+Human lists use an uppercase-header table. App details use a detail tree. Requests show progress while waiting, and results retain the Gateway request ID. Inputs remain explicit in every mode.
+
 ## orbit app:create
 
 Create an App. The Gateway resolves the remote default branch once when `--default-branch` is omitted and stores the result.
@@ -43,7 +45,7 @@ orbit app:create acme https://github.com/acme/site.git
 orbit app:create acme git@github.com:acme/site.git --default-branch=stable --root=web/public
 ```
 
-Creation is idempotent. Repeating the command with the same values returns the existing App. A retry that changes any value fails with `app.identity_conflict`, and a second App for the same repository fails with `app.repository_identity_conflict`. Orbit exposes no App update command.
+Creation is idempotent. Repeating the command with the same values returns the existing App. A retry that changes any value fails with `app.identity_conflict`, and a second App for the same repository fails with `app.repository_identity_conflict`.
 
 A repository access failure or an unavailable remote default returns `app.default_branch_unavailable` without repository diagnostics or credentials.
 
@@ -89,12 +91,14 @@ The command accepts these options.
 Remove an App. The Gateway refuses the request while the App still owns a Route, so remove its App instances first. Removing an App also deletes its process and Schedule definitions.
 
 ```bash
-orbit app:destroy <app> [--json]
+orbit app:destroy <app> [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `app` | yes | Numeric App ID. |
+
+Removal asks for confirmation with No selected. Supply `--yes` for automation, including `--json`. The CLI resolves the App before asking; declining, Ctrl-C or EOF returns `input.cancelled` without sending removal. A valid noninteractive call without `--yes` returns `input.confirmation_required`.
 
 ## Related
 

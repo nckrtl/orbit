@@ -66,7 +66,7 @@ final class CreateAppCommand extends GatewayCommand
             return $this->renderGatewayFailure('app.root_required', 'App root is required.');
         }
 
-        $app = $this->send(
+        $app = $this->sendWithProgress(
             $connector,
             new CreateAppRequest(
                 slug: $slug,
@@ -76,6 +76,7 @@ final class CreateAppCommand extends GatewayCommand
                 defaultBranch: $this->stringOption('default-branch'),
             ),
             AppResponse::class,
+            ['Create App', 'Creating App', 'Created App'],
         );
 
         if (! $app instanceof AppResponse) {
@@ -88,8 +89,8 @@ final class CreateAppCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("App [{$app->slug}] created.");
-        $this->line("Request ID: {$app->requestId}");
+        $this->writeHumanMessage("App [{$app->slug}] created.");
+        $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;
     }

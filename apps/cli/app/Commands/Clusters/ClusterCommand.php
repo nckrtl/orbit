@@ -24,7 +24,7 @@ abstract class ClusterCommand extends GatewayCommand
 
     protected function existingCluster(GatewayConnector $connector, int $clusterId): ?ClusterResponse
     {
-        $cluster = $this->send($connector, new ShowClusterRequest($clusterId), ClusterResponse::class);
+        $cluster = $this->sendWithProgress($connector, new ShowClusterRequest($clusterId), ClusterResponse::class, ['Inspect Cluster', 'Inspecting Cluster', 'Inspected Cluster']);
 
         return $cluster instanceof ClusterResponse ? $cluster : null;
     }
@@ -49,22 +49,15 @@ abstract class ClusterCommand extends GatewayCommand
         return false;
     }
 
-    protected function confirmed(string $operation): bool
+    protected function confirmed(string $operation, ClusterResponse $cluster, ?int $nodeId = null): bool
     {
-        if ($this->option('force') === true) {
-            return true;
-        }
-
-        if ($this->option('json') !== true && $this->input->isInteractive()) {
-            return $this->confirm("Confirm Cluster {$operation}?", false);
-        }
-
-        $this->renderGatewayFailure(
-            'cluster.confirmation_required',
-            "Use --force to confirm Cluster {$operation}.",
+        return $this->confirmAction(
+            "Confirm Cluster {$operation} [{$cluster->name} (#{$cluster->id})]".($nodeId === null ? '?' : " for Node #{$nodeId}?"),
+            "Cluster {$operation} cancelled.",
+            option: 'force',
+            requiredCode: 'cluster.confirmation_required',
+            requiredMessage: "Use --force to confirm Cluster {$operation}.",
         );
-
-        return false;
     }
 
     protected function renderCluster(ClusterResponse $cluster, string $message): int
@@ -75,22 +68,22 @@ abstract class ClusterCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info($message);
-        $this->line("Request ID: {$cluster->requestId}");
+        $this->writeHumanMessage($message);
+        $this->writeHumanMessage("Request ID: {$cluster->requestId}");
 
         return self::SUCCESS;
     }
 
     protected function nodeLabel(?ClusterNodeResponse $node): string
     {
-        return $node instanceof ClusterNodeResponse ? "{$node->name} (#{$node->id})" : '-';
+        return $node instanceof ClusterNodeResponse ? "{$node->name} (#{$node->id})" : '—';
     }
 
     /** @param list<ClusterNodeResponse> $nodes */
     protected function nodeList(array $nodes): string
     {
         if ($nodes === []) {
-            return '-';
+            return '—';
         }
 
         return implode(', ', array_map(

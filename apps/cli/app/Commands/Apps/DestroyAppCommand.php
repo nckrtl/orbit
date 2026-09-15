@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
+use Orbit\Sdk\Requests\Apps\ShowAppRequest;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 
 final class DestroyAppCommand extends GatewayCommand
@@ -15,6 +16,7 @@ final class DestroyAppCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'app:destroy
         {app : Numeric app ID}
+        {--yes : Confirm removal without prompting}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -36,7 +38,23 @@ final class DestroyAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $app = $this->send($connector, new DestroyAppRequest($appId), AppResponse::class);
+        if ($this->option('yes') !== true) {
+            $existing = $this->sendWithProgress(
+                $connector,
+                new ShowAppRequest($appId),
+                AppResponse::class,
+                ['Inspect App', 'Inspecting App', 'Inspected App'],
+            );
+
+            if (! $existing instanceof AppResponse || ! $this->confirmAction(
+                "Confirm App removal [{$existing->slug}]?",
+                'App removal cancelled.',
+            )) {
+                return self::FAILURE;
+            }
+        }
+
+        $app = $this->sendWithProgress($connector, new DestroyAppRequest($appId), AppResponse::class, ['Remove App', 'Removing App', 'Removed App']);
 
         if (! $app instanceof AppResponse) {
             return self::FAILURE;
@@ -48,8 +66,8 @@ final class DestroyAppCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("App [{$app->slug}] removed.");
-        $this->line("Request ID: {$app->requestId}");
+        $this->writeHumanMessage("App [{$app->slug}] removed.");
+        $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;
     }

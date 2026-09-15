@@ -14,7 +14,7 @@ Every result that the CLI prints carries a Gateway request ID. That ID is the li
 | [`activity:list`](#orbit-activitylist) | List recent Gateway command activity. |
 | [`activity:show`](#orbit-activityshow) | Show one Gateway command activity attempt. |
 
-Every command accepts `--json`.
+Every command accepts `--json`. Human requests show progress while waiting. Lists use uppercase table headers; one Activity uses a detail tree. Inputs remain explicit in every mode.
 
 ## orbit activity:list
 
@@ -36,7 +36,7 @@ orbit activity:list --limit=50
 orbit activity:list --request-id=9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81
 ```
 
-Human output is one table with the columns ID, Time, Command, Status, Caller, Target, and Error, followed by the request ID of the list call.
+Human output is one table with the columns ID, TIME, COMMAND, STATUS, CALLER, TARGET, and ERROR, followed by the request ID of the list call.
 
 ## orbit activity:show
 
@@ -54,7 +54,7 @@ orbit activity:show <activity> [--json]
 orbit activity:show 481
 ```
 
-Human output prints the command and status, the request ID the Gateway assigned to that attempt, the time, duration, exit code, and error code. JSON output returns every field below.
+Human output uses a detail tree with the command and status, the request ID the Gateway assigned to that attempt, the time, duration, exit code, and error code. JSON output returns every field below.
 
 ## What a record holds
 

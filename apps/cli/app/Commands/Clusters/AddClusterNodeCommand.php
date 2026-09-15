@@ -38,10 +38,11 @@ final class AddClusterNodeCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->send(
+        $cluster = $this->sendWithProgress(
             $connector,
             new AddClusterNodeRequest($clusterId, $nodeId),
             ClusterResponse::class,
+            ['Attach Node', 'Attaching Node', 'Attached Node'],
         );
 
         if (! $cluster instanceof ClusterResponse) {

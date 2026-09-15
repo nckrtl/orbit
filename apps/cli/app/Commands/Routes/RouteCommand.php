@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Routes;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 abstract class RouteCommand extends GatewayCommand
@@ -49,7 +50,7 @@ abstract class RouteCommand extends GatewayCommand
         return null;
     }
 
-    protected function renderRoute(RouteResponse $route, string $message): int
+    protected function renderRoute(RouteResponse $route): int
     {
         if ($this->option('json') === true) {
             $this->writeJson($route->toArray());
@@ -57,17 +58,35 @@ abstract class RouteCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info($message);
-        $this->line('Scope: '.($route->clusterId === null ? "node {$route->nodeId}" : "cluster {$route->clusterId}"));
-        $targetIds = array_map(
-            static fn ($target): int => $target->appInstanceId,
-            $route->targets !== [] ? $route->targets : array_filter([$route->target]),
-        );
-        $this->line('Target: '.($targetIds === [] ? '—' : implode(', ', $targetIds)));
-        $this->line("Status: {$route->status}");
-        $this->line("Public publication: {$route->publicPublication}");
-        $this->line("Request ID: {$route->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Route: {$route->domain}", [
+            'ID' => $route->id,
+            'App' => $route->appId,
+            'Provenance' => $route->provenance,
+            'Scope' => $route->clusterId === null ? "Node {$route->nodeId}" : "Cluster {$route->clusterId}",
+            'Targets' => $this->targetList($route),
+            'Publication' => $route->publication,
+            'Public publication' => $route->publicPublication,
+            'Status' => $route->status,
+            'Generation basis Node' => $route->generationBasisNodeId,
+            'Replaces Route' => $route->replacesRouteId,
+            'Replaced by Route' => $route->replacedByRouteId,
+            'Replacement step' => $route->replacementStep,
+            'Target set step' => $route->targetSetStep,
+            'Failed step' => $route->failedStep,
+            'Error' => $route->errorCode,
+            'Request ID' => $route->requestId,
+        ]));
 
         return self::SUCCESS;
+    }
+
+    protected function targetList(RouteResponse $route): string
+    {
+        $targets = $route->targets !== [] ? $route->targets : array_filter([$route->target]);
+
+        return $targets === [] ? '—' : implode(', ', array_map(
+            static fn ($target): int => $target->appInstanceId,
+            $targets,
+        ));
     }
 }

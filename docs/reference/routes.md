@@ -7,6 +7,8 @@ description: "What a Route records, how Orbit projects its private traffic path 
 
 A Route gives an App instance a domain and directs private traffic to it. This page explains domain selection, traffic setup, and supported changes. Each active App instance has exactly one authoritative Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires. A domain change creates a replacement Route under [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
 
+The CLI renders Route lists as tables and individual Routes as detail trees, including lifecycle and replacement fields. Human requests show progress while waiting. Route removal and target clearing require default-No interactive confirmation or `--yes`; JSON and piped calls never imply consent.
+
 ## Route record
 
 The Gateway stores each Route's settings and tracks setup of its certificates, web server, firewall, and DNS records.
