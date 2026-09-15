@@ -114,7 +114,9 @@
               "reference/implementation-loop",
               "reference/incus-topologies",
               "reference/proof-plans",
-              "reference/topology-snapshot"
+              "reference/topology-snapshot",
+              "reference/cli-command-vocabulary",
+              "reference/cli-ux"
             ]
           },
           {
@@ -485,13 +487,6 @@
               "decisions/0075-prune-idle-app-dev-checkout-dependencies"
             ]
           }
-        ]
-      },
-      {
-        "group": "Contributors",
-        "pages": [
-          "reference/cli-command-vocabulary",
-          "reference/cli-ux"
         ]
       }
     ]
