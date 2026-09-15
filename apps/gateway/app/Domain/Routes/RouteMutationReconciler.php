@@ -113,6 +113,113 @@ final readonly class RouteMutationReconciler
     }
 
     /**
+     * Inventory active private Routes whose domain or routing scope would change.
+     *
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
+     * @return list<array{route: Route, domain: string, placement: RoutePlacement}>
+     */
+    public function activePrivatePlacementChanges(
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
+        array $baselineNodeOverrides = [],
+        array $baselineClusterOverrides = [],
+    ): array {
+        return $this->placementChanges(
+            $nodeOverrides,
+            $clusterOverrides,
+            $baselineNodeOverrides,
+            $baselineClusterOverrides,
+            refusePublic: false,
+        );
+    }
+
+    /**
+     * Inventory active Routes whose domain or routing scope would change for attach or detach.
+     *
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
+     * @return list<array{route: Route, domain: string, placement: RoutePlacement}>
+     */
+    public function membershipChanges(
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
+        array $baselineNodeOverrides = [],
+        array $baselineClusterOverrides = [],
+    ): array {
+        return $this->placementChanges(
+            $nodeOverrides,
+            $clusterOverrides,
+            $baselineNodeOverrides,
+            $baselineClusterOverrides,
+            refusePublic: true,
+        );
+    }
+
+    /**
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
+     * @return list<array{route: Route, domain: string, placement: RoutePlacement}>
+     */
+    private function placementChanges(
+        array $nodeOverrides,
+        array $clusterOverrides,
+        array $baselineNodeOverrides,
+        array $baselineClusterOverrides,
+        bool $refusePublic,
+    ): array {
+        [$routes, $proposals] = $this->proposals(
+            $nodeOverrides,
+            $clusterOverrides,
+            $baselineNodeOverrides,
+            $baselineClusterOverrides,
+        );
+        $changes = [];
+
+        foreach ($routes as $route) {
+            $proposal = $proposals[$route->id];
+
+            if ($route->status !== RouteStatus::Active) {
+                continue;
+            }
+
+            if (
+                $route->domain === $proposal['domain']
+                && $route->node_id === $proposal['node_id']
+                && $route->cluster_id === $proposal['cluster_id']
+            ) {
+                continue;
+            }
+
+            if ($route->publication !== RoutePublication::Private) {
+                if ($refusePublic) {
+                    new RouteReconciliationGuard()->refuse();
+                }
+
+                continue;
+            }
+
+            $changes[] = [
+                'route' => $route,
+                'domain' => $proposal['domain'],
+                'placement' => new RoutePlacement(
+                    nodeId: $proposal['node_id'],
+                    clusterId: $proposal['cluster_id'],
+                    effectiveTld: null,
+                ),
+            ];
+        }
+
+        return $changes;
+    }
+
+    /**
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides

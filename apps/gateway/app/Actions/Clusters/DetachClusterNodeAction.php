@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Firewall\RouterLanIngressReconciler;
@@ -21,12 +22,16 @@ final readonly class DetachClusterNodeAction
     public function __construct(
         private ActiveTldScopeGuard $tldScope,
         private ?RouteMutationReconciler $routes = null,
+        private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
     {
+        $node->refresh();
+        $cluster->refresh();
+
         $this->lanIngress()->expand(
             nodeOverrides: [$node->id => ['cluster_id' => null]],
             clusterIds: [$cluster->id],
@@ -44,6 +49,9 @@ final readonly class DetachClusterNodeAction
         }
 
         try {
+            $this->assertDetachable($cluster, $node);
+            $this->convergeMembership([$node->id => ['cluster_id' => null]]);
+
             /**
              * @var Cluster $updated
              */
@@ -51,13 +59,7 @@ final readonly class DetachClusterNodeAction
                 $lockedCluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
                 $lockedNode = Node::query()->lockForUpdate()->findOrFail($node->id);
 
-                if ($lockedNode->cluster_id !== $lockedCluster->id) {
-                    throw new ResourceOperationException(
-                        errorCode: 'cluster.membership_missing',
-                        message: "Node [{$lockedNode->name}] does not belong to Cluster [{$lockedCluster->name}].",
-                        status: 409,
-                    );
-                }
+                $this->assertDetachable($lockedCluster, $lockedNode);
 
                 $routerAssignments = $lockedNode
                     ->roles()
@@ -65,31 +67,11 @@ final readonly class DetachClusterNodeAction
                     ->lockForUpdate()
                     ->get();
 
-                if ($routerAssignments->contains(
-                    static fn (NodeRole $assignment): bool => ! $assignment->neverActivated(),
-                )) {
-                    throw new ResourceOperationException(
-                        errorCode: 'cluster.router_detach_forbidden',
-                        message: 'Clear the Cluster Router before detaching its Node.',
-                        status: 409,
-                    );
-                }
-
                 foreach ($routerAssignments as $assignment) {
                     $assignment->delete();
                 }
 
-                if ($lockedNode->roles()->where('role', RoleName::Ingress)->exists()) {
-                    throw new ResourceOperationException(
-                        errorCode: 'cluster.ingress_detach_forbidden',
-                        message: 'Remove the Cluster Ingress role before detaching its Node.',
-                        status: 409,
-                    );
-                }
-
-                $this->tldScope->assertNodeCanDetach($lockedCluster, $lockedNode);
-
-                ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(nodeOverrides: [
+                $this->routeReconciler()->reconcile(nodeOverrides: [
                     $lockedNode->id => ['cluster_id' => null],
                 ]);
 
@@ -114,6 +96,65 @@ final readonly class DetachClusterNodeAction
         );
 
         return $updated;
+    }
+
+    private function assertDetachable(Cluster $cluster, Node $node): void
+    {
+        if ($node->cluster_id !== $cluster->id) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.membership_missing',
+                message: "Node [{$node->name}] does not belong to Cluster [{$cluster->name}].",
+                status: 409,
+            );
+        }
+
+        $routerAssignments = $node
+            ->roles()
+            ->where('role', RoleName::Router)
+            ->get();
+
+        if ($routerAssignments->contains(
+            static fn (NodeRole $assignment): bool => ! $assignment->neverActivated(),
+        )) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.router_detach_forbidden',
+                message: 'Clear the Cluster Router before detaching its Node.',
+                status: 409,
+            );
+        }
+
+        if ($node->roles()->where('role', RoleName::Ingress)->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.ingress_detach_forbidden',
+                message: 'Remove the Cluster Ingress role before detaching its Node.',
+                status: 409,
+            );
+        }
+
+        $this->tldScope->assertNodeCanDetach($cluster, $node);
+    }
+
+    /** @param array<int, array{cluster_id: ?int}> $overrides */
+    private function convergeMembership(array $overrides): void
+    {
+        foreach ($this->routeReconciler()->membershipChanges(nodeOverrides: $overrides) as $change) {
+            $this->convergeRoute()->execute(
+                $change['route'],
+                $change['domain'],
+                allowGenerated: true,
+                placement: $change['placement'],
+            );
+        }
+    }
+
+    private function routeReconciler(): RouteMutationReconciler
+    {
+        return $this->routes ?? app(RouteMutationReconciler::class);
+    }
+
+    private function convergeRoute(): ConvergeRouteAction
+    {
+        return $this->convergeRoute ?? app(ConvergeRouteAction::class);
     }
 
     private function lanIngress(): RouterLanIngressReconciler

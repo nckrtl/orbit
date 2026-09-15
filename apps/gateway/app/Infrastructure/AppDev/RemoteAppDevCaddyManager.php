@@ -25,9 +25,12 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         $this->owner()->run(fn () => $this->convergeSites($node));
     }
 
-    public function convergeRoute(Node $node, Route $route): void
+    /**
+     * @param  array<int, int>  $routerOverrides
+     */
+    public function convergeRoute(Node $node, Route $route, array $routerOverrides = []): void
     {
-        $this->owner()->run(fn () => $this->convergeSites($node, $route));
+        $this->owner()->run(fn () => $this->convergeSites($node, $route, routerOverrides: $routerOverrides));
     }
 
     public function convergeUnavailableRoute(Node $node, Route $route, AppInstance $appInstance): void
@@ -40,14 +43,18 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         $this->owner()->run(fn () => $this->convergeSites($node, additionalRoute: $candidate));
     }
 
+    /**
+     * @param  array<int, int>  $routerOverrides
+     */
     private function convergeSites(
         Node $node,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
         ?Route $additionalRoute = null,
+        array $routerOverrides = [],
     ): void {
         $configuration = $this->renderer->render(
-            $this->sites->forNode($node, $pendingRoute, $unavailableInstance, $additionalRoute),
+            $this->sites->forNode($node, $pendingRoute, $unavailableInstance, $additionalRoute, $routerOverrides),
         );
         $version = bin2hex(random_bytes(8));
         $this->ssh->execute(

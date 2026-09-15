@@ -13,6 +13,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
@@ -21,6 +22,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -40,6 +42,7 @@ final readonly class ConvergeRouteAction
         string $domain,
         ?RoutePublication $publication = null,
         bool $allowGenerated = false,
+        ?RoutePlacement $placement = null,
     ): Route {
         $domain = RouteDomain::validate($domain);
 
@@ -62,6 +65,7 @@ final readonly class ConvergeRouteAction
                     $targetIds,
                     $publication,
                     $allowGenerated,
+                    $placement,
                 ),
             ),
         );
@@ -74,6 +78,7 @@ final readonly class ConvergeRouteAction
         array $expectedTargetIds,
         ?RoutePublication $publication = null,
         bool $allowGenerated = false,
+        ?RoutePlacement $placement = null,
     ): Route {
         $route = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
@@ -99,6 +104,7 @@ final readonly class ConvergeRouteAction
                     $expectedTargetIds,
                     $publication,
                     $allowGenerated,
+                    $placement,
                 );
             }
         }
@@ -133,7 +139,15 @@ final readonly class ConvergeRouteAction
 
         $this->assertTargetsUnchanged($route, $expectedTargetIds);
 
-        if ($route->domain === $domain && $route->replaced_by_route_id === null) {
+        $placementChanged = $placement instanceof RoutePlacement
+            && ($placement->nodeId !== $route->node_id || $placement->clusterId !== $route->cluster_id);
+        $placementRetry = $placement instanceof RoutePlacement
+            && $route->domain === $domain
+            && $route->replaced_by_route_id === null
+            && $this->forwardRank($route->replacement_step)
+                >= $this->forwardRank(RouteReplacementStep::DatabaseCutover);
+
+        if ($route->domain === $domain && $route->replaced_by_route_id === null && ! $placementChanged && ! $placementRetry) {
             return $route;
         }
 
@@ -143,7 +157,24 @@ final readonly class ConvergeRouteAction
             publication: $publication ?? $route->publication,
             allowGenerated: $allowGenerated,
         );
-        $replacement = $this->reserve($route, $domain, $publication);
+
+        if ($placement instanceof RoutePlacement && $route->domain === $domain && $route->replaced_by_route_id === null) {
+            return $this->convergePlacement($route, $placement, $targets);
+        }
+
+        if (
+            $route->replaced_by_route_id === null
+            && $route->replacement_step !== null
+            && $route->domain !== $domain
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'route.domain_change_conflict',
+                message: 'The Route already has another domain change in progress.',
+                status: 409,
+            );
+        }
+
+        $replacement = $this->reserve($route, $domain, $publication, $placement);
 
         if (
             (
@@ -406,10 +437,14 @@ final readonly class ConvergeRouteAction
         return $targets;
     }
 
-    private function reserve(Route $route, string $domain, ?RoutePublication $publication = null): Route
-    {
+    private function reserve(
+        Route $route,
+        string $domain,
+        ?RoutePublication $publication = null,
+        ?RoutePlacement $placement = null,
+    ): Route {
         /** @var Route $reserved */
-        $reserved = DB::transaction(function () use ($route, $domain, $publication): Route {
+        $reserved = DB::transaction(function () use ($route, $domain, $publication, $placement): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
 
             if ($locked->replaced_by_route_id !== null) {
@@ -461,8 +496,8 @@ final readonly class ConvergeRouteAction
 
             $replacement = Route::query()->create([
                 'app_id' => $locked->app_id,
-                'node_id' => $locked->node_id,
-                'cluster_id' => $locked->cluster_id,
+                'node_id' => $placement instanceof RoutePlacement ? $placement->nodeId : $locked->node_id,
+                'cluster_id' => $placement instanceof RoutePlacement ? $placement->clusterId : $locked->cluster_id,
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
                 'domain' => $domain,
                 'provenance' => $locked->provenance,
@@ -481,7 +516,7 @@ final readonly class ConvergeRouteAction
                 ]);
             }
 
-            return $replacement->refresh()->load('targets');
+            return $replacement->refresh()->load(['targets', 'cluster.routerAssignment.node']);
         });
 
         return $reserved;
@@ -495,6 +530,261 @@ final readonly class ConvergeRouteAction
 
         $operation();
         $this->checkpoint($route, $step);
+    }
+
+    /** @param list<AppInstance> $targets */
+    private function convergePlacement(Route $route, RoutePlacement $placement, array $targets): Route
+    {
+        $retired = $this->candidateWithPlacement($route, new RoutePlacement(
+            nodeId: $route->node_id,
+            clusterId: $route->cluster_id,
+            effectiveTld: null,
+        ));
+        $candidate = $this->candidateWithPlacement($route, $placement);
+
+        if ($route->replacement_step === null) {
+            $this->checkpoint($route, RouteReplacementStep::Reserved);
+        }
+
+        if (
+            $route->node_id === $placement->nodeId
+            && $route->cluster_id === $placement->clusterId
+            && $this->forwardRank($route->replacement_step)
+                >= $this->forwardRank(RouteReplacementStep::DatabaseCutover)
+        ) {
+            return $this->cleanupPlacement($route, $retired, $candidate, $targets);
+        }
+
+        $failureStep = 'workload-certificate';
+
+        try {
+            $this->forwardStep(
+                $route,
+                RouteReplacementStep::WorkloadCertificate,
+                function () use ($targets, $route, $candidate): void {
+                    foreach ($targets as $appInstance) {
+                        $this->projection->prepareWorkloadCertificate($appInstance, $route, $candidate);
+                    }
+                },
+            );
+            $failureStep = 'workload-caddy';
+            $this->forwardStep(
+                $route,
+                RouteReplacementStep::WorkloadCaddy,
+                function () use ($targets, $route, $candidate): void {
+                    foreach ($targets as $appInstance) {
+                        $this->projection->prepareWorkloadCaddy($appInstance, $route, $candidate);
+                    }
+                },
+            );
+            $failureStep = 'router-certificate';
+            $this->forwardStep(
+                $route,
+                RouteReplacementStep::RouterCertificate,
+                function () use ($targets, $route, $candidate): void {
+                    foreach ($targets as $appInstance) {
+                        $this->projection->prepareRouterCertificate($appInstance, $route, $candidate);
+                    }
+                },
+            );
+            $failureStep = 'firewall-policy';
+            $this->forwardStep(
+                $route,
+                RouteReplacementStep::FirewallPolicy,
+                function () use ($targets, $candidate): void {
+                    foreach ($targets as $appInstance) {
+                        $this->projection->prepareFirewallPolicy($appInstance, $candidate);
+                    }
+                },
+            );
+            $failureStep = 'workload-verify';
+            $this->forwardStep(
+                $route,
+                RouteReplacementStep::WorkloadVerified,
+                function () use ($targets, $candidate): void {
+                    foreach ($targets as $appInstance) {
+                        $this->projection->verifyWorkload($appInstance, $candidate);
+                    }
+                },
+            );
+            $failureStep = 'router-caddy';
+            $this->forwardStep(
+                $route,
+                RouteReplacementStep::RouterCaddy,
+                function () use ($targets, $route, $candidate): void {
+                    foreach ($targets as $appInstance) {
+                        $this->projection->prepareRouterCaddy($appInstance, $route, $candidate);
+                    }
+                },
+            );
+
+            $production = array_values(array_filter(
+                $targets,
+                static fn (AppInstance $instance): bool => $instance->environment === 'production',
+            ));
+
+            if ($production !== []) {
+                $failureStep = 'environment-synchronization';
+                $this->forwardStep(
+                    $route,
+                    RouteReplacementStep::EnvironmentSynchronized,
+                    function () use ($production): void {
+                        foreach ($production as $appInstance) {
+                            $this->routeEnvironment->synchronizeRouteDomain(
+                                $appInstance,
+                                AppInstanceEnvironmentRouteDomain::Candidate,
+                            );
+                        }
+                    },
+                );
+            } else {
+                $failureStep = 'laravel-url';
+                $this->forwardStep(
+                    $route,
+                    RouteReplacementStep::LaravelUrl,
+                    function () use ($targets, $candidate): void {
+                        foreach ($targets as $appInstance) {
+                            if ($appInstance->source_is_laravel) {
+                                $this->configuration->configureLaravelUrl(
+                                    $appInstance,
+                                    "https://{$candidate->domain}",
+                                );
+                            }
+                        }
+                    },
+                );
+            }
+
+            $failureStep = 'dns-publication';
+            $this->forwardStep(
+                $route,
+                RouteReplacementStep::DnsPublished,
+                fn () => $this->projection->publishDns($route, $candidate),
+            );
+            $failureStep = 'database-cutover';
+            $this->cutoverPlacement($route, $placement);
+        } catch (Throwable $exception) {
+            $this->recordFailure($route, $failureStep, $this->errorCode($exception));
+
+            if (
+                $this->forwardRank($route->refresh()->replacement_step)
+                    < $this->forwardRank(RouteReplacementStep::DatabaseCutover)
+            ) {
+                $this->failBeforeCutoverPlacement($route, $retired, $targets);
+            }
+
+            throw $exception;
+        }
+
+        return $this->cleanupPlacement(
+            $route->refresh(),
+            $retired,
+            $this->candidateWithPlacement($route->refresh(), $placement),
+            $targets,
+        );
+    }
+
+    private function candidateWithPlacement(Route $route, RoutePlacement $placement): Route
+    {
+        $candidate = $route->newInstance($route->getAttributes(), true);
+        $candidate->exists = true;
+        $candidate->node_id = $placement->nodeId;
+        $candidate->cluster_id = $placement->clusterId;
+        $candidate->setRelation('targets', $route->targets);
+
+        if ($placement->clusterId === null) {
+            $candidate->setRelation('cluster', null);
+
+            return $candidate;
+        }
+
+        $candidate->setRelation(
+            'cluster',
+            Cluster::query()->with('routerAssignment.node')->find($placement->clusterId),
+        );
+
+        return $candidate;
+    }
+
+    private function cutoverPlacement(Route $route, RoutePlacement $placement): void
+    {
+        DB::transaction(function () use ($route, $placement): void {
+            $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+            $locked->update([
+                'node_id' => $placement->nodeId,
+                'cluster_id' => $placement->clusterId,
+                'replacement_step' => RouteReplacementStep::DatabaseCutover,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+            $route->setRawAttributes($locked->refresh()->getAttributes(), true);
+        });
+    }
+
+    /** @param list<AppInstance> $targets */
+    private function cleanupPlacement(Route $route, Route $retired, Route $candidate, array $targets): Route
+    {
+        try {
+            foreach ($targets as $appInstance) {
+                $this->projection->cleanup($appInstance, $retired);
+
+                if ($appInstance->environment === 'production') {
+                    $this->routeEnvironment->synchronizeRouteDomain(
+                        $appInstance,
+                        AppInstanceEnvironmentRouteDomain::Candidate,
+                    );
+                } elseif ($appInstance->source_is_laravel) {
+                    $this->configuration->configureLaravelUrl(
+                        $appInstance,
+                        "https://{$candidate->domain}",
+                    );
+                }
+
+                $this->projection->verifyWorkload($appInstance, $candidate);
+            }
+
+            DB::transaction(function () use ($route): void {
+                $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+                $locked->update([
+                    'replacement_step' => null,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]);
+                $route->setRawAttributes($locked->refresh()->getAttributes(), true);
+            });
+        } catch (Throwable $exception) {
+            $this->recordFailure($route, 'cleanup', $this->errorCode($exception));
+
+            throw $exception;
+        }
+
+        return $route->refresh()->load('targets');
+    }
+
+    /** @param list<AppInstance> $targets */
+    private function failBeforeCutoverPlacement(Route $route, Route $retired, array $targets): void
+    {
+        try {
+            foreach ($targets as $appInstance) {
+                $this->projection->rollbackCertificates($appInstance, $route);
+                $this->projection->rollbackCaddy($appInstance, $route);
+
+                if ($appInstance->environment === 'production') {
+                    $this->routeEnvironment->synchronizeRouteDomain(
+                        $appInstance,
+                        AppInstanceEnvironmentRouteDomain::Authoritative,
+                    );
+                } elseif ($appInstance->source_is_laravel) {
+                    $this->configuration->configureLaravelUrl(
+                        $appInstance,
+                        "https://{$retired->domain}",
+                    );
+                }
+            }
+
+            $this->projection->rollbackDns($route);
+        } catch (Throwable) {
+        }
     }
 
     private function cutover(Route $current, Route $replacement): void

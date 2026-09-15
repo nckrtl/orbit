@@ -10,11 +10,14 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
+use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -25,6 +28,7 @@ use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeClusterRouterReplacementProjector;
 
 beforeEach(function (): void {
     $this->baselines = new class implements RoleBaselineConverger
@@ -66,6 +70,7 @@ beforeEach(function (): void {
         }
     };
     app()->instance(RoleBaselineConverger::class, $this->baselines);
+    $this->replacements = cluster_router_replacement_projector();
     $this->gateway = $this->markAsGateway(cluster_router_api_node('gateway-router-peer', '10.44.0.1'));
     $this->cluster = Cluster::query()->create(['name' => 'development']);
     $this->first = cluster_router_api_node('first-router', '10.44.0.2', $this->cluster);
@@ -285,18 +290,25 @@ it('runs Router mutation and removal guards against state created while waiting'
     app()->instance(ClusterRouterOperationLock::class, $owner);
 
     $this
-        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.reconciliation_required');
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertOk()
+        ->assertJsonPath('data.router.id', $this->second->id);
     $this
         ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.reconciliation_required');
 
     expect($this->cluster->routerAssignment()->sole()->node_id)
-        ->toBe($this->first->id)
+        ->toBe($this->second->id)
         ->and($this->baselines->calls)
-        ->toBeEmpty();
+        ->toBe([
+            "converge:{$this->second->id}",
+            "remove:{$this->first->id}",
+        ])
+        ->and($this->replacements->events)
+        ->toContain('router-certificate')
+        ->toContain('dns-publication')
+        ->toContain('cleanup');
 });
 
 it('holds Router ownership through baseline work outside database transactions', function (): void {
@@ -683,6 +695,222 @@ it('clears an optional Router while a TLD-less Cluster remains active', function
         ->and($this->cluster->routerAssignment()->exists())
         ->toBeFalse();
 });
+
+it('prepares and publishes Cluster Route projections before a replacement assignment is authoritative', function (): void {
+    [$route, $target] = cluster_router_owned_route($this->cluster, $this->first);
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    $this->replacements->events = [];
+    $this->replacements->placements = [];
+    $this->replacements->onPrepare = function () use ($route, $target): void {
+        expect($this->cluster->routerAssignment()->sole()->node_id)
+            ->toBe($this->first->id)
+            ->and($route->refresh()->only(['id', 'domain', 'cluster_id', 'node_id']))
+            ->toBe([
+                'id' => $route->id,
+                'domain' => 'acme.example.test',
+                'cluster_id' => $this->cluster->id,
+                'node_id' => null,
+            ])
+            ->and($target->refresh()->node_id)
+            ->toBe($this->first->id);
+    };
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertOk()
+        ->assertJsonPath('data.router.id', $this->second->id);
+
+    expect($route->refresh()->only(['id', 'domain', 'cluster_id', 'node_id', 'status']))
+        ->toBe([
+            'id' => $route->id,
+            'domain' => 'acme.example.test',
+            'cluster_id' => $this->cluster->id,
+            'node_id' => null,
+            'status' => RouteStatus::Active,
+        ])
+        ->and($target->refresh()->only(['id', 'node_id', 'status']))
+        ->toBe([
+            'id' => $target->id,
+            'node_id' => $this->first->id,
+            'status' => AppInstanceState::Active,
+        ])
+        ->and($this->replacements->events)
+        ->toBe([
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'dns-publication',
+            'cleanup',
+        ])
+        ->and($this->replacements->placements[0]['router_id'])
+        ->toBe($this->second->id);
+});
+
+it('composes a colocated replacement Caddy site without a self-proxy hop', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    [$route] = cluster_router_owned_route($this->cluster, $this->second);
+    $this->second->update(['lan_ip' => '10.10.0.3']);
+    $sites = new AppDevSiteRepository()->forNode(
+        $this->second,
+        routerOverrides: [$this->cluster->id => $this->second->id],
+    );
+    $rendered = new AppDevCaddyConfigRenderer()->render($sites);
+
+    expect($sites->contains(fn ($site): bool => $site->isProxy() && $site->domain === $route->domain))
+        ->toBeFalse()
+        ->and($rendered)
+        ->not->toContain('reverse_proxy https://10.10.0.3')
+        ->not->toContain('reverse_proxy https://127.0.0.1')
+        ->not->toContain("reverse_proxy https://{$this->second->wireguard_ip}");
+});
+
+it('uses a local next hop when replacement colocates Router and workload roles', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    [$route] = cluster_router_owned_route($this->cluster, $this->second);
+
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
+
+    expect($this->replacements->events)
+        ->toContain('router-caddy:local-next-hop')
+        ->not->toContain('router-caddy')
+        ->and($route->refresh()->domain)
+        ->toBe('acme.example.test');
+});
+
+it('restores the old Router when replacement publication fails and retries the same candidate', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    [$route] = cluster_router_owned_route($this->cluster, $this->first);
+    $this->replacements->failures = ['dns-publication' => 1];
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertServerError();
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $this->second->id)
+        ->sole();
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->first->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($candidate->failed_step)
+        ->toBe('dns-publication')
+        ->and($candidate->error_code)
+        ->toBe('route.test_dns-publication')
+        ->and($this->replacements->events)
+        ->toContain('restore')
+        ->and($route->refresh()->domain)
+        ->toBe('acme.example.test');
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+        });
+
+    $this->replacements->failures = [];
+    $this->replacements->events = [];
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->second->id)
+        ->and($this->replacements->events)
+        ->toBe([
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'dns-publication',
+            'cleanup',
+        ]);
+});
+
+it('keeps the replacement assignment when cleanup fails and refuses a conflicting transition', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    cluster_router_owned_route($this->cluster, $this->first);
+    $this->replacements->failures = ['cleanup' => 1];
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertServerError();
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $this->second->id)
+        ->sole();
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->second->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($candidate->failed_step)
+        ->toBe('cleanup');
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+        });
+});
+
+it('replaces a Router when the application returns HTTP 500 and leaves Route lifecycle unchanged', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    [$route, $target] = cluster_router_owned_route($this->cluster, $this->first);
+    $this->replacements->applicationHttpStatus = 500;
+
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->second->id)
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Active)
+        ->and($target->refresh()->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($this->replacements->events)
+        ->toContain('workload-verify');
+});
+
+function cluster_router_replacement_projector(): FakeClusterRouterReplacementProjector
+{
+    $projector = new FakeClusterRouterReplacementProjector;
+    app()->instance(ClusterRouterReplacementProjector::class, $projector);
+
+    return $projector;
+}
+
+/**
+ * @return array{0: Route, 1: AppInstance}
+ */
+function cluster_router_owned_route(Cluster $cluster, Node $workload): array
+{
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme-'.Str::random(6),
+        'repository_url' => 'https://example.test/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $target = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $workload->id,
+        'name' => 'default',
+        'checkout_path' => '/srv/acme/default',
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'domain' => 'acme.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return [$route->refresh(), $target];
+}
 
 function cluster_router_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
 {

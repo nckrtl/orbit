@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Actions\Routes\CreateRouteAction;
@@ -9,6 +10,7 @@ use App\Actions\Routes\RemoveRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
@@ -16,8 +18,11 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -30,9 +35,11 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeClusterRouterReplacementProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
@@ -172,6 +179,190 @@ it('records Cluster TLD generated Route failure, restores the old Cluster TLD an
         ->toBeNull();
 });
 
+it('records Router replacement failure, restores the old Router, and retries the same candidate', function (
+    string $failure,
+): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $projector->failures = [$failure => 1];
+    $routeBefore = $route->fresh(['targets'])->toArray();
+    $memberBefore = $member->fresh()->toArray();
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeConvergenceException::class, "Injected {$failure} failure.");
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($current->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($candidate->failed_step)
+        ->toBe($failure)
+        ->and($route->fresh(['targets'])->toArray())
+        ->toBe($routeBefore)
+        ->and($member->fresh()->toArray())
+        ->toBe($memberBefore)
+        ->and($projector->events)
+        ->toContain('restore');
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $current))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+        });
+
+    $projector->failures = [];
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($route->refresh()->only(['id', 'domain', 'cluster_id', 'status']))
+        ->toBe([
+            'id' => $route->id,
+            'domain' => $route->domain,
+            'cluster_id' => $cluster->id,
+            'status' => RouteStatus::Active,
+        ]);
+})->with([
+    'router-certificate',
+    'firewall-policy',
+    'workload-verify',
+    'router-caddy',
+    'dns-publication',
+]);
+
+it('records Router replacement database failure after publication and retries forward', function (): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $routeBefore = $route->fresh(['targets'])->toArray();
+    $failCutover = true;
+    NodeRole::updating(function (NodeRole $role) use (&$failCutover): void {
+        if (
+            ! $failCutover
+            || $role->role !== RoleName::Router
+            || ! $role->isDirty('status')
+            || $role->status !== LifecycleStatus::Active
+        ) {
+            return;
+        }
+
+        $original = $role->getOriginal('status');
+
+        if ($original !== LifecycleStatus::Provisioning && $original !== LifecycleStatus::Provisioning->value) {
+            return;
+        }
+
+        $failCutover = false;
+
+        throw new RuntimeException('Injected database failure.');
+    });
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeException::class, 'Injected database failure.');
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($current->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($candidate->failed_step)
+        ->toBe('database')
+        ->and($projector->events)
+        ->not->toContain('restore')
+        ->and($route->fresh(['targets'])->toArray())
+        ->toBe($routeBefore);
+
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($route->refresh()->id)
+        ->toBe($routeBefore['id']);
+});
+
+it('keeps the replacement Router authoritative when cleanup fails and retries cleanup', function (): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $projector->failures = ['cleanup' => 1];
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeConvergenceException::class, 'Injected cleanup failure.');
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($candidate->failed_step)
+        ->toBe('cleanup')
+        ->and($candidate->error_code)
+        ->toBe('route.test_cleanup')
+        ->and($projector->events)
+        ->not->toContain('restore');
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $current))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+        });
+
+    $projector->failures = [];
+    $projector->events = [];
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($candidate->refresh()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => LifecycleStatus::Active,
+            'failed_step' => null,
+            'error_code' => null,
+        ])
+        ->and($projector->events)
+        ->toBe(['cleanup'])
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Active);
+});
+
+it('records Router replacement rollback failure on the same candidate', function (): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $projector->failures = ['dns-publication' => 1, 'restore' => 1];
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeConvergenceException::class, 'Injected restore failure.');
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($current->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($candidate->failed_step)
+        ->toBe('rollback:dns-publication')
+        ->and($route->refresh()->id)
+        ->toBe($route->id);
+
+    $projector->failures = [];
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id);
+});
+
 it('records generated Route failure, restores the old URL, and refuses a conflicting mutation', function (): void {
     $route = route_domain_change_route(laravel: true, generated: true);
     $this->projector->failures = [
@@ -211,6 +402,230 @@ it('records generated Route failure, restores the old URL, and refuses a conflic
         ->and($updated->status)
         ->toBe(RouteStatus::Active)
         ->and(Route::query()->find($route->id))
+        ->toBeNull();
+});
+
+it('converges a same-domain Cluster scope change on one Route and restores after a pre-cutover failure', function (): void {
+    $route = route_domain_change_route(laravel: true);
+    $cluster = Cluster::query()->create(['name' => 'activation', 'state' => 'inactive', 'tld' => 'cluster.test']);
+    $router = Node::query()->create([
+        'name' => 'activation-router',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.30',
+        'wireguard_ip' => '10.44.0.30',
+        'user' => 'orbit',
+    ]);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'dev.test');
+
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: false,
+        placement: $placement,
+    );
+
+    expect($updated->id)
+        ->toBe($route->id)
+        ->and($updated->domain)
+        ->toBe('old.example.test')
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->node_id)
+        ->toBeNull()
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->replacement_step)
+        ->toBeNull()
+        ->and($this->events->values)
+        ->toBe([
+            'owner',
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'url:https://old.example.test',
+            'dns-publication',
+            'cleanup',
+            'url:https://old.example.test',
+            'workload-verify',
+        ]);
+
+    $nodeId = $route->targets->sole()->appInstance->node_id;
+    $route->refresh()->update(['node_id' => $nodeId, 'cluster_id' => null]);
+    $this->events->values = [];
+    $this->projector->failures['router-caddy'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute(
+        $route->refresh(),
+        $route->domain,
+        placement: $placement,
+    ))->toThrow(ResourceOperationException::class, 'Injected router-caddy failure.');
+
+    expect($route->refresh()->cluster_id)
+        ->toBeNull()
+        ->and($route->refresh()->node_id)
+        ->not->toBeNull()
+        ->and($route->refresh()->failed_step)
+        ->toBe('router-caddy')
+        ->and($this->events->values)
+        ->toContain('rollback-certificates', 'rollback-caddy', 'rollback-dns');
+
+    $this->projector->failures = [];
+    $this->events->values = [];
+    $retried = app(ConvergeRouteAction::class)->execute(
+        $route->refresh(),
+        $route->domain,
+        placement: $placement,
+    );
+
+    expect($retried->cluster_id)
+        ->toBe($cluster->id)
+        ->and($retried->failed_step)
+        ->toBeNull()
+        ->and($retried->replacement_step)
+        ->toBeNull();
+});
+
+it('applies proposed Cluster placement on a generated domain replacement', function (): void {
+    $route = route_domain_change_route(laravel: false, generated: true);
+    $cluster = Cluster::query()->create(['name' => 'generated-activation', 'state' => 'inactive', 'tld' => 'next.test']);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'next.test');
+
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        'feature.acme.next.test',
+        allowGenerated: true,
+        placement: $placement,
+    );
+
+    expect($updated->id)
+        ->not->toBe($route->id)
+        ->and($updated->domain)
+        ->toBe('feature.acme.next.test')
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->node_id)
+        ->toBeNull()
+        ->and($updated->provenance->value)
+        ->toBe('generated');
+});
+
+it('converges a generated private Route onto Cluster scope without replacing its domain', function (): void {
+    $route = route_domain_change_route(laravel: true, generated: true);
+    $cluster = Cluster::query()->create(['name' => 'membership-generated', 'state' => 'active', 'tld' => null]);
+    $router = Node::query()->create([
+        'name' => 'membership-generated-router',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.40',
+        'wireguard_ip' => '10.44.0.40',
+        'user' => 'orbit',
+    ]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: true,
+        placement: new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'dev.test'),
+    );
+
+    expect($updated->id)
+        ->toBe($route->id)
+        ->and($updated->domain)
+        ->toBe('feature.acme.dev.test')
+        ->and($updated->node_id)
+        ->toBeNull()
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->replacement_step)
+        ->toBeNull()
+        ->and($updated->failed_step)
+        ->toBeNull();
+});
+
+it('records scope-only failure, restores the old scope, and refuses a conflicting domain retry', function (): void {
+    $route = route_domain_change_route(laravel: true, generated: true);
+    $cluster = Cluster::query()->create(['name' => 'membership-retry', 'state' => 'active', 'tld' => null]);
+    $router = Node::query()->create([
+        'name' => 'membership-retry-router',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.41',
+        'wireguard_ip' => '10.44.0.41',
+        'user' => 'orbit',
+    ]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'dev.test');
+    $this->projector->failures = [
+        'workload-caddy' => 1,
+        'rollback-caddy' => 1,
+    ];
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: true,
+        placement: $placement,
+    ))->toThrow(ResourceOperationException::class, 'Injected workload-caddy failure.');
+
+    expect($route->refresh()->node_id)
+        ->not->toBeNull()
+        ->and($route->cluster_id)
+        ->toBeNull()
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->failed_step)
+        ->toBe('workload-caddy')
+        ->and($route->replaced_by_route_id)
+        ->toBeNull();
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute(
+        $route,
+        'feature.acme.other.test',
+        allowGenerated: true,
+        placement: new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'other.test'),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.domain_change_conflict');
+    });
+
+    $this->projector->failures = [];
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: true,
+        placement: $placement,
+    );
+
+    expect($updated->id)
+        ->toBe($route->id)
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->failed_step)
         ->toBeNull();
 });
 
@@ -727,6 +1142,43 @@ it('refuses a conflicting publication request without changing recorded intent',
 });
 
 /** @return array{Cluster, Route, Node} */
+function bind_cluster_router_replacement_projection(): FakeClusterRouterReplacementProjector
+{
+    $projector = new FakeClusterRouterReplacementProjector;
+    app()->instance(ClusterRouterReplacementProjector::class, $projector);
+    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+    {
+        public function converge(Node $node, NodeRole $assignment): void {}
+
+        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    });
+
+    return $projector;
+}
+
+/**
+ * @return array{0: Cluster, 1: Route, 2: Node, 3: Node, 4: Node}
+ */
+function cluster_router_replacement_route(): array
+{
+    [$cluster, $route, $member] = cluster_tld_generated_route();
+    $current = $cluster->routerAssignment()->sole()->node;
+    $replacement = Node::query()->create([
+        'name' => 'cluster-router-next',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.82',
+        'wireguard_ip' => '10.44.0.82',
+        'user' => 'orbit',
+    ]);
+
+    return [$cluster, $route, $member, $current, $replacement];
+}
+
 function cluster_tld_generated_route(): array
 {
     $cluster = Cluster::query()->create([
