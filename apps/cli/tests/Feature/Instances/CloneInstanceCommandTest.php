@@ -14,7 +14,11 @@ use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
+require_once __DIR__.'/../../Support/InstanceSourceOutput.php';
+
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=400');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-clone-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -27,6 +31,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -155,21 +160,21 @@ describe('instance:clone output', function (): void {
     it('reports the target, configured branch, actual preview, and absent first release', function (): void {
         MockClient::global(clone_cli_responses());
 
-        $this
-            ->artisan('instance:clone', [
-                'candidate' => '11',
-                'node' => '7',
-                'name' => 'production',
-                '--preview-name' => 'shop.com',
-            ])
-            ->expectsOutput('Production AppInstance [production] cloned.')
-            ->expectsOutput('Target ID: 29')
-            ->expectsOutput('Configured branch: release')
-            ->expectsOutput('Preview domain: shop.com.prod.orbit')
-            ->expectsOutput('Selected release: -')
-            ->expectsOutput('Clone request ID: '.clone_cli_request_id())
-            ->expectsOutput('Release request ID: '.clone_cli_release_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:clone', [
+            'candidate' => '11',
+            'node' => '7',
+            'name' => 'production',
+            '--preview-name' => 'shop.com',
+        ]))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'App instance: production',
+            'Target ID 29',
+            'Configured branch release',
+            'Preview domain shop.com.prod.orbit',
+            'Selected release —',
+            'Clone request ID '.clone_cli_request_id(),
+            'Release request ID '.clone_cli_release_request_id(),
+        );
     });
 
     it('renders a deterministic JSON result without prompting', function (): void {
@@ -368,3 +373,24 @@ function clone_cli_release_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a845';
 }
+
+it('reports the created clone when the following release lookup fails', function (bool $json): void {
+    $responses = clone_cli_responses();
+    $responses[ListAppInstanceReleasesRequest::class] = MockResponse::make([
+        'error' => ['code' => 'deployment.releases_unavailable', 'message' => 'Releases are unavailable.'],
+    ], 503, ['X-Orbit-Request-Id' => clone_cli_release_request_id()]);
+    $mock = MockClient::global($responses);
+    expect(Artisan::call('instance:clone', [
+        'candidate' => '11', 'node' => '7', 'name' => 'production', '--preview-name' => 'shop.com', '--json' => $json,
+    ]))->toBe(1);
+    $output = Artisan::output();
+    expect($mock->getRecordedResponses())->toHaveCount(2);
+    if ($json) {
+        expect(trim($output))->toBe(clone_cli_error('deployment.releases_unavailable', 'Releases are unavailable.', clone_cli_release_request_id()));
+    } else {
+        expect(instance_source_text($output))->toContain(
+            'App instance [production] (#29) was cloned; the selected release could not be read.',
+            'Clone request ID: '.clone_cli_request_id(), 'Releases are unavailable.',
+        )->not->toContain('App instance cloned.');
+    }
+})->with([false, true]);

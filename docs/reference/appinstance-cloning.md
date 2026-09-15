@@ -43,7 +43,7 @@ orbit instance:clone CANDIDATE NODE NAME \
   [--sqlite-source-path=PATH]
 ```
 
-Use unambiguous candidate and Node identifiers in noninteractive and `--json` calls. The command sends typed requests through the PHP software development kit (SDK) and does not open a local or remote shell. Its result identifies the target App instance ID, configured branch, actual preview domain, and current selected release. A new target has no selected release.
+Use unambiguous candidate and Node identifiers in noninteractive and `--json` calls. The command sends typed requests through the PHP software development kit (SDK) and does not open a local or remote shell. Its result identifies the target App instance ID, configured branch, actual preview domain, and current selected release. A new target has no selected release. Human output shows separate clone and release-lookup progress, then the target details. If the release lookup fails after cloning, the command reports the created target and failed lookup; it does not claim rollback.
 
 The candidate supplies committed source evidence, stored environment values, and an optional SQLite snapshot. The candidate's App supplies the production Process and Schedule definitions. Cloning copies no candidate-specific Process or Schedule override and starts no copied runtime.
 

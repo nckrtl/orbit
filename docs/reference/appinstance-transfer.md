@@ -16,7 +16,7 @@ An authorized client sends one App instance selector and the destination Node to
 
 The request accepts no destination path, Cluster, Route, Process, or extra persistent-data selector. The Gateway refuses malformed JSON, duplicate members, unknown members, and invalid values before it changes stored or remote state.
 
-The caller needs directed access to both the source Node and the destination Node. `--json` confirms the transfer and disables prompts. Interactive CLI calls prompt once unless `--force` is present.
+The caller needs directed access to both the source Node and the destination Node. Interactive CLI calls require a default-No confirmation naming the source, destination, downtime and old-placement deletion, unless `--force` supplies explicit consent. JSON and noninteractive calls require `--force`; `--json` only selects machine output and disables prompts. Missing consent returns `instance.confirmation_required` before mutation.
 
 ## Check eligibility
 

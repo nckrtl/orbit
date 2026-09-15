@@ -612,7 +612,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'instance:deploy-step:destroy' => [['instance', 'name'], ['json' => false]],
+        'instance:deploy-step:destroy' => [['instance', 'name'], ['yes' => false, 'json' => false]],
         'instance:deploy-step:list' => [['instance'], ['json' => false]],
         'instance:deploy-step:update' => [
             ['instance', 'name'],
@@ -625,7 +625,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'instance:destroy' => [['instance'], ['force' => false, 'json' => false]],
+        'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
         'instance:register' => [
             [],
@@ -639,6 +639,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'name' => null,
                 'root' => null,
                 'domain' => null,
+                'yes' => false,
                 'json' => false,
             ],
         ],

@@ -7,6 +7,8 @@ description: "How a production App instance stores deploy steps, separates relea
 
 This page tells an operator how a production App instance stores named deploy steps and changes its deployment branch. It describes how that App instance separates replaceable code from persistent environment configuration and optional SQLite data. It covers deployment of the recorded branch and rollback of retained code. Cloning produces each production App instance, and the first deployment produces the release layout. [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) owns the production release and serving-layout boundary. [ADR 0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) owns deploy-step records and the branch update.
 
+Removing a deploy step requires consent. The prompt names the App instance and step and defaults to No; `--yes` confirms without prompting. JSON and noninteractive calls require `--yes`. Read commands show complete tables with explicit empty results; create and update commands show the recorded step details.
+
 ## Read the production home
 
 The Gateway prepares each new production home with these paths before it publishes serving state.

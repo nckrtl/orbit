@@ -12,6 +12,8 @@ use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 
 final class CreateInstanceCommand extends GatewayCommand
 {
+    use InstanceOutput;
+
     #[\Override]
     protected $signature = 'instance:create
         {app : Numeric app ID}
@@ -59,7 +61,7 @@ HELP;
             return self::FAILURE;
         }
 
-        $instance = $this->send(
+        $instance = $this->sendWithProgress(
             $connector,
             new CreateAppInstanceRequest(
                 appId: $appId,
@@ -71,6 +73,7 @@ HELP;
                 recoverSourceProfile: $this->option('recover-source-profile') === true ? true : null,
             ),
             AppInstanceResponse::class,
+            ['Create App instance', 'Creating App instance', 'Created App instance'],
         );
 
         if (! $instance instanceof AppInstanceResponse) {
@@ -83,21 +86,7 @@ HELP;
             return self::SUCCESS;
         }
 
-        $this->info("Instance [{$instance->name}] is {$instance->status}.");
-        $this->line("Source layout: {$instance->sourceLayout}");
-        if ($instance->productionUser !== null) {
-            $this->line("Production user: {$instance->productionUser}");
-            $this->line("Production home: {$instance->productionHome}");
-        }
-        $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
-        $this->line('Selected branch: '.($instance->selectedBranch ?? '-'));
-        $this->line('Branch override: '.($instance->branchOverride ?? '-'));
-        $this->line('Migration required: '.($instance->migrationRequired ? 'yes' : 'no'));
-        if ($instance->url !== null) {
-            $this->line('Route domain: '.($instance->domain ?? '-'));
-            $this->line("URL: {$instance->url}");
-        }
-        $this->line("Request ID: {$instance->requestId}");
+        $this->writeInstanceDetails($instance);
 
         return self::SUCCESS;
     }

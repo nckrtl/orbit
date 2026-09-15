@@ -52,7 +52,9 @@ During an upgrade, the Gateway checks every existing App before it makes reposit
 
 Registration finds the App from the checkout's verified Git origin. It matches the repository identity across URL formats. Conflicting App or source details stop registration before any changes.
 
-When no App owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its App instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request. Non-interactive registration, including every `--json` call, refuses when a required value remains unresolved and sends no request. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
+When no App owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its App instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request.
+
+Ownership transfer requires a default-No confirmation naming the source, or explicit `--yes`. Non-interactive registration, including every `--json` call, requires `--yes` and refuses when a required value remains unresolved. These refusals send no mutation request. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
 
 Registration can infer these App values from unambiguous source evidence.
 

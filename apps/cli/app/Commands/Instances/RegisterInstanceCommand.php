@@ -10,6 +10,14 @@ use App\Services\GatewayConnectorFactory;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
 use App\Services\Git\GitRepositoryOriginPolicy;
+use App\Support\Console\ConsoleInterrupted;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
+use App\Support\Console\PromptAborted;
+use App\Support\Console\TerminalText;
+use App\Support\GatewayFailureRenderer;
+use Laravel\Prompts\ConfirmPrompt;
+use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRegistrationResponse;
 
@@ -26,6 +34,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--name= : Optional non-default AppInstance name}
         {--root= : Confirmed App root or existing-App root override}
         {--domain= : Optional explicit Route domain}
+        {--yes : Confirm source ownership transfer without prompting}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -38,7 +47,12 @@ final class RegisterInstanceCommand extends GatewayCommand
     ): int {
         $workingDirectory = getcwd();
         $requestedPath = $this->stringOption('path') ?? ($workingDirectory === false ? '' : $workingDirectory);
-        $facts = $git->inspect($requestedPath);
+        $inspection = $this->progressDisplay('Inspect source');
+        $inspection->admit('inspect', 'Inspect source', 'Inspecting source', 'Inspected source');
+        $facts = $inspection->during('inspect', fn (): ?GitRegistrationFacts => $git->inspect($requestedPath));
+        $validSource = $facts instanceof GitRegistrationFacts && GitRepositoryOriginPolicy::isSafe($facts->repositoryUrl);
+        $inspection->complete('inspect', $validSource ? ProgressState::Success : ProgressState::Failure);
+        $inspection->finish($validSource ? 'Source inspected.' : 'Source inspection failed.');
 
         if (! $facts instanceof GitRegistrationFacts) {
             return $this->renderGatewayFailure(
@@ -54,9 +68,17 @@ final class RegisterInstanceCommand extends GatewayCommand
             );
         }
 
-        $values = $this->confirmedValues($facts);
+        try {
+            $values = $this->confirmedValues($facts);
+        } catch (PromptAborted|ConsoleInterrupted) {
+            return $this->renderGatewayFailure('instance.registration_cancelled', 'Registration was cancelled.');
+        }
 
         if ($values === null) {
+            return self::FAILURE;
+        }
+
+        if (! $this->confirmOwnership($facts)) {
             return self::FAILURE;
         }
 
@@ -66,7 +88,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new RegisterAppInstanceRequest(
                 sourcePath: $facts->path,
@@ -80,6 +102,7 @@ final class RegisterInstanceCommand extends GatewayCommand
                 domain: $this->stringOption('domain'),
             ),
             AppInstanceRegistrationResponse::class,
+            ['Register source', 'Registering source', 'Registered source'],
         );
 
         if (! $response instanceof AppInstanceRegistrationResponse) {
@@ -93,16 +116,19 @@ final class RegisterInstanceCommand extends GatewayCommand
         }
 
         $instance = $response->appInstance;
-        $this->info("Instance [{$instance->name}] is {$instance->status}.");
-        $this->line("App: {$response->app->slug} (#{$response->app->id})");
-        $this->line("Source layout: {$instance->sourceLayout}");
-        $this->line("Managed path: {$instance->checkoutPath}");
-        $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
-        $this->line('Git state: '.($instance->detached ? 'detached' : $instance->selectedBranch ?? '-'));
-        $this->line('Commit: '.($instance->startingCommit ?? '-'));
-        $this->line('Route domain: '.($instance->domain ?? '-'));
-        $this->line("Registered sources: {$response->completedCount}/{$response->sourceCount}");
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+            'ID' => $instance->id,
+            'Status' => $instance->status,
+            'App' => "{$response->app->slug} (#{$response->app->id})",
+            'Source layout' => $instance->sourceLayout,
+            'Managed path' => $instance->checkoutPath,
+            'Effective root' => $instance->effectiveRoot,
+            'Git state' => $instance->detached ? 'detached' : $instance->selectedBranch,
+            'Commit' => $instance->startingCommit,
+            'Route domain' => $instance->domain,
+            'Registered sources' => "{$response->completedCount}/{$response->sourceCount}",
+            'Request ID' => $response->requestId,
+        ]));
 
         return self::SUCCESS;
     }
@@ -125,8 +151,20 @@ final class RegisterInstanceCommand extends GatewayCommand
 
         $selectedApp = is_int($appIdValue);
         $appValues = $selectedApp ? $this->explicitAppValues() : $this->inferredAppValues();
+        $errors = [];
+        if ($appValues['branch'] !== null && self::branchError($appValues['branch']) !== null) {
+            $errors['default_branch'] = ['The default branch is not a valid Git branch name.'];
+        }
+        if ($appValues['root'] !== null && self::rootError($appValues['root']) !== null) {
+            $errors['root'] = ['The root must be a normalized relative web path.'];
+        }
+        if ($errors !== []) {
+            GatewayFailureRenderer::write($this, 'validation.failed', 'The request data is invalid.', details: $errors);
+
+            return null;
+        }
         $name = $this->stringOption('app-name');
-        $nonInteractive = $this->option('json') === true || ! $this->input->isInteractive();
+        $nonInteractive = ! $this->consoleMode()->mayPrompt;
 
         if ($nonInteractive) {
             if (
@@ -174,19 +212,26 @@ final class RegisterInstanceCommand extends GatewayCommand
         $root = $appValues['root'] ?? $facts->root;
         $selectedApp = $appId !== null;
 
-        $this->line("Source: {$facts->path}");
-        $this->line("Repository: {$facts->repositoryUrl}");
-        $this->line('App slug: '.$slug);
-        $this->line('Default branch: '.($branch ?? $facts->defaultBranch ?? 'unresolved'));
-        $this->line('Root: '.($root ?? $facts->root ?? 'unresolved'));
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Source: '.$facts->path, [
+            'Repository' => $facts->repositoryUrl,
+            'App slug' => $slug,
+            'Default branch' => $branch ?? $facts->defaultBranch ?? 'unresolved',
+            'Web root' => $root ?? $facts->root ?? 'unresolved',
+        ]));
         if (! $selectedApp && $branch === null) {
-            $branchAnswer = $this->ask('Default branch');
+
+            $branchAnswer = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
+                'Default branch', required: true, validate: self::branchError(...),
+            ));
             $branch = is_string($branchAnswer) ? $branchAnswer : null;
             $appValues['branch'] = $branch;
         }
 
         if (! $selectedApp && $root === null) {
-            $rootAnswer = $this->ask('Application root');
+
+            $rootAnswer = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
+                'Web root', required: true, validate: self::rootError(...),
+            ));
             $root = is_string($rootAnswer) ? $rootAnswer : null;
             $appValues['root'] = $root;
         }
@@ -200,12 +245,6 @@ final class RegisterInstanceCommand extends GatewayCommand
             return null;
         }
 
-        if (! $this->confirm('Transfer this source to Orbit ownership?', true)) {
-            $this->renderGatewayFailure('instance.registration_cancelled', 'Registration was cancelled.');
-
-            return null;
-        }
-
         return [
             'appId' => $appId,
             'appName' => $name,
@@ -213,6 +252,51 @@ final class RegisterInstanceCommand extends GatewayCommand
             'defaultBranch' => $appValues['branch'],
             'root' => $appValues['root'],
         ];
+    }
+
+    private function confirmOwnership(GitRegistrationFacts $facts): bool
+    {
+        if ($this->option('yes') === true) {
+            return true;
+        }
+        if (! $this->consoleMode()->mayPrompt) {
+            $this->renderGatewayFailure('input.confirmation_required', 'Supply --yes to transfer this source to Orbit ownership.');
+
+            return false;
+        }
+        $scope = $this->option('include-worktrees') === true ? ' and all linked worktrees' : '';
+        try {
+            if ($this->commandPrompts()->run(fn (): ConfirmPrompt => new ConfirmPrompt(
+                TerminalText::safe("Transfer source [{$facts->path}]{$scope} to Orbit ownership, allowing relocation and later removal?"),
+                default: false,
+            )) === true) {
+                return true;
+            }
+        } catch (PromptAborted|ConsoleInterrupted) {
+            // Registration keeps its existing cancellation code.
+        }
+        $this->renderGatewayFailure('instance.registration_cancelled', 'Registration was cancelled.');
+
+        return false;
+    }
+
+    private static function branchError(string $branch): ?string
+    {
+        $invalid = $branch === '' || strlen($branch) > 255 || $branch === 'HEAD' || str_starts_with($branch, '-')
+            || str_contains($branch, '..') || str_contains($branch, '@{') || str_ends_with($branch, '.')
+            || preg_match('//u', $branch) !== 1
+            || preg_match('/[\\x00-\\x20\\x7F~^:?*\\[\\\\\\\\]/', $branch) === 1
+            || ! array_all(explode('/', $branch), static fn (string $part): bool => $part !== '' && ! str_starts_with($part, '.') && ! str_ends_with($part, '.lock'));
+
+        return $invalid ? 'Enter a valid Git branch name.' : null;
+    }
+
+    private static function rootError(string $root): ?string
+    {
+        $valid = $root !== '' && strlen($root) <= 255 && array_all(explode('/', $root),
+            static fn (string $part): bool => $part !== '' && $part !== '.' && $part !== '..' && preg_match('/\\A[A-Za-z0-9._-]+\\z/D', $part) === 1);
+
+        return $valid ? null : 'Enter a normalized relative web path.';
     }
 
     /** @return array{slug: ?string, branch: ?string, root: ?string} */

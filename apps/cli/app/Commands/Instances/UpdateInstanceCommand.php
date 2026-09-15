@@ -7,6 +7,7 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 
@@ -44,10 +45,11 @@ final class UpdateInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->send(
+        $instance = $this->sendWithProgress(
             $connector,
             new UpdateAppInstanceRequest($instanceId, $branch),
             AppInstanceResponse::class,
+            ['Update App instance', 'Updating App instance', 'Updated App instance'],
         );
 
         if (! $instance instanceof AppInstanceResponse) {
@@ -60,9 +62,12 @@ final class UpdateInstanceCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("{$instance->name} (#{$instance->id}): {$instance->status}");
-        $this->line('Selected branch: '.($instance->selectedBranch ?? '-'));
-        $this->line('Request ID: '.$instance->requestId);
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+            'ID' => $instance->id,
+            'Status' => $instance->status,
+            'Selected branch' => $instance->selectedBranch,
+            'Request ID' => $instance->requestId,
+        ]));
 
         return self::SUCCESS;
     }

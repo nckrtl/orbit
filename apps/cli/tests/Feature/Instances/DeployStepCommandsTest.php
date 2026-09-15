@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
@@ -13,7 +14,11 @@ use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
+require_once __DIR__.'/../../Support/InstanceSourceOutput.php';
+
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=400');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-deploy-steps-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -26,6 +31,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -72,13 +78,12 @@ it('lists deploy steps in the stored order', function (): void {
         ]),
     ]);
 
-    $this
-        ->artisan('instance:deploy-step:list', ['instance' => '17'])
-        ->expectsOutput('- Name: "migrate"')
-        ->expectsOutput('  Phase: before_activation')
-        ->expectsOutput('- Name: "optimize"')
-        ->expectsOutput('  Phase: after_activation')
-        ->assertExitCode(0);
+    expect(Artisan::call('instance:deploy-step:list', ['instance' => '17']))->toBe(0);
+    expect(instance_source_text(Artisan::output()))->toContain(
+        'NAME PHASE COMMAND TIMEOUT (SECONDS)',
+        'migrate before_activation php artisan migrate --force 300',
+        'optimize after_activation php artisan optimize 45',
+    );
 });
 
 it('updates and destroys a deploy step by name', function (): void {
@@ -104,7 +109,7 @@ it('updates and destroys a deploy step by name', function (): void {
         ]);
 
     $this
-        ->artisan('instance:deploy-step:destroy', [
+        ->artisan('instance:deploy-step:destroy', ['--yes' => true,
             'instance' => '17',
             'name' => 'migrate',
             '--json' => true,

@@ -7,8 +7,14 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
+use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
 final class TransferInstanceCommand extends GatewayCommand
 {
@@ -30,7 +36,7 @@ Transfer moves one active development AppInstance to a distinct active app-dev N
 
 Orbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.
 
-Use --name when the destination path or generated domain must change. --json confirms the transfer and disables prompts.
+Use --name when the destination path or generated domain must change. --json disables prompts and requires --force for transfer consent.
 HELP;
 
     public function handle(
@@ -49,17 +55,32 @@ HELP;
             return self::FAILURE;
         }
 
-        if (! $this->confirmed()) {
-            return self::FAILURE;
-        }
-
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;
         }
 
-        $instance = $this->send(
+        if ($this->option('force') !== true) {
+            $source = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
+                ['Resolve App instance', 'Loading App instance', 'Loaded App instance']);
+            if (! $source instanceof AppInstanceResponse) {
+                return self::FAILURE;
+            }
+            $destination = $this->sendWithProgress($connector, new ShowNodeRequest($nodeId), NodeResponse::class,
+                ['Resolve destination Node', 'Loading destination Node', 'Loaded destination Node']);
+            if (! $destination instanceof NodeResponse || ! $this->confirmAction(
+                "Transfer App instance [{$source->name}] (#{$source->id}) from Node #{$source->nodeId} to Node [{$destination->name}] (#{$destination->id}) with downtime and deletion of the old placement?",
+                'App instance transfer cancelled.',
+                option: 'force',
+                requiredCode: 'instance.confirmation_required',
+                requiredMessage: 'Use --force to confirm AppInstance transfer downtime and old-placement deletion.',
+            )) {
+                return self::FAILURE;
+            }
+        }
+
+        $instance = $this->sendWithProgress(
             $connector,
             new TransferAppInstanceRequest(
                 instanceId: $instanceId,
@@ -68,6 +89,14 @@ HELP;
                 sqliteSourcePath: $this->stringOption('sqlite-source-path'),
             ),
             AppInstanceResponse::class,
+            ['Transfer App instance', 'Transferring App instance', 'Transferred App instance'],
+            static function (object $response): ProgressState {
+                if (! $response instanceof AppInstanceResponse || $response->transfer === null || $response->domain === null || $response->domain === '') {
+                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response instanceof AppInstanceResponse ? $response->requestId : null);
+                }
+
+                return $response->transfer->cleanupCompleted ? ProgressState::Success : ProgressState::Warning;
+            },
         );
 
         if (! $instance instanceof AppInstanceResponse) {
@@ -96,35 +125,15 @@ HELP;
             return self::SUCCESS;
         }
 
-        $this->info("AppInstance [{$instance->name}] transferred.");
-        $this->line("Instance ID: {$instance->id}");
-        $this->line("Destination Node: {$instance->nodeId}");
-        $this->line("Destination path: {$instance->checkoutPath}");
-        $this->line("Authoritative domain: {$instance->domain}");
-        $this->line('Cleanup: '.($instance->transfer->cleanupCompleted ? 'completed' : 'incomplete'));
-        $this->line("Request ID: {$instance->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+            'ID' => $instance->id,
+            'Destination Node' => $instance->nodeId,
+            'Destination path' => $instance->checkoutPath,
+            'Authoritative domain' => $instance->domain,
+            'Cleanup' => $instance->transfer->cleanupCompleted ? 'completed' : 'incomplete',
+            'Request ID' => $instance->requestId,
+        ]));
 
         return self::SUCCESS;
-    }
-
-    private function confirmed(): bool
-    {
-        if ($this->option('force') === true || $this->option('json') === true) {
-            return true;
-        }
-
-        if ($this->input->isInteractive()) {
-            return $this->confirm(
-                'Transfer stops the source AppInstance, then deletes the old placement. Continue?',
-                false,
-            );
-        }
-
-        $this->renderGatewayFailure(
-            'instance.confirmation_required',
-            'Use --force to confirm AppInstance transfer downtime and old-placement deletion.',
-        );
-
-        return false;
     }
 }
