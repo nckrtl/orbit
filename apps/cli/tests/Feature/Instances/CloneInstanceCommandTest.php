@@ -343,6 +343,7 @@ function clone_cli_payload(): array
         'domain' => 'shop.com.prod.orbit',
         'url' => 'https://shop.com.prod.orbit',
         'removal' => null,
+        'transfer' => null,
         'deploy_steps' => [],
     ];
 }
