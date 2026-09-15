@@ -98,6 +98,11 @@ final readonly class RemoteAppDevCertificateManager
         $this->remove($router, "route-{$route->id}-router");
     }
 
+    public function removeRouteRouterHostnameChange(Route $route, Node $router): void
+    {
+        $this->remove($router, "route-{$route->id}-router-hostname-change");
+    }
+
     public function removeRouteIngress(Route $route, Node $ingress): void
     {
         $this->remove($ingress, "route-{$route->id}-ingress");

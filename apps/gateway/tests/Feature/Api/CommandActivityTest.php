@@ -23,6 +23,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerException;
@@ -44,6 +45,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Str;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
 
@@ -402,6 +404,7 @@ it('records a metrics disable request as metrics:disable', function (): void {
 
 it('records renamed App Cluster and Route lifecycle command names', function (): void {
     $this->fakeRepositoryBranches();
+    app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
     $operator = Node::query()->create([
         'name' => 'lifecycle-operator',
         'status' => LifecycleStatus::Active,

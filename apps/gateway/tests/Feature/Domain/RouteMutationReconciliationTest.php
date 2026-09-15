@@ -33,6 +33,7 @@ use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -44,6 +45,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
@@ -166,6 +168,31 @@ it('retains reconciliation refusals for active Route changes without association
         });
         expect($route->fresh(['targets'])->toArray())->toBe($before);
     }
+});
+
+it('removes a fully reconciled untargeted Route without route.reconciliation_required', function (): void {
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'active.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $route->targets()->delete();
+    $removal = new FakeRouteRemovalProjector;
+    app()->instance(RouteRemovalProjector::class, $removal);
+
+    $removed = app(RemoveRouteAction::class)->execute($route);
+
+    expect($removed->id)
+        ->toBe($route->id)
+        ->and(Route::query()->whereKey($route->id)->exists())
+        ->toBeFalse()
+        ->and($removal->events)
+        ->toBe(['dns', 'certificates', 'caddy', 'firewall']);
 });
 
 it('retains hostname reconciliation refusals for generated Routes before projection', function (): void {

@@ -287,6 +287,14 @@ final readonly class ClusterRouterDnsSelection
                 RouteStatus::Pending->value,
                 RouteStatus::Failed->value,
             ])
+            ->where(static function ($query): void {
+                $query
+                    ->whereHas('targets')
+                    ->orWhereNotIn('status', [
+                        RouteStatus::Retiring->value,
+                        RouteStatus::Failed->value,
+                    ]);
+            })
             ->orderBy('id')
             ->get();
 
