@@ -17,7 +17,7 @@
         "laravel/pao": "^1.1",
         "laravel/pint": "^1.32",
         "mockery/mockery": "^1.6.12",
-        "pestphp/pest": "^5.1",
+        "nckrtl/pestphp-monorepo": "^1.0",
         "phpunit/phpunit": "^13.0",
         "rector/rector": "^2.3",
         "spatie/guidelines-skills": "^1.1"
@@ -44,7 +44,6 @@
         }
     ],
     "scripts": {
-        "pre-autoload-dump": "@php ../../bin/pest-setup",
         "test:affected": "vendor/bin/pest --parallel --processes=2 --tia --compact",
         "analyse": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check": [
