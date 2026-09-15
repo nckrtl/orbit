@@ -12,6 +12,8 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -336,6 +338,116 @@ it('records cleanup failure when deleting the retiring Route fails', function ()
         ->toBe(RouteStatus::Retiring);
 });
 
+it('prepares public Ingress after Router Caddy and activates the handler only after cutover', function (): void {
+    $route = route_domain_change_public_route();
+
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test', RoutePublication::Public);
+
+    expect($this->events->values)
+        ->toBe([
+            'owner',
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'ingress-certificate',
+            'ingress-caddy',
+            'public-edge-verified',
+            'environment:candidate',
+            'dns-publication',
+            'public-activated',
+            'ingress-firewall',
+            'cleanup',
+            'environment:candidate',
+            'workload-verify',
+        ])
+        ->and($updated->publication)
+        ->toBe(RoutePublication::Public)
+        ->and($updated->public_publication)
+        ->toBe(RoutePublicPublication::Active)
+        ->and($updated->id)
+        ->not->toBe($route->id);
+});
+
+it('rolls back the public edge before cutover and keeps the handler inactive', function (string $failure): void {
+    $route = route_domain_change_public_route();
+    $this->projector->failures[$failure] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test', RoutePublication::Public))
+        ->toThrow(ResourceOperationException::class, "Injected {$failure} failure.");
+
+    expect($route->refresh()->domain)
+        ->toBe('old.example.test')
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->public_publication)
+        ->toBe(RoutePublicPublication::Inactive)
+        ->and($route->replaced_by_route_id)
+        ->toBeNull()
+        ->and($this->events->values)
+        ->toContain('rollback-public-edge')
+        ->and(Route::query()->where('domain', 'next.example.test')->exists())
+        ->toBeFalse();
+})->with([
+    'ingress certificate' => ['ingress-certificate'],
+    'ingress Caddy' => ['ingress-caddy'],
+    'public edge' => ['public-edge-verified'],
+]);
+
+it('keeps an unverified public handler inactive when activation fails after cutover and recovers forward', function (): void {
+    $route = route_domain_change_public_route();
+    $this->projector->failures['public-activated'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test', RoutePublication::Public))
+        ->toThrow(ResourceOperationException::class, 'Injected public-activated failure.');
+
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
+
+    expect($replacement->status)
+        ->toBe(RouteStatus::Activating)
+        ->and($replacement->public_publication)
+        ->toBe(RoutePublicPublication::Inactive)
+        ->and($this->events->values)
+        ->toContain('rollback-public-edge')
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Retiring);
+
+    $this->projector->failures = [];
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test', RoutePublication::Public);
+
+    expect($updated->id)
+        ->toBe($replacement->id)
+        ->and($updated->public_publication)
+        ->toBe(RoutePublicPublication::Active)
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and(Route::query()->find($route->id))
+        ->toBeNull();
+});
+
+it('refuses a conflicting publication request without changing recorded intent', function (): void {
+    $route = route_domain_change_public_route();
+    $this->projector->failures = [
+        'ingress-certificate' => 1,
+        'rollback-public-edge' => 1,
+    ];
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test', RoutePublication::Public))
+        ->toThrow(ResourceOperationException::class);
+
+    $replacement = Route::query()->where('domain', 'next.example.test')->sole();
+    $before = $replacement->fresh()->getAttributes();
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test', RoutePublication::Private))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.domain_change_conflict');
+        });
+
+    expect($replacement->fresh()->getAttributes())->toBe($before);
+});
+
 function route_domain_change_route(bool $laravel, string $environment = 'development'): Route
 {
     $app = OrbitApp::query()->create([
@@ -441,6 +553,57 @@ function route_domain_change_shared_production_route(): Route
     return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster']);
 }
 
+function route_domain_change_public_route(): Route
+{
+    $app = OrbitApp::query()->create([
+        'name' => 'Public',
+        'slug' => 'public',
+        'repository_url' => 'https://example.test/public.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $cluster = Cluster::query()->create(['name' => 'public', 'state' => 'active']);
+    $node = Node::query()->create([
+        'name' => 'public-prod',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.81',
+        'wireguard_ip' => '10.44.0.81',
+        'lan_ip' => '10.10.0.81',
+        'user' => 'orbit',
+    ]);
+    $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => '/var/www/public/current',
+        'production_home' => '/var/www/public',
+        'production_user' => 'orbit-public',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'domain' => 'old.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+
+    return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster']);
+}
+
 final class RouteDomainChangeEnvironmentFake implements AppInstanceRouteEnvironmentSynchronizer
 {
     /** @var array<string, int> */
@@ -512,6 +675,36 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
     public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('router-caddy');
+    }
+
+    public function prepareIngressCertificate(Route $candidate): void
+    {
+        $this->event('ingress-certificate');
+    }
+
+    public function stageIngressCaddy(Route $candidate): void
+    {
+        $this->event('ingress-caddy');
+    }
+
+    public function prepareIngressFirewall(Route $candidate): void
+    {
+        $this->event('ingress-firewall');
+    }
+
+    public function verifyPublicEdge(Route $candidate): void
+    {
+        $this->event('public-edge-verified');
+    }
+
+    public function activatePublicHandler(Route $candidate): void
+    {
+        $this->event('public-activated');
+    }
+
+    public function rollbackPublicEdge(Route $route): void
+    {
+        $this->event('rollback-public-edge');
     }
 
     public function publishDns(Route $current, Route $candidate): void

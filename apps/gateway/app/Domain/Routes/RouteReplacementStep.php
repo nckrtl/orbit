@@ -15,7 +15,12 @@ enum RouteReplacementStep: string
     case RouterCaddy = 'router-caddy';
     case LaravelUrl = 'laravel-url';
     case EnvironmentSynchronized = 'environment-synchronized';
+    case IngressCertificate = 'ingress-certificate';
+    case IngressCaddy = 'ingress-caddy';
+    case IngressFirewall = 'ingress-firewall';
+    case PublicEdgeVerified = 'public-edge-verified';
     case DnsPublished = 'dns-published';
     case DatabaseCutover = 'database-cutover';
+    case PublicActivated = 'public-activated';
     case Cleanup = 'cleanup';
 }

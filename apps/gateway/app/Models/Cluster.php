@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property ClusterState $state
  * @property-read Collection<int, Node> $nodes
  * @property-read NodeRole|null $routerAssignment
+ * @property-read NodeRole|null $ingressAssignment
  */
 final class Cluster extends Model
 {
@@ -47,6 +48,15 @@ final class Cluster extends Model
         return $this
             ->hasOne(NodeRole::class)
             ->where('role', 'router')
+            ->where('status', LifecycleStatus::Active);
+    }
+
+    /** @return HasOne<NodeRole, $this> */
+    public function ingressAssignment(): HasOne
+    {
+        return $this
+            ->hasOne(NodeRole::class)
+            ->where('role', 'ingress')
             ->where('status', LifecycleStatus::Active);
     }
 

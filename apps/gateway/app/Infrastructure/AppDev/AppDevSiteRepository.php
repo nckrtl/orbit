@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\PublicRouteEligibility;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
+use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
@@ -14,6 +18,11 @@ use Illuminate\Support\Collection;
 
 final readonly class AppDevSiteRepository
 {
+    public function __construct(
+        private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
+        private IngressSiteRepository $ingressSites = new IngressSiteRepository,
+    ) {}
+
     /** @return Collection<int, AppDevSite> */
     public function forNode(
         Node $node,
@@ -44,7 +53,12 @@ final readonly class AppDevSiteRepository
         $sites = collect();
 
         $routeQuery = Route::query()
-            ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->with([
+                'targets.appInstance.app',
+                'targets.appInstance.node',
+                'cluster.routerAssignment.node',
+                'cluster.ingressAssignment.node',
+            ])
             ->where(static function (Builder $query) use ($pendingRoute): void {
                 $query->whereIn('status', [
                     RouteStatus::Active->value,
@@ -84,6 +98,10 @@ final readonly class AppDevSiteRepository
                         ->orWhereHas(
                             'cluster.routerAssignment',
                             static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
+                        )
+                        ->orWhereHas(
+                            'cluster.ingressAssignment',
+                            static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
                         );
 
                     if (
@@ -116,21 +134,44 @@ final readonly class AppDevSiteRepository
                 )
                 ->values();
             $router = $route->cluster?->routerAssignment?->node;
+            $ingress = $route->cluster !== null
+                ? $this->eligibility->activeIngress($route->cluster)
+                : null;
+            $hasPublicIngress = $this->publishesIngress($route)
+                && $ingress instanceof Node;
+            $ingressSharesRouter = $hasPublicIngress && $router instanceof Node && $ingress->is($router);
             $hasRouterSite = $router instanceof Node
             && is_string($router->wireguard_ip)
             && $targets->isNotEmpty()
             && ! $targets->contains(
                 static fn (AppInstance $target): bool => $router->is($target->node),
-            );
+            )
+            && ! $ingressSharesRouter;
 
             foreach ($targets as $target) {
+                if ($hasPublicIngress && $ingress->is($target->node) && $ingressSharesRouter) {
+                    $sites->push($this->composedPublicSite($target, $route, $ingress));
+
+                    continue;
+                }
 
                 $sites->push($this->appInstanceSite($target, $route));
             }
 
             if ($hasRouterSite) {
-
                 $sites->push($this->routerSite(array_values($targets->all()), $route, $router));
+            }
+
+            if ($hasPublicIngress && ! $ingressSharesRouter) {
+                $sites->push($this->ingressSite($route, $ingress, $router));
+            }
+
+            if (
+                $hasPublicIngress
+                && $ingressSharesRouter
+                && ! $targets->contains(static fn (AppInstance $target): bool => $ingress->is($target->node))
+            ) {
+                $sites->push($this->publicRouterSite(array_values($targets->all()), $route, $ingress));
             }
 
             if (
@@ -265,6 +306,77 @@ final readonly class AppDevSiteRepository
             phpVersion: null,
             domain: $route->domain,
             unavailable: true,
+        );
+    }
+
+    private function publishesIngress(Route $route): bool
+    {
+        return $route->publication === RoutePublication::Public
+            && $route->public_publication === RoutePublicPublication::Active;
+    }
+
+    private function composedPublicSite(AppInstance $instance, Route $route, Node $ingress): AppDevSite
+    {
+        $site = $this->appInstanceSite($instance, $route);
+
+        return new AppDevSite(
+            nodeId: $ingress->id,
+            nodeAddress: $ingress->wireguard_ip ?? '',
+            scope: "route-{$route->id}-ingress",
+            checkoutPath: $site->checkoutPath,
+            documentRoot: $site->documentRoot,
+            phpVersion: $site->phpVersion,
+            domain: $route->domain,
+            environment: $site->environment,
+            productionUser: $site->productionUser,
+            productionHome: $site->productionHome,
+            appSlug: $site->appSlug,
+            certificateScope: "route-{$route->id}-ingress",
+            productionPhpSocket: $site->productionPhpSocket,
+            publicListener: true,
+            preserveForwardedIdentity: true,
+        );
+    }
+
+    /** @param list<AppInstance> $instances */
+    private function publicRouterSite(array $instances, Route $route, Node $ingress): AppDevSite
+    {
+        $router = $this->routerSite($instances, $route, $ingress);
+
+        return new AppDevSite(
+            nodeId: $ingress->id,
+            nodeAddress: $ingress->wireguard_ip ?? '',
+            scope: "route-{$route->id}-ingress",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: $route->domain,
+            upstreamAddresses: $router->proxyAddresses(),
+            certificateScope: "route-{$route->id}-ingress",
+            publicListener: true,
+            preserveForwardedIdentity: true,
+        );
+    }
+
+    private function ingressSite(Route $route, Node $ingress, ?Node $router): AppDevSite
+    {
+        $artifact = $this->ingressSites->forRoute($route);
+        $upstream = $router instanceof Node && ! $router->is($ingress)
+            ? [$artifact->routerUpstream]
+            : [];
+
+        return new AppDevSite(
+            nodeId: $ingress->id,
+            nodeAddress: $ingress->wireguard_ip ?? '',
+            scope: "route-{$route->id}-ingress",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: $route->domain,
+            upstreamAddresses: $upstream,
+            certificateScope: $artifact->certificateScope,
+            publicListener: true,
+            preserveForwardedIdentity: true,
         );
     }
 }

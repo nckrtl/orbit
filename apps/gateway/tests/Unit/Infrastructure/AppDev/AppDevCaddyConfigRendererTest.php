@@ -94,6 +94,34 @@ it('keeps two development sites isolated on the same loopback port', function ()
         ->not->toContain('reverse_proxy https://');
 });
 
+it('binds a public Ingress proxy without an https prefix and preserves forwarded identity', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        new AppDevSite(
+            nodeId: 3,
+            nodeAddress: '10.44.0.3',
+            scope: 'route-9-ingress',
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: 'shop.example.test',
+            upstreamAddresses: ['10.10.0.20'],
+            certificateScope: 'route-9-ingress',
+            publicListener: true,
+            preserveForwardedIdentity: true,
+        ),
+    ]));
+
+    expect($configuration)
+        ->toContain('shop.example.test {')
+        ->toContain('reverse_proxy https://10.10.0.20')
+        ->toContain('header_up Host shop.example.test')
+        ->toContain('header_up X-Forwarded-Proto https')
+        ->toContain('header_up X-Forwarded-For {remote_host}')
+        ->toContain('header_up X-Forwarded-Host shop.example.test')
+        ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('https://shop.example.test {');
+});
+
 it('does not attach the development-server handle to production, proxy, or unavailable sites', function (): void {
     $production = new AppDevSite(
         nodeId: 1,

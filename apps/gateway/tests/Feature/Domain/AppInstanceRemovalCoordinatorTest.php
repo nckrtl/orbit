@@ -27,6 +27,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
@@ -786,27 +787,51 @@ it('requires an identical force value when resuming accepted removal', function 
         ->toBeTrue();
 });
 
+it('closes a public Route handler before deleting its identity and leaves unrelated public Routes', function (): void {
+    $removed = orb181_coordinator_instance('production');
+    $removed->routes->sole()->update(['publication' => RoutePublication::Public]);
+    $survivor = orb181_coordinator_instance('production');
+    $survivor->routes->sole()->update([
+        'publication' => RoutePublication::Public,
+        'public_publication' => RoutePublicPublication::Active,
+    ]);
+
+    $this->orb181Coordinator->execute($removed, true);
+
+    expect(Route::query()->find($removed->routes->sole()->id))
+        ->toBeNull()
+        ->and($survivor->routes->sole()->refresh()->public_publication)
+        ->toBe(RoutePublicPublication::Active)
+        ->and($this->orb181Projector->calls)
+        ->toContain('remove-public-edge:'.$removed->id)
+        ->and(AppInstance::query()->whereKey($removed->id)->exists())
+        ->toBeFalse();
+});
+
 function orb181_coordinator_instance(
     string $environment = 'development',
     string $layout = AppInstanceSourceLayout::Checkout->value,
 ): AppInstance {
+    static $sequence = 0;
+    $sequence++;
+    $slug = "acme-{$sequence}";
     $app = OrbitApp::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'https://example.test/acme.git',
+        'name' => "Acme {$sequence}",
+        'slug' => $slug,
+        'repository_url' => "https://example.test/{$slug}.git",
         'default_branch' => 'main',
         'root' => 'public',
     ]);
     $cluster = $environment === 'production'
-        ? Cluster::query()->create(['name' => 'production', 'state' => 'active'])
+        ? Cluster::query()->create(['name' => "production-{$sequence}", 'state' => 'active'])
         : null;
     $node = Node::query()->create([
         'cluster_id' => $cluster?->id,
-        'name' => 'app-dev',
+        'name' => "app-dev-{$sequence}",
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.50',
-        'wireguard_ip' => '10.44.0.50',
+        'public_ssh_host' => '192.0.2.'.(50 + $sequence),
+        'wireguard_ip' => '10.44.0.'.(50 + $sequence),
     ]);
     $node->roles()->create([
         'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
@@ -818,7 +843,7 @@ function orb181_coordinator_instance(
         'name' => 'dev',
         'environment' => $environment,
         'source_layout' => $layout,
-        'checkout_path' => '/srv/orbit/apps/acme/dev',
+        'checkout_path' => "/srv/orbit/apps/{$slug}/dev",
         'branch' => 'dev',
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::SourceResolved,
@@ -828,7 +853,7 @@ function orb181_coordinator_instance(
         'node_id' => $environment === 'production' ? null : $node->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $environment === 'production' ? null : $node->id,
-        'domain' => 'dev.acme.test',
+        'domain' => "dev-{$sequence}.acme.test",
         'provenance' => $environment === 'production' ? RouteProvenance::Explicit : RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -1183,6 +1208,16 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
         }
 
         $route->targets()->where('app_instance_id', $member->app_instance_id)->delete();
+
+        if ($route->targets()->exists()) {
+            return 'retained';
+        }
+
+        if ($route->publication === RoutePublication::Public) {
+            $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+            $this->calls[] = "remove-public-edge:{$member->app_instance_id}";
+        }
+
         $route->delete();
 
         return 'deleted';

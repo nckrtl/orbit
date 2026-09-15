@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $domain
  * @property RouteProvenance $provenance
  * @property RoutePublication $publication
+ * @property RoutePublicPublication $public_publication
  * @property RouteStatus $status
  * @property string|null $failed_step
  * @property string|null $error_code
@@ -42,6 +44,7 @@ final class Route extends Model
     #[\Override]
     protected $attributes = [
         'status' => 'pending',
+        'public_publication' => 'inactive',
     ];
 
     /** @var list<string> */
@@ -54,6 +57,7 @@ final class Route extends Model
         'domain',
         'provenance',
         'publication',
+        'public_publication',
         'status',
         'failed_step',
         'error_code',
@@ -115,6 +119,7 @@ final class Route extends Model
         return [
             'provenance' => RouteProvenance::class,
             'publication' => RoutePublication::class,
+            'public_publication' => RoutePublicPublication::class,
             'status' => RouteStatus::class,
             'replacement_step' => RouteReplacementStep::class,
         ];

@@ -32,6 +32,11 @@ final readonly class RemoteAppDevCertificateManager
         $this->converge($router, "route-{$route->id}-router", $route->domain);
     }
 
+    public function convergeRouteIngress(Route $route, Node $ingress): void
+    {
+        $this->converge($ingress, "route-{$route->id}-ingress", $route->domain);
+    }
+
     public function convergeAppInstanceHostnameChange(AppInstance $appInstance, string $domain): void
     {
         $appInstance->loadMissing('node');
@@ -91,6 +96,11 @@ final readonly class RemoteAppDevCertificateManager
     public function removeRouteRouter(Route $route, Node $router): void
     {
         $this->remove($router, "route-{$route->id}-router");
+    }
+
+    public function removeRouteIngress(Route $route, Node $ingress): void
+    {
+        $this->remove($ingress, "route-{$route->id}-ingress");
     }
 
     public function removeHostnameChange(AppInstance $appInstance, Route $route): void

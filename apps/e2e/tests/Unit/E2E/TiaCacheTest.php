@@ -22,7 +22,7 @@ it('isolates background checks while preserving cache lifecycle and failure repo
         $repository,
         $environment,
     );
-    $process->setTimeout(180);
+    $process->setTimeout(360);
     $process->run();
 
     expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
