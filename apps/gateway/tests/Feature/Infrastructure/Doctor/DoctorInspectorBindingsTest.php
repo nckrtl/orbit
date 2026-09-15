@@ -6,7 +6,9 @@ use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\ProcessStateInspector;
+use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
@@ -14,7 +16,9 @@ use App\Domain\Tools\ToolInspector;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
+use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
@@ -32,6 +36,10 @@ it('resolves every read-only inspector through its domain contract', function ()
         ->toBeInstanceOf(NativeAppStateInspector::class)
         ->and(app(InstanceStateInspector::class))
         ->toBeInstanceOf(NativeInstanceStateInspector::class)
+        ->and(app(PublicRouteEdgeInspector::class))
+        ->toBeInstanceOf(NativePublicRouteEdgeInspector::class)
+        ->and(app(PrivateRouteProjectionInspector::class))
+        ->toBeInstanceOf(NativePrivateRouteProjectionInspector::class)
         ->and(app(ProcessStateInspector::class))
         ->toBeInstanceOf(NativeProcessStateInspector::class)
         ->and(app(ToolInspector::class))
