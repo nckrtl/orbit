@@ -35,8 +35,12 @@ final readonly class ConvergeRouteAction
         private DevelopmentProjectionOperationLock $owner,
     ) {}
 
-    public function execute(Route $route, string $domain, ?RoutePublication $publication = null): Route
-    {
+    public function execute(
+        Route $route,
+        string $domain,
+        ?RoutePublication $publication = null,
+        bool $allowGenerated = false,
+    ): Route {
         $domain = RouteDomain::validate($domain);
 
         /** @var list<int> $targetIds */
@@ -52,7 +56,13 @@ final readonly class ConvergeRouteAction
         return $this->environmentOperations->run(
             $targetIds,
             fn (): Route => $this->owner->run(
-                fn (): Route => $this->convergeOwned($route->id, $domain, $targetIds, $publication),
+                fn (): Route => $this->convergeOwned(
+                    $route->id,
+                    $domain,
+                    $targetIds,
+                    $publication,
+                    $allowGenerated,
+                ),
             ),
         );
     }
@@ -63,6 +73,7 @@ final readonly class ConvergeRouteAction
         string $domain,
         array $expectedTargetIds,
         ?RoutePublication $publication = null,
+        bool $allowGenerated = false,
     ): Route {
         $route = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
@@ -82,7 +93,13 @@ final readonly class ConvergeRouteAction
                     );
                 }
 
-                return $this->convergeOwned($current->id, $domain, $expectedTargetIds, $publication);
+                return $this->convergeOwned(
+                    $current->id,
+                    $domain,
+                    $expectedTargetIds,
+                    $publication,
+                    $allowGenerated,
+                );
             }
         }
 
@@ -109,7 +126,7 @@ final readonly class ConvergeRouteAction
                 return $this->cleanup(
                     $replacement,
                     $route,
-                    $this->eligibleTargets($route, allowRetiring: true),
+                    $this->eligibleTargets($route, allowRetiring: true, allowGenerated: $allowGenerated),
                 );
             }
         }
@@ -124,6 +141,7 @@ final readonly class ConvergeRouteAction
             $route,
             allowRetiring: $route->status === RouteStatus::Retiring,
             publication: $publication ?? $route->publication,
+            allowGenerated: $allowGenerated,
         );
         $replacement = $this->reserve($route, $domain, $publication);
 
@@ -336,6 +354,7 @@ final readonly class ConvergeRouteAction
         Route $route,
         bool $allowRetiring = false,
         ?RoutePublication $publication = null,
+        bool $allowGenerated = false,
     ): array {
         $targets = $route->targets
             ->map(static fn ($row) => $row->appInstance)
@@ -356,10 +375,17 @@ final readonly class ConvergeRouteAction
             || ($allowRetiring && $route->status === RouteStatus::Retiring);
 
         $effectivePublication = $publication ?? $route->publication;
+        $generatedTldChange = $allowGenerated
+            && $route->provenance === RouteProvenance::Generated
+            && $effectivePublication === RoutePublication::Private
+            && count($targets) === 1;
 
         if (
             ! $statusAllowed
-            || $route->provenance !== RouteProvenance::Explicit
+            || (
+                ! $generatedTldChange
+                && $route->provenance !== RouteProvenance::Explicit
+            )
             || ($effectivePublication === RoutePublication::Public && $environments !== ['production'])
             || array_diff($environments, ['development', 'production']) !== []
             || (count($targets) > 1 && $environments !== ['production'])

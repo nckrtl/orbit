@@ -195,6 +195,18 @@ Deploy the shared publication owner by stopping admission of new Gateway mutatio
 
 ## Change an existing Route
 
+### Change a Node TLD
+
+The Gateway reconciles every private Route whose current target Node or retained generation basis uses the Node before the Node TLD becomes authoritative. It inventories those Routes, validates the complete proposed domains, and refuses an invalid or occupied result before it changes the Node, a Route record, environment configuration, or traffic.
+
+A generated Route receives a replacement domain from its target name and the new effective TLD. A targetless generated Route follows the same retained generation basis. An explicit Route keeps its domain.
+
+The Gateway prepares and verifies workload and Router Caddy, Route-scoped certificates, firewall policy, and the detected Laravel URL against the candidate replacement before it publishes the new domain. It commits the Node TLD only after that publication. Development Laravel sources receive `APP_URL` in the environment file and cached configuration without Composer, Artisan, or application bootstrap. Production sources render stored configuration against the candidate Route. Making a stale application cache effective remains a separate application setup or deployment step.
+
+Failure before publication restores the previous Node TLD, Route records, infrastructure intent, and Laravel URL. Each preparation, publication, database, cleanup, or rollback failure records `failed_step` and `error_code` with durable completed-step evidence. Retry revalidates that evidence and resumes from the earliest unverified step. A conflicting Node or Route mutation is refused. After cutover, retry continues forward so two authoritative domains are never exposed for the same Route.
+
+Old projections are removed only after the replacement domain is authoritative.
+
 ### Change an explicit private domain
 
 The Gateway can change a development or production Route domain when the Route is active, explicit, and private. A shared production Route keeps its complete ordered target pool on one replacement. This is the operation that replaces a production clone's preview domain with its intended private domain.
@@ -217,7 +229,7 @@ A failure before cutover leaves the old Route authoritative. Successful cleanup 
 
 A failure after cutover keeps the replacement authoritative. Retry continues forward until the replacement is `active`, every old projection is removed, the retiring Route is deleted, and its domain becomes available.
 
-The reconciliation guard still returns `route.reconciliation_required` for generated Route domain changes that must go through replacement reservation, and for active Route target changes. A publication-only change on an active Route publishes or withdraws the public Ingress edge on that Route ID. The guard also refuses Node WireGuard, LAN, TLD, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation, deactivation, or TLD changes and Router replacement or clearing.
+The reconciliation guard still returns `route.reconciliation_required` for operator-requested generated Route domain changes and for active Route target changes. A publication-only change on an active Route publishes or withdraws the public Ingress edge on that Route ID. The guard also refuses Node WireGuard, LAN, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation, deactivation, or TLD changes and Router replacement or clearing. A Node TLD set, change, or clear is not this refusal; it reconciles the generated private Routes that depend on that Node.
 
 Deployment, code rollback, clone finalization, App instance removal, environment import, stored environment updates, environment synchronization, and a domain replacement share the target App instance's bounded operation owner. A competitor waits or returns `env.operation_busy` before mutation. The domain replacement also holds the shared private projection owner through its Caddy and DNS work. It does not change source, the selected production release, SQLite data, or local PHP tuning.
 
@@ -225,7 +237,7 @@ Route and App instance removal keep their coordinated removal contract. Setting 
 
 App instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted App instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its domain before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [App instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
 
-During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. Full reconciliation of an existing active Route is a separate contract.
+During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. A Node TLD change fully reconciles those generated private Routes. Other active Route, Cluster, and Router mutations keep the separate reconciliation refusal.
 
 ### Router transition ownership
 

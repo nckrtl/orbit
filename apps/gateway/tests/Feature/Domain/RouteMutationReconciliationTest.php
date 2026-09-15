@@ -22,6 +22,7 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -168,7 +169,7 @@ it('retains reconciliation refusals for active Route changes without association
     }
 });
 
-it('retains hostname reconciliation refusals for generated Routes before projection', function (): void {
+it('retains domain reconciliation refusals for generated Routes before projection', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
@@ -430,7 +431,7 @@ it('uses provisioning baseline overrides to select retained generated Routes', f
         ->toBe($this->node->id);
 });
 
-it('rejects a proposed hostname owned by an unaffected Route before any write', function (): void {
+it('rejects a proposed domain owned by an unaffected Route before any write', function (): void {
     $affected = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $unaffectedNode = reconciliation_node('unaffected-owner', 'owner.test');
     $unaffected = reconciliation_route(
@@ -565,7 +566,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
         $observed = [
             'node_tld' => $node->fresh()->tld,
             'node_status' => $node->fresh()->status,
-            'route_hostname' => $current->domain,
+            'route_domain' => $current->domain,
             'route_status' => $current->status,
         ];
     });
@@ -582,7 +583,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
         ->toBe([
             'node_tld' => 'new.test',
             'node_status' => LifecycleStatus::Provisioning,
-            'route_hostname' => 'feature.acme.new.test',
+            'route_domain' => 'feature.acme.new.test',
             'route_status' => RouteStatus::Pending,
         ])
         ->and($replaced->only(['domain', 'generation_basis_node_id', 'failed_step', 'error_code']))
@@ -594,7 +595,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
         ]);
 });
 
-it('preserves a legacy default hostname and source during Route-only reconciliation', function (): void {
+it('preserves a legacy default domain and source during Route-only reconciliation', function (): void {
     $this->target->update([
         'name' => 'main',
         'checkout_path' => '/srv/acme/main',
@@ -775,6 +776,181 @@ it('keeps Cluster membership unchanged when DNS selection expansion fails during
         ->toBe(['expand']);
 });
 
+it('inventories Node TLD changes and refuses an occupied generated domain before any write', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $owner = reconciliation_node('occupied-owner', 'owner.test');
+    reconciliation_route($this->orbitApp, 'feature.acme.next.test', node: $owner);
+    $events = [];
+    Route::updating(static function () use (&$events): void {
+        $events[] = 'route';
+    });
+    Node::updating(static function () use (&$events): void {
+        $events[] = 'node';
+    });
+    bind_node_tld_projection();
+
+    expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        name: $this->node->name,
+        publicSshHost: $this->node->public_ssh_host,
+        tldProvided: true,
+        tld: 'next.test',
+    )))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.domain_conflict');
+    });
+
+    expect($generated->fresh()->domain)
+        ->toBe('feature.acme.dev.test')
+        ->and($this->node->fresh()->tld)
+        ->toBe('dev.test')
+        ->and($events)
+        ->toBe([]);
+});
+
+it('prepares generated private projections before publishing a Node TLD change', function (): void {
+    $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+    $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $events = bind_node_tld_projection();
+
+    $updated = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        name: $this->node->name,
+        publicSshHost: $this->node->public_ssh_host,
+        tldProvided: true,
+        tld: 'next.test',
+    ));
+    $replaced = reconciliation_route_by_domain('feature.acme.next.test');
+
+    expect($events->values)
+        ->toBe([
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'url:https://feature.acme.next.test',
+            'dns-publication',
+            'cleanup',
+            'url:https://feature.acme.next.test',
+            'workload-verify',
+            'tld',
+        ])
+        ->and($updated->tld)
+        ->toBe('next.test')
+        ->and($replaced->id)
+        ->not->toBe($generated->id)
+        ->and($replaced->status)
+        ->toBe(RouteStatus::Active)
+        ->and($replaced->provenance)
+        ->toBe(RouteProvenance::Generated)
+        ->and(Route::query()->find($generated->id))
+        ->toBeNull();
+});
+
+it('keeps an explicit Route domain fixed when the Node TLD changes', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'fixed.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $explicit->update(['status' => RouteStatus::Active]);
+    bind_node_tld_projection();
+
+    app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        name: $this->node->name,
+        publicSshHost: $this->node->public_ssh_host,
+        tldProvided: true,
+        tld: 'next.test',
+    ));
+
+    expect($explicit->refresh()->domain)
+        ->toBe('fixed.example.test')
+        ->and($explicit->id)
+        ->toBe($explicit->id)
+        ->and($this->node->refresh()->tld)
+        ->toBe('next.test');
+});
+
+it('clears a Node TLD onto the active Cluster TLD for a targeted generated Route', function (): void {
+    $cluster = reconciliation_active_cluster('fallback-targeted', 'cluster.test');
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $this->node->update([
+        'cluster_id' => $cluster->id,
+        'ssh_host_fingerprint' => 'SHA256:pinned',
+    ]);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    bind_node_tld_projection();
+
+    app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        name: $this->node->name,
+        publicSshHost: $this->node->public_ssh_host,
+        tldProvided: true,
+        tld: null,
+    ));
+    $replaced = reconciliation_route_by_domain('feature.acme.cluster.test');
+
+    expect($this->node->refresh()->tld)
+        ->toBeNull()
+        ->and($replaced->id)
+        ->not->toBe($generated->id)
+        ->and($replaced->status)
+        ->toBe(RouteStatus::Active)
+        ->and($replaced->cluster_id)
+        ->toBe($cluster->id);
+});
+
+it('does not return reconciliation_required after a Node TLD change and still refuses Cluster mutations', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    bind_node_tld_projection();
+
+    app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        name: $this->node->name,
+        publicSshHost: $this->node->public_ssh_host,
+        tldProvided: true,
+        tld: 'next.test',
+    ));
+    $first = reconciliation_route_by_domain('feature.acme.next.test');
+
+    app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        name: $this->node->name,
+        publicSshHost: $this->node->public_ssh_host,
+        tldProvided: true,
+        tld: 'later.test',
+    ));
+    $second = reconciliation_route_by_domain('feature.acme.later.test');
+    $cluster = reconciliation_active_cluster('still-refused', 'cluster.test');
+    $before = $second->fresh(['targets'])->toArray();
+
+    expect($first->id)
+        ->not->toBe($generated->id)
+        ->and($second->id)
+        ->not->toBe($first->id)
+        ->and(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node->refresh()))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        })
+        ->and($second->fresh(['targets'])->toArray())
+        ->toBe($before);
+});
+
 it('requires a Router only after a TLD-less active Cluster owns a Route', function (): void {
     $cluster = Cluster::query()->create(['name' => 'tldless', 'state' => ClusterState::Active, 'tld' => null]);
     $member = reconciliation_node('member', 'member.test');
@@ -837,6 +1013,27 @@ function reconciliation_node(string $name, ?string $tld): Node
         'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 20),
         'user' => 'orbit',
     ]);
+}
+
+function bind_node_tld_projection(): NodeTldProjectionEvents
+{
+    $events = new NodeTldProjectionEvents;
+    app()->instance(RouteDomainProjector::class, new NodeTldRouteProjector($events));
+    app()->instance(DevelopmentAppInstanceConfigurator::class, new NodeTldRouteConfigurator($events));
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
+    app()->instance(AppDevTldConverger::class, new class($events) implements AppDevTldConverger
+    {
+        public function __construct(
+            private NodeTldProjectionEvents $events,
+        ) {}
+
+        public function converge(Node $node): void
+        {
+            $this->events->values[] = 'tld';
+        }
+    });
+
+    return $events;
 }
 
 function bind_route_reconciliation_provisioning(?Closure $onConverge = null): void
@@ -963,5 +1160,102 @@ final class RouteReconciliationClusterRouterOperationLock implements ClusterRout
         } finally {
             $this->active = false;
         }
+    }
+}
+
+final class NodeTldProjectionEvents
+{
+    /** @var list<string> */
+    public array $values = [];
+}
+
+final class NodeTldRouteProjector implements RouteDomainProjector
+{
+    public function __construct(
+        private NodeTldProjectionEvents $events,
+    ) {}
+
+    public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $this->events->values[] = 'workload-certificate';
+    }
+
+    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $this->events->values[] = 'workload-caddy';
+    }
+
+    public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $this->events->values[] = 'router-certificate';
+    }
+
+    public function prepareFirewallPolicy(AppInstance $appInstance, Route $candidate): void
+    {
+        $this->events->values[] = 'firewall-policy';
+    }
+
+    public function verifyWorkload(AppInstance $appInstance, Route $candidate): void
+    {
+        $this->events->values[] = 'workload-verify';
+    }
+
+    public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $this->events->values[] = 'router-caddy';
+    }
+
+    public function prepareIngressCertificate(Route $candidate): void {}
+
+    public function stageIngressCaddy(Route $candidate): void {}
+
+    public function prepareIngressFirewall(Route $candidate): void {}
+
+    public function verifyPublicEdge(Route $candidate): void {}
+
+    public function activatePublicHandler(Route $candidate): void {}
+
+    public function rollbackPublicEdge(Route $route): void {}
+
+    public function publishDns(Route $current, Route $candidate): void
+    {
+        $this->events->values[] = 'dns-publication';
+    }
+
+    public function cleanup(AppInstance $appInstance, Route $route): void
+    {
+        $this->events->values[] = 'cleanup';
+    }
+
+    public function rollbackDns(Route $route): void
+    {
+        $this->events->values[] = 'rollback-dns';
+    }
+
+    public function rollbackCaddy(AppInstance $appInstance, Route $route): void
+    {
+        $this->events->values[] = 'rollback-caddy';
+    }
+
+    public function rollbackCertificates(AppInstance $appInstance, Route $route): void
+    {
+        $this->events->values[] = 'rollback-certificates';
+    }
+}
+
+final class NodeTldRouteConfigurator implements DevelopmentAppInstanceConfigurator
+{
+    public function __construct(
+        private NodeTldProjectionEvents $events,
+    ) {}
+
+    public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+    {
+        return new DevelopmentSourceProfile('8.5', (bool) $appInstance->source_is_laravel);
+    }
+
+    public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+    {
+        $this->events->values[] = "url:{$url}";
     }
 }
