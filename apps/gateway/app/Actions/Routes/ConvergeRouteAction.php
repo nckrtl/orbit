@@ -162,6 +162,18 @@ final readonly class ConvergeRouteAction
             return $this->convergePlacement($route, $placement, $targets);
         }
 
+        if (
+            $route->replaced_by_route_id === null
+            && $route->replacement_step !== null
+            && $route->domain !== $domain
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'route.domain_change_conflict',
+                message: 'The Route already has another domain change in progress.',
+                status: 409,
+            );
+        }
+
         $replacement = $this->reserve($route, $domain, $publication, $placement);
 
         if (

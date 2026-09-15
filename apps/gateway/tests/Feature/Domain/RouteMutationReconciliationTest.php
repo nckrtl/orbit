@@ -943,7 +943,7 @@ it('clears a Node TLD onto the active Cluster TLD for a targeted generated Route
         ->toBe($cluster->id);
 });
 
-it('does not return reconciliation_required after a Node TLD change and still refuses Cluster mutations', function (): void {
+it('does not return reconciliation_required after a Node TLD change and still refuses Router clearing', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -984,10 +984,7 @@ it('does not return reconciliation_required after a Node TLD change and still re
         ->and($this->node->refresh()->cluster_id)
         ->toBe($cluster->id);
 
-    $replacement = reconciliation_node('router-still-refused', null);
-    $replacement->update(['cluster_id' => $cluster->id]);
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+    expect(fn () => app(ClearClusterRouterAction::class)->execute($cluster))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.reconciliation_required');
         });
@@ -1204,6 +1201,7 @@ it('does not return reconciliation_required after a Cluster TLD change and still
     $second = reconciliation_route_by_domain('reconciled.acme.later-cluster.test');
     $outsider = reconciliation_node('cluster-still-refused', 'outsider.test');
     $outsiderTarget = reconciliation_instance($this->orbitApp, $outsider, 'outsider');
+    $outsiderTarget->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $outsiderRoute = app(CreateRouteAction::class)->ensureForAppInstance($outsiderTarget, null);
     $outsiderRoute->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
@@ -1424,11 +1422,9 @@ it('does not return reconciliation_required after Cluster activation or deactiva
     bind_node_tld_projection();
 
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
-    $replacement = reconciliation_node('still-refused-router', null);
-    $replacement->update(['cluster_id' => $cluster->id]);
     $before = reconciliation_route_by_domain('feature.acme.dev.test')->fresh(['targets'])->toArray();
 
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+    expect(fn () => app(ClearClusterRouterAction::class)->execute($cluster))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.reconciliation_required');
         })
@@ -1917,7 +1913,8 @@ final class NodeTldRouteProjector implements RouteDomainProjector
 
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
     {
-        $this->event('workload-certificate', $candidate);    }
+        $this->event('workload-certificate', $candidate);
+    }
 
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
     {
