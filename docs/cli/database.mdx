@@ -1,9 +1,9 @@
 ---
 title: "database"
-description: "Register, inspect, update, and destroy the mysql, pgsql, and sqlite connections that App instances can attach."
+description: "Register, inspect, update, and destroy the mysql, pgsql, and sqlite connections that App instances can attach, and create a MySQL user through a Node Process."
 ---
 
-A Database connection is a Gateway-owned registry record with an encrypted password. The `database` family manages that registry and inspects a registered connection. It does not start or stop a database; a shared database server on a Node is a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) converges Docker for it.
+A Database connection is a Gateway-owned registry record with an encrypted password. The `database` family manages that registry and inspects a registered connection. It does not start or stop a database; a shared database server on a Node is a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) converges Docker for it. `database:user:create` creates a MySQL user and database through that Process, then registers or refreshes the connection.
 
 The [Database connections reference](/reference/database-connections) owns the driver fields, the API, and the keys that an attachment writes. Attach a registered connection to an App instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
 
@@ -15,6 +15,7 @@ The [Database connections reference](/reference/database-connections) owns the d
 | [`database:list`](#orbit-databaselist) | List registered connections. |
 | [`database:show`](#orbit-databaseshow) | Show one connection. |
 | [`database:update`](#orbit-databaseupdate) | Replace the supplied fields on one connection. |
+| [`database:user:create`](#orbit-databaseusercreate) | Create a MySQL user and database through a Node Docker Process, then register or refresh the connection. |
 | [`database:destroy`](#orbit-databasedestroy) | Destroy one connection record. |
 | [`database:query`](#orbit-databasequery) | Run one SQL statement against a registered connection. |
 | [`database:tables`](#orbit-databasetables) | List tables on a registered connection. |
@@ -109,6 +110,33 @@ orbit database:update app --node=
 ```
 
 Updating a record does not rewrite the keys already stored on attached App instances. Run `instance:database:add` again with the same prefix to re-project them, then `env:sync` to install them.
+
+## orbit database:user:create
+
+Create a MySQL user and database through an existing Node-targeted Docker MySQL Process, then register or refresh the connection.
+
+```bash
+orbit database:user:create <slug> --process=ID --database=NAME --username=USER --password=SECRET
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Lowercase kebab name of at most 63 characters. |
+
+| Option | Meaning |
+| --- | --- |
+| `--process=ID` | Numeric Process ID of a Node-targeted Docker MySQL Process. |
+| `--database=NAME` | Database name. A 1-32 character identifier. |
+| `--username=USER` | Username. A 1-32 character identifier. |
+| `--password=SECRET` | Password for the created user. |
+
+```bash
+orbit database:user:create app --process=12 --database=app --username=app --password=secret
+```
+
+The Process must be Node-owned and Docker, use a `mysql` or `mysql-server` image, publish container port `3306`, and store `MYSQL_ROOT_PASSWORD`. The Gateway creates the user through that Process. The CLI does not open SSH. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.
+
+The [Database connections reference](/reference/database-connections#create-a-managed-mysql-user) owns the Process checks, stored host and port, and failure codes.
 
 ## orbit database:destroy
 
@@ -210,5 +238,5 @@ orbit database:describe app users
 ## Related
 
 - [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd) and [`instance:database:remove`](/cli/instance#orbit-instancedatabaseremove) attach and detach a connection on one App instance.
-- [`process`](/cli/process) creates the Docker Node Process that runs a shared database server.
+- [`process`](/cli/process) creates the Docker Node Process that runs a shared database server. `database:user:create` uses that Process to create a MySQL user and database.
 - [`doctor --family=database_connection`](/cli/doctor) reports missing, unhealthy, or mismatched attachments.

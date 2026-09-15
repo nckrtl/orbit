@@ -7368,8 +7368,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "The request succeeded.",
+          "201": {
+            "description": "Created.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9824,6 +9824,146 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\DestroyProcessRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProcessRequest(processId: 41))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/processes/{process}/database-users": {
+      "post": {
+        "operationId": "database-user-create",
+        "summary": "Create a managed MySQL user",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Process ID."
+          }
+        ],
+        "description": "Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slug": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 63,
+                    "description": "Database connection slug"
+                  },
+                  "database": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 32,
+                    "description": "Database name to create"
+                  },
+                  "username": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 32,
+                    "description": "Username to create"
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Password for the created user"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "database",
+                  "username",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseConnection"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/processes/41/database-users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"database\": \"app\", \"username\": \"app\", \"password\": \"secret\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseUserRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseUserRequest(\n    processId: 41,\n    slug: 'acme',\n    database: 'app',\n    username: 'app',\n    password: 'secret',\n))->dto();\n"
           }
         ]
       }

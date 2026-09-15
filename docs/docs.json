@@ -327,7 +327,8 @@
               "GET /api/v1/database-connections/{database_connection}/describe/{table}",
               "POST /api/v1/database-connections/{database_connection}/query",
               "GET /api/v1/database-connections/{database_connection}/schema",
-              "GET /api/v1/database-connections/{database_connection}/tables"
+              "GET /api/v1/database-connections/{database_connection}/tables",
+              "POST /api/v1/processes/{process}/database-users"
             ]
           },
           {
