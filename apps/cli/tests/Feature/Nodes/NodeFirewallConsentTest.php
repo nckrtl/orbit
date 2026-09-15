@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Console\TerminalText;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
@@ -216,3 +217,39 @@ it('keeps authorization and missing-rule failures ahead of firewall consent', fu
         ->and($payload['error']['code'])->toBe($forbidden ? 'authorization.node_access_denied' : 'http.404')
         ->and($payload['error']['request_id'])->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 })->with([false, true]);
+
+it('keeps offline and purge independent of interactive consent and the read-only preview', function (
+    string $family, bool $offline, bool $purge, bool $accepted,
+): void {
+    $case = node_firewall_consent_case($family, $purge);
+    $case['arguments'] = [...$case['arguments'], '--no-ansi', ...($offline ? ['--offline'] : [])];
+    $case['mutation_body']['offline'] = $offline;
+    if ($family === 'role') {
+        $case['replies'][0]['body']['error']['details']['dependents'] = [];
+    }
+    $result = run_node_firewall_fixture($case, $accepted ? ['y', "\r"] : ["\r"]);
+    expect($result['status'])->toBe($accepted ? 0 : 1)->and($result['requests'])->toHaveCount($case['reads'] + ($accepted ? 1 : 0));
+    if ($family === 'role') {
+        expect($result['output'])->not->toContain('Dependent resources:');
+        expect($result['requests'][0]['body'])->toBe(['force' => false, 'purge_data' => false, 'offline' => false]);
+    }
+    if ($accepted) {
+        expect($result['requests'][array_key_last($result['requests'])]['body'])->toBe($case['mutation_body']);
+    }
+})->with([
+    ['node', true, false], ['role', false, false], ['role', false, true], ['role', true, true],
+])->with([false, true]);
+
+it('wraps the self-lockout warning within a narrow terminal', function (): void {
+    $case = node_firewall_consent_case('access');
+    $case['arguments'] = [...$case['arguments'], '--force', '--no-ansi'];
+    $case['columns'] = 24;
+    $case['replies'][2]['body']['data']['self_lockout'] = true;
+    $result = run_node_firewall_fixture($case, []);
+    expect($result['status'])->toBe(0);
+    $text = str_replace("\r", '', $result['output']);
+    foreach (explode("\n", $text) as $line) {
+        expect(TerminalText::width($line))->toBeLessThanOrEqual(24);
+    }
+    expect(preg_replace('/\s+/', '', $text))->toContain('Warning:ThisnodenolongerhasGatewayaccess.');
+});

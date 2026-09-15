@@ -14,7 +14,7 @@ import time
 
 configuration = json.loads(open(sys.argv[3]).read())
 master, slave = pty.openpty()
-fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 50, 200, 0, 0))
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 50, configuration.get('columns', 200), 0, 0))
 before = termios.tcgetattr(slave)
 process = subprocess.Popen(sys.argv[1:4], stdin=slave, stdout=slave, stderr=slave,
                            env={**os.environ, 'TERM': 'xterm-256color', 'PAO_DISABLE': '1'})

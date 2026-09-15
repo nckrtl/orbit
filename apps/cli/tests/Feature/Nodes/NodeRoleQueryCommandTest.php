@@ -16,6 +16,8 @@ use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-node-role-query-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -28,6 +30,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -90,6 +93,9 @@ it('shows a concise node role table with lifecycle and failure columns', functio
     expect($output)->toContain('STATUS');
     expect($output)->toContain('FAILED STEP');
     expect($output)->toContain('ERROR CODE');
+    foreach (['34', 'app-dev', 'active', '—', '35', 'app-prod', 'failed', 'converge:packages', 'packages.failed'] as $value) {
+        expect($output)->toContain($value);
+    }
     expect($output)->toContain('Request ID: '.node_role_command_request_id());
 });
 
@@ -122,6 +128,9 @@ it('lists Ingress lifecycle identity in JSON and human modes without extra setti
     expect($output)->toContain('STATUS');
     expect($output)->toContain('FAILED STEP');
     expect($output)->toContain('ERROR CODE');
+    foreach (['41', 'ingress', 'active', '—'] as $value) {
+        expect($output)->toContain($value);
+    }
     expect($output)->toContain('Request ID: '.node_role_command_request_id());
 });
 

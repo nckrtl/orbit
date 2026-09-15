@@ -84,7 +84,7 @@ final class RemoveNodeAccessCommand extends NodeCommand
         $this->writeHumanMessage($message);
 
         if ($access->selfLockout) {
-            ConsoleWriter::write($this->output, TerminalText::style('Warning: This node no longer has Gateway access.', 'orange', $this->consoleMode()->decorated).\PHP_EOL);
+            ConsoleWriter::write($this->output, TerminalText::style(implode("\n", TerminalText::wrap('Warning: This node no longer has Gateway access.', $this->consoleMode()->columns)), 'orange', $this->consoleMode()->decorated).\PHP_EOL);
         }
 
         $this->writeHumanMessage("Request ID: {$access->requestId}");

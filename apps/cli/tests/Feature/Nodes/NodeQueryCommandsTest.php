@@ -13,6 +13,8 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -25,6 +27,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -70,6 +73,9 @@ describe('node:list', function (): void {
         expect($output)->toContain('CLUSTER');
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
+        foreach (['app-dev', 'active', 'linux', '.app-dev.orbit', 'orbit', '10.44.0.3', '10.0.0.3'] as $value) {
+            expect($output)->toContain($value);
+        }
         expect($output)->toContain('Request ID: '.request_id());
     });
 
@@ -114,6 +120,9 @@ describe('node:list', function (): void {
         expect($output)->toContain('CLUSTER');
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
+        foreach (['app-dev', 'active', 'linux', '.app-dev.orbit', 'orbit', '10.44.0.3', '10.0.0.3'] as $value) {
+            expect($output)->toContain($value);
+        }
     });
 
     it('reports when no nodes are registered', function (): void {

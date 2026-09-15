@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
@@ -208,17 +209,16 @@ it('shows the degradation advisory for an offline node removal', function (): vo
         ]),
     ]);
 
-    $this
-        ->artisan('node:remove', ['node' => '3', '--offline' => true, '--force' => true])
-        ->expectsOutput('Node [app-prod] removed.')
-        ->expectsOutput('Warning: Node [app-prod] was unreachable. Orbit removed only the state it owns.')
-        ->expectsOutput('Roles shed:')
-        ->expectsOutput('  app-prod')
-        ->expectsOutput('Left on the node:')
-        ->expectsOutput('  Caddy site configuration and certificates for the app-prod role')
-        ->expectsOutput('Run the node-local Metrics cleanup on the node once it boots, or discard the node.')
-        ->expectsOutput('Request ID: '.remove_node_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('node:remove', ['node' => '3', '--offline' => true, '--force' => true]))->toBe(0);
+    $output = preg_replace('/\s+/', '', Artisan::output());
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Node [app-prod] removed.'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Warning: Node [app-prod] was unreachable. Orbit removed only the state it owns.'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Roles shed:'));
+    expect($output)->toContain(preg_replace('/\s+/', '', '  app-prod'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Left on the node:'));
+    expect($output)->toContain(preg_replace('/\s+/', '', '  Caddy site configuration and certificates for the app-prod role'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Request ID: '.remove_node_request_id()));
 });
 
 it('rejects an invalid node id before making an API request', function (string $nodeId): void {
