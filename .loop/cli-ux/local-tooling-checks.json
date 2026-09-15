@@ -1,0 +1,33 @@
+{
+  "candidate": "b58b6077b1190e20c3494d5934972221481dfb24",
+  "macos_tests": 38,
+  "macos_duration_seconds": 16.625,
+  "linux_tests": 38,
+  "linux_duration_seconds": 11.951,
+  "linux_host": "beast",
+  "linux_log": "/tmp/orbit-cli-ux-linux-57b4b742/tests-b58b6077.log",
+  "solo_project": 4,
+  "solo_processes": [
+    1740,
+    1741
+  ],
+  "solo_capture": "/Users/nckrtl/.codex/work/cli-ux-restoration/evidence/solo-foundation-b58b6077",
+  "solo_inspected": {
+    "terminal": [
+      87,
+      23
+    ],
+    "live_input_bytes": 2,
+    "indicator_intervals_seconds": [
+      0.308,
+      0.307,
+      0.305,
+      0.309
+    ],
+    "child_exit": 0,
+    "capture_exit": 0,
+    "verifier_exit": 0,
+    "cursor_hidden": false
+  },
+  "limitation": "Tooling exercises only; Incus acceptance unavailable. Original input-backpressure finding independently closed. Later merged main changes need current inventory and check bindings."
+}

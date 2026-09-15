@@ -1,0 +1,128 @@
+{
+  "from_candidate": "02c1a55c22cf12c31278ff415051907817425836",
+  "to_candidate": "c652f0b4af5645c3718461771bd48e830d53a8fd",
+  "integrated_main": "6eeb4d6b2e5d4150ffe5d8abe93e4208e548b77d",
+  "accepted_contract": "ORB-101 / ADR 0016",
+  "registry_changed": true,
+  "public_added": [
+    "app:update"
+  ],
+  "public_removed": [],
+  "existing_public_definitions_changed": [],
+  "framework_changed": false,
+  "global_signature_changed": false,
+  "counts_before": {
+    "public": 106,
+    "framework": 20,
+    "registration_keys": 126
+  },
+  "counts_after": {
+    "public": 107,
+    "framework": 20,
+    "registration_keys": 127
+  },
+  "added_public_definition": {
+    "name": "app:update",
+    "class": "App\\Commands\\Apps\\UpdateAppCommand",
+    "hidden": false,
+    "aliases": [],
+    "description": "Update an app.",
+    "signature": {
+      "arguments": {
+        "app": {
+          "required": true,
+          "array": false,
+          "default": null,
+          "description": "Numeric app ID"
+        }
+      },
+      "options": {
+        "default-branch": {
+          "shortcut": null,
+          "accept_value": true,
+          "value_required": false,
+          "value_optional": true,
+          "array": false,
+          "negatable": false,
+          "default": null,
+          "description": "New stored default branch"
+        },
+        "json": {
+          "shortcut": null,
+          "accept_value": false,
+          "value_required": false,
+          "value_optional": false,
+          "array": false,
+          "negatable": false,
+          "default": false,
+          "description": "Return machine-readable JSON"
+        },
+        "repository": {
+          "shortcut": null,
+          "accept_value": true,
+          "value_required": false,
+          "value_optional": true,
+          "array": false,
+          "negatable": false,
+          "default": null,
+          "description": "New repository access URL"
+        },
+        "root": {
+          "shortcut": null,
+          "accept_value": true,
+          "value_required": false,
+          "value_optional": true,
+          "array": false,
+          "negatable": false,
+          "default": null,
+          "description": "New relative web root"
+        },
+        "slug": {
+          "shortcut": null,
+          "accept_value": true,
+          "value_required": false,
+          "value_optional": true,
+          "array": false,
+          "negatable": false,
+          "default": null,
+          "description": "New App slug"
+        }
+      }
+    },
+    "source": "apps/cli/app/Commands/Apps/UpdateAppCommand.php"
+  },
+  "recorded_source_deltas": {
+    "apps/cli/app/Commands/Apps/UpdateAppCommand.php": {
+      "before": null,
+      "after": "57d6056ac45c5b291910172f357bad3677616005060e47eaae248cbc250db70c"
+    }
+  },
+  "lock_comparison": {
+    "apps/cli/composer.lock": {
+      "before": "cb700afecadbb9835914c9fde4d0c4705b32898cb2f08ebd8fdffaab281ccccc",
+      "after": "cb700afecadbb9835914c9fde4d0c4705b32898cb2f08ebd8fdffaab281ccccc",
+      "changed": false
+    },
+    "packages/php-sdk/composer.lock": {
+      "before": "66b9a9c42988df198cb3c6ff9228814dcda838aa81499099be75cd238fa04802",
+      "after": "66b9a9c42988df198cb3c6ff9228814dcda838aa81499099be75cd238fa04802",
+      "changed": false
+    }
+  },
+  "app_update_contract_source_sha256": {
+    "apps/cli/app/Commands/Apps/UpdateAppCommand.php": "57d6056ac45c5b291910172f357bad3677616005060e47eaae248cbc250db70c",
+    "apps/cli/tests/Feature/Apps/AppCommandsTest.php": "6886385e2a616b2a92b1b59236561c3dd48c0b919b72016c66fa45034e051074",
+    "apps/cli/tests/Feature/CommandSurfaceTest.php": "b45b88f2faf673dca39f4ec883117f00869978ae41dbabc882256dbbed8f2d13",
+    "packages/php-sdk/src/Requests/Apps/UpdateAppRequest.php": "8ef3e0ddfb3882bc83b84390fe9bc82d57db167250e403e30d71508d4aa70e49",
+    "packages/php-sdk/tests/Unit/Requests/Apps/AppRequestsTest.php": "399461b7ebf290386c58fb7f902b816ca916de33bec388ab50f4da947c1896f3",
+    "docs/reference/apps.md": "9792cec09022732ce417308d560ce27fb5a48809796af0af66bcc21336f001bb",
+    "docs/decisions/0016-reconcile-app-identity-and-source-default-updates.md": "826f47cf180743917be6acf49f94910b37ce08f5f52337efcd324149492c08d1"
+  },
+  "reviewed_contract": {
+    "app_update_reconciliation": "Accepted ORB-101 / ADR 0016: PATCH one existing numeric App identity. Reconcile inherited source defaults, generated Routes and runtime projections through the Gateway. Omitted fields stay unchanged; updates never deploy. Preserve AppResponse JSON including nulls and request ID. Do not invent remote progress phases or claim rollback without verified outcome.",
+    "app_update_explicit_fields": "Explicit positive numeric app argument; --slug, --repository, --default-branch and --root are optional values with null defaults, but at least one nonempty update is required. Empty update fails app.update_required before Gateway IO. No prompts, consent or override flags exist; do not infer a generic destructive-consent gap or add flags for this ordinary update. Preserve app.id_invalid, app.slug_invalid and app.repository_invalid. Never reintroduce --main-branch.",
+    "app_update_repository_safety": "Preserve repository input checks and generic error messages: reject embedded credentials, query/fragment, unsafe/control/whitespace values, oversized input and invalid URI parsing. Do not echo rejected secrets. Gateway owns repository identity/preflight/source-switch failures and incomplete-operation retry contracts."
+  },
+  "scope": "Registry/source comparison and read-only command/SDK/tests/docs inspection only. This is not a full Git diff or command-behavior proof.",
+  "ux_adoption": "All107 public commands remain Unverified with empty evidence pointers."
+}

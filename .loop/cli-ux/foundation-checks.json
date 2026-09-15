@@ -1,0 +1,46 @@
+{
+  "candidate": "c5cd0bd521483edc197175c5f5ecc895b85e82e0",
+  "tooling_test_candidate": "b58b6077b1190e20c3494d5934972221481dfb24",
+  "tooling_and_standard_blobs_unchanged": true,
+  "local_fixture_actions_passed": [
+    "standard-binding",
+    "skill-forward-check",
+    "recorder-contracts",
+    "verifier-contracts",
+    "registry-reconciliation",
+    "full-artifact-manifest"
+  ],
+  "recorder_tests": 26,
+  "verifier_tests": 12,
+  "linux_tests": 38,
+  "linux_seconds": 11.951,
+  "local_tests_seconds": 16.633,
+  "proof_status": "not_run",
+  "source_registry_status": "passed at current candidate with fourteen rejected altered fixtures",
+  "export_verification": "full-export-local-verification.json",
+  "independent_input_recheck": "reviews/input-backpressure-recheck.md",
+  "solo_capture": "/Users/nckrtl/.codex/work/cli-ux-restoration/evidence/solo-foundation-b58b6077",
+  "raw_files_manifest": "/Users/nckrtl/.codex/work/cli-ux-restoration/evidence/solo-foundation-b58b6077-manifest.json",
+  "limitation": "Local and Beast-host tooling checks only. No isolated acceptance, formal PR approval, or command compliance. Old local fixture identity.phase refers to fixture action phase, not a harness acceptance receipt.",
+  "local_fixture_actions_candidate": "b58b6077b1190e20c3494d5934972221481dfb24",
+  "current_checks": {
+    "builder": "passed: checks/builder-c5cd0bd5-passed.json",
+    "registry": "108 public/20 framework/128 registration keys/176 source files; exact positive and14 rejected altered fixtures",
+    "discovery": "current candidate discovery acquired through Solo1740",
+    "proof": "c652f0b4 captured complete successful proof/export/Solo/manual and independent review; new candidate proof follows main integration",
+    "documentation": "docs-build, docs-lint, mint validate and mint broken-links passed",
+    "snapshot": "ORB-364 closeout complete; generation 8df38ef80c34-ef034a25a402",
+    "builder_selection_warning": "CLI TIA zero selection: current guidance:check runs the only foundation-changed CLI test BoostGuidanceTest.php explicitly (15 tests/304 assertions); full CLI registry checked separately. Transfer/CommandSurface tests also passed in preceding ced71d87 gate; latest merge changed no CLI source/tests."
+  },
+  "prior_successful_proof": {
+    "candidate": "c652f0b4af5645c3718461771bd48e830d53a8fd",
+    "artifact": "794bb418b367e0d7ef970265dc42a73051dd7046",
+    "attempt": "6568fe4098be0b40c503082b04038130",
+    "capture_fingerprint": "49673eb602ef09af8d476129ec66961981a3c874cba92e67ecf513099ec11242",
+    "external_evidence": "/Users/nckrtl/.codex/work/cli-ux-restoration/evidence/proof-c652f0b4",
+    "acceptance_files_verified": 28,
+    "manual_files_verified": 10,
+    "formal_review": "/Users/nckrtl/.codex/work/cli-ux-restoration/orb351-review-c652f0b4.md",
+    "assessment": "All6 acceptance items assessed; no substantive findings; approval withheld solely for main freshness."
+  }
+}

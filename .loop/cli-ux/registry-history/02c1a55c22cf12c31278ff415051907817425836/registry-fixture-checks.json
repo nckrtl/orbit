@@ -1,0 +1,64 @@
+{
+  "candidate": "02c1a55c22cf12c31278ff415051907817425836",
+  "results": [
+    {
+      "case": "exact-registry",
+      "exit_code": 0,
+      "result": {
+        "state": "passed",
+        "check": "ORB-351 exact registry and source reconciliation",
+        "candidate": "02c1a55c22cf12c31278ff415051907817425836",
+        "candidate_binding": "Harness must bind the supplied commit to this mounted candidate; the fixture verifies recorded source hashes, not the commit label alone.",
+        "root": "/Users/nckrtl/orbit-worktrees/orb-351",
+        "php_version": "8.5.8",
+        "public_commands": 106,
+        "framework_commands": 20,
+        "registration_keys": 126,
+        "source_files": 174,
+        "source_manifest_sha256": "49e4bbe93d52d432114214dfded3d33f68b3e0c25ea2e935dfe14363a1c25a99",
+        "expected_sha256": "c6c44f4c185a80d61423f95680ebb4bfea4585d93a6025f1962891552edbe7c1",
+        "verifier_sha256": "d4a45983b3d56117c25714eab66b25819cebc222ef49e2d9d6a24d414da2e69c",
+        "extension_configuration": {
+          "enabled": [
+            "herdr"
+          ]
+        },
+        "isolation": "Private temporary ORBIT_HOME; no command dispatched; no Gateway profile or caller home used.",
+        "ux_adoption": "Unverified for every public command; this proves registry coverage only."
+      }
+    },
+    {
+      "case": "changed-public-signature",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "changed-framework-signature",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: framework"
+      }
+    },
+    {
+      "case": "stale-dns-tld-only-signature",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "stale-dns-resolver-source",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: source_sha256"
+      }
+    }
+  ],
+  "ux_adoption": "Unverified; registry reconciliation only."
+}
