@@ -1,0 +1,64 @@
+{
+  "candidate": "eadefb3562b562d8d97929f3f3e255cc0875ef2c",
+  "results": [
+    {
+      "case": "exact",
+      "exit_code": 0,
+      "result": {
+        "state": "passed",
+        "check": "ORB-351 exact registry and source reconciliation",
+        "candidate": "eadefb3562b562d8d97929f3f3e255cc0875ef2c",
+        "candidate_binding": "Harness must bind the supplied commit to this mounted candidate; the fixture verifies recorded source hashes, not the commit label alone.",
+        "root": "/Users/nckrtl/orbit-worktrees/orb-351",
+        "php_version": "8.5.8",
+        "public_commands": 106,
+        "framework_commands": 20,
+        "registration_keys": 126,
+        "source_files": 174,
+        "source_manifest_sha256": "b787a66c843b9221965e40fddae3fc90fde6450bd0067aa012883eb3f7e37264",
+        "expected_sha256": "baaf5e79aac6aef251c5fd22189356ae1f6712245d373e18ca7b1ec954189338",
+        "verifier_sha256": "d4a45983b3d56117c25714eab66b25819cebc222ef49e2d9d6a24d414da2e69c",
+        "extension_configuration": {
+          "enabled": [
+            "herdr"
+          ]
+        },
+        "isolation": "Private temporary ORBIT_HOME; no command dispatched; no Gateway profile or caller home used.",
+        "ux_adoption": "Unverified for every public command; this proves registry coverage only."
+      }
+    },
+    {
+      "case": "public",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "framework",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: framework"
+      }
+    },
+    {
+      "case": "doctor",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "hostname",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    }
+  ],
+  "ux_adoption": "Unverified"
+}

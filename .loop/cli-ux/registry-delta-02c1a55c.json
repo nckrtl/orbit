@@ -1,0 +1,24 @@
+{
+  "from_candidate": "6c8e23c9dc8b2ac2003f25dd57b9e4fef6cb8688",
+  "to_candidate": "02c1a55c22cf12c31278ff415051907817425836",
+  "integrated_main": "5869c47cb0e15717f2d5f899480fb574cf22c6c6",
+  "changed_paths": [
+    "apps/gateway/app/Actions/Routes/RemoveRouteAction.php",
+    "apps/gateway/app/Domain/AppDev/ClusterRouterDnsSelection.php",
+    "apps/gateway/app/Domain/Routes/RouteRemovalProjector.php",
+    "apps/gateway/app/Domain/Routes/RouteRemovalStep.php",
+    "apps/gateway/app/Infrastructure/AppDev/RemoteAppDevCertificateManager.php",
+    "apps/gateway/app/Infrastructure/Routes/NativeRouteRemovalProjector.php",
+    "apps/gateway/app/Providers/AppServiceProvider.php",
+    "apps/gateway/tests/Feature/Api/CommandActivityTest.php",
+    "apps/gateway/tests/Feature/Api/RoutesTest.php",
+    "apps/gateway/tests/Feature/Domain/ClusterRouterDnsSelectionTest.php",
+    "apps/gateway/tests/Feature/Domain/ConvergeRouteActionTest.php",
+    "apps/gateway/tests/Feature/Domain/RouteMutationReconciliationTest.php",
+    "apps/gateway/tests/Support/FakeRouteRemovalProjector.php",
+    "docs/reference/routes.md"
+  ],
+  "registry_changed": false,
+  "recorded_source_changed": false,
+  "ux_adoption": "All 106 public commands remain Unverified."
+}
