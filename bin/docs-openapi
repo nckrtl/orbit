@@ -253,6 +253,7 @@ SUMMARIES = {
     'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
     'route:list': 'List Routes', 'route:show': 'Show a Route', 'route:create': 'Create a Route', 'route:update': 'Update a Route', 'route:destroy': 'Remove a Route', 'route:target:set': 'Set the Route target', 'route:target:unset': 'Clear the Route target',
     'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'database:query': 'Query a Database connection', 'database:tables': 'List Database connection tables', 'database:schema': 'Show a Database connection schema', 'database:describe': 'Describe a Database table',
     'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'process:destroy': 'Remove a Process',
     'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
     'doctor': 'Run Doctor', 'activity:list': 'List Activities', 'activity:show': 'Show an Activity',
@@ -266,6 +267,10 @@ DESCRIPTIONS = {
     'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
     'schedule:complete': 'The installed Schedule callback on the host Node reports the latest run. The Gateway accepts it only from the Schedule\'s recorded host Node and records `last_run_at` and `last_run_status`.',
     'runtime-activation:app-instance': 'Caddy on the App instance Node calls this endpoint when the awake marker is absent. The Gateway returns an HTML progress page and starts the desired-running Processes.',
+    'database:query': 'Runs one SQL statement against a registered Database connection. Query is read-only unless the body sets write to true. SQLite runs on the associated Node. Responses omit passwords and replace a password-shaped value with [REDACTED].',
+    'database:tables': 'Lists tables on a registered Database connection. SQLite inspection runs on the associated Node.',
+    'database:schema': 'Shows columns for every table on a registered Database connection. SQLite inspection runs on the associated Node.',
+    'database:describe': 'Shows columns for one table on a registered Database connection. An unknown table returns database.table_missing.',
     'instance:deployment-config:show': 'Returns the recorded deployment branch and the deploy steps in phase and placement order as one document.',
     'instance:deployment-config:update': 'Atomically replaces the branch and the complete deploy-step set from one document without fetching source or starting a deployment.',
     'instance:deployment-layout:prepare': 'Converts an existing production App instance that serves code from its home into the release layout with `releases/` and `current`.',
@@ -318,12 +323,13 @@ PARAM_SCHEMAS = {
     'step': ({'type': 'string', 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'}, 'Deploy step name.'),
     'key': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,254}$'}, 'Environment key.'),
     'database_connection': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database connection slug.'),
+    'table': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]*$', 'maxLength': 64}, 'Table name.'),
     'process_definition': ({'type': 'string'}, 'Process definition name, unique within the App.'),
     'schedule_definition': ({'type': 'string'}, 'Schedule definition name, unique within the App.'),
     'firewall_rule': ({'type': 'string'}, 'Firewall rule name, unique on the Node.'),
 }
 ENV_INSTANCE = ({'type': 'string'}, 'Positive App instance ID or the exact Route domain of the App instance.')
-EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'app': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
+EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'app': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'table': 'users', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
 
 
 def openapi_path(route):
@@ -676,7 +682,7 @@ EXAMPLE_BY_NAME = {
     'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
     'public_ssh_host': 'beast.example.com', 'public_ssh_port': 22, 'user': 'root', 'orbit_user': 'orbit', 'platform': 'linux', 'architecture': 'x86_64', 'tld': 'test', 'roles': ['app-dev'], 'role': 'app-dev',
     'cluster_id': 3, 'node_id': 7, 'app_id': 4, 'app_instance_id': 12, 'target_id': 12, 'wireguard_ip': '10.44.0.7', 'lan_ip': '192.168.6.20', 'branch': 'main', 'preview_name': 'shop.com',
-    'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'prefix': 'DB',
+    'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'prefix': 'DB',
     'runtime': 'systemd', 'command': ['/usr/bin/php', 'artisan', 'queue:work'], 'restart_policy': 'on-failure', 'keep_alive': True, 'start': True, 'image': 'postgres:18', 'working_directory': '/app',
     'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
     'session': 'commander-tasks', 'pane': 'w1:p1', 'terminal': 'term-abc', 'cols': 120, 'rows': 40, 'origin': 'https://tasks.example.test', 'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
@@ -690,7 +696,7 @@ PHP_EXAMPLES = {
     'domain': 'app.example.test', 'repositoryUrl': 'https://github.com/acme/site.git', 'publication': 'private', 'key': 'MAIL_MAILER', 'value': 'log', 'branch': 'main', 'release': '20260914T101500Z', 'manager': 'vp',
     'package': '@openai/codex', 'calendar': 'daily', 'command': 'php artisan report:send', 'phpVersion': '8.5', 'tld': 'test', 'pane': 'w1:p1', 'terminal': 'term-abc', 'cols': 120, 'rows': 40, 'origin': 'https://tasks.example.test',
     'status': 'success', 'sourcePath': '/srv/orbit/apps/acme/main', 'publicSshHost': 'beast.example.com', 'previewName': 'shop.com', 'lines': 100, 'limit': 25, 'phase': 'before_activation', 'timeoutSeconds': 300,
-    'prefix': 'DB', 'port': 3306, 'host': 'db.example.test', 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'source': '10.6.0.0/24', 'protocol': 'tcp',
+    'prefix': 'DB', 'port': 3306, 'host': 'db.example.test', 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'source': '10.6.0.0/24', 'protocol': 'tcp',
     'definition': '{"name": "queue", "environments": ["production"], "spec": {"runtime": "systemd", "command": ["/usr/bin/php", "artisan", "queue:work"]}}', 'families': ['node'], 'environments': ['production'], 'roles': ['app-dev'],
     'runtime': 'systemd', 'image': 'postgres:18', 'restartPolicy': 'on-failure', 'force': True,
 }
@@ -812,6 +818,10 @@ def error_response(desc):
 RESPONSE_OVERRIDES = {
     'RootCaCertificatesController@show': {'type': 'object', 'properties': {'root_ca': {'type': 'string', 'description': 'PEM-encoded root certificate.'}, 'sha256': {'type': 'string', 'description': 'SHA-256 fingerprint of the certificate.'}}},
     'ProcessesController@logs': {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'name': {'type': 'string'}, 'lines': {'type': 'integer'}, 'logs': {'type': 'array', 'items': {'type': 'string'}}}},
+    'DatabaseConnectionsController@query': {'type': 'object', 'properties': {'slug': {'type': 'string'}, 'driver': {'type': 'string'}, 'write': {'type': 'boolean'}, 'columns': {'type': 'array', 'items': {'type': 'string'}}, 'rows': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': True}}, 'row_count': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}},
+    'DatabaseConnectionsController@tables': {'type': 'object', 'properties': {'slug': {'type': 'string'}, 'driver': {'type': 'string'}, 'tables': {'type': 'array', 'items': {'type': 'string'}}}},
+    'DatabaseConnectionsController@schema': {'type': 'object', 'properties': {'slug': {'type': 'string'}, 'driver': {'type': 'string'}, 'tables': {'type': 'array', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'columns': {'type': 'array', 'items': {'type': 'object'}}}}}}},
+    'DatabaseConnectionsController@describe': {'type': 'object', 'properties': {'slug': {'type': 'string'}, 'driver': {'type': 'string'}, 'table': {'type': 'string'}, 'columns': {'type': 'array', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'type': {'type': 'string'}, 'nullable': {'type': 'boolean'}, 'default': {'type': ['string', 'null']}, 'primary': {'type': 'boolean'}}}}}},
 }
 CTRL_DATA_OVERRIDES = {
     'SchedulesController@index': ('ScheduleData', True), 'SchedulesController@show': ('ScheduleData', False), 'SchedulesController@run': ('ScheduleData', False), 'SchedulesController@activate': ('ScheduleData', False), 'SchedulesController@destroy': ('ScheduleData', False), 'SchedulesController@logs': ('ScheduleLogsData', False),
@@ -865,7 +875,7 @@ spec = {
         'Error': {'type': 'object', 'properties': {'error': {'type': 'object', 'properties': {'code': {'type': 'string', 'description': 'Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`.'}, 'message': {'type': 'string', 'description': 'Safe message without credentials, environment values, or remote output.'}, 'details': {'type': 'object', 'additionalProperties': True, 'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule.'}, 'request_id': {'type': 'string', 'format': 'uuid'}}, 'required': ['code', 'message']}}, 'required': ['error']},
     }},
 }
-BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'include_worktrees', 'start', 'keep_alive'}
+BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'include_worktrees', 'start', 'keep_alive', 'write'}
 nav_pages = {t: [] for _, t, _ in TAGS}
 unmatched = []
 
@@ -898,6 +908,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         sch = rules_to_schema(rules_text)
         if route['method'] == 'GET':
             for k, v in (sch.get('properties') or {}).items():
+                if k in params:
+                    continue
                 op['parameters'].append({'name': k, 'in': 'query', 'required': k in sch.get('required', []), 'schema': v})
                 query.append(k)
         else:

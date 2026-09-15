@@ -8,10 +8,14 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -193,6 +197,116 @@ it('destroys a connection after --force', function (): void {
 
     expect($mockClient->getLastRequest())
         ->toBeInstanceOf(DestroyDatabaseConnectionRequest::class);
+});
+
+it('queries a registered connection and sends the write flag only when asked', function (): void {
+    $mockClient = database_cli_mock(QueryDatabaseConnectionRequest::class, [
+        'slug' => 'app',
+        'driver' => 'mysql',
+        'write' => false,
+        'columns' => ['email'],
+        'rows' => [['email' => 'owner@example.test']],
+        'row_count' => 1,
+        'truncated' => false,
+    ]);
+
+    $this
+        ->artisan('database:query', [
+            'slug' => 'app',
+            'sql' => 'SELECT email FROM users',
+            '--json' => true,
+        ])
+        ->doesntExpectOutputToContain(DATABASE_CLI_SECRET)
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(QueryDatabaseConnectionRequest::class)
+        ->and($mockClient->getLastRequest()?->resolveEndpoint())
+        ->toBe('/api/v1/database-connections/app/query')
+        ->and($mockClient->getLastRequest()?->body()->all())
+        ->toBe(['sql' => 'SELECT email FROM users', 'write' => false]);
+
+    $writeClient = database_cli_mock(QueryDatabaseConnectionRequest::class, [
+        'slug' => 'app',
+        'driver' => 'mysql',
+        'write' => true,
+        'columns' => [],
+        'rows' => [],
+        'row_count' => 1,
+        'truncated' => false,
+    ]);
+
+    $this
+        ->artisan('database:query', [
+            'slug' => 'app',
+            'sql' => 'DELETE FROM users',
+            '--write' => true,
+            '--json' => true,
+        ])
+        ->assertExitCode(0);
+
+    expect($writeClient->getLastRequest()?->body()->all())
+        ->toBe(['sql' => 'DELETE FROM users', 'write' => true]);
+});
+
+it('lists tables and describes schema through typed inspection requests', function (): void {
+    $tables = database_cli_mock(ListDatabaseTablesRequest::class, [
+        'slug' => 'app',
+        'driver' => 'mysql',
+        'tables' => ['users'],
+    ]);
+
+    $this
+        ->artisan('database:tables', ['slug' => 'app', '--json' => true])
+        ->assertExitCode(0);
+
+    expect($tables->getLastRequest())
+        ->toBeInstanceOf(ListDatabaseTablesRequest::class)
+        ->and($tables->getLastRequest()?->resolveEndpoint())
+        ->toBe('/api/v1/database-connections/app/tables');
+
+    database_cli_mock(ShowDatabaseSchemaRequest::class, [
+        'slug' => 'app',
+        'driver' => 'mysql',
+        'tables' => [[
+            'name' => 'users',
+            'columns' => [
+                ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
+            ],
+        ]],
+    ]);
+
+    $this
+        ->artisan('database:schema', ['slug' => 'app', '--json' => true])
+        ->assertExitCode(0);
+
+    $describe = database_cli_mock(DescribeDatabaseTableRequest::class, [
+        'slug' => 'app',
+        'driver' => 'mysql',
+        'table' => 'users',
+        'columns' => [
+            ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
+        ],
+    ]);
+
+    $this
+        ->artisan('database:describe', ['slug' => 'app', 'table' => 'users', '--json' => true])
+        ->assertExitCode(0);
+
+    expect($describe->getLastRequest())
+        ->toBeInstanceOf(DescribeDatabaseTableRequest::class)
+        ->and($describe->getLastRequest()?->resolveEndpoint())
+        ->toBe('/api/v1/database-connections/app/describe/users');
+});
+
+it('refuses an invalid describe table before it contacts the Gateway', function (): void {
+    $mock = MockClient::global();
+
+    $this
+        ->artisan('database:describe', ['slug' => 'app', 'table' => 'users;drop', '--json' => true])
+        ->assertExitCode(1);
+
+    expect($mock->getLastPendingRequest())->toBeNull();
 });
 
 it('refuses mysql create without a password before it contacts the Gateway', function (): void {

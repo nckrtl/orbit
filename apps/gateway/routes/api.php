@@ -304,6 +304,19 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'destroy'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:destroy');
+        Route::post('database-connections/{database_connection}/query', [DatabaseConnectionsController::class, 'query'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:query');
+        Route::get('database-connections/{database_connection}/tables', [DatabaseConnectionsController::class, 'tables'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:tables');
+        Route::get('database-connections/{database_connection}/schema', [DatabaseConnectionsController::class, 'schema'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:schema');
+        Route::get('database-connections/{database_connection}/describe/{table}', [DatabaseConnectionsController::class, 'describe'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->where('table', '[A-Za-z_][A-Za-z0-9_]*')
+            ->name('database:describe');
         Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
             ->name('herdr:session:list');
         Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])

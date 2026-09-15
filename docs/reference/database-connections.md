@@ -5,9 +5,9 @@ description: "The Gateway-owned registry of mysql, pgsql, and sqlite connections
 
 # Database connections
 
-This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, add, remove, and Doctor inspection behave. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
+This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, add, remove, query, tables, schema, describe, and Doctor inspection behave. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
 
-A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start, stop, or query a database.
+A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start or stop a database. Query, tables, schema, and describe run against a registered connection only.
 
 The operator adds a connection on an App instance only. Add writes prefixed keys into the Gateway-owned stored App instance environment under [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). It does not write the workload `.env`. Run `orbit env:sync` after add or remove when the workload file must match stored configuration. [App instance environment variables](/reference/environment-variables) owns import, update, and synchronization.
 
@@ -69,10 +69,14 @@ The CLI sends each operation through the Gateway.
 | `orbit database:create SLUG --driver=DRIVER` | Create one connection and encrypt the supplied password. |
 | `orbit database:update SLUG` | Replace the supplied fields on one connection. |
 | `orbit database:destroy SLUG --force` | Destroy the connection record. |
+| `orbit database:query SLUG SQL` | Run one SQL statement against the registered connection. |
+| `orbit database:tables SLUG` | List tables on the registered connection. |
+| `orbit database:schema SLUG` | Show columns for every table on the registered connection. |
+| `orbit database:describe SLUG TABLE` | Show columns for one table on the registered connection. |
 | `orbit instance:database:add SLUG --instance=SELECTOR` | Add the connection on one App instance and write prefixed stored environment keys. |
 | `orbit instance:database:remove SLUG --instance=SELECTOR --force` | Remove the connection from one App instance and clear the prefixed stored environment keys. |
 
-Every command also accepts `--json`. Human and JSON results include the Gateway request ID. `database:destroy` and `instance:database:remove` require interactive confirmation or `--force` before they send the delete request. `database:update` requires at least one field option.
+Every command also accepts `--json`. Human and JSON results include the Gateway request ID. `database:destroy` and `instance:database:remove` require interactive confirmation or `--force` before they send the delete request. `database:update` requires at least one field option. `database:query` is read-only unless `--write` is set.
 
 The create command accepts `--host`, `--port`, `--database`, `--path`, `--username`, `--password`, and `--node`. The update command accepts the same field options except the slug. An empty `--node` on update clears the stored Node association.
 
@@ -87,8 +91,32 @@ The Gateway exposes the registry at `/api/v1/database-connections`. Access to th
 | `GET` | `/api/v1/database-connections/{slug}` | Show one record |
 | `PATCH` | `/api/v1/database-connections/{slug}` | Update supplied fields |
 | `DELETE` | `/api/v1/database-connections/{slug}` | Destroy the record |
+| `POST` | `/api/v1/database-connections/{slug}/query` | Run one SQL statement |
+| `GET` | `/api/v1/database-connections/{slug}/tables` | List tables |
+| `GET` | `/api/v1/database-connections/{slug}/schema` | Show every table's columns |
+| `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | Show one table's columns |
 
 A duplicate slug returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. An unknown slug returns `http.404`. Destroying a record deletes that row when no App instance attachment exists. The Gateway answers `database.connection_attached` (HTTP 409) when an attachment still exists. Recovery of a stored password depends on retaining the Gateway encryption key material.
+
+## Inspect a registered connection
+
+The operator inspects a registered connection with query, tables, schema, and describe. The Gateway refuses SQL that is not sent against a stored slug. The request never accepts a host, path, username, or password of its own.
+
+Query is read-only by default. The Gateway answers `database.write_required` when the statement would write and the request omits `write: true`. `--write` on the CLI sends that flag. Query accepts one statement. Stacked statements return `database.sql_multiple_statements`.
+
+SQLite query, tables, schema, and describe run on the associated Node. The Gateway answers `database.sqlite_node_required` when that connection has no Node. The remote command is `sqlite3` with the stored path. SQL travels on protected stdin and does not enter argv.
+
+MySQL and PostgreSQL inspection uses the stored host, port, database, username, and password from the Gateway. The password never enters a DSN, response, activity record, error, or debug output. Responses, activity records, errors, and debug output replace a password-shaped value with `[REDACTED]`. Query returns at most 500 rows and sets `truncated` when more remain.
+
+An unknown table returns `database.table_missing` (HTTP 404). A failed remote or driver execution returns `database.query_failed` (HTTP 502).
+
+```text
+orbit database:query app "SELECT id, email FROM users"
+orbit database:query app "DELETE FROM users WHERE id = 1" --write
+orbit database:tables app
+orbit database:schema app
+orbit database:describe app users
+```
 
 ## Add a connection on an App instance
 

@@ -49,6 +49,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 
 | Family | Actions | Result |
 | --- | --- | --- |
+| `database` | `describe`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections). |
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/concepts#doctor) compares Gateway intent with Node state. |
 | `env` | `import`, `sync` | The CLI imports or synchronizes AppInstance environment values. |
