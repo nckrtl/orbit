@@ -69,8 +69,14 @@ HELP;
             }
             $destination = $this->sendWithProgress($connector, new ShowNodeRequest($nodeId), NodeResponse::class,
                 ['Resolve destination Node', 'Loading destination Node', 'Loaded destination Node']);
+            $resuming = $source->transfer !== null
+                && ! $source->transfer->cleanupCompleted
+                && $source->transfer->destinationNodeId === $nodeId
+                && $source->transfer->sourceNodeId > 0;
+            $action = $resuming ? 'Resume transfer of' : 'Transfer';
+            $sourceNodeId = $resuming ? $source->transfer->sourceNodeId : $source->nodeId;
             if (! $destination instanceof NodeResponse || ! $this->confirmAction(
-                "Transfer App instance [{$source->name}] (#{$source->id}) from Node #{$source->nodeId} to Node [{$destination->name}] (#{$destination->id}) with downtime and deletion of the old placement?",
+                "{$action} App instance [{$source->name}] (#{$source->id}) from Node #{$sourceNodeId} to Node [{$destination->name}] (#{$destination->id}) with downtime and deletion of the old placement?",
                 'App instance transfer cancelled.',
                 option: 'force',
                 requiredCode: 'instance.confirmation_required',

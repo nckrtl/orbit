@@ -112,6 +112,29 @@ it('requires default-No native consent and restores the terminal before returnin
     'Ctrl-C' => [["\x03"], false], 'EOF' => [["\x04"], false],
 ]);
 
+it('names the original source when confirming a transfer retry after cutover', function (bool $accepted): void {
+    $case = instance_source_consent_case('transfer');
+    $case['arguments'][] = '--no-ansi';
+    $case['prompt'] = 'Resume transfer of App instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
+    $case['replies'][0]['body']['data']['node_id'] = 8;
+    $case['replies'][0]['body']['data']['transfer'] = [
+        'source_node_id' => 2, 'destination_node_id' => 8,
+        'cutover_completed' => true, 'cleanup_completed' => false,
+    ];
+
+    $result = run_instance_source_consent($case, $accepted ? ['y', "\r"] : ["\r"]);
+
+    expect($result['status'])->toBe($accepted ? 0 : 1)
+        ->and($result['prompt_seen'])->toBeTrue()
+        ->and($result['restored'])->toBeTrue()
+        ->and($result['output'])->toContain($case['prompt'])
+        ->and($result['requests'])->toHaveCount($accepted ? 3 : 2);
+    if ($accepted) {
+        expect($result['requests'][2]['class'])->toBe(TransferAppInstanceRequest::class)
+            ->and($result['requests'][2]['body'])->toBe(['node_id' => 8]);
+    }
+})->with([false, true]);
+
 it('keeps JSON and noninteractive mode separate from explicit consent', function (string $family, bool $json, bool $consent): void {
     $case = instance_source_consent_case($family);
     $case['arguments'] = [...$case['arguments'], '--ansi', ...($json ? ['--json'] : []), ...($consent ? [$case['option']] : [])];
