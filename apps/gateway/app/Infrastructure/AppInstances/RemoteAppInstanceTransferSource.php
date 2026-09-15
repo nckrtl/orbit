@@ -52,7 +52,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             nodeId: $instance->node_id,
             layout: $layout,
             sourcePath: $instance->checkout_path,
-            commonRepositoryPath: is_string($facts['common'] ?? null) && $facts['common'] !== ''
+            commonRepositoryPath: $facts['common'] !== ''
                 ? $facts['common']
                 : $instance->registration_common_repository_path,
             head: $facts['head'],
@@ -230,7 +230,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             '-i',
             $this->keys->privateKeyPath(),
             '-o',
-            'UserKnownHostsFile='.$this->knownHosts->path($node),
+            'UserKnownHostsFile='.$this->knownHosts->path(),
             $source,
             $target,
         ];
@@ -241,11 +241,13 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         $host = $node->wireguard_ip;
         $user = $node->user;
 
-        if (! is_string($host) || filter_var($host, FILTER_VALIDATE_IP) === false || ! is_string($user)) {
+        if (! is_string($host) || filter_var($host, FILTER_VALIDATE_IP) === false) {
             throw $this->failed();
         }
 
-        return "{$user}@{$host}:{$path}";
+        $formattedHost = str_contains($host, ':') ? "[{$host}]" : $host;
+
+        return "{$user}@{$formattedHost}:{$path}";
     }
 
     /** @return array{head: string, branch: string, detached: string, archive: string, common: string, refs: string} */
