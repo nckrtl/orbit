@@ -1418,24 +1418,19 @@ it('restores Cluster and Route state when activation fails before publication', 
         reconciliation_update(state: ClusterState::Active),
     ))->toThrow(ResourceOperationException::class, 'Injected dns-publication failure.');
 
-    $replacement = reconciliation_route_by_domain('feature.acme.cluster.test');
-
     expect($cluster->refresh()->state)
         ->toBe(ClusterState::Inactive)
-        ->and($generated->refresh()->only(['id', 'domain', 'node_id', 'cluster_id', 'status']))
+        ->and($generated->refresh()->only(['id', 'domain', 'node_id', 'cluster_id', 'status', 'replaced_by_route_id']))
         ->toBe([
             'id' => $routeBefore['id'],
             'domain' => $routeBefore['domain'],
             'node_id' => $routeBefore['node_id'],
             'cluster_id' => null,
             'status' => RouteStatus::Active,
+            'replaced_by_route_id' => null,
         ])
-        ->and($generated->replaced_by_route_id)
-        ->toBe($replacement->id)
-        ->and($replacement->status)
-        ->toBe(RouteStatus::Failed)
-        ->and($replacement->failed_step)
-        ->toBe('dns-publication')
+        ->and(Route::query()->where('domain', 'feature.acme.cluster.test')->exists())
+        ->toBeFalse()
         ->and($generated->targets()->pluck('app_instance_id')->all())
         ->toBe(array_column($routeBefore['targets'], 'app_instance_id'))
         ->and($events->values)
@@ -1703,21 +1698,16 @@ it('restores membership and Route scope when attach projection fails before publ
     expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
         ->toThrow(ResourceOperationException::class, 'Injected workload-caddy failure.');
 
-    $replacement = reconciliation_route_by_domain('feature.acme.cluster.test');
-
-    expect($generated->refresh()->only(['domain', 'node_id', 'cluster_id', 'status']))
+    expect($generated->refresh()->only(['domain', 'node_id', 'cluster_id', 'status', 'replaced_by_route_id']))
         ->toBe([
             'domain' => 'feature.acme.dev.test',
             'node_id' => $this->node->id,
             'cluster_id' => null,
             'status' => RouteStatus::Active,
+            'replaced_by_route_id' => null,
         ])
-        ->and($generated->replaced_by_route_id)
-        ->toBe($replacement->id)
-        ->and($replacement->status)
-        ->toBe(RouteStatus::Failed)
-        ->and($replacement->failed_step)
-        ->toBe('workload-caddy')
+        ->and(Route::query()->where('domain', 'feature.acme.cluster.test')->exists())
+        ->toBeFalse()
         ->and($this->node->fresh()->cluster_id)
         ->toBeNull();
 
