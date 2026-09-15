@@ -248,7 +248,7 @@ it('retains Node, Cluster, and Router reconciliation refusals before dependent s
 
     expect(fn () => app(UpdateClusterAction::class)->execute(
         $cluster,
-        reconciliation_update(state: ClusterState::Inactive),
+        reconciliation_update(tldProvided: true, tld: 'next-cluster.test', state: ClusterState::Inactive),
     ))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('route.reconciliation_required');
     });
@@ -1212,6 +1212,217 @@ it('does not return reconciliation_required after a Cluster TLD change and still
         ->toBe($cluster->id);
 });
 
+it('validates Cluster activation and deactivation before they become authoritative', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $cluster = Cluster::query()->create([
+        'name' => 'activation-validation',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster.test',
+    ]);
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $generated->update(['status' => RouteStatus::Active]);
+    $before = $generated->fresh(['targets'])->toArray();
+    $clusterBefore = $cluster->fresh()->toArray();
+
+    expect(fn () => app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(state: ClusterState::Active),
+    ))->toThrow(ResourceOperationException::class, 'requires one active Router');
+
+    expect($generated->fresh(['targets'])->toArray())
+        ->toBe($before)
+        ->and($cluster->fresh()->toArray())
+        ->toBe($clusterBefore)
+        ->and($this->target->refresh()->node_id)
+        ->toBe($this->node->id);
+});
+
+it('prepares Cluster Router paths before activation and Node scope before deactivation', function (): void {
+    $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $explicitTarget = reconciliation_instance($this->orbitApp, $this->node, 'explicit');
+    $explicitTarget->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'fixed.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $explicitTarget->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $cluster = Cluster::query()->create([
+        'name' => 'activation-cutover',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster.test',
+    ]);
+    $router = reconciliation_node('activation-router', null);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $generated->update(['status' => RouteStatus::Active]);
+    $explicit->update(['status' => RouteStatus::Active]);
+    $explicitId = $explicit->id;
+    $events = bind_node_tld_projection();
+
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+    $generated = reconciliation_route_by_domain('feature.acme.dev.test');
+    $explicit = reconciliation_route_by_domain('fixed.example.test');
+
+    expect($cluster->refresh()->state)
+        ->toBe(ClusterState::Active)
+        ->and($generated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($generated->node_id)
+        ->toBeNull()
+        ->and($generated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($explicit->id)
+        ->toBe($explicitId)
+        ->and($explicit->domain)
+        ->toBe('fixed.example.test')
+        ->and($explicit->cluster_id)
+        ->toBe($cluster->id)
+        ->and($this->target->refresh()->node_id)
+        ->toBe($this->node->id)
+        ->and($events->values)
+        ->toContain('router-caddy', 'dns-publication', 'cleanup');
+
+    $events->values = [];
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Inactive));
+    $generated = reconciliation_route_by_domain('feature.acme.dev.test');
+    $explicit = reconciliation_route_by_domain('fixed.example.test');
+
+    expect($cluster->refresh()->state)
+        ->toBe(ClusterState::Inactive)
+        ->and($generated->node_id)
+        ->toBe($this->node->id)
+        ->and($generated->cluster_id)
+        ->toBeNull()
+        ->and($explicit->domain)
+        ->toBe('fixed.example.test')
+        ->and($explicit->node_id)
+        ->toBe($this->node->id)
+        ->and($events->values)
+        ->toContain('workload-caddy', 'dns-publication', 'cleanup');
+});
+
+it('activates a TLD-less Cluster with owned Routes on one colocated Router', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $cluster = Cluster::query()->create([
+        'name' => 'tldless-activation',
+        'state' => ClusterState::Inactive,
+        'tld' => null,
+    ]);
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $this->node->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $generated->update(['status' => RouteStatus::Active]);
+    bind_node_tld_projection();
+
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+    $generated = reconciliation_route_by_domain('feature.acme.dev.test');
+
+    expect($cluster->refresh()->state)
+        ->toBe(ClusterState::Active)
+        ->and($generated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($generated->domain)
+        ->toBe('feature.acme.dev.test')
+        ->and($this->target->refresh()->node_id)
+        ->toBe($this->node->id);
+});
+
+it('restores Cluster and Route state when activation fails before publication', function (): void {
+    $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $cluster = Cluster::query()->create([
+        'name' => 'activation-failure',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster.test',
+    ]);
+    $router = reconciliation_node('failure-router', null);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $generated->update(['status' => RouteStatus::Active]);
+    $events = bind_node_tld_projection();
+    $projector = app(RouteDomainProjector::class);
+    assert($projector instanceof NodeTldRouteProjector);
+    $projector->failAt = 'dns-publication';
+    $routeBefore = $generated->fresh(['targets'])->toArray();
+
+    expect(fn () => app(UpdateClusterAction::class)->execute(
+        $cluster,
+        reconciliation_update(state: ClusterState::Active),
+    ))->toThrow(ResourceOperationException::class, 'Injected dns-publication failure.');
+
+    expect($cluster->refresh()->state)
+        ->toBe(ClusterState::Inactive)
+        ->and($generated->refresh()->only(['id', 'domain', 'node_id', 'cluster_id', 'status', 'failed_step']))
+        ->toBe([
+            'id' => $routeBefore['id'],
+            'domain' => $routeBefore['domain'],
+            'node_id' => $routeBefore['node_id'],
+            'cluster_id' => null,
+            'status' => RouteStatus::Active,
+            'failed_step' => 'dns-publication',
+        ])
+        ->and($generated->targets()->pluck('app_instance_id')->all())
+        ->toBe(array_column($routeBefore['targets'], 'app_instance_id'))
+        ->and($events->values)
+        ->toContain('rollback-dns');
+});
+
+it('does not return reconciliation_required after Cluster activation or deactivation', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $cluster = Cluster::query()->create([
+        'name' => 'activation-complete',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster.test',
+    ]);
+    $router = reconciliation_node('complete-router', null);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $generated->update(['status' => RouteStatus::Active]);
+    bind_node_tld_projection();
+
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+    $replacement = reconciliation_node('still-refused-router', null);
+    $replacement->update(['cluster_id' => $cluster->id]);
+    $before = reconciliation_route_by_domain('feature.acme.dev.test')->fresh(['targets'])->toArray();
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        })
+        ->and(reconciliation_route_by_domain('feature.acme.dev.test')->fresh(['targets'])->toArray())
+        ->toBe($before);
+
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Inactive));
+
+    expect($cluster->refresh()->state)
+        ->toBe(ClusterState::Inactive);
+});
+
 it('requires a Router only after a TLD-less active Cluster owns a Route', function (): void {
     $cluster = Cluster::query()->create(['name' => 'tldless', 'state' => ClusterState::Active, 'tld' => null]);
     $member = reconciliation_node('member', 'member.test');
@@ -1439,13 +1650,15 @@ final class NodeTldProjectionEvents
 
 final class NodeTldRouteProjector implements RouteDomainProjector
 {
+    public ?string $failAt = null;
+
     public function __construct(
         private NodeTldProjectionEvents $events,
     ) {}
 
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
     {
-        $this->events->values[] = 'workload-certificate';
+        $this->event('workload-certificate');
     }
 
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
@@ -1487,7 +1700,20 @@ final class NodeTldRouteProjector implements RouteDomainProjector
 
     public function publishDns(Route $current, Route $candidate): void
     {
-        $this->events->values[] = 'dns-publication';
+        $this->event('dns-publication');
+    }
+
+    private function event(string $name): void
+    {
+        $this->events->values[] = $name;
+
+        if ($this->failAt === $name) {
+            throw new ResourceOperationException(
+                errorCode: 'route.domain_change_failed',
+                message: "Injected {$name} failure.",
+                status: 409,
+            );
+        }
     }
 
     public function cleanup(AppInstance $appInstance, Route $route): void

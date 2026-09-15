@@ -1906,7 +1906,7 @@ it('creates equivalent source on Nodes in every optional Cluster state', functio
     expect(AppInstance::query()->sole()->getAttributes())->not->toHaveKey('cluster_id');
 })->with(['standalone', 'inactive', 'active-without-tld', 'active-with-tld']);
 
-it('refuses Cluster activation that would change an active AppInstance Route', function (): void {
+it('reconciles Cluster activation for an active AppInstance Route without moving placement', function (): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -1929,24 +1929,35 @@ it('refuses Cluster activation that would change an active AppInstance Route', f
         'public_ssh_host' => '192.0.2.21',
         'wireguard_ip' => '10.44.0.21',
     ]);
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+    app()->instance(
+        DevelopmentProjectionOperationLock::class,
+        new class implements DevelopmentProjectionOperationLock
+        {
+            public function run(Closure $operation): mixed
+            {
+                return $operation();
+            }
+        },
+    );
 
     $this->putJson("/api/v1/clusters/{$cluster->id}/nodes/{$this->node->id}")->assertOk();
     $this->putJson("/api/v1/clusters/{$cluster->id}/router/{$firstRouter->id}")->assertOk();
     $this->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'orbit'])->assertOk();
     $this
         ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.reconciliation_required');
+        ->assertOk()
+        ->assertJsonPath('data.state', 'active');
 
     expect(AppInstance::query()->findOrFail($created->json('data.id'))->getAttributes())
         ->toBe($before)
         ->and($cluster->refresh()->state)
-        ->toBe(ClusterState::Inactive)
+        ->toBe(ClusterState::Active)
         ->and(Route::query()->sole()->only(['status', 'node_id', 'cluster_id', 'domain']))
         ->toBe([
             'status' => RouteStatus::Active,
-            'node_id' => $this->node->id,
-            'cluster_id' => null,
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
             'domain' => 'dev.acme.test',
         ])
         ->and($firstRouter->roles()->where('role', RoleName::Router)->sole()->status)

@@ -18,6 +18,7 @@ use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -212,6 +213,120 @@ it('records generated Route failure, restores the old URL, and refuses a conflic
         ->toBe(RouteStatus::Active)
         ->and(Route::query()->find($route->id))
         ->toBeNull();
+});
+
+it('converges a same-domain Cluster scope change on one Route and restores after a pre-cutover failure', function (): void {
+    $route = route_domain_change_route(laravel: true);
+    $cluster = Cluster::query()->create(['name' => 'activation', 'state' => 'inactive', 'tld' => 'cluster.test']);
+    $router = Node::query()->create([
+        'name' => 'activation-router',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.30',
+        'wireguard_ip' => '10.44.0.30',
+        'user' => 'orbit',
+    ]);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'dev.test');
+
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: false,
+        placement: $placement,
+    );
+
+    expect($updated->id)
+        ->toBe($route->id)
+        ->and($updated->domain)
+        ->toBe('old.example.test')
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->node_id)
+        ->toBeNull()
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->replacement_step)
+        ->toBeNull()
+        ->and($this->events->values)
+        ->toBe([
+            'owner',
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'url:https://old.example.test',
+            'dns-publication',
+            'cleanup',
+            'url:https://old.example.test',
+            'workload-verify',
+        ]);
+
+    $route->update(['node_id' => $route->targets->sole()->appInstance->node_id, 'cluster_id' => null]);
+    $this->events->values = [];
+    $this->projector->failures['router-caddy'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute(
+        $route->refresh(),
+        $route->domain,
+        placement: $placement,
+    ))->toThrow(ResourceOperationException::class, 'Injected router-caddy failure.');
+
+    expect($route->refresh()->cluster_id)
+        ->toBeNull()
+        ->and($route->refresh()->node_id)
+        ->not->toBeNull()
+        ->and($route->refresh()->failed_step)
+        ->toBe('router-caddy')
+        ->and($this->events->values)
+        ->toContain('rollback-certificates', 'rollback-caddy', 'rollback-dns');
+
+    $this->projector->failures = [];
+    $this->events->values = [];
+    $retried = app(ConvergeRouteAction::class)->execute(
+        $route->refresh(),
+        $route->domain,
+        placement: $placement,
+    );
+
+    expect($retried->cluster_id)
+        ->toBe($cluster->id)
+        ->and($retried->failed_step)
+        ->toBeNull()
+        ->and($retried->replacement_step)
+        ->toBeNull();
+});
+
+it('applies proposed Cluster placement on a generated domain replacement', function (): void {
+    $route = route_domain_change_route(laravel: false, generated: true);
+    $cluster = Cluster::query()->create(['name' => 'generated-activation', 'state' => 'inactive', 'tld' => 'next.test']);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'next.test');
+
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        'feature.acme.next.test',
+        allowGenerated: true,
+        placement: $placement,
+    );
+
+    expect($updated->id)
+        ->not->toBe($route->id)
+        ->and($updated->domain)
+        ->toBe('feature.acme.next.test')
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->node_id)
+        ->toBeNull()
+        ->and($updated->provenance->value)
+        ->toBe('generated');
 });
 
 it('prepares every projection and Laravel URL before DNS then cuts over and cleans up', function (): void {
