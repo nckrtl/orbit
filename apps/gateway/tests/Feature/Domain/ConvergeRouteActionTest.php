@@ -40,6 +40,89 @@ beforeEach(function (): void {
     );
 });
 
+it('converges a generated private development Route when Node TLD reconciliation allows it', function (): void {
+    $route = route_domain_change_route(laravel: true, generated: true);
+
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'feature.acme.next.test', allowGenerated: true);
+
+    expect($this->events->values)
+        ->toBe([
+            'owner',
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'url:https://feature.acme.next.test',
+            'dns-publication',
+            'cleanup',
+            'url:https://feature.acme.next.test',
+            'workload-verify',
+        ])
+        ->and($updated->domain)
+        ->toBe('feature.acme.next.test')
+        ->and($updated->provenance->value)
+        ->toBe('generated')
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->id)
+        ->not->toBe($route->id);
+});
+
+it('refuses a generated Route unless Node TLD reconciliation allows it', function (): void {
+    $route = route_domain_change_route(laravel: false, generated: true);
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'feature.acme.next.test'))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        });
+
+    expect($route->refresh()->domain)->toBe('feature.acme.dev.test');
+});
+
+it('records generated Route failure, restores the old URL, and refuses a conflicting mutation', function (): void {
+    $route = route_domain_change_route(laravel: true, generated: true);
+    $this->projector->failures = [
+        'workload-caddy' => 1,
+        'rollback-caddy' => 1,
+    ];
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'feature.acme.next.test', allowGenerated: true))
+        ->toThrow(ResourceOperationException::class, 'Injected workload-caddy failure.');
+
+    $replacement = Route::query()->where('domain', 'feature.acme.next.test')->sole();
+
+    expect($route->refresh()->domain)
+        ->toBe('feature.acme.dev.test')
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->replaced_by_route_id)
+        ->toBe($replacement->id)
+        ->and($replacement->status)
+        ->toBe(RouteStatus::Failed)
+        ->and($replacement->failed_step)
+        ->toBe('workload-caddy');
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute(
+        $route,
+        'feature.acme.other.test',
+        allowGenerated: true,
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.domain_change_conflict');
+    });
+
+    $this->projector->failures = [];
+    $updated = app(ConvergeRouteAction::class)->execute($route, 'feature.acme.next.test', allowGenerated: true);
+
+    expect($updated->domain)
+        ->toBe('feature.acme.next.test')
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and(Route::query()->find($route->id))
+        ->toBeNull();
+});
+
 it('prepares every projection and Laravel URL before DNS then cuts over and cleans up', function (): void {
     $route = route_domain_change_route(laravel: true);
 
@@ -448,7 +531,7 @@ it('refuses a conflicting publication request without changing recorded intent',
     expect($replacement->fresh()->getAttributes())->toBe($before);
 });
 
-function route_domain_change_route(bool $laravel, string $environment = 'development'): Route
+function route_domain_change_route(bool $laravel, string $environment = 'development', bool $generated = false): Route
 {
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
@@ -485,8 +568,9 @@ function route_domain_change_route(bool $laravel, string $environment = 'develop
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'domain' => 'old.example.test',
-        'provenance' => 'explicit',
+        'generation_basis_node_id' => $generated ? $node->id : null,
+        'domain' => $generated ? 'feature.acme.dev.test' : 'old.example.test',
+        'provenance' => $generated ? 'generated' : 'explicit',
         'publication' => 'private',
         'status' => 'pending',
     ]);

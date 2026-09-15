@@ -35,17 +35,17 @@ beforeEach(function (): void {
         }
 
         /** @return array{status: string, changed: bool} */
-        public function resolve(string $tld, string $target): array
+        public function resolve(string $name, string $target): array
         {
-            $this->resolveCalls[] = ['tld' => $tld, 'target' => $target];
+            $this->resolveCalls[] = ['tld' => $name, 'target' => $target];
 
             return $this->resolveResult;
         }
 
         /** @return array{status: string, changed: bool} */
-        public function reset(string $tld): array
+        public function reset(string $name): array
         {
-            $this->resetCalls[] = $tld;
+            $this->resetCalls[] = $name;
 
             return $this->resetResult;
         }
@@ -76,6 +76,65 @@ it('configures a caller-local TLD resolver override', function (): void {
     ]);
 });
 
+it('preserves wildcard human output', function (): void {
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'beast',
+            'target' => '10.44.0.7',
+        ])
+        ->expectsOutputToContain('.beast resolves locally to 10.44.0.7.')
+        ->expectsOutputToContain('Restart open browsers to use the new route.')
+        ->assertExitCode(0);
+});
+
+it('configures an exact private Route resolver override', function (): void {
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'shop.app.beast',
+            'target' => '10.44.0.8',
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode([
+            'hostname' => 'shop.app.beast',
+            'target' => '10.44.0.8',
+            'status' => 'resolved',
+            'changed' => true,
+            'restart_browser' => true,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+
+    expect($this->resolver->resolveCalls)->toBe([
+        ['tld' => 'shop.app.beast', 'target' => '10.44.0.8'],
+    ]);
+});
+
+it('accepts an IPv6 target for an exact Route name', function (): void {
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'shop.app.beast',
+            'target' => '2001:db8::8',
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode([
+            'hostname' => 'shop.app.beast',
+            'target' => '2001:db8::8',
+            'status' => 'resolved',
+            'changed' => true,
+            'restart_browser' => true,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+});
+
+it('names the exact hostname in human output', function (): void {
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'shop.app.beast',
+            'target' => '10.44.0.8',
+        ])
+        ->expectsOutputToContain('shop.app.beast resolves locally to 10.44.0.8.')
+        ->assertExitCode(0);
+});
+
 it('rejects invalid input without changing resolver state', function (array $arguments, string $code): void {
     $this
         ->artisan('dns:resolve', [...$arguments, '--json' => true])
@@ -89,6 +148,9 @@ it('rejects invalid input without changing resolver state', function (array $arg
 })->with([
     'leading dot' => [['tld' => '.beast', 'target' => '10.44.0.7'], 'dns.tld_invalid'],
     'hostname target' => [['tld' => 'beast', 'target' => 'gateway.orbit'], 'dns.target_invalid'],
+    'uppercase exact name' => [['tld' => 'Shop.app.beast', 'target' => '10.44.0.8'], 'dns.hostname_invalid'],
+    'empty exact label' => [['tld' => 'shop..beast', 'target' => '10.44.0.8'], 'dns.hostname_invalid'],
+    'leading-dot exact name' => [['tld' => '.shop.app.beast', 'target' => '10.44.0.8'], 'dns.hostname_invalid'],
 ]);
 
 it('rejects a target together with reset', function (): void {
@@ -122,6 +184,63 @@ it('removes a caller-local TLD resolver override', function (): void {
         ->assertExitCode(0);
 
     expect($this->resolver->resetCalls)->toBe(['beast']);
+});
+
+it('removes an exact private Route resolver override', function (): void {
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'shop.app.beast',
+            '--reset' => true,
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode([
+            'hostname' => 'shop.app.beast',
+            'target' => null,
+            'status' => 'reset',
+            'changed' => true,
+            'restart_browser' => true,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+
+    expect($this->resolver->resetCalls)->toBe(['shop.app.beast']);
+});
+
+it('repeats an identical exact-name install without mutation', function (): void {
+    $this->resolver->resolveResult = ['status' => 'already_resolved', 'changed' => false];
+
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'shop.app.beast',
+            'target' => '10.44.0.8',
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode([
+            'hostname' => 'shop.app.beast',
+            'target' => '10.44.0.8',
+            'status' => 'already_resolved',
+            'changed' => false,
+            'restart_browser' => false,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+});
+
+it('repeats an identical exact-name reset without mutation', function (): void {
+    $this->resolver->resetResult = ['status' => 'already_absent', 'changed' => false];
+
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'shop.app.beast',
+            '--reset' => true,
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode([
+            'hostname' => 'shop.app.beast',
+            'target' => null,
+            'status' => 'already_absent',
+            'changed' => false,
+            'restart_browser' => false,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
 });
 
 it('rejects unsupported platforms', function (): void {
@@ -165,5 +284,18 @@ it('reports a local dnsmasq refresh failure', function (): void {
             '--json' => true,
         ])
         ->expectsOutputToContain('"code":"dns.refresh_failed"')
+        ->assertExitCode(1);
+});
+
+it('reports a local resolver write failure', function (): void {
+    $this->resolver->resolveResult = ['status' => 'write_failed', 'changed' => false];
+
+    $this
+        ->artisan('dns:resolve', [
+            'tld' => 'shop.app.beast',
+            'target' => '10.44.0.8',
+            '--json' => true,
+        ])
+        ->expectsOutputToContain('"code":"dns.write_failed"')
         ->assertExitCode(1);
 });

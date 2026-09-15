@@ -39,15 +39,19 @@ It can ask for local administrator privileges.
 
 ## Local DNS overrides
 
-On macOS, route one development TLD directly to an IP address:
+On macOS, route one development TLD or one exact private Route name to an IP
+address:
 
 ```bash
 ./orbit dns:resolve beast 192.168.6.20
+./orbit dns:resolve shop.app.beast 192.168.1.40
+./orbit dns:resolve shop.app.beast --reset
 ./orbit dns:resolve beast --reset
 ```
 
-The command uses Homebrew dnsmasq and `/etc/resolver/<tld>`. Restart open
-browsers after a change so they do not reuse an existing connection.
+The command uses Homebrew dnsmasq and `/etc/resolver/<name>`. An exact-name
+override takes precedence over a wildcard TLD override. Restart open browsers
+after a change so they do not reuse an existing connection.
 
 ## Doctor
 
