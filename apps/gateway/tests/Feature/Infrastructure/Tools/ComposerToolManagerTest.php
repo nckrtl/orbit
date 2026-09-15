@@ -14,6 +14,8 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\ComposerDryRunVersionParser;
+use App\Infrastructure\Tools\ComposerInstalledInventory;
+use App\Infrastructure\Tools\ComposerInstalledInventoryParser;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
@@ -130,6 +132,11 @@ describe(ComposerToolManager::class, function (): void {
             static fn (ComposerToolManager $manager, Node $node): ?string => $manager->installedVersion(
                 $node,
                 'laravel/installer',
+            ),
+        ],
+        'installed inventory' => [
+            static fn (ComposerToolManager $manager, Node $node): ComposerInstalledInventory => $manager->installedInventory(
+                $node,
             ),
         ],
         'install' => [
@@ -438,6 +445,69 @@ describe(ComposerToolManager::class, function (): void {
         expect($version)->toBeNull();
     });
 
+    it('resolves multiple packages from one installed inventory command', function (): void {
+        [$manager, $ssh] = composer_tool_manager([
+            composer_result(composer_show_entries([
+                ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
+                ['name' => 'phpunit/phpunit', 'version' => 'v11.0.0'],
+                ['name' => 'other/dup', 'version' => 'v1.0.0'],
+                ['name' => 'other/dup', 'version' => 'v1.0.1'],
+            ])),
+        ]);
+
+        $inventory = $manager->installedInventory(composer_tool_node());
+
+        expect($inventory->versionFor('laravel/installer'))->toBe('v5.16.0');
+        expect($inventory->versionFor('phpunit/phpunit'))->toBe('v11.0.0');
+        expect($inventory->versionFor('missing/pkg'))->toBeNull();
+        expect(fn () => $inventory->versionFor('other/dup'))
+            ->toThrow(function (ToolManagerException $exception): void {
+                expect($exception->step)->toBe('installed-version');
+                expect($exception->result?->stdout)->toBeEmpty();
+                expect($exception->result?->stderr)->toBeEmpty();
+            });
+        expect($ssh->arguments())->toBe([composer_show_arguments()]);
+    });
+
+    it('reads a fresh installed inventory for each observation', function (): void {
+        [$manager, $ssh] = composer_tool_manager([
+            composer_result(composer_show_entries([
+                ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
+                ['name' => 'phpunit/phpunit', 'version' => 'v11.0.0'],
+            ])),
+            composer_result(composer_show_entries([
+                ['name' => 'laravel/installer', 'version' => 'v5.17.0'],
+                ['name' => 'phpunit/phpunit', 'version' => 'v11.1.0'],
+            ])),
+        ]);
+        $node = composer_tool_node();
+
+        $before = $manager->installedInventory($node);
+        $after = $manager->installedVersion($node, 'laravel/installer');
+
+        expect($before->versionFor('laravel/installer'))->toBe('v5.16.0');
+        expect($before->versionFor('phpunit/phpunit'))->toBe('v11.0.0');
+        expect($after)->toBe('v5.17.0');
+        expect($ssh->arguments())->toBe([
+            composer_show_arguments(),
+            composer_show_arguments(),
+        ]);
+    });
+
+    it('rejects a full malformed inventory envelope before any package lookup', function (): void {
+        [$manager, $ssh] = composer_tool_manager([
+            composer_result('{"installed":{"laravel/installer":"v5.16.0"}}'),
+        ]);
+
+        expect(fn () => $manager->installedInventory(composer_tool_node()))
+            ->toThrow(function (ToolManagerException $exception): void {
+                expect($exception->step)->toBe('installed-version');
+                expect($exception->result?->stdout)->toBeEmpty();
+                expect($exception->result?->stderr)->toBeEmpty();
+            });
+        expect($ssh->arguments())->toBe([composer_show_arguments()]);
+    });
+
     it('fails closed on malformed installed-version output', function (CommandResult $result, string $step): void {
         [$manager] = composer_tool_manager([$result]);
 
@@ -552,6 +622,7 @@ function composer_tool_manager(array $results): array
                 knownHosts: composer_tool_known_hosts(),
             ),
             parser: new ComposerDryRunVersionParser,
+            inventory: new ComposerInstalledInventoryParser,
             versions: new SemverVersionNormalizer,
         ),
         $ssh,
