@@ -622,6 +622,51 @@ it('renders local validation failures through the exact json boundary', function
         'node.host_key_fingerprint_invalid',
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
     ],
+    'database user process' => [
+        'database:user:create',
+        [
+            'slug' => 'app',
+            '--process' => 'validation-secret',
+            '--database' => 'app',
+            '--username' => 'app',
+            '--password' => 'secret',
+        ],
+        'database.process_invalid',
+        'Process ID must be a positive integer.',
+    ],
+    'database user password' => [
+        'database:user:create',
+        [
+            'slug' => 'app',
+            '--process' => '12',
+            '--database' => 'app',
+            '--username' => 'app',
+        ],
+        'database.password_required',
+        'A managed MySQL user requires --password.',
+    ],
+    'database user database' => [
+        'database:user:create',
+        [
+            'slug' => 'app',
+            '--process' => '12',
+            '--username' => 'app',
+            '--password' => 'secret',
+        ],
+        'database.database_required',
+        'A managed MySQL user requires --database.',
+    ],
+    'database user username' => [
+        'database:user:create',
+        [
+            'slug' => 'app',
+            '--process' => '12',
+            '--database' => 'app',
+            '--password' => 'secret',
+        ],
+        'database.username_required',
+        'A managed MySQL user requires --username.',
+    ],
     'process target selection' => [
         'process:create',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],

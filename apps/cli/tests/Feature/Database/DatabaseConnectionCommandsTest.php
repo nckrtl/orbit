@@ -8,6 +8,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
@@ -197,6 +198,51 @@ it('destroys a connection after --force', function (): void {
 
     expect($mockClient->getLastRequest())
         ->toBeInstanceOf(DestroyDatabaseConnectionRequest::class);
+});
+
+it('creates a managed MySQL user through the Process-scoped request and hides the password', function (): void {
+    $mockClient = database_cli_mock(CreateDatabaseUserRequest::class, [
+        ...database_cli_gateway_data(),
+        'node_id' => 8,
+        'host' => '10.44.0.80',
+        'port' => 3307,
+    ], status: 201);
+
+    $this
+        ->artisan('database:user:create', [
+            'slug' => 'app',
+            '--process' => '12',
+            '--database' => 'app',
+            '--username' => 'app',
+            '--password' => DATABASE_CLI_SECRET,
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode(
+            [
+                ...database_cli_gateway_data(),
+                'node_id' => 8,
+                'host' => '10.44.0.80',
+                'port' => 3307,
+                'request_id' => database_cli_request_id(),
+            ],
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+        ))
+        ->doesntExpectOutputToContain(DATABASE_CLI_SECRET)
+        ->assertExitCode(0);
+
+    $request = $mockClient->getLastRequest();
+
+    expect($request)
+        ->toBeInstanceOf(CreateDatabaseUserRequest::class)
+        ->and($request?->resolveEndpoint())
+        ->toBe('/api/v1/processes/12/database-users')
+        ->and($request?->body()->all())
+        ->toBe([
+            'slug' => 'app',
+            'database' => 'app',
+            'username' => 'app',
+            'password' => DATABASE_CLI_SECRET,
+        ]);
 });
 
 it('queries a registered connection and sends the write flag only when asked', function (): void {

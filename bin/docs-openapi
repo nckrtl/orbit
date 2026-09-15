@@ -79,7 +79,7 @@ def load_controllers():
             ctrl[f'{f.stem}@{m.group(1)}'] = {
                 'requests': re.findall(r'(\w+Request) \$', params),
                 'data': sorted({a or b for a, b in re.findall(r'(\w+Data)::fromModel|(\w+Data)::from\w*\(', body)}),
-                'created': bool(re.search(r'\],\s*201\)', body)),
+                'created': bool(re.search(r',\s*201\)', body)),
             }
     return ctrl
 
@@ -252,7 +252,7 @@ SUMMARIES = {
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
     'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
     'route:list': 'List Routes', 'route:show': 'Show a Route', 'route:create': 'Create a Route', 'route:update': 'Update a Route', 'route:destroy': 'Remove a Route', 'route:target:set': 'Set the Route target', 'route:target:unset': 'Clear the Route target',
-    'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:user:create': 'Create a managed MySQL user', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
     'database:query': 'Query a Database connection', 'database:tables': 'List Database connection tables', 'database:schema': 'Show a Database connection schema', 'database:describe': 'Describe a Database table',
     'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'process:destroy': 'Remove a Process',
     'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
@@ -274,6 +274,7 @@ DESCRIPTIONS = {
     'instance:deployment-config:show': 'Returns the recorded deployment branch and the deploy steps in phase and placement order as one document.',
     'instance:deployment-config:update': 'Atomically replaces the branch and the complete deploy-step set from one document without fetching source or starting a deployment.',
     'instance:deployment-layout:prepare': 'Converts an existing production App instance that serves code from its home into the release layout with `releases/` and `current`.',
+    'database:user:create': 'Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.',
 }
 
 

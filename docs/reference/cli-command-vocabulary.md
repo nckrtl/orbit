@@ -28,6 +28,7 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `cluster` | `create` and `destroy` | A Cluster record |
 | `cluster:node` | `add` and `remove` | A [Node](/reference/node-provisioning) in a Cluster |
 | `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record |
+| `database:user` | `create` | A MySQL user and database on a Node Docker Process, then a connection record |
 | `gateway` | `add` and `remove` | A Gateway profile in the CLI configuration |
 | `herdr:session` | `create` and `destroy` | A [Herdr session](/reference/herdr-sessions) |
 | `instance` | `create` and `destroy` | An AppInstance |
