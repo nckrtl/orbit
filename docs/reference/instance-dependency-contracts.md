@@ -54,9 +54,21 @@ The importer must agree with the manifest's dependency specifiers and scopes. Pe
 
 Remote HTTP and HTTPS tarball locators use the package metadata's `version`; the URL is not a package version. The reader matches raw locators only in memory. Before returning the graph, it replaces every URL-bearing resolution ID, edge endpoint, and requirement reference with `pnpm:sha256:` plus a SHA-256 digest of that exact value. Different sources and peer contexts therefore stay distinct without retaining URLs, credentials, or query values. Registry locators and ordinary version constraints stay unchanged. A remote locator without a valid metadata version fails explicitly.
 
+## Bun reader
+
+`ReadBunDependencyGraphAction` accepts root `package.json` JSON and `bun.lock` JSONC text. It supports `lockfileVersion` 1 with exactly the root workspace, named `""`. Comments and trailing commas are data syntax; the reader never evaluates JavaScript, runs Bun, reads project files, or contacts registries. The caller selects the text lockfile and supplies stable matching source contents.
+
+Package paths remain resolution IDs, including nested and scoped paths. Tuple descriptors supply actual package names, so aliases retain their declared edge names without changing catalog identities. Dependency and peer lookup starts below the requesting package and walks through containing package paths to the root, following Bun's text lock behavior. Root regular and development declarations establish independent reachability through cycles. Optional dependencies override duplicate regular declarations. Package-local development declarations do not install development tools.
+
+When a name appears only in development and optional declarations, Bun saves the optional declaration in the root record. The reader validates that normalization and retains the manifest's development path to the optional target.
+
+Bun's `optionalPeers` list marks optional peer edges. Missing optional dependencies and peers remain null targets without invented versions. Missing mandatory dependencies, unreachable records, missing parents, conflicting root declarations, malformed tuples, duplicate keys, and invalid retained fields fail with `dependencies.invalid_bun_input`. Unsupported versions and binary locks use `dependencies.unsupported_format`; extra workspaces and local package links use `dependencies.unsupported_layout`. Errors contain only the stable code.
+
+Registry tuples preserve exact versions and valid integrity. Download URLs and executable metadata are omitted. Remote tarball and Git tuples do not contain a package release version: their opaque locked reference represents the resolution. Source-bearing references are replaced by deterministic `bun:sha256:` values before output, preserving distinctions without retaining URLs or credentials. A hexadecimal Git revision is retained separately when available. No version constraint is solved during parsing.
+
 ## Unsupported Yarn inputs
 
-Yarn Classic and modern Yarn are excluded from dependency inventory and updates. There is no Yarn reader. The [scope amendment](/reference/instance-dependencies#yarn-scope-amendment) supersedes the earlier Yarn parser contracts. Composer, npm, and pnpm readers retain their existing contracts; Bun text support belongs to its assigned parser task.
+Yarn Classic and modern Yarn are excluded from dependency inventory and updates. There is no Yarn reader. The [scope amendment](/reference/instance-dependencies#yarn-scope-amendment) supersedes the earlier Yarn parser contracts. Composer, npm, and pnpm readers retain their existing contracts; Bun text uses the reader described above.
 
 The npm and pnpm readers reject Yarn lock contents with a parse error instead of returning an empty graph. These pure readers do not select package managers. The collector must reject Yarn manager or lockfile selection explicitly, without trying another manager's lockfile. A failed scan uses the existing failure contract to retain stale inventory, or unknown state when no successful observation exists. Update preflight must reject Yarn before any package mutation, including Composer work in a mixed project.
 
