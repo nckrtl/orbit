@@ -104,6 +104,7 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -222,6 +223,7 @@ use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
@@ -292,6 +294,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         AppInstanceRouteEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         RouteDomainProjector::class => NativeDevelopmentRouteProjector::class,
+        ClusterRouterReplacementProjector::class => NativeClusterRouterReplacementProjector::class,
         RouteRemovalProjector::class => NativeRouteRemovalProjector::class,
         PublicRouteEdgeProjector::class => NativePublicRouteEdgeProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
