@@ -1953,6 +1953,7 @@
             "concepts": [
                 "App",
                 "App instance",
+                "Cluster",
                 "Database",
                 "Doctor",
                 "Gateway",
