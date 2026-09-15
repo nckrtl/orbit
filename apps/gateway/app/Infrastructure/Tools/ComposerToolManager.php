@@ -12,8 +12,6 @@ use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
-use JsonException;
-use stdClass;
 
 final readonly class ComposerToolManager implements ToolManager
 {
@@ -40,6 +38,7 @@ final readonly class ComposerToolManager implements ToolManager
     public function __construct(
         private RemoteToolCommandRunner $commands,
         private ComposerDryRunVersionParser $parser,
+        private ComposerInstalledInventoryParser $inventory,
         private SemverVersionNormalizer $versions,
     ) {}
 
@@ -193,9 +192,8 @@ final readonly class ComposerToolManager implements ToolManager
         );
     }
 
-    public function installedVersion(Node $node, string $package): ?string
+    public function installedInventory(Node $node): ComposerInstalledInventory
     {
-        $this->guardPackage($package);
         $this->guardSupportedNode($node);
 
         $result = $this->commands->execute($node, $this->showArguments());
@@ -206,68 +204,14 @@ final readonly class ComposerToolManager implements ToolManager
             message: 'The Composer installed version probe failed.',
         );
 
-        try {
-            /** @var mixed $decoded */
-            $decoded = json_decode($result->stdout, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The Composer installed version probe returned malformed output.',
-                result: $result,
-                previous: $exception,
-            );
-        }
+        return $this->inventory->parse($result, $this->validatePackage(...));
+    }
 
-        if ($decoded === []) {
-            return null;
-        }
+    public function installedVersion(Node $node, string $package): ?string
+    {
+        $this->guardPackage($package);
 
-        if (
-            ! $decoded instanceof stdClass
-            || ! property_exists($decoded, 'installed')
-            || ! is_array($decoded->installed)
-        ) {
-            throw $this->malformedInstalledResult($result);
-        }
-
-        $installed = $decoded->installed;
-
-        $versions = [];
-
-        /** @var mixed $entry */
-        foreach ($installed as $entry) {
-            if (! $entry instanceof stdClass) {
-                throw $this->malformedInstalledResult($result);
-            }
-
-            /** @var mixed $name */
-            $name = $entry->name ?? null;
-            /** @var mixed $version */
-            $version = $entry->version ?? null;
-
-            if (
-                ! is_string($name)
-                || ! is_string($version)
-                || ! $this->validatePackage($name)
-                || ! $this->isSafePackageVersion($version)
-            ) {
-                throw $this->malformedInstalledResult($result);
-            }
-
-            if ($name === $package) {
-                $versions[] = $version;
-            }
-        }
-
-        if ($versions === []) {
-            return null;
-        }
-
-        if (count($versions) !== 1) {
-            throw $this->malformedInstalledResult($result);
-        }
-
-        return $versions[0];
+        return $this->installedInventory($node)->versionFor($package);
     }
 
     public function normalizeVersion(string $rawVersion): ?string
@@ -366,11 +310,6 @@ final readonly class ComposerToolManager implements ToolManager
             && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1;
     }
 
-    private function isSafePackageVersion(string $version): bool
-    {
-        return $this->isSafeText($version) && preg_match('/\s/', $version) !== 1;
-    }
-
     private function combinedOutput(CommandResult $result): string
     {
         return implode(
@@ -405,15 +344,6 @@ final readonly class ComposerToolManager implements ToolManager
                 .'\. Check the package spelling, your version constraint and that the package is available in a stability which matches your minimum-stability~',
                 $normalized,
             ) === 1;
-    }
-
-    private function malformedInstalledResult(CommandResult $result): ToolManagerException
-    {
-        return new ToolManagerException(
-            step: 'installed-version',
-            message: 'The Composer installed version probe returned malformed output.',
-            result: $result,
-        );
     }
 
     /** @return non-empty-list<string> */
