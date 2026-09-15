@@ -1,0 +1,663 @@
+[
+  {
+    "argv": [
+      "activity:list"
+    ],
+    "family": "activities",
+    "method": "GET",
+    "path": "/activities?limit=25",
+    "running": "Loading activities",
+    "completed": "Loaded activities",
+    "contains": [
+      "COMMAND",
+      "process:start"
+    ],
+    "body": null,
+    "required": [],
+    "invalid_argv": [
+      "activity:list",
+      "--limit=0"
+    ],
+    "invalid_error": [
+      "activity.limit_invalid",
+      "Limit must be between 1 and 200."
+    ]
+  },
+  {
+    "argv": [
+      "activity:show",
+      "42"
+    ],
+    "family": "activities",
+    "method": "GET",
+    "path": "/activities/42",
+    "running": "Loading activity",
+    "completed": "Loaded activity",
+    "contains": [
+      "Activity: 42",
+      "process:start"
+    ],
+    "body": null,
+    "required": [
+      "activity"
+    ],
+    "invalid_argv": [
+      "activity:show",
+      "0"
+    ],
+    "invalid_error": [
+      "activity.id_invalid",
+      "Activity ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "app:create",
+      "ux-proof",
+      "https://example.test/ux.git"
+    ],
+    "family": "apps",
+    "method": "POST",
+    "path": "/apps",
+    "running": "Creating App",
+    "completed": "Created App",
+    "contains": [
+      "ux-proof",
+      "created"
+    ],
+    "body": {
+      "slug": "ux-proof",
+      "repository_url": "https://example.test/ux.git",
+      "root": "public"
+    },
+    "required": [
+      "slug",
+      "repository"
+    ],
+    "invalid_argv": [
+      "app:create",
+      "bad\nslug",
+      "https://example.test/ux.git"
+    ],
+    "invalid_error": [
+      "app.slug_invalid",
+      "App slug is invalid."
+    ]
+  },
+  {
+    "argv": [
+      "app:destroy",
+      "3",
+      "--yes"
+    ],
+    "family": "apps",
+    "method": "DELETE",
+    "path": "/apps/3",
+    "running": "Removing App",
+    "completed": "Removed App",
+    "contains": [
+      "ux-proof",
+      "removed"
+    ],
+    "consent": "--yes",
+    "prompt": "Confirm App removal [ux-proof]?",
+    "body": null,
+    "required": [
+      "app"
+    ],
+    "invalid_argv": [
+      "app:destroy",
+      "0",
+      "--yes"
+    ],
+    "invalid_error": [
+      "app.id_invalid",
+      "App ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "app:list"
+    ],
+    "family": "apps",
+    "method": "GET",
+    "path": "/apps",
+    "running": "Loading Apps",
+    "completed": "Loaded Apps",
+    "contains": [
+      "SLUG",
+      "ux-proof"
+    ],
+    "body": null,
+    "required": []
+  },
+  {
+    "argv": [
+      "app:show",
+      "3"
+    ],
+    "family": "apps",
+    "method": "GET",
+    "path": "/apps/3",
+    "running": "Loading App",
+    "completed": "Loaded App",
+    "contains": [
+      "App: ux-proof",
+      "Web root"
+    ],
+    "body": null,
+    "required": [
+      "app"
+    ],
+    "invalid_argv": [
+      "app:show",
+      "0"
+    ],
+    "invalid_error": [
+      "app.id_invalid",
+      "App ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "app:update",
+      "3",
+      "--default-branch=stable"
+    ],
+    "family": "apps",
+    "method": "PATCH",
+    "path": "/apps/3",
+    "running": "Updating App",
+    "completed": "Updated App",
+    "contains": [
+      "ux-proof",
+      "updated"
+    ],
+    "body": {
+      "default_branch": "stable"
+    },
+    "required": [
+      "app"
+    ],
+    "invalid_argv": [
+      "app:update",
+      "0",
+      "--default-branch=stable"
+    ],
+    "invalid_error": [
+      "app.id_invalid",
+      "App ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:create",
+      "ux-cluster",
+      "--tld=proof"
+    ],
+    "family": "clusters",
+    "method": "POST",
+    "path": "/clusters",
+    "running": "Creating Cluster",
+    "completed": "Created Cluster",
+    "contains": [
+      "ux-cluster",
+      "created"
+    ],
+    "body": {
+      "name": "ux-cluster",
+      "tld": "proof"
+    },
+    "required": [
+      "name"
+    ],
+    "invalid_argv": [
+      "cluster:create",
+      "ux",
+      "--tld=bad.label"
+    ],
+    "invalid_error": [
+      "cluster.tld_invalid",
+      "TLD must be one DNS label."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:destroy",
+      "3",
+      "--force"
+    ],
+    "family": "clusters",
+    "method": "DELETE",
+    "path": "/clusters/3",
+    "running": "Removing Cluster",
+    "completed": "Removed Cluster",
+    "contains": [
+      "ux-cluster",
+      "removed"
+    ],
+    "consent": "--force",
+    "prompt": "Confirm Cluster removal [ux-cluster (#3)]?",
+    "body": null,
+    "required": [
+      "cluster"
+    ],
+    "invalid_argv": [
+      "cluster:destroy",
+      "0",
+      "--force"
+    ],
+    "invalid_error": [
+      "cluster.id_invalid",
+      "Cluster ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:list"
+    ],
+    "family": "clusters",
+    "method": "GET",
+    "path": "/clusters",
+    "running": "Loading Clusters",
+    "completed": "Loaded Clusters",
+    "contains": [
+      "NAME",
+      "ux-cluster"
+    ],
+    "body": null,
+    "required": []
+  },
+  {
+    "argv": [
+      "cluster:show",
+      "3"
+    ],
+    "family": "clusters",
+    "method": "GET",
+    "path": "/clusters/3",
+    "running": "Loading Cluster",
+    "completed": "Loaded Cluster",
+    "contains": [
+      "Cluster: ux-cluster",
+      ".proof"
+    ],
+    "body": null,
+    "required": [
+      "cluster"
+    ],
+    "invalid_argv": [
+      "cluster:show",
+      "0"
+    ],
+    "invalid_error": [
+      "cluster.id_invalid",
+      "Cluster ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:update",
+      "3",
+      "--name=ux-cluster"
+    ],
+    "family": "clusters",
+    "method": "PATCH",
+    "path": "/clusters/3",
+    "running": "Updating Cluster",
+    "completed": "Updated Cluster",
+    "contains": [
+      "ux-cluster",
+      "updated"
+    ],
+    "body": {
+      "name": "ux-cluster"
+    },
+    "required": [
+      "cluster"
+    ],
+    "invalid_argv": [
+      "cluster:update",
+      "0",
+      "--name=ux-cluster"
+    ],
+    "invalid_error": [
+      "cluster.id_invalid",
+      "Cluster ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:node:add",
+      "3",
+      "2"
+    ],
+    "family": "clusters",
+    "method": "PUT",
+    "path": "/clusters/3/nodes/2",
+    "running": "Attaching Node",
+    "completed": "Attached Node",
+    "contains": [
+      "Node #2",
+      "attached"
+    ],
+    "body": null,
+    "required": [
+      "cluster",
+      "node"
+    ],
+    "invalid_argv": [
+      "cluster:node:add",
+      "0",
+      "2"
+    ],
+    "invalid_error": [
+      "cluster.id_invalid",
+      "Cluster ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:node:remove",
+      "3",
+      "2",
+      "--force"
+    ],
+    "family": "clusters",
+    "method": "DELETE",
+    "path": "/clusters/3/nodes/2",
+    "running": "Detaching Node",
+    "completed": "Detached Node",
+    "contains": [
+      "Node #2",
+      "detached"
+    ],
+    "consent": "--force",
+    "prompt": "Confirm Cluster Node detachment [ux-cluster (#3)] for Node #2?",
+    "body": {
+      "force": true
+    },
+    "required": [
+      "cluster",
+      "node"
+    ],
+    "invalid_argv": [
+      "cluster:node:remove",
+      "0",
+      "2",
+      "--force"
+    ],
+    "invalid_error": [
+      "cluster.id_invalid",
+      "Cluster ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:router:set",
+      "3",
+      "2"
+    ],
+    "family": "clusters",
+    "method": "PUT",
+    "path": "/clusters/3/router/2",
+    "running": "Setting Cluster Router",
+    "completed": "Set Cluster Router",
+    "contains": [
+      "Node #2",
+      "Router"
+    ],
+    "body": null,
+    "required": [
+      "cluster",
+      "node"
+    ],
+    "invalid_argv": [
+      "cluster:router:set",
+      "0",
+      "2"
+    ],
+    "invalid_error": [
+      "cluster.id_invalid",
+      "Cluster ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "cluster:router:unset",
+      "3",
+      "--force"
+    ],
+    "family": "clusters",
+    "method": "DELETE",
+    "path": "/clusters/3/router",
+    "running": "Clearing Cluster Router",
+    "completed": "Cleared Cluster Router",
+    "contains": [
+      "Router cleared",
+      "ux-cluster"
+    ],
+    "consent": "--force",
+    "prompt": "Confirm Cluster Router clearing [ux-cluster (#3)]?",
+    "body": {
+      "force": true
+    },
+    "required": [
+      "cluster"
+    ],
+    "invalid_argv": [
+      "cluster:router:unset",
+      "0",
+      "--force"
+    ],
+    "invalid_error": [
+      "cluster.id_invalid",
+      "Cluster ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "route:create",
+      "3",
+      "ux.test",
+      "--node=2"
+    ],
+    "family": "routes",
+    "method": "POST",
+    "path": "/routes",
+    "running": "Creating Route",
+    "completed": "Created Route",
+    "contains": [
+      "Route: ux.test",
+      "Targets"
+    ],
+    "body": {
+      "app_id": 3,
+      "domain": "ux.test",
+      "publication": "private",
+      "node_id": 2
+    },
+    "required": [
+      "app",
+      "domain"
+    ],
+    "invalid_argv": [
+      "route:create",
+      "0",
+      "ux.test",
+      "--node=2"
+    ],
+    "invalid_error": [
+      "app.id_invalid",
+      "App ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "route:destroy",
+      "11",
+      "--yes"
+    ],
+    "family": "routes",
+    "method": "DELETE",
+    "path": "/routes/11",
+    "running": "Removing Route",
+    "completed": "Removed Route",
+    "contains": [
+      "Route: ux.test",
+      "Targets"
+    ],
+    "consent": "--yes",
+    "prompt": "Confirm Route removal [ux.test]?",
+    "body": null,
+    "required": [
+      "route"
+    ],
+    "invalid_argv": [
+      "route:destroy",
+      "0",
+      "--yes"
+    ],
+    "invalid_error": [
+      "route.id_invalid",
+      "Route ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "route:list"
+    ],
+    "family": "routes",
+    "method": "GET",
+    "path": "/routes",
+    "running": "Loading Routes",
+    "completed": "Loaded Routes",
+    "contains": [
+      "DOMAIN",
+      "ux.test"
+    ],
+    "body": null,
+    "required": []
+  },
+  {
+    "argv": [
+      "route:show",
+      "11"
+    ],
+    "family": "routes",
+    "method": "GET",
+    "path": "/routes/11",
+    "running": "Loading Route",
+    "completed": "Loaded Route",
+    "contains": [
+      "Route: ux.test",
+      "Targets"
+    ],
+    "body": null,
+    "required": [
+      "route"
+    ],
+    "invalid_argv": [
+      "route:show",
+      "0"
+    ],
+    "invalid_error": [
+      "route.id_invalid",
+      "Route ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "route:update",
+      "11",
+      "--publication=private"
+    ],
+    "family": "routes",
+    "method": "PATCH",
+    "path": "/routes/11",
+    "running": "Updating Route",
+    "completed": "Updated Route",
+    "contains": [
+      "Route: ux.test",
+      "Targets"
+    ],
+    "body": {
+      "publication": "private"
+    },
+    "required": [
+      "route"
+    ],
+    "invalid_argv": [
+      "route:update",
+      "0",
+      "--publication=private"
+    ],
+    "invalid_error": [
+      "route.id_invalid",
+      "Route ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "route:target:set",
+      "11",
+      "7"
+    ],
+    "family": "routes",
+    "method": "PUT",
+    "path": "/routes/11/target",
+    "running": "Setting Route targets",
+    "completed": "Set Route targets",
+    "contains": [
+      "Route: ux.test",
+      "Targets"
+    ],
+    "body": {
+      "app_instance_id": 7
+    },
+    "required": [
+      "route",
+      "target"
+    ],
+    "invalid_argv": [
+      "route:target:set",
+      "0",
+      "7"
+    ],
+    "invalid_error": [
+      "route.id_invalid",
+      "Route ID must be a positive integer."
+    ]
+  },
+  {
+    "argv": [
+      "route:target:unset",
+      "11",
+      "--yes"
+    ],
+    "family": "routes",
+    "method": "DELETE",
+    "path": "/routes/11/target",
+    "running": "Clearing Route target",
+    "completed": "Cleared Route target",
+    "contains": [
+      "Route: ux.test",
+      "Targets"
+    ],
+    "consent": "--yes",
+    "prompt": "Confirm Route target clearing [ux.test]?",
+    "body": null,
+    "required": [
+      "route"
+    ],
+    "invalid_argv": [
+      "route:target:unset",
+      "0",
+      "--yes"
+    ],
+    "invalid_error": [
+      "route.id_invalid",
+      "Route ID must be a positive integer."
+    ]
+  }
+]

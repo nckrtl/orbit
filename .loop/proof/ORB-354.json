@@ -1,0 +1,129 @@
+{
+  "setup": [
+    {
+      "id": "prepare-command-recording",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb354-setup.sh"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "record-identity",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "setup"
+      ],
+      "timeout_seconds": 60
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "rendering",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "rendering"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "modes",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "modes"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "liveness",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "liveness"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "errors",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "errors"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "consent",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "consent"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "empty",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "empty"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "invalid",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "invalid"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "actual",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "actual"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "adoption",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb354-action.py",
+        "adoption"
+      ],
+      "timeout_seconds": 240
+    }
+  ],
+  "inputs": [
+    "apps/cli",
+    "packages/php-sdk",
+    ".agents/skills/verifying-cli-output",
+    "docs/reference/cli-ux.md",
+    "docs/cli/activity.mdx",
+    "docs/cli/app.mdx",
+    "docs/cli/cluster.mdx",
+    "docs/cli/route.mdx",
+    "docs/reference/apps.md",
+    "docs/reference/routes.md"
+  ],
+  "mutates": true,
+  "observed_inputs": false
+}
