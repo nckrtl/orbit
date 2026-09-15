@@ -48,7 +48,7 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 | Create | Store an explicit Route with its App, domain, publication intent, optional single target, and either the target-derived scope or one supplied scope when no target is present. |
 | List | Return the Routes visible to the caller in stable order. |
 | Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, and target. |
-| Update | Change an explicit Route domain by reserving a replacement Route, or change publication intent on the same domain without changing its Route ID, App, provenance, generation basis, or scope. A publication-only request on an active Route publishes or withdraws the public Ingress edge. |
+| Update | Reserve a replacement Route for an explicit domain change, or change publication intent on the same Route ID. |
 | Target set | Add or replace the one App instance target when the change does not detach an active App instance from its sole Route. |
 | Target unset | Remove the target only when that does not leave an active App instance without a Route, unless the same operation removes that App instance. |
 | Destroy | Delete the Route and only its Route-owned target rows when no active App instance depends on it. |
@@ -151,7 +151,7 @@ When the Gateway converges the app-prod role, it retires the Orbit-owned public 
 
 ## Publish a public Route
 
-A public Route terminates HTTPS on the Cluster Ingress, forwards privately through the Cluster Router, and reaches the app-prod workload without exposing placement or workload listeners. Role ownership follows [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement). The Ingress-only public boundary follows [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing).
+A public Route terminates HTTPS on the Cluster Ingress, forwards privately through the Cluster Router, and reaches the app-prod workload without exposing placement or workload listeners. Role ownership follows [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement). Only Ingress may be the public boundary; [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) records that rule.
 
 The Gateway activates public publication only when the Route is Cluster-scoped, the Cluster is active, and that Cluster has exactly one active Ingress and one active Router. A Node-scoped Route, an inactive Cluster, or a Cluster that lacks an active Ingress or Router keeps publication intent and reports public publication as inactive. Those cases create no public certificate, listener, firewall rule, or partial activation.
 
