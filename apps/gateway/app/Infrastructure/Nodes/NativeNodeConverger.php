@@ -46,7 +46,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         ?string $expectedSshHostFingerprint = null,
         bool $rolelessOperator = false,
     ): NodeObservation {
-        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
+        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator);
         $this->wireGuard->converge(
             $node,
             $this->connection($node, $identity->managedUser),
@@ -65,7 +65,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         Closure $completion,
         bool $rolelessOperator = false,
     ): void {
-        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
+        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator);
 
         if ($node->roles()->exists()) {
             $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
@@ -103,7 +103,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
     }
 
     /** @return array{0: HostKey, 1: string, 2: NodeObservation} */
-    private function prepare(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint): array
+    private function prepare(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, bool $rolelessOperator): array
     {
         if ($node->platform !== 'linux') {
             throw new NodeProvisioningException(
@@ -150,8 +150,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         $bootstrap = $this->ssh->execute(
             $bootstrapConnection,
             $identity->bootstrapUser === 'root'
-                ? $this->bootstrapCommand->make($node, $identity->managedUser)
-                : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser),
+                ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
+                : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator),
         );
 
         if (! $bootstrap->succeeded()) {
