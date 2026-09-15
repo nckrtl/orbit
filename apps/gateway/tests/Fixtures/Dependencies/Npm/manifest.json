@@ -1,0 +1,22 @@
+{
+  "name": "sample-root",
+  "version": "1.0.0",
+  "dependencies": {
+    "app-one": "^1.0",
+    "app-two": "^2.0",
+    "alias": "npm:@sample/actual@^3.0",
+    "shared": "^1.0"
+  },
+  "devDependencies": {
+    "tool": "^1.0"
+  },
+  "optionalDependencies": {
+    "unavailable": "^4.0"
+  },
+  "peerDependencies": {
+    "root-peer": "^9.0"
+  },
+  "scripts": {
+    "preinstall": "echo must-never-execute"
+  }
+}

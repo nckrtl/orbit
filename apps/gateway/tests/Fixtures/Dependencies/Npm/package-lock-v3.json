@@ -1,0 +1,86 @@
+{
+  "name": "sample-root",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "sample-root",
+      "version": "1.0.0",
+      "dependencies": {
+        "app-one": "^1.0",
+        "app-two": "^2.0",
+        "alias": "npm:@sample/actual@^3.0",
+        "shared": "^1.0"
+      },
+      "devDependencies": {
+        "tool": "^1.0"
+      },
+      "optionalDependencies": {
+        "unavailable": "^4.0"
+      },
+      "peerDependencies": {
+        "root-peer": "^9.0"
+      }
+    },
+    "node_modules/alias": {
+      "name": "@sample/actual",
+      "version": "3.1.0",
+      "resolved": "https://fixture-user:fixture-secret@127.0.0.1/never-fetch.tgz",
+      "integrity": "sha512-YWJjZA==",
+      "hasInstallScript": true
+    },
+    "node_modules/app-one": {
+      "version": "1.1.0",
+      "dev": true,
+      "dependencies": {
+        "shared": "^1.0",
+        "adapter": "^1.0"
+      },
+      "devDependencies": {
+        "not-installed": "^8.0"
+      }
+    },
+    "node_modules/app-one/node_modules/adapter": {
+      "version": "1.0.0",
+      "peerDependencies": {
+        "shared": "^1.0",
+        "optional-peer": "*"
+      },
+      "peerDependenciesMeta": {
+        "optional-peer": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/app-two": {
+      "version": "2.1.0",
+      "dependencies": {
+        "shared": "^2.0",
+        "adapter": "^1.0"
+      }
+    },
+    "node_modules/app-two/node_modules/adapter": {
+      "version": "1.0.0",
+      "peerDependencies": {
+        "shared": "^2.0"
+      }
+    },
+    "node_modules/app-two/node_modules/shared": {
+      "version": "2.2.0"
+    },
+    "node_modules/shared": {
+      "version": "1.2.0",
+      "dependencies": {
+        "app-one": "^1.0"
+      }
+    },
+    "node_modules/tool": {
+      "version": "1.0.0",
+      "dependencies": {
+        "shared": "^1.0"
+      },
+      "dev": true
+    }
+  }
+}

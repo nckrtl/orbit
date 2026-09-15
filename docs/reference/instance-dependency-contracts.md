@@ -32,6 +32,18 @@ Platform requirements such as `php`, `ext-*`, `lib-*`, and Composer runtime APIs
 
 The reader throws `DependencyParseException` with a stable error code and no input text. Invalid JSON or graph records use `dependencies.invalid_composer_input`; unsupported layouts use `dependencies.unsupported_layout`. It rejects unsafe retained values rather than exposing credentials. It does not resolve version constraints or contact registries to repair input. Collection must still ensure the manifest and lockfile belong to one stable source observation.
 
+## npm reader
+
+`ReadNpmDependencyGraphAction` accepts root `package.json` and npm lockfile contents as JSON strings. It supports `lockfileVersion` 2 and 3 through the `packages` map. The caller selects `npm-shrinkwrap.json` before `package-lock.json` when both exist. The reader does not read files, run npm or package scripts, or contact registries. Version 2's legacy `dependencies` tree is not a second inventory source.
+
+Installation locations identify resolutions, including nested and scoped packages and repeated versions. Requirement lookup follows the nearest package location and then its ancestors. Peer lookup uses the containing installation context. Aliases retain the declared name and constraint while their target uses the locked package identity. Names preserve mixed-case and numeric npm identities.
+
+Root regular and development paths establish independent reachability through dependencies and resolved peers; lockfile `dev` flags do not replace those paths. A package's own development requirements do not introduce installed dependencies. Optional dependencies override regular declarations of the same name, while development paths remain separate. Missing optional and peer targets remain null; missing required dependency targets fail.
+
+When the root has no dependencies, npm can omit the root record and write `packages: {}`. Both supported versions accept this as a present empty graph after manifest validation. An omitted root still fails when the manifest declares requirements or the packages map contains records. An explicit malformed root record also fails.
+
+The root lock record must agree with the manifest's dependency declarations. Workspace declarations, local links, and package locations outside the root installation tree fail with `dependencies.unsupported_layout`. Invalid JSON, duplicate keys, malformed records, conflicting identities, missing parents, and unreachable package records fail with `dependencies.invalid_npm_input`. Unsupported lockfile versions use `dependencies.unsupported_format`. Exceptions contain no input text. Locked versions remain opaque, integrity is retained when valid, and resolved download URLs and executable metadata are omitted. The reader does not solve version constraints; the collector must supply matching files from one stable source observation.
+
 ## Observation values
 
 Scan results use these values to distinguish observed source from a failed collection attempt.
