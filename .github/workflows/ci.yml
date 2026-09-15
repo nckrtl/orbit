@@ -59,6 +59,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes acl attr wireguard-tools
           brew install caddy openssl@3
+          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       - name: Prepare application environment
