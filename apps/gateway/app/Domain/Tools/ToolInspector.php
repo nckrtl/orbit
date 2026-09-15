@@ -9,4 +9,10 @@ use App\Models\Tool;
 interface ToolInspector
 {
     public function inspect(Tool $tool): ToolInspectionData;
+
+    /**
+     * @param  list<Tool>  $tools
+     * @return list<ToolInspectionOutcome>
+     */
+    public function inspectMany(array $tools): array;
 }
