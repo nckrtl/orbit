@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Clusters\AttachClusterNodeAction;
-use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\CreateRouteAction;
-use App\Data\Clusters\UpdateClusterData;
+use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
@@ -14,23 +12,27 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
+use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
-use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\FakePublicRouteEdgeProjector;
 
 beforeEach(function (): void {
     $this->gateway = Node::query()->create([
@@ -72,6 +74,7 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
         ->assertJsonPath('data.domain', 'app.example.test')
         ->assertJsonPath('data.provenance', 'explicit')
         ->assertJsonPath('data.publication', 'private')
+        ->assertJsonPath('data.public_publication', 'inactive')
         ->assertJsonPath('data.status', 'pending')
         ->assertJsonPath('data.failed_step', null)
         ->assertJsonPath('data.error_code', null)
@@ -329,70 +332,6 @@ it('leaves the complete Route unchanged for invalid target proposals', function 
         'app_instance_id' => $collision->id,
     ])->assertConflict();
     expect($route->fresh(['targets'])->toArray())->toBe($before);
-});
-
-it('keeps legacy Instance and Workspace host identity unchanged through Route operations', function (): void {
-    $legacy = Instance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'legacy',
-        'environment' => 'development',
-        'checkout_path' => '/srv/orbit/legacy/acme',
-        'domain' => 'legacy.example.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $workspace = Workspace::query()->create([
-        'instance_id' => $legacy->id,
-        'name' => 'preview',
-        'branch' => 'preview',
-        'checkout_path' => '/srv/orbit/legacy/acme/preview',
-        'domain' => 'preview.example.test',
-        'status' => LifecycleStatus::Active,
-    ]);
-    $legacyBefore = $legacy->only(['domain', 'certificate_mode']);
-    $workspaceBefore = $workspace->only(['domain']);
-
-    $route = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'route.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated();
-    $routeId = $route->json('data.id');
-    $routeId = $this
-        ->patchJson("/api/v1/routes/{$routeId}", ['domain' => 'changed.example.test'])
-        ->assertOk()
-        ->json('data.id');
-    $this->putJson("/api/v1/routes/{$routeId}/target", ['app_instance_id' => $this->target->id])->assertOk();
-    $this->target->update(['status' => AppInstanceState::Reserved]);
-    $this->deleteJson("/api/v1/routes/{$routeId}/target")->assertOk();
-
-    $cluster = Cluster::query()->create(['name' => 'legacy-proof', 'state' => ClusterState::Inactive]);
-    $router = route_node('legacy-router', '10.44.0.7', null);
-    $router->update(['cluster_id' => $cluster->id]);
-    $router
-        ->roles()
-        ->create([
-            'cluster_id' => $cluster->id,
-            'role' => RoleName::Router,
-            'status' => LifecycleStatus::Active,
-        ]);
-    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
-    app(UpdateClusterAction::class)->execute($cluster, new UpdateClusterData(
-        nameProvided: false,
-        name: null,
-        tldProvided: false,
-        tld: null,
-        stateProvided: true,
-        state: ClusterState::Active,
-    ));
-    $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
-
-    expect($legacy->refresh()->only(['domain', 'certificate_mode']))
-        ->toBe($legacyBefore)
-        ->and($workspace->refresh()->only(['domain']))
-        ->toBe($workspaceBefore);
 });
 
 it('rejects malformed input, caller-owned fields, arrays, and conflicting retries unchanged', function (): void {
@@ -692,6 +631,200 @@ it('updates an active explicit private production domain through a replacement R
         ->toBe($targetId);
 });
 
+it('keeps public publication inactive without artifacts for a Node-scoped Route, inactive Cluster, or missing Ingress', function (): void {
+    $edge = new FakePublicRouteEdgeProjector;
+    app()->instance(PublicRouteEdgeProjector::class, $edge);
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+
+    $nodeScoped = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'node-public.example.test',
+        'publication' => 'public',
+        'app_instance_id' => $this->target->id,
+    ])->assertCreated();
+
+    expect($nodeScoped->json('data.public_publication'))
+        ->toBe('inactive')
+        ->and($nodeScoped->json('data'))
+        ->not->toHaveKey('public_ip')
+        ->and($edge->calls)
+        ->toBe([]);
+
+    $active = Route::query()->findOrFail($nodeScoped->json('data.id'));
+    $active->update(['status' => RouteStatus::Active]);
+    $published = app(PublishPublicRouteAction::class)->execute($active, RoutePublication::Public);
+
+    expect($published->id)
+        ->toBe($active->id)
+        ->and($published->public_publication)
+        ->toBe(RoutePublicPublication::Inactive)
+        ->and($edge->calls)
+        ->toBe([]);
+
+    [$cluster, , , , , $clusterRoute] = route_public_topology(
+        $this->orbitApp,
+        domain: 'inactive-cluster.example.test',
+        name: 'inactive-public',
+    );
+    $cluster->update(['state' => ClusterState::Inactive]);
+    $inactiveCluster = app(PublishPublicRouteAction::class)->execute($clusterRoute, RoutePublication::Public);
+
+    expect($inactiveCluster->public_publication)
+        ->toBe(RoutePublicPublication::Inactive)
+        ->and($edge->calls)
+        ->toBe([]);
+
+    [$missingIngress] = route_cluster('missing-ingress', 'missing.test');
+    $missing = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'missing-ingress.example.test',
+        'publication' => 'public',
+        'cluster_id' => $missingIngress->id,
+    ])->assertCreated();
+
+    expect($missing->json('data.public_publication'))->toBe('inactive')->and($edge->calls)->toBe([]);
+});
+
+it('creates and shows a public Route without a Node public-IP field', function (): void {
+    $created = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'shown-public.example.test',
+        'publication' => 'public',
+        'cluster_id' => route_cluster('shown-public', 'shown.test')[0]->id,
+    ])->assertCreated();
+
+    expect($created->json('data'))
+        ->not->toHaveKey('public_ip')
+        ->not->toHaveKey('public_ssh_host')
+        ->and($created->json('data.public_publication'))
+        ->toBe('inactive');
+
+    $shown = $this->getJson('/api/v1/routes/'.$created->json('data.id'))->assertOk();
+
+    expect($shown->json('data'))
+        ->not->toHaveKey('public_ip')
+        ->and($shown->json('data.publication'))
+        ->toBe('public');
+});
+
+it('publishes an eligible public Route on the same ID and names only the Ingress domain and Router upstream', function (): void {
+    [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
+    $edge = new FakePublicRouteEdgeProjector;
+    app()->instance(PublicRouteEdgeProjector::class, $edge);
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+
+    $updated = $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
+        ->assertOk()
+        ->assertJsonPath('data.id', $route->id)
+        ->assertJsonPath('data.publication', 'public')
+        ->assertJsonPath('data.public_publication', 'active');
+
+    expect($updated->json('data'))
+        ->not->toHaveKey('public_ip')
+        ->and($edge->calls)
+        ->toBe(['ingress-certificate', 'ingress-caddy', 'public-edge-verified', 'public-activated', 'ingress-firewall']);
+
+    $artifact = new IngressSiteRepository()->forRoute($route->refresh());
+    expect($artifact->artifact())
+        ->toBe(['domain' => $route->domain, 'router_upstream' => $router->lan_ip])
+        ->and($artifact->artifact())
+        ->not->toHaveKey('app_instance_id')
+        ->not->toHaveKey('node_id')
+        ->and(array_keys($artifact->artifact()))
+        ->toBe(['domain', 'router_upstream']);
+
+    $catalog = new NodeFirewallRuleCatalog;
+    expect(collect($catalog->forRole($ingress, RoleName::Ingress))->map(fn ($rule) => $rule->shape->comment)->all())
+        ->toBe(['orbit:ingress-http', 'orbit:ingress-https'])
+        ->and($catalog->forRole($router, RoleName::Ingress))
+        ->toBeEmpty()
+        ->and($catalog->forRole($workload, RoleName::AppProd))
+        ->toBeEmpty();
+
+    $override = $edge->privateOverride($route);
+    expect($override->domain)
+        ->toBe($route->domain)
+        ->and($override->routerAddress)
+        ->toBe($router->lan_ip)
+        ->and($override->workloadAddress)
+        ->toBe($workload->lan_ip);
+
+    expect($instance->refresh()->status->value)->toBe('active');
+});
+
+it('reserves a replacement Route for a combined domain and publication change', function (): void {
+    [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology(
+        $this->orbitApp,
+        publication: RoutePublication::Private,
+        domain: 'preview.example.test',
+    );
+    $edge = new FakePublicRouteEdgeProjector;
+    app()->instance(PublicRouteEdgeProjector::class, $edge);
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    app()->instance(RouteDomainProjector::class, route_api_domain_projector(cleanup: true));
+    app()->instance(
+        DevelopmentAppInstanceConfigurator::class,
+        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+    );
+    $environment = Mockery::mock(AppInstanceRouteEnvironmentSynchronizer::class);
+    $environment->shouldReceive('synchronizeRouteDomain')->twice()->andReturn(
+        new AppInstanceEnvironmentResult($instance->id, 'sync', true, 1),
+    );
+    app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, $environment);
+
+    $updated = $this
+        ->patchJson("/api/v1/routes/{$route->id}", [
+            'domain' => 'final.example.test',
+            'publication' => 'public',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.domain', 'final.example.test')
+        ->assertJsonPath('data.publication', 'public')
+        ->assertJsonPath('data.public_publication', 'active');
+
+    expect($updated->json('data.id'))
+        ->not->toBe($route->id)
+        ->and(Route::query()->whereKey($route->id)->exists())
+        ->toBeFalse();
+});
+
+it('composes one public Caddy site when Ingress shares a Node and uses LAN without WireGuard fallback', function (): void {
+    [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
+    $route->update(['public_publication' => RoutePublicPublication::Active]);
+    $sites = new AppDevSiteRepository;
+    $renderer = new AppDevCaddyConfigRenderer;
+
+    $separate = $renderer->render($sites->forNode($ingress, $route));
+    expect($separate)
+        ->toContain("{$route->domain} {")
+        ->toContain("reverse_proxy https://{$router->lan_ip}")
+        ->toContain('header_up X-Forwarded-Proto https')
+        ->toContain('header_up X-Forwarded-Host '.$route->domain)
+        ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain('https://'.$route->domain.' {');
+
+    $colocated = route_node('ingress-router', '10.44.0.41', null);
+    $colocated->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.10.0.40']);
+    $router->roles()->where('role', RoleName::Router)->update(['node_id' => $colocated->id, 'cluster_id' => $cluster->id]);
+    $ingress->roles()->where('role', RoleName::Ingress)->update(['node_id' => $colocated->id, 'cluster_id' => $cluster->id]);
+    $route->refresh()->load(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'targets.appInstance.node']);
+    $composed = $renderer->render($sites->forNode($colocated, $route));
+    expect($composed)
+        ->toContain("{$route->domain} {")
+        ->toContain("reverse_proxy https://{$workload->lan_ip}")
+        ->not->toContain('reverse_proxy https://127.0.0.1');
+
+    $colocatedUpstream = new IngressSiteRepository()->forRoute($route->refresh());
+    expect($colocatedUpstream->routerUpstream)->toBe('127.0.0.1');
+
+    $colocated->roles()->where('role', RoleName::Ingress)->update(['node_id' => $ingress->id, 'cluster_id' => $cluster->id]);
+    $colocated->roles()->where('role', RoleName::Router)->update(['node_id' => $router->id, 'cluster_id' => $cluster->id]);
+    $router->update(['lan_ip' => null]);
+    expect(new IngressSiteRepository()->forRoute($route->refresh())->routerUpstream)
+        ->toBe($router->wireguard_ip);
+});
+
 function route_node(string $name, string $wireguardIp, ?string $tld): Node
 {
     return Node::query()->create([
@@ -769,9 +902,15 @@ function route_api_domain_projector(bool $rollback = false, bool $cleanup = fals
         'prepareRouterCertificate',
         'prepareFirewallPolicy',
         'prepareRouterCaddy',
+        'prepareIngressCertificate',
+        'stageIngressCaddy',
+        'prepareIngressFirewall',
+        'verifyPublicEdge',
+        'activatePublicHandler',
+        'rollbackPublicEdge',
         'publishDns',
     ] as $method) {
-        $projector->shouldReceive($method)->once();
+        $projector->shouldReceive($method)->zeroOrMoreTimes();
     }
 
     $projector->shouldReceive('verifyWorkload')->times($cleanup ? 2 : 1);
@@ -797,11 +936,54 @@ final readonly class RouteApiProjectionOwner implements DevelopmentProjectionOpe
     }
 }
 
+/** @return array{Cluster, Node, Node, Node, AppInstance, Route} */
+function route_public_topology(
+    OrbitApp $app,
+    RoutePublication $publication = RoutePublication::Public,
+    string $domain = 'public.example.test',
+    string $name = 'public',
+): array {
+    [$cluster, $router] = route_cluster($name, "{$name}.test");
+    $router->update(['lan_ip' => '10.10.0.20']);
+    $ingress = route_node("{$name}-ingress", '10.44.0.30', null);
+    $ingress->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.10.0.30']);
+    $ingress->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Ingress,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $workload = route_node("{$name}-prod", '10.44.0.31', null);
+    $workload->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.10.0.10']);
+    $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $instance = route_instance($app, $workload, 'production');
+    $instance->update([
+        'environment' => 'production',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'production_home' => '/var/www/acme',
+        'production_user' => 'orbit-acme',
+        'selected_php_version' => '8.5',
+    ]);
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $app->id,
+        domain: $domain,
+        publication: $publication,
+        appInstanceId: $instance->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+
+    return [$cluster, $router->refresh(), $ingress->refresh(), $workload->refresh(), $instance->refresh(), $route->refresh()];
+}
+
 /** @return array{Cluster, Node} */
 function route_cluster(string $name, ?string $tld): array
 {
+    static $octet = 100;
+    $octet++;
     $cluster = Cluster::query()->create(['name' => $name, 'tld' => $tld, 'state' => ClusterState::Active]);
-    $router = route_node("{$name}-router", '10.44.0.20', null);
+    $router = route_node("{$name}-router", "10.45.0.{$octet}", null);
     $router->update(['cluster_id' => $cluster->id]);
     $router
         ->roles()

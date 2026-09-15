@@ -2,20 +2,19 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\CertificateMode;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Models\App as OrbitApp;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\Process;
-use App\Models\Workspace;
 use Illuminate\Database\QueryException;
 
-it('stores apps, instances, workspaces, and their process ownership', function (): void {
+it('stores apps, AppInstances, and their process ownership', function (): void {
     $node = Node::query()->create([
         'name' => 'app-dev',
         'public_ssh_host' => '94.237.40.75',
@@ -25,44 +24,36 @@ it('stores apps, instances, workspaces, and their process ownership', function (
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
     ]);
-    $instance = Instance::query()->create([
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
-        'domain' => 'orbit.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
+        'root' => 'public',
+        'selected_php_version' => '8.5',
+        'status' => AppInstanceState::Active,
     ]);
-    $workspace = Workspace::query()->create([
-        'instance_id' => $instance->id,
-        'name' => 'feature',
-        'branch' => 'feature/test',
-        'checkout_path' => '/home/orbit/.orbit/worktrees/orbit/feature',
-        'domain' => 'feature.orbit.test',
-    ]);
-    $process = $workspace
+    $process = $instance
         ->processes()
         ->create([
             'name' => 'vite',
             'runtime' => ProcessRuntime::Systemd,
-            'working_directory' => $workspace->checkout_path,
+            'working_directory' => $instance->checkout_path,
             'runtime_config' => ['command' => 'npm run dev'],
         ]);
 
-    expect($app->instances()->sole()->is($instance))
+    expect($app->appInstances()->sole()->is($instance))
         ->toBeTrue()
-        ->and($node->instances()->sole()->is($instance))
-        ->toBeTrue()
-        ->and($instance->workspaces()->sole()->is($workspace))
+        ->and($node->appInstances()->sole()->is($instance))
         ->toBeTrue()
         ->and($process)
         ->toBeInstanceOf(Process::class)
-        ->and($process->owner->is($workspace))
+        ->and($process->owner->is($instance))
         ->toBeTrue();
 });
 
-it('enforces at most one app instance on each node', function (): void {
+it('enforces one AppInstance name per app and one checkout path per node', function (): void {
     $node = Node::query()->create([
         'name' => 'app-dev',
         'public_ssh_host' => '94.237.40.75',
@@ -72,25 +63,38 @@ it('enforces at most one app instance on each node', function (): void {
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
     ]);
-    Instance::query()->create([
+    AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'first',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
-        'domain' => 'orbit.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
+        'root' => 'public',
+        'selected_php_version' => '8.5',
+        'status' => AppInstanceState::Active,
     ]);
 
-    expect(fn () => Instance::query()->create([
+    expect(fn () => AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'name' => 'second',
+        'name' => 'first',
         'environment' => 'development',
-        'checkout_path' => '/home/orbit/apps/orbit',
-        'domain' => 'other.test',
-        'certificate_mode' => CertificateMode::OrbitCa,
+        'checkout_path' => '/home/orbit/apps/orbit-other',
+        'root' => 'public',
+        'selected_php_version' => '8.5',
+        'status' => AppInstanceState::Active,
     ]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => 'second',
+            'environment' => 'development',
+            'checkout_path' => '/home/orbit/apps/orbit',
+            'root' => 'public',
+            'selected_php_version' => '8.5',
+            'status' => AppInstanceState::Active,
+        ]))
         ->toThrow(QueryException::class);
 });
 

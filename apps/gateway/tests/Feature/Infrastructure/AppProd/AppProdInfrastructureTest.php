@@ -3,29 +3,19 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppProd\AppProdCaddyManager;
-use App\Domain\AppProd\AppProdPhpFpmManager;
-use App\Domain\AppProd\AppProdSourceManager;
-use App\Domain\AppProd\AppProdUserManager;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppProd\AppProdCaddyConfigRenderer;
 use App\Infrastructure\AppProd\AppProdCaddyPublisher;
 use App\Infrastructure\AppProd\AppProdPhpFpmConfigRenderer;
 use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
-use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
-use App\Infrastructure\AppProd\RemoteAppProdSourceManager;
-use App\Infrastructure\AppProd\RemoteAppProdUserManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -36,7 +26,7 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FpmPublishHarness;
 
 it('renders no leftover production Instance sites for Caddy or PHP-FPM', function (): void {
-    [$node, $instance] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $sites = new AppProdSiteRepository()->forNode($node);
 
     $fpm = new AppProdPhpFpmConfigRenderer()->render($sites);
@@ -47,252 +37,20 @@ it('renders no leftover production Instance sites for Caddy or PHP-FPM', functio
         ->and($fpm)
         ->not->toContain(
             '[orbit-prod-instance-1]',
-            "https://{$instance->domain}",
+            'https://orbit.nckrtl.com',
             'php_fastcgi unix//run/php/orbit-prod-instance-1.sock',
         )
         ->and($caddy)
         ->not->toContain(
-            "https://{$instance->domain}",
+            'https://orbit.nckrtl.com',
             'root * /var/www/acme/main/public',
             'php_fastcgi unix//run/php/orbit-prod-instance-1.sock',
         );
 });
 
-it('uses fixed production identity, clone, ownership, and exact removal guards', function (): void {
-    [, $instance] = app_prod_runtime_models();
-    $ssh = new AppDevFakeSshExecutor;
-    $executor = app_prod_ssh($ssh);
-    $users = new RemoteAppProdUserManager($executor);
-    $source = new RemoteAppProdSourceManager($executor);
-
-    $users->converge($instance);
-    $source->converge($instance);
-    $source->remove($instance);
-    $users->remove($instance);
-
-    expect($ssh->commands)
-        ->toHaveCount(5)
-        ->and($ssh->commands[0]->arguments)
-        ->toBe(['bash', '-seu', '--', 'orbit-acme', 'acme'])
-        ->and($ssh->commands[0]->input)
-        ->toContain(
-            'useradd --system --user-group --home-dir "$app_root" --shell /usr/sbin/nologin -- "$user"',
-            'test "$actual_shell" = /usr/sbin/nologin',
-            'test ! -L "$app_root"',
-            'install -d -o "$user" -g "$user" -m 0700 -- "$app_root"',
-        )
-        ->and($ssh->commands[1]->input)
-        ->toContain(
-            'test "$(sudo -u "$user" -H -- git -C "$checkout" remote get-url origin)" = "$repository"',
-            'test "$(sudo -u "$user" -H -- git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"',
-            'test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"',
-        )
-        ->and($ssh->commands[2]->arguments)
-        ->toBe([
-            'bash',
-            '-seu',
-            '--',
-            'orbit-acme',
-            'acme',
-            'main',
-            'git@github.com:acme/site.git',
-            '/var/www/acme/main',
-            'public',
-        ])
-        ->and($ssh->commands[2]->input)
-        ->toContain(
-            'sudo -u "$user" -H -- git clone -- "$repository" "$checkout"',
-            'sudo -u "$user" -H -- git -C "$checkout" remote get-url origin',
-            'sudo -u "$user" -H -- git -C "$checkout" rev-parse --show-toplevel',
-            'test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"',
-            'setfacl -P -R -m u:caddy:--- "$checkout_root"',
-            'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
-        )
-        ->and($ssh->commands[3]->arguments)
-        ->toBe([
-            'sudo',
-            'bash',
-            '-seu',
-            '--',
-            'orbit-acme',
-            'acme',
-            'main',
-            'git@github.com:acme/site.git',
-            '/var/www/acme/main',
-        ])
-        ->and($ssh->commands[3]->input)
-        ->toContain(
-            'test "$checkout" = "/var/www/$slug/$instance"',
-            'test "$(sudo -u "$user" -H -- git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"',
-            'test "$(sudo -u "$user" -H -- git -C "$checkout" remote get-url origin)" = "$repository"',
-            'sudo -u "$user" -H -- rm -rf -- "$checkout"',
-        )
-        ->and($ssh->commands[4]->input)
-        ->toContain(
-            'if ! getent passwd "$user" >/dev/null; then',
-            'exit 0',
-            'test "$(stat -c %G "$app_root")" = "$user"',
-            'test -z "$(find -P "$app_root" -xdev -mindepth 1 -maxdepth 1 -print -quit)"',
-            'test -z "$(pgrep -u "$user" || true)"',
-            'userdel -- "$user"',
-            'rmdir -- "$app_root"',
-        )
-        ->not->toContain('userdel -r', 'rm -rf "$app_root"');
-});
-
-it('cleans only isolated app-owned home entries before deleting the production user', function (): void {
-    [, $instance] = app_prod_runtime_models();
-    $ssh = new AppDevFakeSshExecutor;
-    $users = new RemoteAppProdUserManager(app_prod_ssh($ssh));
-
-    $users->remove($instance);
-
-    $cleanup = $ssh->commands[0]->input ?? '';
-    $processGuard = mb_strpos(
-        haystack: $cleanup,
-        needle: 'test -z "$(pgrep -u "$user" || true)"',
-    );
-    $safeWorkingDirectory = mb_strpos(haystack: $cleanup, needle: 'cd /');
-    $homeCleanup = mb_strpos(
-        haystack: $cleanup,
-        needle: 'sudo -u "$user" -H -- find -P "$app_root" -xdev -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +',
-    );
-    $emptyGuard = mb_strrpos(
-        haystack: $cleanup,
-        needle: 'test -z "$(find -P "$app_root" -xdev -mindepth 1 -maxdepth 1 -print -quit)"',
-    );
-    $userRemoval = mb_strpos(
-        haystack: $cleanup,
-        needle: 'userdel -- "$user"',
-    );
-
-    expect($cleanup)
-        ->toContain(
-            'test -z "$(find -P "$app_root" -xdev -mindepth 1 ! -user "$user" -print -quit)"',
-            'test -z "$(find -P "$app_root" -xdev -mindepth 1 ! -group "$user" -print -quit)"',
-            'findmnt -rn -o TARGET',
-        )
-        ->not
-        ->toContain('userdel -r', 'rm -rf -- "$app_root"')
-        ->and($processGuard)
-        ->toBeInt()
-        ->toBeLessThan($safeWorkingDirectory)
-        ->and($safeWorkingDirectory)
-        ->toBeInt()
-        ->toBeLessThan($homeCleanup)
-        ->and($homeCleanup)
-        ->toBeInt()
-        ->toBeLessThan($emptyGuard)
-        ->and($emptyGuard)
-        ->toBeInt()
-        ->toBeLessThan($userRemoval)
-        ->and($userRemoval)
-        ->toBeInt();
-});
-
-it('runs every isolated source probe as the exact app user across clone retry and removal', function (): void {
-    [, $instance] = app_prod_runtime_models();
-    $ssh = new AppDevFakeSshExecutor;
-    $source = new RemoteAppProdSourceManager(app_prod_ssh($ssh));
-
-    $source->converge($instance);
-    $source->remove($instance);
-
-    $driftProbe = $ssh->commands[0]->input ?? '';
-    $converge = $ssh->commands[1]->input ?? '';
-    $remove = $ssh->commands[2]->input ?? '';
-
-    expect($driftProbe)
-        ->toContain(
-            'if ! sudo -u "$user" -H -- test -e "$checkout"; then',
-            'sudo -u "$user" -H -- test -d "$checkout"',
-            'sudo -u "$user" -H -- test ! -L "$checkout"',
-            'sudo -u "$user" -H -- realpath -e "$checkout"',
-            'sudo -u "$user" -H -- stat -c %U "$checkout"',
-            'sudo -u "$user" -H -- git -C "$checkout" rev-parse --show-toplevel',
-            'sudo -u "$user" -H -- git -C "$checkout" remote get-url origin',
-        );
-
-    $checkoutProbe = mb_strpos(
-        haystack: $converge,
-        needle: 'if ! sudo -u "$user" -H -- test -e "$checkout"; then',
-    );
-    $clone = mb_strpos(
-        haystack: $converge,
-        needle: 'sudo -u "$user" -H -- git clone -- "$repository" "$checkout"',
-    );
-
-    expect($checkoutProbe)
-        ->toBeInt()
-        ->toBeLessThan($clone)
-        ->and($converge)
-        ->toContain(
-            'sudo -u "$user" -H -- test -f "$checkout/.env"',
-            'sudo -u "$user" -H -- test ! -L "$checkout/.env"',
-            'sudo -u "$user" -H -- realpath -e "$document_root_path"',
-            'sudo -u "$user" -H -- find -P "$document_root_real" -type l -print0',
-            'sudo -u "$user" -H -- realpath -e "$link"',
-            'sudo -u "$user" -H -- test -d "$expected_target"',
-            'sudo -u "$user" -H -- find -P "$expected_target" -type l -print -quit',
-        )
-        ->and($remove)
-        ->toContain(
-            'if ! sudo -u "$user" -H -- test -e "$checkout"; then',
-            'sudo -u "$user" -H -- test -d "$checkout"',
-            'sudo -u "$user" -H -- test ! -L "$checkout"',
-            'sudo -u "$user" -H -- realpath -e "$checkout"',
-            'sudo -u "$user" -H -- stat -c %U "$checkout"',
-            'sudo -u "$user" -H -- git -C "$checkout" rev-parse --show-toplevel',
-            'sudo -u "$user" -H -- git -C "$checkout" remote get-url origin',
-            'sudo -u "$user" -H -- rm -rf -- "$checkout"',
-        );
-});
-
-it('rejects an unsafe stored repository origin before app-prod SSH execution', function (): void {
-    [, $instance] = app_prod_runtime_models();
-    $ssh = new AppDevFakeSshExecutor;
-    $manager = new RemoteAppProdSourceManager(app_prod_ssh($ssh));
-    $sentinel = 'sentinel-app-prod-password';
-    $instance
-        ->app
-        ->forceFill([
-            'repository_url' => "ssh://git:{$sentinel}@example.test/acme/site.git",
-        ])
-        ->save();
-    $exception = null;
-
-    try {
-        $manager->converge($instance);
-    } catch (InvalidArgumentException $caught) {
-        $exception = $caught;
-    }
-
-    $appOwnedTrace = array_values(array_filter(
-        $exception?->getTrace() ?? [],
-        static fn (array $frame): bool => (
-            is_string($frame['class'] ?? null) && str_starts_with($frame['class'], 'App\\')
-        ),
-    ));
-    $debugOutput = json_encode([
-        'message' => $exception?->getMessage(),
-        'trace' => $appOwnedTrace,
-    ], JSON_THROW_ON_ERROR);
-
-    expect($exception)
-        ->toBeInstanceOf(InvalidArgumentException::class)
-        ->and($exception?->getMessage())
-        ->toBe('The Git repository origin is invalid.')
-        ->and($debugOutput)
-        ->not
-        ->toContain($sentinel)
-        ->and($ssh->commands)
-        ->toBeEmpty();
-});
-
 it('retires leftover app-prod pools without activating leftover Instance PHP versions', function (): void {
-    [$node, $instance] = app_prod_runtime_models();
-    $instance->update(['php_version' => '8.4']);
-    $leftoverConfiguration = "[orbit-prod-instance-{$instance->id}]\n";
+    $node = app_prod_runtime_models();
+    $leftoverConfiguration = "[orbit-prod-instance-1]\n";
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\t".base64_encode($leftoverConfiguration)."\n", '', 1, false),
     ]);
@@ -319,7 +77,7 @@ it('retires leftover app-prod pools without activating leftover Instance PHP ver
 });
 
 it('fails closed when leftover app-prod retirement publication fails', function (): void {
-    [$node] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $previousConfiguration = "[orbit-prod-instance-1]\n";
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
@@ -351,7 +109,7 @@ it('fails closed when leftover app-prod retirement publication fails', function 
 });
 
 it('restores earlier leftover app-prod retirements when a later leftover version fails', function (): void {
-    [$node] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $previousFour = "[orbit-prod-instance-1]\n";
     $previousFive = "[orbit-prod-instance-2]\n";
     $ssh = new AppDevFakeSshExecutor([
@@ -385,7 +143,7 @@ it('restores earlier leftover app-prod retirements when a later leftover version
 });
 
 it('validates aggregate FPM candidates and restores the managed pool after leftover retirement failure', function (): void {
-    [$node] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\t".base64_encode("[orbit-prod-instance-1]\n")."\n", '', 1, false),
     ]);
@@ -458,8 +216,7 @@ it('validates aggregate FPM candidates and restores the managed pool after lefto
 });
 
 it('does not install PHP packages for leftover production Instances', function (): void {
-    [$node, $instance] = app_prod_runtime_models();
-    $instance->update(['php_version' => '8.5']);
+    $node = app_prod_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
     $manager = new RemoteAppProdPhpFpmManager(
         sites: new AppProdSiteRepository,
@@ -479,7 +236,7 @@ it('does not install PHP packages for leftover production Instances', function (
 });
 
 it('restores the exact AppProd FPM file before the recovery reload when activation fails', function (): void {
-    [$node] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $harness = new FpmPublishHarness;
     $managed = $harness->prepare('8.5', 'orbit-prod-scopes.conf', "previous app-prod pool\n");
     $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "8.5\n", '', 1, false)]);
@@ -522,7 +279,7 @@ it('restores the exact AppProd FPM file before the recovery reload when activati
 });
 
 it('publishes one Orbit-owned Caddy fragment and restores the prior aggregate after reload failure', function (): void {
-    [$node] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
     $manager = new RemoteAppProdCaddyManager(
         sites: new AppProdSiteRepository,
@@ -594,7 +351,7 @@ it('publishes one Orbit-owned Caddy fragment and restores the prior aggregate af
 });
 
 it('orders the app-prod Caddy unit after the managed WireGuard interface', function (): void {
-    [$node] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
     $manager = new RemoteAppProdCaddyManager(
         sites: new AppProdSiteRepository,
@@ -731,161 +488,10 @@ it('restores the exact Caddy symlink before the recovery reload when activation 
     }
 });
 
-it('converges and removes production runtime components in recovery-safe order', function (): void {
-    [, $instance] = app_prod_runtime_models();
-    $calls = [];
-    $users = new class($calls) implements AppProdUserManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Instance $instance): void
-        {
-            $this->calls[] = 'user:converge';
-        }
-
-        public function remove(Instance $instance): void
-        {
-            $this->calls[] = 'user:remove';
-        }
-    };
-    $source = new class($calls) implements AppProdSourceManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Instance $instance): void
-        {
-            $this->calls[] = 'source:converge';
-        }
-
-        public function remove(Instance $instance): void
-        {
-            $this->calls[] = 'source:remove';
-        }
-    };
-    $fpm = new class($calls) implements AppProdPhpFpmManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Node $node): void
-        {
-            $this->calls[] = 'fpm';
-        }
-    };
-    $caddy = new class($calls) implements AppProdCaddyManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Node $node): void
-        {
-            $this->calls[] = 'caddy';
-        }
-
-        public function remove(Node $node): void
-        {
-            $this->calls[] = 'caddy:remove';
-        }
-    };
-    $runtime = new NativeAppProdRuntimeConverger($users, $source, $fpm, $caddy);
-
-    $runtime->convergeInstance($instance);
-    $runtime->removeInstance($instance);
-
-    expect($calls)->toBe([
-        'user:converge',
-        'source:converge',
-        'fpm',
-        'caddy',
-        'caddy',
-        'fpm',
-        'source:remove',
-        'user:remove',
-    ]);
-});
-
-it('unpublishes production runtime repeatedly without removing source or its user', function (): void {
-    [, $instance] = app_prod_runtime_models();
-    $calls = [];
-    $users = new class($calls) implements AppProdUserManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Instance $instance): void {}
-
-        public function remove(Instance $instance): void
-        {
-            $this->calls[] = 'user';
-        }
-    };
-    $source = new class($calls) implements AppProdSourceManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Instance $instance): void {}
-
-        public function remove(Instance $instance): void
-        {
-            $this->calls[] = 'source';
-        }
-    };
-    $fpm = new class($calls) implements AppProdPhpFpmManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Node $node): void
-        {
-            $this->calls[] = 'fpm';
-        }
-    };
-    $caddy = new class($calls) implements AppProdCaddyManager
-    {
-        /** @param list<string> $calls */
-        public function __construct(
-            public array &$calls,
-        ) {}
-
-        public function converge(Node $node): void
-        {
-            $this->calls[] = 'caddy';
-        }
-
-        public function remove(Node $node): void
-        {
-            $this->calls[] = 'caddy';
-        }
-    };
-    $runtime = new NativeAppProdRuntimeConverger($users, $source, $fpm, $caddy);
-
-    $runtime->unpublishInstance($instance);
-    $runtime->unpublishInstance($instance);
-
-    expect($calls)->toBe(['caddy', 'fpm', 'caddy', 'fpm']);
-});
-
 it('removes only the app production Caddy fragment through an atomic preserved aggregate', function (): void {
     expect(method_exists(AppProdCaddyPublisher::class, 'removeCommand'))->toBeTrue();
 
-    [$node] = app_prod_runtime_models();
+    $node = app_prod_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
     $manager = new RemoteAppProdCaddyManager(
         sites: new AppProdSiteRepository,
@@ -1028,10 +634,9 @@ function run_app_prod_direct_caddy_removal(bool $failActivation): array
     return $result;
 }
 
-/** @return array{Node, Instance} */
-function app_prod_runtime_models(): array
+function app_prod_runtime_models(): Node
 {
-    $node = Node::query()->create([
+    return Node::query()->create([
         'name' => 'app-prod',
         'platform' => 'linux',
         'status' => LifecycleStatus::Active,
@@ -1039,25 +644,6 @@ function app_prod_runtime_models(): array
         'wireguard_ip' => '10.44.0.5',
         'user' => 'nckrtl',
     ]);
-    $app = OrbitApp::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'git@github.com:acme/site.git',
-    ]);
-    $instance = Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'main',
-        'environment' => 'production',
-        'checkout_path' => '/var/www/acme/main',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'domain' => 'orbit.nckrtl.com',
-        'certificate_mode' => CertificateMode::Acme,
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    return [$node, $instance];
 }
 
 function app_prod_ssh(AppDevFakeSshExecutor $ssh): AppProdSshExecutor

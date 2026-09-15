@@ -5,14 +5,28 @@ declare(strict_types=1);
 use App\Actions\Doctor\RunDoctorAction;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorNodeReportData;
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\InstanceInspectionData;
+use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\PublicRouteEdgeInspector;
+use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Route;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -267,6 +281,96 @@ describe('RunDoctorAction', function (): void {
                 'unverifiable' => 1,
             ]);
     });
+
+    it('does not inspect or mutate unselected public-route related nodes', function (): void {
+        $consumer = run_doctor_node('consumer');
+        $cluster = Cluster::query()->create(['name' => 'doctor-run', 'state' => ClusterState::Active]);
+        $workload = run_doctor_node('workload');
+        $ingress = run_doctor_node('ingress');
+        $router = run_doctor_node('router');
+        foreach ([$workload, $ingress, $router] as $node) {
+            $node->update(['cluster_id' => $cluster->id]);
+        }
+        $ingress->roles()->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Ingress,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $router->roles()->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $app = App::query()->create([
+            'name' => 'Doctor Run',
+            'slug' => 'doctor-run',
+            'repository_url' => 'https://example.test/doctor-run.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $user = "orbit-app-{$app->id}";
+        $instance = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $workload->id,
+            'name' => 'production',
+            'environment' => 'production',
+            'checkout_path' => "/home/{$user}/releases/initial",
+            'production_user' => $user,
+            'production_home' => "/home/{$user}",
+            'production_php_service' => "orbit-{$user}-php8.5-fpm.service",
+            'production_php_pool' => "orbit-{$user}",
+            'production_php_socket' => "/run/php/{$user}.sock",
+            'selected_php_version' => '8.5',
+            'root' => 'public',
+            'branch' => 'main',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::Active,
+        ]);
+        $route = Route::query()->create([
+            'app_id' => $app->id,
+            'cluster_id' => $cluster->id,
+            'domain' => 'run-doctor.example.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Public,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->update([
+            'status' => RouteStatus::Active,
+            'public_publication' => RoutePublicPublication::Active,
+        ]);
+        $consumer->accessibleNodes()->attach([$workload->id, $ingress->id, $router->id]);
+        bind_run_doctor_inspector();
+        app()->instance(InstanceStateInspector::class, new class implements InstanceStateInspector
+        {
+            public function inspect(AppInstance $appInstance): InstanceInspectionData
+            {
+                return new InstanceInspectionData(
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                );
+            }
+        });
+        $edge = new RunDoctorPublicEdgeInspector;
+        app()->instance(PublicRouteEdgeInspector::class, $edge);
+
+        $report = app(RunDoctorAction::class)->execute($consumer, $workload->id, [DoctorFamily::Instance]);
+
+        expect(array_map(static fn ($issue): string => $issue->code, $report->nodes[0]->families[0]->issues))
+            ->toBe(['instance.related_node_unverifiable'])
+            ->and($edge->nodes)
+            ->toBe([])
+            ->and($route->refresh()->public_publication)
+            ->toBe(RoutePublicPublication::Active);
+    });
 });
 
 function run_doctor_node(string $name): Node
@@ -318,5 +422,18 @@ final class RunDoctorRecordingNodeStateInspector implements NodeStateInspector
         }
 
         return $this->inspection;
+    }
+}
+
+final class RunDoctorPublicEdgeInspector implements PublicRouteEdgeInspector
+{
+    /** @var list<int> */
+    public array $nodes = [];
+
+    public function inspect(Node $node, Route $route): PublicRouteEdgeObservation
+    {
+        $this->nodes[] = $node->id;
+
+        return new PublicRouteEdgeObservation(true, true, true, true);
     }
 }

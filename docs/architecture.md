@@ -44,7 +44,7 @@ When an App instance is idle on an active `app-dev` Node, it can [hibernate](/re
 
 See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and domain changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [App instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
 
-App instance commands manage App instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use App instances and Routes only. Doctor inspects App instances and Routes, not leftover Legacy Instance or Workspace rows.
+App instance commands manage App instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use App instances and Routes only. Doctor inspects App instances and Routes.
 
 ## Herdr sessions
 

@@ -269,7 +269,7 @@ final readonly class TopologyVerifier
      *         service:string,
      *         socket:string,
      *         current_target:?string,
-     *         hostname:string
+     *         domain:string
      *     }
      * }
      */
@@ -340,7 +340,7 @@ final readonly class TopologyVerifier
      *     service:string,
      *     socket:string,
      *     current_target:?string,
-     *     hostname:string
+     *     domain:string
      * }
      */
     private function productionPlacement(mixed $placement): array
@@ -412,7 +412,7 @@ final readonly class TopologyVerifier
             'service' => $placement['service'],
             'socket' => $placement['socket'],
             'current_target' => $placement['current_target'],
-            'hostname' => $endpoint,
+            'domain' => $endpoint,
         ];
     }
 

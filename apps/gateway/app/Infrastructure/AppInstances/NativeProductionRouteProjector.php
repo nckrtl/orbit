@@ -11,6 +11,11 @@ use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEdgeProjector;
+use App\Domain\Routes\PublicRouteEligibility;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -32,6 +37,8 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         private DnsmasqPrivateDnsManager $dns,
         private ProductionReleaseLayout $releaseLayout,
         private AppDevSshExecutor $ssh,
+        private ?PublicRouteEdgeProjector $publicEdge = null,
+        private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
     ) {}
 
     public function prepareRuntime(AppInstance $appInstance, Route $route): void
@@ -64,6 +71,24 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $this->prepareWorkloadCaddy($appInstance, $route);
         $this->prepareRouterCaddy($appInstance, $route);
         $this->prepareDns($route);
+        $this->publishPublicEdge($route);
+    }
+
+    private function publishPublicEdge(Route $route): void
+    {
+        if ($route->publication !== RoutePublication::Public || ! $this->eligibility->canActivate($route)) {
+            return;
+        }
+
+        $edge = $this->publicEdge ?? app(PublicRouteEdgeProjector::class);
+        $edge->prepareIngressCertificate($route);
+        $edge->stageIngressCaddy($route);
+        $edge->verifyPublicEdge($route);
+        if (in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)) {
+            $route->update(['public_publication' => RoutePublicPublication::Active]);
+        }
+        $edge->activatePublicHandler($route);
+        $edge->prepareIngressFirewall($route);
     }
 
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void

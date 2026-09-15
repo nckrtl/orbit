@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\AppInstances;
 
+use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\AppInstances\CloneAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
@@ -582,6 +583,12 @@ final readonly class CloneAppInstanceAction
                     'clone_completed_at' => now(),
                 ]);
             });
+
+            $activated = Route::query()->findOrFail($routeId);
+
+            if ($activated->publication === RoutePublication::Public) {
+                app(PublishPublicRouteAction::class)->execute($activated, RoutePublication::Public);
+            }
         });
     }
 

@@ -158,10 +158,6 @@ it('retains reconciliation refusals for active Route changes without association
             $route,
             new UpdateRouteData(true, 'changed.example.test', false, null),
         ),
-        fn () => app(UpdateRouteAction::class)->execute(
-            $route,
-            new UpdateRouteData(false, null, true, RoutePublication::Public),
-        ),
         fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
         fn () => app(RemoveRouteAction::class)->execute($route),
     ] as $mutation) {

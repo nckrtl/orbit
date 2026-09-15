@@ -15,6 +15,7 @@ use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
@@ -34,7 +35,7 @@ final readonly class ConvergeRouteAction
         private DevelopmentProjectionOperationLock $owner,
     ) {}
 
-    public function execute(Route $route, string $domain): Route
+    public function execute(Route $route, string $domain, ?RoutePublication $publication = null): Route
     {
         $domain = RouteDomain::validate($domain);
 
@@ -51,14 +52,18 @@ final readonly class ConvergeRouteAction
         return $this->environmentOperations->run(
             $targetIds,
             fn (): Route => $this->owner->run(
-                fn (): Route => $this->convergeOwned($route->id, $domain, $targetIds),
+                fn (): Route => $this->convergeOwned($route->id, $domain, $targetIds, $publication),
             ),
         );
     }
 
     /** @param list<int> $expectedTargetIds */
-    private function convergeOwned(int $routeId, string $domain, array $expectedTargetIds): Route
-    {
+    private function convergeOwned(
+        int $routeId,
+        string $domain,
+        array $expectedTargetIds,
+        ?RoutePublication $publication = null,
+    ): Route {
         $route = Route::query()
             ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
             ->findOrFail($routeId);
@@ -77,7 +82,7 @@ final readonly class ConvergeRouteAction
                     );
                 }
 
-                return $this->convergeOwned($current->id, $domain, $expectedTargetIds);
+                return $this->convergeOwned($current->id, $domain, $expectedTargetIds, $publication);
             }
         }
 
@@ -96,11 +101,17 @@ final readonly class ConvergeRouteAction
 
             $this->assertTargetsUnchanged($route, $expectedTargetIds);
 
-            return $this->cleanup(
-                $replacement,
-                $route,
-                $this->eligibleTargets($route, allowRetiring: true),
-            );
+            if (
+                $replacement->publication !== RoutePublication::Public
+                || $this->forwardRank($replacement->replacement_step)
+                    >= $this->forwardRank(RouteReplacementStep::IngressFirewall)
+            ) {
+                return $this->cleanup(
+                    $replacement,
+                    $route,
+                    $this->eligibleTargets($route, allowRetiring: true),
+                );
+            }
         }
 
         $this->assertTargetsUnchanged($route, $expectedTargetIds);
@@ -109,11 +120,24 @@ final readonly class ConvergeRouteAction
             return $route;
         }
 
-        $targets = $this->eligibleTargets($route);
-        $replacement = $this->reserve($route, $domain);
+        $targets = $this->eligibleTargets(
+            $route,
+            allowRetiring: $route->status === RouteStatus::Retiring,
+            publication: $publication ?? $route->publication,
+        );
+        $replacement = $this->reserve($route, $domain, $publication);
 
-        if ($replacement->status === RouteStatus::Activating
-            || $replacement->replacement_step === RouteReplacementStep::DatabaseCutover) {
+        if (
+            (
+                $replacement->status === RouteStatus::Activating
+                || $replacement->replacement_step === RouteReplacementStep::DatabaseCutover
+            )
+            && (
+                $replacement->publication !== RoutePublication::Public
+                || $this->forwardRank($replacement->replacement_step)
+                    >= $this->forwardRank(RouteReplacementStep::IngressFirewall)
+            )
+        ) {
             return $this->cleanup($replacement, $route->refresh(), $targets);
         }
 
@@ -180,6 +204,27 @@ final readonly class ConvergeRouteAction
                 },
             );
 
+            if ($replacement->publication === RoutePublication::Public) {
+                $failureStep = 'ingress-certificate';
+                $this->forwardStep(
+                    $replacement,
+                    RouteReplacementStep::IngressCertificate,
+                    fn () => $this->projection->prepareIngressCertificate($replacement),
+                );
+                $failureStep = 'ingress-caddy';
+                $this->forwardStep(
+                    $replacement,
+                    RouteReplacementStep::IngressCaddy,
+                    fn () => $this->projection->stageIngressCaddy($replacement),
+                );
+                $failureStep = 'public-edge-verified';
+                $this->forwardStep(
+                    $replacement,
+                    RouteReplacementStep::PublicEdgeVerified,
+                    fn () => $this->projection->verifyPublicEdge($replacement),
+                );
+            }
+
             $production = array_values(array_filter(
                 $targets,
                 static fn (AppInstance $instance): bool => $instance->environment === 'production',
@@ -225,8 +270,37 @@ final readonly class ConvergeRouteAction
             );
             $failureStep = 'database-cutover';
             $this->cutover($route, $replacement);
+
+            if ($replacement->publication === RoutePublication::Public) {
+                $failureStep = 'public-activated';
+                $this->forwardStep(
+                    $replacement,
+                    RouteReplacementStep::PublicActivated,
+                    function () use ($replacement): void {
+                        $replacement->update(['public_publication' => RoutePublicPublication::Active]);
+                        $this->projection->activatePublicHandler($replacement);
+                    },
+                );
+                $failureStep = 'ingress-firewall';
+                $this->forwardStep(
+                    $replacement,
+                    RouteReplacementStep::IngressFirewall,
+                    fn () => $this->projection->prepareIngressFirewall($replacement),
+                );
+            }
         } catch (Throwable $exception) {
             $this->recordFailure($replacement, $failureStep, $this->errorCode($exception));
+
+            if (
+                $replacement->refresh()->status === RouteStatus::Activating
+                && $replacement->publication === RoutePublication::Public
+                && $this->forwardRank($replacement->replacement_step)
+                    < $this->forwardRank(RouteReplacementStep::PublicActivated)
+            ) {
+                $replacement->update(['public_publication' => RoutePublicPublication::Inactive]);
+                $this->projection->rollbackPublicEdge($replacement);
+            }
+
             $this->failBeforeCutover($replacement, $targets);
 
             throw $exception;
@@ -258,8 +332,11 @@ final readonly class ConvergeRouteAction
     }
 
     /** @return list<AppInstance> */
-    private function eligibleTargets(Route $route, bool $allowRetiring = false): array
-    {
+    private function eligibleTargets(
+        Route $route,
+        bool $allowRetiring = false,
+        ?RoutePublication $publication = null,
+    ): array {
         $targets = $route->targets
             ->map(static fn ($row) => $row->appInstance)
             ->filter(static fn ($instance): bool => $instance instanceof AppInstance)
@@ -278,10 +355,12 @@ final readonly class ConvergeRouteAction
         $statusAllowed = $route->status === RouteStatus::Active
             || ($allowRetiring && $route->status === RouteStatus::Retiring);
 
+        $effectivePublication = $publication ?? $route->publication;
+
         if (
             ! $statusAllowed
             || $route->provenance !== RouteProvenance::Explicit
-            || $route->publication !== RoutePublication::Private
+            || ($effectivePublication === RoutePublication::Public && $environments !== ['production'])
             || array_diff($environments, ['development', 'production']) !== []
             || (count($targets) > 1 && $environments !== ['production'])
         ) {
@@ -301,16 +380,27 @@ final readonly class ConvergeRouteAction
         return $targets;
     }
 
-    private function reserve(Route $route, string $domain): Route
+    private function reserve(Route $route, string $domain, ?RoutePublication $publication = null): Route
     {
         /** @var Route $reserved */
-        $reserved = DB::transaction(function () use ($route, $domain): Route {
+        $reserved = DB::transaction(function () use ($route, $domain, $publication): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
 
             if ($locked->replaced_by_route_id !== null) {
                 $existing = Route::query()->lockForUpdate()->findOrFail($locked->replaced_by_route_id);
 
                 if ($existing->domain !== $domain) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.domain_change_conflict',
+                        message: 'The Route already has another domain change in progress.',
+                        status: 409,
+                    );
+                }
+
+                if (
+                    $publication instanceof RoutePublication
+                    && $existing->publication !== $publication
+                ) {
                     throw new ResourceOperationException(
                         errorCode: 'route.domain_change_conflict',
                         message: 'The Route already has another domain change in progress.',
@@ -350,7 +440,7 @@ final readonly class ConvergeRouteAction
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
                 'domain' => $domain,
                 'provenance' => $locked->provenance,
-                'publication' => $locked->publication,
+                'publication' => $publication ?? $locked->publication,
                 'status' => RouteStatus::Pending,
                 'replaces_route_id' => $locked->id,
                 'replacement_step' => RouteReplacementStep::Reserved,
@@ -485,6 +575,10 @@ final readonly class ConvergeRouteAction
 
             $this->projection->rollbackDns($replacement);
 
+            if ($replacement->publication === RoutePublication::Public) {
+                $this->projection->rollbackPublicEdge($replacement);
+            }
+
             DB::transaction(function () use ($replacement): void {
                 $locked = Route::query()->lockForUpdate()->findOrFail($replacement->id);
                 $old = Route::query()->lockForUpdate()->findOrFail((int) $locked->replaces_route_id);
@@ -540,10 +634,15 @@ final readonly class ConvergeRouteAction
             RouteReplacementStep::FirewallPolicy => 4,
             RouteReplacementStep::WorkloadVerified => 5,
             RouteReplacementStep::RouterCaddy => 6,
-            RouteReplacementStep::LaravelUrl, RouteReplacementStep::EnvironmentSynchronized => 7,
-            RouteReplacementStep::DnsPublished => 8,
-            RouteReplacementStep::DatabaseCutover => 9,
-            RouteReplacementStep::Cleanup => 10,
+            RouteReplacementStep::IngressCertificate => 7,
+            RouteReplacementStep::IngressCaddy => 8,
+            RouteReplacementStep::PublicEdgeVerified => 9,
+            RouteReplacementStep::LaravelUrl, RouteReplacementStep::EnvironmentSynchronized => 10,
+            RouteReplacementStep::DnsPublished => 11,
+            RouteReplacementStep::DatabaseCutover => 12,
+            RouteReplacementStep::PublicActivated => 13,
+            RouteReplacementStep::IngressFirewall => 14,
+            RouteReplacementStep::Cleanup => 15,
             default => -1,
         };
     }

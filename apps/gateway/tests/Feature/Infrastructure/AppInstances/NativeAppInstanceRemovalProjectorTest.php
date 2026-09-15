@@ -12,8 +12,10 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -46,6 +48,7 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\FakePublicRouteEdgeProjector;
 
 afterEach(function (): void {
     if (is_string($this->orb181ProjectorHome ?? null)) {
@@ -229,6 +232,41 @@ it('deletes a final production Route after cleanup without publishing developmen
         ->toBeFalse();
 });
 
+it('removes a final public Route edge before deleting the Route and refreshes a surviving public Route', function (): void {
+    [$member, $route, $departing, $survivor] = orb183_projector_production_member(shared: false);
+    $survivorRoute = orb181_projector_route($departing->app, null, $route->cluster, 'survivor.production.test');
+    $survivorRoute->targets()->create(['app_instance_id' => $survivor->id, 'position' => 0]);
+    $survivorRoute->update([
+        'status' => RouteStatus::Active,
+        'publication' => RoutePublication::Public,
+        'public_publication' => RoutePublicPublication::Active,
+    ]);
+    $survivor->update(['status' => AppInstanceState::Active]);
+    $route->update([
+        'publication' => RoutePublication::Public,
+        'public_publication' => RoutePublicPublication::Active,
+    ]);
+    orb181_projector_node('ingress-final', '87', $route->cluster, RoleName::Ingress);
+    $edge = new FakePublicRouteEdgeProjector;
+    [$projector] = orb181_removal_projector($this, publicEdge: $edge);
+
+    expect($projector->clearRouteTarget($member))
+        ->toBe('deleted')
+        ->and(Route::query()->find($route->id))
+        ->toBeNull()
+        ->and($survivorRoute->refresh()->public_publication)
+        ->toBe(RoutePublicPublication::Active)
+        ->and($edge->calls)
+        ->toContain('remove-public-edge')
+        ->and($edge->calls)
+        ->toContain('ingress-firewall');
+
+    expect($projector->clearRouteTarget($member))
+        ->toBe('deleted')
+        ->and(Route::query()->find($route->id))
+        ->toBeNull();
+});
+
 it('removes only the dedicated runtime for an associated production AppInstance', function (): void {
     [$member, , $departing] = orb183_projector_production_member(shared: false);
     $user = "orbit-app-{$departing->app_id}";
@@ -348,6 +386,7 @@ function orb183_projector_production_member(bool $shared): array
 function orb181_removal_projector(
     object $test,
     ?ProductionPhpRuntimeManager $productionPhp = null,
+    ?PublicRouteEdgeProjector $publicEdge = null,
 ): array {
     $ssh = new Orb181RemovalSshExecutor;
     $keys = new class implements SshKeyProvider
@@ -416,6 +455,7 @@ function orb181_removal_projector(
             new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites)),
             new RemoteAppDevRouteFirewallManager($executor),
             $productionPhp,
+            $publicEdge,
         ),
         $ssh,
         $processes,
@@ -479,7 +519,7 @@ function orb181_projector_node(
         'user' => 'orbit',
     ]);
     $node->roles()->create([
-        'cluster_id' => $role === RoleName::Router ? $cluster?->id : null,
+        'cluster_id' => in_array($role, [RoleName::Router, RoleName::Ingress], true) ? $cluster?->id : null,
         'role' => $role,
         'status' => LifecycleStatus::Active,
     ]);

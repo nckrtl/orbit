@@ -272,14 +272,14 @@ function typed_sample_resource_fixture(): array
           printf '{"id":3,"name":"e2e-development","tld":null,"state":"%s","nodes":%s,"router":%s}' "$lifecycle" "$nodes" "$router"
         }
         route_json() {
-          local endpoint='"hostname":"e2e-dev.orbit"'
-          case "${ROUTE_ENDPOINT_SHAPE:-hostname}" in
-            domain) endpoint='"domain":"e2e-dev.orbit"' ;;
+          local endpoint='"domain":"e2e-dev.orbit"'
+          case "${ROUTE_ENDPOINT_SHAPE:-domain}" in
+            domain) ;;
+            hostname) endpoint='"hostname":"e2e-dev.orbit"' ;;
             invalid-domain-with-hostname) endpoint='"domain":"","hostname":"e2e-dev.orbit"' ;;
-            hostname) ;;
             *) exit 70 ;;
           esac
-          printf '{"id":5,"app_id":1,"node_id":null,"cluster_id":3,"generation_basis_node_id":null,%s,"provenance":"explicit","publication":"private","status":"pending","failed_step":null,"error_code":null,"target":{"id":6,"app_instance_id":4,"position":0}}' "$endpoint"
+          printf '{"id":5,"app_id":1,"node_id":null,"cluster_id":3,"generation_basis_node_id":null,%s,"provenance":"explicit","publication":"private","status":"pending","failed_step":null,"error_code":null,"replaces_route_id":null,"replaced_by_route_id":null,"replacement_step":null,"target":{"id":6,"app_instance_id":4,"position":0}}' "$endpoint"
         }
         normal_nodes() {
           local cluster_id=null
@@ -361,11 +361,11 @@ function typed_sample_resource_fixture(): array
               else
                 printf '{%s"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}' "$prefix" "$state" "$(printf a%.0s {1..40})"
                 if [[ -e "$state/production" ]]; then
-                  production_endpoint='"hostname":"e2e-prod.orbit.test"'
-                  case "${PRODUCTION_ENDPOINT_SHAPE:-hostname}" in
-                    domain) production_endpoint='"domain":"e2e-prod.orbit.test"' ;;
+                  production_endpoint='"domain":"e2e-prod.orbit.test"'
+                  case "${PRODUCTION_ENDPOINT_SHAPE:-domain}" in
+                    domain) ;;
+                    hostname) production_endpoint='"hostname":"e2e-prod.orbit.test"' ;;
                     invalid-domain-with-hostname) production_endpoint='"domain":"","hostname":"e2e-prod.orbit.test"' ;;
-                    hostname) ;;
                     *) exit 70 ;;
                   esac
                   printf ',{"id":5,"app_id":1,"node_id":3,"name":"e2e-prod","environment":"production","source_layout":"release","status":"active","checkout_path":"%s/production/current","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","effective_root":"%s/production/current/public","current_target":"%s/production/releases/one",%s,"php_version":"8.5"}' "$state" "$state" "$(printf a%.0s {1..40})" "$state" "$state" "$production_endpoint"
@@ -377,12 +377,8 @@ function typed_sample_resource_fixture(): array
             fi
             ;;
           instance:create)
-            if [[ "$*" == 'instance:create --help' ]]; then
-              printf '%s\n' "${INSTANCE_CREATE_HELP:-  --hostname[=HOSTNAME]  Optional explicit Route hostname}"
-              exit 0
-            fi
             [[ -e "$state/verified" ]] || touch "$state/instance-before-cluster"
-            [[ "$*" == 'instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json' || "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
+            [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
             touch "$state/instance"
             touch "$state/route"
             printf '{"id":4}'
@@ -422,7 +418,7 @@ function typed_sample_resource_fixture(): array
             if [[ -n "${ROUTE_NEW_RESPONSE:-}" ]]; then
               printf '%s' "$ROUTE_NEW_RESPONSE"
             else
-              printf '{"id":5,"app_id":1,"node_id":null,"cluster_id":3,"generation_basis_node_id":null,"hostname":"e2e-dev.orbit","provenance":"explicit","publication":"private","status":"pending","failed_step":null,"error_code":null,"target":{"id":6,"app_instance_id":4,"position":0},"request_id":"0198e15d-16c4-7855-8eb2-182b53ad28ba"}'
+              printf '{"id":5,"app_id":1,"node_id":null,"cluster_id":3,"generation_basis_node_id":null,"domain":"e2e-dev.orbit","provenance":"explicit","publication":"private","status":"pending","failed_step":null,"error_code":null,"replaces_route_id":null,"replaced_by_route_id":null,"replacement_step":null,"target":{"id":6,"app_instance_id":4,"position":0},"request_id":"0198e15d-16c4-7855-8eb2-182b53ad28ba"}'
             fi
             ;;
           *) exit 70 ;;
@@ -487,16 +483,19 @@ function typed_sample_route(array $overrides = []): array
         'node_id' => null,
         'cluster_id' => 3,
         'generation_basis_node_id' => null,
-        'hostname' => 'e2e-dev.orbit',
+        'domain' => 'e2e-dev.orbit',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,
+        'replaces_route_id' => null,
+        'replaced_by_route_id' => null,
+        'replacement_step' => null,
         'target' => ['id' => 6, 'app_instance_id' => 4, 'position' => 0],
     ];
-    if (array_key_exists('domain', $overrides) && ! array_key_exists('hostname', $overrides)) {
-        unset($route['hostname']);
+    if (array_key_exists('hostname', $overrides) && ! array_key_exists('domain', $overrides)) {
+        unset($route['domain']);
     }
 
     return array_replace($route, $overrides);
@@ -935,7 +934,7 @@ describe('Gateway host prerequisite convergence', function () {
             'service' => 'orbit-nckrtl-php8.5-fpm.service',
             'socket' => "{$root}/production/php.sock",
             'current_target' => "{$root}/production/releases/one",
-            'hostname' => 'e2e-prod.orbit.test',
+            'domain' => 'e2e-prod.orbit.test',
         ];
         $run = static function (string $probe, array $value) use ($root): Process {
             return new Process([
@@ -954,13 +953,15 @@ describe('Gateway host prerequisite convergence', function () {
                 ->toBe(0)
                 ->and($run('php-fpm.app-prod', $placement)->run())
                 ->toBe(0);
-            $domainPlacement = array_replace(
-                array_diff_key($placement, ['hostname' => true]),
-                ['domain' => $placement['hostname']],
+            $hostnamePlacement = array_replace(
+                array_diff_key($placement, ['domain' => true]),
+                ['hostname' => $placement['domain']],
             );
-            expect($run('role.app-prod', $domainPlacement)->run())
+            expect($run('role.app-prod', $hostnamePlacement)->run())
+                ->not
                 ->toBe(0)
-                ->and($run('php-fpm.app-prod', $domainPlacement)->run())
+                ->and($run('php-fpm.app-prod', $hostnamePlacement)->run())
+                ->not
                 ->toBe(0);
             expect($run('role.app-prod', array_replace($placement, ['domain' => '']))->run())
                 ->not
@@ -2894,7 +2895,7 @@ describe('convergence guest scripts', function () {
                 ->toHaveCount(0)
                 ->and(array_filter($commands, fn (string $command): bool => str_starts_with(
                     $command,
-                    'instance:create --',
+                    'instance:create 1 ',
                 )))
                 ->toHaveCount(1)
                 ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'route:create ')))
@@ -3031,8 +3032,7 @@ describe('convergence guest scripts', function () {
                 ...typed_cluster_creation_commands(),
                 'app:list --json',
                 'app:create laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
-                'instance:create --help',
-                'instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json',
+                'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json',
                 'instance:list --json',
                 'route:list --json',
             ]);
@@ -3077,7 +3077,7 @@ describe('convergence guest scripts', function () {
                 ->toHaveCount(1)
                 ->and(array_filter($allCommands, fn (string $command): bool => str_starts_with(
                     $command,
-                    'instance:create --',
+                    'instance:create 1 ',
                 )))
                 ->toHaveCount(1)
                 ->and(file_exists("{$fixture['root']}/app-before-cluster"))
@@ -3099,37 +3099,17 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('selects domain-form instance:create input when the installed CLI exposes it', function (): void {
+    it('invokes only domain-form instance:create input', function (): void {
         $fixture = typed_sample_resource_fixture();
         try {
-            $process = typed_sample_create_resources_process($fixture, [
-                'INSTANCE_CREATE_HELP' => '  --domain[=DOMAIN]  Optional explicit Route domain',
-            ]);
+            $process = typed_sample_create_resources_process($fixture);
 
             expect($process->run())->toBe(0, $process->getErrorOutput());
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect($commands)
-                ->toContain('instance:create --help')
                 ->toContain('instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json')
+                ->not->toContain('instance:create --help')
                 ->not->toContain('instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json');
-        } finally {
-            new Filesystem()->deleteDirectory($fixture['root']);
-        }
-    });
-
-    it('selects hostname-form instance:create input only for the earlier CLI contract', function (): void {
-        $fixture = typed_sample_resource_fixture();
-        try {
-            $process = typed_sample_create_resources_process($fixture, [
-                'INSTANCE_CREATE_HELP' => '  --hostname[=HOSTNAME]  Optional explicit Route hostname',
-            ]);
-
-            expect($process->run())->toBe(0, $process->getErrorOutput());
-            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($commands)
-                ->toContain('instance:create --help')
-                ->toContain('instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json')
-                ->not->toContain('instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json');
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
@@ -3147,15 +3127,15 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->toBe(0, $process->getErrorOutput());
             $state = json_decode((string) file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR);
-            expect($state['production']['hostname'] ?? null)->toBe('e2e-prod.orbit.test');
-            expect($state['production'])->not->toHaveKey('domain');
+            expect($state['production']['domain'] ?? null)->toBe('e2e-prod.orbit.test');
+            expect($state['production'])->not->toHaveKey('hostname');
             expect($state['name'])->toBe('e2e-dev');
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
-    it('accepts hostname only when domain is absent', function (): void {
+    it('refuses hostname-only Route and production responses without fallback', function (): void {
         $fixture = typed_sample_resource_fixture();
         $surface = implode("\n", ['instance:clone', 'instance:deploy', 'instance:deploy-step:create'])."\n";
         try {
@@ -3165,11 +3145,8 @@ describe('convergence guest scripts', function () {
                 'PRODUCTION_ENDPOINT_SHAPE' => 'hostname',
             ]);
 
-            expect($process->run())->toBe(0, $process->getErrorOutput());
-            $state = json_decode((string) file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR);
-            expect($state['production']['hostname'] ?? null)->toBe('e2e-prod.orbit.test');
-            expect($state['shape'])->toBe('app_instances');
-            expect($state['name'])->toBe('e2e-dev');
+            expect($process->run())->not->toBe(0);
+            expect(file_exists($fixture['state']))->toBeFalse();
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
@@ -3194,8 +3171,10 @@ describe('convergence guest scripts', function () {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
-        'invalid Route domain' => ['invalid-domain-with-hostname', 'hostname'],
-        'invalid production domain' => ['hostname', 'invalid-domain-with-hostname'],
+        'invalid Route domain' => ['invalid-domain-with-hostname', 'domain'],
+        'invalid production domain' => ['domain', 'invalid-domain-with-hostname'],
+        'hostname-only Route' => ['hostname', 'domain'],
+        'hostname-only production' => ['domain', 'hostname'],
     ]);
 
     it('selects candidate creation and explicit deployment once without repeat mutation', function (): void {
@@ -3325,6 +3304,39 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('inspects a replacement Route while selecting the authoritative private domain', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        foreach (['cluster', 'attached', 'router', 'active', 'app', 'instance'] as $stateFile) {
+            touch("{$fixture['root']}/{$stateFile}");
+        }
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'ROUTE_LIST_RESPONSE' => typed_sample_route_list([
+                    typed_sample_route([
+                        'id' => 8,
+                        'domain' => 'e2e-dev-next.orbit',
+                        'status' => 'activating',
+                        'replaces_route_id' => 5,
+                        'replacement_step' => 'activate',
+                    ]),
+                    typed_sample_route([
+                        'replaced_by_route_id' => 8,
+                        'replacement_step' => 'retire',
+                    ]),
+                ]),
+            ]);
+
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)
+                ->toContain('route:list --json')
+                ->not->toContain('route:create 1 e2e-dev.orbit --publication=private --target=4 --json');
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
     it('refuses conflicting or malformed typed Routes without Route mutation', function (string $response): void {
         $fixture = typed_sample_resource_fixture();
         foreach (['cluster', 'attached', 'router', 'active', 'app', 'instance'] as $stateFile) {
@@ -3355,14 +3367,14 @@ describe('convergence guest scripts', function () {
         ])])],
         'Node scope' => [typed_sample_route_list([typed_sample_route(['node_id' => 2, 'cluster_id' => null])])],
         'wrong Cluster scope' => [typed_sample_route_list([typed_sample_route(['cluster_id' => 9])])],
-        'wrong hostname' => [typed_sample_route_list([typed_sample_route(['hostname' => 'wrong.orbit'])])],
+        'hostname without domain' => [typed_sample_route_list([typed_sample_route(['hostname' => 'e2e-dev.orbit'])])],
         'wrong domain' => [typed_sample_route_list([typed_sample_route(['domain' => 'wrong.orbit'])])],
         'generated provenance' => [typed_sample_route_list([typed_sample_route([
             'generation_basis_node_id' => 2,
             'provenance' => 'generated',
         ])])],
         'public publication' => [typed_sample_route_list([typed_sample_route(['publication' => 'public'])])],
-        'targetless hostname' => [typed_sample_route_list([typed_sample_route(['target' => null])])],
+        'targetless domain' => [typed_sample_route_list([typed_sample_route(['target' => null])])],
         'nonzero target position' => [typed_sample_route_list([typed_sample_route([
             'target' => ['id' => 6, 'app_instance_id' => 4, 'position' => 1],
         ])])],
@@ -3370,9 +3382,13 @@ describe('convergence guest scripts', function () {
             typed_sample_route(),
             ['node_id' => true],
         )])],
+        'missing replacement fields' => [typed_sample_route_list([array_diff_key(
+            typed_sample_route(),
+            ['replaces_route_id' => true, 'replaced_by_route_id' => true, 'replacement_step' => true],
+        )])],
         'multiple associations' => [typed_sample_route_list([
             typed_sample_route(),
-            typed_sample_route(['id' => 7, 'hostname' => 'second.orbit']),
+            typed_sample_route(['id' => 7, 'domain' => 'second.orbit']),
         ])],
     ]);
 
@@ -3926,7 +3942,7 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($commands)->toContain('instance:create 1 2 e2e-dev --hostname=e2e-dev.orbit --json');
+            expect($commands)->toContain('instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json');
             expect(file_exists($fixture['state']))->toBeFalse();
             expect(implode("\n", $commands))
                 ->not

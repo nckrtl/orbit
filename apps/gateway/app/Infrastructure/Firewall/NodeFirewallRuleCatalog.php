@@ -8,16 +8,19 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Models\Node;
+use App\Models\NodeRole;
 
 final readonly class NodeFirewallRuleCatalog
 {
     public function __construct(
         private AppProdSiteRepository $appProdSites = new AppProdSiteRepository,
+        private PublicRouteEligibility $publicRoutes = new PublicRouteEligibility,
     ) {}
 
     /** @return list<UfwManagedRule> */
@@ -38,7 +41,8 @@ final readonly class NodeFirewallRuleCatalog
             ],
             RoleName::Vpn => [],
             RoleName::Router => $this->routerLanIngress($node),
-            RoleName::Ingress, RoleName::AppDev => [],
+            RoleName::Ingress => $this->ingressPublicHttp($node),
+            RoleName::AppDev => [],
             RoleName::AppProd => $this->appProdSites->requiresPublicFirewall($node)
                 ? [
                     $this->rule('orbit:app-prod-http', '80'),
@@ -76,6 +80,28 @@ final readonly class NodeFirewallRuleCatalog
             $this->rule('orbit:app-dev-https', '443', $this->wireguardIp($node), 'orbit'),
             $this->rule('orbit:app-dev-direct-http', '80'),
             $this->rule('orbit:app-dev-direct-https', '443'),
+        ];
+    }
+
+    /** @return list<UfwManagedRule> */
+    private function ingressPublicHttp(Node $node): array
+    {
+        $assignment = NodeRole::query()
+            ->where('node_id', $node->id)
+            ->where('role', RoleName::Ingress)
+            ->first();
+
+        if (! $assignment instanceof NodeRole || $assignment->cluster_id === null) {
+            return [];
+        }
+
+        if (! $this->publicRoutes->clusterHasActivePublicRoute($assignment->cluster_id)) {
+            return [];
+        }
+
+        return [
+            $this->rule('orbit:ingress-http', '80'),
+            $this->rule('orbit:ingress-https', '443'),
         ];
     }
 

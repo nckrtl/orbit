@@ -21,6 +21,7 @@ final readonly class UpdateRouteAction
     public function __construct(
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private ConvergeRouteAction $converge,
+        private PublishPublicRouteAction $publishPublic,
         private RouteReconciliationGuard $reconciliation,
     ) {}
 
@@ -66,12 +67,11 @@ final readonly class UpdateRouteAction
         $publicationChanges =
             $data->publicationProvided && $data->publication !== null && $route->publication !== $data->publication;
 
-        if ($route->status === RouteStatus::Active && $publicationChanges) {
-            $this->reconciliation->refuse();
-        }
+        $requestedPublication = $data->publicationProvided ? $data->publication : null;
+        $domainChanges = $domain !== null && $domain !== $route->domain;
 
         if (
-            $domain !== null
+            $domainChanges
             && in_array($route->status, [
                 RouteStatus::Active,
                 RouteStatus::Activating,
@@ -79,7 +79,15 @@ final readonly class UpdateRouteAction
                 RouteStatus::Failed,
             ], true)
         ) {
-            return $this->converge->execute($route, $domain);
+            return $this->converge->execute($route, $domain, $requestedPublication);
+        }
+
+        if (
+            ! $domainChanges
+            && $requestedPublication instanceof RoutePublication
+            && in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
+        ) {
+            return $this->publishPublic->execute($route, $requestedPublication);
         }
 
         if ($route->status === RouteStatus::Pending && $domain !== null && $domain !== $route->domain) {

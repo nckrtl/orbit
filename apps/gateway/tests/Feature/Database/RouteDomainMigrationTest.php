@@ -9,10 +9,8 @@ use App\Domain\Routes\RouteStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\Workspace;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Crypt;
@@ -149,47 +147,25 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
     DB::table('routes')->where('id', $routeId)->update(['hostname_change_target' => null]);
 });
 
-it('migrates leftover Instance and Workspace endpoints without changing their values', function (): void {
-    $app = OrbitApp::query()->create([
-        'name' => 'Legacy',
-        'slug' => 'legacy',
-        'repository_url' => 'https://example.test/legacy.git',
-    ]);
-    $node = Node::query()->create([
-        'name' => 'legacy-node',
-        'status' => 'active',
-        'public_ssh_host' => 'legacy-node.test',
-        'wireguard_ip' => '10.44.0.82',
-        'user' => 'orbit',
-    ]);
-    $leftover = Instance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => 'default',
-        'environment' => 'development',
-        'checkout_path' => '/srv/legacy',
-        'domain' => 'legacy.app-dev.orbit',
-        'certificate_mode' => 'orbit-ca',
-        'status' => 'active',
-    ]);
-    $workspace = Workspace::query()->create([
-        'instance_id' => $leftover->id,
-        'name' => 'feature',
-        'branch' => 'feature',
-        'checkout_path' => '/srv/legacy-feature',
-        'domain' => 'feature.legacy.app-dev.orbit',
-        'status' => 'active',
-    ]);
-
-    expect($leftover->refresh()->domain)
-        ->toBe('legacy.app-dev.orbit')
-        ->and($leftover->node_id)
-        ->toBe($node->id)
-        ->and($workspace->refresh()->domain)
-        ->toBe('feature.legacy.app-dev.orbit')
-        ->and(Schema::hasColumn('instances', 'hostname'))
+it('skips leftover Instance and Workspace endpoint columns after schema retirement', function (): void {
+    expect(Schema::hasTable('instances'))
         ->toBeFalse()
-        ->and(Schema::hasColumn('workspaces', 'hostname'))
+        ->and(Schema::hasTable('workspaces'))
+        ->toBeFalse()
+        ->and(class_exists('App\\Models\\Instance'))
+        ->toBeFalse()
+        ->and(class_exists('App\\Models\\Workspace'))
+        ->toBeFalse();
+
+    route_domain_migration()->up();
+
+    expect(Schema::hasTable('instances'))
+        ->toBeFalse()
+        ->and(Schema::hasTable('workspaces'))
+        ->toBeFalse()
+        ->and(Schema::hasColumn('routes', 'domain'))
+        ->toBeTrue()
+        ->and(Schema::hasColumn('routes', 'hostname'))
         ->toBeFalse();
 });
 

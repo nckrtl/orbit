@@ -61,6 +61,7 @@ abstract class RouteCommand extends GatewayCommand
         $this->line('Scope: '.($route->clusterId === null ? "node {$route->nodeId}" : "cluster {$route->clusterId}"));
         $this->line('Target: '.($route->target->appInstanceId ?? '—'));
         $this->line("Status: {$route->status}");
+        $this->line("Public publication: {$route->publicPublication}");
         $this->line("Request ID: {$route->requestId}");
 
         return self::SUCCESS;

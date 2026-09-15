@@ -103,7 +103,7 @@ function task7_process_result(
     bool $typed = false,
     ?TopologyTarget $target = null,
     bool $typedProduction = false,
-    string $productionEndpointKey = 'hostname',
+    string $productionEndpointKey = 'domain',
     bool $invalidProductionDomain = false,
 ): ProcessResult {
     $command = $process->command;
@@ -269,7 +269,7 @@ function task7_process_result(
 }
 
 /** @return array<string, mixed> */
-function task7_production_placement(string $endpointKey = 'hostname'): array
+function task7_production_placement(string $endpointKey = 'domain'): array
 {
     $placement = [
         'layout' => 'release',
@@ -371,7 +371,7 @@ describe('TopologyConverger', function () {
             );
     });
 
-    it('normalizes a domain-shaped production placement to one hostname endpoint for hydration', function (): void {
+    it('hydrates the recorded domain-shaped production placement without rewriting it to hostname', function (): void {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
             return task7_process_result(
@@ -394,7 +394,7 @@ describe('TopologyConverger', function () {
             static fn (array $command): string => implode(' ', array_map(strval(...), $command)),
             $recorded,
         );
-        $encoded = base64_encode(json_encode(task7_production_placement(), JSON_THROW_ON_ERROR));
+        $encoded = base64_encode(json_encode(task7_production_placement('domain'), JSON_THROW_ON_ERROR));
         expect($commands)
             ->toContain(
                 'incus --project orbit exec lab:orbit-e2e-tst-123-aaaaaaaa-app-prod -- '
@@ -403,6 +403,25 @@ describe('TopologyConverger', function () {
                 .' app-prod '
                 .$encoded,
             );
+    });
+
+    it('refuses a hostname-only production placement without fallback', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result(
+                $process,
+                $recorded,
+                typed: true,
+                typedProduction: true,
+                productionEndpointKey: 'hostname',
+            );
+        });
+
+        expect(fn () => new TopologyConverger(task7_host())->converge(
+            featureTarget('TST-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        ))->toThrow(RuntimeException::class, 'invalid production placement');
     });
 
     it('refuses a present invalid production domain without falling back to hostname', function (): void {

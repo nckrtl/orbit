@@ -29,8 +29,10 @@ final readonly class AppDevCaddyConfigRenderer
                 ->map(function (AppDevSite $site): string {
                     $handler = $this->handler($site);
 
+                    $scheme = $site->publicListener ? '' : 'https://';
+
                     return <<<CADDY
-                        https://{$site->domain} {
+                        {$scheme}{$site->domain} {
                             bind 0.0.0.0
                             tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
                             {$handler}
@@ -55,12 +57,27 @@ final readonly class AppDevCaddyConfigRenderer
                 static fn (string $address): string => "https://{$address}",
                 $site->proxyAddresses(),
             ));
+            $identity = $site->preserveForwardedIdentity
+                ? <<<CADDY
+
+                    header_up X-Forwarded-Proto https
+                    header_up X-Forwarded-For {remote_host}
+                    header_up X-Forwarded-Host {$site->domain}
+                CADDY
+                : '';
+            $root = self::ORBIT_ROOT_CA_PATH;
+            $trust = $site->publicListener || $site->preserveForwardedIdentity
+                ? <<<CADDY
+
+                        tls_trusted_ca_certs {$root}
+                CADDY
+                : '';
 
             return <<<CADDY
                 reverse_proxy {$upstreams} {
-                    header_up Host {$site->domain}
+                    header_up Host {$site->domain}{$identity}
                     transport http {
-                        tls_server_name {$site->domain}
+                        tls_server_name {$site->domain}{$trust}
                     }
                 }
                 CADDY;

@@ -480,6 +480,7 @@ function instance_gateway_route_data(): array
         'domain' => 'orbit-docs.test',
         'provenance' => 'generated',
         'publication' => 'private',
+        'public_publication' => 'inactive',
         'status' => 'active',
         'failed_step' => null,
         'error_code' => null,
