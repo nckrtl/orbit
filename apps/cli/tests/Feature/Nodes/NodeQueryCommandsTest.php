@@ -73,9 +73,8 @@ describe('node:list', function (): void {
         expect($output)->toContain('CLUSTER');
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
-        foreach (['app-dev', 'active', 'linux', '.app-dev.orbit', 'orbit', '10.44.0.3', '10.0.0.3'] as $value) {
-            expect($output)->toContain($value);
-        }
+        expect(preg_replace('/[ \t]+/', ' ', $output))
+            ->toContain('│ 2 │ app-dev │ active │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
         expect($output)->toContain('Request ID: '.request_id());
     });
 
@@ -120,9 +119,8 @@ describe('node:list', function (): void {
         expect($output)->toContain('CLUSTER');
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
-        foreach (['app-dev', 'active', 'linux', '.app-dev.orbit', 'orbit', '10.44.0.3', '10.0.0.3'] as $value) {
-            expect($output)->toContain($value);
-        }
+        expect(preg_replace('/[ \t]+/', ' ', $output))
+            ->toContain('│ 2 │ app-dev │ active │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
     });
 
     it('reports when no nodes are registered', function (): void {

@@ -93,9 +93,9 @@ it('shows a concise node role table with lifecycle and failure columns', functio
     expect($output)->toContain('STATUS');
     expect($output)->toContain('FAILED STEP');
     expect($output)->toContain('ERROR CODE');
-    foreach (['34', 'app-dev', 'active', '—', '35', 'app-prod', 'failed', 'converge:packages', 'packages.failed'] as $value) {
-        expect($output)->toContain($value);
-    }
+    expect(preg_replace('/[ \t]+/', ' ', $output))
+        ->toContain('│ 34 │ app-dev │ active │ — │ — │')
+        ->toContain('│ 35 │ app-prod │ failed │ converge:packages │ packages.failed │');
     expect($output)->toContain('Request ID: '.node_role_command_request_id());
 });
 
@@ -128,9 +128,8 @@ it('lists Ingress lifecycle identity in JSON and human modes without extra setti
     expect($output)->toContain('STATUS');
     expect($output)->toContain('FAILED STEP');
     expect($output)->toContain('ERROR CODE');
-    foreach (['41', 'ingress', 'active', '—'] as $value) {
-        expect($output)->toContain($value);
-    }
+    expect(preg_replace('/[ \t]+/', ' ', $output))
+        ->toContain('│ 41 │ ingress │ active │ — │ — │');
     expect($output)->toContain('Request ID: '.node_role_command_request_id());
 });
 
