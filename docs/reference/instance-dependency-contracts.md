@@ -153,3 +153,24 @@ The collection identity covers every inspected file and the selected directory. 
 The action selects and parses Composer and JavaScript independently. Each successful ecosystem replaces its graph atomically; a failed ecosystem retains its last observation as stale. Verified absence clears usage only after both source inspections succeed. The action compares the complete collection identity before publication and checks the instance source fields again inside each publication transaction. A changed release, checkout, Node placement, migration state, or removal cannot publish the earlier graph.
 
 An unavailable instance fails before collection. Instance lock contention returns `dependencies.operation_busy` with retained observations and does not append an attempt outside the lock. Other collection and parse failures record their stable codes. Source changes between inspections fail both ecosystems with `dependencies.source_changed`. These checks observe source at a point in time; they do not prevent external edits after the final inspection. Target authorization and HTTP or CLI adapters remain caller responsibilities.
+
+## Single-instance HTTP API
+
+Both endpoints under `/api/v1` require an active WireGuard peer with access to the instance's owning Node. Gateway authority remains fleet-wide. Targets use numeric instance IDs; neither endpoint accepts a source path, package manager, command, or fleet selector.
+
+| Method and path | Route name | Result |
+| --- | --- | --- |
+| `GET /instances/{instance}/dependencies` | `instance:dependencies:show` | Read stored inventory without SSH or a new attempt. |
+| `POST /instances/{instance}/dependencies/scan` | `instance:dependencies:scan` | Scan both ecosystems synchronously and return their outcomes. |
+
+POST requires an empty JSON object. GET accepts no body, and neither endpoint accepts query parameters. Invalid input returns `422 validation.failed`. Missing targets return `404 http.404`; unknown peers and denied access return the existing `403` errors. Inactive, removing, migration-required, or retained-removal targets return `409 dependencies.instance_unavailable` without inventory. Lock contention returns `409 dependencies.operation_busy`. The boundary reloads and checks authorization and availability under the instance operation lock, including after collection.
+
+### Inventory response
+
+A completed read or scan returns HTTP 200 with `data` and `meta.request_id`. Scan failures remain explicit in the typed result: HTTP 200 does not mean both ecosystems refreshed. `data` contains `instance_id`, nullable `succeeded`, and named `composer` and `javascript` results. Overall success is null until both ecosystems have attempts; otherwise it requires both to succeed. JavaScript identities use ecosystem `npm` for npm, pnpm, and Bun.
+
+Each ecosystem contains `ecosystem`, `state`, nullable `succeeded`, `attempted_at`, `error_code`, and `snapshot`. Never scanned means unknown with null attempt, success, error, and snapshot. First failure remains unknown but includes a failed attempt. A failed scan with a prior snapshot is stale and retains its original observation time. Verified absence has a snapshot with null graph; a dependency-free project has a graph with empty arrays. Mixed success returns each ecosystem's actual outcome and overall false.
+
+Snapshots contain `observed_at`, source provenance, and nullable graph. Source contains `project_root`, `reference`, `file_hashes`, and nullable `format`. Graphs contain `resolutions` and `requirements`. Resolutions expose graph-local `id`, package `ecosystem` and `name`, opaque `version`, independent `regular` and `development` flags, `source_reference`, and `integrity`. Requirements expose nullable `from` and `to`, declared `name`, `constraint`, `kind`, `scope`, and `optional`. Root and unresolved endpoints remain null. Timestamps use UTC RFC 3339.
+
+Only one instance's latest observations and attempts are returned, with no attempt history or installed-file audit. Input collection retains its documented byte and time bounds. Raw source contents, configuration values, download URLs, credentials, and process output are excluded. API access does not update packages, select another instance, or deploy source.

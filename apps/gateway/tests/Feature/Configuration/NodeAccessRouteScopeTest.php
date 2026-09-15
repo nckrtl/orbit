@@ -103,6 +103,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:create' => ServingNode::InstanceOwning,
         'instance:database:add' => ServingNode::EnvironmentInstanceOwning,
         'instance:database:remove' => ServingNode::EnvironmentInstanceOwning,
+        'instance:dependencies:scan' => ServingNode::InstanceOwning,
+        'instance:dependencies:show' => ServingNode::InstanceOwning,
         'instance:deploy' => ServingNode::InstanceOwning,
         'instance:deploy-step:create' => ServingNode::InstanceOwning,
         'instance:deploy-step:destroy' => ServingNode::InstanceOwning,

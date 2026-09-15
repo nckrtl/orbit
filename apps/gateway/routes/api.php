@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
+use App\Http\Controllers\Api\AppInstanceDependenciesController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
 use App\Http\Controllers\Api\AppInstanceDeployStepsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
@@ -194,6 +195,8 @@ Route::prefix('v1')->group(function (): void {
             Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
                 ->name('schedule:destroy');
         });
+        Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
+        Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
         Route::patch('instances/{instance}', [AppInstancesController::class, 'update'])->name('instance:update');
