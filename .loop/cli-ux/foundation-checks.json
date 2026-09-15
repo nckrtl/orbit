@@ -1,0 +1,42 @@
+{
+  "candidate": "c652f0b4af5645c3718461771bd48e830d53a8fd",
+  "tooling_test_candidate": "b58b6077b1190e20c3494d5934972221481dfb24",
+  "tooling_and_standard_blobs_unchanged": true,
+  "local_fixture_actions_passed": [
+    "standard-binding",
+    "skill-forward-check",
+    "recorder-contracts",
+    "verifier-contracts",
+    "registry-reconciliation",
+    "full-artifact-manifest"
+  ],
+  "recorder_tests": 26,
+  "verifier_tests": 12,
+  "linux_tests": 38,
+  "linux_seconds": 11.951,
+  "local_tests_seconds": 16.633,
+  "proof_status": "not_run",
+  "source_registry_status": "passed at current candidate with nine rejected altered fixtures",
+  "export_verification": "full-export-local-verification.json",
+  "independent_input_recheck": "reviews/input-backpressure-recheck.md",
+  "solo_capture": "/Users/nckrtl/.codex/work/cli-ux-restoration/evidence/solo-foundation-b58b6077",
+  "raw_files_manifest": "/Users/nckrtl/.codex/work/cli-ux-restoration/evidence/solo-foundation-b58b6077-manifest.json",
+  "limitation": "Local and Beast-host tooling checks only. No isolated acceptance, formal PR approval, or command compliance. Old local fixture identity.phase refers to fixture action phase, not a harness acceptance receipt.",
+  "local_fixture_actions_candidate": "b58b6077b1190e20c3494d5934972221481dfb24",
+  "current_checks": {
+    "builder": "passed: checks/builder-c652f0b4-passed.json; no warnings",
+    "registry": "107 public/20 framework/127 keys/175 source files; exact positive plus9 rejected altered fixtures",
+    "discovery": "fresh issue-owned discovery acquired at c652f0b4",
+    "proof": "02c1a55c captured successful proof, complete export and Solo manual inspection retained; new app:update integration requires fresh evidence evaluation",
+    "documentation": "docs-build, docs-lint, mint validate and mint broken-links passed",
+    "snapshot": "ORB-364 closeout complete; generation 8df38ef80c34-ef034a25a402"
+  },
+  "prior_successful_proof": {
+    "candidate": "02c1a55c22cf12c31278ff415051907817425836",
+    "attempt": "834aa52c8ba6cea629000ba865d09f83",
+    "capture_fingerprint": "a26b09a6ce41dd7a6fc5f73242269e8f6de4d8af9765aadc7facec62c6716f39",
+    "external_evidence": "/Users/nckrtl/.codex/work/cli-ux-restoration/evidence/proof-02c1a55c",
+    "acceptance_files_verified": 28,
+    "manual_files_verified": 10
+  }
+}
