@@ -24,6 +24,12 @@ The [Node provisioning](/reference/node-provisioning), [Node settings](/referenc
 
 Every command accepts `--json`. Commands that take a `node` argument or `--node` option accept the numeric Node ID; `node:role:*` and `node:settings` also accept the registered Node name.
 
+Node and role lists use read-only tables with every column retained at narrow widths. Below the minimum table width, each row becomes a labeled record. Empty lists say `No nodes.` or `No roles.`. Node details use an aligned tree; absent human values use an em dash, and TLDs include their leading dot. JSON retains the existing fields and null values.
+
+Requests show an indeterminate progress tree while the Gateway works. The CLI does not receive individual provisioning steps. It settles the operation before showing its result or error and request ID. Piped output keeps readable waiting and settled results without animation; JSON contains only the response.
+
+Arguments and settings remain explicit in every mode. Removal confirmations default to No and identify the target and effect. Declining, cancelling, or reaching end of input exits 1 before removal. Automation, including JSON, requires the existing `--force` consent option. `--offline` and `--purge-data` do not supply consent.
+
 ## orbit node:add
 
 Add a machine to the fleet. The same command provisions a new machine and converges an existing Node after you change its TLD, roles, or settings.
@@ -87,7 +93,7 @@ orbit node:list [--json]
 
 ## orbit node:show
 
-Show one Node, including its recorded architecture, WireGuard and LAN addresses, roles, and raw `settings` member.
+Show one Node, including its recorded architecture, WireGuard and LAN addresses, roles, and configured apps path. JSON includes the raw `settings` member.
 
 ```bash
 orbit node:show <node> [--json]

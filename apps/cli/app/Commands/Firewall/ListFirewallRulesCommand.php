@@ -6,6 +6,7 @@ namespace App\Commands\Firewall;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
 
@@ -35,10 +36,11 @@ final class ListFirewallRulesCommand extends FirewallCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ListFirewallRulesRequest($nodeId),
             FirewallRulesResponse::class,
+            ['List firewall rules', 'Loading firewall rules', 'Loaded firewall rules'],
         );
 
         if (! $response instanceof FirewallRulesResponse) {
@@ -64,8 +66,8 @@ final class ListFirewallRulesCommand extends FirewallCommand
             ];
         }
 
-        $this->table(['Name', 'Action', 'Source', 'Port', 'Protocol', 'Status'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['Name', 'Action', 'Source', 'Port', 'Protocol', 'Status'], $rows, 'No firewall rules.'));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

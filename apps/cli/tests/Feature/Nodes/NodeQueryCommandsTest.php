@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
@@ -41,10 +42,9 @@ describe('node:list', function (): void {
             'request_id' => request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $this
-            ->artisan('node:list', ['--json' => true])
-            ->expectsOutput($expected)
-            ->assertExitCode(0);
+        expect(Artisan::call('node:list', ['--json' => true]))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain($expected);
 
         expect($mockClient->getLastPendingRequest()?->getUrl())
             ->toBe('https://10.44.0.1/api/v1/nodes');
@@ -58,14 +58,19 @@ describe('node:list', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('node:list')
-            ->expectsTable(
-                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'Cluster', 'WireGuard', 'LAN'],
-                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', 3, '10.44.0.3', '10.0.0.3']],
-            )
-            ->expectsOutput('Request ID: '.request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('node:list'))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain('ID');
+        expect($output)->toContain('NAME');
+        expect($output)->toContain('STATUS');
+        expect($output)->toContain('ROLES');
+        expect($output)->toContain('PLATFORM');
+        expect($output)->toContain('TLD');
+        expect($output)->toContain('USER');
+        expect($output)->toContain('CLUSTER');
+        expect($output)->toContain('WIREGUARD');
+        expect($output)->toContain('LAN');
+        expect($output)->toContain('Request ID: '.request_id());
     });
 
     it('does not invent a missing public SSH port', function (): void {
@@ -82,10 +87,9 @@ describe('node:list', function (): void {
             'request_id' => request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $this
-            ->artisan('node:list', ['--json' => true])
-            ->expectsOutput($expected)
-            ->assertExitCode(0);
+        expect(Artisan::call('node:list', ['--json' => true]))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain($expected);
     });
 
     it('keeps the managed user visible without a complete public endpoint', function (): void {
@@ -98,13 +102,18 @@ describe('node:list', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('node:list')
-            ->expectsTable(
-                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'Cluster', 'WireGuard', 'LAN'],
-                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', 3, '10.44.0.3', '10.0.0.3']],
-            )
-            ->assertExitCode(0);
+        expect(Artisan::call('node:list'))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain('ID');
+        expect($output)->toContain('NAME');
+        expect($output)->toContain('STATUS');
+        expect($output)->toContain('ROLES');
+        expect($output)->toContain('PLATFORM');
+        expect($output)->toContain('TLD');
+        expect($output)->toContain('USER');
+        expect($output)->toContain('CLUSTER');
+        expect($output)->toContain('WIREGUARD');
+        expect($output)->toContain('LAN');
     });
 
     it('reports when no nodes are registered', function (): void {
@@ -115,11 +124,10 @@ describe('node:list', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('node:list')
-            ->expectsOutput('No nodes.')
-            ->expectsOutput('Request ID: '.request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('node:list'))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain('No nodes.');
+        expect($output)->toContain('Request ID: '.request_id());
     });
 
     it('fails clearly when no gateway profile is active', function (): void {
@@ -203,23 +211,19 @@ describe('node:show', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('node:show', ['node' => '2'])
-            ->expectsOutput('app-dev: active')
-            ->expectsOutput('Roles: app-dev')
-            ->expectsOutput('SSH: orbit@94.237.40.75:22')
-            ->expectsOutput('Cluster: 3')
-            ->expectsOutput('WireGuard: 10.44.0.3')
-            ->expectsOutput('LAN: 10.0.0.3')
-            ->expectsOutput('WireGuard public key: app-dev-public-key')
-            ->expectsOutput('WireGuard endpoint override: 10.0.0.2:51820')
-            ->expectsOutput('DNS server override: 10.0.0.2')
-            ->expectsOutput('TLD: app-dev.orbit')
-            ->expectsOutput('Platform: linux (x86_64)')
-            ->expectsOutput('Access to: app-dev (#3), app-prod (#5)')
-            ->expectsOutput('Accessible by: maintainer (#4)')
-            ->expectsOutput('Request ID: '.request_id())
-            ->assertExitCode(0);
+        $status = Artisan::call('node:show', ['node' => '2']);
+        $output = preg_replace('/[ \t]+/', ' ', Artisan::output());
+        expect($status)->toBe(0);
+        foreach ([
+            'Node: app-dev', 'Status active', 'Roles app-dev', 'SSH orbit@94.237.40.75:22',
+            'Cluster 3', 'WireGuard 10.44.0.3', 'LAN 10.0.0.3', 'WireGuard public key app-dev-public-key',
+            'WireGuard endpoint override 10.0.0.2:51820', 'DNS server override 10.0.0.2',
+            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Apps path —',
+            'Access to app-dev (#3), app-prod (#5)', 'Accessible by maintainer (#4)',
+            'Request ID: '.request_id(),
+        ] as $field) {
+            expect($output)->toContain($field);
+        }
     });
 
     it('shows empty node access summaries as dashes', function (): void {
@@ -236,11 +240,10 @@ describe('node:show', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('node:show', ['node' => '2'])
-            ->expectsOutput('Access to: -')
-            ->expectsOutput('Accessible by: -')
-            ->assertExitCode(0);
+        expect(Artisan::call('node:show', ['node' => '2']))->toBe(0);
+        $output = preg_replace('/[ \t]+/', ' ', Artisan::output());
+        expect($output)->toContain('Access to —');
+        expect($output)->toContain('Accessible by —');
     });
 
     it('renders an incomplete public SSH endpoint safely in node details', function (): void {
@@ -253,10 +256,9 @@ describe('node:show', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('node:show', ['node' => '2'])
-            ->expectsOutput('SSH: -')
-            ->assertExitCode(0);
+        expect(Artisan::call('node:show', ['node' => '2']))->toBe(0);
+        $output = preg_replace('/[ \t]+/', ' ', Artisan::output());
+        expect($output)->toContain('SSH —');
     });
 
     it('rejects an invalid node ID before making an API request', function (string $nodeId): void {

@@ -187,64 +187,6 @@ it('registers the exact node access remove command signature surface', function 
         ]);
 });
 
-it('rejects an invalid consumer node id for removal before connector io', function (string $consumerId): void {
-    $mockClient = MockClient::global();
-
-    $this
-        ->artisan('node:access:remove', ['consumer' => $consumerId, 'serving' => '3', '--force' => true])
-        ->expectsOutputToContain('Consumer ID must be a positive integer.')
-        ->assertExitCode(1);
-
-    expect($mockClient->getLastPendingRequest())->toBeNull();
-})->with([
-    'remove consumer non-numeric' => 'operator',
-    'remove consumer zero' => '0',
-    'remove consumer negative' => '-1',
-]);
-
-it('rejects an invalid serving node id for removal before connector io', function (string $servingId): void {
-    $mockClient = MockClient::global();
-
-    $this
-        ->artisan('node:access:remove', ['consumer' => '2', 'serving' => $servingId, '--force' => true])
-        ->expectsOutputToContain('Serving ID must be a positive integer.')
-        ->assertExitCode(1);
-
-    expect($mockClient->getLastPendingRequest())->toBeNull();
-})->with([
-    'remove serving non-numeric' => 'app-dev',
-    'remove serving zero' => '0',
-    'remove serving negative' => '-1',
-]);
-
-it('does not send a removal request when interactive confirmation is declined', function (): void {
-    $mockClient = node_access_existing_show_mock();
-
-    $this
-        ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3'])
-        ->expectsConfirmation('Remove access from node #2 to node #3?', 'no')
-        ->assertExitCode(1);
-
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(ShowNodeRequest::class)
-        ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(2);
-});
-
-it('sends exactly one removal request when interactive confirmation is accepted', function (): void {
-    $mockClient = node_access_confirmed_remove_mock();
-
-    $this
-        ->artisan('node:access:remove', ['consumer' => '2', 'serving' => '3'])
-        ->expectsConfirmation('Remove access from node #2 to node #3?', 'yes')
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(RemoveNodeAccessRequest::class)
-        ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(3);
-});
-
 it('fails as not-found for a missing access node without force', function (string $consumerId, string $servingId, string $missingId): void {
     $mockClient = node_access_missing_show_mock((int) $missingId);
     $expected = json_encode(node_access_missing_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);

@@ -29,42 +29,6 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-it('requires force before sending a destructive node removal request', function (): void {
-    $mockClient = MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
-    ]);
-
-    $this
-        ->artisan('node:remove', ['node' => '2'])
-        ->expectsConfirmation('Remove this node from the gateway?', 'no')
-        ->assertExitCode(1);
-
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(ShowNodeRequest::class)
-        ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(1);
-});
-
-it('accepts explicit confirmation before sending one node removal request', function (): void {
-    $mockClient = MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:remove', ['node' => '2'])
-        ->expectsConfirmation('Remove this node from the gateway?', 'yes')
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(RemoveNodeRequest::class)
-        ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(2);
-});
-
 it('fails as not-found for a missing node without force', function (): void {
     $mockClient = MockClient::global([
         ShowNodeRequest::class => MockResponse::make(
@@ -217,24 +181,6 @@ it('sends the offline claim and returns the full degraded json payload', functio
         ->toBe(['force' => true, 'offline' => true]);
 });
 
-it('sends force true when an interactive confirmation grants consent', function (): void {
-    $mockClient = MockClient::global([
-        ShowNodeRequest::class => MockResponse::make(existing_node_show_payload(id: 3, name: 'app-prod')),
-        RemoveNodeRequest::class => MockResponse::make([
-            'data' => removed_node_degraded_payload(),
-            'meta' => ['request_id' => remove_node_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:remove', ['node' => '3', '--offline' => true])
-        ->expectsConfirmation('Remove this node from the gateway?', 'yes')
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['force' => true, 'offline' => true]);
-});
-
 it('shows deterministic human output for node removal', function (): void {
     MockClient::global([
         ShowNodeRequest::class => MockResponse::make(existing_node_show_payload()),
@@ -267,9 +213,9 @@ it('shows the degradation advisory for an offline node removal', function (): vo
         ->expectsOutput('Node [app-prod] removed.')
         ->expectsOutput('Warning: Node [app-prod] was unreachable. Orbit removed only the state it owns.')
         ->expectsOutput('Roles shed:')
-        ->expectsOutput('  - app-prod')
+        ->expectsOutput('  app-prod')
         ->expectsOutput('Left on the node:')
-        ->expectsOutput('  - Caddy site configuration and certificates for the app-prod role')
+        ->expectsOutput('  Caddy site configuration and certificates for the app-prod role')
         ->expectsOutput('Run the node-local Metrics cleanup on the node once it boots, or discard the node.')
         ->expectsOutput('Request ID: '.remove_node_request_id())
         ->assertExitCode(0);

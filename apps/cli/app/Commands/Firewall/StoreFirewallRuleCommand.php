@@ -6,6 +6,8 @@ namespace App\Commands\Firewall;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressState;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 
@@ -59,10 +61,19 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
             return self::FAILURE;
         }
 
-        $rule = $this->send(
+        $rule = $this->sendWithProgress(
             $connector,
             $this->request($nodeId, $name, $source, $protocol, $port),
             FirewallRuleResponse::class,
+            ['Apply firewall rule', 'Applying firewall rule', 'Applied firewall rule'],
+            static function (object $response): ProgressState {
+                if (! $response instanceof FirewallRuleResponse || $response->backendStatus !== 'active') {
+                    throw new GatewayApiException('Gateway response does not confirm the firewall operation.',
+                        'gateway.invalid_response', requestId: $response instanceof FirewallRuleResponse ? $response->requestId : null);
+                }
+
+                return ProgressState::Success;
+            },
         );
 
         if (! $rule instanceof FirewallRuleResponse) {
@@ -75,9 +86,9 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
             return self::SUCCESS;
         }
 
-        $this->info("Firewall rule [{$rule->name}] is active.");
+        $this->writeHumanMessage("Firewall rule [{$rule->name}] is active.");
 
-        $this->line("Request ID: {$rule->requestId}");
+        $this->writeHumanMessage("Request ID: {$rule->requestId}");
 
         return self::SUCCESS;
     }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-final class ShowNodeCommand extends GatewayCommand
+final class ShowNodeCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:show
@@ -36,7 +36,7 @@ final class ShowNodeCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $node = $this->send($connector, new ShowNodeRequest($nodeId), NodeResponse::class);
+        $node = $this->sendWithProgress($connector, new ShowNodeRequest($nodeId), NodeResponse::class, ['Show Node', 'Loading Node', 'Loaded Node']);
 
         if (! $node instanceof NodeResponse) {
             return self::FAILURE;
@@ -48,34 +48,31 @@ final class ShowNodeCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $roles = $node->roles === [] ? '-' : implode(', ', $node->roles);
-        $platform = match (true) {
-            $node->platform !== null && $node->architecture !== null => "{$node->platform} ({$node->architecture})",
-            $node->platform !== null => $node->platform,
-            $node->architecture !== null => $node->architecture,
-            default => '-',
-        };
-
-        $this->info("{$node->name}: {$node->status}");
-        $this->line("Roles: {$roles}");
-        $this->line('SSH: '.NodeOutput::sshEndpoint($node));
-        $this->line('Cluster: '.($node->clusterId ?? '-'));
-        $this->line('WireGuard: '.($node->wireguardIp ?? '-'));
-        $this->line('LAN: '.($node->lanIp ?? '-'));
-        $this->line('WireGuard public key: '.($node->wireguardPublicKey ?? '-'));
-        $this->line('WireGuard endpoint override: '.($node->wireguardEndpointOverride ?? '-'));
-        $this->line('DNS server override: '.($node->dnsServerOverride ?? '-'));
-        $this->line('TLD: '.($node->tld ?? '-'));
-        $this->line("Platform: {$platform}");
-        $this->line('Access to: '.NodeOutput::accessList($node->access->canAccess ?? []));
-        $this->line('Accessible by: '.NodeOutput::accessList($node->access->accessibleBy ?? []));
+        $platform = implode(' ', array_filter([$node->platform, $node->architecture !== null ? "({$node->architecture})" : null]));
+        $fields = [
+            'ID' => $node->id,
+            'Status' => $node->status,
+            'Roles' => $node->roles,
+            'SSH' => NodeOutput::sshEndpoint($node),
+            'Cluster' => $node->clusterId,
+            'WireGuard' => $node->wireguardIp,
+            'LAN' => $node->lanIp,
+            'WireGuard public key' => $node->wireguardPublicKey,
+            'WireGuard endpoint override' => $node->wireguardEndpointOverride,
+            'DNS server override' => $node->dnsServerOverride,
+            'TLD' => NodeOutput::tld($node->tld),
+            'Platform' => $platform,
+            'Apps path' => $node->settings?->apps?->path,
+            'Access to' => NodeOutput::accessList($node->access->canAccess ?? []),
+            'Accessible by' => NodeOutput::accessList($node->access->accessibleBy ?? []),
+        ];
 
         if ($node->failedStep !== null || $node->errorCode !== null) {
-            $failure = implode(' / ', array_filter([$node->failedStep, $node->errorCode], is_string(...)));
-            $this->line("Failure: {$failure}");
+            $fields['Failure'] = implode(' / ', array_filter([$node->failedStep, $node->errorCode], is_string(...)));
         }
 
-        $this->line("Request ID: {$node->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Node: {$node->name}", $fields));
+        $this->writeHumanMessage("Request ID: {$node->requestId}");
 
         return self::SUCCESS;
     }

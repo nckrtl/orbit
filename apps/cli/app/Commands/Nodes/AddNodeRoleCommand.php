@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 
-final class AddNodeRoleCommand extends GatewayCommand
+final class AddNodeRoleCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:role:add
@@ -44,10 +43,12 @@ final class AddNodeRoleCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new AddNodeRoleRequest($nodeId, $role, $this->option('converge') === true),
             NodeRoleMutationResponse::class,
+            ['Add Node role', 'Adding Node role', 'Added Node role'],
+            NodeOutput::mutationState(...),
         );
 
         if (! $response instanceof NodeRoleMutationResponse) {
@@ -60,8 +61,8 @@ final class AddNodeRoleCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("Role [{$response->role}] added to node [{$response->nodeName}] (#{$response->nodeId}).");
-        $this->line("Request ID: {$response->requestId}");
+        $this->writeHumanMessage("Role [{$response->role}] added to node [{$response->nodeName}] (#{$response->nodeId}).");
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

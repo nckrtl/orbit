@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-final class AddNodeCommand extends GatewayCommand
+final class AddNodeCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:add
@@ -158,7 +157,7 @@ final class AddNodeCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $node = $this->send(
+        $node = $this->sendWithProgress(
             $connector,
             new AddNodeRequest(
                 name: $name,
@@ -180,6 +179,8 @@ final class AddNodeCommand extends GatewayCommand
                 settings: $settings['provided'] ? NodeSettingOptions::settings($settings['body']) : null,
             ),
             NodeResponse::class,
+            ['Add Node', 'Adding Node', 'Added Node'],
+            NodeOutput::mutationState(...),
         );
 
         if (! $node instanceof NodeResponse) {
@@ -192,8 +193,8 @@ final class AddNodeCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("Node [{$node->name}] is {$node->status}.");
-        $this->line("Request ID: {$node->requestId}");
+        $this->writeHumanMessage("Node [{$node->name}] is {$node->status}.");
+        $this->writeHumanMessage("Request ID: {$node->requestId}");
 
         return self::SUCCESS;
     }

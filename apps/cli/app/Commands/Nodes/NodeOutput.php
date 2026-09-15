@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use LaravelZero\Framework\Commands\Command;
+use App\Support\Console\ConsoleMode;
+use App\Support\Console\HumanRenderer;
+use App\Support\Console\ProgressState;
+use App\Support\Console\TerminalText;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
+use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 
 final class NodeOutput
 {
@@ -14,7 +20,7 @@ final class NodeOutput
     public static function accessList(array $nodes): string
     {
         if ($nodes === []) {
-            return '-';
+            return '—';
         }
 
         return implode(', ', array_map(
@@ -26,10 +32,35 @@ final class NodeOutput
     public static function sshEndpoint(NodeResponse $node): string
     {
         if ($node->user === '' || $node->publicSshHost === '' || $node->publicSshPort < 1) {
-            return '-';
+            return '—';
         }
 
         return "{$node->user}@{$node->publicSshHost}:{$node->publicSshPort}";
+    }
+
+    public static function tld(?string $tld): ?string
+    {
+        return $tld === null || $tld === '' ? null : '.'.ltrim($tld, '.');
+    }
+
+    public static function mutationState(object $response, bool $removing = false): ProgressState
+    {
+        $valid = match (true) {
+            $response instanceof NodeResponse => ! $removing && $response->status === 'active',
+            $response instanceof RemovedNodeResponse => $removing && $response->removed,
+            $response instanceof NodeRoleMutationResponse => $response->removed === $removing && ($removing || $response->assignment?->status === 'active'),
+            default => false,
+        };
+
+        if (! $valid) {
+            throw new GatewayApiException('Gateway response does not confirm the Node operation.',
+                'gateway.invalid_response', requestId: $response instanceof NodeResponse
+                    || $response instanceof RemovedNodeResponse || $response instanceof NodeRoleMutationResponse
+                        ? $response->requestId : null);
+        }
+
+        return ($response instanceof RemovedNodeResponse || $response instanceof NodeRoleMutationResponse)
+            && $response->degradation !== null ? ProgressState::Warning : ProgressState::Success;
     }
 
     /**
@@ -37,43 +68,37 @@ final class NodeOutput
      * @param  list<string>  $retainedOnNode
      */
     public static function degradationAdvisory(
-        Command $command,
+        HumanRenderer $renderer,
+        ConsoleMode $mode,
         string $nodeName,
         ?string $degradation,
         array $rolesShed,
         array $retainedOnNode,
         ?string $followUp,
-    ): void {
-        if ($degradation === null) {
-            return;
+    ): string {
+        if ($degradation === null || $mode->machine) {
+            return '';
         }
 
-        $command->warn(
-            "Warning: Node [{$nodeName}] was "
-            .self::degradationDescription($degradation)
-            .'. '
-            .'Orbit removed only the state it owns.',
-        );
+        $warning = "Warning: Node [{$nodeName}] was ".self::degradationDescription($degradation)
+            .'. Orbit removed only the state it owns.';
+        $output = TerminalText::style(implode("\n", TerminalText::wrap(TerminalText::safe($warning), $mode->columns)), 'orange', $mode->decorated)."\n";
+        $groups = [];
 
-        if ($rolesShed !== []) {
-            $command->line('Roles shed:');
-
-            foreach ($rolesShed as $role) {
-                $command->line("  - {$role}");
+        foreach (['Roles shed' => $rolesShed, 'Left on the node' => $retainedOnNode] as $title => $items) {
+            if ($items !== []) {
+                $groups[] = ['title' => $title.':', 'items' => array_map(
+                    static fn (string $item): array => ['label' => $item, 'fields' => []], $items)];
             }
         }
 
-        if ($retainedOnNode !== []) {
-            $command->line('Left on the node:');
-
-            foreach ($retainedOnNode as $item) {
-                $command->line("  - {$item}");
-            }
-        }
+        $output .= $renderer->properties($groups);
 
         if ($followUp !== null) {
-            $command->comment($followUp);
+            $output .= implode("\n", TerminalText::wrap(TerminalText::safe($followUp), $mode->columns))."\n";
         }
+
+        return $output;
     }
 
     private static function degradationDescription(string $degradation): string

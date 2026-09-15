@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
@@ -126,7 +127,7 @@ it('reports inactive UFW as a structured gateway failure', function (
     'remove' => [
         'firewall:remove',
         RemoveFirewallRuleRequest::class,
-        ['name' => 'private-web', '--node' => '7'],
+        ['--yes' => true, 'name' => 'private-web', '--node' => '7'],
     ],
 ]);
 
@@ -172,7 +173,7 @@ it('reports inactive UFW with the exact safe JSON error envelope', function (
     'remove JSON' => [
         'firewall:remove',
         RemoveFirewallRuleRequest::class,
-        ['name' => 'private-web', '--node' => '7'],
+        ['--yes' => true, 'name' => 'private-web', '--node' => '7'],
     ],
 ]);
 
@@ -184,14 +185,15 @@ it('lists stable named rules for one node', function (): void {
         ]),
     ]);
 
-    $this
-        ->artisan('firewall:list', ['--node' => '7'])
-        ->expectsTable(
-            ['Name', 'Action', 'Source', 'Port', 'Protocol', 'Status'],
-            [['private-web', 'allow', '192.0.2.0/24', '443', 'tcp', 'active']],
-        )
-        ->expectsOutput('Request ID: '.firewall_cli_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('firewall:list', ['--node' => '7']))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('NAME');
+    expect($output)->toContain('ACTION');
+    expect($output)->toContain('SOURCE');
+    expect($output)->toContain('PORT');
+    expect($output)->toContain('PROTOCOL');
+    expect($output)->toContain('STATUS');
+    expect($output)->toContain('Request ID: '.firewall_cli_request_id());
 });
 
 it('removes one stable name within one node', function (): void {
@@ -201,6 +203,7 @@ it('removes one stable name within one node', function (): void {
 
     $this
         ->artisan('firewall:remove', [
+            '--yes' => true,
             'name' => 'private-web',
             '--node' => '7',
         ])

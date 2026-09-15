@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Nodes\ListNodeRolesRequest;
 use Orbit\Sdk\Responses\Nodes\NodeRolesResponse;
 
-final class ListNodeRolesCommand extends GatewayCommand
+final class ListNodeRolesCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:role:list
@@ -36,7 +36,7 @@ final class ListNodeRolesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListNodeRolesRequest($nodeId), NodeRolesResponse::class);
+        $response = $this->sendWithProgress($connector, new ListNodeRolesRequest($nodeId), NodeRolesResponse::class, ['List Node roles', 'Loading Node roles', 'Loaded Node roles']);
 
         if (! $response instanceof NodeRolesResponse) {
             return self::FAILURE;
@@ -49,8 +49,8 @@ final class ListNodeRolesCommand extends GatewayCommand
         }
 
         if ($response->assignments === []) {
-            $this->line('No roles.');
-            $this->line("Request ID: {$response->requestId}");
+            $this->writeHumanMessage('No roles.');
+            $this->writeHumanMessage("Request ID: {$response->requestId}");
 
             return self::SUCCESS;
         }
@@ -62,13 +62,13 @@ final class ListNodeRolesCommand extends GatewayCommand
                 $assignment->id,
                 $assignment->role,
                 $assignment->status,
-                $assignment->failedStep ?? '-',
-                $assignment->errorCode ?? '-',
+                $assignment->failedStep ?? null,
+                $assignment->errorCode ?? null,
             ];
         }
 
-        $this->table(['ID', 'Role', 'Status', 'Failed step', 'Error code'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Role', 'Status', 'Failed step', 'Error code'], $rows));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }
