@@ -63,27 +63,26 @@ it('creates a Cluster through the exact typed request and renders JSON', functio
 it('lists Clusters with deterministic human output', function (): void {
     cluster_cli_mock(ListClustersRequest::class, [cluster_cli_gateway_data()]);
 
-    $this
-        ->artisan('cluster:list')
-        ->expectsTable(
-            ['ID', 'Name', 'TLD', 'State', 'Nodes', 'Router'],
-            [[3, 'development', 'beast', 'inactive', 1, '-']],
-        )
-        ->expectsOutput('Request ID: '.cluster_cli_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('cluster:list'))->toBe(0);
+    expect(Artisan::output())->toContain('NAME')
+        ->toContain('TLD')
+        ->toContain('STATE')
+        ->toContain('NODES')
+        ->toContain('ROUTER')
+        ->toContain(cluster_cli_request_id());
 });
 
 it('shows a Cluster by numeric ID', function (): void {
     $mockClient = cluster_cli_mock(ShowClusterRequest::class, cluster_cli_gateway_data());
 
-    $this
-        ->artisan('cluster:show', ['cluster' => '3'])
-        ->expectsOutput('development: inactive (#3)')
-        ->expectsOutput('TLD: beast')
-        ->expectsOutput('Router: -')
-        ->expectsOutput('Nodes: app-dev (#2)')
-        ->expectsOutput('Request ID: '.cluster_cli_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('cluster:show', ['cluster' => '3']))->toBe(0);
+    expect(Artisan::output())->toContain('Cluster: development')
+        ->toContain('inactive')
+        ->toContain('.beast')
+        ->toContain('Router')
+        ->toContain('—')
+        ->toContain('app-dev (#2)')
+        ->toContain(cluster_cli_request_id());
 
     expect($mockClient->getLastRequest())->toBeInstanceOf(ShowClusterRequest::class);
 });
@@ -114,7 +113,7 @@ it('removes a Cluster only after force confirmation', function (): void {
     $this
         ->artisan('cluster:destroy', ['cluster' => '3', '--force' => true])
         ->expectsOutput('Cluster [development] removed.')
-        ->expectsOutput('Request ID: '.cluster_cli_request_id())
+        ->expectsOutputToContain(cluster_cli_request_id())
         ->assertExitCode(0);
 
     expect($mockClient->getLastRequest())->toBeInstanceOf(DestroyClusterRequest::class)
@@ -342,27 +341,23 @@ it('requires human confirmation only after an existing Cluster is resolved', fun
     'clear' => ['cluster:router:unset', ['cluster' => '3']],
 ]);
 
-it('accepts explicit confirmation after resolving an existing Cluster', function (
+it('does not treat interactive framework input as terminal consent', function (
     string $command,
-    string $requestClass,
     array $arguments,
     string $operation,
 ): void {
-    $mockClient = cluster_cli_confirmed_mock($requestClass, cluster_cli_gateway_data());
+    $mockClient = cluster_cli_show_mock();
 
-    $this
-        ->artisan($command, $arguments)
-        ->expectsConfirmation("Confirm Cluster {$operation}?", 'yes')
-        ->assertExitCode(0);
+    $this->artisan($command, $arguments)
+        ->expectsOutputToContain("Use --force to confirm Cluster {$operation}.")
+        ->assertExitCode(1);
 
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf($requestClass)
-        ->and($mockClient->getRecordedResponses())
-        ->toHaveCount(2);
+    expect($mockClient->getLastRequest())->toBeInstanceOf(ShowClusterRequest::class)
+        ->and($mockClient->getRecordedResponses())->toHaveCount(1);
 })->with([
-    'remove' => ['cluster:destroy', DestroyClusterRequest::class, ['cluster' => '3'], 'removal'],
-    'detach' => ['cluster:node:remove', RemoveClusterNodeRequest::class, ['cluster' => '3', 'node' => '2'], 'Node detachment'],
-    'clear' => ['cluster:router:unset', UnsetClusterRouterRequest::class, ['cluster' => '3'], 'Router clearing'],
+    'remove' => ['cluster:destroy', ['cluster' => '3'], 'removal'],
+    'detach' => ['cluster:node:remove', ['cluster' => '3', 'node' => '2'], 'Node detachment'],
+    'clear' => ['cluster:router:unset', ['cluster' => '3'], 'Router clearing'],
 ]);
 
 /** @param class-string $requestClass */
@@ -469,3 +464,21 @@ function cluster_cli_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('renders an explicit empty list and preserves the empty machine collection', function (bool $json): void {
+    MockClient::global([
+        ListClustersRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => cluster_cli_request_id()]]),
+    ]);
+
+    expect(Artisan::call('cluster:list', ['--json' => $json]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->not->toContain("\e[");
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'clusters' => [], 'request_id' => cluster_cli_request_id(),
+        ]);
+    } else {
+        expect($output)->toContain('No Clusters found.', cluster_cli_request_id())->not->toContain('Operation failed.');
+    }
+})->with([false, true]);

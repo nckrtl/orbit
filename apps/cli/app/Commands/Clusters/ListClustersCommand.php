@@ -6,6 +6,7 @@ namespace App\Commands\Clusters;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Responses\Clusters\ClustersResponse;
 
@@ -26,7 +27,7 @@ final class ListClustersCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListClustersRequest, ClustersResponse::class);
+        $response = $this->sendWithProgress($connector, new ListClustersRequest, ClustersResponse::class, ['List Clusters', 'Loading Clusters', 'Loaded Clusters']);
 
         if (! $response instanceof ClustersResponse) {
             return self::FAILURE;
@@ -44,15 +45,15 @@ final class ListClustersCommand extends ClusterCommand
             $rows[] = [
                 $cluster->id,
                 $cluster->name,
-                $cluster->tld ?? '-',
+                $cluster->tld === null ? null : '.'.ltrim($cluster->tld, '.'),
                 $cluster->state,
                 count($cluster->nodes),
                 $this->nodeLabel($cluster->router),
             ];
         }
 
-        $this->table(['ID', 'Name', 'TLD', 'State', 'Nodes', 'Router'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Name', 'TLD', 'State', 'Nodes', 'Router'], $rows, 'No Clusters found.'));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

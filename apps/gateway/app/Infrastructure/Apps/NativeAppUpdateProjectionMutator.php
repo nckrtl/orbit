@@ -18,6 +18,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Node;
 use App\Models\Route;
 use Throwable;
 
@@ -242,13 +243,13 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
     {
         $node = $instance instanceof AppInstance ? $instance->node : $route->generationBasisNode;
 
-        if ($node !== null && is_string($node->tld) && $node->tld !== '') {
+        if ($node instanceof Node) {
             $name = $instance instanceof AppInstance ? $instance->name : 'default';
 
-            return $this->domains->generatedDomain($newSlug, $name, $node->tld);
+            return $this->domains->generatedDomain($newSlug, $name, $this->domains->forNode($node)->effectiveTld);
         }
 
-        if ($instance?->name === 'default' && str_starts_with($route->domain, $app->slug.'.')) {
+        if (str_starts_with($route->domain, $app->slug.'.')) {
             return $newSlug.substr($route->domain, strlen($app->slug));
         }
 

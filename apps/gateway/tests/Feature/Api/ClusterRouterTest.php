@@ -124,6 +124,23 @@ it('keeps the previous Router when DNS selection expansion fails', function (): 
         ->toBe(['expand']);
 });
 
+it('sets a Router beside an existing database role', function (): void {
+    $this->second->roles()->create([
+        'role' => RoleName::Database,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertOk()
+        ->assertJsonPath('data.router.id', $this->second->id);
+
+    expect($this->second->refresh()->roles->pluck('role')->map->value->sort()->values()->all())
+        ->toBe(['database', 'router'])
+        ->and($this->baselines->calls)
+        ->toBe(["converge:{$this->second->id}"]);
+});
+
 it('sets a Router beside an application role and rejects generic Router mutation', function (): void {
     $this
         ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")

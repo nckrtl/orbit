@@ -7,6 +7,7 @@ namespace App\Commands\Activities;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Activities\ListActivitiesRequest;
 use Orbit\Sdk\Responses\Activities\ActivitiesResponse;
 
@@ -59,10 +60,11 @@ final class ListActivitiesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ListActivitiesRequest($limit, is_string($requestId) ? $requestId : null),
             ActivitiesResponse::class,
+            ['List activities', 'Loading activities', 'Loaded activities'],
         );
 
         if (! $response instanceof ActivitiesResponse) {
@@ -89,8 +91,8 @@ final class ListActivitiesCommand extends GatewayCommand
             ];
         }
 
-        $this->table(['ID', 'Time', 'Command', 'Status', 'Caller', 'Target', 'Error'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Time', 'Command', 'Status', 'Caller', 'Target', 'Error'], $rows, 'No activities found.'));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

@@ -83,6 +83,25 @@ class MainCacheTest(unittest.TestCase):
             cache.seed(root, self.store, [self.project])
         return Path(info['cache'])
 
+    def test_runner_identity_tracks_locked_releases_and_project_bootstrap(self):
+        project = self.root / self.project
+        (project / 'tests').mkdir(parents=True)
+        lock = project / 'composer.lock'
+        bootstrap = project / 'tests/Pest.php'
+        lock.write_text(json.dumps({'packages-dev': [{
+            'name': 'nckrtl/pestphp-monorepo', 'version': 'v1.0.0',
+            'source': {'reference': 'first-release'},
+        }]}))
+        bootstrap.write_text('<?php\n')
+        with patch.object(cache, 'run', return_value=json.dumps(self.info)):
+            initial = cache.metadata(self.root, self.project)['runner']
+            self.assertEqual(initial, cache.metadata(self.root, self.project)['runner'])
+            lock.write_text(lock.read_text().replace('first-release', 'next-release'))
+            upgraded = cache.metadata(self.root, self.project)['runner']
+            self.assertNotEqual(initial, upgraded)
+            bootstrap.write_text('<?php pest()->tia()->directory("custom");\n')
+            self.assertNotEqual(upgraded, cache.metadata(self.root, self.project)['runner'])
+
     def test_main_graph_is_copied_without_transient_state_and_writes_stay_private(self):
         self.publish()
         (Path(self.info['cache']) / 'affected.json').write_text('do not copy')
@@ -150,14 +169,14 @@ class MainCacheTest(unittest.TestCase):
 
     def test_runner_change_discards_runtime_graph_before_recording_again(self):
         self.publish()
-        self.info['runner'] = 'upgraded-patch'
+        self.info['runner'] = 'upgraded-release'
 
         def record():
             self.assertFalse((Path(self.info['cache']) / 'graph.json').exists())
             self.write_graph()
 
         self.publish(record)
-        self.assertEqual('upgraded-patch', cache.read_publication(self.store, self.project)['runner'])
+        self.assertEqual('upgraded-release', cache.read_publication(self.store, self.project)['runner'])
 
     def test_refresh_restores_successful_graph_before_retrying_failed_runtime_state(self):
         self.publish()
@@ -224,10 +243,8 @@ class MainCacheTest(unittest.TestCase):
 
     def test_native_background_checks_isolate_setup_settings_and_keep_dependency_access(self):
         project = self.root / self.project
-        (self.root / 'bin/pest-support').mkdir(parents=True)
         (project / 'tests').mkdir(parents=True)
         (self.root / '.gitignore').write_text('**/vendor/\n')
-        (self.root / 'bin/pest-support/manifest.json').write_text('{}\n')
         (project / 'tests/Pest.php').write_text('<?php\n')
         (project / 'composer.lock').write_text('{"packages":[]}\n')
         (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}\n')

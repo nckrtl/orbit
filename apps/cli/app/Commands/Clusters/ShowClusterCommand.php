@@ -6,6 +6,7 @@ namespace App\Commands\Clusters;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Clusters\ShowClusterRequest;
 use Orbit\Sdk\Responses\Clusters\ClusterResponse;
 
@@ -33,7 +34,7 @@ final class ShowClusterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->send($connector, new ShowClusterRequest($clusterId), ClusterResponse::class);
+        $cluster = $this->sendWithProgress($connector, new ShowClusterRequest($clusterId), ClusterResponse::class, ['Show Cluster', 'Loading Cluster', 'Loaded Cluster']);
 
         if (! $cluster instanceof ClusterResponse) {
             return self::FAILURE;
@@ -45,11 +46,14 @@ final class ShowClusterCommand extends ClusterCommand
             return self::SUCCESS;
         }
 
-        $this->info("{$cluster->name}: {$cluster->state} (#{$cluster->id})");
-        $this->line('TLD: '.($cluster->tld ?? '-'));
-        $this->line('Router: '.$this->nodeLabel($cluster->router));
-        $this->line('Nodes: '.$this->nodeList($cluster->nodes));
-        $this->line("Request ID: {$cluster->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Cluster: {$cluster->name}", [
+            'ID' => $cluster->id,
+            'State' => $cluster->state,
+            'TLD' => $cluster->tld === null ? null : '.'.ltrim($cluster->tld, '.'),
+            'Router' => $this->nodeLabel($cluster->router),
+            'Nodes' => $this->nodeList($cluster->nodes),
+            'Request ID' => $cluster->requestId,
+        ]));
 
         return self::SUCCESS;
     }

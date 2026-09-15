@@ -139,7 +139,7 @@ def atomic_write(path, data, replace=True):
 
 def metadata(root, project):
     data = json.loads(run(root, 'php', '-r', PHP_METADATA, str(root / project)))
-    data['runner'] = digest((root / 'bin/pest-support/manifest.json').read_bytes()
+    data['runner'] = digest((root / project / 'composer.lock').read_bytes()
                             + (root / project / 'tests/Pest.php').read_bytes())
     return data
 
@@ -270,7 +270,7 @@ def refresh_project(root, store, project, commit, installed=False, recover=False
     graph_path = Path(info['cache']) / 'graph.json'
     # Only the maintenance checkout writes here. Start from its last successful,
     # compatible publication, never an unverified graph left by a failed run or
-    # by another runner version. Pest's own fingerprint does not cover our patch.
+    # by another runner version. Runner identity also includes the locked release.
     if baseline is None:
         graph_path.unlink(missing_ok=True)
     else:

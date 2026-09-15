@@ -36,14 +36,15 @@ final class UnsetClusterRouterCommand extends ClusterCommand
 
         $existing = $this->existingCluster($connector, $clusterId);
 
-        if ($existing === null || ! $this->confirmed('Router clearing')) {
+        if ($existing === null || ! $this->confirmed('Router clearing', $existing)) {
             return self::FAILURE;
         }
 
-        $cluster = $this->send(
+        $cluster = $this->sendWithProgress(
             $connector,
             new UnsetClusterRouterRequest($clusterId, true),
             ClusterResponse::class,
+            ['Clear Cluster Router', 'Clearing Cluster Router', 'Cleared Cluster Router'],
         );
 
         if (! $cluster instanceof ClusterResponse) {

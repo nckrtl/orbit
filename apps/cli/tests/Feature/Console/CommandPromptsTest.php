@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Commands\GatewayCommand;
 use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
@@ -15,6 +16,8 @@ use Laravel\Prompts\SuggestPrompt;
 use Laravel\Prompts\Terminal;
 use Laravel\Prompts\TextPrompt;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Tester\CommandTester;
 
 function promptFixtureMode(bool $interactive = true, bool $machine = false, bool $decorated = true, int $columns = 80): ConsoleMode
 {
@@ -29,6 +32,65 @@ function withNativePromptFixture(Closure $operation): mixed
         return $operation();
     });
 }
+
+it('requires affirmative consent and stops before mutation on decline or aborted input', function (
+    array $keys,
+    int $status,
+    string $option,
+): void {
+    withNativePromptFixture(function () use ($keys, $status, $option): void {
+        $terminal = new PromptKeysFixtureTerminal($keys);
+        $command = new class($terminal, $option) extends GatewayCommand
+        {
+            protected $signature = 'fixture:consent {--yes} {--force} {--json}';
+
+            public function __construct(private readonly Terminal $terminal, private readonly string $consentOption)
+            {
+                parent::__construct();
+            }
+
+            protected function consoleMode(?OutputInterface $output = null): ConsoleMode
+            {
+                return promptFixtureMode(decorated: false);
+            }
+
+            protected function commandPrompts(): CommandPrompts
+            {
+                return new CommandPrompts($this->consoleMode(), $this->output, $this->terminal);
+            }
+
+            public function handle(): int
+            {
+                if (! $this->confirmAction('Remove fixture [example]?', 'Fixture removal cancelled.', $this->consentOption)) {
+                    return self::FAILURE;
+                }
+
+                $this->writeHumanMessage('Mutation admitted.');
+
+                return self::SUCCESS;
+            }
+        };
+        $command->setLaravel(app());
+        $tester = new CommandTester($command);
+
+        expect($tester->execute([]))->toBe($status);
+        $output = $tester->getDisplay();
+        expect($output)->toContain('Remove fixture [example]?')->not->toContain("\e[");
+        expect($terminal->raw)->toBeFalse()->and($terminal->restores)->toBeGreaterThan(0);
+
+        if ($status === 0) {
+            expect($output)->toContain('Mutation admitted.')->not->toContain('cancelled');
+        } else {
+            expect($output)->toContain('Fixture removal cancelled.')->not->toContain('Mutation admitted.');
+        }
+    });
+})->with([
+    'default No' => [[Key::ENTER], 1],
+    'explicit No' => [['n', Key::ENTER], 1],
+    'explicit Yes' => [['y', Key::ENTER], 0],
+    'Ctrl-C' => [[Key::CTRL_C], 1],
+    'EOF' => [[Key::CTRL_D], 1],
+])->with(['yes', 'force']);
 
 it('refuses forbidden interaction before constructing or reading a prompt', function (bool $machine): void {
     $output = new BufferedOutput;

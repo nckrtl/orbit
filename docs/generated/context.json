@@ -1865,7 +1865,8 @@
             "governing_adrs": [
                 "0001",
                 "0069",
-                "0070"
+                "0070",
+                "0077"
             ]
         },
         {
@@ -2016,6 +2017,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0077-allow-database-beside-router.md",
+            "title": "ADR 0077: Allow the database role beside router",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Cluster",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Process",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0069",
+                "0070",
+                "0077"
+            ]
+        },
+        {
             "path": "docs/decisions/0078-assign-vite-ports-to-development-appinstances.md",
             "title": "ADR 0078: Assign Vite ports to development App instances",
             "kind": "decision",
@@ -2147,6 +2172,7 @@
                 "0073",
                 "0074",
                 "0076",
+                "0077",
                 "0078"
             ]
         },
@@ -2498,7 +2524,8 @@
             ],
             "governing_adrs": [
                 "0069",
-                "0070"
+                "0070",
+                "0077"
             ]
         },
         {
@@ -2858,6 +2885,7 @@
                 "0039",
                 "0041",
                 "0062",
+                "0063",
                 "0065",
                 "0067"
             ]

@@ -27,10 +27,10 @@ final class ShowRouteCommand extends RouteCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $route = $this->send($connector, new ShowRouteRequest($id), RouteResponse::class);
+        $route = $this->sendWithProgress($connector, new ShowRouteRequest($id), RouteResponse::class, ['Show Route', 'Loading Route', 'Loaded Route']);
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "{$route->domain} (#{$route->id})")
+            ? $this->renderRoute($route)
             : self::FAILURE;
     }
 }

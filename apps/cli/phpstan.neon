@@ -16,11 +16,6 @@ parameters:
     ignoreErrors:
         -
             identifier: larastan.console.undefinedOption
-            message: '#^Command "(?:cluster:list|cluster:create|cluster:node:add|cluster:router:set|cluster:show|cluster:update)" does not have option "force"\.$#'
-            path: app/Commands/Clusters/ClusterCommand.php
-            count: 6
-        -
-            identifier: larastan.console.undefinedOption
             message: '#^Command "(?:tool:remove|tool:show|tool:update)" does not have option "node"\.$#'
             path: app/Commands/Tools/ToolCommand.php
             count: 3

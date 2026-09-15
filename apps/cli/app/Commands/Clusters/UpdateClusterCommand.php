@@ -69,7 +69,7 @@ final class UpdateClusterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->send(
+        $cluster = $this->sendWithProgress(
             $connector,
             new UpdateClusterRequest(
                 clusterId: $clusterId,
@@ -81,6 +81,7 @@ final class UpdateClusterCommand extends ClusterCommand
                 state: is_string($state) ? $state : null,
             ),
             ClusterResponse::class,
+            ['Update Cluster', 'Updating Cluster', 'Updated Cluster'],
         );
 
         if (! $cluster instanceof ClusterResponse) {

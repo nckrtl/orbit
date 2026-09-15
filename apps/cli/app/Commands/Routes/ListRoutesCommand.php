@@ -6,6 +6,7 @@ namespace App\Commands\Routes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Routes\ListRoutesRequest;
 use Orbit\Sdk\Responses\Routes\RoutesResponse;
 
@@ -23,7 +24,7 @@ final class ListRoutesCommand extends RouteCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $response = $this->send($connector, new ListRoutesRequest, RoutesResponse::class);
+        $response = $this->sendWithProgress($connector, new ListRoutesRequest, RoutesResponse::class, ['List Routes', 'Loading Routes', 'Loaded Routes']);
         if (! $response instanceof RoutesResponse) {
             return self::FAILURE;
         }
@@ -32,17 +33,17 @@ final class ListRoutesCommand extends RouteCommand
 
             return self::SUCCESS;
         }
-        $rows = array_map(static fn ($route): array => [
+        $rows = array_map(fn ($route): array => [
             $route->id,
             $route->domain,
             $route->provenance,
             $route->publication,
             $route->clusterId === null ? "node {$route->nodeId}" : "cluster {$route->clusterId}",
-            $route->target->appInstanceId ?? '—',
+            $this->targetList($route),
             $route->status,
         ], $response->routes);
-        $this->table(['ID', 'Domain', 'Provenance', 'Publication', 'Scope', 'Target', 'Status'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Domain', 'Provenance', 'Publication', 'Scope', 'Target', 'Status'], $rows, 'No Routes found.'));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

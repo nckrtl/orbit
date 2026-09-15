@@ -73,7 +73,7 @@ final class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $route = $this->send(
+        $route = $this->sendWithProgress(
             $connector,
             new CreateRouteRequest(
                 appId: $appId,
@@ -84,10 +84,11 @@ final class CreateRouteCommand extends RouteCommand
                 clusterId: $clusterId,
             ),
             RouteResponse::class,
+            ['Create Route', 'Creating Route', 'Created Route'],
         );
 
         return $route instanceof RouteResponse
-            ? $this->renderRoute($route, "Route [{$route->domain}] created.")
+            ? $this->renderRoute($route)
             : self::FAILURE;
     }
 }

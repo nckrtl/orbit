@@ -7,6 +7,8 @@ description: "What a Route records, how Orbit projects its private traffic path 
 
 A Route gives an App instance a domain and directs private traffic to it. This page explains domain selection, traffic setup, and supported changes. Each active App instance has exactly one authoritative Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires. A domain change creates a replacement Route under [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
 
+The CLI renders Route lists as tables and individual Routes as detail trees, including lifecycle and replacement fields. Human requests show progress while waiting. Route removal and target clearing require default-No interactive confirmation or `--yes`; JSON and piped calls never imply consent.
+
 ## Route record
 
 The Gateway stores each Route's settings and tracks setup of its certificates, web server, firewall, and DNS records.
@@ -29,9 +31,9 @@ Creating the same explicit Route again with identical App, domain, publication i
 
 ## Select a domain and scope
 
-Supply a domain when creating an App instance to request an explicit Route. Otherwise, Orbit generates one from the Node or Cluster top-level domain (TLD). If neither can supply a name, creation stops before source or runtime changes. App instance responses derive the domain and URL from the authoritative Route.
+Supply a domain when creating an App instance to request an explicit Route. Otherwise, Orbit generates one from the effective top-level domain (TLD). Generation uses an active Cluster TLD first, then the Node TLD. If neither authority supplies a TLD, creation stops before source or runtime changes. An explicit domain stays as supplied. App instance responses derive the domain and URL from the authoritative Route.
 
-A generated domain combines the instance name, App name, and Node TLD. If the Node has no TLD, Orbit uses its active Cluster's TLD. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines the `default` name.
+A generated domain combines the instance name, App name, and that effective TLD. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines the `default` name. [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes) owns the Cluster-first precedence.
 
 | App instance name | Generated domain with effective TLD `test` |
 | --- | --- |
@@ -48,7 +50,7 @@ A default-branch update does not replace a Route or change its domain. The [Apps
 
 An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. A standalone app-prod Node can remain valid without a TLD when production creation supplies an explicit Route domain.
 
-Cluster membership determines routing, independently of the domain. A Node in an active Cluster uses Cluster routing, even if the name uses a Node TLD or the Cluster has no TLD. Other Nodes route directly. A Cluster with Routes needs exactly one active Router.
+Cluster membership determines routing, independently of the domain. A Node in an active Cluster uses Cluster routing, even when the generated name uses a Node TLD because the Cluster has no TLD. Other Nodes route directly. A Cluster with Routes needs exactly one active Router.
 
 ## Route operations
 
@@ -281,7 +283,7 @@ Deploy the shared publication owner by stopping admission of new Gateway mutatio
 
 The Gateway reconciles every private Route whose current target Node or retained generation basis uses the Node before the Node TLD becomes authoritative. It inventories those Routes, validates the complete proposed domains, and refuses an invalid or occupied result before it changes the Node, a Route record, environment configuration, or traffic.
 
-A generated Route receives a replacement domain from its target name and the new effective TLD. A targetless generated Route follows the same retained generation basis. An explicit Route keeps its domain.
+A generated Route receives a replacement domain from its target name and the new effective TLD. An active Cluster TLD still owns that effective TLD, so a Node TLD change does not rename a generated Route that already uses the Cluster namespace. A targetless generated Route follows the same retained generation basis. An explicit Route keeps its domain.
 
 The Gateway prepares and verifies workload and Router Caddy, Route-scoped certificates, firewall policy, and the detected Laravel URL against the candidate replacement before it publishes the new domain. It commits the Node TLD only after that publication. Development Laravel sources receive `APP_URL` in the environment file and cached configuration without Composer, Artisan, or application bootstrap. Production sources render stored configuration against the candidate Route. Making a stale application cache effective remains a separate application setup or deployment step.
 
@@ -295,7 +297,7 @@ The Gateway reconciles every private Route whose current Cluster scope or retain
 
 A generated Route receives a replacement domain from its target name and the new effective TLD. A targetless generated Route follows the same retained generation basis. An explicit Route keeps its domain. Cluster state, membership, Router assignment, and App instance placement stay unchanged.
 
-Removing a Cluster TLD keeps Cluster Router routing for owned Routes while active membership remains. The generated domain follows the current or retained generation basis instead of changing routing scope. The Gateway refuses the complete change when that basis would leave a generated Route without an effective TLD.
+Removing a Cluster TLD keeps Cluster Router routing for owned Routes while active membership remains. Generated domains fall back to the Node TLD instead of changing routing scope. The Gateway refuses the complete change when that fallback would leave a generated Route without an effective TLD.
 
 The Gateway prepares and verifies workload and Router Caddy, Route-scoped certificates, firewall policy, and the detected Laravel URL against the candidate replacement before it publishes the new domain. It commits the Cluster TLD only after that publication. Development Laravel sources receive `APP_URL` in the environment file and cached configuration without Composer, Artisan, or application bootstrap. Production sources render stored configuration against the candidate Route. Making a stale application cache effective remains a separate application setup or deployment step.
 
@@ -309,7 +311,7 @@ The Gateway reconciles every private Route whose current target Node, Cluster sc
 
 Activation prepares and verifies the Cluster Router serving path before publication. Deactivation prepares usable direct Node scope before it removes authoritative Cluster routing. Workload and Router Caddy, Route-scoped certificates, firewall policy, DNS, and detected Laravel URLs agree with the published scope, including a TLD-less Cluster that already owns Routes.
 
-A generated Route follows its current target name and effective TLD, or the retained generation basis when it has no target. An explicit Route keeps its domain. A domain change reserves a replacement Route. A scope-only change keeps the same Route ID. Old projections are removed after publication. When the Router and workload share one Node, one composed Caddy service uses a local next hop and does not proxy to its own HTTPS listener.
+A generated Route follows its current target name and effective TLD, or the retained generation basis when it has no target. When a Cluster that has a TLD becomes active, generated domains move into that Cluster namespace. Deactivation falls back to the Node TLD. An explicit Route keeps its domain. A domain change reserves a replacement Route. A scope-only change keeps the same Route ID. Old projections are removed after publication. When the Router and workload share one Node, one composed Caddy service uses a local next hop and does not proxy to its own HTTPS listener.
 
 Failure before publication restores the previous Cluster state, Route records, infrastructure intent, and Laravel URL. Each preparation, publication, database, cleanup, or rollback failure records `failed_step` and `error_code` with durable completed-step evidence. Retry revalidates that evidence and resumes from the earliest unverified step. A conflicting Cluster or Route mutation is refused. After cutover, retry continues forward so two authoritative scopes are never exposed for the same Route.
 
@@ -335,7 +337,7 @@ The Gateway reconciles every private Route whose current target Node or retained
 
 Attach to an active Cluster prepares and verifies the Cluster serving path before publication, including a TLD-less active Cluster that still uses Cluster scope and a Router. Detach prepares usable direct Node scope before it removes authoritative Cluster routing. Workload and Router Caddy, Route-scoped certificates, firewall policy, private DNS, and detected Laravel URLs agree with the published scope.
 
-A generated Route follows its current or retained generation basis. An explicit Route keeps its domain. When the resulting domain changes, the Gateway uses the replacement Route lifecycle. When only the routing scope changes, the Route keeps its ID. Old projections are removed only after publication. When Router and workload roles share one Node, the composed Caddy service uses a local next hop and does not proxy to its own HTTPS listener.
+A generated Route follows its current or retained generation basis. When a Node joins an active Cluster that has a TLD, generated domains move into that Cluster namespace. Detach falls back to the Node TLD. An explicit Route keeps its domain. When the resulting domain changes, the Gateway uses the replacement Route lifecycle. When only the routing scope changes, the Route keeps its ID. Old projections are removed only after publication. When Router and workload roles share one Node, the composed Caddy service uses a local next hop and does not proxy to its own HTTPS listener.
 
 The Gateway prepares and verifies those projections and the detected Laravel URL before it publishes the resulting scope. Development Laravel sources receive `APP_URL` in the environment file and cached configuration without Composer, Artisan, or application bootstrap. Production sources render stored configuration against the candidate Route. Making a stale application cache effective remains a separate application setup or deployment step.
 
@@ -414,8 +416,8 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 Route operations do not change App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects private Routes and publishes public Routes through Cluster Ingress. It changes an active explicit development or production Route domain by reserving a replacement Route. It replaces an explicit Cluster-scoped production Route target set with recorded retry. It reconciles generated private Routes when a Node TLD changes, and it reconciles private Route scope and generated domains when a Cluster activates or deactivates.
+This contract projects private Routes and publishes public Routes through Cluster Ingress. It changes an active explicit development or production Route domain by reserving a replacement Route. It replaces an explicit Cluster-scoped production Route target set with recorded retry. It reconciles generated private Routes when a Node TLD, Cluster TLD, Cluster activation, or Cluster membership change alters the effective TLD or routing scope. Generated domains follow [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes): explicit domain, active Cluster TLD, then Node TLD.
 
 It also removes an already untargeted private Route with its Route-owned projections, moves private Router sites and exact DNS when a Cluster Router is replaced, and coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal.
 
-It does not implement Cluster TLD or membership reconciliation, Router replacement, public DNS providers, automatic placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.
+It does not implement public DNS providers, automatic placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal), and [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes) define the remaining boundaries.

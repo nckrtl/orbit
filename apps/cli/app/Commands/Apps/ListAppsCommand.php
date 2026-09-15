@@ -7,6 +7,7 @@ namespace App\Commands\Apps;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
 
@@ -29,7 +30,7 @@ final class ListAppsCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListAppsRequest, AppsResponse::class);
+        $response = $this->sendWithProgress($connector, new ListAppsRequest, AppsResponse::class, ['List Apps', 'Loading Apps', 'Loaded Apps']);
 
         if (! $response instanceof AppsResponse) {
             return self::FAILURE;
@@ -54,8 +55,8 @@ final class ListAppsCommand extends GatewayCommand
             ];
         }
 
-        $this->table(['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Root'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Web root'], $rows, 'No Apps found.'));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

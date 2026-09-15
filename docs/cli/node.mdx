@@ -44,7 +44,7 @@ orbit node:add <name> [host] [options]
 | `--orbit-user=USER` | `orbit` | Orbit-managed system user that every later Gateway command runs as. |
 | `--platform=PLATFORM` | `linux` | Node platform. Only `linux` is accepted. |
 | `--architecture=ARCH` | observed on the machine | Machine architecture such as `x86_64` or `aarch64`. A new Node records the observed value, and an explicit value must equal it. |
-| `--tld=TLD` | none | Node TLD. Generated Route domains and production clone previews use it. |
+| `--tld=TLD` | none | Node TLD. Generated development Route domains use it when no active Cluster TLD owns the Node. Production clone previews still use the Node TLD. |
 | `--role=ROLE` | none | Initial role assignment. Repeat the option for more than one role. |
 | `--host-key-fingerprint=SHA256` | none | Approved SSH host key fingerprint. |
 | `--cluster=ID` | none | Numeric Cluster ID to join. |

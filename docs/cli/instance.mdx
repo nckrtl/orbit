@@ -60,7 +60,7 @@ orbit instance:create <app> <node> <name> [options]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--root=PATH` | the App root | Relative web-root override for this App instance. |
-| `--domain=HOST` | generated | Explicit Route domain for the development source. |
+| `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
 | `--branch=BRANCH` | see below | Explicit source branch. It must exist on the remote. |
 | `--recover-source-profile` | off | Adopt complete source evidence for a checkpoint that has no recorded source profile. |
 
