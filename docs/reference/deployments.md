@@ -173,6 +173,10 @@ Deployment and code rollback share one operation owner for the same production A
 
 Cloning is the only way the Gateway creates a production App instance. The clone result is a prepared home with no selected `current` release. The first explicit deployment fetches the configured branch, synchronizes stored environment values, runs recorded deploy steps, and selects that release. See [App instance cloning](/reference/appinstance-cloning).
 
+## App updates
+
+An App update does not deploy, change `deployment_branch`, replace production source, or select a different release. Production App instances keep their recorded initial branch, starting commit, checkout path, production home, and deployment ownership. When the App web root changes, production continues to resolve that root inside the already selected `current` release.
+
 ## Resolve the serving path
 
 The web root is the App instance root override or its App root beneath `current`, and `current` must resolve to a release beneath the same production home. A root such as `public` therefore serves `<production-home>/current/public` while code is selected.

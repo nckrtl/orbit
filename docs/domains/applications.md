@@ -18,7 +18,7 @@ orbit app:create \
 
 When you omit the default branch, the Gateway reads the remote default branch once and stores it. A later remote default change does not rewrite the App.
 
-An App can return null for `default_branch` and root when its source defaults are incomplete. New App instance creation fails with `app.source_defaults_incomplete`. Orbit has no command that updates or backfills them.
+An App can return null for `default_branch` and root when its source defaults are incomplete. New App instance creation fails with `app.source_defaults_incomplete`. Use `app:update` to set complete source defaults on an existing App.
 
 ## Create a development App instance
 
@@ -146,6 +146,22 @@ The Gateway reports a failed source, PHP selection, Laravel URL, runtime, certif
 Active means Orbit prepared the source, PHP runtime if needed, supported Laravel configuration, and Route. The application can still fail. Missing dependencies, an application key, or a database can cause HTTP 500 while the App instance and Route remain active.
 
 Retrying creation for an active App instance with a recorded profile returns it unchanged. Use the endpoint to inspect the application and finish setup. Application setup commands run separately from provisioning.
+
+## Reconcile an App update
+
+`app:update` keeps one App identity while it reconciles source defaults that App instances already inherit. Creation stays a separate idempotent operation. [Apps](/reference/apps#update-an-app) owns the command fields, failure codes, and retry contract.
+
+A `default_branch` change switches the development `default` checkout or worktree that inherits the App default. The instance name, managed path, and Route stay the same. An instance with `branch_override` keeps that branch even when the override equals the old default. [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) owns that inheritance boundary.
+
+A repository access-URL change applies to Orbit-owned development checkouts. A checkout owns its `.git` directory. A worktree owns its working directory and uses the checkout's common repository. The Gateway changes `origin` on the checkout once and leaves the worktree's common repository untouched. It refuses the update when a worktree points at a common repository no Orbit-owned checkout owns.
+
+A slug change replaces each generated development Route domain. The replacement keeps the App, Cluster, target, and publication intent. Explicit domains, including production domains, do not change. Checkout paths, production users, and homes stay as recorded. [Routes](/reference/routes#generated-domains-after-an-app-slug-update) owns the replacement contract.
+
+Orbit owns the Laravel canonical application URL on development and production App instances. The URL comes from the App instance's authoritative Route domain as `https://<domain>`. During a slug update the Gateway updates stored environment configuration and the workload `.env` projection for that URL, then updates cached `app.url` when a Laravel config cache exists. Environment synchronization does not run Artisan, refresh an application cache, or restart a process. [Environment variables](/reference/environment-variables#app-update-boundary) owns that split.
+
+A web-root change applies to every App instance whose own root override is null. Production serves the new root inside the active release through `current`. The update does not fetch a branch, run deploy steps, or replace a release. [Production release layout](/reference/deployments#app-updates) owns that production boundary.
+
+Production PHP FastCGI Process Manager (PHP-FPM) reprojection during a slug or web-root update keeps operator `local.conf` tuning, validates the effective runtime configuration before an Orbit activation or reload, and leaves other production users' services and caches unchanged. [PHP runtimes](/reference/php-runtime#app-updates) owns that runtime boundary.
 
 ## Set the web root
 

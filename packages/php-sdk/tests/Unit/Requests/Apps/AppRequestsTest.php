@@ -7,6 +7,7 @@ use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Apps\ShowAppRequest;
+use Orbit\Sdk\Requests\Apps\UpdateAppRequest;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
 use Saloon\Enums\Method;
@@ -135,6 +136,46 @@ describe('app requests', function (): void {
             ->toBeInstanceOf(AppResponse::class)
             ->and($response->id)
             ->toBe(3);
+    });
+
+    it('updates an app through PATCH and omits unchanged fields', function (): void {
+        $mockClient = new MockClient([
+            UpdateAppRequest::class => MockResponse::make([
+                'data' => [
+                    ...app_gateway_data(),
+                    'repository_url' => 'https://github.com/nckrtl/orbit-docs.git',
+                    'default_branch' => 'stable',
+                ],
+                'meta' => ['request_id' => orbit_request_id()],
+            ]),
+        ]);
+        $connector = app_gateway_connector($mockClient);
+        $request = new UpdateAppRequest(
+            appId: 3,
+            repositoryUrl: 'https://github.com/nckrtl/orbit-docs.git',
+            defaultBranch: 'stable',
+        );
+
+        $response = $connector->send($request)->dto();
+
+        expect($request->getMethod())
+            ->toBe(Method::PATCH)
+            ->and($request->resolveEndpoint())
+            ->toBe('/api/v1/apps/3')
+            ->and($request->body()->all())
+            ->toBe([
+                'repository_url' => 'https://github.com/nckrtl/orbit-docs.git',
+                'default_branch' => 'stable',
+            ])
+            ->and($request->body()->all())
+            ->not
+            ->toHaveKey('main_branch')
+            ->and($response)
+            ->toBeInstanceOf(AppResponse::class)
+            ->and($response->repositoryUrl)
+            ->toBe('https://github.com/nckrtl/orbit-docs.git')
+            ->and($response->defaultBranch)
+            ->toBe('stable');
     });
 
     it('does not keep the replaced App request class name', function (): void {

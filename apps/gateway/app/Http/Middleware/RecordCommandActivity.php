@@ -479,6 +479,10 @@ final readonly class RecordCommandActivity
             return $this->appInstanceCloneInput($request);
         }
 
+        if ($command === 'app:update') {
+            return $this->appUpdateInput($request);
+        }
+
         if ($command === 'env:import') {
             return $this->appInstanceEnvironmentImportInput($request);
         }
@@ -655,6 +659,21 @@ final readonly class RecordCommandActivity
         }
 
         return ['name' => $name, 'environments' => $environments];
+    }
+
+    /** @return array<array-key, mixed> */
+    private function appUpdateInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect(
+                $request->getContent(),
+                ['slug', 'repository_url', 'default_branch', 'root'],
+            );
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        return $this->inputSanitizer->sanitizeProperties($input);
     }
 
     /** @return array<array-key, mixed> */

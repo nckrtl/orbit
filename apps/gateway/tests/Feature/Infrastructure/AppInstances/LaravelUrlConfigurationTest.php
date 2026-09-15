@@ -264,6 +264,78 @@ it('refuses duplicate Laravel URL values without changing the environment', func
     }
 });
 
+it('reconciles Laravel canonical URLs when an App slug changes', function (): void {
+    $fixture = \Tests\Support\Orb101AppUpdateFixture::bind($this);
+    $fixture->defaultInstance->environmentValues()->create([
+        'env_key' => 'APP_URL',
+        'env_value' => 'https://acme.test',
+    ]);
+
+    app(\App\Actions\Apps\UpdateAppAction::class)->execute(
+        $fixture->app,
+        new \App\Data\Apps\UpdateAppData(
+            slugProvided: true,
+            slug: 'shop',
+            repositoryUrlProvided: false,
+            repositoryUrl: null,
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+        ),
+    );
+
+    expect($fixture->projections->laravelUrls)
+        ->toBe([['instance_id' => $fixture->defaultInstance->id, 'url' => 'https://shop.test']])
+        ->and(\App\Models\AppInstanceEnvironmentValue::query()->where('env_key', 'APP_URL')->value('env_value'))
+        ->toBe('https://shop.test');
+});
+
+it('restores Laravel URL environment on a failed slug update and ignores application errors after publication', function (): void {
+    $fixture = \Tests\Support\Orb101AppUpdateFixture::bind($this);
+    $fixture->defaultInstance->environmentValues()->create([
+        'env_key' => 'APP_URL',
+        'env_value' => 'https://acme.test',
+    ]);
+    $fixture->projections->failSlugPrepare = true;
+
+    expect(fn () => app(\App\Actions\Apps\UpdateAppAction::class)->execute(
+        $fixture->app,
+        new \App\Data\Apps\UpdateAppData(
+            slugProvided: true,
+            slug: 'shop',
+            repositoryUrlProvided: false,
+            repositoryUrl: null,
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+        ),
+    ))->toThrow(\App\Domain\Shared\ResourceOperationException::class);
+
+    expect(\App\Models\AppInstanceEnvironmentValue::query()->where('env_key', 'APP_URL')->value('env_value'))
+        ->toBe('https://acme.test');
+
+    $fixture->projections->failSlugPrepare = false;
+    $fixture->projections->applicationErrorOnUrl = true;
+
+    app(\App\Actions\Apps\UpdateAppAction::class)->execute(
+        $fixture->app->refresh(),
+        new \App\Data\Apps\UpdateAppData(
+            slugProvided: true,
+            slug: 'shop',
+            repositoryUrlProvided: false,
+            repositoryUrl: null,
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+        ),
+    );
+
+    expect($fixture->app->refresh()->slug)->toBe('shop');
+});
+
 /** @return array{RemoteDevelopmentAppInstanceConfigurator, AppDevFakeSshExecutor, AppInstance} */
 function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser = null): array
 {

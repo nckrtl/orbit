@@ -45,6 +45,8 @@ use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
+use App\Domain\Apps\AppUpdateProjectionMutator;
+use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
@@ -136,6 +138,8 @@ use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
 use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
+use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
+use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
@@ -263,6 +267,8 @@ final class AppServiceProvider extends ServiceProvider
         ProductionAppInstanceContentRetention::class => RecordedProductionAppInstanceContentRetention::class,
         AppInstanceRemovalProjector::class => NativeAppInstanceRemovalProjector::class,
         DevelopmentAppInstanceConfigurator::class => RemoteDevelopmentAppInstanceConfigurator::class,
+        AppUpdateSourceMutator::class => RemoteAppUpdateSourceMutator::class,
+        AppUpdateProjectionMutator::class => NativeAppUpdateProjectionMutator::class,
         DevelopmentAppInstanceProvisioner::class => NativeDevelopmentAppInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,

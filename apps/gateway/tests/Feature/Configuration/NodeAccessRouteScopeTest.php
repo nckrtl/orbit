@@ -63,6 +63,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'app:destroy' => ServingNode::AppOwning,
         'app:list' => ServingNode::Collection,
         'app:show' => ServingNode::AppOwning,
+        'app:update' => ServingNode::AppOwning,
         'cluster:create' => ServingNode::Gateway,
         'cluster:destroy' => ServingNode::ClusterOwning,
         'cluster:list' => ServingNode::Collection,

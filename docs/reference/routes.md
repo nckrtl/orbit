@@ -35,6 +35,12 @@ A generated domain combines the instance name, App name, and Node TLD. If the No
 
 An explicit source branch changes neither placement nor generated Route identity. For example, `instance:create <app> <node> default --branch=release` still generates `<app>.test`.
 
+## Generated domains after an App slug update
+
+An App slug update recomputes every generated development Route domain from the new slug, the existing App instance name, and the current effective TLD. The Gateway creates a replacement Route for each domain that must change. The replacement keeps the App, routing scope, provenance, publication intent, and target. The previous generated Route is removed after the replacement is authoritative. Explicit domains never change because of an App slug update.
+
+A default-branch update does not replace a Route or change its domain. The [Apps reference](/reference/apps#update-an-app) owns the App update lifecycle that drives this replacement.
+
 An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. A standalone app-prod Node can remain valid without a TLD when production creation supplies an explicit Route domain.
 
 Cluster membership determines routing, independently of the domain. A Node in an active Cluster uses Cluster routing, even if the name uses a Node TLD or the Cluster has no TLD. Other Nodes route directly. A Cluster with Routes needs exactly one active Router.
