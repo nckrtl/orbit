@@ -1,0 +1,88 @@
+{
+  "extension": "app-prod",
+  "mutates": true,
+  "setup": [
+    {
+      "id": "prepare-recorder",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb368-setup.sh"
+      ],
+      "timeout_seconds": 240
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "prepare",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb368-live.py",
+        "--candidate",
+        "89f4bfa3626031ccd1c4ebfe440c6dad4aedfe35",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/proof",
+        "--visible",
+        "--stage",
+        "prepare"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "roundtrip",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb368-live.py",
+        "--candidate",
+        "89f4bfa3626031ccd1c4ebfe440c6dad4aedfe35",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/proof",
+        "--visible",
+        "--stage",
+        "roundtrip"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "failures",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb368-live.py",
+        "--candidate",
+        "89f4bfa3626031ccd1c4ebfe440c6dad4aedfe35",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/proof",
+        "--visible",
+        "--stage",
+        "failures"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "retain-fixture",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb368-live.py",
+        "--candidate",
+        "89f4bfa3626031ccd1c4ebfe440c6dad4aedfe35",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-368/proof",
+        "--visible",
+        "--stage",
+        "retain-fixture"
+      ],
+      "timeout_seconds": 900
+    }
+  ],
+  "inputs": [
+    "apps/gateway",
+    "apps/cli",
+    "packages/php-sdk",
+    ".agents/skills/verifying-cli-output",
+    "docs/reference/appinstance-transfer.md"
+  ]
+}
