@@ -291,6 +291,50 @@ describe('deployment streams', function (): void {
         expect(Artisan::all())->not->toHaveKeys(['instance:releases']);
     });
 
+    it('interrupts a synchronous Gateway request before response headers arrive', function (int $signal, string $mode): void {
+        if (! function_exists('pcntl_signal_dispatch') || ! function_exists('posix_kill')) {
+            $this->markTestSkipped('POSIX signals are unavailable.');
+        }
+
+        $fixture = deployment_cli_signal_fixture($this->orbitHome, 'headers-late');
+        $command = new Process(
+            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'node:role:add', '17', 'app-prod', '--converge', $mode],
+            env: ['ORBIT_HOME' => $fixture['home']],
+            timeout: 10,
+        );
+
+        try {
+            $command->start();
+            deployment_cli_wait_until(static fn (): bool => is_file($fixture['request']));
+            expect($command->isRunning())->toBeTrue();
+            $startedAt = microtime(true);
+            $command->signal($signal);
+            $exitCode = $command->wait();
+            $elapsed = microtime(true) - $startedAt;
+            expect($exitCode)->toBe(128 + $signal)
+                ->and($elapsed)->toBeLessThan(2.0);
+            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+
+            expect($fixture['server']->wait())->toBe(0)
+                ->and($command->getErrorOutput())->toBe('')
+                ->and($command->getOutput())->not->toContain('Role [app-prod] added', 'Added Node role.');
+
+            if ($mode === '--json') {
+                expect($command->getOutput())->toBe('');
+            } else {
+                expect($command->getOutput())->toContain('Operation interrupted.');
+            }
+        } finally {
+            if ($command->isRunning()) {
+                $command->stop(0.1, 9);
+            }
+
+            if ($fixture['server']->isRunning()) {
+                $fixture['server']->stop(0.1, 9);
+            }
+        }
+    })->with([SIGINT, SIGTERM])->with(['--ansi', '--no-ansi', '--json']);
+
     it('terminates promptly and disconnects before headers or during a blocked stream read', function (string $mode): void {
         if (! defined('SIGINT') || ! function_exists('posix_kill') || ! function_exists('openssl_csr_new')) {
             $this->markTestSkipped('POSIX signals are unavailable.');
