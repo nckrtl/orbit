@@ -520,6 +520,115 @@ it('applies proposed Cluster placement on a generated domain replacement', funct
         ->toBe('generated');
 });
 
+it('converges a generated private Route onto Cluster scope without replacing its domain', function (): void {
+    $route = route_domain_change_route(laravel: true, generated: true);
+    $cluster = Cluster::query()->create(['name' => 'membership-generated', 'state' => 'active', 'tld' => null]);
+    $router = Node::query()->create([
+        'name' => 'membership-generated-router',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.40',
+        'wireguard_ip' => '10.44.0.40',
+        'user' => 'orbit',
+    ]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: true,
+        placement: new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'dev.test'),
+    );
+
+    expect($updated->id)
+        ->toBe($route->id)
+        ->and($updated->domain)
+        ->toBe('feature.acme.dev.test')
+        ->and($updated->node_id)
+        ->toBeNull()
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
+        ->and($updated->replacement_step)
+        ->toBeNull()
+        ->and($updated->failed_step)
+        ->toBeNull();
+});
+
+it('records scope-only failure, restores the old scope, and refuses a conflicting domain retry', function (): void {
+    $route = route_domain_change_route(laravel: true, generated: true);
+    $cluster = Cluster::query()->create(['name' => 'membership-retry', 'state' => 'active', 'tld' => null]);
+    $router = Node::query()->create([
+        'name' => 'membership-retry-router',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.41',
+        'wireguard_ip' => '10.44.0.41',
+        'user' => 'orbit',
+    ]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'dev.test');
+    $this->projector->failures = [
+        'workload-caddy' => 1,
+        'rollback-caddy' => 1,
+    ];
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: true,
+        placement: $placement,
+    ))->toThrow(ResourceOperationException::class, 'Injected workload-caddy failure.');
+
+    expect($route->refresh()->node_id)
+        ->not->toBeNull()
+        ->and($route->cluster_id)
+        ->toBeNull()
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->failed_step)
+        ->toBe('workload-caddy')
+        ->and($route->replaced_by_route_id)
+        ->toBeNull();
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute(
+        $route,
+        'feature.acme.other.test',
+        allowGenerated: true,
+        placement: new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'other.test'),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.domain_change_conflict');
+    });
+
+    $this->projector->failures = [];
+    $updated = app(ConvergeRouteAction::class)->execute(
+        $route,
+        $route->domain,
+        allowGenerated: true,
+        placement: $placement,
+    );
+
+    expect($updated->id)
+        ->toBe($route->id)
+        ->and($updated->cluster_id)
+        ->toBe($cluster->id)
+        ->and($updated->failed_step)
+        ->toBeNull();
+});
+
 it('prepares every projection and Laravel URL before DNS then cuts over and cleans up', function (): void {
     $route = route_domain_change_route(laravel: true);
 

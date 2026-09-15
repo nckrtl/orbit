@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Routes\RouteMutationReconciler;
@@ -19,20 +20,42 @@ final readonly class AttachClusterNodeAction
 {
     public function __construct(
         private ?RouteMutationReconciler $routes = null,
+        private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
     {
+        $node->refresh();
+
+        if ($node->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.node_inactive',
+                message: "Node [{$node->name}] must be active before Cluster attachment.",
+                status: 409,
+            );
+        }
+
+        if ($node->cluster_id !== null && $node->cluster_id !== $cluster->id) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.membership_conflict',
+                message: "Node [{$node->name}] already belongs to another Cluster.",
+                status: 409,
+            );
+        }
+
+        $overrides = [$node->id => ['cluster_id' => $cluster->id]];
+        $this->convergeMembership($overrides);
+
         $this->lanIngress()->expand(
-            nodeOverrides: [$node->id => ['cluster_id' => $cluster->id]],
+            nodeOverrides: $overrides,
             clusterIds: [$cluster->id],
         );
 
         try {
             $this->dnsSelection()->expand(
-                nodeOverrides: [$node->id => ['cluster_id' => $cluster->id]],
+                nodeOverrides: $overrides,
                 clusterIds: [$cluster->id],
             );
         } catch (Throwable $exception) {
@@ -66,7 +89,7 @@ final readonly class AttachClusterNodeAction
                 }
 
                 try {
-                    ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(nodeOverrides: [
+                    $this->routeReconciler()->reconcile(nodeOverrides: [
                         $lockedNode->id => ['cluster_id' => $lockedCluster->id],
                     ]);
                     $lockedNode->update(['cluster_id' => $lockedCluster->id]);
@@ -92,6 +115,29 @@ final readonly class AttachClusterNodeAction
         $this->lanIngress()->prune(clusterIds: [$updated->id]);
 
         return $updated;
+    }
+
+    /** @param array<int, array{cluster_id: ?int}> $overrides */
+    private function convergeMembership(array $overrides): void
+    {
+        foreach ($this->routeReconciler()->membershipChanges(nodeOverrides: $overrides) as $change) {
+            $this->convergeRoute()->execute(
+                $change['route'],
+                $change['domain'],
+                allowGenerated: true,
+                placement: $change['placement'],
+            );
+        }
+    }
+
+    private function routeReconciler(): RouteMutationReconciler
+    {
+        return $this->routes ?? app(RouteMutationReconciler::class);
+    }
+
+    private function convergeRoute(): ConvergeRouteAction
+    {
+        return $this->convergeRoute ?? app(ConvergeRouteAction::class);
     }
 
     private function lanIngress(): RouterLanIngressReconciler

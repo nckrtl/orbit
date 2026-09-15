@@ -224,45 +224,32 @@ it('retains domain reconciliation refusals for generated Routes before projectio
     expect($generated->fresh(['targets'])->toArray())->toBe($before);
 });
 
-it('retains Node, Cluster, and Router reconciliation refusals before dependent state changes', function (): void {
+it('retains Router-clearing refusal after a reconciled attach', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $standalone = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $standalone->update(['status' => RouteStatus::Active]);
     $cluster = reconciliation_active_cluster('active-refusal', 'cluster.test');
-    $standaloneBefore = $standalone->fresh(['targets'])->toArray();
-    $nodeBefore = $this->node->fresh()->toArray();
+    bind_node_tld_projection();
 
-    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+
+    expect($standalone->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($standalone->node_id)
+        ->toBeNull()
+        ->and($standalone->domain)
+        ->toBe('feature.acme.dev.test')
+        ->and($this->node->refresh()->cluster_id)
+        ->toBe($cluster->id);
+
+    $before = $standalone->fresh(['targets'])->toArray();
+
+    expect(fn () => app(ClearClusterRouterAction::class)->execute($cluster))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.reconciliation_required');
-        });
-    expect($standalone->fresh(['targets'])->toArray())
-        ->toBe($standaloneBefore)
-        ->and($this->node->fresh()->toArray())
-        ->toBe($nodeBefore)
-        ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
-        ->toBe(['expand', 'prune']);
-
-    $workload = reconciliation_node('cluster-workload-refusal', 'workload.test');
-    $workload->update(['cluster_id' => $cluster->id]);
-    $clusterTarget = reconciliation_instance($this->orbitApp, $workload, 'cluster-target');
-    $clusterRoute = app(CreateRouteAction::class)->ensureForAppInstance($clusterTarget, null);
-    $clusterRoute->update(['status' => RouteStatus::Active]);
-    $clusterBefore = $cluster->fresh()->toArray();
-    $clusterRouteBefore = $clusterRoute->fresh(['targets'])->toArray();
-
-    expect(fn () => app(UpdateClusterAction::class)->execute(
-        $cluster,
-        reconciliation_update(tldProvided: true, tld: 'next-cluster.test', state: ClusterState::Inactive),
-    ))->toThrow(function (ResourceOperationException $exception): void {
-        expect($exception->errorCode)->toBe('route.reconciliation_required');
-    });
-    expect($cluster->fresh()->toArray())
-        ->toBe($clusterBefore)
-        ->and($clusterRoute->fresh(['targets'])->toArray())
-        ->toBe($clusterRouteBefore)
-        ->and(array_column(route_mutation_dns_reconciler()->events, 'phase'))
-        ->toContain('expand')
-        ->toContain('prune');
+        })
+        ->and($standalone->fresh(['targets'])->toArray())
+        ->toBe($before);
 });
 
 it('does not return reconciliation_required after Router replacement and still refuses Router removal', function (): void {
@@ -980,18 +967,30 @@ it('does not return reconciliation_required after a Node TLD change and still re
     ));
     $second = reconciliation_route_by_domain('feature.acme.later.test');
     $cluster = reconciliation_active_cluster('still-refused', 'cluster.test');
-    $before = $second->fresh(['targets'])->toArray();
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+    $attached = reconciliation_route_by_domain('feature.acme.later.test');
 
     expect($first->id)
         ->not->toBe($generated->id)
         ->and($second->id)
         ->not->toBe($first->id)
-        ->and(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node->refresh()))
+        ->and($attached->id)
+        ->toBe($second->id)
+        ->and($attached->cluster_id)
+        ->toBe($cluster->id)
+        ->and($attached->node_id)
+        ->toBeNull()
+        ->and($this->node->refresh()->cluster_id)
+        ->toBe($cluster->id);
+
+    $replacement = reconciliation_node('router-still-refused', null);
+    $replacement->update(['cluster_id' => $cluster->id]);
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.reconciliation_required');
-        })
-        ->and($second->fresh(['targets'])->toArray())
-        ->toBe($before);
+        });
 });
 
 it('inventories Cluster TLD changes and refuses an occupied generated domain before any write', function (): void {
@@ -1182,7 +1181,7 @@ it('refuses clearing a Cluster TLD that would leave a generated Route without an
         ->toBe($memberBefore);
 });
 
-it('does not return reconciliation_required after a Cluster TLD change and still refuses membership mutations', function (): void {
+it('does not return reconciliation_required after a Cluster TLD change and still refuses Router clearing', function (): void {
     $cluster = reconciliation_active_cluster('cluster-reconciled', 'cluster.test');
     $workload = reconciliation_node('cluster-reconciled-workload', null);
     $workload->update(['cluster_id' => $cluster->id]);
@@ -1207,8 +1206,9 @@ it('does not return reconciliation_required after a Cluster TLD change and still
     $outsiderTarget = reconciliation_instance($this->orbitApp, $outsider, 'outsider');
     $outsiderRoute = app(CreateRouteAction::class)->ensureForAppInstance($outsiderTarget, null);
     $outsiderRoute->update(['status' => RouteStatus::Active]);
-    $before = $second->fresh(['targets'])->toArray();
-    $outsiderBefore = $outsiderRoute->fresh(['targets'])->toArray();
+    bind_node_tld_projection();
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $outsider);
 
     expect($first->id)
         ->not->toBe($generated->id)
@@ -1216,16 +1216,18 @@ it('does not return reconciliation_required after a Cluster TLD change and still
         ->not->toBe($first->id)
         ->and($cluster->refresh()->tld)
         ->toBe('later-cluster.test')
-        ->and(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $outsider))
+        ->and($outsiderRoute->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($outsiderRoute->node_id)
+        ->toBeNull()
+        ->and($outsider->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($workload->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and(fn () => app(ClearClusterRouterAction::class)->execute($cluster))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.reconciliation_required');
-        })
-        ->and($second->fresh(['targets'])->toArray())
-        ->toBe($before)
-        ->and($outsiderRoute->fresh(['targets'])->toArray())
-        ->toBe($outsiderBefore)
-        ->and($workload->refresh()->cluster_id)
-        ->toBe($cluster->id);
+        });
 });
 
 it('validates Cluster activation and deactivation before they become authoritative', function (): void {
@@ -1481,6 +1483,225 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
         );
 });
 
+it('inventories attach and refuses an occupied generated domain before any write', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $this->node->update(['tld' => null]);
+    $cluster = reconciliation_active_cluster('occupied-attach', 'next.test');
+    $owner = reconciliation_node('occupied-attach-owner', 'owner.test');
+    reconciliation_route($this->orbitApp, 'feature.acme.next.test', node: $owner);
+    $events = [];
+    Route::updating(static function () use (&$events): void {
+        $events[] = 'route';
+    });
+    Node::updating(static function () use (&$events): void {
+        $events[] = 'node';
+    });
+    bind_node_tld_projection();
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.domain_conflict');
+        });
+
+    expect($generated->fresh()->only(['domain', 'node_id', 'cluster_id']))
+        ->toBe([
+            'domain' => 'feature.acme.dev.test',
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+        ])
+        ->and($this->node->fresh()->cluster_id)
+        ->toBeNull()
+        ->and($events)
+        ->toBe([]);
+});
+
+it('prepares private projections before an attach becomes authoritative', function (): void {
+    $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('attach-projections', 'cluster.test');
+    $events = bind_node_tld_projection();
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+
+    expect($events->values)
+        ->toBe([
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'url:https://feature.acme.dev.test',
+            'dns-publication',
+            'cleanup',
+            'url:https://feature.acme.dev.test',
+            'workload-verify',
+        ])
+        ->and($events->scopes)
+        ->toContain([null, $cluster->id])
+        ->and($generated->refresh()->only(['id', 'domain', 'node_id', 'cluster_id', 'status']))
+        ->toBe([
+            'id' => $generated->id,
+            'domain' => 'feature.acme.dev.test',
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
+            'status' => RouteStatus::Active,
+        ])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBe($cluster->id);
+});
+
+it('keeps an explicit Route domain fixed when a Node attaches or detaches', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'fixed.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $explicit->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('explicit-membership', 'cluster.test');
+    bind_node_tld_projection();
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+
+    expect($explicit->refresh()->only(['id', 'domain', 'node_id', 'cluster_id']))
+        ->toBe([
+            'id' => $explicit->id,
+            'domain' => 'fixed.example.test',
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
+        ]);
+
+    app(DetachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+
+    expect($explicit->refresh()->only(['id', 'domain', 'node_id', 'cluster_id']))
+        ->toBe([
+            'id' => $explicit->id,
+            'domain' => 'fixed.example.test',
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+        ])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBeNull();
+});
+
+it('follows the retained Node TLD when attaching to a TLD-less active Cluster', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('tldless-attach', null);
+    $events = bind_node_tld_projection();
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+
+    expect($generated->refresh()->only(['id', 'domain', 'node_id', 'cluster_id']))
+        ->toBe([
+            'id' => $generated->id,
+            'domain' => 'feature.acme.dev.test',
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
+        ])
+        ->and($events->scopes)
+        ->toContain([null, $cluster->id]);
+});
+
+it('prepares direct Node scope before detach removes Cluster membership', function (): void {
+    $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('detach-projections', 'cluster.test');
+    bind_node_tld_projection();
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $events = bind_node_tld_projection();
+
+    app(DetachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+
+    expect($events->values)
+        ->toBe([
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'url:https://feature.acme.dev.test',
+            'dns-publication',
+            'cleanup',
+            'url:https://feature.acme.dev.test',
+            'workload-verify',
+        ])
+        ->and($events->scopes)
+        ->toContain([$this->node->id, null])
+        ->and($generated->refresh()->only(['id', 'domain', 'node_id', 'cluster_id', 'status']))
+        ->toBe([
+            'id' => $generated->id,
+            'domain' => 'feature.acme.dev.test',
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+            'status' => RouteStatus::Active,
+        ])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBeNull();
+});
+
+it('restores membership and Route scope when attach projection fails before publication', function (): void {
+    $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('attach-failure', 'cluster.test');
+    $events = bind_node_tld_projection();
+    $events->failures = ['workload-caddy' => 1];
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(ResourceOperationException::class, 'Injected workload-caddy failure.');
+
+    expect($generated->refresh()->only(['domain', 'node_id', 'cluster_id', 'status', 'failed_step']))
+        ->toBe([
+            'domain' => 'feature.acme.dev.test',
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+            'status' => RouteStatus::Active,
+            'failed_step' => 'workload-caddy',
+        ])
+        ->and($this->node->fresh()->cluster_id)
+        ->toBeNull();
+
+    $events->failures = [];
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+
+    expect($generated->refresh()->only(['node_id', 'cluster_id', 'failed_step', 'error_code']))
+        ->toBe([
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
+            'failed_step' => null,
+            'error_code' => null,
+        ])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBe($cluster->id);
+});
+
+it('refuses attach without a Router and leaves membership unchanged', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated->update(['status' => RouteStatus::Active]);
+    $cluster = Cluster::query()->create(['name' => 'no-router', 'state' => ClusterState::Active, 'tld' => null]);
+    $before = $generated->fresh(['targets'])->toArray();
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(ResourceOperationException::class, 'requires one active Router');
+
+    expect($generated->fresh(['targets'])->toArray())
+        ->toBe($before)
+        ->and($this->node->fresh()->cluster_id)
+        ->toBeNull();
+});
+
 function route_mutation_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
 {
     $dns = app(ClusterRouterDnsSelectionReconciler::class);
@@ -1678,6 +1899,12 @@ final class NodeTldProjectionEvents
 {
     /** @var list<string> */
     public array $values = [];
+
+    /** @var list<array{0: ?int, 1: ?int}> */
+    public array $scopes = [];
+
+    /** @var array<string, int> */
+    public array $failures = [];
 }
 
 final class NodeTldRouteProjector implements RouteDomainProjector
@@ -1690,32 +1917,31 @@ final class NodeTldRouteProjector implements RouteDomainProjector
 
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
     {
-        $this->event('workload-certificate');
-    }
+        $this->event('workload-certificate', $candidate);    }
 
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
     {
-        $this->events->values[] = 'workload-caddy';
+        $this->event('workload-caddy', $candidate);
     }
 
     public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
     {
-        $this->events->values[] = 'router-certificate';
+        $this->event('router-certificate', $candidate);
     }
 
     public function prepareFirewallPolicy(AppInstance $appInstance, Route $candidate): void
     {
-        $this->events->values[] = 'firewall-policy';
+        $this->event('firewall-policy', $candidate);
     }
 
     public function verifyWorkload(AppInstance $appInstance, Route $candidate): void
     {
-        $this->events->values[] = 'workload-verify';
+        $this->event('workload-verify', $candidate);
     }
 
     public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
     {
-        $this->events->values[] = 'router-caddy';
+        $this->event('router-caddy', $candidate);
     }
 
     public function prepareIngressCertificate(Route $candidate): void {}
@@ -1733,19 +1959,6 @@ final class NodeTldRouteProjector implements RouteDomainProjector
     public function publishDns(Route $current, Route $candidate): void
     {
         $this->event('dns-publication');
-    }
-
-    private function event(string $name): void
-    {
-        $this->events->values[] = $name;
-
-        if ($this->failAt === $name) {
-            throw new ResourceOperationException(
-                errorCode: 'route.domain_change_failed',
-                message: "Injected {$name} failure.",
-                status: 409,
-            );
-        }
     }
 
     public function cleanup(AppInstance $appInstance, Route $route): void
@@ -1766,6 +1979,34 @@ final class NodeTldRouteProjector implements RouteDomainProjector
     public function rollbackCertificates(AppInstance $appInstance, Route $route): void
     {
         $this->events->values[] = 'rollback-certificates';
+    }
+
+    private function event(string $name, ?Route $candidate = null): void
+    {
+        $this->events->values[] = $name;
+
+        if ($candidate instanceof Route) {
+            $this->events->scopes[] = [$candidate->node_id, $candidate->cluster_id];
+        }
+
+        if ($this->failAt === $name) {
+            throw new ResourceOperationException(
+                errorCode: 'route.domain_change_failed',
+                message: "Injected {$name} failure.",
+                status: 409,
+            );
+        }
+
+        if (($this->events->failures[$name] ?? 0) < 1) {
+            return;
+        }
+
+        $this->events->failures[$name]--;
+
+        throw new ResourceOperationException(
+            errorCode: "route.test_{$name}",
+            message: "Injected {$name} failure.",
+        );
     }
 }
 
