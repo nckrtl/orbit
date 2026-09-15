@@ -75,8 +75,23 @@ abstract class PromptContext extends Prompt
             self::$cancelUsing = static fn (): never => throw new PromptAborted;
 
             $failure = null;
+            $handlers = [];
+            $async = null;
 
             try {
+                if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal_get_handler')) {
+                    $async = pcntl_async_signals();
+
+                    foreach ([SIGINT, SIGTERM] as $signal) {
+                        $handlers[$signal] = pcntl_signal_get_handler($signal);
+                        pcntl_signal($signal, static function (int $received): never {
+                            throw new ConsoleInterrupted($received);
+                        });
+                    }
+
+                    pcntl_async_signals(true);
+                }
+
                 return TableTheme::run($mode, $operation);
             } catch (Throwable $exception) {
                 $failure = $exception;
@@ -97,6 +112,14 @@ abstract class PromptContext extends Prompt
                     }
                 } catch (Throwable $exception) {
                     $cleanupFailure ??= $exception;
+                }
+
+                foreach ($handlers as $signal => $handler) {
+                    pcntl_signal($signal, $handler);
+                }
+
+                if ($async !== null) {
+                    pcntl_async_signals($async);
                 }
 
                 if ($failure === null && $cleanupFailure !== null) {

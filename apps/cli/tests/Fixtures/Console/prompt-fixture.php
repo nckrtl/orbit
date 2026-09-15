@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Console\CommandPrompts;
+use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\InputTerminal;
 use App\Support\Console\PromptAborted;
@@ -93,6 +94,9 @@ try {
 } catch (PromptAborted $exception) {
     fwrite(STDERR, json_encode(['aborted' => $exception->reason], JSON_THROW_ON_ERROR)."\n");
     $exitCode = 20;
+} catch (ConsoleInterrupted $exception) {
+    fwrite(STDERR, json_encode(['interrupted' => $exception->signal], JSON_THROW_ON_ERROR)."\n");
+    $exitCode = $exception->getCode();
 } finally {
     if (is_resource($stream)) {
         fclose($stream);

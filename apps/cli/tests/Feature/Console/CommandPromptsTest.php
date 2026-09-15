@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Console\CommandPrompts;
+use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\InputTerminal;
 use App\Support\Console\PromptAborted;
@@ -77,6 +78,77 @@ it('returns sparse stable datatable keys after filtering and after clearing an e
         expect($prompts->selectEntity('Choose record', ['ID', 'Name'], $rows))->toBe(94);
     });
 });
+
+it('shows plain selection and search changes before accepting a stable key', function (): void {
+    withNativePromptFixture(function (): void {
+        $output = new BufferedOutput;
+        $terminal = new PromptKeysFixtureTerminal([Key::DOWN, '/', 'Gamma', Key::ENTER, Key::ENTER]);
+        $frames = [];
+        $terminal->beforeRead = function () use ($output, &$frames): void {
+            $frames[] = $output->fetch();
+        };
+        $prompts = new CommandPrompts(promptFixtureMode(decorated: false), $output, $terminal);
+
+        expect($prompts->selectEntity('Choose record', ['ID', 'Name'], [17 => ['17', 'Alpha'], 'record-beta' => ['18', 'Beta'], 94 => ['94', 'Gamma']]))->toBe(94);
+        expect($frames[0])->toMatch('/›│[^\n]*Alpha/')
+            ->and($frames[1])->toMatch('/›│[^\n]*Beta/')
+            ->and($frames[2])->toContain('/ ▏')
+            ->and($frames[3])->toContain('Gamma')->not->toContain('Alpha', 'Beta')
+            ->and($frames[4])->toMatch('/›│[^\n]*Gamma/')
+            ->and(implode('', $frames).$output->fetch())->not->toContain("\e");
+    });
+});
+
+it('shows plain text edits before submission', function (): void {
+    withNativePromptFixture(function (): void {
+        $output = new BufferedOutput;
+        $terminal = new PromptKeysFixtureTerminal(['ready', Key::BACKSPACE, 'y', Key::ENTER]);
+        $frames = [];
+        $terminal->beforeRead = function () use ($output, &$frames): void {
+            $frames[] = $output->fetch();
+        };
+        $prompts = new CommandPrompts(promptFixtureMode(decorated: false), $output, $terminal);
+
+        expect($prompts->run(fn (): TextPrompt => new TextPrompt('Name')))->toBe('ready')
+            ->and($frames[1])->toContain('ready')
+            ->and($frames[2])->toContain('read')->not->toContain('ready')
+            ->and($frames[3])->toContain('ready')
+            ->and(implode('', $frames).$output->fetch())->not->toContain("\e");
+    });
+});
+
+it('cleans an interrupted prompt and restores surrounding signal handlers', function (int $signal): void {
+    withNativePromptFixture(function () use ($signal): void {
+        $async = pcntl_async_signals();
+        $original = pcntl_signal_get_handler($signal);
+        $prior = static function (): void {};
+        pcntl_signal($signal, $prior);
+        pcntl_async_signals(false);
+        $terminal = new PromptKeysFixtureTerminal([]);
+        $terminal->beforeRead = function () use ($signal): void {
+            posix_kill(getmypid(), $signal);
+            pcntl_signal_dispatch();
+        };
+        $output = new BufferedOutput;
+        $mutated = false;
+
+        try {
+            $prompts = new CommandPrompts(promptFixtureMode(), $output, $terminal);
+            expect(function () use ($prompts, &$mutated): void {
+                $prompts->run(fn (): TextPrompt => new TextPrompt('Name'));
+                $mutated = true;
+            })->toThrow(ConsoleInterrupted::class);
+            expect($mutated)->toBeFalse()
+                ->and($terminal->raw)->toBeFalse()
+                ->and($output->fetch())->toContain("\e[?25h")
+                ->and(pcntl_signal_get_handler($signal))->toBe($prior)
+                ->and(pcntl_async_signals())->toBeFalse();
+        } finally {
+            pcntl_signal($signal, $original);
+            pcntl_async_signals($async);
+        }
+    });
+})->with([SIGINT, SIGTERM]);
 
 it('rejects an empty or structurally too narrow selector without reading input', function (): void {
     withNativePromptFixture(function (): void {
@@ -386,6 +458,8 @@ abstract class PromptStateFixture extends Prompt
 
 final class PromptKeysFixtureTerminal extends Terminal
 {
+    public ?Closure $beforeRead = null;
+
     public bool $failRestore = false;
 
     public int $reads = 0;
@@ -406,6 +480,7 @@ final class PromptKeysFixtureTerminal extends Terminal
     public function read(): string
     {
         $this->reads++;
+        ($this->beforeRead ?? static function (): void {})();
 
         return array_shift($this->keys) ?? throw new PromptAborted('Fixture input ended.', 'eof');
     }

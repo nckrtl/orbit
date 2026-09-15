@@ -142,6 +142,8 @@ Tables keep all supplied columns and wrap headers and values within their cells.
 
 Prompt and progress state belongs to one invocation. Finishing a nested or sequential command restores the surrounding command's prompt configuration, output, cursor, and terminal settings. A forced color option does not make a pipe repaintable or permit escape codes in machine output.
 
+An interactive prompt without decoration still shows input edits, search results, and the current selection before submission. Append changed prompt frames without escape codes when repainting is unavailable. These user-driven updates are separate from animation. SIGINT and SIGTERM interrupt a waiting prompt, restore its terminal, and stop before the command can use a submitted value.
+
 ## Shared helpers
 
 The shared implementation lives under `apps/cli/app/Support/Console`. `ConsoleMode` keeps machine output, prompt admission, decoration, repainting, and terminal width separate. `GatewayCommand` resolves these facts after input binding when a command requests its shared helpers. `CommandPrompts` takes a factory for a Laravel Prompts instance and owns its input and terminal scope. Commands still decide which inputs may be prompted and how to report a typed `PromptAborted` failure.

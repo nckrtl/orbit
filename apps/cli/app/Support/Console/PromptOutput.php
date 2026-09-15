@@ -78,10 +78,6 @@ final class PromptOutput extends Output
     protected function doWrite(string $message, bool $newline): void
     {
         if (! $this->mode->mayRepaint) {
-            if ($this->prompt !== null && ! in_array($this->prompt->state, ['initial', 'error', 'submit', 'cancel'], true)) {
-                return;
-            }
-
             $message = preg_replace('/\x1B(?:\[[0-?]*[ -\/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\\\))/', '', $message) ?? '';
 
             if ($this->prompt !== null && $message === $this->lastPlainFrame) {

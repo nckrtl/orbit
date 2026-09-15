@@ -44,6 +44,8 @@ class InputTerminal extends Terminal
 
         try {
             $input = @fread($this->input, 1024);
+        } catch (ConsoleInterrupted $exception) {
+            throw $exception;
         } catch (Throwable $exception) {
             throw new PromptAborted('Unable to read input.', 'read_failed', $exception);
         }
