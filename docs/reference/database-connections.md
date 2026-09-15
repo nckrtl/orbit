@@ -5,7 +5,7 @@ description: "The Gateway-owned registry of mysql, pgsql, and sqlite connections
 
 # Database connections
 
-This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, managed user create, add, remove, query, tables, schema, describe, and Doctor inspection behave. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
+This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records and which fields each driver requires. It also covers list, show, create, update, destroy, managed user create, add, remove, query, tables, schema, describe, and Doctor inspection. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
 
 A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start or stop a database. The Gateway can create a MySQL user and database through an existing Node-targeted Docker MySQL Process and then register or refresh the connection. Query, tables, schema, and describe run against a registered connection only.
 
