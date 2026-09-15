@@ -700,6 +700,7 @@ it('prepares and publishes Cluster Route projections before a replacement assign
     [$route, $target] = cluster_router_owned_route($this->cluster, $this->first);
     $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
     $this->replacements->events = [];
+    $this->replacements->placements = [];
     $this->replacements->onPrepare = function () use ($route, $target): void {
         expect($this->cluster->routerAssignment()->sole()->node_id)
             ->toBe($this->first->id)
