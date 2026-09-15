@@ -1,0 +1,45 @@
+{
+  "from": "57b4b742e7245001d5f2ada4fd7e7570a03a5c0f",
+  "to": "79a129447f58cec2cfb7fef3d922256e4162cf11",
+  "integrated_main": "85283bef32ec9cd1dcd2a0a6f5e388755caa8a26",
+  "owner": "ORB-204",
+  "public_command_count": 106,
+  "framework_command_count": 20,
+  "name_changes": [],
+  "signature_changes": [
+    {
+      "command": "doctor",
+      "field": "options.family.description",
+      "before": "Limit checks to node, role, app, instance, workspace, schedule, tool, process, firewall, herdr, or database_connection",
+      "after": "Limit checks to node, role, app, instance, schedule, tool, process, firewall, herdr, or database_connection",
+      "reason": "Accepted removal of the Workspace Doctor family; not a UX-adoption change."
+    }
+  ],
+  "source_hash_changes": [
+    {
+      "path": "apps/cli/app/Commands/Doctor/DoctorCommand.php",
+      "before": "3f1d84c90f8d1d0b74836f0f5cbab10730ab9bb0bd979ea9de9f17048fb1c6f4",
+      "after": "5c50a27afe080b1aa367033c764715a1963e02b9f5dc62e0001d7b2f8c26c28f"
+    }
+  ],
+  "current_doctor_families": [
+    "node",
+    "role",
+    "app",
+    "instance",
+    "schedule",
+    "tool",
+    "process",
+    "firewall",
+    "herdr",
+    "database_connection"
+  ],
+  "doctor_contract_source_sha256": {
+    "apps/cli/app/Commands/Doctor/DoctorCommand.php": "5c50a27afe080b1aa367033c764715a1963e02b9f5dc62e0001d7b2f8c26c28f",
+    "apps/gateway/app/Domain/Doctor/DoctorFamily.php": "88598eda872070dd8117b797c3496fadbf28527a7acef789a1a3932a89f4a6ff",
+    "packages/php-sdk/src/Responses/Doctor/DoctorFamily.php": "ef2e02be0f4e2af7b4d73f6e1363769292073e0d1d2185de29a1f81d523dddc7",
+    "apps/cli/tests/Feature/Doctor/DoctorCommandTest.php": "a99d65e9d7292a4e2c4cce1cefd2fb6d7b98364bd92eaa5c477bca440561ee1f"
+  },
+  "other_main_change": "ORB-349 fixes E2E endpoint fixtures; no additional CLI registry or bound CLI source delta observed.",
+  "ux_adoption": "All 106 public and 20 framework rows remain Unverified."
+}

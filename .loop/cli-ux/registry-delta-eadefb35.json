@@ -1,0 +1,18 @@
+{
+  "from": "f59e9a1bd83b2055fb7f422b5cac9e63380b50af",
+  "to": "eadefb3562b562d8d97929f3f3e255cc0875ef2c",
+  "integrated_main": "90ee94ba617865ce9115ce30f30903ede16bc7cb",
+  "owner": "ORB-83 and ORB-205",
+  "public_command_count": 106,
+  "framework_command_count": 20,
+  "name_changes": [],
+  "signature_changes": [],
+  "source_hash_changes": [
+    {
+      "path": "apps/cli/app/Commands/Routes/RouteCommand.php",
+      "before": "64891118cff3561dc0e465515254aa1899fb11490177b6ed8d813599e96a5f3e",
+      "after": "6b3c5906b6acb2f57e7e8505e27c285763f1b2315efca8f38ffe8b7e88148f61"
+    }
+  ],
+  "ux_adoption": "Unverified; Route detail now includes public publication under accepted product contract."
+}
