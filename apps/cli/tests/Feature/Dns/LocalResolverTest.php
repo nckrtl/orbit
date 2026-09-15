@@ -216,6 +216,187 @@ it('removes only the selected local override', function (): void {
     );
 });
 
+it('installs an exact Route name beside a wildcard TLD override', function (): void {
+    seed_wildcard_override($this, 'beast', '192.168.6.20');
+    fake_local_resolver_processes([
+        'orbit-local-resolver-health.shop.app.beast' => "192.168.1.40\n",
+    ]);
+    $resolver = local_resolver_for_test($this);
+
+    $result = $resolver->resolve('shop.app.beast', '192.168.1.40');
+
+    expect($result)
+        ->toBe(['status' => 'resolved', 'changed' => true])
+        ->and(file_get_contents($this->configurationDirectory.'/shop.app.beast.conf'))
+        ->toBe("address=/shop.app.beast/192.168.1.40\n")
+        ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))
+        ->toBe("address=/beast/192.168.6.20\n")
+        ->and(file_get_contents($this->resolverDirectory.'/shop.app.beast'))
+        ->toBe("nameserver 127.0.0.1\n")
+        ->and(file_get_contents($this->resolverDirectory.'/beast'))
+        ->toBe("nameserver 127.0.0.1\n");
+});
+
+it('points an exact Route name at the Cluster Router or the workload', function (string $target): void {
+    seed_wildcard_override($this, 'beast', '192.168.6.20');
+    fake_local_resolver_processes([
+        'orbit-local-resolver-health.shop.app.beast' => "{$target}\n",
+    ]);
+    $resolver = local_resolver_for_test($this);
+
+    $result = $resolver->resolve('shop.app.beast', $target);
+
+    expect($result)
+        ->toBe(['status' => 'resolved', 'changed' => true])
+        ->and(file_get_contents($this->configurationDirectory.'/shop.app.beast.conf'))
+        ->toBe("address=/shop.app.beast/{$target}\n")
+        ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))
+        ->toBe("address=/beast/192.168.6.20\n");
+})->with([
+    'router' => ['192.168.6.20'],
+    'workload' => ['192.168.1.40'],
+]);
+
+it('gives an exact hostname override precedence over the wildcard TLD', function (): void {
+    seed_wildcard_override($this, 'beast', '192.168.6.20');
+    fake_local_resolver_processes([
+        'orbit-local-resolver-health.shop.app.beast' => "192.168.1.40\n",
+    ]);
+    $resolver = local_resolver_for_test($this);
+
+    $resolver->resolve('shop.app.beast', '192.168.1.40');
+
+    expect(file_get_contents($this->configurationDirectory.'/shop.app.beast.conf'))
+        ->toBe("address=/shop.app.beast/192.168.1.40\n")
+        ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))
+        ->toBe("address=/beast/192.168.6.20\n")
+        ->and(file_exists($this->resolverDirectory.'/shop.app.beast'))
+        ->toBeTrue()
+        ->and(file_exists($this->resolverDirectory.'/beast'))
+        ->toBeTrue();
+});
+
+it('resets an exact hostname override without changing the wildcard TLD', function (): void {
+    seed_wildcard_override($this, 'beast', '192.168.6.20');
+    new Filesystem()->ensureDirectoryExists($this->configurationDirectory);
+    new Filesystem()->ensureDirectoryExists($this->resolverDirectory);
+    file_put_contents(
+        filename: $this->configurationDirectory.'/shop.app.beast.conf',
+        data: "address=/shop.app.beast/192.168.1.40\n",
+    );
+    file_put_contents(
+        filename: $this->resolverDirectory.'/shop.app.beast',
+        data: "nameserver 127.0.0.1\n",
+    );
+    fake_local_resolver_processes();
+    $resolver = local_resolver_for_test($this);
+
+    $result = $resolver->reset('shop.app.beast');
+
+    expect($result)
+        ->toBe(['status' => 'reset', 'changed' => true])
+        ->and(file_exists($this->configurationDirectory.'/shop.app.beast.conf'))
+        ->toBeFalse()
+        ->and(file_exists($this->resolverDirectory.'/shop.app.beast'))
+        ->toBeFalse()
+        ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))
+        ->toBe("address=/beast/192.168.6.20\n")
+        ->and(file_get_contents($this->resolverDirectory.'/beast'))
+        ->toBe("nameserver 127.0.0.1\n");
+});
+
+it('does not rewrite a healthy existing exact hostname override', function (): void {
+    seed_wildcard_override($this, 'beast', '192.168.6.20');
+    new Filesystem()->ensureDirectoryExists($this->configurationDirectory);
+    new Filesystem()->ensureDirectoryExists($this->resolverDirectory);
+    file_put_contents(
+        filename: $this->configurationDirectory.'/shop.app.beast.conf',
+        data: "address=/shop.app.beast/192.168.1.40\n",
+    );
+    file_put_contents(
+        filename: $this->resolverDirectory.'/shop.app.beast',
+        data: "nameserver 127.0.0.1\n",
+    );
+    Process::fake(
+        fn (PendingProcess $process) => $process->command === [
+            'dig',
+            '@127.0.0.1',
+            'orbit-local-resolver-health.shop.app.beast',
+            '+short',
+        ]
+            ? Process::result(output: "192.168.1.40\n")
+            : Process::result(),
+    );
+    Process::preventStrayProcesses();
+    $resolver = local_resolver_for_test($this);
+
+    $result = $resolver->resolve('shop.app.beast', '192.168.1.40');
+
+    expect($result)->toBe(['status' => 'already_resolved', 'changed' => false]);
+    Process::assertNotRan(
+        fn (PendingProcess $process): bool => is_array($process->command) && ($process->command[0] ?? null) === 'sudo',
+    );
+    expect(file_get_contents($this->configurationDirectory.'/beast.conf'))
+        ->toBe("address=/beast/192.168.6.20\n");
+});
+
+it('leaves unrelated overrides unchanged when a write is refused', function (): void {
+    seed_wildcard_override($this, 'beast', '192.168.6.20');
+    $master = file_get_contents($this->masterConfigurationPath);
+    Process::fake(fn (): mixed => Process::result(exitCode: 1));
+    Process::preventStrayProcesses();
+    $resolver = local_resolver_for_test($this);
+
+    $result = $resolver->resolve('shop.app.beast', '192.168.1.40');
+
+    expect($result)
+        ->toBe(['status' => 'write_failed', 'changed' => false])
+        ->and(file_exists($this->configurationDirectory.'/shop.app.beast.conf'))
+        ->toBeFalse()
+        ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))
+        ->toBe("address=/beast/192.168.6.20\n")
+        ->and(file_get_contents($this->masterConfigurationPath))
+        ->toBe($master);
+});
+
+it('refuses an unsafe resolver name before writing files', function (): void {
+    seed_wildcard_override($this, 'beast', '192.168.6.20');
+    Process::fake();
+    Process::preventStrayProcesses();
+    $resolver = local_resolver_for_test($this);
+
+    $result = $resolver->resolve('../etc/passwd', '192.168.1.40');
+
+    expect($result)
+        ->toBe(['status' => 'write_failed', 'changed' => false])
+        ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))
+        ->toBe("address=/beast/192.168.6.20\n");
+});
+
+it('installs an IPv6 exact hostname override', function (): void {
+    fake_local_resolver_processes([
+        'orbit-local-resolver-health.shop.app.beast' => "2001:db8::8\n",
+        'AAAA' => true,
+    ]);
+    $resolver = local_resolver_for_test($this);
+
+    $result = $resolver->resolve('shop.app.beast', '2001:db8::8');
+
+    expect($result)
+        ->toBe(['status' => 'resolved', 'changed' => true])
+        ->and(file_get_contents($this->configurationDirectory.'/shop.app.beast.conf'))
+        ->toBe("address=/shop.app.beast/2001:db8::8\n");
+    Process::assertRan(
+        fn (PendingProcess $process): bool => $process->command === [
+            'dig',
+            '@127.0.0.1',
+            'orbit-local-resolver-health.shop.app.beast',
+            'AAAA',
+            '+short',
+        ],
+    );
+});
+
 it('reports a local dnsmasq refresh failure', function (): void {
     Process::fake(function (PendingProcess $process) {
         if (
@@ -258,4 +439,58 @@ function local_resolver_for_test(object $test): LocalResolver
         masterConfigurationPath: $test->masterConfigurationPath,
         brewExecutable: $test->brewExecutable,
     );
+}
+
+function seed_wildcard_override(object $test, string $tld, string $target): void
+{
+    new Filesystem()->ensureDirectoryExists($test->configurationDirectory);
+    new Filesystem()->ensureDirectoryExists($test->resolverDirectory);
+    new Filesystem()->ensureDirectoryExists(dirname($test->masterConfigurationPath));
+    file_put_contents(
+        filename: $test->configurationDirectory."/{$tld}.conf",
+        data: "address=/{$tld}/{$target}\n",
+    );
+    file_put_contents(filename: $test->resolverDirectory.'/'.$tld, data: "nameserver 127.0.0.1\n");
+    file_put_contents(
+        $test->masterConfigurationPath,
+        "conf-dir={$test->configurationDirectory}/,*.conf\n",
+    );
+}
+
+/**
+ * @param  array<string, string|true>  $answers
+ */
+function fake_local_resolver_processes(array $answers = []): void
+{
+    $ipv6 = ($answers['AAAA'] ?? false) === true;
+    unset($answers['AAAA']);
+
+    Process::fake(function (PendingProcess $process) use ($answers, $ipv6) {
+        $command = $process->command;
+
+        if (is_array($command) && ($command[0] ?? null) === 'dig') {
+            $name = $command[2] ?? null;
+            $hasAaaa = in_array('AAAA', $command, strict: true);
+
+            if ($ipv6 !== $hasAaaa) {
+                return Process::result(output: '');
+            }
+
+            if (is_string($name) && array_key_exists($name, $answers)) {
+                return Process::result(output: $answers[$name]);
+            }
+        }
+
+        if (is_array($command) && array_slice(array: $command, offset: 0, length: 3) === ['sudo', '-n', 'install']) {
+            new Filesystem()->ensureDirectoryExists(dirname($command[11]));
+            copy($command[10], $command[11]);
+        }
+
+        if (is_array($command) && array_slice(array: $command, offset: 0, length: 4) === ['sudo', '-n', 'rm', '--']) {
+            unlink($command[4]);
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
 }
