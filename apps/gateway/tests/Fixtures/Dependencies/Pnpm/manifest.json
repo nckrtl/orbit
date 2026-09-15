@@ -1,0 +1,9 @@
+{
+    "name": "sample-root",
+    "private": true,
+    "dependencies": {"app-one": "^1", "app-two": "^1", "renamed": "npm:@sample/core@^3", "native": "^0"},
+    "devDependencies": {"tool": "^1", "native": "^1"},
+    "optionalDependencies": {"native": "^1"},
+    "peerDependencies": {"root-peer": "^9"},
+    "scripts": {"postinstall": "must-never-execute"}
+}

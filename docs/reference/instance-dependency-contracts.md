@@ -44,6 +44,16 @@ When the root has no dependencies, npm can omit the root record and write `packa
 
 The root lock record must agree with the manifest's dependency declarations. Workspace declarations, local links, and package locations outside the root installation tree fail with `dependencies.unsupported_layout`. Invalid JSON, duplicate keys, malformed records, conflicting identities, missing parents, and unreachable package records fail with `dependencies.invalid_npm_input`. Unsupported lockfile versions use `dependencies.unsupported_format`. Exceptions contain no input text. Locked versions remain opaque, integrity is retained when valid, and resolved download URLs and executable metadata are omitted. The reader does not solve version constraints; the collector must supply matching files from one stable source observation.
 
+## pnpm reader
+
+`ReadPnpmDependencyGraphAction` accepts root `package.json` JSON and `pnpm-lock.yaml` text. It reads pnpm lockfile version `9.0` with exactly one importer, `.`. The reader parses data in memory through Symfony YAML, which is a Gateway runtime dependency. It does not read files, execute package code, or contact registries.
+
+Registry snapshot keys remain resolution IDs. Their peer suffixes remain intact, so the same package version can have separate peer contexts. Package metadata supplies identities, integrity, and peer constraints; snapshots supply resolved dependency links. Aliases keep the declared name while targeting the actual package identity. Root regular, optional, and development declarations establish separate reachability paths through cycles and resolved peers. Optional declarations override duplicate regular declarations. pnpm records each root package once, using optional, regular, then development precedence. The graph retains a development path when the manifest also declares that package for development.
+
+The importer must agree with the manifest's dependency specifiers and scopes. Peer declarations remain distinct edges, including null targets when unresolved. Every recorded dependency link must identify an existing snapshot and package record. Unreachable records, duplicate keys, malformed YAML or JSON, and inconsistent records fail with `dependencies.invalid_pnpm_input`. Unsupported lockfile versions use `dependencies.unsupported_format`; multiple importers, workspaces, and local links use `dependencies.unsupported_layout`. Errors contain no source text. Download URLs and executable metadata are omitted from results. The collector must still select the lockfile and supply stable matching source contents.
+
+Remote HTTP and HTTPS tarball locators use the package metadata's `version`; the URL is not a package version. The reader matches raw locators only in memory. Before returning the graph, it replaces every URL-bearing resolution ID, edge endpoint, and requirement reference with `pnpm:sha256:` plus a SHA-256 digest of that exact value. Different sources and peer contexts therefore stay distinct without retaining URLs, credentials, or query values. Registry locators and ordinary version constraints stay unchanged. A remote locator without a valid metadata version fails explicitly.
+
 ## Observation values
 
 Scan results use these values to distinguish observed source from a failed collection attempt.
