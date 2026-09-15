@@ -7,6 +7,7 @@ namespace App\Commands\Extension;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayConfigException;
 use App\Services\Extensions\LocalExtensionState;
+use App\Support\Console\ProgressState;
 
 final class EnableExtensionCommand extends GatewayCommand
 {
@@ -24,8 +25,11 @@ final class EnableExtensionCommand extends GatewayCommand
             return $this->renderGatewayFailure('extension.unknown', 'Unknown Orbit extension.');
         }
 
+        $progress = $this->progressDisplay("Extension: {$extension}");
+        $progress->admit('enable', 'Enable extension', 'Enabling extension', 'Enabled extension');
+
         try {
-            $extensions->enable($extension);
+            $progress->during('enable', fn () => $extensions->enable($extension));
         } catch (GatewayConfigException) {
             return $this->renderGatewayFailure(
                 'extension.config_invalid',
@@ -33,19 +37,13 @@ final class EnableExtensionCommand extends GatewayCommand
             );
         }
 
-        $this->success($extension, true);
+        $progress->complete('enable', ProgressState::Success);
+        $progress->finish("Orbit extension [{$extension}] is enabled.");
 
-        return self::SUCCESS;
-    }
-
-    private function success(string $extension, bool $enabled): void
-    {
         if ($this->option('json') === true) {
-            $this->writeJson(['extension' => $extension, 'enabled' => $enabled]);
-
-            return;
+            $this->writeJson(['extension' => $extension, 'enabled' => true]);
         }
 
-        $this->info("Orbit extension [{$extension}] is enabled.");
+        return self::SUCCESS;
     }
 }

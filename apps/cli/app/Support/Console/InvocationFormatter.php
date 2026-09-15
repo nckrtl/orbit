@@ -16,6 +16,11 @@ final readonly class InvocationFormatter implements WrappableOutputFormatterInte
         $this->setDecorated($formatter->isDecorated());
     }
 
+    public function __clone(): void
+    {
+        $this->formatter = clone $this->formatter;
+    }
+
     public function setDecorated(bool $decorated): void
     {
         $this->formatter->setDecorated($decorated && $this->mayDecorate);

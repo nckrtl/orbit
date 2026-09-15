@@ -3,7 +3,7 @@ title: "gateway"
 description: "Register Gateway profiles on the operator machine, select the active one, pin the Gateway root certificate, and check Gateway status."
 ---
 
-Every other command sends its request to the active Gateway. The `gateway` family manages the local profiles that name a Gateway, pins its root certificate authority (CA), installs that certificate in the operating-system trust store, and shows whether the Gateway answers.
+Commands that manage remote resources send their requests to the active Gateway. The `gateway` family manages the local profiles that name a Gateway, pins its root certificate authority (CA), installs that certificate in the operating-system trust store, and shows whether the Gateway answers.
 
 Profiles live in `$HOME/.orbit/config.json`; set `ORBIT_HOME` to move that directory. Pinned certificates live under `$ORBIT_HOME/gateways/<profile>-<hash>/ca/`. The [Gateway trust reference](/reference/gateway-trust) owns the trust sequence, the profile guard, and recovery when a profile changes during a trust command.
 
@@ -17,7 +17,7 @@ Profiles live in `$HOME/.orbit/config.json`; set `ORBIT_HOME` to move that direc
 | [`gateway:trust`](#orbit-gatewaytrust) | Trust or re-verify the active Gateway root CA. |
 | [`gateway:remove`](#orbit-gatewayremove) | Remove a profile and its pinned certificate. |
 
-Every command accepts `--json`. `gateway:add`, `gateway:use`, and `gateway:remove` change only local configuration; `gateway:status` and `gateway:trust` contact the Gateway named by the active profile.
+Every command accepts `--json`. `gateway:use` and `gateway:remove` work locally. Registration, status, and trust contact the selected Gateway; registration and trust can also change the operating-system trust store.
 
 ## orbit gateway:add
 
@@ -70,7 +70,7 @@ orbit gateway:use <name>
 orbit gateway:use production
 ```
 
-An unknown name returns `gateway.profile_not_found`.
+Supply the profile name explicitly in every mode. An unknown name returns `gateway.profile_not_found`. Human output shows the selection operation and its result. JSON returns `active_gateway` with the selected name.
 
 ## orbit gateway:status
 
@@ -83,6 +83,8 @@ orbit gateway:status [--json]
 ```bash
 orbit gateway:status
 ```
+
+Human output shows waiting feedback during the request, then a detail tree with the profile URL, Gateway name, status, Orbit version, PHP version, Laravel version, and request ID. Missing display values use an em dash. JSON keeps these values in the existing flat response without progress output.
 
 The command returns `gateway.profile_missing` when no profile is active and `gateway.unreachable` when the Gateway does not answer.
 
@@ -114,7 +116,7 @@ Operating-system trust and the local profile are separate stores. When the guard
 Remove a profile from the local configuration and delete its pinned certificate file when one exists. The operating-system trust store stays unchanged.
 
 ```bash
-orbit gateway:remove <name> [--force]
+orbit gateway:remove <name> [--force] [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -124,10 +126,17 @@ orbit gateway:remove <name> [--force]
 | Option | Meaning |
 | --- | --- |
 | `--force` | Remove the active profile and clear the active selection. Without it, the CLI refuses the active profile with `gateway.profile_active`. |
+| `--yes` | Confirm removal without a prompt. Required for noninteractive and JSON calls. |
+
+Supply the profile name explicitly. The CLI checks that the profile exists and that active-profile removal has `--force` before asking for consent. The prompt names the profile and the removal of its pinned certificate; it defaults to No. `--force` permits active-profile removal but does not supply consent.
+
+A valid noninteractive or JSON call without `--yes` exits 1 with `input.confirmation_required`. Declining, pressing Ctrl-C, or reaching end of input at the prompt exits 1 with `input.cancelled`. These refusals leave configuration and certificates unchanged. After consent, human output shows the removal operation and its result. JSON returns `profile` with the removed name.
+
+If the profile is removed but its pinned certificate cannot be deleted, the command exits 1 with `gateway.config_invalid`. Its error message states that the profile was removed and certificate cleanup failed. The command does not claim that removal was rolled back.
 
 ```bash
 orbit gateway:remove staging
-orbit gateway:remove default --force
+orbit gateway:remove default --force --yes
 ```
 
 ## Related

@@ -38,6 +38,8 @@ Operating-system trust and the local profile file are separate stores. The opera
 
 `gateway:remove` removes a named Gateway profile from the CLI configuration. The CLI deletes that profile entry and, when the profile records a pinned certificate path and that file exists, deletes the pinned certificate file. The command does not change the operating-system trust store.
 
+Removal requires default-No interactive confirmation or explicit `--yes`. Removing the active profile also requires the independent `--force` override. See [gateway:remove](/cli/gateway#orbit-gatewayremove) for refusal codes and automation examples.
+
 The CLI refuses the active profile and leaves the configuration unchanged. With `--force`, the CLI removes the active profile and clears the active selection. An unknown name exits with `gateway.profile_not_found`. An active profile without `--force` exits with `gateway.profile_active`.
 
 Human output names the removed profile. `--json` returns the removed profile name.

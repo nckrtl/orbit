@@ -19,6 +19,19 @@ afterEach(function (): void {
 });
 
 describe(GatewayUseCommand::class, function (): void {
+    it('reports the selected profile only after saving it and preserves certificate pins', function (): void {
+        $repository = app(GatewayConfigRepository::class);
+        $repository->add(new GatewayProfile('test', 'https://10.70.0.1'));
+        $repository->add(new GatewayProfile('production', 'https://10.80.0.1', '/tmp/production.pem'));
+
+        expect(Artisan::call('gateway:use', ['name' => 'production']))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain('Selecting profile...', '● Selected profile', 'Gateway [production] is active.')
+            ->not->toContain("\e[");
+        expect($repository->active()?->name)->toBe('production')
+            ->and($repository->find('production')?->caPath)->toBe('/tmp/production.pem');
+    });
+
     it('changes the active gateway profile', function (): void {
         expect(class_exists(GatewayUseCommand::class))->toBeTrue();
 

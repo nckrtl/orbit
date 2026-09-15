@@ -7,6 +7,8 @@ namespace App\Commands\Gateway;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 
@@ -29,15 +31,23 @@ final class GatewayStatusCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $status = $this->send(
+        $progress = $this->progressDisplay("Check gateway: {$profile->name}");
+        $progress->admit('status', 'Request status', 'Requesting status', 'Received status');
+        $status = $progress->during('status', fn () => $this->send(
             $connectors->make($profile),
             new ShowGatewayStatusRequest,
             GatewayStatusResponse::class,
-        );
+        ));
 
         if (! $status instanceof GatewayStatusResponse) {
+            $progress->complete('status', ProgressState::Failure);
+            $progress->finish('Gateway status unavailable.');
+
             return self::FAILURE;
         }
+
+        $progress->complete('status', ProgressState::Success);
+        $progress->finish('Gateway status received.');
 
         $payload = [
             'gateway' => $profile->name,
@@ -51,12 +61,15 @@ final class GatewayStatusCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $statusLabel = $status->status !== '' ? $status->status : '-';
-        $version = $status->version !== '' ? $status->version : '-';
-
-        $this->info("{$profile->name}: {$statusLabel} ({$version})");
-        $this->line("URL: {$profile->url}");
-        $this->line("Request ID: {$status->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Gateway: {$profile->name}", [
+            'URL' => $profile->url,
+            'Name' => $status->name,
+            'Status' => $status->status,
+            'Version' => $status->version,
+            'PHP version' => $status->phpVersion,
+            'Laravel version' => $status->laravelVersion,
+            'Request ID' => $status->requestId,
+        ]));
 
         return self::SUCCESS;
     }

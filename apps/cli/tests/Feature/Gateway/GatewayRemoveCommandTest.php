@@ -28,7 +28,7 @@ describe(GatewayRemoveCommand::class, function (): void {
         $repository->add(new GatewayProfile('production', 'https://10.80.0.1', $caPath));
 
         $this
-            ->artisan('gateway:remove', ['name' => 'production'])
+            ->artisan('gateway:remove', ['name' => 'production', '--yes' => true])
             ->expectsOutputToContain('Gateway [production] removed.')
             ->assertExitCode(0);
 
@@ -108,6 +108,7 @@ describe(GatewayRemoveCommand::class, function (): void {
             ->artisan('gateway:remove', [
                 'name' => 'test',
                 '--force' => true,
+                '--yes' => true,
                 '--json' => true,
             ])
             ->expectsOutputToContain('"profile":"test"')
@@ -129,12 +130,65 @@ describe(GatewayRemoveCommand::class, function (): void {
         $repository->add(new GatewayProfile('production', 'https://10.80.0.1'));
         $expected = json_encode(['profile' => 'production'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $exitCode = Artisan::call('gateway:remove', ['name' => 'production', '--json' => true]);
+        $exitCode = Artisan::call('gateway:remove', ['name' => 'production', '--yes' => true, '--json' => true]);
         $output = trim(Artisan::output());
 
         expect($exitCode)->toBe(0);
         expect($output)->toBe($expected);
         expect($repository->find('production'))->toBeNull();
+    });
+
+    it('requires consent independently of force and leaves every file untouched', function (bool $active, bool $json): void {
+        $repository = app(GatewayConfigRepository::class);
+        $repository->add(new GatewayProfile('test', 'https://10.70.0.1'));
+        $caPath = gateway_remove_test_certificate($this->orbitHome, 'production');
+        $repository->add(new GatewayProfile('production', 'https://10.80.0.1', $caPath));
+
+        if ($active) {
+            $repository->use('production');
+        }
+
+        unlink($this->orbitHome.'/config.json.lock');
+        $before = file_get_contents($this->orbitHome.'/config.json');
+        $certificate = file_get_contents($caPath);
+        $arguments = ['name' => 'production', '--no-interaction' => true];
+
+        if ($active) {
+            $arguments['--force'] = true;
+        }
+
+        if ($json) {
+            $arguments['--json'] = true;
+        }
+
+        expect(Artisan::call('gateway:remove', $arguments))->toBe(1);
+        $output = Artisan::output();
+        expect($output)->toContain('Supply --yes')
+            ->not->toContain('Removing profile', "\e[");
+
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                'error' => [
+                    'code' => 'input.confirmation_required',
+                    'message' => 'Supply --yes to confirm gateway profile removal.',
+                    'request_id' => null,
+                ],
+            ]);
+        }
+
+        expect(file_get_contents($this->orbitHome.'/config.json'))->toBe($before)
+            ->and(file_get_contents($caPath))->toBe($certificate)
+            ->and(file_exists($this->orbitHome.'/config.json.lock'))->toBeFalse();
+    })->with([false, true])->with([false, true]);
+
+    it('does not let consent bypass the active profile override', function (): void {
+        $repository = app(GatewayConfigRepository::class);
+        $repository->add(new GatewayProfile('test', 'https://10.70.0.1'));
+        $before = file_get_contents($this->orbitHome.'/config.json');
+
+        expect(Artisan::call('gateway:remove', ['name' => 'test', '--yes' => true, '--json' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('gateway.profile_active');
+        expect(file_get_contents($this->orbitHome.'/config.json'))->toBe($before);
     });
 
     it('rejects invalid names without exposing input or changing configuration', function (string $name): void {
@@ -176,7 +230,7 @@ describe(GatewayRemoveCommand::class, function (): void {
         ));
 
         $this
-            ->artisan('gateway:remove', ['name' => 'production'])
+            ->artisan('gateway:remove', ['name' => 'production', '--yes' => true])
             ->assertExitCode(0);
 
         expect($repository->find('production'))->toBeNull();
@@ -197,7 +251,7 @@ describe(GatewayRemoveCommand::class, function (): void {
             $repository->add(new GatewayProfile('production', 'https://10.80.0.1', $link));
 
             $this
-                ->artisan('gateway:remove', ['name' => 'production'])
+                ->artisan('gateway:remove', ['name' => 'production', '--yes' => true])
                 ->assertExitCode(0);
 
             expect($repository->find('production'))

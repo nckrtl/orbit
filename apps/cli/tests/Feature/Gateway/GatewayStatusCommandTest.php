@@ -125,9 +125,11 @@ describe(GatewayStatusCommand::class, function (): void {
 
         $this
             ->artisan('gateway:status')
-            ->expectsOutput('test: - (-)')
-            ->expectsOutput('URL: https://10.70.0.1')
-            ->expectsOutput('Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844')
+            ->expectsOutputToContain('Gateway: test')
+            ->expectsOutputToContain('URL               https://10.70.0.1')
+            ->expectsOutputToContain('Status            —')
+            ->expectsOutputToContain('Version           —')
+            ->expectsOutputToContain('Request ID        0198e15c-bf97-7c23-8f1f-61b8fe67a844')
             ->assertExitCode(0);
     });
 

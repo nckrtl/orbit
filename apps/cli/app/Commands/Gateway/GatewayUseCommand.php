@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\ProgressState;
 
 final class GatewayUseCommand extends GatewayCommand
 {
@@ -45,7 +46,9 @@ final class GatewayUseCommand extends GatewayCommand
                 );
             }
 
-            $repository->use($name);
+            $progress = $this->progressDisplay("Gateway profile: {$name}");
+            $progress->admit('select', 'Select profile', 'Selecting profile', 'Selected profile');
+            $progress->during('select', fn () => $repository->use($name));
         } catch (GatewayConfigException) {
             return $this->renderGatewayFailure(
                 'gateway.config_invalid',
@@ -53,16 +56,12 @@ final class GatewayUseCommand extends GatewayCommand
             );
         }
 
+        $progress->complete('select', ProgressState::Success);
+        $progress->finish("Gateway [{$name}] is active.");
+
         if ($this->option('json') === true) {
-            $this->line(json_encode(
-                ['active_gateway' => $name],
-                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-            ));
-
-            return self::SUCCESS;
+            $this->writeJson(['active_gateway' => $name]);
         }
-
-        $this->info("Gateway [{$name}] is active.");
 
         return self::SUCCESS;
     }
