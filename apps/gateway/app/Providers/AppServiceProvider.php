@@ -54,6 +54,7 @@ use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\ScheduleStateInspector;
@@ -98,6 +99,7 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
@@ -141,6 +143,7 @@ use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteProductionDeployment;
 use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
+use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
@@ -150,6 +153,7 @@ use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
@@ -272,6 +276,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         AppInstanceRouteEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         RouteDomainProjector::class => NativeDevelopmentRouteProjector::class,
+        PublicRouteEdgeProjector::class => NativePublicRouteEdgeProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppStateInspector::class => NativeAppStateInspector::class,
@@ -280,6 +285,7 @@ final class AppServiceProvider extends ServiceProvider
         GatewayVpnStateInspector::class => NativeGatewayVpnStateInspector::class,
         HostKeyScanner::class => SshHostKeyScanner::class,
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
+        PublicRouteEdgeInspector::class => NativePublicRouteEdgeInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
         MetricsCredentialRuntime::class => MetricsSshExecutor::class,

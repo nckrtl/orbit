@@ -4,15 +4,26 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\InstanceDoctorProbe;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\DoctorInspectionScope;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Doctor\PublicRouteEdgeInspector;
+use App\Domain\Doctor\PublicRouteEdgeObservation;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Route;
 
 it('returns a healthy empty instance report and excludes other nodes', function (): void {
     $node = instance_probe_node();
@@ -299,6 +310,65 @@ it('reports unavailable production observations without hiding established drift
         ->toBe([$instance->id]);
 });
 
+it('reports public-route drift without placement and skips unselected related nodes', function (): void {
+    [$workload, $ingress, $router, $instance] = instance_probe_public_route();
+    $inspector = new InstanceProbePublicEdgeInspector;
+    $healthy = new class implements InstanceStateInspector
+    {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            return new InstanceInspectionData(
+                checkoutExists: true,
+                repositoryLayoutMatches: true,
+                originMatches: true,
+                sourceIdentityMatches: true,
+                productionHomeMatches: true,
+                releaseSelectionMatches: true,
+                selectedReleaseRootMatches: true,
+                environmentProjectionMatches: true,
+                phpFpmProjectionMatches: true,
+                caddyProjectionMatches: true,
+            );
+        }
+    };
+
+    $unselected = new InstanceDoctorProbe($healthy, $inspector)->inspect(
+        instance_probe_context($workload)->withScope(new DoctorInspectionScope([
+            $workload->id => instance_probe_context($workload),
+        ])),
+    );
+
+    expect(array_map(static fn ($issue): string => $issue->code, $unselected->issues))
+        ->toBe(['instance.related_node_unverifiable'])
+        ->and($inspector->nodes)
+        ->toBe([])
+        ->and(json_encode($unselected, JSON_THROW_ON_ERROR))
+        ->not->toContain('10.10.0')
+        ->not->toContain((string) $ingress->id)
+        ->not->toContain((string) $router->id);
+
+    $inspector->observation = new PublicRouteEdgeObservation(false, false, false, false);
+    $selected = new InstanceDoctorProbe($healthy, $inspector)->inspect(
+        instance_probe_context($workload)->withScope(new DoctorInspectionScope([
+            $workload->id => instance_probe_context($workload),
+            $ingress->id => instance_probe_context($ingress),
+            $router->id => instance_probe_context($router),
+        ])),
+    );
+
+    expect(array_map(static fn ($issue): string => $issue->code, $selected->issues))
+        ->toBe([
+            'instance.public_ingress_mismatch',
+            'instance.private_forwarding_mismatch',
+            'instance.public_tls_mismatch',
+            'instance.public_firewall_mismatch',
+        ])
+        ->and($inspector->nodes)
+        ->toBe([$ingress->id])
+        ->and(collect($selected->issues)->pluck('resourceId')->unique()->all())
+        ->toBe([$instance->id]);
+});
+
 function instance_probe_node(): Node
 {
     static $number = 60;
@@ -374,4 +444,64 @@ function instance_probe_production_instance(App $app, Node $node): AppInstance
 function instance_probe_context(Node $node, bool $reachable = true): DoctorNodeContext
 {
     return new DoctorNodeContext($node, new NodeInspectionData($reachable, 'linux', 'x86_64', true));
+}
+
+/** @return array{Node, Node, Node, AppInstance} */
+function instance_probe_public_route(): array
+{
+    $cluster = Cluster::query()->create(['name' => 'doctor-public', 'state' => ClusterState::Active]);
+    $workload = instance_probe_node();
+    $ingress = instance_probe_node();
+    $router = instance_probe_node();
+    foreach ([$workload, $ingress, $router] as $node) {
+        $node->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.10.0.'.($node->id % 200)]);
+    }
+    $ingress->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Ingress,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $instance = instance_probe_production_instance(instance_probe_app(), $workload);
+    $route = Route::query()->create([
+        'app_id' => $instance->app_id,
+        'cluster_id' => $cluster->id,
+        'domain' => 'doctor.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Public,
+        'public_publication' => RoutePublicPublication::Inactive,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update([
+        'status' => RouteStatus::Active,
+        'public_publication' => RoutePublicPublication::Active,
+    ]);
+
+    return [$workload, $ingress, $router, $instance];
+}
+
+final class InstanceProbePublicEdgeInspector implements PublicRouteEdgeInspector
+{
+    /** @var list<int> */
+    public array $nodes = [];
+
+    public PublicRouteEdgeObservation $observation;
+
+    public function __construct()
+    {
+        $this->observation = new PublicRouteEdgeObservation(true, true, true, true);
+    }
+
+    public function inspect(Node $node, Route $route): PublicRouteEdgeObservation
+    {
+        $this->nodes[] = $node->id;
+
+        return $this->observation;
+    }
 }

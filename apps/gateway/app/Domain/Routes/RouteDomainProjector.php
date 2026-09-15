@@ -21,6 +21,16 @@ interface RouteDomainProjector
 
     public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void;
 
+    public function prepareIngressCertificate(Route $candidate): void;
+
+    public function stageIngressCaddy(Route $candidate): void;
+
+    public function prepareIngressFirewall(Route $candidate): void;
+
+    public function verifyPublicEdge(Route $candidate): void;
+
+    public function activatePublicHandler(Route $candidate): void;
+
     public function publishDns(Route $current, Route $candidate): void;
 
     public function cleanup(AppInstance $appInstance, Route $route): void;
@@ -30,4 +40,6 @@ interface RouteDomainProjector
     public function rollbackCaddy(AppInstance $appInstance, Route $route): void;
 
     public function rollbackCertificates(AppInstance $appInstance, Route $route): void;
+
+    public function rollbackPublicEdge(Route $route): void;
 }

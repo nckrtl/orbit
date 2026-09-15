@@ -15,13 +15,21 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
+use App\Domain\Doctor\PublicRouteEdgeInspector;
+use App\Domain\Routes\PublicRouteEligibility;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Models\AppInstance;
+use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
         private InstanceStateInspector $inspector,
+        private ?PublicRouteEdgeInspector $publicEdge = null,
+        private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
     ) {}
 
     public function family(): DoctorFamily
@@ -134,6 +142,8 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             } catch (DoctorInspectionException) {
                 $issues[] = $this->inspectionFailedIssue($instance);
             }
+
+            $issues = [...$issues, ...$this->publicRouteIssues($instance, $context)];
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
@@ -176,6 +186,78 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 || $other->production_php_pool === $instance->production_php_pool
                 || $other->production_php_socket === $instance->production_php_socket;
         });
+    }
+
+    /** @return list<DoctorIssueData> */
+    private function publicRouteIssues(AppInstance $instance, DoctorNodeContext $context): array
+    {
+        $routes = Route::query()
+            ->with(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
+            ->where('publication', RoutePublication::Public)
+            ->where('public_publication', RoutePublicPublication::Active)
+            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $instance->id))
+            ->orderBy('id')
+            ->get();
+
+        $issues = [];
+
+        foreach ($routes as $route) {
+            $cluster = $route->cluster;
+            $ingress = $cluster !== null ? $this->eligibility->activeIngress($cluster) : null;
+            $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
+            $related = [];
+            foreach ([$ingress, $router] as $node) {
+                if ($node !== null) {
+                    $related[$node->id] = $node;
+                }
+            }
+            $scope = $context->scope;
+            $inspector = $this->publicEdge;
+
+            foreach ($related as $node) {
+                if ($scope === null || ! $scope->has($node->id)) {
+                    $issues[] = new DoctorIssueData(
+                        InstanceDoctorIssueCode::RelatedNodeUnverifiable,
+                        DoctorIssueKind::Unverifiable,
+                        'instance',
+                        $instance->id,
+                        $instance->name,
+                        'Public Route projection cannot be verified from the selected nodes.',
+                        'verifiable',
+                        'unverifiable',
+                    );
+
+                    continue 2;
+                }
+            }
+
+            if ($inspector === null || ! $ingress instanceof Node) {
+                continue;
+            }
+
+            try {
+                $observation = $inspector->inspect($ingress, $route);
+            } catch (DoctorInspectionException) {
+                $issues[] = $this->inspectionFailedIssue($instance);
+
+                continue;
+            }
+
+            $fields = [
+                'ingressProjectionMatches' => InstanceDoctorIssueCode::PublicIngressMismatch,
+                'privateForwardingMatches' => InstanceDoctorIssueCode::PrivateForwardingMismatch,
+                'publicTlsMatches' => InstanceDoctorIssueCode::PublicTlsMismatch,
+                'firewallMatches' => InstanceDoctorIssueCode::PublicFirewallMismatch,
+            ];
+
+            foreach ($fields as $field => $code) {
+                if ($observation->{$field} === false) {
+                    $issues[] = $this->projectionIssue($instance, $code);
+                }
+            }
+        }
+
+        return $issues;
     }
 
     private function projectionIssue(AppInstance $instance, InstanceDoctorIssueCode $code): DoctorIssueData

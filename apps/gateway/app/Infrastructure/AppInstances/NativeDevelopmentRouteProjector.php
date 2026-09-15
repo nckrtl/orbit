@@ -6,7 +6,9 @@ namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RoutePublication;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -25,6 +27,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         private RemoteAppDevCaddyManager $caddy,
         private DnsmasqPrivateDnsManager $dns,
         private AppDevSshExecutor $ssh,
+        private ?PublicRouteEdgeProjector $publicEdge = null,
     ) {}
 
     public function converge(AppInstance $appInstance, Route $route): void
@@ -110,6 +113,48 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         }
     }
 
+    public function prepareIngressCertificate(Route $candidate): void
+    {
+        if ($candidate->publication === RoutePublication::Public) {
+            $this->publicEdge()->prepareIngressCertificate($candidate);
+        }
+    }
+
+    public function stageIngressCaddy(Route $candidate): void
+    {
+        if ($candidate->publication === RoutePublication::Public) {
+            $this->publicEdge()->stageIngressCaddy($candidate);
+        }
+    }
+
+    public function prepareIngressFirewall(Route $candidate): void
+    {
+        if ($candidate->publication === RoutePublication::Public) {
+            $this->publicEdge()->prepareIngressFirewall($candidate);
+        }
+    }
+
+    public function verifyPublicEdge(Route $candidate): void
+    {
+        if ($candidate->publication === RoutePublication::Public) {
+            $this->publicEdge()->verifyPublicEdge($candidate);
+        }
+    }
+
+    public function activatePublicHandler(Route $candidate): void
+    {
+        if ($candidate->publication === RoutePublication::Public) {
+            $this->publicEdge()->activatePublicHandler($candidate);
+        }
+    }
+
+    public function rollbackPublicEdge(Route $route): void
+    {
+        if ($route->publication === RoutePublication::Public) {
+            $this->publicEdge()->rollbackPublicEdge($route);
+        }
+    }
+
     public function publishDns(Route $current, Route $candidate): void
     {
         $this->dns->convergeHostnameChange($candidate);
@@ -155,6 +200,11 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
     public function rollbackCertificates(AppInstance $appInstance, Route $route): void
     {
         $this->certificates->removeHostnameChange($appInstance, $route);
+    }
+
+    private function publicEdge(): PublicRouteEdgeProjector
+    {
+        return $this->publicEdge ?? app(PublicRouteEdgeProjector::class);
     }
 
     private function router(AppInstance $appInstance, Route $route): ?Node

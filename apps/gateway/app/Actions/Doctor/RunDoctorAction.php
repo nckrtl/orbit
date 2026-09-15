@@ -9,6 +9,7 @@ use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\DoctorInspectionScope;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
@@ -38,9 +39,16 @@ final readonly class RunDoctorAction
     public function execute(Node $consumer, ?int $nodeId, array $families): DoctorReportData
     {
         $nodeReports = [];
+        $selected = [];
 
         foreach ($this->nodes($consumer, $nodeId) as $node) {
-            $context = $this->context($node);
+            $selected[$node->id] = $this->context($node);
+        }
+
+        $scope = new DoctorInspectionScope($selected);
+
+        foreach ($selected as $context) {
+            $context = $context->withScope($scope);
             $familyReports = [];
 
             foreach ($this->families($families) as $family) {
@@ -48,8 +56,8 @@ final readonly class RunDoctorAction
             }
 
             $nodeReports[] = DoctorNodeReportData::fromFamilies(
-                $node->id,
-                $node->name,
+                $context->node->id,
+                $context->node->name,
                 $familyReports,
             );
         }

@@ -12,5 +12,11 @@ final readonly class DoctorNodeContext
         public Node $node,
         public NodeInspectionData $inspection,
         public bool $inspectionFailed = false,
+        public ?DoctorInspectionScope $scope = null,
     ) {}
+
+    public function withScope(DoctorInspectionScope $scope): self
+    {
+        return new self($this->node, $this->inspection, $this->inspectionFailed, $scope);
+    }
 }

@@ -82,6 +82,13 @@ final readonly class RouteRemovalGuard
                 details: ['reason' => 'route_targets_attached', 'role' => $role->value],
             );
         }
+
+        if ($role === RoleName::Ingress && new PublicRouteEligibility()->ingressDependsOnPublicRoutes($node)) {
+            throw new NodeRoleValidationException(
+                message: "Role [ingress] cannot be removed while public Routes depend on node [{$node->name}].",
+                details: ['reason' => 'public_routes_attached', 'role' => $role->value],
+            );
+        }
     }
 
     public function assertRouterRemovable(Cluster $cluster): void

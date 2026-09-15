@@ -246,6 +246,37 @@ it('renders only the first invalid input as one JSON document', function (
     ],
 ]);
 
+it('transports a combined domain and publication update and renders public publication', function (): void {
+    $payload = [...route_payload(), 'publication' => 'public', 'public_publication' => 'active', 'domain' => 'final.example.test'];
+    $mock = MockClient::global([
+        UpdateRouteRequest::class => MockResponse::make([
+            'data' => $payload,
+            'meta' => ['request_id' => route_request_id()],
+        ]),
+        ShowRouteRequest::class => MockResponse::make([
+            'data' => $payload,
+            'meta' => ['request_id' => route_request_id()],
+        ]),
+    ]);
+
+    $this->artisan('route:update', [
+        'route' => '11',
+        '--domain' => 'final.example.test',
+        '--publication' => 'public',
+        '--json' => true,
+    ])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'domain' => 'final.example.test',
+        'publication' => 'public',
+    ]);
+
+    $this
+        ->artisan('route:show', ['route' => '11'])
+        ->expectsOutputToContain('Public publication: active')
+        ->assertExitCode(0);
+});
+
 it('lists, shows, updates, targets, clears, and removes through exact requests', function (): void {
     $mock = MockClient::global([
         ListRoutesRequest::class => MockResponse::make([
@@ -328,6 +359,7 @@ function route_payload(): array
         'domain' => 'app.test',
         'provenance' => 'explicit',
         'publication' => 'private',
+        'public_publication' => 'inactive',
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,

@@ -24,6 +24,8 @@ final readonly class AppDevSite
         public ?string $appSlug = null,
         public ?string $certificateScope = null,
         public ?string $productionPhpSocket = null,
+        public bool $publicListener = false,
+        public bool $preserveForwardedIdentity = false,
     ) {}
 
     public function poolName(): string

@@ -27,6 +27,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
@@ -786,6 +787,27 @@ it('requires an identical force value when resuming accepted removal', function 
         ->toBeTrue();
 });
 
+it('closes a public Route handler before deleting its identity and leaves unrelated public Routes', function (): void {
+    $removed = orb181_coordinator_instance('production');
+    $removed->routes->sole()->update(['publication' => RoutePublication::Public]);
+    $survivor = orb181_coordinator_instance('production');
+    $survivor->routes->sole()->update([
+        'publication' => RoutePublication::Public,
+        'public_publication' => RoutePublicPublication::Active,
+    ]);
+
+    $this->orb181Coordinator->execute($removed, true);
+
+    expect(Route::query()->find($removed->routes->sole()->id))
+        ->toBeNull()
+        ->and($survivor->routes->sole()->refresh()->public_publication)
+        ->toBe(RoutePublicPublication::Active)
+        ->and($this->orb181Projector->calls)
+        ->toContain('remove-public-edge:'.$removed->id)
+        ->and(AppInstance::query()->whereKey($removed->id)->exists())
+        ->toBeFalse();
+});
+
 function orb181_coordinator_instance(
     string $environment = 'development',
     string $layout = AppInstanceSourceLayout::Checkout->value,
@@ -1183,6 +1205,16 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
         }
 
         $route->targets()->where('app_instance_id', $member->app_instance_id)->delete();
+
+        if ($route->targets()->exists()) {
+            return 'retained';
+        }
+
+        if ($route->publication === RoutePublication::Public) {
+            $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+            $this->calls[] = "remove-public-edge:{$member->app_instance_id}";
+        }
+
         $route->delete();
 
         return 'deleted';

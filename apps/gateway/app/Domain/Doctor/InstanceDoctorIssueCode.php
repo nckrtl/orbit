@@ -21,6 +21,11 @@ enum InstanceDoctorIssueCode: string implements DoctorIssueCode
     case PhpFpmAssociationShared = 'instance.php_fpm_association_shared';
     case PhpFpmProjectionMismatch = 'instance.php_fpm_projection_mismatch';
     case CaddyProjectionMismatch = 'instance.caddy_projection_mismatch';
+    case PublicIngressMismatch = 'instance.public_ingress_mismatch';
+    case PrivateForwardingMismatch = 'instance.private_forwarding_mismatch';
+    case PublicTlsMismatch = 'instance.public_tls_mismatch';
+    case PublicFirewallMismatch = 'instance.public_firewall_mismatch';
+    case RelatedNodeUnverifiable = 'instance.related_node_unverifiable';
     case InspectionFailed = 'instance.inspection_failed';
     case NodeUnreachable = 'instance.node_unreachable';
 

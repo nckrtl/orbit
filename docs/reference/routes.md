@@ -15,6 +15,7 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Replacement | Optional `replaces_route_id`, `replaced_by_route_id`, and `replacement_step` that expose a reserved, activating, retiring, or failed replacement pair. |
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
 | Publication intent | The requested publication state, retained even when the Route has no target. |
+| Public publication | `inactive` until a public Route has a verified Ingress edge, then `active`. A public Route can keep intent while public publication stays inactive. |
 | Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
 | Configured target | The API, PHP SDK, and CLI accept zero or one App instance target. Generated and development Routes permit at most one target. |
@@ -47,7 +48,7 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 | Create | Store an explicit Route with its App, domain, publication intent, optional single target, and either the target-derived scope or one supplied scope when no target is present. |
 | List | Return the Routes visible to the caller in stable order. |
 | Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, and target. |
-| Update | Change an explicit Route domain by reserving a replacement Route, or change mutable publication intent on the same Route without changing its App, provenance, generation basis, or scope. |
+| Update | Change an explicit Route domain by reserving a replacement Route, or change publication intent on the same domain without changing its Route ID, App, provenance, generation basis, or scope. A publication-only request on an active Route publishes or withdraws the public Ingress edge. |
 | Target set | Add or replace the one App instance target when the change does not detach an active App instance from its sole Route. |
 | Target unset | Remove the target only when that does not leave an active App instance without a Route, unless the same operation removes that App instance. |
 | Destroy | Delete the Route and only its Route-owned target rows when no active App instance depends on it. |
@@ -148,6 +149,40 @@ Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not ex
 
 When the Gateway converges the app-prod role, it retires the Orbit-owned public HTTP and HTTPS workload rules and does not republish them. Ingress keeps public HTTP and HTTPS publication. Unrelated firewall rules stay in place. A retry after a failed cleanup uses the same owned-rule set.
 
+## Publish a public Route
+
+A public Route terminates HTTPS on the Cluster Ingress, forwards privately through the Cluster Router, and reaches the app-prod workload without exposing placement or workload listeners. Role ownership follows [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement). The Ingress-only public boundary follows [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing).
+
+The Gateway activates public publication only when the Route is Cluster-scoped, the Cluster is active, and that Cluster has exactly one active Ingress and one active Router. A Node-scoped Route, an inactive Cluster, or a Cluster that lacks an active Ingress or Router keeps publication intent and reports public publication as inactive. Those cases create no public certificate, listener, firewall rule, or partial activation.
+
+The Ingress artifact names the public domain and the Router upstream. It does not name an App instance, workload Node, or backend pool. Router Caddy keeps backend selection. Workload Caddy stays private.
+
+Public TLS terminates on the Ingress Node with an Orbit certificate-authority certificate for the Route domain. Ingress forwards Orbit-CA HTTPS to the Router over the configured LAN address and uses WireGuard only when no LAN address is set. A configured but unreachable LAN path fails and does not fall back to WireGuard. Ingress preserves the original `Host` value, HTTPS scheme, and client address.
+
+When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
+
+Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. Router and workload listeners stay private. Direct public workload traffic is denied.
+
+An exact client-local override can send the Route domain to the Router address and then to the workload address without changing public Ingress or DNS state. Installing a client resolver is outside this contract.
+
+Creating or showing a public Route adds no Node public-IP field and calls no DNS-provider API.
+
+A stale application HTTP error does not block a valid public edge. The trusted response remains observable and the App instance remains active.
+
+### Activate public publication
+
+A publication-only update on the same domain keeps the Route ID. The Gateway prepares the Ingress certificate, stages the Ingress Caddy site outside the live import, and verifies the private hops before it marks public publication active and installs the handler. Firewall rules open after at least one public Route is active. The candidate handler stays unreachable until those checks succeed, including when another Route already keeps Ingress ports open.
+
+A combined domain and publication change reserves a replacement Route with public publication intent. The current Route stays authoritative until cutover. Environment synchronization and private infrastructure complete before public exposure. Cutover makes the replacement authoritative in one database transition. Successful cleanup deletes the preview Route and releases its domain.
+
+The PHP software development kit (SDK) and `route:update` CLI send the combined domain and publication request and return the replacement Route identity. They do not bypass Cluster Ingress.
+
+Failure before cutover leaves the preview Route authoritative, restores its environment projection, and rolls back the candidate public edge. Incomplete cleanup remains inspectable and recovers only through the identical request. Failure after cutover keeps the replacement authoritative and recovers forward. A conflicting domain or publication request changes no recorded intent.
+
+The Gateway refuses Ingress replacement or removal while any public Route in that Cluster depends on the Ingress, unless a later operation preserves that public edge atomically.
+
+Doctor instance checks report public Ingress, private forwarding, TLS, and firewall drift with bounded codes. They expose no placement and change no Ingress, Router, workload, TLS, or firewall state. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+
 ### Publication ownership
 
 Only one operation can publish private Caddy, DNS, or Metrics configuration at a time. The Gateway takes a shared lock before reading current Route, target, Cluster, and Router state. It holds the lock through Caddy updates, DNS publication, and activation. Nested calls in the same request share the lock. Failure releases it so a retry can read fresh state.
@@ -182,7 +217,7 @@ A failure before cutover leaves the old Route authoritative. Successful cleanup 
 
 A failure after cutover keeps the replacement authoritative. Retry continues forward until the replacement is `active`, every old projection is removed, the retiring Route is deleted, and its domain becomes available.
 
-The reconciliation guard still returns `route.reconciliation_required` for generated Route domain changes that must go through replacement reservation, and for active Route publication or target changes. It also refuses Node WireGuard, LAN, TLD, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation, deactivation, or TLD changes and Router replacement or clearing.
+The reconciliation guard still returns `route.reconciliation_required` for generated Route domain changes that must go through replacement reservation, and for active Route target changes. A publication-only change on an active Route publishes or withdraws the public Ingress edge on that Route ID. The guard also refuses Node WireGuard, LAN, TLD, or Cluster-membership changes when an active Route depends on the change. The same rule covers Cluster activation, deactivation, or TLD changes and Router replacement or clearing.
 
 Deployment, code rollback, clone finalization, App instance removal, environment import, stored environment updates, environment synchronization, and a domain replacement share the target App instance's bounded operation owner. A competitor waits or returns `env.operation_busy` before mutation. The domain replacement also holds the shared private projection owner through its Caddy and DNS work. It does not change source, the selected production release, SQLite data, or local PHP tuning.
 
@@ -213,6 +248,7 @@ Route ownership prevents deletion from leaving an invalid retained record.
 | Node | Refused while a Route retains the Node as scope, target host, or generation basis. |
 | App instance | Clears its target only inside an accepted removal, retains a non-empty shared production Route, and deletes a final-target Route before source finalization. |
 | App role | Refused while the Node hosts a Route target. |
+| Cluster Ingress | Refused while any public Route in the Cluster depends on the Ingress. |
 | Cluster Router | Clearing the Router assignment is refused while the Cluster owns a Route. |
 | Route | Deletes only an eligible Route and its Route-owned target rows. |
 
@@ -220,4 +256,4 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 Route operations do not change App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects private Routes and changes a development or production Route domain by reserving a replacement Route when the current Route is active, explicit, and private. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal. It does not implement generated domain changes outside replacement reservation, other later Route reconciliation or removal, public Ingress, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.
+This contract projects private Routes, publishes public Routes through Cluster Ingress, and changes a development or production Route domain by reserving a replacement Route when the current Route is active and explicit. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal. It does not implement generated domain changes outside replacement reservation, other later Route reconciliation or removal, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.

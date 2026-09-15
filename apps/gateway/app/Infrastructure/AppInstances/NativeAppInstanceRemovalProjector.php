@@ -6,6 +6,9 @@ namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
+use App\Domain\Routes\PublicRouteEdgeProjector;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -27,6 +30,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         private DnsmasqPrivateDnsManager $dns,
         private RemoteAppDevRouteFirewallManager $firewall,
         private ?ProductionPhpRuntimeManager $productionPhp = null,
+        private ?PublicRouteEdgeProjector $publicEdge = null,
     ) {}
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
@@ -35,7 +39,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         $route = $member->route_id === null
             ? null
             : Route::query()
-                ->with(['targets.appInstance.node', 'cluster.routerAssignment.node'])
+                ->with(['targets.appInstance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
                 ->find($member->route_id);
 
         if (! $route instanceof Route) {
@@ -94,6 +98,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             $this->dns->convergeUnavailableRoute($route, $appInstance);
         }
 
+        $this->removePublicEdge($route);
         $this->removeRouteProjection($route, $appInstance);
 
         DB::transaction(function () use ($route): void {
@@ -142,6 +147,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
         $this->certificates->removeAppInstance($departing);
         $this->dns->converge();
+        $this->refreshIngress($route);
     }
 
     private function removeRouteProjection(Route $route, AppInstance $appInstance): void
@@ -160,6 +166,36 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         }
 
         $this->dns->converge();
+        $this->refreshIngress($route);
+    }
+
+    private function removePublicEdge(Route $route): void
+    {
+        if ($route->publication !== RoutePublication::Public) {
+            return;
+        }
+
+        $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+        $this->publicEdge()->removePublicEdge($route);
+    }
+
+    private function refreshIngress(Route $route): void
+    {
+        if ($route->publication !== RoutePublication::Public) {
+            return;
+        }
+
+        $this->publicEdge()->prepareIngressFirewall($route);
+        $ingress = $route->cluster?->ingressAssignment?->node;
+
+        if ($ingress instanceof Node) {
+            $this->caddy->converge($ingress);
+        }
+    }
+
+    private function publicEdge(): PublicRouteEdgeProjector
+    {
+        return $this->publicEdge ?? app(PublicRouteEdgeProjector::class);
     }
 
     private function servingNode(Route $route, AppInstance $appInstance): Node
