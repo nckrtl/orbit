@@ -32,6 +32,7 @@ final readonly class AppInstanceResponse
         public ?string $domain,
         public ?string $url,
         public ?AppInstanceRemovalProgressResponse $removal,
+        public ?AppInstanceTransferProgressResponse $transfer,
         /** @var list<DeploymentStepResponse> */
         public array $deploySteps,
         public string $requestId,
@@ -66,6 +67,7 @@ final readonly class AppInstanceResponse
             domain: is_string($data['domain'] ?? null) ? $data['domain'] : null,
             url: is_string($data['url'] ?? null) ? $data['url'] : null,
             removal: self::removal($data['removal'] ?? null),
+            transfer: self::transfer($data['transfer'] ?? null),
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
             requestId: $requestId,
         );
@@ -96,6 +98,7 @@ final readonly class AppInstanceResponse
             'domain' => $this->domain,
             'url' => $this->url,
             'removal' => $this->removal?->toArray(),
+            'transfer' => $this->transfer?->toArray(),
             'deploy_steps' => array_map(
                 static fn (DeploymentStepResponse $step): array => $step->toArray(),
                 $this->deploySteps,
@@ -171,5 +174,24 @@ final readonly class AppInstanceResponse
         }
 
         return AppInstanceRemovalProgressResponse::fromGatewayData($removal);
+    }
+
+    private static function transfer(#[SensitiveParameter] mixed $value): ?AppInstanceTransferProgressResponse
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $transfer = [];
+
+        foreach ($value as $key => $item) {
+            if (! is_string($key)) {
+                continue;
+            }
+
+            $transfer[$key] = $item;
+        }
+
+        return AppInstanceTransferProgressResponse::fromGatewayData($transfer);
     }
 }

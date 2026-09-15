@@ -45,6 +45,8 @@ use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\Apps\AppUpdateProjectionMutator;
@@ -130,6 +132,7 @@ use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppInstances\NativeAppInstanceEnvironmentOperationLock;
 use App\Infrastructure\AppInstances\NativeAppInstanceRemovalProjector;
+use App\Infrastructure\AppInstances\NativeAppInstanceTransferRuntime;
 use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
@@ -140,6 +143,7 @@ use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
 use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
+use App\Infrastructure\AppInstances\RemoteAppInstanceTransferSource;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
@@ -261,6 +265,8 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceEnvironmentWriter::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceOperationPreflight::class => RemoteAppInstanceEnvironmentAccess::class,
         AppInstanceSqliteSeeder::class => RemoteAppInstanceSqliteSeeder::class,
+        AppInstanceTransferSource::class => RemoteAppInstanceTransferSource::class,
+        AppInstanceTransferRuntime::class => NativeAppInstanceTransferRuntime::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
         AppDevTldConverger::class => NativeAppDevTldConverger::class,

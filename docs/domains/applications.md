@@ -1,6 +1,6 @@
 # Applications
 
-Create an App instance on a Node you choose, or register an existing checkout. The App stores shared source defaults. Each App instance has its own location and Route. The supported App instance commands are `instance:create`, `instance:list`, `instance:show`, and `instance:destroy`. Those commands resolve App instances owned by their App and Node. The fleet operator prepares incompatible legacy deployments outside Orbit. Orbit provides no conversion command, API, or SDK operation.
+Create an App instance on a Node you choose, or register an existing checkout. The App stores shared source defaults. Each App instance has its own location and Route. The supported App instance commands are `instance:create`, `instance:list`, `instance:show`, `instance:transfer`, and `instance:destroy`. Those commands resolve App instances owned by their App and Node. The fleet operator prepares incompatible legacy deployments outside Orbit. Orbit provides no conversion command, API, or SDK operation.
 
 [ADR 0009](/decisions/0009-clustered-app-instance-routing) defines the development source boundary. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines stable default identity, [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) defines owned source layouts, and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) defines explicit branch selection. [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) defines production placement, and [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) defines its release layout.
 
@@ -198,7 +198,13 @@ The removal reference also describes worktree preflight, forced fixed-set cascad
 
 ## Move an App instance
 
-Orbit exposes no HTTP route, CLI command, or PHP SDK method that moves an App instance to another Node while preserving its ID. [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) records the Gateway obligations for that move.
+`instance:transfer` moves one active development App instance to a distinct active app-dev Node in an active Cluster and keeps the App instance ID. The destination may be in the same Cluster or another Cluster.
+
+```text
+orbit instance:transfer INSTANCE NODE [--name=NAME] [--sqlite-source-path=PATH] [--force]
+```
+
+The Gateway reserves `<destination-apps-root>/<app-slug>/<instance-name>`, copies the source into an independent destination checkout, stops source execution for the downtime window, and deletes the old managed placement after cutover. The [App instance transfer reference](/reference/appinstance-transfer) describes eligibility, destination naming, preserved state, domain behavior, failure recovery, retry, and cleanup. [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) owns the transfer decision.
 
 ## Input boundary
 

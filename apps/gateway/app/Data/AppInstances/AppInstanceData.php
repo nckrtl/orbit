@@ -8,6 +8,7 @@ use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\AppInstanceTransfer;
 use App\Models\Route;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -38,6 +39,7 @@ final class AppInstanceData extends Data
         public ?string $domain,
         public ?string $url,
         public ?AppInstanceRemovalData $removal,
+        public ?AppInstanceTransferData $transfer,
         /** @var list<DeploymentStepData> */
         public array $deploySteps = [],
     ) {}
@@ -78,10 +80,23 @@ final class AppInstanceData extends Data
             removal: $removal instanceof AppInstanceRemoval
                 ? AppInstanceRemovalData::fromModel($removal)
                 : null,
+            transfer: self::transfer($appInstance),
             deploySteps: array_map(
                 DeploymentStepData::fromDomain(...),
                 app(AppInstanceDeployStepStore::class)->ordered($appInstance),
             ),
         );
+    }
+
+    private static function transfer(AppInstance $appInstance): ?AppInstanceTransferData
+    {
+        $transfer = AppInstanceTransfer::query()
+            ->where('app_instance_id', $appInstance->id)
+            ->latest('created_at')
+            ->first();
+
+        return $transfer instanceof AppInstanceTransfer
+            ? AppInstanceTransferData::fromModel($transfer)
+            : null;
     }
 }

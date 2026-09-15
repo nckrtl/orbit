@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 109 concrete public Gateway API operations:
+The SDK models exactly 110 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -8,7 +8,7 @@ The SDK models exactly 109 concrete public Gateway API operations:
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, update, and remove.
 - App runtime definition: process and Schedule list, create, show, update, and destroy.
-- AppInstance: list, show, create, register, clone, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
+- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
@@ -36,6 +36,10 @@ operations. Keep the public API typed and small.
   optional SQLite source path. Preserve omission separately from every supplied
   string. The Gateway owns candidate eligibility, placement, cloning, and Route
   policy.
+- Keep AppInstance transfer transport limited to the numeric AppInstance ID,
+  destination Node ID, optional rename, and optional SQLite source path.
+  Preserve omission separately from every supplied string. The Gateway owns
+  eligibility, destination reservation, downtime, Route cutover, and cleanup.
 - Keep AppInstance deployment transport limited to named deploy-step create,
   list, update, and destroy, AppInstance branch update, explicit deploy and
   rollback streams, and retained-release inspection. Preserve optional

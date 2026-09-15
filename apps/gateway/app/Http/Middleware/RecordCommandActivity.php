@@ -483,6 +483,10 @@ final readonly class RecordCommandActivity
             return $this->appUpdateInput($request);
         }
 
+        if ($command === 'instance:transfer') {
+            return $this->appInstanceTransferInput($request);
+        }
+
         if ($command === 'env:import') {
             return $this->appInstanceEnvironmentImportInput($request);
         }
@@ -746,6 +750,42 @@ final readonly class RecordCommandActivity
             || ! is_string($previewName)
             || ! RouteDomain::isValid($previewName)
             || (array_key_exists('branch', $input) && (! is_string($branch) || ! GitBranchName::isValid($branch)))
+            || (array_key_exists('sqlite_source_path', $input) && ! is_string($sqliteSourcePath))
+        ) {
+            return [];
+        }
+
+        unset($input['sqlite_source_path']);
+        $input['sqlite_selected'] = $sqliteSourcePath !== null;
+
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function appInstanceTransferInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), [
+                'node_id',
+                'name',
+                'sqlite_source_path',
+            ]);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        $nodeId = $input['node_id'] ?? null;
+        $name = $input['name'] ?? null;
+        $sqliteSourcePath = $input['sqlite_source_path'] ?? null;
+
+        if (
+            ! is_int($nodeId)
+            || $nodeId < 1
+            || (array_key_exists('name', $input) && (
+                ! is_string($name)
+                || strlen($name) > 63
+                || preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $name) !== 1
+            ))
             || (array_key_exists('sqlite_source_path', $input) && ! is_string($sqliteSourcePath))
         ) {
             return [];
