@@ -182,3 +182,17 @@ Only one instance's latest observations and attempts are returned, with no attem
 The SDK rejects an entire invalid response instead of dropping graph records or supplying success defaults. It checks envelope shape, request correlation, instance identity, field types, state consistency, unique resolution IDs, and graph endpoints. It accepts at most 32 MiB of response JSON, 50,000 resolutions and 200,000 requirements per ecosystem, 64 source hashes, and 16 KiB per text field. Oversized or malformed results raise a safe `GatewayApiException`; valid error-envelope codes, redacted details, and request IDs use the shared transport boundary.
 
 These are transport limits, not package-selection policy. The SDK does not parse lockfiles, resolve domains, run packages, render CLI output, or retry scans. Focused Saloon fixtures verify this contract; CLI and integrated discovery checks exercise real transport.
+
+## Full-domain target resolution
+
+`GET /api/v1/instances/resolve?domain=FULL_DOMAIN` resolves one dependency target without collecting source or changing inventory. The request has no body and accepts only `domain`. It normalizes case and surrounding whitespace using the Route domain rules, requires a full dotted domain, and rejects URLs, ports, paths and wildcard selectors.
+
+The Gateway reads authoritative Routes and their complete target pools in one database transaction. Every target must be accessible through its owning Node. Missing domains and inaccessible matches return the same `dependencies.target_not_found` error without candidate identities. More than one authoritative Route or target returns `dependencies.target_ambiguous` only after access checks. Empty pools fail; the resolver never filters a pool into an apparent unique match. Pending, failed and retiring Routes do not select instances.
+
+A unique target must be active, outside removal and free of a required source migration. Otherwise resolution returns `dependencies.instance_unavailable`. Success contains only `domain`, `instance_id`, `app_id`, `node_id` and `environment`, with the usual request ID. This result describes current selection; later operations must authorize and check the instance again.
+
+### SDK and CLI selection
+
+The SDK exposes `ResolveAppInstanceRequest` and `ResolvedAppInstanceResponse`. It accepts at most 4096 bytes of response JSON and requires the exact success envelope and ownership fields. Duplicate JSON keys, including escaped equivalents, are rejected. The body must contain a valid request ID that agrees with a valid response-header request ID when present. Malformed responses raise a safe `GatewayApiException` without returning a target or raw response data.
+
+The CLI's `DependencyInstanceSelector::resolveDomain` provides a shared SDK call for subsequent scan and update commands. It preserves the domain input and structured errors, without local Route filtering or directory detection. No dependency command or package mutation is added by this resolver.
