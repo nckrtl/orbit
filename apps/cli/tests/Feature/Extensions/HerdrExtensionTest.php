@@ -49,6 +49,25 @@ it('lists Herdr as an opt-in extension', function (): void {
     expect(trim(Artisan::output()))->toBe('{"extensions":[{"extension":"herdr","enabled":false}]}');
 });
 
+it('renders extension states as a read-only table without prompting or ANSI', function (): void {
+    expect(Artisan::call('extension:list'))->toBe(0);
+    expect(Artisan::output())->toContain('EXTENSION', 'STATE', 'herdr', 'disabled')
+        ->not->toContain("\e[", 'Press / to search');
+
+    app(LocalExtensionState::class)->enable('herdr');
+    expect(Artisan::call('extension:list'))->toBe(0);
+    expect(Artisan::output())->toContain('herdr', 'enabled')->not->toContain('disabled');
+});
+
+it('reports idempotent local extension changes with their actual resulting state', function (string $verb, bool $enabled): void {
+    foreach ([1, 2] as $attempt) {
+        expect(Artisan::call('extension:'.$verb, ['extension' => 'herdr']))->toBe(0);
+        expect(Artisan::output())->toContain('Extension: herdr', $enabled ? '● Enabled extension' : '● Disabled extension')
+            ->not->toContain("\e[");
+        expect(app(LocalExtensionState::class)->enabled('herdr'))->toBe($enabled);
+    }
+})->with([['enable', true], ['disable', false]]);
+
 it('rejects extension state readable by other users', function (): void {
     mkdir($this->orbitHome, 0700, true);
     $path = $this->orbitHome.'/extensions.json';

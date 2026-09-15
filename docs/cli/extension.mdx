@@ -15,7 +15,7 @@ The CLI stores the enabled set in `$ORBIT_HOME/extensions.json`, next to the Gat
 | [`extension:enable`](#orbit-extensionenable) | Enable an extension and reveal its commands. |
 | [`extension:disable`](#orbit-extensiondisable) | Disable an extension and hide its commands. |
 
-Every command accepts `--json`.
+Every command accepts `--json`. Enable and disable require an explicit extension slug in every mode. Human output shows the operation and its completed or failed result, including waiting feedback when another local command holds the configuration lock. JSON has no prompt or progress output.
 
 ## Available extensions
 
@@ -35,7 +35,7 @@ orbit extension:list [--json]
 orbit extension:list
 ```
 
-Human output is one table with the columns Extension and State. JSON output returns an `extensions` array with `extension` and `enabled` for each entry.
+Human output is one table with the columns EXTENSION and STATE. Narrow terminals wrap cells or use labeled records when a table cannot fit. JSON output returns an `extensions` array with `extension` and `enabled` for each entry.
 
 ## orbit extension:enable
 
@@ -53,7 +53,7 @@ orbit extension:enable <extension> [--json]
 orbit extension:enable herdr
 ```
 
-An unknown slug fails with `extension.unknown`. A configuration file that is malformed or not private fails with `extension.config_invalid` and leaves the file unchanged.
+An unknown slug fails with `extension.unknown`. A configuration file that is malformed or not private fails with `extension.config_invalid` and leaves the file unchanged. Enabling an already enabled extension succeeds. JSON returns `extension` and `enabled: true`.
 
 ## orbit extension:disable
 
@@ -70,6 +70,8 @@ orbit extension:disable <extension> [--json]
 ```bash
 orbit extension:disable herdr
 ```
+
+Disabling an already disabled extension succeeds. JSON returns `extension` and `enabled: false`. Unknown slugs and invalid configuration use the same errors as enable.
 
 <Note>
 Disabling an extension does not stop, remove, or change anything the extension created on a Node. A Herdr session keeps running after you disable the `herdr` extension; use `herdr:session:destroy` first if you want it gone.

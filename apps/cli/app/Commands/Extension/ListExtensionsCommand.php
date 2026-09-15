@@ -7,6 +7,7 @@ namespace App\Commands\Extension;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayConfigException;
 use App\Services\Extensions\LocalExtensionState;
+use App\Support\Console\ConsoleWriter;
 
 final class ListExtensionsCommand extends GatewayCommand
 {
@@ -36,10 +37,10 @@ final class ListExtensionsCommand extends GatewayCommand
         if ($this->option('json') === true) {
             $this->writeJson(['extensions' => $rows]);
         } else {
-            $this->table(['Extension', 'State'], array_map(
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table(['Extension', 'State'], array_map(
                 static fn (array $row): array => [$row['extension'], $row['enabled'] ? 'enabled' : 'disabled'],
                 $rows,
-            ));
+            ), 'No extensions found.'));
         }
 
         return self::SUCCESS;
