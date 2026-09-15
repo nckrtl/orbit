@@ -16,6 +16,7 @@ use Illuminate\Support\Str;
  * @property string $id
  * @property int $app_instance_id
  * @property int $source_node_id
+ * @property int|null $source_router_node_id
  * @property int $destination_node_id
  * @property string|null $requested_name
  * @property string $destination_name
@@ -52,6 +53,7 @@ final class AppInstanceTransfer extends Model
         'id',
         'app_instance_id',
         'source_node_id',
+        'source_router_node_id',
         'destination_node_id',
         'requested_name',
         'destination_name',
@@ -102,6 +104,7 @@ final class AppInstanceTransfer extends Model
     protected function casts(): array
     {
         return [
+            'source_router_node_id' => 'integer',
             'source_layout' => AppInstanceSourceLayout::class,
             'status' => AppInstanceTransferStatus::class,
             'current_step' => AppInstanceTransferStep::class,

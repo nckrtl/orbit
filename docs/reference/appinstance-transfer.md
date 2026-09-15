@@ -62,9 +62,15 @@ A failure before cutover restores the source Route, environment, processes, and 
 
 Once cutover makes the destination authoritative, retry proceeds only forward. The Gateway never restarts source execution, completes Route publication and runtime activation, and resumes exact old-placement cleanup without copying source again.
 
+The transfer records the original Router before cutover. If an older incomplete transfer passed cutover without this evidence, cleanup stops with `instance.transfer_source_router_unknown`. Recover the original Router identity from retained operation evidence before retrying; the current Cluster membership alone does not establish that identity.
+
 ## Finish cleanup
 
 Successful transfer deletes the old managed checkout or owned worktree and its runtime artifacts. It releases an obsolete generated Route. It preserves unowned worktree resources such as the common repository and sibling worktrees.
+
+After cutover, an obsolete generated Route stops contributing serving and DNS projections. Its record reserves the old domain until cleanup succeeds. The Gateway reconciles the old workload and Router before removing their unused certificates, firewall rules and source placement. A cleanup failure keeps the destination authoritative and retains the transfer identity for an identical retry.
+
+Successful cleanup clears the destination Route's replacement state and completes the transfer together. The resulting Route can be used by environment operations and a later transfer, including a transfer back to the original Node.
 
 The result reports the destination Node, destination path, authoritative domain, and whether cleanup completed. Completion depends on verified source, environment, runtime, Route, and placement state. It does not depend on a successful application HTTP response.
 
@@ -108,3 +114,5 @@ The Gateway returns these transfer conflicts before or during the operation.
 | `instance.transfer_retry_conflict` | A different request tried to resume an incomplete transfer. |
 | `instance.transfer_failed` | Transfer failed and the Gateway restored or retained the current authority. |
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative and old-placement cleanup still needs the identical retry. |
+| `instance.transfer_source_router_unknown` | The original Router identity is unavailable, so source projection cleanup cannot proceed. |
+| `instance.transfer_cleanup_conflict` | Recorded placement or Route ownership changed, so cleanup stops without finalizing the transfer. |

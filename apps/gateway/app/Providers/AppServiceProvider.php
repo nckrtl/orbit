@@ -48,6 +48,7 @@ use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppProd\AppProdCaddyManager;
@@ -277,6 +278,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceSqliteSeeder::class => RemoteAppInstanceSqliteSeeder::class,
         AppInstanceTransferSource::class => RemoteAppInstanceTransferSource::class,
         AppInstanceTransferRuntime::class => NativeAppInstanceTransferRuntime::class,
+        AppInstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
         AppDevTldConverger::class => NativeAppDevTldConverger::class,

@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Data\AppInstances\TransferAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
@@ -21,11 +22,13 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -70,6 +73,9 @@ final readonly class TransferAppInstanceAction
         private AppInstanceEnvironmentWriter $environmentWriter,
         private RouteStateResolver $routeState,
         private DevelopmentRouteProjector $projection,
+        private AppInstanceTransferRouteProjector $transferProjection,
+        private DevelopmentProjectionOperationLock $projectionOwner,
+        private ClusterRouterOperationLock $routerOwner,
     ) {}
 
     /** @return array{appInstance: AppInstance, transfer: AppInstanceTransfer, created: bool} */
@@ -86,6 +92,31 @@ final readonly class TransferAppInstanceAction
             ];
         }
 
+        if ($existing?->cutover_at !== null) {
+            return $this->executeOwned($instance, $data, $existing, null);
+        }
+
+        $sourceRoute = $existing instanceof AppInstanceTransfer
+            ? Route::query()->findOrFail($existing->source_route_id)
+            : $this->authoritativeRoute($instance);
+        $clusterId = $sourceRoute->cluster_id;
+        if ($clusterId === null) {
+            throw $this->conflict('instance.standalone_unsupported', 'The source Route must belong to an active Cluster.');
+        }
+
+        return $this->routerOwner->run(
+            $clusterId,
+            fn (): array => $this->executeOwned($instance, $data, $existing, $clusterId),
+        );
+    }
+
+    /** @return array{appInstance: AppInstance, transfer: AppInstanceTransfer, created: bool} */
+    private function executeOwned(
+        AppInstance $instance,
+        TransferAppInstanceData $data,
+        ?AppInstanceTransfer $existing,
+        ?int $sourceClusterId,
+    ): array {
         if ($existing instanceof AppInstanceTransfer) {
             $transfer = $existing;
             $created = false;
@@ -104,7 +135,7 @@ final readonly class TransferAppInstanceAction
                     $transfer->destination_node_id,
                     fn (): AppInstance => $this->sourceLock->synchronized(
                         $transfer->source_node_id,
-                        fn (): AppInstance => $this->resume($instance->id, $transfer->id),
+                        fn (): AppInstance => $this->resume($instance->id, $transfer->id, $sourceClusterId),
                     ),
                 ),
             );
@@ -174,6 +205,7 @@ final readonly class TransferAppInstanceAction
         return AppInstanceTransfer::query()->create([
             'app_instance_id' => $instance->id,
             'source_node_id' => $instance->node_id,
+            'source_router_node_id' => $this->sourceRouterId($route),
             'destination_node_id' => $destination->id,
             'requested_name' => $data->name,
             'destination_name' => $data->name ?? $instance->name,
@@ -370,12 +402,25 @@ final readonly class TransferAppInstanceAction
         }
     }
 
-    private function resume(int $instanceId, string $transferId): AppInstance
+    private function resume(int $instanceId, string $transferId, ?int $sourceClusterId): AppInstance
     {
         $instance = AppInstance::query()->with(['app', 'node', 'routes.targets'])->findOrFail($instanceId);
         $transfer = AppInstanceTransfer::query()->findOrFail($transferId);
         $destination = Node::query()->findOrFail($transfer->destination_node_id);
         $path = StoragePath::parse($transfer->destination_path);
+
+        if ($transfer->source_router_node_id === null) {
+            if ($transfer->cutover_at !== null) {
+                throw $this->conflict(
+                    'instance.transfer_source_router_unknown',
+                    'The original Router was not recorded. Recover its identity before retrying cleanup.',
+                );
+            }
+
+            $transfer->update([
+                'source_router_node_id' => $this->sourceRouterId(Route::query()->findOrFail($transfer->source_route_id)),
+            ]);
+        }
 
         if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);
@@ -419,7 +464,7 @@ final readonly class TransferAppInstanceAction
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::RoutePrepared) {
-            $this->cutover($instance, $destination, $transfer);
+            $this->cutover($instance, $destination, $transfer, $sourceClusterId);
         }
 
         $instance = AppInstance::query()->with(['app', 'node', 'routes.targets'])->findOrFail($instanceId);
@@ -437,7 +482,7 @@ final readonly class TransferAppInstanceAction
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::DestinationActivated) {
-            $this->cleanupSource($instance, $transfer);
+            $this->projectionOwner->run(fn () => $this->cleanupSource($instance, $transfer));
         }
 
         return $instance->refresh()->load(['routes.targets', 'node']);
@@ -589,9 +634,18 @@ final readonly class TransferAppInstanceAction
         $transfer->refresh();
     }
 
-    private function cutover(AppInstance $instance, Node $destination, AppInstanceTransfer $transfer): void
+    private function cutover(AppInstance $instance, Node $destination, AppInstanceTransfer $transfer, ?int $sourceClusterId): void
     {
-        DB::transaction(function () use ($instance, $destination, $transfer): void {
+        if ($sourceClusterId === null) {
+            throw $this->conflict('instance.transfer_source_router_unknown', 'The source Route requires its original Router.');
+        }
+
+        $this->projectionOwner->run(fn () => $this->cutoverOwned($instance, $destination, $transfer, $sourceClusterId));
+    }
+
+    private function cutoverOwned(AppInstance $instance, Node $destination, AppInstanceTransfer $transfer, int $sourceClusterId): void
+    {
+        DB::transaction(function () use ($instance, $destination, $transfer, $sourceClusterId): void {
             $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
             $lockedTransfer = AppInstanceTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
             $sourceRoute = Route::query()->lockForUpdate()->findOrFail($lockedTransfer->source_route_id);
@@ -599,6 +653,11 @@ final readonly class TransferAppInstanceAction
                 $lockedTransfer->destination_route_id ?? $lockedTransfer->source_route_id,
             );
             $placement = $this->routeState->forNode($destination);
+
+            if ($sourceRoute->cluster_id !== $sourceClusterId) {
+                throw $this->conflict('instance.transfer_cleanup_conflict', 'The source Route placement changed before cutover.');
+            }
+            $lockedTransfer->update(['source_router_node_id' => $this->sourceRouterId($sourceRoute)]);
 
             $lockedInstance->update([
                 'node_id' => $destination->id,
@@ -650,13 +709,11 @@ final readonly class TransferAppInstanceAction
 
     private function cleanupSource(AppInstance $instance, AppInstanceTransfer $transfer): void
     {
+        DB::transaction(fn (): array => $this->lockCleanupRoutes($instance, $transfer));
         $sourceNode = Node::query()->findOrFail($transfer->source_node_id);
+        $this->transferProjection->retireSource($transfer);
         $this->runtime->cleanupSourceArtifacts($instance, $sourceNode, $transfer->source_path);
         $cleanup = $this->sources->cleanupSource($transfer);
-
-        if ($transfer->destination_route_id !== null && $transfer->destination_route_id !== $transfer->source_route_id) {
-            Route::query()->whereKey($transfer->source_route_id)->where('status', RouteStatus::Retiring)->delete();
-        }
 
         if (! $cleanup->sourcePlacementRemoved) {
             $transfer->update([
@@ -675,14 +732,84 @@ final readonly class TransferAppInstanceAction
             );
         }
 
-        app(VitePortAllocator::class)->release($instance, $sourceNode);
-        $this->checkpoint($transfer, AppInstanceTransferStep::Completed, [
-            'status' => AppInstanceTransferStatus::Completed,
-            'completed_at' => now(),
-            'recovery_evidence' => null,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
+        DB::transaction(function () use ($instance, $sourceNode, $transfer): void {
+            [$lockedTransfer, $sourceRoute, $destinationRoute] = $this->lockCleanupRoutes($instance, $transfer);
+            if ($destinationRoute->id !== $sourceRoute->id) {
+                $sourceRoute->delete();
+                $destinationRoute->update([
+                    'replacement_step' => null,
+                    'replaces_route_id' => null,
+                    'replaced_by_route_id' => null,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]);
+            }
+
+            app(VitePortAllocator::class)->release($instance, $sourceNode);
+            $this->checkpoint($lockedTransfer, AppInstanceTransferStep::Completed, [
+                'status' => AppInstanceTransferStatus::Completed,
+                'completed_at' => now(),
+                'recovery_evidence' => null,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+        });
+    }
+
+    private function sourceRouterId(Route $route): int
+    {
+        $route->load('cluster.routerAssignment.node');
+        $router = $route->cluster?->routerAssignment?->node;
+        if (! $router instanceof Node) {
+            throw $this->conflict('instance.transfer_source_router_unknown', 'The source Route requires its original Router.');
+        }
+
+        return $router->id;
+    }
+
+    /** @return array{AppInstanceTransfer, Route, Route} */
+    private function lockCleanupRoutes(AppInstance $instance, AppInstanceTransfer $transfer): array
+    {
+        $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+        $lockedTransfer = AppInstanceTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
+        $sourceRoute = Route::query()->lockForUpdate()->find($lockedTransfer->source_route_id);
+        $destinationRoute = Route::query()->lockForUpdate()->find($lockedTransfer->destination_route_id);
+        if (
+            $lockedTransfer->app_instance_id !== $lockedInstance->id
+            || $lockedTransfer->cutover_at === null
+            || $lockedTransfer->completed_at !== null
+            || $lockedTransfer->current_step !== AppInstanceTransferStep::DestinationActivated
+            || $lockedInstance->node_id !== $lockedTransfer->destination_node_id
+            || $lockedInstance->checkout_path !== $lockedTransfer->destination_path
+            || ! $sourceRoute instanceof Route
+            || ! $destinationRoute instanceof Route
+            || $destinationRoute->status !== RouteStatus::Active
+            || $destinationRoute->domain !== $lockedTransfer->destination_domain
+        ) {
+            throw $this->conflict('instance.transfer_cleanup_conflict', 'Transfer placement changed before source cleanup.');
+        }
+
+        foreach ([$sourceRoute, $destinationRoute] as $route) {
+            $targets = $route->targets()->lockForUpdate()->pluck('app_instance_id')->all();
+            if ($route->app_id !== $lockedInstance->app_id || $targets !== [$lockedInstance->id]) {
+                throw $this->conflict('instance.transfer_cleanup_conflict', 'Transfer Route ownership changed before source cleanup.');
+            }
+        }
+
+        $replaced = $sourceRoute->id !== $destinationRoute->id;
+        if (
+            $sourceRoute->replaced_by_route_id !== ($replaced ? $destinationRoute->id : null)
+            || $destinationRoute->replaces_route_id !== ($replaced ? $sourceRoute->id : null)
+            || $sourceRoute->replaces_route_id !== null
+            || $destinationRoute->replaced_by_route_id !== null
+            || $sourceRoute->status !== ($replaced ? RouteStatus::Retiring : RouteStatus::Active)
+            || $sourceRoute->replacement_step !== ($replaced ? RouteReplacementStep::DatabaseCutover : null)
+            || $destinationRoute->replacement_step !== ($replaced ? RouteReplacementStep::DatabaseCutover : null)
+        ) {
+            throw $this->conflict('instance.transfer_cleanup_conflict', 'Transfer Route lifecycle changed before source cleanup.');
+        }
+
+        return [$lockedTransfer, $sourceRoute, $destinationRoute];
     }
 
     /** @param array<string, mixed> $attributes */

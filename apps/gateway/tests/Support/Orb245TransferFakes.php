@@ -16,11 +16,13 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferCleanupResult;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -46,9 +48,28 @@ final class Orb245DestinationGuard implements AppInstanceDestinationGuard
 
 final class Orb245EnvironmentLock implements AppInstanceEnvironmentOperationLock
 {
+    public ?Closure $beforeRun = null;
+
     public function run(array $appInstanceIds, Closure $operation): mixed
     {
+        ($this->beforeRun ?? static fn () => null)();
+
         return $operation();
+    }
+}
+
+final class Orb368RouterLock implements ClusterRouterOperationLock
+{
+    public ?int $ownedClusterId = null;
+
+    public function run(int $clusterId, Closure $operation): mixed
+    {
+        $this->ownedClusterId = $clusterId;
+        try {
+            return $operation();
+        } finally {
+            $this->ownedClusterId = null;
+        }
     }
 }
 
@@ -259,7 +280,7 @@ final class Orb245EnvironmentWriter implements AppInstanceEnvironmentWriter
     }
 }
 
-final class Orb245Projection implements DevelopmentRouteProjector
+final class Orb245Projection implements AppInstanceTransferRouteProjector, DevelopmentRouteProjector
 {
     /** @var list<string> */
     public array $calls = [];
@@ -267,6 +288,17 @@ final class Orb245Projection implements DevelopmentRouteProjector
     public int $httpChecks = 0;
 
     public bool $failOnce = false;
+
+    public bool $failRetirementOnce = false;
+
+    public function retireSource(AppInstanceTransfer $transfer): void
+    {
+        $this->calls[] = 'retire';
+        if ($this->failRetirementOnce) {
+            $this->failRetirementOnce = false;
+            throw new ResourceOperationException('instance.transfer_failed', 'Source projection retirement failed.', 409);
+        }
+    }
 
     public function converge(AppInstance $appInstance, Route $route): void
     {
