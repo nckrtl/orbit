@@ -6,6 +6,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
@@ -54,6 +55,7 @@ describe('database connection requests', function (): void {
         'list' => [new ListDatabaseConnectionsRequest, Method::GET, '/api/v1/database-connections'],
         'show' => [new ShowDatabaseConnectionRequest('app'), Method::GET, '/api/v1/database-connections/app'],
         'create' => [new CreateDatabaseConnectionRequest('app', 'mysql'), Method::POST, '/api/v1/database-connections'],
+        'user-create' => [new CreateDatabaseUserRequest(12, 'app', 'app', 'app', 'secret'), Method::POST, '/api/v1/processes/12/database-users'],
         'update' => [new UpdateDatabaseConnectionRequest('app'), Method::PATCH, '/api/v1/database-connections/app'],
         'destroy' => [new DestroyDatabaseConnectionRequest('app'), Method::DELETE, '/api/v1/database-connections/app'],
         'add' => [new AddInstanceDatabaseRequest(12, 'app'), Method::PUT, '/api/v1/instances/12/database-connections/app'],
@@ -67,6 +69,22 @@ describe('database connection requests', function (): void {
     it('encodes slugs in item paths', function (): void {
         expect(new ShowDatabaseConnectionRequest('app-db')->resolveEndpoint())
             ->toBe('/api/v1/database-connections/app-db');
+    });
+
+    it('sends the managed user payload on the Process path', function (): void {
+        expect(new CreateDatabaseUserRequest(
+            processId: 12,
+            slug: 'app',
+            database: 'app',
+            username: 'app',
+            password: DATABASE_CONNECTION_SDK_SECRET,
+        )->body()->all())
+            ->toBe([
+                'slug' => 'app',
+                'database' => 'app',
+                'username' => 'app',
+                'password' => DATABASE_CONNECTION_SDK_SECRET,
+            ]);
     });
 
     it('omits null create fields and preserves an explicit empty password', function (): void {

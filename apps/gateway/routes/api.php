@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
+use App\Http\Controllers\Api\DatabaseUsersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
@@ -289,6 +290,8 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:stop');
         Route::post('processes/{process}/restart', [ProcessesController::class, 'restart'])
             ->name('process:restart');
+        Route::post('processes/{process}/database-users', [DatabaseUsersController::class, 'store'])
+            ->name('database:user:create');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:destroy');
         Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
