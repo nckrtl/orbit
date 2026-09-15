@@ -51,7 +51,7 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 | Update | Reserve a replacement Route for an explicit domain change, or change publication intent on the same Route ID. |
 | Target set | Add or replace the one App instance target when the change does not detach an active App instance from its sole Route. |
 | Target unset | Remove the target only when that does not leave an active App instance without a Route, unless the same operation removes that App instance. |
-| Destroy | Delete the Route and only its Route-owned target rows when no active App instance depends on it. |
+| Destroy | The Gateway deletes an eligible Route after untargeted private projection cleanup. It refuses a targeted Route before cleanup. |
 
 The CLI names these operations `route:create`, `route:list`, `route:show`, `route:update`, `route:target:set`, `route:target:unset`, and `route:destroy`.
 
@@ -261,6 +261,14 @@ App instance removal is the coordinated target-clear exception. After complete s
 
 During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged. A Node TLD change fully reconciles those generated private Routes. Other active Route, Cluster, and Router mutations keep the separate reconciliation refusal.
 
+### Remove an untargeted private Route
+
+`route:destroy` removes an already untargeted private Route. The Gateway refuses a targeted Route before it changes projections. It then removes Route-owned DNS records, certificates, workload and Router Caddy fragments, and firewall entries, and deletes the Route record last.
+
+A failure at a projection step or at final record deletion keeps the Route inspectable with bounded `failed_step` and `error_code`. Retry uses the same destroy request, revalidates completed work, and resumes at the earliest unverified step. It does not restore removed projections, delete unrelated Routes or workloads, or accept a conflicting target mutation.
+
+Successful removal releases the domain immediately. An identical retry finds no Route. The Node's shared runtime and composed Caddy service stay. App instance removal remains the owner of final-target deletion; see [App instance removal](/reference/appinstance-removal).
+
 ### Router transition ownership
 
 Each Cluster has a Router operation lock. Setting or clearing its Router holds the lock through validation, setup, activation, and cleanup. Cluster status and TLD changes also use it while updating dependent state. Different Clusters use separate locks.
@@ -284,10 +292,12 @@ Route ownership prevents deletion from leaving an invalid retained record.
 | App role | Refused while the Node hosts a Route target. |
 | Cluster Ingress | Refused while any public Route in the Cluster depends on the Ingress. |
 | Cluster Router | Clearing the Router assignment is refused while the Cluster owns a Route. |
-| Route | Deletes only an eligible Route and its Route-owned target rows. |
+| Route | The Gateway deletes an untargeted private Route after projection cleanup, or a pending targeted Route whose App instance is not active. It refuses an active targeted Route before cleanup. |
 
 ## Compatibility and limits
 
 Route operations do not change App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects private Routes, publishes public Routes through Cluster Ingress, and changes a development or production Route domain by reserving a replacement Route when the current Route is active and explicit. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal. It does not implement generated domain changes outside replacement reservation, other later Route reconciliation or removal, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.
+This contract projects private Routes and publishes public Routes through Cluster Ingress. It changes a development or production Route domain by reserving a replacement Route when the current Route is active and explicit, and it removes an already untargeted private Route with its Route-owned projections. It also coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal.
+
+It does not implement generated domain changes outside replacement reservation, other later Route reconciliation, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.

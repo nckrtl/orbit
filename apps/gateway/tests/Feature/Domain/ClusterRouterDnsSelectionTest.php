@@ -183,6 +183,24 @@ it('publishes Cluster TLD wildcards to the Router WireGuard address', function (
         ->toContain('address=/.cluster.test/192.168.10.20');
 });
 
+it('releases an untargeted retiring Route hostname from Cluster Router DNS selection', function (): void {
+    [$route, $outside, $eligible] = orb260_cluster_routes();
+    $instance = $route->targets->sole()->appInstance;
+    $instance->update(['status' => AppInstanceState::Reserved]);
+    $route->targets()->delete();
+    $route->update(['status' => RouteStatus::Retiring]);
+
+    $catalog = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog();
+    $eligibleKey = DnsRequester::registered($eligible->id, (string) $eligible->wireguard_ip)->cacheKey();
+
+    expect($catalog->exact[$route->domain] ?? null)
+        ->toBeNull()
+        ->and($catalog->overrides[$eligibleKey][$route->domain] ?? null)
+        ->toBeNull()
+        ->and($catalog->overrides[$eligibleKey][$outside->domain])
+        ->toBe('192.168.10.20');
+});
+
 it('fills requester catalog overrides for eligible LAN members only', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();
     $catalog = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog();

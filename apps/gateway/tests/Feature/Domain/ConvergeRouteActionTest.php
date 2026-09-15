@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Actions\Routes\CreateRouteAction;
+use App\Actions\Routes\RemoveRouteAction;
+use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -14,6 +17,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -25,6 +30,7 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
     $this->events = new RouteDomainChangeEvents;
@@ -421,6 +427,110 @@ it('records cleanup failure when deleting the retiring Route fails', function ()
         ->toBe(RouteStatus::Retiring);
 });
 
+it('retains failed_step evidence at each untargeted removal boundary and resumes without restoring projections', function (
+    string $failure,
+): void {
+    $route = route_untargeted_removal_route();
+    $unrelated = route_untargeted_removal_unrelated($route);
+    $projector = new FakeRouteRemovalProjector;
+    $projector->failures[$failure] = 1;
+    app()->instance(RouteRemovalProjector::class, $projector);
+
+    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        ->toThrow(ResourceOperationException::class, "Injected {$failure} failure.");
+
+    expect($route->refresh()->status)
+        ->toBe(RouteStatus::Failed)
+        ->and($route->failed_step)
+        ->toBe($failure)
+        ->and($route->error_code)
+        ->toBe("route.test_{$failure}")
+        ->and(Route::query()->whereKey($unrelated->id)->exists())
+        ->toBeTrue()
+        ->and($projector->events)
+        ->toContain($failure);
+
+    $completed = count($projector->events);
+    $retried = app(RemoveRouteAction::class)->execute($route);
+
+    expect(Route::query()->whereKey($route->id)->exists())
+        ->toBeFalse()
+        ->and($retried->id)
+        ->toBe($route->id)
+        ->and(array_slice($projector->events, $completed))
+        ->toBe(['dns', 'certificates', 'caddy', 'firewall'])
+        ->and($unrelated->fresh())
+        ->not->toBeNull();
+})->with([
+    'DNS' => ['dns'],
+    'certificates' => ['certificates'],
+    'Caddy' => ['caddy'],
+    'firewall' => ['firewall'],
+]);
+
+it('records the earliest revalidation failure on untargeted removal retry', function (): void {
+    $route = route_untargeted_removal_route();
+    $projector = new FakeRouteRemovalProjector;
+    $projector->failures['firewall'] = 1;
+    app()->instance(RouteRemovalProjector::class, $projector);
+
+    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        ->toThrow(ResourceOperationException::class, 'Injected firewall failure.');
+
+    $projector->failures['dns'] = 1;
+
+    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        ->toThrow(ResourceOperationException::class, 'Injected dns failure.');
+
+    expect($route->refresh()->status)
+        ->toBe(RouteStatus::Failed)
+        ->and($route->failed_step)
+        ->toBe(RouteRemovalStep::Dns->value)
+        ->and($route->error_code)
+        ->toBe('route.test_dns');
+});
+
+it('records record-deletion failure and refuses a conflicting mutation on untargeted removal retry', function (): void {
+    $route = route_untargeted_removal_route();
+    app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
+    DB::unprepared(<<<'SQL'
+        CREATE TRIGGER route_untargeted_removal_record_failure
+        BEFORE DELETE ON routes
+        WHEN OLD.domain = 'untargeted.example.test'
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected record deletion failure.');
+        END
+        SQL);
+
+    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        ->toThrow(QueryException::class);
+
+    expect($route->refresh()->status)
+        ->toBe(RouteStatus::Failed)
+        ->and($route->failed_step)
+        ->toBe(RouteRemovalStep::Record->value)
+        ->and($route->error_code)
+        ->toBe('route.removal_failed');
+
+    $conflict = AppInstance::query()->create([
+        'app_id' => $route->app_id,
+        'node_id' => $route->node_id,
+        'name' => 'conflict',
+        'checkout_path' => '/srv/acme/conflict',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('b', 40),
+        'status' => AppInstanceState::Reserved,
+    ]);
+    $route->targets()->create(['app_instance_id' => $conflict->id, 'position' => 0]);
+
+    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('env.owner_changed');
+        });
+
+    expect($route->fresh())->not->toBeNull();
+});
+
 it('prepares public Ingress after Router Caddy and activates the handler only after cutover', function (): void {
     $route = route_domain_change_public_route();
 
@@ -635,6 +745,61 @@ function route_domain_change_shared_production_route(): Route
     $instances[1]->update(['status' => AppInstanceState::Active]);
 
     return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster']);
+}
+
+function route_untargeted_removal_route(): Route
+{
+    $app = OrbitApp::query()->create([
+        'name' => 'Untargeted',
+        'slug' => 'untargeted',
+        'repository_url' => 'https://example.test/untargeted.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'untargeted-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => 'untargeted.test',
+        'public_ssh_host' => '192.0.2.91',
+        'wireguard_ip' => '10.44.0.91',
+        'user' => 'orbit',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'main',
+        'checkout_path' => '/srv/untargeted/main',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $app->id,
+        domain: 'untargeted.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $instance->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => AppInstanceState::Reserved]);
+    $route->targets()->delete();
+
+    return $route->refresh()->load(['app', 'node', 'targets']);
+}
+
+function route_untargeted_removal_unrelated(Route $route): Route
+{
+    return Route::query()->create([
+        'app_id' => $route->app_id,
+        'node_id' => $route->node_id,
+        'domain' => 'unrelated.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
 }
 
 function route_domain_change_public_route(): Route
