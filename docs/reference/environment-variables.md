@@ -130,7 +130,7 @@ This comparison checks only Orbit-owned file projection. It does not inspect a f
 
 ## Synchronize during a domain change
 
-A production Route domain replacement uses the same stored-configuration, preflight, rendering, and protected-writer boundaries when the current Route is active and private, including a generated domain that changes because a Node or Cluster TLD changes or a Cluster activates or deactivates. The change holds the App instance operation owner. This internal synchronization resolves `{{app_instance.domain}}` against the candidate replacement Route even though the public import, update, and synchronization endpoints refuse an App instance with a Route transition in progress.
+A production Route domain replacement uses the same stored-configuration, preflight, rendering, and protected-writer boundaries when the current Route is active and private. That includes a generated domain that changes because a Node or Cluster TLD changes or a Cluster activates or deactivates. The change holds the App instance operation owner. This internal synchronization resolves `{{app_instance.domain}}` against the candidate replacement Route even though the public import, update, and synchronization endpoints refuse an App instance with a Route transition in progress.
 
 The operation does not change stored values. A placeholder-based `APP_URL` changes in the rendered production `.env`, while unrelated entries and a literal `APP_KEY` remain the stored values. The operation changes no framework cache, service, process, deployment release, source file, SQLite database, or local PHP tuning.
 
