@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 110 public Gateway operations. It preserves typed
+The SDK exposes exactly 111 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -69,7 +69,7 @@ bounded and preserve the management mode and request ID. Adoption records an ext
 
 ## Database connections
 
-The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records. Add and update send host, port, database, sqlite path, username, and password only when supplied. Attach and detach send an AppInstance selector, the connection slug, and an optional prefix. Item, collection, and attachment responses omit passwords and environment values, expose has_password on registry records, and redact credential-shaped values. The Gateway owns validation, encryption, persistence, and stored-environment writes.
+The SDK exposes typed list, show, add, update, remove, attach, detach, and user create requests for Gateway-owned database connection records. Add and update send host, port, database, sqlite path, username, and password only when supplied. Attach and detach send an AppInstance selector, the connection slug, and an optional prefix. User create sends a numeric Process ID, slug, database, username, and password. Item, collection, and attachment responses omit passwords and environment values, expose has_password on registry records, and redact credential-shaped values. The Gateway owns validation, encryption, persistence, Process execution, and stored-environment writes.
 
 ## Requirements
 

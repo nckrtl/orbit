@@ -81,6 +81,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'database:list',
         'database:show',
         'database:update',
+        'database:user:create',
         'dns:resolve',
         'doctor',
         'env:import',
@@ -402,6 +403,7 @@ it('does not expose replaced definition command names', function (): void {
 it('does not expose replaced database connection names', function (): void {
     expect(app(Kernel::class)->all())->not->toHaveKeys([
         'database:add',
+        'database:add-user',
         'database:remove',
         'database:attach',
         'database:detach',
@@ -500,6 +502,16 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'port' => null,
                 'database' => null,
                 'path' => null,
+                'username' => null,
+                'password' => null,
+                'json' => false,
+            ],
+        ],
+        'database:user:create' => [
+            ['slug'],
+            [
+                'process' => null,
+                'database' => null,
                 'username' => null,
                 'password' => null,
                 'json' => false,
@@ -887,6 +899,13 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'database:list' => [[], ...$profileMissing],
         'database:show' => [['slug' => 'app'], ...$profileMissing],
         'database:update' => [['slug' => 'app', '--host' => 'db.example.test'], ...$profileMissing],
+        'database:user:create' => [[
+            'slug' => 'app',
+            '--process' => '12',
+            '--database' => 'app',
+            '--username' => 'app',
+            '--password' => 'secret',
+        ], ...$profileMissing],
         'dns:resolve' => [
             ['tld' => '.validation-secret', 'target' => '127.0.0.1'],
             'code' => 'dns.tld_invalid',

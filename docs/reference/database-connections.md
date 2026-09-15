@@ -5,9 +5,9 @@ description: "The Gateway-owned registry of mysql, pgsql, and sqlite connections
 
 # Database connections
 
-This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, add, remove, and Doctor inspection behave. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
+This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, managed user create, add, remove, and Doctor inspection behave. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
 
-A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start, stop, or query a database.
+A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start or stop a database. The Gateway can create a MySQL user and database through an existing Node-targeted Docker MySQL Process and then register or refresh the connection.
 
 The operator adds a connection on an App instance only. Add writes prefixed keys into the Gateway-owned stored App instance environment under [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). It does not write the workload `.env`. Run `orbit env:sync` after add or remove when the workload file must match stored configuration. [App instance environment variables](/reference/environment-variables) owns import, update, and synchronization.
 
@@ -68,27 +68,57 @@ The CLI sends each operation through the Gateway.
 | `orbit database:show SLUG` | Show one connection without the password. |
 | `orbit database:create SLUG --driver=DRIVER` | Create one connection and encrypt the supplied password. |
 | `orbit database:update SLUG` | Replace the supplied fields on one connection. |
+| `orbit database:user:create SLUG --process=ID` | Create a MySQL user and database through a Node Docker Process, then register or refresh the connection. |
 | `orbit database:destroy SLUG --force` | Destroy the connection record. |
 | `orbit instance:database:add SLUG --instance=SELECTOR` | Add the connection on one App instance and write prefixed stored environment keys. |
 | `orbit instance:database:remove SLUG --instance=SELECTOR --force` | Remove the connection from one App instance and clear the prefixed stored environment keys. |
 
 Every command also accepts `--json`. Human and JSON results include the Gateway request ID. `database:destroy` and `instance:database:remove` require interactive confirmation or `--force` before they send the delete request. `database:update` requires at least one field option.
 
-The create command accepts `--host`, `--port`, `--database`, `--path`, `--username`, `--password`, and `--node`. The update command accepts the same field options except the slug. An empty `--node` on update clears the stored Node association.
+The create command accepts `--host`, `--port`, `--database`, `--path`, `--username`, `--password`, and `--node`. The update command accepts the same field options except the slug. An empty `--node` on update clears the stored Node association. `database:user:create` accepts `--process`, `--database`, `--username`, and `--password`.
+
+## Create a managed MySQL user
+
+Create a MySQL user and database through an existing Node-targeted Docker MySQL Process, then register or refresh the connection:
+
+```text
+orbit database:user:create app --process=12 --database=app --username=app --password=secret
+```
+
+The Process must be Node-owned, use the Docker runtime, use a `mysql` or `mysql-server` image, publish container port `3306`, and store `MYSQL_ROOT_PASSWORD` in its environment. The Gateway runs the create through that Process. The CLI does not open SSH to the Node.
+
+The Gateway writes these connection fields from the Process. The host is the Node WireGuard address. The port is the published host port for container port `3306`. The Node association is the Process owner. The driver is `mysql`.
+
+The SQL is idempotent: the Gateway creates the database and user when they are missing, then sets the password and grants privileges on that database from any host. A slug that already names a mysql connection is refreshed with those fields. A slug that names a pgsql or sqlite connection returns `database.slug_conflict` (HTTP 409) and does not change the Process.
+
+The Gateway answers these process refusals before it writes a connection.
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `http.404` | 404 | The Process ID is not present. |
+| `database.process_not_node` | 422 | The Process is not Node-targeted. |
+| `database.process_not_docker` | 422 | The Process is not Docker. |
+| `database.process_not_mysql` | 422 | The image is not MySQL or container port `3306` is not published. |
+| `database.root_password_missing` | 422 | The Process environment has no `MYSQL_ROOT_PASSWORD`. |
+| `database.user_create_failed` | 502 | The Process could not create the user. |
+| `database.slug_conflict` | 409 | The slug already names a non-mysql connection. |
+
+Responses, activity records, errors, and debug output omit the user password and the Process root password.
 
 ## API
 
-The Gateway exposes the registry at `/api/v1/database-connections`. Access to the Gateway is fleet-wide.
+The Gateway exposes the registry at `/api/v1/database-connections`. Access to those registry routes is fleet-wide. Managed user create uses the Process owning Node at `/api/v1/processes/{process}/database-users`.
 
 | Method | Path | Result |
 | --- | --- | --- |
 | `GET` | `/api/v1/database-connections` | List records ordered by slug |
 | `POST` | `/api/v1/database-connections` | Create one record |
+| `POST` | `/api/v1/processes/{process}/database-users` | Create a MySQL user and database through that Process, then register or refresh the connection |
 | `GET` | `/api/v1/database-connections/{slug}` | Show one record |
 | `PATCH` | `/api/v1/database-connections/{slug}` | Update supplied fields |
 | `DELETE` | `/api/v1/database-connections/{slug}` | Destroy the record |
 
-A duplicate slug returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. An unknown slug returns `http.404`. Destroying a record deletes that row when no App instance attachment exists. The Gateway answers `database.connection_attached` (HTTP 409) when an attachment still exists. Recovery of a stored password depends on retaining the Gateway encryption key material.
+A duplicate slug on registry create returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. Managed user create returns HTTP 201 for a new mysql row and HTTP 200 when it refreshes an existing mysql slug. An unknown slug returns `http.404`. Destroying a record deletes that row when no App instance attachment exists. The Gateway answers `database.connection_attached` (HTTP 409) when an attachment still exists. Recovery of a stored password depends on retaining the Gateway encryption key material.
 
 ## Add a connection on an App instance
 

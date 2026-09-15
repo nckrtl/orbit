@@ -78,6 +78,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'database:list' => ServingNode::Gateway,
         'database:show' => ServingNode::Gateway,
         'database:update' => ServingNode::Gateway,
+        'database:user:create' => ServingNode::ProcessOwning,
         'doctor' => ServingNode::Collection,
         'env:import' => ServingNode::EnvironmentInstanceOwning,
         'env:sync' => ServingNode::EnvironmentInstanceOwning,

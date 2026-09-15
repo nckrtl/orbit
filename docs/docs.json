@@ -322,7 +322,8 @@
               "POST /api/v1/database-connections",
               "DELETE /api/v1/database-connections/{database_connection}",
               "GET /api/v1/database-connections/{database_connection}",
-              "PATCH /api/v1/database-connections/{database_connection}"
+              "PATCH /api/v1/database-connections/{database_connection}",
+              "POST /api/v1/processes/{process}/database-users"
             ]
           },
           {

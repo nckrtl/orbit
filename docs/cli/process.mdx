@@ -254,4 +254,4 @@ Destroying a definition leaves every existing App instance copy in place.
 - [`schedule`](/cli/schedule) records recurring commands; Process commands do not operate on Schedules.
 - [`instance`](/cli/instance) removal cleans up every owned Process; Node-owned Processes stay in place.
 - [`doctor`](/cli/doctor) with `--family=process` compares desired and observed state without changing it.
-- [`database`](/cli/database) connections can align with a same-Node Docker Process on a published port.
+- [`database`](/cli/database) connections can align with a same-Node Docker Process on a published port. [`database:user:create`](/cli/database#orbit-databaseusercreate) creates a MySQL user and database through that Process.
