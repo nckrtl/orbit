@@ -1,0 +1,102 @@
+{
+  "setup": [
+    {
+      "id": "prepare-command-recording",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb353-setup.sh"
+      ],
+      "timeout_seconds": 240
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "rendering",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "rendering"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "prompts",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "prompts"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "liveness",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "liveness"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "modes",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "modes"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "state",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "state"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "consent",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "consent"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "refusals",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "refusals"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "adoption",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb353-action.py",
+        "adoption"
+      ],
+      "timeout_seconds": 180
+    }
+  ],
+  "inputs": [
+    "apps/cli",
+    ".agents/skills/verifying-cli-output",
+    "docs/reference/cli-ux.md"
+  ],
+  "mutates": true,
+  "observed_inputs": false
+}
