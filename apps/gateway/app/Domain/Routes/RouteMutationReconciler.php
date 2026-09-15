@@ -74,6 +74,45 @@ final readonly class RouteMutationReconciler
     }
 
     /**
+     * Inventory and validate every affected Route without writing records.
+     *
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $baselineClusterOverrides
+     * @return list<array{route: Route, domain: string}>
+     */
+    public function generatedPrivateDomainChanges(
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
+        array $baselineNodeOverrides = [],
+        array $baselineClusterOverrides = [],
+    ): array {
+        [$routes, $proposals] = $this->proposals(
+            $nodeOverrides,
+            $clusterOverrides,
+            $baselineNodeOverrides,
+            $baselineClusterOverrides,
+        );
+        $changes = [];
+
+        foreach ($routes as $route) {
+            $domain = $proposals[$route->id]['domain'];
+
+            if (
+                $route->status === RouteStatus::Active
+                && $route->provenance === RouteProvenance::Generated
+                && $route->publication === RoutePublication::Private
+                && $route->domain !== $domain
+            ) {
+                $changes[] = ['route' => $route, 'domain' => $domain];
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
