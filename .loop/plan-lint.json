@@ -1,0 +1,7 @@
+{
+    "schema": 1,
+    "issue": "ORB-352",
+    "flow": "proof",
+    "plan_sha256": "75cedc46ab885a6d33473478243877b3e1587efa878318195d2e336aeefe47dc",
+    "validator_sha256": "dc9384e1584b3630c91e89328b93e83f0f857d067eef79e07e85773253ca27a1"
+}
