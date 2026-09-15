@@ -5,6 +5,8 @@ description: Design and review valuable Orbit CLI tests for contracts, security 
 
 # Testing Best Practices
 
+Use Pest with `describe()` and `it()`. Follow sibling command tests and existing helpers. Exercise input, SDK requests, output, exit codes, and local side effects.
+
 ## Coverage
 
 - Test observable contracts and security boundaries, not private methods or source text alone.

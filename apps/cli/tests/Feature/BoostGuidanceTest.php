@@ -193,15 +193,12 @@ it('resolves CLI design and terminal guidance to the canonical root resources', 
     $repositoryRoot = dirname(base_path(), 2);
     $canonicalPaths = [
         $repositoryRoot.'/docs/reference/cli-ux.md',
-        $repositoryRoot.'/.agents/skills/designing-cli-commands/SKILL.md',
         $repositoryRoot.'/.agents/skills/verifying-cli-output/SKILL.md',
     ];
     $guidancePaths = [
         'AGENTS.md',
         'README.md',
         '.ai/rules/commands.md',
-        '.ai/skills/command-designer/SKILL.md',
-        '.agents/skills/command-designer/SKILL.md',
     ];
 
     foreach ($canonicalPaths as $canonicalPath) {
@@ -265,9 +262,7 @@ it('defines the complete HTTP-only Schedule operator surface', function (): void
         'schedule:enable',
     ];
     $commandRules = file_get_contents(base_path('.ai/rules/commands.md'));
-    $developmentSkill = file_get_contents(base_path('.ai/skills/orbit-cli-development/SKILL.md'));
-    $guidance = "{$commandRules}\n{$developmentSkill}";
-    $normalizedGuidance = preg_replace('/\s+/', ' ', $guidance);
+    $normalizedGuidance = preg_replace('/\s+/', ' ', (string) $commandRules);
     $visibleCommands = collect(app(Kernel::class)->all())
         ->reject(static fn ($command): bool => $command->isHidden())
         ->keys()
@@ -340,8 +335,6 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         '.ai/guidelines/orbit.md',
         '.ai/rules/tests.md',
         '.ai/rules/tooling.md',
-        '.ai/skills/orbit-cli-development/SKILL.md',
-        '.ai/skills/pest-testing/SKILL.md',
     ] as $guidanceFile) {
         $guidance = file_get_contents(base_path($guidanceFile));
 
@@ -349,12 +342,6 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
             ->not->toContain('Test Impact Analysis')
             ->not->toContain('test:full');
 
-        if ($guidanceFile === '.ai/skills/orbit-cli-development/SKILL.md') {
-            expect(substr_count(
-                haystack: (string) $guidance,
-                needle: '`composer check`',
-            ))->toBe(1);
-        }
     }
     expect(config('boost.guidelines.exclude'))
         ->toContain('deployments', 'foundation', 'laravel/core', 'pest/core')

@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -68,21 +71,19 @@ jobs:
       - name: Validate Composer metadata
         run: composer validate --strict
 
-      - name: Verify repository guidance
-        run: composer guidance:check
+      - name: Run project quality checks
+        run: composer check
 
-      - name: Lint maintained documentation
-        if: matrix.directory == 'apps/docs'
-        run: composer docs:lint
-
-      - name: Run impacted tests in parallel
+      - name: Run affected tests
         run: vendor/bin/pest --parallel --processes=2 --tia --compact
 
-      - name: Check Rector
-        run: vendor/bin/rector process --dry-run
-
-      - name: Check formatting
-        run: composer format:check
-
-      - name: Analyse
-        run: composer analyse
+  required:
+    name: Required checks
+    if: always()
+    needs: [project]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every project to pass
+        env:
+          PROJECT_RESULT: ${{ needs.project.result }}
+        run: test "$PROJECT_RESULT" = success

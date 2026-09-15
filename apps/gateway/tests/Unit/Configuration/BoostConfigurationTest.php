@@ -321,7 +321,6 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         ->toContain(
             'Pest 5 TDD',
             'TIA tests and project quality checks',
-            'root `composer check`',
             'git diff --check',
         )
         ->not->toContain('test:full');
@@ -361,35 +360,18 @@ it('preserves project and installed testing guidance', function (): void {
         ->toContain(
             'Use Pest 5 with `describe()` and `it()`.',
             'Use Pint for formatting and Larastan for static analysis.',
-            'Always activate the `spatie-laravel-php` skill',
-            'Always activate the `spatie-version-control` skill',
-            'Always activate the `spatie-security` skill',
             '## Skills Activation',
             'Test every code change by adding or updating a test.',
             'Read the `testing-best-practices` skill before writing tests.',
         );
 
-    expect($readProjectFile('boost.json'))
-        ->toContain(
-            '"laravel-best-practices"',
-            '"orbit-gateway-development"',
-            '"testing-best-practices"',
-            '"pest-testing"',
-            '"spatie-laravel-php"',
-            '"spatie-security"',
-            '"spatie-version-control"',
-        );
+    $boost = json_decode($readProjectFile('boost.json'), associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($readProjectFile('.ai/skills/orbit-gateway-development/SKILL.md'))
-        ->toBe($readProjectFile('.agents/skills/orbit-gateway-development/SKILL.md'));
-    expect($readProjectFile('.ai/skills/pest-testing/SKILL.md'))
-        ->toBe($readProjectFile('.agents/skills/pest-testing/SKILL.md'))
-        ->toContain('Pest 5', 'Test Impact Analysis', '--tia')
-        ->not->toContain('browser testing', 'Livewire', 'Inertia');
-    expect($readProjectFile('.ai/skills/spatie-security/SKILL.md'))
-        ->toBe($readProjectFile('.agents/skills/spatie-security/SKILL.md'));
-    expect($readProjectFile('.ai/skills/spatie-security/references/spatie-security-guidelines.md'))
-        ->toBe($readProjectFile('.agents/skills/spatie-security/references/spatie-security-guidelines.md'));
+    expect($boost['skills'])->not->toBeEmpty();
+
+    foreach ($boost['skills'] as $skill) {
+        expect($readProjectFile(".agents/skills/{$skill}/SKILL.md"))->not->toBeEmpty();
+    }
 
     expect($readProjectFile('.codex/config.toml'))
         ->toContain(
@@ -435,34 +417,6 @@ it('preserves project and installed testing guidance', function (): void {
     expect($readProjectFile('.agents/skills/testing-best-practices/rules/test-data.md'))
         ->toContain('named factory state', '`recycle()`', '`sequence()`');
 
-    expect($readProjectFile('.agents/skills/orbit-gateway-development/SKILL.md'))
-        ->toContain(
-            'fixed argument arrays',
-            'secrets out of local and remote argument arrays',
-            'Require exact Orbit ownership before mutation.',
-            'Linux privilege escalation',
-            'legacy project is optional research',
-            'Reviewers run root `composer check` across all projects with TIA',
-            'Pint format checks and Larastan analysis',
-        )
-        ->not->toContain('test:full');
-
     expect($readProjectFile('.ai/rules/boost/tests.md'))
-        ->toContain('independent reviewer who runs root `composer check` across all projects with TIA')
         ->not->toContain('test:full');
-});
-
-it('keeps two-factor authentication mandatory when the preferred integration is unavailable', function (): void {
-    $projectRoot = dirname(path: __DIR__, levels: 3);
-    $securityGuidance = file_get_contents(
-        "{$projectRoot}/.agents/skills/spatie-security/references/spatie-security-guidelines.md",
-    );
-
-    expect($securityGuidance)
-        ->toBeString()
-        ->toContain(
-            'Enable two-factor authentication for every service that supports it.',
-            'Use 1Password for the second factor when the service supports that integration; otherwise use another supported authenticator.',
-        )
-        ->not->toContain('Enable two-factor authentication through 1Password when available.');
 });

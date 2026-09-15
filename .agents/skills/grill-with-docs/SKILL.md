@@ -1,12 +1,18 @@
 ---
 name: grill-with-docs
-description: Use only when explicitly asked to shape an Orbit feature through a thorough interview grounded in current docs, ADRs, code, and tests.
+description: Use when shaping an Orbit feature idea through discussion, architectural decisions, and documentation before implementation.
 ---
 
 # Grill With Docs
 
-Run `grilling` with `domain-modeling` as one shaping session before issue creation.
+Turn a feature idea into agreed behavior, proposed ADRs, and documentation.
 
-Start from current `origin/main`. Read `docs/concepts.md`, every relevant accepted ADR, maintained pages, current code and tests, and any source issue or report. Establish repository facts yourself. Then work the material decision frontier in rounds, recommend answers, and let the user decide.
+Read the request, affected documentation, ADRs, code, and tests. Establish repository facts yourself.
 
-Do not confirm the handoff while a material fact or product decision is unresolved. Produce one confirmed shaping handoff in the form required by `grilling`. Create no issue and make no repository or external write. When shaping selects a significant architectural decision, route that chosen decision to `recording-decisions`; dependent issue creation waits until its ADR is accepted on `origin/main`. Otherwise the confirmed handoff is ready for `creating-issues`.
+Ask the user about choices that affect the feature. Start with decisions that other choices depend on. Use short rounds, recommend an answer, and explain its main trade-off.
+
+Work through concrete examples. Clarify terms, relationships, ownership, and what happens during normal use, failure, recovery, and removal. Challenge ambiguous language and disagreements with the existing architecture.
+
+As choices settle, update the feature's documentation and draft significant ADR changes in the same branch. Use the [documentation guide](../writing-documentation/SKILL.md) for writing and checks. For CLI behavior, follow the [CLI standard](../../../docs/reference/cli-ux.md).
+
+Finish with the agreed behavior, consistent ADRs and documentation, check results, and any open questions. Keep the summary brief enough for the user to confirm or correct.

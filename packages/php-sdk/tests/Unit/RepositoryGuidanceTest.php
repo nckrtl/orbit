@@ -142,20 +142,6 @@ describe('repository guidance bootstrap', function (): void {
             ->not->toContain('composer test:full')
             ->not->toContain('local TIA');
 
-        expect(repository_guidance_contents('AGENTS.md'))
-            ->toContain(
-                'Use `composer test:affected` for Pest development checks. Reviewers run root `composer check` across all projects with TIA.',
-            );
-
-        foreach ([
-            '.ai/rules/index.md',
-            '.ai/rules/testing-quality.md',
-            '.agents/skills/orbit-sdk-development/SKILL.md',
-        ] as $guidanceFile) {
-            expect(repository_guidance_contents($guidanceFile))
-                ->toContain('parallel')
-                ->not->toContain('Pest 5 TIA', 'composer test:full', 'after TIA');
-        }
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {

@@ -9,7 +9,7 @@ This page is for contributors, agents, and operators who use disposable Incus to
 
 ## Discovery and proof
 
-An issue with the `incus` label uses a disposable discovery topology for development. Explicit `proof` delivery adds a separate proof topology; the label itself does not select that flow. Automated-only issues without the label need no topology. [Implementation loop](/reference/implementation-loop#incus-requirement) describes this selection under [ADR 0058](/decisions/0058-separate-incus-requirements-from-delivery-flow). [ADR 0005](/decisions/0005-rolling-incus-development-topology) governs the rolling topology snapshot they are copied from. [ADR 0006](/decisions/0006-topology-led-feature-development) separates discovery from proof. Its fresh-proof requirements apply only to explicit proof delivery under [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery).
+Orbit's [feature review](/reference/implementation-loop#orbit-review-on-incus) uses an authorized Incus environment to reproduce the submitted behavior. The commands below describe existing discovery and retained proof resources. [ADR 0005](/decisions/0005-rolling-incus-development-topology) governs the rolling snapshot. Retained proof mechanics remain available for explicit inspection and resource recovery.
 
 ## Registered profile and issue extension
 
@@ -68,7 +68,7 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 
 ## Commands
 
-`acquire` takes the worktree as a positional argument. Every other command finds the issue among registered Git worktrees by branch or directory name, requires exactly one match, or takes `--worktree=PATH`. New worktrees use the configurable external base described in [Implementation loop](/reference/implementation-loop). Every command accepts `--json`, and a failure prints `{"state":"failed","error":"..."}` with a nonzero exit.
+`acquire` takes the worktree as a positional argument. Every other command finds the issue among registered Git worktrees by branch or directory name, requires exactly one match, or takes `--worktree=PATH`. Internal worktrees use the configurable external base; ordinary Git worktrees are also supported. Every command accepts `--json`, and a failure prints `{"state":"failed","error":"..."}` with a nonzero exit.
 
 | Command | What it does |
 | --- | --- |
@@ -86,7 +86,7 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | `status ISSUE` | Reports the state files, capture identity, retained topology, and review evaluation without touching Incus |
 | `release ISSUE [--proof\|--candidate] [--replace\|--abandon] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. A successful proof requires explicit replacement or abandonment; ordinary closeout owns post-refresh release. Recovery options identify one exact legacy lease. |
 
-`bin/worktree-remove ISSUE` releases the proof topology only after its closeout guard permits cleanup, then releases discovery and removes the worktree. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) governs candidate-bound artifact refs. Captured proof evidence and review records remain in the primary archive after worktree removal.
+`bin/worktree-remove ISSUE` releases the proof topology only after its closeout guard permits cleanup, then releases discovery and removes the worktree. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) describes the artifact refs used by retained proof. Captured proof evidence and review records remain in the primary archive after worktree removal.
 
 ### Guest commands
 

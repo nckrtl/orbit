@@ -65,7 +65,7 @@ The Gateway stores named MySQL, PostgreSQL, and SQLite connections. Register a h
 
 ## Testing on real Linux machines
 
-Automated tests cover most Orbit behavior. When a change depends on Linux, systemd, file permissions, networking, or several machines, contributors also observe it in a disposable Incus environment. The selected [implementation flow](/reference/implementation-loop#incus-requirement) decides whether that environment is development discovery or a separate fresh proof topology. [ADR 0006](/decisions/0006-topology-led-feature-development) explains why Orbit uses Incus.
+Automated tests cover most Orbit behavior. Orbit reviewers also reproduce feature acceptance on Incus, including Linux, systemd, file permissions, networking, and multi-machine behavior when the feature depends on them. The [feature delivery reference](/reference/implementation-loop#orbit-review-on-incus) describes the review evidence and merge requirements.
 
 ## Documentation tools
 

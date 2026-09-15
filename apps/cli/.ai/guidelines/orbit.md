@@ -13,5 +13,5 @@
 
 ## Verification
 
-- Use `composer test:affected` for Pest 5 development checks. The Builder runs root `composer check` across all projects with TIA; `composer test` also uses TIA.
+- Use `composer test:affected` for Pest 5 development checks. CI runs checks across all projects; `composer test` also uses TIA.
 - Run `composer check` before delivery. Pint, Larastan, and Rector are the configured PHP quality tools.

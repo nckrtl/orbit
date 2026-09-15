@@ -111,6 +111,7 @@
           {
             "group": "Contributing",
             "pages": [
+              "contributor-guide",
               "reference/implementation-loop",
               "reference/incus-topologies",
               "reference/proof-plans",
@@ -484,7 +485,8 @@
               "decisions/0072-add-and-remove-nodes-without-changing-the-machine",
               "decisions/0073-store-deploy-steps-as-named-appinstance-records",
               "decisions/0074-hibernate-idle-app-dev-appinstance-processes",
-              "decisions/0075-prune-idle-app-dev-checkout-dependencies"
+              "decisions/0075-prune-idle-app-dev-checkout-dependencies",
+              "decisions/0076-deliver-features-through-complete-pull-requests"
             ]
           }
         ]
