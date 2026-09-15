@@ -4,11 +4,26 @@ sidebarTitle: "Overview"
 description: "How the orbit command line talks to the Gateway, selects records, confirms destructive changes, and returns machine-readable output."
 ---
 
-The `orbit` command is a thin client. Every fleet command sends one HTTPS request to the active Gateway, and the Gateway does the work on the managed Nodes over SSH. The CLI never opens an SSH session to a Node itself.
+Use `orbit` to manage fleet records and local client settings. Operational commands use the Gateway API; local profile, extension, trust, and DNS commands follow their own documented behavior. The CLI does not open an SSH session to a managed Node.
 
-Humans and coding agents use the same commands. Human output is readable in a terminal, and `--json` returns the same result as one structured document.
+Humans and coding agents use the same commands. Human output is readable in a terminal. A command's machine mode preserves its documented JSON document or event stream.
 
-Each command is one Gateway endpoint. The [API reference](/api/overview) documents the same operations for clients that call the Gateway directly or through the [PHP SDK](/api/php-sdk).
+The [API reference](/api/overview) documents Gateway operations for clients that call it directly or through the [PHP SDK](/api/php-sdk).
+
+## Find a command
+
+These entry points show local command information without changing fleet records.
+
+| Invocation | Result |
+| --- | --- |
+| `orbit` | Show the command summary. |
+| `orbit --version` | Print the installed version. |
+| `orbit list` | List registered commands. |
+| `orbit help node:show` or `orbit node:show --help` | Show a command's arguments and options. |
+| `orbit list --format=json` | Print the framework's command-list JSON format. |
+| `orbit completion zsh` | Print a shell completion script. |
+
+Help, command-list formats, version output, and shell completion keep their own formats. They do not gain product JSON envelopes, prompts, or progress output. An unknown command reports the error on standard error and exits with status `1`.
 
 ## Command families
 
@@ -34,11 +49,10 @@ Commands are grouped by the record they manage. Each family has its own page wit
 | [`activity`](/cli/activity) | The Gateway's log of who ran what. |
 | [`extension`](/cli/extension) | Optional local command extensions. |
 | [`herdr`](/cli/herdr) | Named Herdr terminal sessions and observation grants. |
-| [`workspace`](/cli/workspace) | Git worktrees owned by legacy Instances. |
 
 ## Select a Gateway
 
-The CLI stores Gateway profiles in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to move that directory. Register a Gateway once, and every later command uses the active profile.
+The CLI stores Gateway profiles in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to move that directory. Commands that require a Gateway use the selected profile.
 
 ```bash
 orbit gateway:add 10.70.0.1 --use
@@ -49,31 +63,21 @@ orbit gateway:status
 
 ## Name the record you mean
 
-Most commands take a numeric ID that `*:list` or `*:show` prints. A few families accept a name or domain as well.
+Use the arguments and selectors documented for the command. A numeric ID, name, slug, UUID, or Route domain is accepted only where that command permits it. A command that requires an explicit target refuses an omitted target.
 
-| Selector | Accepted by |
-| --- | --- |
-| Numeric ID | Every family. Apps, App instances, Nodes, Clusters, Routes, Processes, and Tools all use their database ID. |
-| Node ID or registered name | `--node` on `process`, `metrics`, `herdr`, `database`, and `node:role` and `node:settings` commands. |
-| App instance ID or exact Route domain | `--instance` on `env` and `instance:database` commands. |
-| Slug | `database` connections. |
-| UUID | Installed Schedules. |
-| Name with `--app` | App-owned process and Schedule definitions. |
+When a command permits a prompt, enter a value or select from its admitted choices. Invalid prompted input is checked before the command continues. Cancelling before work begins selects no target and starts no mutation. An interruption after work starts may leave partial work; inspect the reported result before retrying.
+
+Use `--no-interaction` or `-n` to disable prompts. Supply required values through the command's arguments and options. For automation, use the command's documented noninteractive inputs and explicit consent option.
 
 ## Confirm destructive changes
 
-A command that deletes or detaches something asks for confirmation in an interactive terminal. Pass `--force` to skip the prompt. A non-interactive call, including every `--json` call, refuses a destructive change without `--force` and sends no request.
+Read the command's confirmation and override options before automating a destructive change. An existing consent option and an override can have different effects. For example, discarding dirty source is separate from choosing an output format. Do not assume that `--force` has the same meaning across families or that selecting JSON authorizes a mutation.
 
-```bash
-orbit instance:destroy 12
-orbit cluster:destroy 3 --force --json
-```
-
-`--force` only skips the confirmation. It never waives a safety check on the Gateway. For example, `instance:destroy --force` may delete dirty source, but it still refuses a checkout whose path, owner, or repository does not match the record.
+The contributor [CLI design standard](/reference/cli-ux#consent) defines the shared consent rules. Each family page documents its supported options and refusal conditions.
 
 ## Read machine-readable output
 
-Every command accepts `--json`. Success returns one JSON document that includes the Gateway `request_id`. Failure returns one error envelope with a stable error code:
+Use `--json` where the command supports it. Preserve its documented shape when writing scripts; a final-response command and a streaming command have different contracts. Framework commands such as `list` use their own format options. Gateway command failures use a stable error code and request correlation when available:
 
 ```json
 {
@@ -91,7 +95,7 @@ Error codes are namespaced by family, such as `node.not_active`, `schedule.calen
 
 ## Follow a request through the Gateway
 
-The Gateway records one Activity for every command it authorizes. Use the request ID from any result to find the matching attempt:
+Use a Gateway request ID, when the result supplies one, to find the matching Activity. A local or parser failure may have no Gateway request; its error request ID is `null`.
 
 ```bash
 orbit activity:list --request-id=9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81
@@ -102,7 +106,7 @@ Activity records identify the operation, target, caller, and result. They never 
 
 ## Exit status
 
-A command exits with `0` when the Gateway accepted and completed the request. Any refusal, transport failure, or failed streamed operation exits nonzero. `orbit doctor` exits `1` when any check is unhealthy or unverifiable.
+A successful command exits with `0`. A handled failure returns the command's documented nonzero status. Local commands do not need a Gateway request to succeed. Parser usage errors, product refusals, and failed streams keep their existing statuses; scripts should check the exit status as well as the result.
 
 ## Enable an extension
 

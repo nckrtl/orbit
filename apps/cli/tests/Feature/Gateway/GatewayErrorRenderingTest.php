@@ -102,6 +102,13 @@ it('renders validation field details in the json envelope', function (): void {
 });
 
 it('prints each validation field message on its own line after the error message', function (): void {
+    // This assertion fixes the layout width so each complete field fits a line.
+    $originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=120');
+    $this->beforeApplicationDestroyed(static function () use ($originalColumns): void {
+        putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
+    });
+
     MockClient::global([
         CreateAppRequest::class => gateway_validation_failure([
             'slug' => [

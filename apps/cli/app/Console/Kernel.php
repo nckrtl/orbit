@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console;
 
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\OutputContext;
+use App\Support\Console\PromptContext;
+use App\Support\Console\TerminalText;
 use LaravelZero\Framework\Kernel as BaseKernel;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Input\InputInterface;
@@ -30,15 +34,16 @@ final class Kernel extends BaseKernel
 
         if ($commandName !== null && ! $this->commandExists($commandName)) {
             $errorOutput = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            $errorOutput->writeln(sprintf(
+            ConsoleWriter::write($errorOutput, sprintf(
                 'Command "%s" is not defined. Run "orbit list" to see available commands.',
-                $commandName,
-            ));
+                TerminalText::safe($commandName),
+            )."\n");
 
             return 1;
         }
 
-        return parent::handle($input, $output);
+        return OutputContext::run($input, $output,
+            fn (): int => PromptContext::preserve(fn (): int => parent::handle($input, $output)));
     }
 
     private function commandExists(string $commandName): bool

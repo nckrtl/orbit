@@ -94,7 +94,7 @@ A detail tree uses the following shape, with one empty terminal line before and 
 
 ```
 
-The title uses the singular human entity label and its selector. Align property values, use title-case labels, and separate properties with a blank continuation row. The last property uses the closing connector and has no continuation row after it. Dim the connectors when decoration is enabled; keep the title, labels, and values at normal intensity. Values are one-line summaries; lists use comma-separated values. Do not add nested section headings or a `Showing ...` introduction. A command may add a separate related-record table when its contract calls for one.
+The title uses the singular human entity label and its selector. Align property values, use title-case labels, and separate properties with a blank continuation row. The last property uses the closing connector and has no continuation row after it. Dim the connectors when decoration is enabled; keep the title, labels, and values at normal intensity. Each value is one concise summary that may wrap within the tree at narrow widths; lists use comma-separated values. Do not add nested section headings or a `Showing ...` introduction. A command may add a separate related-record table when its contract calls for one.
 
 ## Progress and liveness
 
@@ -132,7 +132,25 @@ Partial work reports the verified outcome and remaining failure. A request that 
 
 Decorated terminals may repaint active output in place. Restore cursor visibility and terminal settings on success, failure, cancellation, and timeout. Piped and undecorated output has no escape codes or repeated animation frames; emit readable settled results. Keep color selection separate from input availability and live terminal capability.
 
+When stdin is a pipe, measure the selected output's terminal. Plain output may write one complete waiting line before admitted slow work, followed by its settled outcome. A forced color option cannot turn a pipe into a terminal.
+
 Wrap panel content inside its borders. Account for visible character width rather than ANSI bytes. Long labels and errors must not collide with borders or depend on terminal auto-wrap. Summaries and detail lines have distinct jobs and do not repeat the same full error twice. A human issue cap reports omitted items and does not truncate the machine result.
+
+Measure ordinary terminal cells without assuming emoji sequences collapse into one glyph. Keep each grapheme intact when wrapping, but count its visible base characters separately. Combining marks and joiners add no cells. Verify widths in the actual terminal. Text measurements do not prove terminal alignment.
+
+Tables keep all supplied columns and wrap headers and values within their cells. Their minimum width includes borders, separators, padding, and room for each column's widest indivisible character. Below that width, a read-only table uses a plain labeled record display that preserves every field. An interactive data list reports the required width and stops without selecting a row. It never hides a column or truncates a selector to force a selection into the available space.
+
+Prompt and progress state belongs to one invocation. Finishing a nested or sequential command restores the surrounding command's prompt configuration, output, cursor, and terminal settings. A forced color option does not make a pipe repaintable or permit escape codes in machine output.
+
+An interactive prompt without decoration still shows input edits, search results, and the current selection before submission. Append changed prompt frames without escape codes when repainting is unavailable. These user-driven updates are separate from animation. SIGINT and SIGTERM interrupt a waiting prompt, restore its terminal, and stop before the command can use a submitted value.
+
+## Shared helpers
+
+The shared implementation lives under `apps/cli/app/Support/Console`. `ConsoleMode` keeps machine output, prompt admission, decoration, repainting, and terminal width separate. `GatewayCommand` resolves these facts after input binding when a command requests its shared helpers. `CommandPrompts` takes a factory for a Laravel Prompts instance and owns its input and terminal scope. Commands still decide which inputs may be prompted and how to report a typed `PromptAborted` failure.
+
+`HumanRenderer` returns terminal bytes for details, tables, properties, and failures. Write these bytes through `ConsoleWriter` so literal formatter tags remain data. `ProgressDisplay` admits known steps and runs each callback in the parent process. Its `during()` method returns the callback result without inferring product success. Set the terminal state with `complete()` after checking that result, then call `finish()` with the verified outcome. `SpinnerDisplay::during()` reports a completed wait and preserves the callback's value or exception. An inner spinner shares the active tree's rendering and animation clock.
+
+These helpers do not migrate a command automatically. Keep its adoption verdict unverified until its documented input, output, and terminal cases pass.
 
 ## Verification and adoption
 

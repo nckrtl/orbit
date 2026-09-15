@@ -422,6 +422,12 @@ it('rejects invalid SSH ports before making an API request', function (string $p
 ]);
 
 it('rejects an invalid host key fingerprint before making an API request', function (): void {
+    $originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=120');
+    $this->beforeApplicationDestroyed(static function () use ($originalColumns): void {
+        putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
+    });
+
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
         name: 'test',
         url: 'https://10.44.0.1',
