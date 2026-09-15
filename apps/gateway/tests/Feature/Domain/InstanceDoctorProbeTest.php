@@ -415,6 +415,33 @@ it('reports private Route drift in stable field order without exposing projectio
         ->not->toContain('ufw');
 });
 
+it('reports target-set and association drift without treating application HTTP errors as provisioning drift', function (): void {
+    [$workload, $router, $instance] = instance_probe_private_cluster_route();
+    $healthy = instance_probe_healthy_inspector();
+    $scope = instance_probe_context($workload)->withScope(new DoctorInspectionScope([
+        $workload->id => instance_probe_context($workload),
+        $router->id => instance_probe_context($router),
+    ]));
+
+    $drift = new InstanceDoctorProbe($healthy, null, new InstanceProbePrivateProjectionInspector(
+        new PrivateRouteProjectionObservation(true, true, true, true, true, true, true, false, false),
+    ))->inspect($scope);
+    $healthyPool = new InstanceDoctorProbe($healthy, null, new InstanceProbePrivateProjectionInspector(
+        new PrivateRouteProjectionObservation(true, true, true, true, true, true, true),
+    ))->inspect($scope);
+
+    expect(array_map(static fn ($issue): string => $issue->code, $drift->issues))
+        ->toBe([
+            'instance.target_set_mismatch',
+            'instance.route_association_mismatch',
+        ])
+        ->and($healthyPool->issues)
+        ->toBe([])
+        ->and(json_encode($drift, JSON_THROW_ON_ERROR))
+        ->not->toContain('500')
+        ->not->toContain('10.10.0');
+});
+
 it('maps missing stale malformed and unreachable private observations to bounded findings', function (): void {
     [$workload, $router, $instance] = instance_probe_private_cluster_route();
     $healthy = instance_probe_healthy_inspector();

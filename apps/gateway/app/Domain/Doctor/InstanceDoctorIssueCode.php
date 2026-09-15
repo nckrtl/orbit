@@ -32,6 +32,8 @@ enum InstanceDoctorIssueCode: string implements DoctorIssueCode
     case PrivateDnsMismatch = 'instance.private_dns_mismatch';
     case PrivateFirewallMismatch = 'instance.private_firewall_mismatch';
     case LaravelUrlMismatch = 'instance.laravel_url_mismatch';
+    case TargetSetMismatch = 'instance.target_set_mismatch';
+    case RouteAssociationMismatch = 'instance.route_association_mismatch';
     case RelatedNodeUnverifiable = 'instance.related_node_unverifiable';
     case InspectionFailed = 'instance.inspection_failed';
     case NodeUnreachable = 'instance.node_unreachable';

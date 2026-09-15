@@ -132,6 +132,17 @@ it('defines the exact update, target, clear, and remove transports', function ()
         ->toBe('/api/v1/routes/11/target')
         ->and($set->body()->all())
         ->toBe(['app_instance_id' => 8])
+        ->and((new SetRouteTargetRequest(11, targetIds: [8, 9], dispositions: [
+            ['app_instance_id' => 10, 'route_id' => 4],
+            ['app_instance_id' => 11, 'remove' => true],
+        ]))->body()->all())
+        ->toBe([
+            'targets' => [8, 9],
+            'dispositions' => [
+                ['app_instance_id' => 10, 'route_id' => 4],
+                ['app_instance_id' => 11, 'remove' => true],
+            ],
+        ])
         ->and($clear->getMethod())
         ->toBe(Method::DELETE)
         ->and($clear->resolveEndpoint())
@@ -201,7 +212,9 @@ function route_data(): array
         'replaces_route_id' => 10,
         'replaced_by_route_id' => 12,
         'replacement_step' => 'router-caddy',
+        'target_set_step' => null,
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
+        'targets' => [['id' => 12, 'app_instance_id' => 7, 'position' => 0]],
     ];
 }
 

@@ -26,6 +26,7 @@ final readonly class AppDevSite
         public ?string $productionPhpSocket = null,
         public bool $publicListener = false,
         public bool $preserveForwardedIdentity = false,
+        public ?string $localUnixUpstream = null,
     ) {}
 
     public function poolName(): string
@@ -52,17 +53,23 @@ final readonly class AppDevSite
 
     public function isProxy(): bool
     {
-        return $this->upstreamAddress !== null || $this->upstreamAddresses !== [];
+        return $this->upstreamAddress !== null
+            || $this->upstreamAddresses !== []
+            || $this->localUnixUpstream !== null;
     }
 
     /** @return list<string> */
     public function proxyAddresses(): array
     {
-        if ($this->upstreamAddresses !== []) {
-            return $this->upstreamAddresses;
+        $addresses = $this->upstreamAddresses !== []
+            ? $this->upstreamAddresses
+            : ($this->upstreamAddress === null ? [] : [$this->upstreamAddress]);
+
+        if (is_string($this->localUnixUpstream) && $this->localUnixUpstream !== '') {
+            array_unshift($addresses, $this->localUnixUpstream);
         }
 
-        return $this->upstreamAddress === null ? [] : [$this->upstreamAddress];
+        return $addresses;
     }
 
     public function executionUser(string $developmentUser): string

@@ -488,7 +488,9 @@ function instance_gateway_route_data(): array
         'replaces_route_id' => null,
         'replaced_by_route_id' => null,
         'replacement_step' => null,
+        'target_set_step' => null,
         'target' => ['id' => 10, 'app_instance_id' => 7, 'position' => 0],
+        'targets' => [['id' => 10, 'app_instance_id' => 7, 'position' => 0]],
     ];
 }
 

@@ -296,6 +296,20 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
     expect($mock->getLastRequest()?->body()->all())->toBe(['domain' => 'next.test']);
     $this->artisan('route:target:set', ['route' => '11', 'target' => '8'])->assertExitCode(0);
     expect($mock->getLastRequest()?->body()->all())->toBe(['app_instance_id' => 8]);
+    $this->artisan('route:target:set', [
+        'route' => '11',
+        'target' => '8',
+        '--targets' => ['9'],
+        '--reassign' => ['10:4'],
+        '--remove' => ['11'],
+    ])->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'targets' => [8, 9],
+        'dispositions' => [
+            ['app_instance_id' => 10, 'route_id' => 4],
+            ['app_instance_id' => 11, 'remove' => true],
+        ],
+    ]);
     $this->artisan('route:target:unset', ['route' => '11'])->assertExitCode(0);
     $this->artisan('route:destroy', ['route' => '11'])->assertExitCode(0);
 });
@@ -366,7 +380,9 @@ function route_payload(): array
         'replaces_route_id' => null,
         'replaced_by_route_id' => null,
         'replacement_step' => null,
+        'target_set_step' => null,
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
+        'targets' => [['id' => 12, 'app_instance_id' => 7, 'position' => 0]],
     ];
 }
 

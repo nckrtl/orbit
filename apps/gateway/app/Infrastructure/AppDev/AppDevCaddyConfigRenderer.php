@@ -28,18 +28,39 @@ final readonly class AppDevCaddyConfigRenderer
                 ->sortBy('domain')
                 ->map(function (AppDevSite $site): string {
                     $handler = $this->handler($site);
+                    $internal = $this->localUnixSite($site);
 
                     $scheme = $site->publicListener ? '' : 'https://';
 
-                    return <<<CADDY
+                    $siteBlock = <<<CADDY
                         {$scheme}{$site->domain} {
                             bind 0.0.0.0
                             tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
                             {$handler}
                         }
                         CADDY;
+
+                    return $internal === null ? $siteBlock : $internal.PHP_EOL.PHP_EOL.$siteBlock;
                 })
                 ->implode(PHP_EOL.PHP_EOL).PHP_EOL;
+    }
+
+    private function localUnixSite(AppDevSite $site): ?string
+    {
+        if (! is_string($site->localUnixUpstream) || $site->localUnixUpstream === '') {
+            return null;
+        }
+
+        $root = $site->checkoutPath === '' ? null : "root * {$site->checkoutPath}/{$site->documentRoot}";
+        $php = $site->phpVersion === null ? null : $this->phpHandler($site);
+        $application = implode(PHP_EOL, array_filter([$root, $php, $site->checkoutPath === '' ? null : 'file_server']));
+
+        return <<<CADDY
+            http://{$site->localUnixUpstream} {
+                bind {$site->localUnixUpstream}
+                {$application}
+            }
+            CADDY;
     }
 
     private function handler(AppDevSite $site): string
@@ -54,7 +75,9 @@ final readonly class AppDevCaddyConfigRenderer
 
         if ($site->isProxy()) {
             $upstreams = implode(' ', array_map(
-                static fn (string $address): string => "https://{$address}",
+                static fn (string $address): string => str_starts_with($address, 'unix/')
+                    ? $address
+                    : "https://{$address}",
                 $site->proxyAddresses(),
             ));
             $identity = $site->preserveForwardedIdentity
@@ -66,20 +89,45 @@ final readonly class AppDevCaddyConfigRenderer
                 CADDY
                 : '';
             $root = self::ORBIT_ROOT_CA_PATH;
-            $trust = $site->publicListener || $site->preserveForwardedIdentity
+            $hasRemoteHttps = array_any(
+                $site->proxyAddresses(),
+                static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
+            );
+            $trust = $site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps
                 ? <<<CADDY
 
                         tls_trusted_ca_certs {$root}
                 CADDY
                 : '';
+            $pool = count($site->proxyAddresses()) > 1
+                ? <<<'CADDY'
+
+                    lb_policy round_robin
+                    lb_retries 0
+                    fail_duration 10s
+                CADDY
+                : '';
+            $unavailable = count($site->proxyAddresses()) > 1
+                ? <<<'CADDY'
+
+                handle_errors {
+                    @orbit_unavailable `{err.status_code} == 502`
+                    handle @orbit_unavailable {
+                        header Cache-Control "no-store"
+                        header Content-Type "text/plain; charset=utf-8"
+                        respond "Orbit Route unavailable\n" 503
+                    }
+                }
+                CADDY
+                : '';
 
             return <<<CADDY
                 reverse_proxy {$upstreams} {
-                    header_up Host {$site->domain}{$identity}
+                    header_up Host {$site->domain}{$identity}{$pool}
                     transport http {
                         tls_server_name {$site->domain}{$trust}
                     }
-                }
+                }{$unavailable}
                 CADDY;
         }
 

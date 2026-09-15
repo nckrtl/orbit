@@ -889,6 +889,348 @@ it('composes one public Caddy site when Ingress shares a Node and uses LAN witho
         ->toBe($router->wireguard_ip);
 });
 
+it('sets a two-target production pool through the typed target-set contract', function (): void {
+    [$route, $first, $second] = route_api_production_pool();
+    app()->instance(RouteDomainProjector::class, route_api_target_set_projector());
+    app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, route_api_environment_fake());
+
+    $this
+        ->putJson("/api/v1/routes/{$route->id}/target", [
+            'targets' => [$first->id, $second->id],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.id', $route->id)
+        ->assertJsonPath('data.domain', $route->domain)
+        ->assertJsonPath('data.targets.0.app_instance_id', $first->id)
+        ->assertJsonPath('data.targets.1.app_instance_id', $second->id)
+        ->assertJsonMissingPath('data.targets.0.lan_ip')
+        ->assertJsonMissingPath('data.lan_ip')
+        ->assertJsonMissingPath('data.wireguard_ip');
+
+    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe([$first->id, $second->id]);
+});
+
+it('refuses a generated Route, duplicate target, foreign App or Cluster, inactive target, missing disposition, and concurrent intent', function (): void {
+    [$route, $first, $second] = route_api_production_pool();
+    $devNode = route_node('dev-pool-node', '10.44.0.93', 'devpool.test');
+    $dev = route_instance($this->orbitApp, $devNode, 'dev-pool');
+    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $foreignApp = OrbitApp::query()->create([
+        'name' => 'Other',
+        'slug' => 'other',
+        'repository_url' => 'https://example.test/other.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $foreign = route_instance($foreignApp, $second->node, 'foreign');
+    [$foreignCluster] = route_cluster('foreign-pool', null);
+    $foreignClusterNode = route_node('foreign-app-prod', '10.44.0.91', null);
+    $foreignClusterNode->update(['cluster_id' => $foreignCluster->id, 'lan_ip' => '10.10.0.91']);
+    $foreignClusterNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $foreignClusterInstance = route_instance($this->orbitApp, $foreignClusterNode, 'foreign-cluster');
+    $foreignClusterInstance->update([
+        'environment' => 'production',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'production_home' => '/var/www/acme/foreign-cluster',
+        'production_user' => 'orbit-acme',
+        'selected_php_version' => '8.5',
+    ]);
+    $inactiveNode = route_node('inactive-pool', '10.44.0.94', null);
+    $inactiveNode->update(['cluster_id' => $route->cluster_id]);
+    $inactive = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $inactiveNode->id,
+        'name' => 'inactive',
+        'environment' => 'production',
+        'checkout_path' => '/var/www/inactive',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('b', 40),
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $foreignRoute = Route::query()->create([
+        'app_id' => $foreignApp->id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'foreign-dest.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $before = route_api_target_rows();
+
+    $this->putJson("/api/v1/routes/{$generated->id}/target", ['targets' => [$this->target->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.pool_unsupported');
+    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $first->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_conflict');
+    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $dev->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.pool_unsupported');
+    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $foreign->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_app_conflict');
+    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $foreignClusterInstance->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_scope_conflict');
+    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $inactive->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_inactive');
+    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$second->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_disposition_required');
+    $this->putJson("/api/v1/routes/{$route->id}/target", [
+        'targets' => [$second->id],
+        'dispositions' => [
+            ['app_instance_id' => $first->id, 'route_id' => $foreignRoute->id],
+        ],
+    ])->assertConflict()->assertJsonPath('error.code', 'route.target_app_conflict');
+
+    $route->update([
+        'target_set_intent' => ['targets' => [$second->id], 'dispositions' => []],
+        'target_set_step' => 'reserved',
+    ]);
+    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $second->id]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_set_conflict');
+
+    expect(route_api_target_rows())->toBe($before);
+});
+
+it('projects a production pool with LAN preference, WireGuard fallback, mixed local composition, and empty-pool 503', function (): void {
+    [$route, $first, $second] = route_api_production_pool();
+    $route->targets()->create(['app_instance_id' => $second->id, 'position' => 1]);
+    $route->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+    $router = $route->cluster?->routerAssignment?->node;
+    expect($router)->not->toBeNull();
+    $renderer = new AppDevCaddyConfigRenderer;
+
+    $remote = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    expect($remote)
+        ->toContain("reverse_proxy https://{$first->node->lan_ip} https://{$second->node->lan_ip}")
+        ->toContain('lb_policy round_robin')
+        ->toContain('fail_duration 10s')
+        ->not->toContain('https://'.$first->node->wireguard_ip);
+
+    $second->node->update(['lan_ip' => null]);
+    $route->refresh()->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+    $wireguard = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    expect($wireguard)
+        ->toContain("https://{$first->node->lan_ip}")
+        ->toContain("https://{$second->node->refresh()->wireguard_ip}");
+
+    $first->node->update(['id' => $first->node->id]);
+    $router->roles()->where('role', RoleName::AppProd)->delete();
+    $router->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $first->update(['node_id' => $router->id]);
+    $route->refresh()->load(['cluster.routerAssignment.node', 'targets.appInstance.app', 'targets.appInstance.node']);
+    $composed = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    expect($composed)
+        ->toContain('unix//run/orbit/route-'.$route->id.'-local.sock')
+        ->toContain('https://'.$second->node->refresh()->wireguard_ip)
+        ->not->toContain('reverse_proxy https://127.0.0.1')
+        ->and(mb_substr_count($composed, "{$route->domain} {"))
+        ->toBe(1);
+
+    $first->update(['status' => AppInstanceState::SourceResolved]);
+    $second->update(['status' => AppInstanceState::SourceResolved]);
+    $route->targets()->delete();
+    $route->refresh()->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+    $empty = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    expect($empty)
+        ->toContain('Orbit Route unavailable')
+        ->toContain('respond "Orbit Route unavailable\n" 503')
+        ->not->toContain('10.10.0.61')
+        ->not->toContain('10.44.0.62');
+});
+
+it('rejects caller-supplied backend URLs, addresses, Caddy directives, and policy fields on target-set', function (): void {
+    [$route] = route_api_production_pool();
+
+    $this
+        ->putJson("/api/v1/routes/{$route->id}/target", [
+            'targets' => [1],
+            'backend_url' => 'http://10.10.0.8',
+            'lan_ip' => '10.10.0.8',
+            'caddy' => 'reverse_proxy 10.10.0.8',
+            'lb_policy' => 'least_conn',
+        ])
+        ->assertUnprocessable();
+});
+
+it('reassigns a detached target and keeps every active App instance on exactly one Route', function (): void {
+    [$route, $first, $second] = route_api_production_pool();
+    $other = Route::query()->create([
+        'app_id' => $route->app_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'other.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    app()->instance(RouteDomainProjector::class, route_api_target_set_projector());
+    app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, route_api_environment_fake());
+
+    $this
+        ->putJson("/api/v1/routes/{$route->id}/target", [
+            'targets' => [$second->id],
+            'dispositions' => [
+                ['app_instance_id' => $first->id, 'route_id' => $other->id],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.targets.0.app_instance_id', $second->id);
+
+    expect($route->refresh()->targets()->pluck('app_instance_id')->all())
+        ->toBe([$second->id])
+        ->and($other->refresh()->targets()->pluck('app_instance_id')->all())
+        ->toBe([$first->id]);
+});
+
+it('transfers an App instance from another Route and leaves a vacated Route serving 503', function (): void {
+    [$route, $first, $second] = route_api_production_pool();
+    $other = Route::query()->create([
+        'app_id' => $route->app_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'vacated.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $other->targets()->create(['app_instance_id' => $second->id, 'position' => 0]);
+    $other->update(['status' => 'active']);
+    app()->instance(RouteDomainProjector::class, route_api_target_set_projector());
+    app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, route_api_environment_fake());
+
+    $this
+        ->putJson("/api/v1/routes/{$route->id}/target", [
+            'targets' => [$first->id, $second->id],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.domain', $route->domain)
+        ->assertJsonPath('data.targets.0.app_instance_id', $first->id)
+        ->assertJsonPath('data.targets.1.app_instance_id', $second->id);
+
+    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe([$first->id, $second->id])
+        ->and($other->refresh()->targets()->count())
+        ->toBe(0)
+        ->and($other->domain)
+        ->toBe('vacated.example.test');
+
+    $other->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+    $router = $other->cluster?->routerAssignment?->node;
+    expect($router)->not->toBeNull();
+    $sites = new AppDevSiteRepository()->forNode($router, additionalRoute: $other);
+    $rendered = new AppDevCaddyConfigRenderer()->render($sites);
+    $vacatedSite = collect(preg_split('/\n\n/', $rendered) ?: [])
+        ->first(static fn (string $block): bool => str_contains($block, 'vacated.example.test'));
+    expect($vacatedSite)
+        ->toBeString()
+        ->toContain('Orbit Route unavailable')
+        ->toContain('respond "Orbit Route unavailable\n" 503')
+        ->not->toContain('10.10.0.62');
+});
+
+it('leaves stored session environment keys unchanged during a pool change', function (): void {
+    [$route, $first, $second] = route_api_production_pool();
+    foreach ([$first, $second] as $instance) {
+        $instance->environmentValues()->create(['env_key' => 'SESSION_DRIVER', 'env_value' => 'redis']);
+        $instance->environmentValues()->create(['env_key' => 'SESSION_CONNECTION', 'env_value' => 'sessions']);
+        $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.domain}}']);
+    }
+    app()->instance(RouteDomainProjector::class, route_api_target_set_projector());
+    app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, route_api_environment_fake());
+
+    $this
+        ->putJson("/api/v1/routes/{$route->id}/target", [
+            'targets' => [$first->id, $second->id],
+        ])
+        ->assertOk();
+
+    foreach ([$first->refresh(), $second->refresh()] as $instance) {
+        expect($instance->environmentValues()->where('env_key', 'SESSION_DRIVER')->value('env_value'))
+            ->toBe('redis')
+            ->and($instance->environmentValues()->where('env_key', 'SESSION_CONNECTION')->value('env_value'))
+            ->toBe('sessions')
+            ->and($instance->environmentValues()->where('env_key', 'APP_URL')->value('env_value'))
+            ->toBe('https://{{app_instance.domain}}');
+    }
+});
+
+it('returns the unchanged Route for an identical completed target-set change', function (): void {
+    [$route, $first, $second] = route_api_production_pool();
+    $route->targets()->create(['app_instance_id' => $second->id, 'position' => 1]);
+    $before = route_api_target_rows();
+
+    $this
+        ->putJson("/api/v1/routes/{$route->id}/target", [
+            'targets' => [$first->id, $second->id],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.targets.0.app_instance_id', $first->id)
+        ->assertJsonPath('data.targets.1.app_instance_id', $second->id);
+
+    expect(route_api_target_rows())->toBe($before);
+});
+
+/** @return array{Route, AppInstance, AppInstance} */
+function route_api_production_pool(): array
+{
+    [$cluster, $router] = route_cluster('pool', null);
+    $firstNode = route_node('pool-one', '10.44.0.61', null);
+    $firstNode->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.10.0.61']);
+    $firstNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $secondNode = route_node('pool-two', '10.44.0.62', null);
+    $secondNode->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.10.0.62']);
+    $secondNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $first = route_instance(test()->orbitApp, $firstNode, 'one');
+    $second = route_instance(test()->orbitApp, $secondNode, 'two');
+    foreach ([$first, $second] as $instance) {
+        $instance->update([
+            'environment' => 'production',
+            'source_is_laravel' => false,
+            'provisioning_step' => 'active',
+            'production_home' => '/var/www/acme/'.$instance->name,
+            'production_user' => 'orbit-acme',
+            'selected_php_version' => '8.5',
+        ]);
+    }
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: test()->orbitApp->id,
+        domain: 'pool.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $first->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+
+    return [$route->refresh(), $first->refresh(), $second->refresh()];
+}
+
+function route_api_target_set_projector(): RouteDomainProjector
+{
+    $projector = Mockery::mock(RouteDomainProjector::class);
+    $projector->shouldIgnoreMissing();
+
+    return $projector;
+}
+
+function route_api_environment_fake(): AppInstanceRouteEnvironmentSynchronizer
+{
+    return new class implements AppInstanceRouteEnvironmentSynchronizer
+    {
+        public function synchronizeRouteDomain(
+            AppInstance $instance,
+            AppInstanceEnvironmentRouteDomain $domain,
+        ): AppInstanceEnvironmentResult {
+            return new AppInstanceEnvironmentResult($instance->id, 'sync', false, 0);
+        }
+    };
+}
+
 function route_node(string $name, string $wireguardIp, ?string $tld): Node
 {
     return Node::query()->create([

@@ -227,7 +227,7 @@ it('deletes a final production Route after cleanup without publishing developmen
         ->toBeNull()
         ->and(collect(orb181_caddy_configurations($ssh->commands))
             ->contains(
-                static fn (string $configuration): bool => str_contains($configuration, 'Orbit Route unavailable'),
+                static fn (string $configuration): bool => orb181_unavailable_site($configuration),
             ))
         ->toBeFalse();
 });
@@ -315,10 +315,16 @@ it('retries shared and final production cleanup without restoring targets or Rou
         ->toBe($shared)
         ->and(collect(orb181_caddy_configurations($ssh->commands))
             ->contains(
-                static fn (string $configuration): bool => str_contains($configuration, 'Orbit Route unavailable'),
+                static fn (string $configuration): bool => orb181_unavailable_site($configuration),
             ))
         ->toBeFalse();
 })->with(['shared' => true, 'final' => false]);
+
+function orb181_unavailable_site(string $configuration): bool
+{
+    return str_contains($configuration, 'Orbit Route unavailable')
+        && ! str_contains($configuration, 'handle_errors');
+}
 
 function expectConnectionHost(?string $host): SshConnection
 {
