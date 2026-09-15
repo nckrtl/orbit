@@ -65,6 +65,7 @@ final class UpdateInstanceCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
             'ID' => $instance->id,
             'Status' => $instance->status,
+            'Deployment branch' => $branch,
             'Selected branch' => $instance->selectedBranch,
             'Request ID' => $instance->requestId,
         ]));

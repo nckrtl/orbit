@@ -199,6 +199,8 @@ Cloning ends with an active App instance that has no selected release. Update an
 
 Change the deployment branch of a production App instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
 
+The human result shows the accepted deployment branch and the currently selected source branch. JSON returns the existing App instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
+
 ```bash
 orbit instance:update <instance> --branch=BRANCH [--json]
 ```

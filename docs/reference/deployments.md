@@ -54,6 +54,8 @@ The `{step}` path segment is the step's unique name.
 
 The Gateway stores the deployment branch on the production App instance. The Gateway does not change deploy steps or start a deployment when it stores a branch.
 
+The CLI's human result shows the accepted deployment branch alongside the selected source branch. The JSON App instance response keeps `selected_branch` as the source branch; it does not expose the stored deployment setting.
+
 | Request | Result |
 | --- | --- |
 | `PATCH /api/v1/instances/{instance}` | Accepts `branch`, a Git branch name accepted by Orbit's branch validator. A later App default change does not replace this instance-owned value. |

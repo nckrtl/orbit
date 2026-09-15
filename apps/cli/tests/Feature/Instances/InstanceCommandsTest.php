@@ -571,6 +571,19 @@ describe('instance:list', function (): void {
 });
 
 describe('instance:update', function (): void {
+    it('shows the accepted deployment branch separately from the unchanged source branch', function (): void {
+        $payload = instance_payload();
+        $payload['environment'] = 'production';
+        $payload['selected_branch'] = 'main';
+        $mock = MockClient::global([
+            UpdateAppInstanceRequest::class => instance_mock_response(payload: $payload),
+        ]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release/next']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain('Deployment branch release/next Selected branch main');
+        expect($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release/next']);
+    });
+
     it('updates the deployment branch without sending steps', function (): void {
         $mock = MockClient::global([
             UpdateAppInstanceRequest::class => instance_mock_response(),
