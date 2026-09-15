@@ -66,12 +66,13 @@ jobs:
         run: cp .env.example .env
 
       - name: Install dependencies
+        if: matrix.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
 
-      - name: Install documentation dependencies for E2E guidance tests
+      - name: Install all project dependencies for E2E integration tests
         if: matrix.directory == 'apps/e2e'
-        working-directory: apps/docs
-        run: composer install --no-interaction --prefer-dist
+        working-directory: .
+        run: bin/bootstrap
 
       - name: Validate Composer metadata
         run: composer validate --strict
