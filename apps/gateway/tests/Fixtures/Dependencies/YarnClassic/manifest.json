@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {"postinstall": "must-never-execute"},
+  "dependencies": {"app": "^1", "shared": "^1", "alias": "npm:@scope/real@^3"},
+  "devDependencies": {"tool": "^1", "shared": "~1.2"},
+  "optionalDependencies": {"native": "^1", "unavailable": "^1"},
+  "peerDependencies": {"host": "^2"},
+  "peerDependenciesMeta": {"host": {"optional": true}}
+}

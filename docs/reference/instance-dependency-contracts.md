@@ -54,6 +54,22 @@ The importer must agree with the manifest's dependency specifiers and scopes. Pe
 
 Remote HTTP and HTTPS tarball locators use the package metadata's `version`; the URL is not a package version. The reader matches raw locators only in memory. Before returning the graph, it replaces every URL-bearing resolution ID, edge endpoint, and requirement reference with `pnpm:sha256:` plus a SHA-256 digest of that exact value. Different sources and peer contexts therefore stay distinct without retaining URLs, credentials, or query values. Registry locators and ordinary version constraints stay unchanged. A remote locator without a valid metadata version fails explicitly.
 
+## Yarn Classic reader
+
+`ReadYarnClassicDependencyGraphAction` accepts root `package.json` JSON and Yarn Classic `yarn.lock` text. It parses the Classic v1 grammar in memory, including quoted, grouped, and name-only selectors. Modern Yarn metadata belongs to a separate reader. The reader does not read files, run Yarn or package scripts, or contact registries.
+
+Each selector group identifies one resolution. Separate groups preserve separate resolutions, including repeated package versions. Root requirements first select a name-only lock key when present, then the exact `name@reference` key. They retain the manifest constraint and scope. Transitive requirements use their exact `name@reference` key without a name-only fallback. The reader does not solve version ranges. Root regular, optional, and development declarations establish independent reachability through cycles.
+
+If a package appears in more than one root section, Classic selects its reference using optional, regular, then development precedence, preferring the first nonempty range other than `*`. The graph retains separate development paths to that selected resolution. Missing required targets and unreachable records fail. Missing optional targets remain null.
+
+Classic does not record transitive peer metadata or installation locations. The reader preserves root peer declarations as unresolved peer edges and does not invent transitive peer relationships or placement. An npm alias supplies the target package identity; other records use an explicit locked name when available, then the selector name. Locked versions remain opaque. Valid integrity and hexadecimal source revisions are retained.
+
+Resolution IDs use `yarn-classic:sha256:` plus a digest of the sorted selector group. Non-registry requirement references use the same prefix with a digest of the exact reference. HTTP tarballs, Git references, and hosted Git shorthands therefore remain distinct without returning URLs or credentials. Ordinary constraints and npm aliases remain intact. Download URLs, permissions, prebuilt metadata, and executable manifest metadata are not returned.
+
+### Classic format validation
+
+Malformed JSON or Classic syntax, duplicate keys or selectors, inconsistent identities, and incomplete graphs use `dependencies.invalid_yarn_classic_input`. Unsupported format markers use `dependencies.unsupported_format`; workspaces and local links use `dependencies.unsupported_layout`. Errors contain no source text. Headerless Classic entries are accepted; an empty graph requires the v1 header. Collection still owns manager selection, external workspace detection, stable source contents, and publication.
+
 ## Observation values
 
 Scan results use these values to distinguish observed source from a failed collection attempt.
