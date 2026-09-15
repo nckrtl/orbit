@@ -15,10 +15,12 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
+use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteStatus;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
@@ -29,6 +31,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
     public function __construct(
         private InstanceStateInspector $inspector,
         private ?PublicRouteEdgeInspector $publicEdge = null,
+        private ?PrivateRouteProjectionInspector $privateProjection = null,
         private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
     ) {}
 
@@ -143,7 +146,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 $issues[] = $this->inspectionFailedIssue($instance);
             }
 
-            $issues = [...$issues, ...$this->publicRouteIssues($instance, $context)];
+            $issues = [...$issues, ...$this->privateRouteIssues($instance, $context), ...$this->publicRouteIssues($instance, $context)];
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
@@ -186,6 +189,91 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 || $other->production_php_pool === $instance->production_php_pool
                 || $other->production_php_socket === $instance->production_php_socket;
         });
+    }
+
+    /** @return list<DoctorIssueData> */
+    private function privateRouteIssues(AppInstance $instance, DoctorNodeContext $context): array
+    {
+        $routes = Route::query()
+            ->with(['cluster.routerAssignment.node'])
+            ->where('publication', RoutePublication::Private)
+            ->where('status', RouteStatus::Active)
+            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $instance->id))
+            ->orderBy('id')
+            ->get();
+
+        $issues = [];
+
+        foreach ($routes as $route) {
+            $cluster = $route->cluster;
+            $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
+            $related = [];
+            if ($router instanceof Node && $router->id !== $instance->node_id) {
+                $related[$router->id] = $router;
+            }
+            $scope = $context->scope;
+            $inspector = $this->privateProjection;
+
+            foreach ($related as $node) {
+                if ($scope === null || ! $scope->has($node->id)) {
+                    $issues[] = new DoctorIssueData(
+                        InstanceDoctorIssueCode::RelatedNodeUnverifiable,
+                        DoctorIssueKind::Unverifiable,
+                        'instance',
+                        $instance->id,
+                        $instance->name,
+                        'Private Route projection cannot be verified from the selected nodes.',
+                        'verifiable',
+                        'unverifiable',
+                    );
+
+                    continue 2;
+                }
+            }
+
+            if ($inspector === null) {
+                continue;
+            }
+
+            try {
+                $observation = $inspector->inspect($instance, $route);
+            } catch (DoctorInspectionException) {
+                $issues[] = $this->inspectionFailedIssue($instance);
+
+                continue;
+            }
+
+            $fields = [
+                'routingScopeMatches' => InstanceDoctorIssueCode::PrivateRoutingScopeMismatch,
+                'routerCaddyMatches' => InstanceDoctorIssueCode::RouterCaddyMismatch,
+                'workloadCaddyMatches' => InstanceDoctorIssueCode::WorkloadCaddyMismatch,
+                'certificateMatches' => InstanceDoctorIssueCode::PrivateCertificateMismatch,
+                'dnsMatches' => InstanceDoctorIssueCode::PrivateDnsMismatch,
+                'firewallMatches' => InstanceDoctorIssueCode::PrivateFirewallMismatch,
+                'laravelUrlMatches' => InstanceDoctorIssueCode::LaravelUrlMismatch,
+            ];
+
+            $inspectionFailed = false;
+            foreach ($fields as $field => $code) {
+                if ($observation->{$field} === null) {
+                    $inspectionFailed = true;
+
+                    continue;
+                }
+
+                if ($observation->{$field} !== false) {
+                    continue;
+                }
+
+                $issues[] = $this->projectionIssue($instance, $code);
+            }
+
+            if ($inspectionFailed) {
+                $issues[] = $this->inspectionFailedIssue($instance);
+            }
+        }
+
+        return $issues;
     }
 
     /** @return list<DoctorIssueData> */
