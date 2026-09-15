@@ -1,0 +1,16 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "repeatable-install",
+      "node": "gateway",
+      "argv": [
+        "php",
+        "/var/lib/orbit-e2e/proof/orb-364-repeatable-install.php"
+      ],
+      "timeout_seconds": 180
+    }
+  ],
+  "mutates": true,
+  "observed_inputs": false
+}
