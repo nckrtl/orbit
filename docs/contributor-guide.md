@@ -8,6 +8,12 @@ description: "Prepare architecture and documentation, build a feature, and submi
 
 Submit a complete feature with its implementation, tests, documentation, and any architectural decisions. Orbit reproduces features on Incus during independent review, and the maintainer approves each merge.
 
+From the repository root, install the project dependencies:
+
+```bash
+bin/bootstrap
+```
+
 ## 1. Check the architecture
 
 Read the affected [architecture decisions](/decisions/overview), code, tests, and documentation. Establish what the feature should do and which parts of Orbit it affects. You can find related documentation with `composer docs-context -- --component=apps/cli`, using the component your feature changes.
