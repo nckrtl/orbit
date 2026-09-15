@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ActiveTldScopeGuard;
@@ -23,6 +24,7 @@ final readonly class UpdateClusterAction
         private ActiveTldScopeGuard $tldScope,
         private ClusterRouterOperationLock $routerOperations,
         private ?RouteMutationReconciler $routes = null,
+        private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
@@ -48,7 +50,14 @@ final readonly class UpdateClusterAction
 
         $proposedTld = $data->tldProvided ? $data->tld : $current->tld;
         $proposedState = $data->state ?? $current->state;
+        $tldChanging = $data->tldProvided && $proposedTld !== $current->tld;
         $selectionChanging = $data->tldProvided || $stateChanging;
+
+        if ($tldChanging && ! $stateChanging) {
+            $this->tldScope->assertClusterTldAvailable($current, $proposedTld, $proposedState);
+            $this->assertActiveRouterIfRequired($current, $proposedTld, $proposedState);
+            $this->convergeGeneratedPrivateDomains($current, $proposedTld, $current->tld, $proposedState);
+        }
 
         if ($stateChanging) {
             $this->lanIngress()->expand(
@@ -85,21 +94,7 @@ final readonly class UpdateClusterAction
                 $proposedState = $data->state ?? $locked->state;
 
                 $this->tldScope->assertClusterTldAvailable($locked, $proposedTld, $proposedState);
-
-                if ($proposedState === ClusterState::Active && $proposedTld !== null) {
-                    $hasActiveRouter = $locked
-                        ->routerAssignment()
-                        ->whereHas('node', static fn ($query) => $query->where('status', LifecycleStatus::Active))
-                        ->exists();
-
-                    if (! $hasActiveRouter) {
-                        throw new ResourceOperationException(
-                            errorCode: 'cluster.router_required',
-                            message: "Cluster [{$locked->name}] requires one active Router.",
-                            status: 409,
-                        );
-                    }
-                }
+                $this->assertActiveRouterIfRequired($locked, $proposedTld, $proposedState);
 
                 $updates = [];
 
@@ -116,9 +111,14 @@ final readonly class UpdateClusterAction
                 }
 
                 if ($proposedTld !== $locked->tld || $proposedState !== $locked->state) {
-                    ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(clusterOverrides: [
-                        $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
-                    ]);
+                    $this->routeReconciler()->reconcile(
+                        clusterOverrides: [
+                            $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
+                        ],
+                        baselineClusterOverrides: [
+                            $locked->id => ['tld' => $locked->tld, 'state' => $locked->state],
+                        ],
+                    );
                 }
 
                 $locked->update($updates);
@@ -146,6 +146,52 @@ final readonly class UpdateClusterAction
         }
 
         return $updated;
+    }
+
+    private function convergeGeneratedPrivateDomains(
+        Cluster $cluster,
+        ?string $tld,
+        ?string $previousTld,
+        ClusterState $state,
+    ): void {
+        foreach ($this->routeReconciler()->generatedPrivateDomainChanges(
+            clusterOverrides: [$cluster->id => ['tld' => $tld, 'state' => $state]],
+            baselineClusterOverrides: [$cluster->id => ['tld' => $previousTld, 'state' => $cluster->state]],
+        ) as $change) {
+            $this->convergeRoute()->execute($change['route'], $change['domain'], allowGenerated: true);
+        }
+    }
+
+    private function assertActiveRouterIfRequired(Cluster $cluster, ?string $tld, ClusterState $state): void
+    {
+        if ($state !== ClusterState::Active || $tld === null) {
+            return;
+        }
+
+        $hasActiveRouter = $cluster
+            ->routerAssignment()
+            ->whereHas('node', static fn ($query) => $query->where('status', LifecycleStatus::Active))
+            ->exists();
+
+        if ($hasActiveRouter) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'cluster.router_required',
+            message: "Cluster [{$cluster->name}] requires one active Router.",
+            status: 409,
+        );
+    }
+
+    private function routeReconciler(): RouteMutationReconciler
+    {
+        return $this->routes ?? app(RouteMutationReconciler::class);
+    }
+
+    private function convergeRoute(): ConvergeRouteAction
+    {
+        return $this->convergeRoute ?? app(ConvergeRouteAction::class);
     }
 
     private function lanIngress(): RouterLanIngressReconciler

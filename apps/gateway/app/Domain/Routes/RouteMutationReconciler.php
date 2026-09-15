@@ -152,7 +152,11 @@ final readonly class RouteMutationReconciler
             );
             $owner = $domains[$proposal['domain']] ?? null;
 
-            if ($owner !== null && $owner !== $route->id) {
+            if (
+                $owner !== null
+                && $owner !== $route->id
+                && ! $this->isReplacementPair($route, $owner, $routes)
+            ) {
                 throw new ResourceOperationException(
                     errorCode: 'route.domain_conflict',
                     message: "Route domain [{$proposal['domain']}] would collide.",
@@ -218,6 +222,23 @@ final readonly class RouteMutationReconciler
             ->lockForUpdate()
             ->orderBy('id')
             ->get();
+    }
+
+    /**
+     * @param  Collection<int, Route>  $routes
+     */
+    private function isReplacementPair(Route $route, int $ownerId, Collection $routes): bool
+    {
+        $owner = $routes->firstWhere('id', $ownerId);
+
+        if (! $owner instanceof Route) {
+            return false;
+        }
+
+        return $owner->replaces_route_id === $route->id
+            || $route->replaces_route_id === $owner->id
+            || $owner->replaced_by_route_id === $route->id
+            || $route->replaced_by_route_id === $owner->id;
     }
 
     /**

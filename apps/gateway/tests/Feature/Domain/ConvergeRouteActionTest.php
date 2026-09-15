@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\RemoveRouteAction;
+use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
@@ -13,6 +15,7 @@ use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
@@ -85,6 +88,88 @@ it('refuses a generated Route unless Node TLD reconciliation allows it', functio
         });
 
     expect($route->refresh()->domain)->toBe('feature.acme.dev.test');
+});
+
+it('records Cluster TLD generated Route failure, restores the old Cluster TLD and URL, and retries the same change', function (): void {
+    [$cluster, $route, $member] = cluster_tld_generated_route();
+    $this->projector->failures = [
+        'dns-publication' => 1,
+        'rollback-dns' => 1,
+    ];
+    $routerBefore = $cluster->routerAssignment()->get()->map->getAttributes()->all();
+
+    expect(fn () => app(UpdateClusterAction::class)->execute(
+        $cluster,
+        new UpdateClusterData(
+            nameProvided: false,
+            name: null,
+            tldProvided: true,
+            tld: 'next-cluster.test',
+            stateProvided: false,
+            state: null,
+        ),
+    ))->toThrow(ResourceOperationException::class, 'Injected dns-publication failure.');
+
+    $replacement = Route::query()->where('domain', 'main.acme.next-cluster.test')->sole();
+
+    expect($cluster->refresh()->tld)
+        ->toBe('cluster.test')
+        ->and($cluster->refresh()->state)
+        ->toBe(ClusterState::Active)
+        ->and($route->refresh()->domain)
+        ->toBe('main.acme.cluster.test')
+        ->and($route->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->replaced_by_route_id)
+        ->toBe($replacement->id)
+        ->and($replacement->status)
+        ->toBe(RouteStatus::Failed)
+        ->and($replacement->failed_step)
+        ->toBe('dns-publication')
+        ->and($replacement->error_code)
+        ->not->toBeNull()
+        ->and($this->events->values)
+        ->toContain('url:https://main.acme.next-cluster.test')
+        ->toContain('url:https://main.acme.cluster.test')
+        ->and($member->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($cluster->routerAssignment()->get()->map->getAttributes()->all())
+        ->toBe($routerBefore);
+
+    expect(fn () => app(UpdateClusterAction::class)->execute(
+        $cluster,
+        new UpdateClusterData(
+            nameProvided: false,
+            name: null,
+            tldProvided: true,
+            tld: 'other-cluster.test',
+            stateProvided: false,
+            state: null,
+        ),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.domain_change_conflict');
+    });
+
+    $this->projector->failures = [];
+    $updated = app(UpdateClusterAction::class)->execute(
+        $cluster,
+        new UpdateClusterData(
+            nameProvided: false,
+            name: null,
+            tldProvided: true,
+            tld: 'next-cluster.test',
+            stateProvided: false,
+            state: null,
+        ),
+    );
+    $replaced = Route::query()->where('domain', 'main.acme.next-cluster.test')->sole();
+
+    expect($updated->tld)
+        ->toBe('next-cluster.test')
+        ->and($replaced->status)
+        ->toBe(RouteStatus::Active)
+        ->and(Route::query()->find($route->id))
+        ->toBeNull();
 });
 
 it('records generated Route failure, restores the old URL, and refuses a conflicting mutation', function (): void {
@@ -640,6 +725,67 @@ it('refuses a conflicting publication request without changing recorded intent',
 
     expect($replacement->fresh()->getAttributes())->toBe($before);
 });
+
+/** @return array{Cluster, Route, Node} */
+function cluster_tld_generated_route(): array
+{
+    $cluster = Cluster::query()->create([
+        'name' => 'cluster-tld',
+        'tld' => 'cluster.test',
+        'state' => ClusterState::Active,
+    ]);
+    $router = Node::query()->create([
+        'name' => 'cluster-tld-router',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => null,
+        'public_ssh_host' => '192.0.2.80',
+        'wireguard_ip' => '10.44.0.80',
+        'user' => 'orbit',
+    ]);
+    $router->roles()->create([
+        'cluster_id' => $cluster->id,
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $member = Node::query()->create([
+        'name' => 'cluster-tld-workload',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => null,
+        'public_ssh_host' => '192.0.2.81',
+        'wireguard_ip' => '10.44.0.81',
+        'user' => 'orbit',
+    ]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://example.test/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $member->id,
+        'name' => 'main',
+        'environment' => 'development',
+        'checkout_path' => '/srv/acme/main',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = app(CreateRouteAction::class)->ensureForAppInstance($instance, null);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return [$cluster, $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']), $member];
+}
 
 function route_domain_change_route(bool $laravel, string $environment = 'development', bool $generated = false): Route
 {
