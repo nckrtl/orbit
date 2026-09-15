@@ -1,0 +1,83 @@
+{
+  "setup": [
+    {
+      "id": "setup",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb-351-foundation.py",
+        "setup"
+      ],
+      "timeout_seconds": 300
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "standard-binding",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb-351-foundation.py",
+        "standard-binding"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "skill-forward-check",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb-351-foundation.py",
+        "skill-forward-check"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "recorder-contracts",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb-351-foundation.py",
+        "recorder-contracts"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "verifier-contracts",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb-351-foundation.py",
+        "verifier-contracts"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "registry-reconciliation",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb-351-foundation.py",
+        "registry-reconciliation"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "full-artifact-manifest",
+      "node": "app-dev",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb-351-foundation.py",
+        "full-artifact-manifest"
+      ],
+      "timeout_seconds": 120
+    }
+  ],
+  "observed_inputs": false,
+  "inputs": [
+    ".agents/skills/designing-cli-commands",
+    ".agents/skills/verifying-cli-output",
+    "docs/reference/cli-ux.md"
+  ],
+  "mutates": true
+}

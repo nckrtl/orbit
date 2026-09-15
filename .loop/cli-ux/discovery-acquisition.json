@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-09-14T22:57:31.281850+00:00",
+  "host": "beast",
+  "worktree": "/fast/worktrees/orbit/orb-351",
+  "candidate": "edbf125f19667ddb8c2a61f8adec212766eff656",
+  "flow": "proof",
+  "solo_project": 4,
+  "solo_process": 1740,
+  "command": "bin/e2e-topology acquire ORB-351 /fast/worktrees/orbit/orb-351",
+  "exit_code": 1,
+  "stderr": "No promoted topology snapshot generation is available.",
+  "topology_acquired": false,
+  "prerequisite_owner": "ORB-91"
+}

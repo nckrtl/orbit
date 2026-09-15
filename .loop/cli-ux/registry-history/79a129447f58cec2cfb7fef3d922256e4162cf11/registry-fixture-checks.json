@@ -1,0 +1,60 @@
+{
+  "candidate": "79a129447f58cec2cfb7fef3d922256e4162cf11",
+  "results": [
+    {
+      "case": "exact-registry",
+      "exit_code": 0,
+      "result": {
+        "state": "passed",
+        "check": "ORB-351 exact registry and source reconciliation",
+        "candidate": "79a129447f58cec2cfb7fef3d922256e4162cf11",
+        "candidate_binding": "Harness must bind the supplied commit to this mounted candidate; the fixture verifies recorded source hashes, not the commit label alone.",
+        "root": "/Users/nckrtl/orbit-worktrees/orb-351",
+        "php_version": "8.5.8",
+        "public_commands": 106,
+        "framework_commands": 20,
+        "registration_keys": 126,
+        "source_files": 174,
+        "source_manifest_sha256": "bd410f6e8bd4a5a3630acf4f6a288cc023e9dfb158836bcd1327f4eb91b1e45f",
+        "expected_sha256": "f993801ae4ee9f51156c79ebe66f78b02ff0c1d5cb742882743ffbf0b64f9197",
+        "verifier_sha256": "d4a45983b3d56117c25714eab66b25819cebc222ef49e2d9d6a24d414da2e69c",
+        "extension_configuration": {
+          "enabled": [
+            "herdr"
+          ]
+        },
+        "isolation": "Private temporary ORBIT_HOME; no command dispatched; no Gateway profile or caller home used.",
+        "ux_adoption": "Unverified for every public command; this proves registry coverage only."
+      },
+      "caller_home_unchanged": true
+    },
+    {
+      "case": "changed-public-signature",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      },
+      "verdict": "Expected mismatch rejected"
+    },
+    {
+      "case": "changed-framework-signature",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: framework"
+      },
+      "verdict": "Expected mismatch rejected"
+    },
+    {
+      "case": "stale-doctor-workspace-description",
+      "exit_code": 1,
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      },
+      "verdict": "Expected mismatch rejected"
+    }
+  ],
+  "ux_adoption": "Unverified; no product command dispatched or terminal behavior proved"
+}

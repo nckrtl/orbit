@@ -1,0 +1,74 @@
+{
+  "from_candidate": "eadefb3562b562d8d97929f3f3e255cc0875ef2c",
+  "to": "6c8e23c9dc8b2ac2003f25dd57b9e4fef6cb8688",
+  "initially_reviewed_candidate": "1ae6290813befef76e4b455bd37c78913b464d97",
+  "integrated_main": "8df38ef80c34536d77ea262e15c758f640b29b87",
+  "owner": "ORB-189",
+  "public_command_count": 106,
+  "framework_command_count": 20,
+  "name_changes": [],
+  "signature_changes": [
+    {
+      "command": "dns:resolve",
+      "field": "description",
+      "before": "Configure or remove a local development TLD resolver override.",
+      "after": "Configure or remove a local development TLD or exact private Route resolver override."
+    },
+    {
+      "command": "dns:resolve",
+      "field": "signature.arguments.target.description",
+      "before": "IP address that wildcard hostnames under the TLD resolve to",
+      "after": "IP address that the TLD wildcard or exact name resolves to"
+    },
+    {
+      "command": "dns:resolve",
+      "field": "signature.arguments.tld.description",
+      "before": "Development TLD to configure, without a leading dot",
+      "after": "Development TLD or exact private Route name, without a leading dot"
+    },
+    {
+      "command": "dns:resolve",
+      "field": "signature.options.reset.description",
+      "before": "Remove the local resolver override for the TLD",
+      "after": "Remove the local resolver override"
+    }
+  ],
+  "source_hash_changes": [
+    {
+      "path": "apps/cli/app/Commands/Dns/DnsResolveTldCommand.php",
+      "before": "08175a75fb67f91f6df5ae1de45b5c4a8c92a1f0ada8e6efbd4573e2c2d459c6",
+      "after": "0e5d7f6127b04e4b8f442fd9b357f4f83537c82e9217681744a29c25fd876aeb"
+    },
+    {
+      "path": "apps/cli/app/Services/Dns/LocalResolver.php",
+      "before": "fbe1561d2e9a2eab6f3eb32a93d64e89786a6cf493cfeb982d24f5cde9e1b341",
+      "after": "f1779adf2bb3d591bd7b8193929e44746a10af2a1fe65698caa162c1f818b6b9"
+    },
+    {
+      "path": "apps/cli/app/Services/Dns/ResolvesLocalDns.php",
+      "before": "a04665c42c0e38e72c2380723fbfa40867bc9118f79f84c1a0b6e4e3062af368",
+      "after": "8c93e0aa07d25997692058cb89b7f6694724bf7217bc488a408092cbf1125cd9"
+    }
+  ],
+  "current_contract": {
+    "inputs": "Existing tld positional argument accepts a lowercase one-label TLD or multi-label exact private Route name. target remains optional for reset and a required IP for setup. --reset and --json are unchanged.",
+    "platform": "macOS only, with Homebrew dnsmasq. Linux still refuses. Native dependency, privilege and resulting resolver checks remain required.",
+    "machine_identity": "One-label success retains tld; exact-name success uses hostname. target/status/changed/restart_browser remain. This is observed accepted product behavior, not a generic UX schema change.",
+    "validation": "Invalid multi-label names use dns.hostname_invalid; one-label invalid inputs retain dns.tld_invalid.",
+    "native_proof": "Exact-name setup/idempotence/reset, overlapping wildcard isolation and failure cases join TLD proof. No native DNS mutation was performed by this inventory refresh."
+  },
+  "contract_source_sha256": {
+    "apps/cli/app/Commands/Dns/DnsResolveTldCommand.php": "0e5d7f6127b04e4b8f442fd9b357f4f83537c82e9217681744a29c25fd876aeb",
+    "apps/cli/app/Services/Dns/LocalResolver.php": "f1779adf2bb3d591bd7b8193929e44746a10af2a1fe65698caa162c1f818b6b9",
+    "apps/cli/app/Services/Dns/ResolvesLocalDns.php": "8c93e0aa07d25997692058cb89b7f6694724bf7217bc488a408092cbf1125cd9",
+    "apps/cli/tests/Feature/Dns/DnsResolveTldCommandTest.php": "42680a3f465bbc9fdac5000a006cf20598675214bb73cea3cf5ee08c06046b1b",
+    "apps/cli/tests/Feature/Dns/LocalResolverTest.php": "35c29c71544f33d8f39a9091d0364f7bc86d5617260c03b12a23e1a8b81a38ff",
+    "apps/cli/README.md": "0ee9c591fdda5cc58ddadc499f7f54d4feff09b016676c01aceb2d4b13eca992"
+  },
+  "other_main_changes": "ORB-191 Route convergence, ORB-364 repair and subsequent Gateway/README changes do not add a CLI registry or bound CLI source delta beyond the reviewed ORB-189 files.",
+  "source_identity_repair": {
+    "previous_file_observed_head": "79a129447f58cec2cfb7fef3d922256e4162cf11",
+    "note": "Previous source-identity metadata lagged the eadefb35 expected fixture; preserved verbatim in history and replaced by the complete live current binding."
+  },
+  "ux_adoption": "All 106 public and 20 framework rows remain Unverified. No product command dispatched."
+}

@@ -1,0 +1,85 @@
+{
+  "id": "ORB-351",
+  "uuid": "78f40f25-13d7-4192-9b48-b0caaef7d7f5",
+  "title": "Restore the generic CLI standard and terminal verification skills",
+  "description": "Contributors can find and apply one shared CLI design standard and the designing-cli-commands and verifying-cli-output skills. The recorder preserves interactive terminal evidence, and its verifier distinguishes expected command failures from broken or incomplete capture.\n\n## Scope\n\n* In: the root CLI design reference, both repository skills, their recording and verification tools, behavioral tests, and routing from contributor and CLI guidance.\n* In: the live command inventory, source map, current-contract exception map, and adoption record format.\n* Out: product command behavior changes, new API or SDK schemas, and topology harness changes.\n\n## Acceptance\n\n- [ ] The standard describes input and output modes, admitted prompt and rendering primitives, consent boundaries, errors, machine-output cleanliness, terminal liveness, and evidence requirements while linking current product authority rather than importing old product rules. Proof: documentation lint and independent semantic review against current ADRs and command contracts.\n- [ ] Both discoverable skills route their readers to the standard and current workflow, with executable tool instructions and no obsolete host, topology, helper, transport, or product assumptions. Proof: skill validation and independent forward-testing on disposable terminal fixtures.\n- [ ] The recorder forwards terminal or prompt-triggered input, preserves raw bytes and split Unicode, reconstructs frames and colors, drains trailing output, reports the actual child status separately from capture failures, and restores its terminal and owned processes. Proof: the verifying-cli-output behavioral tests and a Solo terminal fixture session on disposable Incus.\n- [ ] The verifier rejects incorrect final output, stale case identity, missing input actions, incomplete state sequences, backward state transitions, and static output presented as animation; it accepts the corresponding valid cases. Proof: accepted and rejected recorder/analyzer fixtures.\n- [ ] The inventory includes every supported public command with extensions enabled and separately accounts for framework or internal surfaces, while the adoption format records supported modes, applicable rules, contract-backed exceptions, tests, terminal cases, candidate identity, artifacts, and verdict. Proof: live command-registry reconciliation with the command-surface test.\n- [ ] Full PTY files survive evidence export with matching sizes and SHA-256 hashes; bounded harness stdout/stderr tails do not replace raw recordings. Proof: a disposable fixture capture larger than the harness output-tail limit, bounded manifest, recorded export, and byte/hash comparison before topology release.",
+  "priority": {
+    "value": 0,
+    "name": "No priority"
+  },
+  "url": "https://linear.app/nckrtl/issue/ORB-351/restore-the-generic-cli-standard-and-terminal-verification-skills",
+  "gitBranchName": "nckrtl/orb-351-restore-the-generic-cli-standard-and-terminal-verification",
+  "createdAt": "2026-09-14T22:34:05.329Z",
+  "updatedAt": "2026-09-14T22:34:05.329Z",
+  "archivedAt": null,
+  "completedAt": null,
+  "startedAt": null,
+  "canceledAt": null,
+  "dueDate": null,
+  "slaStartedAt": null,
+  "slaMediumRiskAt": null,
+  "slaHighRiskAt": null,
+  "slaBreachesAt": null,
+  "status": "Todo",
+  "statusType": "unstarted",
+  "labels": [
+    "docs",
+    "incus",
+    "apps/cli",
+    "Improvement"
+  ],
+  "attachments": [
+    {
+      "id": "fa7118a2-7c25-4d93-b641-80a29bf54787",
+      "title": "ADR 0036",
+      "subtitle": "",
+      "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0036-support-only-appinstances.md"
+    },
+    {
+      "id": "5d3de278-4a79-4360-8ee1-64dbef8c87dc",
+      "title": "ADR 0014",
+      "subtitle": "",
+      "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0014-maintain-verified-documentation-context.md"
+    },
+    {
+      "id": "a159ba73-5f65-4704-baed-14555c65ead9",
+      "title": "ADR 0058",
+      "subtitle": "",
+      "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0058-separate-incus-requirements-from-delivery-flow.md"
+    },
+    {
+      "id": "35ca5a3d-3396-4e10-8342-4fda3ed19f4f",
+      "title": "ADR 0071",
+      "subtitle": "",
+      "url": "https://github.com/nckrtl/orbit/blob/main/docs/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk.md"
+    }
+  ],
+  "documents": [],
+  "stateHistory": [
+    {
+      "state": {
+        "id": "a01d1053-f16e-4fc0-8ce0-48b0de3526ce",
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "startedAt": "2026-09-14T22:34:05.329Z",
+      "endedAt": null
+    }
+  ],
+  "createdBy": "Nick Retel",
+  "createdById": "691cb14c-60d5-415a-a5c7-a7c19fe83424",
+  "parentId": "ORB-350",
+  "team": "Orbit",
+  "teamId": "adf44a8f-4b0c-46ae-a846-1414e7d919aa",
+  "relations": {
+    "blocks": [
+      {
+        "id": "ORB-352",
+        "title": "Implement shared CLI input and rendering primitives"
+      }
+    ],
+    "blockedBy": [],
+    "relatedTo": [],
+    "duplicateOf": null
+  }
+}
