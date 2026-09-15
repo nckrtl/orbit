@@ -1,0 +1,270 @@
+{
+  "schema": 1,
+  "role": "builder",
+  "candidate": "af717b848c956f1f9ac017c1a3def66474b290ae",
+  "tree": "5c5b17fd05cedc5125bd538a87be57e8a1368d21",
+  "worktree": "/fast/worktrees/orbit/orb-352",
+  "base": "3092c3a83ebea75e203fd139bfb5932ff3530b1d",
+  "changed_paths": [
+    "apps/cli/app/Commands/GatewayCommand.php",
+    "apps/cli/app/Console/Kernel.php",
+    "apps/cli/app/Support/Console/Animation.php",
+    "apps/cli/app/Support/Console/CommandPrompts.php",
+    "apps/cli/app/Support/Console/ConsoleInterrupted.php",
+    "apps/cli/app/Support/Console/ConsoleMode.php",
+    "apps/cli/app/Support/Console/ConsoleWriter.php",
+    "apps/cli/app/Support/Console/HumanRenderer.php",
+    "apps/cli/app/Support/Console/InputTerminal.php",
+    "apps/cli/app/Support/Console/InvocationFormatter.php",
+    "apps/cli/app/Support/Console/OutputContext.php",
+    "apps/cli/app/Support/Console/ProgressDisplay.php",
+    "apps/cli/app/Support/Console/ProgressState.php",
+    "apps/cli/app/Support/Console/PromptAborted.php",
+    "apps/cli/app/Support/Console/PromptContext.php",
+    "apps/cli/app/Support/Console/PromptOutput.php",
+    "apps/cli/app/Support/Console/PromptTerminal.php",
+    "apps/cli/app/Support/Console/Renderers/DataTableRenderer.php",
+    "apps/cli/app/Support/Console/Renderers/TableLayout.php",
+    "apps/cli/app/Support/Console/Renderers/TableRenderer.php",
+    "apps/cli/app/Support/Console/Renderers/TableTheme.php",
+    "apps/cli/app/Support/Console/Renderers/animate.php",
+    "apps/cli/app/Support/Console/SpinnerDisplay.php",
+    "apps/cli/app/Support/Console/TerminalRegion.php",
+    "apps/cli/app/Support/Console/TerminalText.php",
+    "apps/cli/app/Support/GatewayFailureRenderer.php",
+    "apps/cli/tests/Feature/Console/CommandModeTest.php",
+    "apps/cli/tests/Feature/Console/CommandPromptsTest.php",
+    "apps/cli/tests/Feature/Console/TerminalLifecycleTest.php",
+    "apps/cli/tests/Feature/Gateway/GatewayErrorRenderingTest.php",
+    "apps/cli/tests/Feature/Gateway/GatewayTrustCommandTest.php",
+    "apps/cli/tests/Feature/Metrics/MetricsCommandsTest.php",
+    "apps/cli/tests/Feature/Nodes/AddNodeCommandTest.php",
+    "apps/cli/tests/Fixtures/Console/layout-fixture.php",
+    "apps/cli/tests/Fixtures/Console/progress-states-fixture.php",
+    "apps/cli/tests/Fixtures/Console/prompt-fixture.php",
+    "apps/cli/tests/Fixtures/Console/renderer-faults.php",
+    "apps/cli/tests/Fixtures/Console/runtime-fixture.php",
+    "apps/cli/tests/Unit/Console/AnimationCadenceTest.php",
+    "apps/cli/tests/Unit/Console/HumanRendererTest.php",
+    "apps/cli/tests/Unit/Console/ProgressDisplayTest.php",
+    "docs/cli/overview.mdx",
+    "docs/generated/context.json",
+    "docs/reference/cli-ux.md"
+  ],
+  "started_at": 1789468068.8347428,
+  "checks": [
+    {
+      "project": "apps/cli",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.216,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-cli-validate.log"
+    },
+    {
+      "project": "apps/cli",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 2.512,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-cli-check.log"
+    },
+    {
+      "project": "apps/cli",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 0.319,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-cli-test:affected.log",
+      "warning": "composer test:affected selected no tests although the candidate changes 41 path(s) under apps/cli/"
+    },
+    {
+      "project": "apps/docs",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.193,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-docs-validate.log"
+    },
+    {
+      "project": "apps/docs",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 1.682,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-docs-check.log"
+    },
+    {
+      "project": "apps/docs",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 0.316,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-docs-test:affected.log"
+    },
+    {
+      "project": "apps/gateway",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.199,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-gateway-validate.log"
+    },
+    {
+      "project": "apps/gateway",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 7.222,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-gateway-check.log"
+    },
+    {
+      "project": "apps/gateway",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 5.475,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-gateway-test:affected.log"
+    },
+    {
+      "project": "apps/e2e",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.2,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-e2e-validate.log"
+    },
+    {
+      "project": "apps/e2e",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 2.062,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-e2e-check.log"
+    },
+    {
+      "project": "apps/e2e",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 0.321,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-e2e-test:affected.log"
+    },
+    {
+      "project": "packages/php-sdk",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.173,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/packages-php-sdk-validate.log"
+    },
+    {
+      "project": "packages/php-sdk",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 1.435,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/packages-php-sdk-check.log"
+    },
+    {
+      "project": "packages/php-sdk",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 0.301,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/packages-php-sdk-test:affected.log"
+    }
+  ],
+  "warnings": [
+    {
+      "project": "apps/cli",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/af717b848c956f1f9ac017c1a3def66474b290ae/review-sronqypg/apps-cli-test:affected.log",
+      "paths": [
+        "apps/cli/app/Commands/GatewayCommand.php",
+        "apps/cli/app/Console/Kernel.php",
+        "apps/cli/app/Support/Console/Animation.php",
+        "apps/cli/app/Support/Console/CommandPrompts.php",
+        "apps/cli/app/Support/Console/ConsoleInterrupted.php",
+        "apps/cli/app/Support/Console/ConsoleMode.php",
+        "apps/cli/app/Support/Console/ConsoleWriter.php",
+        "apps/cli/app/Support/Console/HumanRenderer.php",
+        "apps/cli/app/Support/Console/InputTerminal.php",
+        "apps/cli/app/Support/Console/InvocationFormatter.php",
+        "apps/cli/app/Support/Console/OutputContext.php",
+        "apps/cli/app/Support/Console/ProgressDisplay.php",
+        "apps/cli/app/Support/Console/ProgressState.php",
+        "apps/cli/app/Support/Console/PromptAborted.php",
+        "apps/cli/app/Support/Console/PromptContext.php",
+        "apps/cli/app/Support/Console/PromptOutput.php",
+        "apps/cli/app/Support/Console/PromptTerminal.php",
+        "apps/cli/app/Support/Console/Renderers/DataTableRenderer.php",
+        "apps/cli/app/Support/Console/Renderers/TableLayout.php",
+        "apps/cli/app/Support/Console/Renderers/TableRenderer.php",
+        "apps/cli/app/Support/Console/Renderers/TableTheme.php",
+        "apps/cli/app/Support/Console/Renderers/animate.php",
+        "apps/cli/app/Support/Console/SpinnerDisplay.php",
+        "apps/cli/app/Support/Console/TerminalRegion.php",
+        "apps/cli/app/Support/Console/TerminalText.php",
+        "apps/cli/app/Support/GatewayFailureRenderer.php",
+        "apps/cli/tests/Feature/Console/CommandModeTest.php",
+        "apps/cli/tests/Feature/Console/CommandPromptsTest.php",
+        "apps/cli/tests/Feature/Console/TerminalLifecycleTest.php",
+        "apps/cli/tests/Feature/Gateway/GatewayErrorRenderingTest.php",
+        "apps/cli/tests/Feature/Gateway/GatewayTrustCommandTest.php",
+        "apps/cli/tests/Feature/Metrics/MetricsCommandsTest.php",
+        "apps/cli/tests/Feature/Nodes/AddNodeCommandTest.php",
+        "apps/cli/tests/Fixtures/Console/layout-fixture.php",
+        "apps/cli/tests/Fixtures/Console/progress-states-fixture.php",
+        "apps/cli/tests/Fixtures/Console/prompt-fixture.php",
+        "apps/cli/tests/Fixtures/Console/renderer-faults.php",
+        "apps/cli/tests/Fixtures/Console/runtime-fixture.php",
+        "apps/cli/tests/Unit/Console/AnimationCadenceTest.php",
+        "apps/cli/tests/Unit/Console/HumanRendererTest.php",
+        "apps/cli/tests/Unit/Console/ProgressDisplayTest.php"
+      ],
+      "message": "composer test:affected selected no tests although the candidate changes 41 path(s) under apps/cli/"
+    }
+  ],
+  "passed": true,
+  "unchanged": true,
+  "finished_at": 1789468091.725133
+}

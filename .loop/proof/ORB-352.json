@@ -1,0 +1,51 @@
+{
+  "setup": [
+    {
+      "id": "prepare-cli-ux-recording",
+      "node": "app-dev",
+      "argv": ["bash", "/var/lib/orbit-e2e/proof/orb352-setup.sh"],
+      "timeout_seconds": 240
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "layout",
+      "node": "app-dev",
+      "argv": ["python3", "/var/lib/orbit-e2e/proof/orb352-action.py", "layout"],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "modes",
+      "node": "app-dev",
+      "argv": ["python3", "/var/lib/orbit-e2e/proof/orb352-action.py", "modes"],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "prompts",
+      "node": "app-dev",
+      "argv": ["python3", "/var/lib/orbit-e2e/proof/orb352-action.py", "prompts"],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "liveness",
+      "node": "app-dev",
+      "argv": ["python3", "/var/lib/orbit-e2e/proof/orb352-action.py", "liveness"],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "lifecycle",
+      "node": "app-dev",
+      "argv": ["python3", "/var/lib/orbit-e2e/proof/orb352-action.py", "lifecycle"],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "contracts",
+      "node": "app-dev",
+      "argv": ["python3", "/var/lib/orbit-e2e/proof/orb352-action.py", "contracts"],
+      "timeout_seconds": 240
+    }
+  ],
+  "inputs": ["apps/cli", ".agents/skills/verifying-cli-output", "docs/reference/cli-ux.md"],
+  "observed_inputs": false,
+  "mutates": true
+}
