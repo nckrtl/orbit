@@ -86,7 +86,7 @@ abstract class PromptContext extends Prompt
                         $handlers[$signal] = pcntl_signal_get_handler($signal);
                         pcntl_signal($signal, static function (int $received): never {
                             throw new ConsoleInterrupted($received);
-                        });
+                        }, restart_syscalls: false);
                     }
 
                     pcntl_async_signals(true);

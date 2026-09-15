@@ -41,13 +41,22 @@ class InputTerminal extends Terminal
     public function read(): string
     {
         $this->assertInputAvailable();
+        // PHP memory streams omit the blocking flag from their metadata.
+        $metadata = array_replace(['blocked' => true], stream_get_meta_data($this->input));
+        $blocking = $metadata['blocked'];
 
         try {
+            if (! stream_set_blocking($this->input, false)) {
+                throw new PromptAborted('Unable to prepare input reads.', 'read_failed');
+            }
+
             $input = @fread($this->input, 1024);
         } catch (ConsoleInterrupted $exception) {
             throw $exception;
         } catch (Throwable $exception) {
             throw new PromptAborted('Unable to read input.', 'read_failed', $exception);
+        } finally {
+            stream_set_blocking($this->input, $blocking);
         }
 
         if ($input === false) {

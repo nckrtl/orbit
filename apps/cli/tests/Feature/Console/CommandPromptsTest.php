@@ -391,6 +391,26 @@ it('rejects a fallback default when its input stream reaches actual EOF', functi
     });
 });
 
+it('keeps an idle blocking input interruptible and restores its blocking mode', function (): void {
+    $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    expect($pair)->not->toBeFalse();
+    $terminal = new InputTerminal($pair[0]);
+
+    try {
+        expect(stream_get_meta_data($pair[0])['blocked'])->toBeTrue();
+        $started = microtime(true);
+        expect($terminal->read())->toBe('')
+            ->and(microtime(true) - $started)->toBeLessThan(0.5)
+            ->and(stream_get_meta_data($pair[0])['blocked'])->toBeTrue();
+        fwrite($pair[1], 'ready');
+        expect($terminal->read())->toBe('ready')
+            ->and(stream_get_meta_data($pair[0])['blocked'])->toBeTrue();
+    } finally {
+        fclose($pair[0]);
+        fclose($pair[1]);
+    }
+});
+
 it('distinguishes temporarily empty input from EOF', function (): void {
     $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
     expect($pair)->not->toBeFalse();
