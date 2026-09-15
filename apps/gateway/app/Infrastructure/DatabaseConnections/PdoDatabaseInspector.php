@@ -52,7 +52,7 @@ final readonly class PdoDatabaseInspector
         if ($statement->columnCount() > 0) {
             for ($index = 0; $index < $statement->columnCount(); $index++) {
                 $meta = $statement->getColumnMeta($index);
-                $columns[] = is_array($meta) && is_string($meta['name'] ?? null) ? $meta['name'] : (string) $index;
+                $columns[] = is_array($meta) ? $meta['name'] : (string) $index;
             }
 
             while ($row = $statement->fetch(PDO::FETCH_ASSOC)) {
@@ -221,7 +221,10 @@ final readonly class PdoDatabaseInspector
         ), $result->rows);
     }
 
-    /** @param array<array-key, mixed> $row */
+    /**
+     * @param  array<array-key, mixed>  $row
+     * @return array<string, bool|float|int|string|null>
+     */
     private function normalizeRow(array $row): array
     {
         $normalized = [];

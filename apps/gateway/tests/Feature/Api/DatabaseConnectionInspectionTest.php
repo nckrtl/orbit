@@ -49,6 +49,7 @@ it('queries a registered mysql connection as read-only by default and redacts au
 
     $response = $this->postJson('/api/v1/database-connections/app/query', [
         'sql' => 'SELECT email FROM users WHERE token='.DATABASE_INSPECTION_SECRET,
+        'write' => false,
     ]);
 
     $response

@@ -250,52 +250,48 @@ it('queries a registered connection and sends the write flag only when asked', f
 });
 
 it('lists tables and describes schema through typed inspection requests', function (): void {
-    $tables = database_cli_mock(ListDatabaseTablesRequest::class, [
-        'slug' => 'app',
-        'driver' => 'mysql',
-        'tables' => ['users'],
+    $columns = [
+        ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
+    ];
+    $client = MockClient::global([
+        ListDatabaseTablesRequest::class => MockResponse::make([
+            'data' => ['slug' => 'app', 'driver' => 'mysql', 'tables' => ['users']],
+            'meta' => ['request_id' => database_cli_request_id()],
+        ]),
+        ShowDatabaseSchemaRequest::class => MockResponse::make([
+            'data' => [
+                'slug' => 'app',
+                'driver' => 'mysql',
+                'tables' => [['name' => 'users', 'columns' => $columns]],
+            ],
+            'meta' => ['request_id' => database_cli_request_id()],
+        ]),
+        DescribeDatabaseTableRequest::class => MockResponse::make([
+            'data' => ['slug' => 'app', 'driver' => 'mysql', 'table' => 'users', 'columns' => $columns],
+            'meta' => ['request_id' => database_cli_request_id()],
+        ]),
     ]);
 
     $this
         ->artisan('database:tables', ['slug' => 'app', '--json' => true])
         ->assertExitCode(0);
 
-    expect($tables->getLastRequest())
+    expect($client->getLastRequest())
         ->toBeInstanceOf(ListDatabaseTablesRequest::class)
-        ->and($tables->getLastRequest()?->resolveEndpoint())
+        ->and($client->getLastRequest()?->resolveEndpoint())
         ->toBe('/api/v1/database-connections/app/tables');
-
-    database_cli_mock(ShowDatabaseSchemaRequest::class, [
-        'slug' => 'app',
-        'driver' => 'mysql',
-        'tables' => [[
-            'name' => 'users',
-            'columns' => [
-                ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
-            ],
-        ]],
-    ]);
 
     $this
         ->artisan('database:schema', ['slug' => 'app', '--json' => true])
         ->assertExitCode(0);
 
-    $describe = database_cli_mock(DescribeDatabaseTableRequest::class, [
-        'slug' => 'app',
-        'driver' => 'mysql',
-        'table' => 'users',
-        'columns' => [
-            ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
-        ],
-    ]);
-
     $this
         ->artisan('database:describe', ['slug' => 'app', 'table' => 'users', '--json' => true])
         ->assertExitCode(0);
 
-    expect($describe->getLastRequest())
+    expect($client->getLastRequest())
         ->toBeInstanceOf(DescribeDatabaseTableRequest::class)
-        ->and($describe->getLastRequest()?->resolveEndpoint())
+        ->and($client->getLastRequest()?->resolveEndpoint())
         ->toBe('/api/v1/database-connections/app/describe/users');
 });
 
