@@ -47,6 +47,8 @@ use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
+use App\Domain\Apps\AppUpdateProjectionMutator;
+use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
@@ -147,6 +149,8 @@ use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
+use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
+use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
@@ -267,6 +271,8 @@ final class AppServiceProvider extends ServiceProvider
         ProductionAppInstanceContentRetention::class => RecordedProductionAppInstanceContentRetention::class,
         AppInstanceRemovalProjector::class => NativeAppInstanceRemovalProjector::class,
         DevelopmentAppInstanceConfigurator::class => RemoteDevelopmentAppInstanceConfigurator::class,
+        AppUpdateSourceMutator::class => RemoteAppUpdateSourceMutator::class,
+        AppUpdateProjectionMutator::class => NativeAppUpdateProjectionMutator::class,
         DevelopmentAppInstanceProvisioner::class => NativeDevelopmentAppInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionAppInstanceProvisioner::class => NativeProductionAppInstanceProvisioner::class,

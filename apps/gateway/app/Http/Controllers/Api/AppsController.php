@@ -8,11 +8,13 @@ use App\Actions\Apps\CreateAppAction;
 use App\Actions\Apps\ListAppsAction;
 use App\Actions\Apps\RemoveAppAction;
 use App\Actions\Apps\ShowAppAction;
+use App\Actions\Apps\UpdateAppAction;
 use App\Data\Apps\AppData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Apps\StoreAppRequest;
+use App\Http\Requests\Apps\UpdateAppRequest;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
@@ -55,6 +57,15 @@ final class AppsController extends Controller
     {
         return response()->json([
             'data' => AppData::fromModel($action->handle($app))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::AppOwning)]
+    public function update(UpdateAppRequest $request, OrbitApp $app, UpdateAppAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => AppData::fromModel($action->execute($app, $request->payload()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

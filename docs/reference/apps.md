@@ -61,7 +61,30 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 Repeating `app:create` with the same name, slug, repository access URL, default branch, root, and defaults returns the existing App. A retry does not look up an omitted branch again.
 
-A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL. Orbit exposes no App update operation. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) defines the reconciliation boundary for a separate contract.
+A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
+
+## Update an App
+
+Use `app:update` when an existing App must change its slug, repository access URL, default branch, or relative web root. The Gateway API accepts `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest`. Omitted fields stay unchanged. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+
+```bash
+orbit app:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
+```
+
+| Field or option | Result |
+| --- | --- |
+| `slug` and `--slug` | Reconcile generated development Route domains and Laravel application URLs before the new slug is published. Existing checkout paths, production users, and homes stay as recorded. |
+| `repository_url` and `--repository` | Store the selected HTTPS or SSH access URL. Equivalent forms keep the same canonical repository identity. |
+| `default_branch` and `--default-branch` | Store the new App default and switch every development `default` App instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
+| `root` and `--root` | Change the inherited web root of every App instance without its own override. Production resolves the new root inside the active release. |
+
+The Gateway treats the supplied fields as one operation. It inventories affected App instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous App record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
+
+When the repository access URL changes, the Gateway updates `origin` once for each Orbit-owned development checkout. Linked worktrees use that common repository and are not mutated directly. The Gateway refuses the update before mutation when a worktree's common repository is not owned by an Orbit checkout, when the canonical identity belongs to another App (`app.repository_identity_conflict`), or when any affected source fails preflight (`app.repository_preflight_failed` or `app.repository_unowned_common`). Production Git source, deployment branch, starting commit, and release layout do not change. App updates never start a deployment.
+
+When `default_branch` cannot switch on an inheriting `default` source, the Gateway refuses before publication (`app.source_switch_failed`). The App instance name, managed path, and Route identity stay unchanged.
+
+When the slug or web root changes, the Gateway reconciles generated Routes, runtime projections, and Laravel canonical URLs before publication. An application HTTP error does not block completion after Orbit-owned writes succeed. [Applications](/domains/applications#reconcile-an-app-update) describes source ownership and Laravel URL ownership during these updates.
 
 ## Incomplete source defaults
 

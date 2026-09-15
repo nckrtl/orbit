@@ -10,6 +10,7 @@ use App\Models\AppInstanceDeployStep;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\AppUpdate;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -61,6 +62,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceDeployStep::class,
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
+        AppUpdate::class,
         HerdrObservationNonce::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();

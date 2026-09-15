@@ -8,6 +8,7 @@ use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
+use Orbit\Sdk\Requests\Apps\UpdateAppRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
@@ -157,7 +158,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 86;
+        $preScheduleOperationCount = 87;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
@@ -291,6 +292,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ListInstanceDeployStepsRequest::class)
             ->toContain(UpdateInstanceDeployStepRequest::class)
             ->toContain(DestroyInstanceDeployStepRequest::class)
+            ->toContain(UpdateAppRequest::class)
             ->toContain(UpdateAppInstanceRequest::class)
             ->toContain(DeployAppInstanceRequest::class)
             ->toContain(RollbackAppInstanceRequest::class)
@@ -321,12 +323,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($databaseRequests);
     });
 
-    it('documents the 108-operation SDK surface including Database connection transport', function (): void {
+    it('documents the 109-operation SDK surface including Database connection transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 108 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 109 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -392,7 +394,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 108 public Gateway operations.',
+                'The SDK exposes exactly 109 public Gateway operations.',
                 'The SDK exposes typed list, show, add, update, remove, attach, and detach requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
