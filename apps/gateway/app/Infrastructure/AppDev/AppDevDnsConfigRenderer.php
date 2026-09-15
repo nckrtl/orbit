@@ -65,7 +65,12 @@ final readonly class AppDevDnsConfigRenderer
         $records = $nodes
             ->toBase()
             ->merge($this->sites
-                ->all($pendingRoute, $unavailableInstance, $additionalRoute)
+                ->all(
+                    $pendingRoute,
+                    $unavailableInstance,
+                    $additionalRoute,
+                    $this->routerOverrides($clusterOverrides),
+                )
                 ->groupBy('domain')
                 ->map(static function ($sites): string {
                     /** @var AppDevSite $site */
@@ -181,6 +186,23 @@ final readonly class AppDevDnsConfigRenderer
     /**
      * @return array<string, int>
      */
+    /**
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     * @return array<int, int>
+     */
+    private function routerOverrides(array $clusterOverrides): array
+    {
+        $overrides = [];
+
+        foreach ($clusterOverrides as $clusterId => $override) {
+            if (isset($override['router_node_id']) && is_int($override['router_node_id'])) {
+                $overrides[(int) $clusterId] = $override['router_node_id'];
+            }
+        }
+
+        return $overrides;
+    }
+
     public function registeredRequesters(): array
     {
         $requesters = [];
