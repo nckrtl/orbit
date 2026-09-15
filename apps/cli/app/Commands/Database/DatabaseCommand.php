@@ -58,4 +58,40 @@ abstract class DatabaseCommand extends GatewayCommand
 
         return self::SUCCESS;
     }
+
+    /**
+     * @param  list<string>  $headers
+     * @param  list<list<bool|int|string|null>>  $rows
+     */
+    protected function renderInspectionTable(string $message, array $headers, array $rows, string $requestId): int
+    {
+        if ($this->option('json') === true) {
+            return self::SUCCESS;
+        }
+
+        $this->info($message);
+
+        if ($rows === []) {
+            $this->line('No matching records were found.');
+        } else {
+            $this->table($headers, $rows);
+        }
+
+        $this->line("Request ID: {$requestId}");
+
+        return self::SUCCESS;
+    }
+
+    protected function displayValue(bool|float|int|string|null $value): string
+    {
+        if ($value === null) {
+            return '—';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        return (string) $value;
+    }
 }

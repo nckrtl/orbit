@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 110 concrete public Gateway API operations:
+The SDK models exactly 114 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -16,7 +16,7 @@ The SDK models exactly 110 concrete public Gateway API operations:
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Herdr: session list, add, adopt, show, restart, remove, and observation-grant.
-- Database connection: list, show, add, update, remove, attach, and detach.
+- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, and describe.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
 The four abstract request bases are implementation details, not extra Gateway
@@ -85,8 +85,12 @@ operations. Keep the public API typed and small.
   Preserve omitted optional fields as absence. Item and collection responses
   omit the password and expose `has_password`. Attach and detach send an
   AppInstance ID-or-domain selector, the connection slug, and an optional
-  prefix. Attachment responses omit environment values and passwords. The
-  Gateway owns validation, encryption, persistence, and stored-environment writes.
+  prefix. Attachment responses omit environment values and passwords. Query
+  sends the registered-connection slug, SQL, and an optional write flag.
+  Tables, schema, and describe are bodyless reads against that slug. Inspection
+  responses omit passwords and redact credential-shaped values. The Gateway
+  owns validation, encryption, persistence, stored-environment writes, and
+  inspection execution.
 - Accept only the current Doctor family tokens: node, role, app, instance,
   schedule, tool, process, firewall, herdr, and database_connection.
   Keep Doctor verify-only and policy-free.
@@ -94,7 +98,7 @@ operations. Keep the public API typed and small.
   granular permissions, presets, wildcards, permission editing, or legacy
   grant/revoke compatibility.
 - Do not restore the retired Agent, generic executor, direct SSH execution,
-  Docker Swarm, Compose, image-building, generic stream, database query,
+  Docker Swarm, Compose, image-building, generic stream, unregistered database query,
   proxy, legacy Instance, or Workspace surfaces.
 - Coordinate contract changes with Gateway and CLI owners. Do not implement
   Gateway policy or CLI presentation in this repository.

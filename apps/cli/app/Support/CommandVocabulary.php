@@ -26,6 +26,7 @@ final readonly class CommandVocabulary
      * @var array<string, list<string>>
      */
     public const array FAMILY_ACTIONS = [
+        'database' => ['describe', 'query', 'schema', 'tables'],
         'dns' => ['resolve'],
         'doctor' => ['doctor'],
         'env' => ['import', 'sync'],
