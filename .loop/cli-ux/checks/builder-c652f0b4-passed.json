@@ -1,0 +1,200 @@
+{
+  "schema": 1,
+  "role": "builder",
+  "candidate": "c652f0b4af5645c3718461771bd48e830d53a8fd",
+  "tree": "b22bdd67829d8025e2a456ffcd697d370e5d4be9",
+  "worktree": "/fast/worktrees/orbit/orb-351",
+  "base": "6eeb4d6b2e5d4150ffe5d8abe93e4208e548b77d",
+  "changed_paths": [
+    ".agents/skills/designing-cli-commands/SKILL.md",
+    ".agents/skills/designing-cli-commands/templates/adoption-record.md",
+    ".agents/skills/developing-features/SKILL.md",
+    ".agents/skills/planning-features/SKILL.md",
+    ".agents/skills/reviewing-feature-plans/SKILL.md",
+    ".agents/skills/reviewing-pull-requests/SKILL.md",
+    ".agents/skills/verifying-cli-output/SKILL.md",
+    ".agents/skills/verifying-cli-output/scripts/capture.py",
+    ".agents/skills/verifying-cli-output/scripts/requirements.txt",
+    ".agents/skills/verifying-cli-output/scripts/verify.py",
+    ".agents/skills/verifying-cli-output/tests/test_capture.py",
+    ".agents/skills/verifying-cli-output/tests/test_capture_input.py",
+    ".agents/skills/verifying-cli-output/tests/test_capture_lifecycle.py",
+    ".agents/skills/verifying-cli-output/tests/test_verify.py",
+    "AGENTS.md",
+    "apps/cli/.ai/guidelines/orbit.md",
+    "apps/cli/.ai/rules/app.md",
+    "apps/cli/.ai/rules/commands.md",
+    "apps/cli/.ai/skills/command-designer/SKILL.md",
+    "apps/cli/.ai/skills/orbit-cli-development/SKILL.md",
+    "apps/cli/AGENTS.md",
+    "apps/cli/README.md",
+    "apps/cli/tests/Feature/BoostGuidanceTest.php",
+    "docs/README.md",
+    "docs/docs.json",
+    "docs/generated/context.json",
+    "docs/reference/cli-command-vocabulary.md",
+    "docs/reference/cli-ux.md"
+  ],
+  "started_at": 1789455638.3040066,
+  "checks": [
+    {
+      "project": "apps/cli",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.217,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-cli-validate.log"
+    },
+    {
+      "project": "apps/cli",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 3.665,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-cli-check.log"
+    },
+    {
+      "project": "apps/cli",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 1.581,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-cli-test:affected.log"
+    },
+    {
+      "project": "apps/docs",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.193,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-docs-validate.log"
+    },
+    {
+      "project": "apps/docs",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 1.495,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-docs-check.log"
+    },
+    {
+      "project": "apps/docs",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 0.306,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-docs-test:affected.log"
+    },
+    {
+      "project": "apps/gateway",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.194,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-gateway-validate.log"
+    },
+    {
+      "project": "apps/gateway",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 18.068,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-gateway-check.log"
+    },
+    {
+      "project": "apps/gateway",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 91.61,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-gateway-test:affected.log"
+    },
+    {
+      "project": "apps/e2e",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.194,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-e2e-validate.log"
+    },
+    {
+      "project": "apps/e2e",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 1.998,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-e2e-check.log"
+    },
+    {
+      "project": "apps/e2e",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 0.324,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/apps-e2e-test:affected.log"
+    },
+    {
+      "project": "packages/php-sdk",
+      "command": [
+        "composer",
+        "validate",
+        "--strict"
+      ],
+      "exit_code": 0,
+      "seconds": 0.177,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/packages-php-sdk-validate.log"
+    },
+    {
+      "project": "packages/php-sdk",
+      "command": [
+        "composer",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 2.123,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/packages-php-sdk-check.log"
+    },
+    {
+      "project": "packages/php-sdk",
+      "command": [
+        "composer",
+        "test:affected"
+      ],
+      "exit_code": 0,
+      "seconds": 0.591,
+      "log": "/home/nckrtl/orbit/.git/orbit-checks/c652f0b4af5645c3718461771bd48e830d53a8fd/review-h4kezf6i/packages-php-sdk-test:affected.log"
+    }
+  ],
+  "warnings": [],
+  "passed": true,
+  "unchanged": true,
+  "finished_at": 1789455761.3089466
+}

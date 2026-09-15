@@ -1,0 +1,231 @@
+{
+  "candidate": "c5cd0bd521483edc197175c5f5ecc895b85e82e0",
+  "results": [
+    {
+      "case": "exact-registry",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "mutation": null,
+      "result": {
+        "state": "passed",
+        "check": "ORB-351 exact registry and source reconciliation",
+        "candidate": "c5cd0bd521483edc197175c5f5ecc895b85e82e0",
+        "candidate_binding": "Harness must bind the supplied commit to this mounted candidate; the fixture verifies recorded source hashes, not the commit label alone.",
+        "root": "/Users/nckrtl/orbit-worktrees/orb-351",
+        "php_version": "8.5.8",
+        "public_commands": 108,
+        "framework_commands": 20,
+        "registration_keys": 128,
+        "source_files": 176,
+        "source_manifest_sha256": "6f723ba52903363fcb75a2523a5dd4799df08fd03917f368b746fd5f87438a6d",
+        "expected_sha256": "dc9c5094c1a4c7d6087f9de1fb91ace8ecd14d2817aee1bdb84646158fcb13b8",
+        "verifier_sha256": "1c69f9cde546ce5f19fcfafb6f4dd442511c13525993e191ba58623ad9c4d1e2",
+        "extension_configuration": {
+          "enabled": [
+            "herdr"
+          ]
+        },
+        "isolation": "Private temporary ORBIT_HOME; no command dispatched; no Gateway profile or caller home used.",
+        "ux_adoption": "Unverified for every public command; this proves registry coverage only."
+      }
+    },
+    {
+      "case": "changed-public-signature",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.public.app:list.signature.options.json.default",
+        "before": false,
+        "after": true
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "changed-framework-signature",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.framework.list.signature.options.format.default",
+        "before": "txt",
+        "after": "unexpected-format"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: framework"
+      }
+    },
+    {
+      "case": "stale-dns-tld-only-signature",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.public.dns:resolve.description",
+        "before": "Configure or remove a local development TLD or exact private Route resolver override.",
+        "after": "Configure or remove a local development TLD resolver override."
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "stale-dns-resolver-source",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.source_sha256.apps/cli/app/Services/Dns/LocalResolver.php",
+        "before": "f1779adf2bb3d591bd7b8193929e44746a10af2a1fe65698caa162c1f818b6b9",
+        "after": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: source_sha256"
+      }
+    },
+    {
+      "case": "omitted-app:update",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "removed": "registry.public.app:update",
+        "expected_failure": "cardinality108 requirement"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Expected fixture must cover 108 public and 20 framework commands."
+      }
+    },
+    {
+      "case": "count-preserving-app:update-replacement",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "removed": "registry.public.app:update",
+        "added": "registry.public.unexpected:command",
+        "public_count": 108,
+        "expected_failure": "exact public registry comparison"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "changed-app:update-default-branch",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.public.app:update.signature.options.default-branch.default",
+        "before": null,
+        "after": "main"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "changed-app:update-source",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.source_sha256.apps/cli/app/Commands/Apps/UpdateAppCommand.php",
+        "before": "57d6056ac45c5b291910172f357bad3677616005060e47eaae248cbc250db70c",
+        "after": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: source_sha256"
+      }
+    },
+    {
+      "case": "changed-sdk-lock",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.source_sha256.packages/php-sdk/composer.lock",
+        "before": "66b9a9c42988df198cb3c6ff9228814dcda838aa81499099be75cd238fa04802",
+        "after": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: source_sha256"
+      }
+    },
+    {
+      "case": "omitted-instance:transfer",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "removed": "registry.public.instance:transfer",
+        "expected_failure": "cardinality108 requirement"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Expected fixture must cover 108 public and 20 framework commands."
+      }
+    },
+    {
+      "case": "count-preserving-instance:transfer-replacement",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "removed": "registry.public.instance:transfer",
+        "added": "registry.public.unexpected:command",
+        "public_count": 108,
+        "expected_failure": "exact public registry comparison"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "changed-instance:transfer-force-default",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.public.instance:transfer.signature.options.force.default",
+        "before": false,
+        "after": true
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: public"
+      }
+    },
+    {
+      "case": "changed-instance:transfer-source",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.source_sha256.apps/cli/app/Commands/Instances/TransferInstanceCommand.php",
+        "before": "3d4a0eea94c1e06d084e1ffe103c35d6eda00a1a1bc8e78966da4e4c5696c160",
+        "after": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: source_sha256"
+      }
+    },
+    {
+      "case": "stale-command-vocabulary-source",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "mutation": {
+        "path": "registry.source_sha256.apps/cli/app/Support/CommandVocabulary.php",
+        "before": "a5ff34f64c17a06c81898ba58730c0bc0923ddf704fb19adeabebdcdb157c508",
+        "after": "c1cbe145606eeff6be3d7cc2cdb9b4b3cd88f849aef7514eeb47866e5e62774d"
+      },
+      "result": {
+        "state": "failed",
+        "message": "Registry mismatch in: source_sha256"
+      }
+    }
+  ],
+  "caller_home_sentinel": "Unchanged; fixture made no files in caller ORBIT_HOME.",
+  "ux_adoption": "Unverified; registry reconciliation only."
+}

@@ -1,0 +1,147 @@
+{
+  "from_candidate": "c652f0b4af5645c3718461771bd48e830d53a8fd",
+  "to_candidate": "c5cd0bd521483edc197175c5f5ecc895b85e82e0",
+  "integrated_main": "44fa6c92dcdbd39ae40b5b3867554dce0de9c608",
+  "transfer_main": "e89af206eb2066d7ac9709dbc08ada5da522ecbb",
+  "accepted_contract": "ORB-245; ORB-192 Gateway/docs follow-up has no CLI registry delta",
+  "registry_changed": true,
+  "public_added": [
+    "instance:transfer"
+  ],
+  "public_removed": [],
+  "existing_public_definitions_changed": [],
+  "framework_changed": false,
+  "global_signature_changed": false,
+  "counts_before": {
+    "public": 107,
+    "framework": 20,
+    "registration_keys": 127
+  },
+  "counts_after": {
+    "public": 108,
+    "framework": 20,
+    "registration_keys": 128
+  },
+  "added_public_definition": {
+    "name": "instance:transfer",
+    "class": "App\\Commands\\Instances\\TransferInstanceCommand",
+    "hidden": false,
+    "aliases": [],
+    "description": "Transfer a development AppInstance to another app-dev Node.",
+    "signature": {
+      "arguments": {
+        "instance": {
+          "required": true,
+          "array": false,
+          "default": null,
+          "description": "Numeric AppInstance ID"
+        },
+        "node": {
+          "required": true,
+          "array": false,
+          "default": null,
+          "description": "Numeric destination Node ID"
+        }
+      },
+      "options": {
+        "force": {
+          "shortcut": null,
+          "accept_value": false,
+          "value_required": false,
+          "value_optional": false,
+          "array": false,
+          "negatable": false,
+          "default": false,
+          "description": "Confirm downtime and old-placement deletion"
+        },
+        "json": {
+          "shortcut": null,
+          "accept_value": false,
+          "value_required": false,
+          "value_optional": false,
+          "array": false,
+          "negatable": false,
+          "default": false,
+          "description": "Return machine-readable JSON"
+        },
+        "name": {
+          "shortcut": null,
+          "accept_value": true,
+          "value_required": false,
+          "value_optional": true,
+          "array": false,
+          "negatable": false,
+          "default": null,
+          "description": "Optional destination AppInstance name"
+        },
+        "sqlite-source-path": {
+          "shortcut": null,
+          "accept_value": true,
+          "value_required": false,
+          "value_optional": true,
+          "array": false,
+          "negatable": false,
+          "default": null,
+          "description": "Optional SQLite database path on the source"
+        }
+      }
+    },
+    "source": "apps/cli/app/Commands/Instances/TransferInstanceCommand.php"
+  },
+  "recorded_source_deltas": {
+    "apps/cli/app/Commands/Instances/TransferInstanceCommand.php": {
+      "before": null,
+      "after": "3d4a0eea94c1e06d084e1ffe103c35d6eda00a1a1bc8e78966da4e4c5696c160"
+    },
+    "apps/cli/app/Support/CommandVocabulary.php": {
+      "before": "c1cbe145606eeff6be3d7cc2cdb9b4b3cd88f849aef7514eeb47866e5e62774d",
+      "after": "a5ff34f64c17a06c81898ba58730c0bc0923ddf704fb19adeabebdcdb157c508"
+    }
+  },
+  "lock_comparison": {
+    "apps/cli/composer.lock": {
+      "before": "cb700afecadbb9835914c9fde4d0c4705b32898cb2f08ebd8fdffaab281ccccc",
+      "after": "cb700afecadbb9835914c9fde4d0c4705b32898cb2f08ebd8fdffaab281ccccc",
+      "changed": false
+    },
+    "packages/php-sdk/composer.lock": {
+      "before": "66b9a9c42988df198cb3c6ff9228814dcda838aa81499099be75cd238fa04802",
+      "after": "66b9a9c42988df198cb3c6ff9228814dcda838aa81499099be75cd238fa04802",
+      "changed": false
+    }
+  },
+  "transfer_contract_source_sha256": {
+    "apps/cli/app/Commands/Instances/TransferInstanceCommand.php": "3d4a0eea94c1e06d084e1ffe103c35d6eda00a1a1bc8e78966da4e4c5696c160",
+    "apps/cli/app/Support/CommandVocabulary.php": "a5ff34f64c17a06c81898ba58730c0bc0923ddf704fb19adeabebdcdb157c508",
+    "apps/cli/tests/Feature/Instances/TransferInstanceCommandTest.php": "40cc21dcaef19884ffc9f82a1d64bac390d232352c96ea3ea6847e1860544847",
+    "apps/cli/tests/Feature/CommandSurfaceTest.php": "0d7c7ce57a709b4022417bee51dcff010073d2542f003005ac72f8a8e440f127",
+    "packages/php-sdk/src/Requests/AppInstances/TransferAppInstanceRequest.php": "480374f32e1edf100f2dd57ff8a27a35305a349c0b527065ef67994b4a26c384",
+    "packages/php-sdk/src/Responses/AppInstances/AppInstanceTransferProgressResponse.php": "ba0bc4f4af7219f6d0b1e754bfe4a950ddc933e3642974372c8d61648310c22d",
+    "packages/php-sdk/tests/Unit/Requests/AppInstances/TransferAppInstanceRequestTest.php": "2c30ef0948e2c32f4a0bf3928d85c78ff996e4b99288f09deae87b8a99f270c3",
+    "docs/reference/appinstance-transfer.md": "7d715f45cd6367cd120873c3fd1d83379df5391d6d8f1ba743d4ca757ef3b436",
+    "docs/decisions/0066-transfer-development-appinstances-between-nodes.md": "25c50f4793c412c0b8f2d541d4fab20d4d80ce601d39fa556ec8ee3c2b2f146f"
+  },
+  "reviewed_contract": {
+    "numeric_target": "Current signature accepts an explicit positive numeric resource ID; generic prompting must not silently change identifier semantics.",
+    "instance_transfer": "Current accepted ORB-245: explicit positive numeric instance and destination Node IDs; optional name and selected SQLite path remain Gateway-validated inputs. Transfer preserves identity, source state and owned runtime/environment/Route lifecycle, uses independent destination checkout, allows same/cross-Cluster app-dev placement and excludes production/standalone/same-Node moves. Retain pre-cutover source authority, forward-only post-cutover retry and exact cleanup outcomes; no remote work in CLI.",
+    "transfer_force_consent": "Existing --force explicitly confirms transfer downtime and old-placement deletion; it is consent, not a separate safety override. Preserve default-No interactive confirmation and instance.confirmation_required/status1 on valid unconfirmed automation. Restoration requires --force for JSON/noninteractive input and removes JSON-as-consent; do not add --yes or apply instance:destroy force semantics.",
+    "transfer_json_contract": "Preserve one final JSON object with id,node_id,name,checkout_path,domain,transfer,request_id; it is not a stream or full AppInstance DTO. Preserve transfer progress/cleanup fields, request correlation, redaction and gateway.invalid_response on missing transfer metadata/domain. Do not invent intermediate phases from the final transfer response."
+  },
+  "implementation_gaps": {
+    "transfer_json_implies_consent": "Current confirmed() treats --json as consent and current help/docs/tests repeat that behavior. This violates machine-mode separation and is an implementation GAP, never a compliance exception. Require existing --force in JSON/noninteractive mode; preserve default-No interaction and no-write refusal.",
+    "legacy_prompt_calls": "Command or shared family helper uses Symfony ask/choice/confirm instead of the restored prompt primitives.",
+    "transfer_target_confirmation": "Current transfer confirmation describes downtime/deletion but omits the selected source instance and destination identities. Shared prompt adoption must name the subject and effect while retaining explicit IDs and default-No.",
+    "shared_gateway_wait": "GatewayCommand send/sendOrThrow blocks without a shared visible wait indicator. Slow-request paths need truthful terminal liveness; fast reads may not need a progress surface."
+  },
+  "governance_drift": {
+    "description": "Accepted ADR0066 still says no HTTP/CLI/SDK transfer surface and verification omits instance:transfer, while accepted ORB245 and current main expose it. Separate inherited product-governance drift; does not block inventory observation, justify an exception, remove the command or authorize architecture changes. Root routes ADR wording at family preflight.",
+    "paths": [
+      "docs/decisions/0066-transfer-development-appinstances-between-nodes.md"
+    ],
+    "status": "Open separate governance documentation drift; supported command remains inventoried.",
+    "observed_candidate": "c5cd0bd521483edc197175c5f5ecc895b85e82e0",
+    "owner": "Root to route at ORB-356 preflight"
+  },
+  "scope": "Registry/source comparison and read-only command/SDK/tests/docs inspection only. Not command-behavior proof or a full Git diff.",
+  "ux_adoption": "All108 public commands remain Unverified with empty evidence pointers."
+}

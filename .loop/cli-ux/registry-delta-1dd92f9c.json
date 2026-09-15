@@ -1,0 +1,13 @@
+{
+  "candidate": "1dd92f9c411d8e991efd1e69d26d7f7db812966a",
+  "included_main": "5baed1010b72c2dd2e1830afd37dd40e6ef8b891",
+  "prior_candidate": "c5cd0bd521483edc197175c5f5ecc895b85e82e0",
+  "runtime_source_hashes_verified": 176,
+  "registry_fixture_unchanged": true,
+  "public_commands": 108,
+  "framework_commands": 20,
+  "adoption": "All Unverified",
+  "integration": "Mintlify site and Caddy access main changes; no CLI or SDK changes. Corrected contributor navigation nesting. Existing inventory observation retained with original identity.",
+  "previous_proof": "../external: /Users/nckrtl/.codex/work/cli-ux-restoration/evidence/proof-c5cd0bd5/inspection.md",
+  "evidence_decision": "Evaluate retained proof after publishing; no equivalence claim yet."
+}
