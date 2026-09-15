@@ -129,20 +129,6 @@ final class TerminalText
 
     private static function graphemeWidth(string $grapheme): int
     {
-        if (str_contains($grapheme, "\u{20e3}")) {
-            return 2;
-        }
-
-        if (preg_match('/\p{Extended_Pictographic}/u', $grapheme) === 1
-            && (str_contains($grapheme, "\u{200d}") || str_contains($grapheme, "\u{fe0f}")
-                || preg_match('/[\x{1f3fb}-\x{1f3ff}]/u', $grapheme) === 1)) {
-            return 2;
-        }
-
-        if (preg_match('/[\x{1f1e6}-\x{1f1ff}]{2}/u', $grapheme) === 1) {
-            return 2;
-        }
-
         $base = preg_replace('/[\p{M}\x{200d}]/u', '', $grapheme) ?? '';
 
         return mb_strwidth($base, 'UTF-8');

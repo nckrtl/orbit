@@ -36,21 +36,23 @@ describe('safe human display cells', function (): void {
 
     it('wraps wide and combining graphemes without losing text', function (): void {
         $text = "A界e\u{0301}👩‍💻🇳🇱👍🏽1️⃣Z";
-        $lines = TerminalText::wrap($text, 3);
+        $lines = TerminalText::wrap($text, 4);
 
         expect(implode('', $lines))->toBe($text)
             ->and(TerminalText::width("e\u{0301}"))->toBe(1)
-            ->and(TerminalText::width('👩‍💻'))->toBe(2)
+            ->and(TerminalText::width('👩‍💻'))->toBe(4)
             ->and(TerminalText::width('🇳🇱'))->toBe(2)
-            ->and(TerminalText::width('👍🏽'))->toBe(2)
-            ->and(TerminalText::width('1️⃣'))->toBe(2)
+            ->and(TerminalText::width('👍🏽'))->toBe(4)
+            ->and(TerminalText::width('1️⃣'))->toBe(1)
             ->and(TerminalText::width(TerminalText::style('界', 'cyan', true)))->toBe(2);
 
         foreach ($lines as $line) {
-            expect(TerminalText::width($line))->toBeLessThanOrEqual(3);
+            expect(TerminalText::width($line))->toBeLessThanOrEqual(4);
         }
 
         expect(fn () => TerminalText::wrap('界', 1))->toThrow(LengthException::class)
+            ->and(fn () => TerminalText::wrap('👩‍💻', 3))->toThrow(LengthException::class)
+            ->and(TerminalText::wrap('A👩‍💻B', 4))->toBe(['A', '👩‍💻', 'B'])
             ->and(TerminalText::minimumWidth(''))->toBe(1);
     });
 });

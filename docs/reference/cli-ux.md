@@ -136,6 +136,8 @@ When stdin is a pipe, measure the selected output's terminal. Plain output may w
 
 Wrap panel content inside its borders. Account for visible character width rather than ANSI bytes. Long labels and errors must not collide with borders or depend on terminal auto-wrap. Summaries and detail lines have distinct jobs and do not repeat the same full error twice. A human issue cap reports omitted items and does not truncate the machine result.
 
+Measure ordinary terminal cells without assuming emoji sequences collapse into one glyph. Keep each grapheme intact when wrapping, but count its visible base characters separately. Combining marks and joiners add no cells. Verify widths in the actual terminal. Text measurements do not prove terminal alignment.
+
 Tables keep all supplied columns and wrap headers and values within their cells. Their minimum width includes borders, separators, padding, and room for each column's widest indivisible character. Below that width, a read-only table uses a plain labeled record display that preserves every field. An interactive data list reports the required width and stops without selecting a row. It never hides a column or truncates a selector to force a selection into the available space.
 
 Prompt and progress state belongs to one invocation. Finishing a nested or sequential command restores the surrounding command's prompt configuration, output, cursor, and terminal settings. A forced color option does not make a pipe repaintable or permit escape codes in machine output.

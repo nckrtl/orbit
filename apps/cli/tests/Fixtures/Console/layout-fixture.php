@@ -11,7 +11,7 @@ require dirname(__DIR__, 3).'/vendor/autoload.php';
 
 // Private proof fixture: php layout-fixture.php SCENARIO [auto|plain|machine] [COLUMNS].
 // Without COLUMNS, detect the actual terminal width. No command is registered.
-// The five-column table needs 23 columns; at 22 it becomes labeled records.
+// The five-column table needs 25 columns; at 24 it becomes labeled records.
 $scenario = $argv[1] ?? 'all';
 $format = $argv[2] ?? 'auto';
 $requestedColumns = $argv[3] ?? null;
