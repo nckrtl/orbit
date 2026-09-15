@@ -12,7 +12,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 
-function managed_mysql_node(array $attributes = []): Node
+function managed_mysql_process_node(array $attributes = []): Node
 {
     return Node::query()->create([
         'name' => $attributes['name'] ?? 'db',
@@ -25,7 +25,7 @@ function managed_mysql_node(array $attributes = []): Node
     ]);
 }
 
-function managed_mysql_process(Node $node, array $attributes = []): Process
+function managed_mysql_process_record(Node $node, array $attributes = []): Process
 {
     return Process::query()->create([
         'owner_type' => $attributes['owner_type'] ?? Node::class,
@@ -47,8 +47,8 @@ function managed_mysql_process(Node $node, array $attributes = []): Process
 }
 
 it('accepts a Node-targeted Docker MySQL Process and hides the root password', function (): void {
-    $node = managed_mysql_node();
-    $process = managed_mysql_process($node);
+    $node = managed_mysql_process_node();
+    $process = managed_mysql_process_record($node);
 
     $managed = ManagedMysqlProcess::from($process);
 
@@ -65,8 +65,8 @@ it('accepts a Node-targeted Docker MySQL Process and hides the root password', f
 });
 
 it('accepts mysql-server image names and published host ports', function (string $image): void {
-    $node = managed_mysql_node();
-    $process = managed_mysql_process($node, [
+    $node = managed_mysql_process_node();
+    $process = managed_mysql_process_record($node, [
         'runtime_config' => [
             'image' => $image,
             'command' => ['mysqld'],
@@ -84,7 +84,7 @@ it('accepts mysql-server image names and published host ports', function (string
 ]);
 
 it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', function (): void {
-    $node = managed_mysql_node();
+    $node = managed_mysql_process_node();
     $app = OrbitApp::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
@@ -101,7 +101,7 @@ it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', f
         'status' => 'active',
     ]);
 
-    $instanceProcess = managed_mysql_process($node, [
+    $instanceProcess = managed_mysql_process_record($node, [
         'owner_type' => AppInstance::class,
         'owner_id' => $instance->id,
     ]);
@@ -111,7 +111,7 @@ it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', f
             expect($exception->errorCode)->toBe('database.process_not_node');
         });
 
-    $systemd = managed_mysql_process($node, [
+    $systemd = managed_mysql_process_record($node, [
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
     ]);
@@ -121,7 +121,7 @@ it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', f
             expect($exception->errorCode)->toBe('database.process_not_docker');
         });
 
-    $redis = managed_mysql_process($node, [
+    $redis = managed_mysql_process_record($node, [
         'name' => 'redis',
         'runtime_config' => [
             'image' => 'redis:8',
@@ -139,9 +139,9 @@ it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', f
 });
 
 it('refuses a missing published MySQL port or root password', function (): void {
-    $node = managed_mysql_node();
+    $node = managed_mysql_process_node();
 
-    $noPort = managed_mysql_process($node, [
+    $noPort = managed_mysql_process_record($node, [
         'name' => 'mysql-noport',
         'runtime_config' => [
             'image' => 'mysql:8',
@@ -157,7 +157,7 @@ it('refuses a missing published MySQL port or root password', function (): void 
             expect($exception->errorCode)->toBe('database.process_not_mysql');
         });
 
-    $noPassword = managed_mysql_process($node, [
+    $noPassword = managed_mysql_process_record($node, [
         'name' => 'mysql-nopass',
         'runtime_config' => [
             'image' => 'mysql:8',

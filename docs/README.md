@@ -41,7 +41,7 @@ These pages explain commands and managed services.
 - Application pages describe [Apps](/reference/apps), [cloning](/reference/appinstance-cloning), [transfer](/reference/appinstance-transfer), [environment variables](/reference/environment-variables), [process and Schedule definitions](/reference/app-processes-and-schedules), and [removal](/reference/appinstance-removal).
 - Runtime reference pages describe the [production release layout](/reference/deployments), [PHP runtime defaults](/reference/php-runtime), [Routes](/reference/routes), [Schedules](/reference/schedules), and [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
 - Infrastructure reference pages describe [Gateway trust](/reference/gateway-trust), [Herdr sessions](/reference/herdr-sessions), the [Database role](/reference/database-role), the [Metrics role](/reference/metrics), [Node provisioning](/reference/node-provisioning), [Node retarget](/reference/node-retarget), [Node settings](/reference/node-settings), [Tools](/reference/tools), and [WireGuard endpoints](/reference/wireguard-endpoints).
-- [Database connections](/reference/database-connections) describes the Gateway-owned mysql, pgsql, and sqlite registry, managed MySQL user create through a Node Process, and how an operator adds a connection on an App instance.
+- [Database connections](/reference/database-connections) describes the connection registry and managed MySQL user create.
 
 ## Contributor guides
 
