@@ -3,7 +3,7 @@ title: "route"
 description: "Create explicit domains for an App, point them at an App instance, change a domain or publication intent, and remove Routes."
 ---
 
-A Route is an App-owned domain with one routing scope: a Node or an active Cluster. Development Routes have one target. Production Routes can have an ordered target pool. Orbit generates a Route for every App instance it creates. The `route` family manages explicit Routes and their targets and domains.
+A Route is an App-owned domain with one routing scope: a Node or an active Cluster. Development Routes have one target. Production Routes can have an ordered target pool. Orbit generates a Route for every App instance it creates. Generated domains use an explicit hostname, an active Cluster TLD, then the Node TLD. The `route` family manages explicit Routes and their targets and domains.
 
 The [Routes reference](/reference/routes) owns the Route record, domain generation, private projection, and the guards that refuse a change while an active App instance depends on it.
 

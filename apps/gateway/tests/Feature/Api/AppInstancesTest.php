@@ -1826,7 +1826,7 @@ it('refuses unavailable generated naming before source mutation and completes on
     expect(Route::query()->sole()->domain)->toBe('dev.acme.test');
 });
 
-it('uses Node TLD before active Cluster fallback while Cluster membership selects scope', function (): void {
+it('uses the active Cluster TLD before the Node TLD while Cluster membership selects scope', function (): void {
     $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('a', 40));
     $cluster = Cluster::query()->create([
         'name' => 'routing',
@@ -1849,7 +1849,7 @@ it('uses Node TLD before active Cluster fallback while Cluster membership select
     ])->assertCreated();
 
     expect(Route::query()->sole()->domain)
-        ->toBe('acme.test')
+        ->toBe('acme.cluster.test')
         ->and(Route::query()->sole()->cluster_id)
         ->toBe($cluster->id);
 
