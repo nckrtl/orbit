@@ -102,6 +102,7 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
@@ -214,6 +215,7 @@ use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
+use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
 use App\Infrastructure\Schedules\SshScheduleRuntimeAccountResolver;
 use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
@@ -278,6 +280,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         AppInstanceRouteEnvironmentSynchronizer::class => SynchronizeAppInstanceEnvironmentAction::class,
         RouteDomainProjector::class => NativeDevelopmentRouteProjector::class,
+        RouteRemovalProjector::class => NativeRouteRemovalProjector::class,
         PublicRouteEdgeProjector::class => NativePublicRouteEdgeProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
