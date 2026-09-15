@@ -1434,9 +1434,21 @@ function route_target_set_expandable_pool(): array
     $route = route_domain_change_shared_production_route();
     $first = $route->targets[0]->appInstance;
     $second = $route->targets[1]->appInstance;
-    $route->targets()->where('app_instance_id', $second->id)->delete();
+    $sibling = Route::query()->create([
+        'app_id' => $route->app_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'sibling.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $route->targets()->where('app_instance_id', $second->id)->update([
+        'route_id' => $sibling->id,
+        'position' => 0,
+    ]);
+    $sibling->update(['status' => RouteStatus::Active]);
 
-    return [$route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']), $first, $second];
+    return [$route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']), $first->refresh(), $second->refresh()];
 }
 
 function route_domain_change_shared_production_route(): Route

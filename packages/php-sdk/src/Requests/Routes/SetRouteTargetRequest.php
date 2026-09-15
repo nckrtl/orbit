@@ -43,7 +43,7 @@ final class SetRouteTargetRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         if ($this->targetIds !== null) {
-            $body = ['targets' => array_values($this->targetIds)];
+            $body = ['targets' => $this->targetIds];
 
             if ($this->dispositions !== []) {
                 $body['dispositions'] = $this->dispositions;

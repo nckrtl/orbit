@@ -114,7 +114,9 @@ function instance_route_payload(): array
         'replaces_route_id' => null,
         'replaced_by_route_id' => null,
         'replacement_step' => null,
+        'target_set_step' => null,
         'target' => ['id' => 9, 'app_instance_id' => 5, 'position' => 0],
+        'targets' => [['id' => 9, 'app_instance_id' => 5, 'position' => 0]],
     ];
 }
 

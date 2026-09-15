@@ -89,7 +89,11 @@ final readonly class AppDevCaddyConfigRenderer
                 CADDY
                 : '';
             $root = self::ORBIT_ROOT_CA_PATH;
-            $trust = $site->publicListener || $site->preserveForwardedIdentity
+            $hasRemoteHttps = array_any(
+                $site->proxyAddresses(),
+                static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
+            );
+            $trust = $site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps
                 ? <<<CADDY
 
                         tls_trusted_ca_certs {$root}

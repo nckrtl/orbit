@@ -12,6 +12,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\ResourceOperationException;
@@ -142,7 +143,8 @@ final readonly class ConvergeRouteTargetSetAction
         }
 
         $current = $route
-            ->targets
+            ->targets()
+            ->orderBy('position')
             ->pluck('app_instance_id')
             ->map(static fn (mixed $id): int => (int) $id)
             ->values()
@@ -182,46 +184,126 @@ final readonly class ConvergeRouteTargetSetAction
         DB::transaction(function () use ($route, $proposal): void {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $this->guard->assertProposal($locked, $proposal);
-
-            foreach ($proposal->targetIds as $appInstanceId) {
-                RouteTarget::query()
-                    ->where('app_instance_id', $appInstanceId)
-                    ->where('route_id', '!=', $locked->id)
-                    ->delete();
-            }
-
+            $vacatedRouteIds = $this->vacatedRouteIds($locked, $proposal);
             $removeIds = [];
+            $reassignments = [];
 
             foreach ($proposal->dispositions as $disposition) {
                 if ($disposition->remove) {
                     $removeIds[] = $disposition->appInstanceId;
+                } elseif ($disposition->routeId !== null) {
+                    $reassignments[$disposition->appInstanceId] = $disposition->routeId;
                 }
             }
 
-            $keepIds = [...$proposal->targetIds, ...$removeIds];
-
-            $locked->targets()->delete();
-
-            foreach (array_values($keepIds) as $position => $appInstanceId) {
-                $locked->targets()->create([
-                    'app_instance_id' => $appInstanceId,
-                    'position' => $position,
-                ]);
+            foreach ($proposal->targetIds as $appInstanceId) {
+                $this->associateOnRoute($locked, $appInstanceId);
             }
 
-            foreach ($proposal->dispositions as $disposition) {
-                if ($disposition->remove || $disposition->routeId === null) {
+            foreach ($reassignments as $appInstanceId => $destinationId) {
+                $this->reassignToRoute($appInstanceId, $destinationId);
+            }
+
+            $this->compactPositions($locked->id, [...$proposal->targetIds, ...$removeIds]);
+
+            foreach ($vacatedRouteIds as $vacatedRouteId) {
+                $this->compactPositions($vacatedRouteId);
+            }
+        });
+    }
+
+    private function associateOnRoute(Route $route, int $appInstanceId): void
+    {
+        $existing = RouteTarget::query()
+            ->where('app_instance_id', $appInstanceId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($existing instanceof RouteTarget && $existing->route_id === $route->id) {
+            return;
+        }
+
+        $position = RouteTarget::query()->where('route_id', $route->id)->count();
+
+        if ($existing instanceof RouteTarget) {
+            $existing->update([
+                'route_id' => $route->id,
+                'position' => $position,
+            ]);
+
+            return;
+        }
+
+        RouteTarget::query()->create([
+            'route_id' => $route->id,
+            'app_instance_id' => $appInstanceId,
+            'position' => $position,
+        ]);
+    }
+
+    private function reassignToRoute(int $appInstanceId, int $destinationId): void
+    {
+        $existing = RouteTarget::query()
+            ->where('app_instance_id', $appInstanceId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $existing instanceof RouteTarget || $existing->route_id === $destinationId) {
+            return;
+        }
+
+        $destination = Route::query()->lockForUpdate()->findOrFail($destinationId);
+        $existing->update([
+            'route_id' => $destination->id,
+            'position' => RouteTarget::query()->where('route_id', $destination->id)->count(),
+        ]);
+
+        if ($destination->status === RouteStatus::Pending) {
+            $destination->update(['status' => RouteStatus::Active]);
+        }
+    }
+
+    /** @param list<int>|null $orderedInstanceIds */
+    private function compactPositions(int $routeId, ?array $orderedInstanceIds = null): void
+    {
+        if ($orderedInstanceIds !== null) {
+            $rows = RouteTarget::query()
+                ->where('route_id', $routeId)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('app_instance_id');
+            $position = 0;
+
+            foreach ($orderedInstanceIds as $appInstanceId) {
+                $row = $rows->get($appInstanceId);
+
+                if (! $row instanceof RouteTarget) {
                     continue;
                 }
 
-                $destination = Route::query()->lockForUpdate()->findOrFail($disposition->routeId);
-                $next = $destination->targets()->count();
-                $destination->targets()->create([
-                    'app_instance_id' => $disposition->appInstanceId,
-                    'position' => $next,
-                ]);
+                if ($row->position !== $position) {
+                    $row->update(['position' => $position]);
+                }
+
+                $position++;
             }
-        });
+
+            return;
+        }
+
+        $rows = RouteTarget::query()
+            ->where('route_id', $routeId)
+            ->lockForUpdate()
+            ->orderBy('position')
+            ->orderBy('id')
+            ->get()
+            ->values();
+
+        foreach ($rows as $position => $row) {
+            if ($row->position !== $position) {
+                $row->update(['position' => $position]);
+            }
+        }
     }
 
     private function synchronizeEnvironments(Route $route, SetRouteTargetsData $proposal): void

@@ -69,7 +69,7 @@ final readonly class RouteResponse
         );
     }
 
-    /** @return array<string, int|string|null|array{id: int, app_instance_id: int, position: int}> */
+    /** @return array<string, int|string|null|array{id: int, app_instance_id: int, position: int}|list<array{id: int, app_instance_id: int, position: int}>> */
     public function toArray(): array
     {
         return [

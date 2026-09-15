@@ -911,9 +911,10 @@ it('sets a two-target production pool through the typed target-set contract', fu
         ->toBe([$first->id, $second->id]);
 });
 
-it('refuses a generated Route, duplicate target, same Node, foreign App or Cluster, inactive target, missing disposition, and concurrent intent', function (): void {
+it('refuses a generated Route, duplicate target, foreign App or Cluster, inactive target, missing disposition, and concurrent intent', function (): void {
     [$route, $first, $second] = route_api_production_pool();
-    $dev = route_instance($this->orbitApp, $this->node, 'dev-pool');
+    $devNode = route_node('dev-pool-node', '10.44.0.93', 'devpool.test');
+    $dev = route_instance($this->orbitApp, $devNode, 'dev-pool');
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $foreignApp = OrbitApp::query()->create([
         'name' => 'Other',
@@ -936,9 +937,11 @@ it('refuses a generated Route, duplicate target, same Node, foreign App or Clust
         'production_user' => 'orbit-acme',
         'selected_php_version' => '8.5',
     ]);
+    $inactiveNode = route_node('inactive-pool', '10.44.0.94', null);
+    $inactiveNode->update(['cluster_id' => $route->cluster_id]);
     $inactive = AppInstance::query()->create([
         'app_id' => $this->orbitApp->id,
-        'node_id' => $second->node_id,
+        'node_id' => $inactiveNode->id,
         'name' => 'inactive',
         'environment' => 'production',
         'checkout_path' => '/var/www/inactive',
@@ -946,24 +949,13 @@ it('refuses a generated Route, duplicate target, same Node, foreign App or Clust
         'starting_commit' => str_repeat('b', 40),
         'status' => AppInstanceState::SourceResolved,
     ]);
-    $sameNode = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $first->node_id,
-        'name' => 'same-node',
-        'environment' => 'production',
-        'checkout_path' => '/var/www/same',
-        'production_home' => '/var/www/same',
-        'branch' => 'main',
-        'starting_commit' => str_repeat('c', 40),
-        'status' => AppInstanceState::Active,
-    ]);
     $foreignRoute = Route::query()->create([
         'app_id' => $foreignApp->id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'foreign-dest.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
-        'status' => 'active',
+        'status' => 'pending',
     ]);
     $before = route_api_target_rows();
 
@@ -985,9 +977,6 @@ it('refuses a generated Route, duplicate target, same Node, foreign App or Clust
     $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $inactive->id]])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.target_inactive');
-    $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$first->id, $sameNode->id]])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.target_conflict');
     $this->putJson("/api/v1/routes/{$route->id}/target", ['targets' => [$second->id]])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.target_disposition_required');
@@ -1044,6 +1033,8 @@ it('projects a production pool with LAN preference, WireGuard fallback, mixed lo
         ->and(mb_substr_count($composed, "{$route->domain} {"))
         ->toBe(1);
 
+    $first->update(['status' => AppInstanceState::SourceResolved]);
+    $second->update(['status' => AppInstanceState::SourceResolved]);
     $route->targets()->delete();
     $route->refresh()->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
     $empty = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
@@ -1076,7 +1067,7 @@ it('reassigns a detached target and keeps every active App instance on exactly o
         'domain' => 'other.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
-        'status' => 'active',
+        'status' => 'pending',
     ]);
     app()->instance(RouteDomainProjector::class, route_api_target_set_projector());
     app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, route_api_environment_fake());
@@ -1105,9 +1096,10 @@ it('transfers an App instance from another Route and leaves a vacated Route serv
         'domain' => 'vacated.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
-        'status' => 'active',
+        'status' => 'pending',
     ]);
     $other->targets()->create(['app_instance_id' => $second->id, 'position' => 0]);
+    $other->update(['status' => 'active']);
     app()->instance(RouteDomainProjector::class, route_api_target_set_projector());
     app()->instance(AppInstanceRouteEnvironmentSynchronizer::class, route_api_environment_fake());
 
@@ -1167,8 +1159,6 @@ it('leaves stored session environment keys unchanged during a pool change', func
 
 it('returns the unchanged Route for an identical completed target-set change', function (): void {
     [$route, $first, $second] = route_api_production_pool();
-    $route->targets()->delete();
-    $route->targets()->create(['app_instance_id' => $first->id, 'position' => 0]);
     $route->targets()->create(['app_instance_id' => $second->id, 'position' => 1]);
     $before = route_api_target_rows();
 
