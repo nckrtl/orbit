@@ -1,0 +1,9 @@
+{
+  "id": "ORB-205",
+  "title": "Remove legacy application schema and models",
+  "url": "https://linear.app/nckrtl/issue/ORB-205/remove-legacy-application-schema-and-models",
+  "status": "In Progress",
+  "labels": ["docs", "incus", "packages/php-sdk", "apps/gateway", "apps/cli", "Feature"],
+  "flow": "discovery",
+  "verification": "focused automated tests and independent review only; no proof topologies"
+}
