@@ -61,7 +61,10 @@ final readonly class RouteTargetSetGuard
         }
     }
 
-    /** @return Collection<int, AppInstance> */
+    /**
+     * @param  list<int>  $ids
+     * @return Collection<int, AppInstance>
+     */
     public function instances(array $ids): Collection
     {
         if ($ids === []) {

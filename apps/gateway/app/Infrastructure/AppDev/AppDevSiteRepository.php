@@ -365,7 +365,10 @@ final readonly class AppDevSiteRepository
         );
     }
 
-    /** @param list<AppInstance> $local @param list<AppInstance> $remote */
+    /**
+     * @param  list<AppInstance>  $local
+     * @param  list<AppInstance>  $remote
+     */
     private function composedPoolSite(array $local, array $remote, Route $route, Node $router): AppDevSite
     {
         $addresses = collect($remote)

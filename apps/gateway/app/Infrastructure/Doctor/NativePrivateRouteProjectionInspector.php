@@ -86,9 +86,9 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         $router = $route->cluster?->routerAssignment?->node;
         $expected = $route->targets
             ->map(static function ($row) use ($router): ?string {
-                $node = $row->appInstance?->node;
+                $node = $row->appInstance->node;
 
-                if ($node === null || ($router instanceof Node && $router->is($node))) {
+                if ($router instanceof Node && $router->is($node)) {
                     return null;
                 }
 

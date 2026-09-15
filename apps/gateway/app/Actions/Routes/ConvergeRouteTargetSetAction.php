@@ -127,7 +127,7 @@ final readonly class ConvergeRouteTargetSetAction
         } catch (Throwable $exception) {
             $this->recordFailure($route, $failureStep, $this->errorCode($exception));
 
-            if ($this->rank(RouteTargetSetStep::tryFrom($failureStep) ?? RouteTargetSetStep::Reserved) < $this->rank(RouteTargetSetStep::DatabaseCommitted)) {
+            if ($this->rank(RouteTargetSetStep::from($failureStep)) < $this->rank(RouteTargetSetStep::DatabaseCommitted)) {
                 $this->rollbackPreparations($route, $proposal);
             }
 
@@ -361,8 +361,10 @@ final readonly class ConvergeRouteTargetSetAction
             }
 
             $published[$destination->id] = true;
-            $target = $destination->targets->first()?->appInstance
-                ?? AppInstance::query()->find($proposal->dispositions[0]->appInstanceId ?? 0);
+            $firstTarget = $destination->targets->first();
+            $target = $firstTarget instanceof RouteTarget
+                ? $firstTarget->appInstance
+                : AppInstance::query()->find($proposal->dispositions[0]->appInstanceId ?? 0);
 
             if ($target instanceof AppInstance) {
                 $this->projection->prepareRouterCaddy($target, $destination, $destination);

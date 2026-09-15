@@ -33,8 +33,8 @@ final class SetRouteTargetsData extends Data
         );
 
         return [
-            'targets' => array_values($targets),
-            'dispositions' => array_values($dispositions),
+            'targets' => $targets,
+            'dispositions' => $dispositions,
         ];
     }
 }

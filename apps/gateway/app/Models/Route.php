@@ -117,7 +117,7 @@ final class Route extends Model
         return $this->hasMany(RouteTarget::class)->orderBy('position')->orderBy('id');
     }
 
-    /** @return array<string, class-string> */
+    /** @return array<string, class-string|string> */
     protected function casts(): array
     {
         return [
