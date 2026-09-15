@@ -10,8 +10,8 @@ use App\Models\Cluster;
 use App\Models\Node;
 
 it('uses the active Cluster TLD when the Node also has a TLD', function (): void {
-    $cluster = resolver_cluster('shared', 'cluster.test', ClusterState::Active);
-    $node = resolver_node('member', 'node.test', $cluster->id);
+    $cluster = route_state_cluster('shared', 'cluster.test', ClusterState::Active);
+    $node = route_state_node('member', 'node.test', $cluster->id);
 
     $placement = app(RouteStateResolver::class)->forNode($node);
 
@@ -24,8 +24,8 @@ it('uses the active Cluster TLD when the Node also has a TLD', function (): void
 });
 
 it('uses the Node TLD when the Cluster is inactive', function (): void {
-    $cluster = resolver_cluster('inactive', 'cluster.test', ClusterState::Inactive);
-    $node = resolver_node('inactive-member', 'node.test', $cluster->id);
+    $cluster = route_state_cluster('inactive', 'cluster.test', ClusterState::Inactive);
+    $node = route_state_node('inactive-member', 'node.test', $cluster->id);
 
     $placement = app(RouteStateResolver::class)->forNode($node);
 
@@ -38,8 +38,8 @@ it('uses the Node TLD when the Cluster is inactive', function (): void {
 });
 
 it('uses the Node TLD when the active Cluster has no TLD', function (): void {
-    $cluster = resolver_cluster('tldless', null, ClusterState::Active);
-    $node = resolver_node('tldless-member', 'node.test', $cluster->id);
+    $cluster = route_state_cluster('tldless', null, ClusterState::Active);
+    $node = route_state_node('tldless-member', 'node.test', $cluster->id);
 
     $placement = app(RouteStateResolver::class)->forNode($node);
 
@@ -52,7 +52,7 @@ it('uses the Node TLD when the active Cluster has no TLD', function (): void {
 });
 
 it('uses the Node TLD for a standalone Node', function (): void {
-    $node = resolver_node('standalone', 'node.test');
+    $node = route_state_node('standalone', 'node.test');
 
     $placement = app(RouteStateResolver::class)->forNode($node);
 
@@ -65,8 +65,8 @@ it('uses the Node TLD for a standalone Node', function (): void {
 });
 
 it('leaves the effective TLD empty when neither authority supplies one', function (): void {
-    $cluster = resolver_cluster('empty', null, ClusterState::Active);
-    $node = resolver_node('empty-member', null, $cluster->id);
+    $cluster = route_state_cluster('empty', null, ClusterState::Active);
+    $node = route_state_node('empty-member', null, $cluster->id);
 
     $placement = app(RouteStateResolver::class)->forNode($node);
 
@@ -79,8 +79,8 @@ it('refuses generated domains when neither authority supplies a TLD', function (
 });
 
 it('applies proposed Cluster TLD and state overrides to the effective TLD', function (): void {
-    $cluster = resolver_cluster('override', 'cluster.test', ClusterState::Active);
-    $node = resolver_node('override-member', 'node.test', $cluster->id);
+    $cluster = route_state_cluster('override', 'cluster.test', ClusterState::Active);
+    $node = route_state_node('override-member', 'node.test', $cluster->id);
     $resolver = app(RouteStateResolver::class);
 
     expect($resolver->forNode($node, clusterOverrides: [$cluster->id => ['tld' => 'next-cluster.test']])->effectiveTld)
@@ -97,7 +97,7 @@ it('applies proposed Cluster TLD and state overrides to the effective TLD', func
         ->toBeNull();
 });
 
-function resolver_cluster(string $name, ?string $tld, ClusterState $state): Cluster
+function route_state_cluster(string $name, ?string $tld, ClusterState $state): Cluster
 {
     return Cluster::query()->create([
         'name' => $name,
@@ -106,7 +106,7 @@ function resolver_cluster(string $name, ?string $tld, ClusterState $state): Clus
     ]);
 }
 
-function resolver_node(string $name, ?string $tld, ?int $clusterId = null): Node
+function route_state_node(string $name, ?string $tld, ?int $clusterId = null): Node
 {
     return Node::query()->create([
         'name' => $name,

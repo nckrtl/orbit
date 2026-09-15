@@ -249,7 +249,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
             return $this->domains->generatedDomain($newSlug, $name, $this->domains->forNode($node)->effectiveTld);
         }
 
-        if ($instance?->name === 'default' && str_starts_with($route->domain, $app->slug.'.')) {
+        if (str_starts_with($route->domain, $app->slug.'.')) {
             return $newSlug.substr($route->domain, strlen($app->slug));
         }
 
