@@ -1,13 +1,12 @@
 ## Change
 
-<!-- Describe the problem and resulting behavior. Link a public or Linear issue if available. -->
+<!-- Describe the problem and resulting behavior. Link an issue when one exists. -->
+
+## Architecture and documentation
+
+<!-- Identify relevant ADRs, additions or superseding decisions, and changed documentation. -->
 
 ## Verification
 
-<!-- List the commands you ran and their results. Name anything unverified.
-You may submit without Incus testing. Nick can perform required machine verification before merge.
-Maintainers: include the selected flow, exact candidate and artifact binding, acceptance evidence, and Builder gate receipt. -->
-
-## Documentation
-
-<!-- List changed pages, or explain why documentation does not change. -->
+<!-- List the commands you ran, observed results, and verification limitations.
+Orbit's independent review reproduces the feature on Incus before merge. Request maintainer review only when implementation is complete. -->

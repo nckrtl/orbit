@@ -10,7 +10,6 @@ function loopFlowFixture(): array
 {
     $root = temporaryPath('orbit-flow-', 6);
     mkdir($root.'/bin', 0700, true);
-    mkdir($root.'/.agents/skills/planning-features', 0700, true);
     $run = new ProcessFactory;
     foreach ([
         ['init',   '-b',         'main'],
@@ -26,10 +25,6 @@ function loopFlowFixture(): array
         copy(dirname(__DIR__, 5).'/bin/'.$script, $root.'/bin/'.$script);
         chmod($root.'/bin/'.$script, 0755);
     }
-    copy(
-        dirname(__DIR__, 5).'/.agents/skills/planning-features/template.md',
-        $root.'/.agents/skills/planning-features/template.md',
-    );
     file_put_contents($root.'/bin/bootstrap', "#!/bin/sh\nexit 0\n");
     chmod($root.'/bin/bootstrap', 0755);
     file_put_contents(
@@ -63,7 +58,7 @@ it('pins a repository default per worktree and requires explicit switching', fun
     expect($run->path($root)->run(['git', 'write-tree'])->output())->toBe($index);
 });
 
-it('creates worktrees with the flag or shared default and preserves existing selections', function (): void {
+it('creates clean worktrees without plans or inherited delivery selections', function (): void {
     ['root' => $root, 'script' => $script, 'run' => $run] = loopFlowFixture();
     $remote = temporaryPath('orbit-flow-remote-', 6);
     expect($run->run(['git', 'init', '--bare', $remote])->successful())->toBeTrue();
@@ -74,19 +69,23 @@ it('creates worktrees with the flag or shared default and preserves existing sel
     $first = $run->path($root)->run([$create, 'TST-42']);
     expect($first->successful())->toBeTrue($first->errorOutput());
     expect(DeliveryFlow::forWorktree($root.'-worktrees/tst-42'))->toBe('discovery');
-    $second = $run->path($root)->run([$create, 'TST-43', '--flow=proof']);
+    $second = $run->path($root)->run([$create, 'TST-43']);
     expect($second->successful())->toBeTrue($second->errorOutput());
-    expect(DeliveryFlow::forWorktree($root.'-worktrees/tst-43'))->toBe('proof');
+    expect(is_dir($root.'-worktrees/tst-43/.loop'))->toBeFalse();
+    // Explicit historical state is preserved when a worktree is reused.
+    expect($run->path($root.'-worktrees/tst-43')->run([$script, 'select', '--flow=proof'])->successful())->toBeTrue();
     expect($run->path($root)->run([$create, 'TST-43'])->successful())->toBeTrue();
     expect(DeliveryFlow::forWorktree($root.'-worktrees/tst-43'))->toBe('proof');
-    expect(file_exists($root.'-worktrees/tst-42/.loop/plan.md'))->toBeTrue();
+    expect(is_dir($root.'-worktrees/tst-42/.loop'))->toBeFalse();
     expect(is_dir($root.'/.worktrees'))->toBeFalse();
     expect(trim($run->path($root.'-worktrees/tst-42')->run(['git', 'branch', '--show-current'])->output()))->toBe('tst-42');
     expect($run->path($root)->run([$create, 'TST-42', 'redundant-slug'])->successful())->toBeFalse();
     expect($run->path($root)->run(['git', 'status', '--porcelain'])->output())->toBe('');
     expect($run->path($root)->run([$script, 'default', '--flow=proof'])->successful())->toBeTrue();
     expect($run->path($root)->run([$create, 'TST-44'])->successful())->toBeTrue();
-    expect(DeliveryFlow::forWorktree($root.'-worktrees/tst-44'))->toBe('proof');
+    expect(is_dir($root.'-worktrees/tst-44/.loop'))->toBeFalse();
+    expect($run->path($root)->run([$create, 'TST-45', '--flow=proof'])->successful())->toBeFalse();
+    expect(is_dir($root.'-worktrees/tst-45'))->toBeFalse();
     expect($run->path($root)->run([$root.'/bin/worktree-remove', 'TST-42'])->successful())->toBeTrue();
     expect(is_dir($root.'-worktrees/tst-42'))->toBeFalse();
     expect($run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-42'])->successful())->toBeFalse();
@@ -149,7 +148,7 @@ it('reuses an existing registered branch after its worktree moves', function ():
 
     expect($result->successful())->toBeTrue($result->errorOutput());
     expect(trim($result->output()))->toEndWith($moved);
-    expect(file_exists($moved.'/.loop/plan.md'))->toBeTrue();
+    expect(is_dir($moved.'/.loop'))->toBeFalse();
     expect(is_dir($root.'-worktrees/tst-49'))->toBeFalse();
 });
 

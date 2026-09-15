@@ -1,67 +1,24 @@
 ---
 name: reviewing-pull-requests
-description: Use when independently reviewing one exact Orbit PR head.
+description: Use when independently reviewing an Orbit feature proposal before coding or a completed PR before merge.
 ---
 
 # Reviewing Pull Requests
 
-Independently review one exact remote PR head against the issue's `Acceptance` checklist, its `Scope`, the attached ADRs, repository invariants, tests, and proof. Return the complete formal review to the external orchestrator. Do not expand the contract or edit code.
+Independently assess whether the feature's architecture, documentation, and behavior agree. Review the supplied proposal or PR and record the revision.
 
-The plan, proof plan, and fixtures are versioned on the PR's candidate-bound artifact ref. Run `bin/loop-artifacts fetch <ISSUE> --candidate=<head> --expected-artifact=<artifact-sha>` with both SHAs from the submitted handoff. Successful validation establishes the parent, file-boundary, file-type, and expected-SHA checks. Do not repeat those checks manually. Validate again when either SHA changes. Investigate any validation failure before continuing. Use the current main helper from the issue worktree when its local helper lacks this option, as described in [artifact references](../../../docs/reference/implementation-loop.md#artifact-references); do not integrate main just to obtain the helper. Read `.loop/` content with `git show <artifact-sha>:<path>`. Validation establishes artifact integrity and binding, not plan quality, acceptance, selected-flow evidence, or approval. Retained proof state stays on the proving host and is never committed.
+For a requested review before coding, check the intended behavior, feasibility, proposed ADRs, documentation, and important failure cases. Return findings for the author to address.
 
-The external orchestrator owns review publication and every other pull-request mutation. The reviewer must not invoke `gh` or create, edit, comment on, review, approve, merge, or otherwise mutate any GitHub surface.
+## Review a completed PR
 
-The external orchestrator assigns the formal reviewer independently of the
-implementation lead and its helpers. Advisory checks within implementation do
-not replace this review or approve the candidate.
+Check correctness, regressions, test coverage, architectural decisions, and documentation. Inspect the required CI results. Check affected security boundaries, including ownership, untrusted input, credentials, TLS, and SSH identities.
 
-## CLI interaction and output
+For command behavior, use the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) for real terminal checks.
 
-Review CLI behavior using [designing-cli-commands](../designing-cli-commands/SKILL.md)
-and the [shared standard](../../../docs/reference/cli-ux.md). Use
-[verifying-cli-output](../verifying-cli-output/SKILL.md) for evidence involving
-prompts, dimensions, color, cursor state, streaming, or liveness. Require the
-applicable command/mode adoption rows and record justified exceptions against
-current contracts. The standard alone does not establish command compliance.
-These skills operate within this role and its selected delivery flow.
+Reproduce the feature's user-visible behavior and important failure cases on Incus. Verify the running source commit and use machines allocated to the review. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. If access is unavailable, return the code findings and leave Incus review pending.
 
-## Delivery flow
+## Report
 
-Run `bin/loop-flow status` in the issue worktree and read [Implementation loop](../../../docs/reference/implementation-loop.md). Name the selected `discovery` or `proof` flow in every handoff. The separately published `.loop/flow.json` binds the choice to the candidate; a missing selection defaults to `discovery`. Proof is opt-in: select `proof` explicitly before planning or reviewing. A repository-default change does not change an existing worktree.
+Give actionable findings with file references, their effect, and suggested corrections. Include the reviewed commit, check results, Incus observations, and limitations. Link sanitized evidence stored outside the repository.
 
-Apply that page's current local check policy when an issue or plan still names generic full-suite requirements. Report the text correction to the orchestrator; do not run `bin/test` to satisfy superseded wording. Every Pest acceptance check must run through TIA without a path, filter, group, or suite; use fresh mode when it must execute instead of replaying a cached result. An intentional full-suite exception needs a current explicit instruction or a concrete diagnostic reason. A full test run does not replace the root gate's quality checks and exact-candidate receipt.
-
-Use the [shared review handoff](../../../docs/reference/implementation-loop.md#review-handoff) for PR evidence. Concise acceptance rows with observed results and precise artifact references are sufficient; do not demand copied logs or immutable discovery proof. Distinguish an omitted publication from missing verification. Return body corrections to the orchestrator and continue substantive review; restoring already supplied evidence on the same candidate needs no new commit, preflight, or repeated passing gate. Preserve actual correctness findings and require adequate evidence before approval.
-
-## Steps
-
-1. **Bind the candidate.** Record the exact remote PR head SHA. Require a clean local checkout equal to it.
-2. **Check current main (proof flow only).** In `discovery`, skip this step: main movement does not invalidate review or approval. Fetch `origin/main`, record its SHA, and confirm the candidate includes it. The reviewer must not merge or rebase `main`. If it does not, stop until the candidate is updated and pushed, then review the new head in a new pass. If main advances during review, withhold approval but return any completed assessment bound to the reviewed head and included main; mark incomplete items explicitly. Base freshness alone does not erase completed review work.
-3. **Read.** The issue named by the PR body's `Issue:` line, with labels and attachments; the exact diff; every attached ADR's `Decision` bullets; nearest `AGENTS.md`; `.loop/plan.md` and `.loop/flow.json` from the bound artifact commit, plus `.loop/proof/<ISSUE>.json` and every fixture when the proof flow requires them; and the PR body's per-item evidence, documentation list, and deviations. Product feature diffs do not touch harness code: everything under `apps/e2e` and `bin/e2e-*` except `apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`. A harness diff requires a dedicated issue with the `apps/e2e` label, repository-owner-approved behavior, and issue-specific proof.
-4. **Validate the Builder gate and inspect evidence.** Read the submitted candidate-gate receipt. Require it under `orbit-checks/<candidate>/review-*/result.json` with `schema: 1`, `role: builder`, `passed: true`, `unchanged: true`, the exact reviewed candidate and tree, and zero-exit strict Composer validation, project `composer check`, and `composer test:affected` results for all five projects. A missing, failed, stale, or changed-tree receipt prevents approval and returns to the Builder before substantive review. Do not repeat root `composer check` solely to approve the candidate. Run a focused check only when a concrete possible finding needs investigation. Retain the receipt path and every per-project outcome in the review payload. GitHub CI is disabled and is not a review or merge gate. A TIA skip does not replace focused acceptance evidence. A receipt `warnings` entry means `composer test:affected` selected no tests for a project the candidate changes; require focused test evidence or an explanation for that project instead of treating the step as passing. Check the `incus` label against acceptance independently of flow; a missing label must not hide a need for real-machine checks. In `discovery`, inspect per-acceptance tests, the validated Builder gate, and discovery observations when Incus is required; discovery is a development tool and is not immutable proof. Do not run proof, equivalence, candidate convergence, main-freshness checks, or snapshot operations. In `proof` with the `incus` label, first require idle discovery to be absent. Run `bin/e2e-topology status <ISSUE>` on the proving host and require the captured successful proof topology to remain active with its complete standard or declared extended inventory. Verify the captured immutable proof: current proof-plan fingerprint, proof-input manifest, one action per Incus-proved `Acceptance` item, and zero exit for every action. Verify the observed-input choice and any opt-out reason; absent observations require the broad static policy, not inferred non-overlap. Use `shell --proof --review-action=<ID>` or `exec --proof --review-action=<ID>` as the ordinary guest user for interactive checks, marking required actions with `--required`. Complete shell actions and record results and findings with `bin/e2e-topology review <ISSUE>`, then require its evaluation to pass. Review actions and findings remain separate from immutable captured proof. A required failed or incomplete action prevents approval; an exploratory failure remains distinct. When the proof names an earlier SHA, require an immutable `exact` or `equivalent` report from `bin/e2e-topology equivalence <ISSUE>` bound to this head and current `origin/main`; `stale` or `indeterminate` requires complete reproof. On `promotion_path: candidate-convergence`, also require a successful immutable candidate result bound to this head, included main, and equivalence fingerprint, with zero-exit convergence and verification evidence. A code or configuration fix found during interactive review requires a corrected candidate and fresh complete proof before another approval pass; neither a live-machine edit nor equivalence to the old proof establishes the fix. Discovery is not proof. For automated-only changes without `incus`, require a passing Builder gate and the relevant local checks; a missing topology is not a finding. A rename from `proof:incus` does not select proof or invalidate unchanged acceptance assessment.
-5. **Review against the issue.** In `proof`, use the main-delta mode below only when its prerequisites hold; otherwise perform a full review. Walk the `Acceptance` checklist in order. For each item, confirm the diff implements it and the named proof shows it. Then confirm the diff stays inside `In`, touches nothing named in `Out`, changes only components the issue is labeled with, where pages under `docs/` and files under `.loop/proof/` are not components and a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`, violates no attached ADR `Decision` bullet, and changes maintained documentation only for the pages the `docs` label requires and the drift fixes and deviations the PR body lists, with `composer docs-lint` passing. Check correctness, regressions, and repository conventions last.
-6. **Return the formal review.** Collect every blocking finding in one pass. Each cites an `Acceptance` item, `Scope` bullet, label, ADR bullet, invariant, test, or repository rule. A new requirement is separate Linear work, not a finding. Bind the payload to the exact reviewed SHA and include the verdict, complete findings, validated Builder receipt and per-project results, per-acceptance evidence assessment, proof status and binding, checked documentation and deviations, and every limitation. When nothing blocks, the review body is exactly `Approved.` The external orchestrator publishes the returned payload.
-
-
-## Discovery conflict corrections
-
-After actual merge conflicts, inspect the updated candidate, published artifacts, conflict-resolution diff, and affected tests with a passing Builder gate on that head. Reuse unchanged acceptance assessment from the prior review when its contract and evidence still apply; review affected behavior again. Do not restart preflight or add proof checks. Bind the returned approval to the new head. Immediately before approval, recheck the remote candidate head; do not withhold discovery approval because main advanced.
-
-## Main-delta review
-
-This section applies only to `proof`.
-
-A fresh independent reviewer may reuse a completed acceptance assessment, never its approval. Require the complete prior independent review artifact bound to workspace head `R` and included main `B`: either an approval or a completed assessment whose only blocker was main freshness. Require the same issue contract, labels, governing ADRs, and acceptance/proof requirements. An incomplete assessment, unresolved substantive finding, changed contract, or missing binding requires full review.
-
-For the narrow main-delta mode, let `M` be current `origin/main` and `C` the new workspace head. Require `B` to be an ancestor of both `R` and `M`, and `C` to have exactly two parents in order: `R`, `M`. Require `git merge-tree --write-tree R M` to exit zero and its tree to equal `C^{tree}`. This excludes extra edits and manual conflict resolutions; a clean merge alone does not establish proof equivalence. A rebase or another commit shape uses full review.
-
-Perform steps 1–4 and validate the current head's fresh Builder gate. With Incus proof, require `exact` or `equivalent` evidence for `C` and `M`, including candidate convergence when selected. Inspect `git diff R C`, incoming main commits `B..M`, and the resulting feature diff `M...C` for interactions and regressions, including changes to documentation, tests, and instructions. Reassess every acceptance item affected by the incoming changes; if the impact cannot be bounded, use full review. Do not infer review equivalence from runtime proof equivalence.
-
-Return the complete per-acceptance assessment, marking which items were reassessed and which inherit evidence from the identified prior artifact. Record `R`, `B`, `M`, `C`, the merge-tree check, evidence fingerprints, review scope, and limitations in the handoff. Recheck current remote head and main before returning approval. If either moved, withhold approval and preserve the completed assessment. A new `Approved.` review is always bound to `C`; neither an old approval nor an inherited assessment authorizes its merge.
-
-## Rules
-
-- A new commit invalidates approval and requires a new pass, scoped to corrections when possible. In `proof`, it invalidates proof unless recorded inputs stay exact or equivalent. Main movement alone does not invalidate discovery approval.
-- Do not drip findings across rounds.
-- Do not merge, promote, release a proved topology, or modify the topology snapshot.
-- The reviewer never publishes its own review; the external orchestrator owns that mutation.
+After fixes, review the changes and repeat affected checks. Confirm that the final assessment covers the current PR commit. Publish the review when authorized. The maintainer approves the completed feature before merge.

@@ -7,7 +7,7 @@ description: "The plan file, fixtures, phases, and captured result that prove on
 
 This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) governs the separate candidate-bound artifact workspace, and the commands that run a plan are on the [Incus topology registry](/reference/incus-topologies).
 
-This page applies to the `proof` delivery flow. The [implementation loop](/reference/implementation-loop) describes the discovery-only flow, which requires no proof plan or isolated acceptance run.
+This page describes retained proof machinery for explicit retained resource inspection and recovery. The [feature delivery reference](/reference/implementation-loop) describes Orbit review and Incus reproduction.
 
 ## Plan file
 

@@ -1,53 +1,38 @@
 ---
 title: "Architecture decisions"
-description: "What an architecture decision record is, when Orbit writes one, and how an accepted record stays immutable."
+description: "How Orbit proposes, reviews, and accepts architectural decisions with feature pull requests."
 ---
 
 # Architecture decisions
 
-Architecture decision records explain why Orbit chose a significant product or
-technical direction. Accepted ADRs form an append-only decision history; they
-are not implementation tasks, issue lifecycle rules, or agent instructions.
+Architecture decision records explain why Orbit chose a significant product or technical direction. They preserve rationale and alternatives. Code, tests, and user-facing documentation describe the delivered behavior.
 
-The threshold is architectural significance, not mere durability. Create an
-ADR for:
+## When to write a record
 
-- a cross-component contract;
-- a durable architecture boundary;
-- a security or ownership model; or
-- a costly-to-reverse operational choice in the product or its infrastructure.
+Write an ADR for a cross-component contract, an architecture boundary, a security or ownership model, or an operational choice that is costly to reverse. Tactical implementation choices belong in code and tests.
 
-Draft a new ADR as `Proposed`. Revise the actual record with the user until the
-user explicitly approves the exact final text, then mark it `Accepted`.
-Accepted ADRs remain immutable. A later direction becomes a new ADR that names
-the decision it extends, amends, or supersedes.
+Read affected decisions before writing documentation and implementing the feature. When changing a decision, explain the departure and its consequences in a new ADR that names the decision it extends, amends, or supersedes. Preserve the original rationale. Editorial corrections can update an accepted record while preserving its decision.
 
-An approved ADR does not intrinsically need a Linear issue or pull request. It
-may be committed directly to `main` only when:
+## Propose and accept
 
-- the user approved the exact final text;
-- the commit contains only the approved ADR and the regenerated `docs/generated/context.json`;
-- local `main` matches the current remote base; and
-- no unrelated work is included, modified, stashed, reset, or discarded.
+Draft an ADR as `Proposed.` on the feature branch. The feature PR contains the proposed decision, implementation, tests, and documentation.
 
-If the remote base moves, recheck the ADR before committing. A pull request
-remains optional when the user requests independent review, multiple people
-share decision authority, or branch protection requires it.
+The maintainer reviews the complete feature. Merging the approved PR accepts the exact proposed decision together with its implementation.
 
-Put an accepted ADR on `origin/main` before deriving implementation issues that
-depend on it. Link the canonical GitHub URL from each governed issue.
+For records introduced under this convention, `Proposed.` describes the proposal at submission. A PR approved and merged by the maintainer establishes its acceptance on main; the merged PR records the date and approved revision. Existing `Accepted on YYYY-MM-DD.` records keep their recorded acceptance. Reviewers use the branch and merge history to establish decision status.
 
-Use the next four-digit number and a short kebab-case name:
+A standalone ADR PR is available when agreement would help several dependent changes. It follows the same maintainer review and merge convention.
+
+## Record format
+
+Use the next available four-digit number and a short kebab-case name. Check for a collision before merging concurrent additions.
 
 ```text
 0001-short-decision-name.md
 ```
 
-Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`. ADRs from 0020 onward follow the template beside the `recording-decisions` skill under `.agents/skills`, add `Rejected alternatives` and `Affects`, and pass the `orbit.adr_structure` and `orbit.adr_language` lint rules in `apps/docs`.
+Use the [ADR template](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/templates/adr.md). Records contain `Status`, `Context`, `Decision`, `Rejected alternatives`, `Consequences`, and `Affects`. Historical records before 0020 retain their original structure.
 
-An ADR records one decision, why it won, and what it binds. It does not carry mechanism: command syntax, verification checklists, error text, field lists, and Doctor behavior belong in the implementing issue's acceptance criteria and, once shipped, in the `docs/reference` page named by the ADR's `Affects` section.
+Keep one decision in each record. Explain why it won, the alternatives, and the costs. Link mechanisms such as CLI syntax, field lists, error behavior, and verification procedures from the affected maintained reference page. Run `composer docs-build` when context changes and `composer docs-lint` before submitting.
 
-Current contributor-governance decisions:
-
-- [ADR 0010: Record decisions before implementation issues](/decisions/0010-record-decisions-before-implementation-issues)
-- [ADR 0014: Maintain verified documentation context](/decisions/0014-maintain-verified-documentation-context)
+The [feature delivery reference](/reference/implementation-loop) describes contribution and review. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records this decision and the contributor rules it replaces. Historical ADRs remain available as decision history.

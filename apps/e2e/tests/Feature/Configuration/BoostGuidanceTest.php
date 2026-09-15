@@ -54,9 +54,6 @@ describe('Boost guidance', function (): void {
             ->toBe([
                 'laravel-best-practices',
                 'testing-best-practices',
-                'spatie-laravel-php',
-                'spatie-security',
-                'spatie-version-control',
             ]);
 
         app(SkillComposer::class)->skills();

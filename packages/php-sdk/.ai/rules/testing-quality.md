@@ -1,7 +1,7 @@
 # Testing and quality
 
 Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
-`composer test:affected` for red, green, and refactor. Reviewers run root `composer check` across all projects with TIA and two parallel test workers per project.
+`composer test:affected` for red, green, and refactor. CI runs checks across all projects.
 
 - Run `composer guidance:check` first. It must fail when the rule index, an
   indexed file, or material path coverage is missing. The failure must give the
@@ -14,8 +14,7 @@ Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
 - Run Pint format checks and PHPStan analysis with zero findings. Run Rector in
   dry-run mode and `git diff --check -- packages/php-sdk` from the monorepo
   root.
-- Require the reviewer's passing root `composer check` receipt on the submitted candidate. Use `composer test`
-  or root `bin/test` only for an explicit broader TIA run or failure diagnosis.
+- Follow the root contributor guide for CI, independent review, and maintainer approval. Root `composer check` is available for local checks across projects.
 - Review the diff, staged files, branch, and upstream state before handoff.
   Keep authorized cross-component changes in the same feature branch. Never
   stage, commit, push, or deploy without authorization.

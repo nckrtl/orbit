@@ -82,13 +82,11 @@
                 "Ingress",
                 "Node",
                 "Process",
-                "Proof topology",
                 "Route",
                 "Router"
             ],
             "governing_adrs": [
                 "0004",
-                "0006",
                 "0014"
             ]
         },
@@ -446,6 +444,16 @@
                 "0064",
                 "0065"
             ]
+        },
+        {
+            "path": "docs/contributor-guide.md",
+            "title": "Contributing to Orbit",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [],
+            "governing_adrs": []
         },
         {
             "path": "docs/decisions/0001-tool-management.md",
@@ -1978,20 +1986,44 @@
             ]
         },
         {
+            "path": "docs/decisions/0076-deliver-features-through-complete-pull-requests.md",
+            "title": "ADR 0076: Deliver features through complete pull requests",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0002",
+                "0006",
+                "0010",
+                "0015",
+                "0022",
+                "0035",
+                "0040",
+                "0049",
+                "0050",
+                "0051",
+                "0053",
+                "0056",
+                "0058",
+                "0059",
+                "0076"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
-            "components": [
-                "apps/docs"
-            ],
-            "concepts": [
-                "Doctor",
-                "Documentation context"
-            ],
+            "components": [],
+            "concepts": [],
             "governing_adrs": [
                 "0001",
-                "0010",
-                "0014"
+                "0076"
             ]
         },
         {
@@ -2086,7 +2118,8 @@
                 "0071",
                 "0072",
                 "0073",
-                "0074"
+                "0074",
+                "0076"
             ]
         },
         {
@@ -2532,7 +2565,7 @@
         },
         {
             "path": "docs/reference/implementation-loop.md",
-            "title": "Implementation loop",
+            "title": "Feature delivery",
             "kind": "reference",
             "components": [
                 "apps/docs",
@@ -2545,18 +2578,12 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Proof topology",
-                "Route",
                 "Tool"
             ],
             "governing_adrs": [
-                "0049",
-                "0051",
                 "0052",
                 "0054",
-                "0056",
-                "0058",
-                "0059"
+                "0076"
             ]
         },
         {
@@ -2581,14 +2608,11 @@
             ],
             "governing_adrs": [
                 "0005",
-                "0006",
                 "0019",
                 "0037",
                 "0040",
                 "0049",
-                "0051",
-                "0056",
-                "0058"
+                "0056"
             ]
         },
         {
