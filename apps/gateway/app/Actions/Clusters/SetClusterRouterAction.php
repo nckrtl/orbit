@@ -437,8 +437,8 @@ final readonly class SetClusterRouterAction
             ->whereKeyNot($current->id)
             ->orderBy('id')
             ->get()
-            ->map(static fn (NodeRole $assignment): ?Node => $assignment->node)
-            ->first(static fn (?Node $node): bool => $node instanceof Node);
+            ->map(static fn (NodeRole $assignment): Node => $assignment->node)
+            ->first();
 
         if (! $oldRouter instanceof Node) {
             $current->update(['failed_step' => null, 'error_code' => null]);

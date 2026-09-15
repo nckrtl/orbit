@@ -184,9 +184,6 @@ final readonly class AppDevDnsConfigRenderer
     }
 
     /**
-     * @return array<string, int>
-     */
-    /**
      * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
      * @return array<int, int>
      */
@@ -195,7 +192,7 @@ final readonly class AppDevDnsConfigRenderer
         $overrides = [];
 
         foreach ($clusterOverrides as $clusterId => $override) {
-            if (isset($override['router_node_id']) && is_int($override['router_node_id'])) {
+            if (array_key_exists('router_node_id', $override) && is_int($override['router_node_id'])) {
                 $overrides[(int) $clusterId] = $override['router_node_id'];
             }
         }
@@ -203,6 +200,7 @@ final readonly class AppDevDnsConfigRenderer
         return $overrides;
     }
 
+    /** @return array<string, int> */
     public function registeredRequesters(): array
     {
         $requesters = [];
