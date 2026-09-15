@@ -7,11 +7,21 @@ namespace App\Infrastructure\Processes;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
+use App\Domain\Processes\VpDevPreset;
 use App\Models\Process;
 use InvalidArgumentException;
 
 final readonly class SystemdProcessRenderer
 {
+    public static function viteEnvironmentPath(int $instanceId): string
+    {
+        if ($instanceId < 1) {
+            throw new InvalidArgumentException('A Vite environment requires a persisted AppInstance.');
+        }
+
+        return "/etc/orbit/vite/app-instance-{$instanceId}.env";
+    }
+
     public function unitName(Process $process): string
     {
         if ($process->id < 1 || preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $process->name) !== 1) {
@@ -30,7 +40,7 @@ final readonly class SystemdProcessRenderer
     {
         $runtimeConfig = $this->runtimeConfig($process);
         $command = $this->stringList($runtimeConfig['command'] ?? null);
-        $environmentFile = $runtimeConfig['environment_file'] ?? null;
+        $environmentFile = $process->isVpDev() ? $target->environmentFile : ($runtimeConfig['environment_file'] ?? null);
 
         if (
             $command === []
@@ -42,7 +52,11 @@ final readonly class SystemdProcessRenderer
             );
         }
 
-        $environmentProjection = $this->environmentProjection($target, $managedAccount);
+        $environmentProjection = $this->environmentProjection($target, $managedAccount, ! $process->isVpDev());
+        if ($process->isVpDev()) {
+            $command = VpDevPreset::command();
+            $environmentProjection['commandPrefix'] = array_values(array_filter($environmentProjection['commandPrefix'], static fn (string $value): bool => ! str_starts_with($value, 'ORBIT_DEV_SERVER_PORT=')));
+        }
         $environmentFileLine = is_string($environmentFile) && $environmentFile !== ''
             ? ['EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile)]
             : [];
@@ -62,11 +76,14 @@ final readonly class SystemdProcessRenderer
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
             ...$environmentProjection['directives'],
+            ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->appInstance?->id), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
                 .implode(
                     ' ',
                     array_map(
-                        $this->quoteArgument(...),
+                        fn (string $argument): string => $process->isVpDev() && $argument === '--port=${ORBIT_DEV_SERVER_PORT}'
+                            ? '"--port=${ORBIT_DEV_SERVER_PORT}"'
+                            : $this->quoteArgument($argument),
                         [...$environmentProjection['commandPrefix'], ...$command],
                     ),
                 ),
@@ -80,7 +97,7 @@ final readonly class SystemdProcessRenderer
     }
 
     /** @return array{directives: list<string>, commandPrefix: list<string>} */
-    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount): array
+    private function environmentProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount, bool $certificates): array
     {
         $directives = [];
         $commandValues = [];
@@ -90,14 +107,14 @@ final readonly class SystemdProcessRenderer
             $directives[] = 'Environment=ORBIT_DEV_SERVER_ORIGIN='.$this->escapeDirectivePath($origin);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_HOST='.$this->escapeDirectivePath($target->routeDomain);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
-            $directives[] = 'Environment=ORBIT_DEV_SERVER_PORT='.(string) DevelopmentServerEndpoint::PORT;
+            $directives[] = 'Environment=ORBIT_DEV_SERVER_PORT='.(string) ($target->appInstance->vite_port ?? DevelopmentServerEndpoint::PORT);
             $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
-            $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) DevelopmentServerEndpoint::PORT;
+            $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) ($target->appInstance->vite_port ?? DevelopmentServerEndpoint::PORT);
         }
 
-        if ($target->certificateScope !== null) {
+        if ($certificates && $target->certificateScope !== null) {
             if ($managedAccount === null || $managedAccount->user !== $target->user) {
                 throw new InvalidArgumentException('A matching managed account is required for process certificates.');
             }

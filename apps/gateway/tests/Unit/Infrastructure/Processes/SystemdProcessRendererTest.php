@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -257,4 +258,15 @@ it('pins the Route development-server origin after the app environment file', fu
         ->toContain(
             '"ORBIT_DEV_SERVER_ORIGIN=https://tasks.commander.test/__orbit/vite"',
         );
+});
+
+it('expands only the preset port and gives its owned environment file precedence', function (): void {
+    $instance = new AppInstance(['vite_port' => 5210]);
+    $instance->id = 64;
+    $process = new Process(['name' => 'assets', 'runtime_config' => ['preset' => 'vp-dev', 'command' => ['/usr/local/bin/vp', 'dev'], 'environment_file' => '/apps/main/.env'], 'working_directory' => '/apps/main', 'restart_policy' => 'on-failure']);
+    $process->id = 9;
+    $target = new ProcessTarget(node: new Node(['name' => 'test']), user: 'orbit', checkoutPath: '/apps/main', appInstance: $instance, environmentFile: '/apps/main/.env', routeDomain: 'example.test');
+    $unit = new SystemdProcessRenderer()->render($process, $target);
+    expect($unit)->toContain('EnvironmentFile=/etc/orbit/vite/app-instance-64.env')->toContain('"--port=${ORBIT_DEV_SERVER_PORT}"')->toContain('"--strictPort"')->toContain('"--host=127.0.0.1"')->not->toContain('"ORBIT_DEV_SERVER_PORT=5210"');
+    expect(strpos($unit, 'EnvironmentFile=-/apps/main/.env'))->toBeLessThan(strpos($unit, 'EnvironmentFile=/etc/orbit/vite/app-instance-64.env'));
 });

@@ -2109,22 +2109,31 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
     {
         public int $leases = 0;
 
+        private bool $held = false;
+
         public function __construct(
             private readonly CreateAppInstanceData $data,
         ) {}
 
         public function synchronized(int $nodeId, Closure $operation): mixed
         {
+            if ($this->held) {
+                return $operation();
+            }
+            $this->held = true;
             $this->leases++;
 
             try {
                 return $operation();
             } catch (Throwable $exception) {
+                $this->held = false;
                 if ($this->leases === 1) {
                     app(CreateAppInstanceAction::class)->execute($this->data);
                 }
 
                 throw $exception;
+            } finally {
+                $this->held = false;
             }
         }
     };

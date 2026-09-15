@@ -27,6 +27,7 @@ final readonly class AppDevSite
         public bool $publicListener = false,
         public bool $preserveForwardedIdentity = false,
         public ?string $localUnixUpstream = null,
+        public ?int $vitePort = null,
     ) {}
 
     public function poolName(): string

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\AppDev\ViteProcessLifecycle;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
@@ -68,6 +69,12 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                 $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
             }
 
+            if ($fresh->isVpDev()) {
+                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->convergeAndActivateSystemd($fresh, $this->targets->forInstallation($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), $fresh->desired_state === DesiredProcessState::Running);
+
+                return;
+            }
+
             match ($fresh->runtime) {
                 ProcessRuntime::Systemd => $this->convergeAndActivateSystemd($fresh, $target),
                 ProcessRuntime::Docker => $this->convergeDocker($fresh, $target),
@@ -80,6 +87,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         $this->lease->run($process, function (Process $fresh): void {
             $target = $this->targets->forStart($fresh);
             $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
+            if ($fresh->isVpDev()) {
+                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true);
+
+                return;
+            }
             $this->startUnlocked($fresh, $target);
         });
     }
@@ -96,6 +108,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         $this->lease->run($process, function (Process $fresh): void {
             $target = $this->targets->forStart($fresh);
             $this->assertReleaseAvailable($fresh, $target, 'restart', 'process.restart_failed');
+            if ($fresh->isVpDev()) {
+                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true, restart: true);
+
+                return;
+            }
             $this->restartUnlocked($fresh, $target);
         });
     }
@@ -193,6 +210,8 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         }
 
         if (! $this->runtimeExistsAndIsOwned($process, 'inspect-runtime', 'process.remove_failed', $target)) {
+            $this->removeViteEnvironment($process, $target);
+
             return;
         }
 
@@ -217,6 +236,23 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             'process.remove_failed',
             target: $target,
         );
+        $this->removeViteEnvironment($process, $target);
+    }
+
+    private function removeViteEnvironment(Process $process, ProcessTarget $target): void
+    {
+        if (! $process->isVpDev()) {
+            return;
+        }
+        $path = SystemdProcessRenderer::viteEnvironmentPath($process->owner_id);
+        $this->executeSuccessfully($process, ['bash', '-c', <<<'BASH'
+            set -euo pipefail
+            if sudo test -e "$1"; then
+                test ! -L "$1"
+                sudo grep -Fx -- "# Orbit AppInstance $2" "$1" >/dev/null
+                sudo rm -f -- "$1" "$1.pending"
+            fi
+            BASH, 'orbit-remove-vite-environment', $path, (string) $process->owner_id], 'remove-vite-environment', 'vite.environment_cleanup_failed', target: $target);
     }
 
     private function removeDockerArtifacts(#[SensitiveParameter] Process $process, ProcessTarget $target): void

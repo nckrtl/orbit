@@ -142,7 +142,7 @@ final readonly class AppDevCaddyConfigRenderer
             return $application;
         }
 
-        $handlers = $this->withDevelopmentServer($application);
+        $handlers = $this->withDevelopmentServer($application, $site->vitePort);
         $wake = $this->hibernationWake($site);
 
         return $wake === null ? $handlers : $wake.PHP_EOL.$handlers;
@@ -191,17 +191,18 @@ final readonly class AppDevCaddyConfigRenderer
             CADDY;
     }
 
-    private function withDevelopmentServer(string $applicationHandler): string
+    private function withDevelopmentServer(string $applicationHandler, ?int $port): string
     {
         $path = DevelopmentServerEndpoint::PATH;
-        $upstream = DevelopmentServerEndpoint::upstream();
+        $upstream = DevelopmentServerEndpoint::upstream($port);
+        $rewrite = $port === null ? "uri strip_prefix {$path}" : '';
 
         return <<<CADDY
             @orbit_vite {
                 path {$path} {$path}/*
             }
             handle @orbit_vite {
-                uri strip_prefix {$path}
+                {$rewrite}
                 reverse_proxy {$upstream}
             }
             handle {

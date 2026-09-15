@@ -34,6 +34,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
 use App\Models\Schedule;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\Orb245Accounts;
 use Tests\Support\Orb245DestinationGuard;
 use Tests\Support\Orb245EnvironmentLock;
@@ -381,6 +382,7 @@ it('restores the source and discards destination state when transfer fails befor
         new TransferAppInstanceData($this->destinationNode->id, 'other', null),
     ))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_retry_conflict'));
 
+    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
     $this->sources->failMaterialize = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
@@ -421,11 +423,13 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
         ->and($transfer->recovery_evidence)->toHaveKey('incomplete')
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
 
+    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->count())->toBe(2);
     $this->sources->cleanupIncomplete = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
     expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup', 'cleanup']);
+    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
 });
 
 it('completes transfer from verified placement state without application HTTP health', function (): void {

@@ -19,7 +19,7 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     /**
-     * @param  list<string>  $command
+     * @param  list<string>|null  $command
      * @param  array<string, string>|null  $environment
      * @param  list<string>|null  $ports
      * @param  list<array{source: string, target: string, read_only?: bool}>|null  $volumes
@@ -27,17 +27,18 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
     public function __construct(
         private readonly AppInstanceProcessTarget|NodeProcessTarget $target,
         private readonly string $name,
-        private readonly string $runtime,
-        private readonly array $command,
+        private readonly ?string $runtime = null,
+        private readonly ?array $command = null,
         private readonly ?string $image = null,
         private readonly ?string $workingDirectory = null,
         #[\SensitiveParameter]
         private readonly ?array $environment = null,
         private readonly ?array $ports = null,
         private readonly ?array $volumes = null,
-        private readonly string $restartPolicy = 'never',
+        private readonly ?string $restartPolicy = null,
         private readonly bool $start = false,
         private readonly bool $keepAlive = false,
+        private readonly ?string $preset = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -59,9 +60,10 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
         $body = [
             ...$this->target->toRequestData(),
             'name' => $this->name,
-            'runtime' => $this->runtime,
-            'command' => $this->command,
-            'restart_policy' => $this->restartPolicy,
+            ...($this->runtime !== null ? ['runtime' => $this->runtime] : []),
+            ...($this->command !== null ? ['command' => $this->command] : []),
+            ...($this->restartPolicy !== null ? ['restart_policy' => $this->restartPolicy] : ($this->preset === null ? ['restart_policy' => 'never'] : [])),
+            ...($this->preset !== null ? ['preset' => $this->preset] : []),
             'start' => $this->start,
             'keep_alive' => $this->keepAlive,
         ];

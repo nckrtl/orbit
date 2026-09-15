@@ -31,5 +31,6 @@ final readonly class AddProcessData
         public string $restartPolicy,
         public bool $start,
         public bool $keepAlive = false,
+        public ?string $preset = null,
     ) {}
 }

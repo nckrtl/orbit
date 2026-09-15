@@ -331,6 +331,7 @@ final readonly class AppDevSiteRepository
             appSlug: $instance->app->slug,
             certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
             productionPhpSocket: $instance->production_php_socket,
+            vitePort: $instance->vite_port,
         );
     }
 

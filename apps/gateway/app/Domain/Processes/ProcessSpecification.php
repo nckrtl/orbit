@@ -20,6 +20,7 @@ final readonly class ProcessSpecification
             ? [
                 'command' => $data->command,
                 'environment_file' => $target->environmentFile,
+                ...($data->preset === null ? [] : ['preset' => $data->preset]),
             ]
             : [
                 'image' => $data->image,

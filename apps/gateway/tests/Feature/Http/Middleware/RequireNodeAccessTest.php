@@ -656,3 +656,15 @@ final class CaptureNodeAccessErrorCode
         return $response;
     }
 }
+
+it('requires access to the resolved instance Node when a process target is a Route domain', function (): void {
+    $consumer = middleware_node('vite-consumer');
+    $node = middleware_node('vite-workload');
+    middleware_gateway();
+    $instance = middleware_app_instance(middleware_app('vite-access'), $node, 'main');
+    $route = App\Models\Route::query()->create(['app_id' => $instance->app_id, 'node_id' => $node->id, 'domain' => 'vite-access.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    middleware_get($this, $consumer, '/_node-access/process?target_type=instance&target_id=vite-access.test')->assertForbidden()->assertJsonPath('error.details.serving_node.id', $node->id);
+    $consumer->accessibleNodes()->attach($node);
+    middleware_get($this, $consumer, '/_node-access/process?target_type=instance&target_id=vite-access.test')->assertOk();
+});

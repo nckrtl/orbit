@@ -268,3 +268,13 @@ function development_server_site(
         domain: $domain,
     );
 }
+
+it('keeps assigned Vite endpoints separate and preserves their base path', function (): void {
+    $sites = collect([
+        new AppDevSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-10', checkoutPath: '/apps/first', documentRoot: 'public', phpVersion: null, domain: 'first.test', vitePort: 5174),
+        new AppDevSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-11', checkoutPath: '/apps/second', documentRoot: 'public', phpVersion: null, domain: 'second.test', vitePort: 5210),
+    ]);
+    $config = new AppDevCaddyConfigRenderer()->render($sites);
+    expect($config)->toContain('reverse_proxy 127.0.0.1:5174')->toContain('reverse_proxy 127.0.0.1:5210')->not->toContain('uri strip_prefix');
+    expect(caddy_adapt($config)->succeeded())->toBeTrue();
+});
