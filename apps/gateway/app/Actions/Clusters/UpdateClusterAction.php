@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Clusters\ActiveTldScopeGuard;
@@ -11,6 +12,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Routes\RouteMutationReconciler;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
@@ -25,6 +27,7 @@ final readonly class UpdateClusterAction
         private ?RouteMutationReconciler $routes = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
+        private ?ConvergeRouteAction $convergeRoute = null,
     ) {}
 
     public function execute(Cluster $cluster, UpdateClusterData $data): Cluster
@@ -48,6 +51,7 @@ final readonly class UpdateClusterAction
 
         $proposedTld = $data->tldProvided ? $data->tld : $current->tld;
         $proposedState = $data->state ?? $current->state;
+        $tldChanging = $data->tldProvided && $data->tld !== $current->tld;
         $selectionChanging = $data->tldProvided || $stateChanging;
 
         if ($stateChanging) {
@@ -76,6 +80,10 @@ final readonly class UpdateClusterAction
         }
 
         try {
+            if ($stateChanging && ! $tldChanging) {
+                $this->convergeActivePrivateRoutes($current, $proposedState, $proposedTld);
+            }
+
             /**
              * @var Cluster $updated
              */
@@ -116,7 +124,7 @@ final readonly class UpdateClusterAction
                 }
 
                 if ($proposedTld !== $locked->tld || $proposedState !== $locked->state) {
-                    ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(clusterOverrides: [
+                    $this->routeReconciler()->reconcile(clusterOverrides: [
                         $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
                     ]);
                 }
@@ -146,6 +154,35 @@ final readonly class UpdateClusterAction
         }
 
         return $updated;
+    }
+
+    private function convergeActivePrivateRoutes(
+        Cluster $cluster,
+        ClusterState $proposedState,
+        ?string $proposedTld,
+    ): void {
+        $overrides = [$cluster->id => ['tld' => $proposedTld, 'state' => $proposedState]];
+        $reconciler = $this->routeReconciler();
+        $reconciler->validate(clusterOverrides: $overrides);
+
+        foreach ($reconciler->activePrivatePlacementChanges(clusterOverrides: $overrides) as $change) {
+            $this->convergeRoute()->execute(
+                $change['route'],
+                $change['domain'],
+                allowGenerated: $change['route']->provenance === RouteProvenance::Generated,
+                placement: $change['placement'],
+            );
+        }
+    }
+
+    private function routeReconciler(): RouteMutationReconciler
+    {
+        return $this->routes ?? app(RouteMutationReconciler::class);
+    }
+
+    private function convergeRoute(): ConvergeRouteAction
+    {
+        return $this->convergeRoute ?? app(ConvergeRouteAction::class);
     }
 
     private function lanIngress(): RouterLanIngressReconciler
