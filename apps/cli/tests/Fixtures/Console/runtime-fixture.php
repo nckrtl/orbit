@@ -27,11 +27,39 @@ $record = static function (string $event, array $facts = []) use ($trace): void 
         file_put_contents($trace, json_encode(['event' => $event, 'pid' => getmypid(), 'time' => microtime(true), ...$facts], JSON_THROW_ON_ERROR)."\n", FILE_APPEND);
     }
 };
+$paintNonce = getenv('ORBIT_UX_PAINT_NONCE');
+$firstPaint = static function (string $id) use ($paintNonce, $outputStream): void {
+    if (! is_string($paintNonce) || $paintNonce === '') {
+        return;
+    }
+
+    if (preg_match('/\A[a-f0-9]{16,64}\z/', $paintNonce) !== 1) {
+        throw new RuntimeException('Invalid first-paint nonce.');
+    }
+
+    // Share the renderer's PTY byte order without causing a helper repaint.
+    $marker = "\e]777;orbit-first-paint;{$paintNonce};{$id};".getmypid()."\x07";
+
+    while ($marker !== '') {
+        $written = @fwrite($outputStream, $marker);
+
+        if ($written === false || $written === 0) {
+            throw new RuntimeException('Could not emit callback-entry marker.');
+        }
+
+        $marker = substr($marker, $written);
+    }
+
+    if (! @fflush($outputStream)) {
+        throw new RuntimeException('Could not flush callback-entry marker.');
+    }
+};
 $record('start', ['mode' => (array) $mode]);
 $signals = function_exists('pcntl_async_signals') ? pcntl_async_signals() : null;
 $handler = function_exists('pcntl_signal_get_handler') ? pcntl_signal_get_handler(SIGTERM) : null;
 $calls = 0;
-$operation = static function () use ($case, &$calls, $record, $mode, $output): int {
+$operation = static function () use ($case, &$calls, $record, $mode, $output, $firstPaint): int {
+    $firstPaint('operation');
     $calls++;
     $record('callback', ['count' => $calls]);
 
@@ -51,7 +79,8 @@ $operation = static function () use ($case, &$calls, $record, $mode, $output): i
     }
 
     if ($case === 'nested-spinners') {
-        new SpinnerDisplay($mode, $output)->during('Waiting for nested response', static function () use ($record): void {
+        new SpinnerDisplay($mode, $output)->during('Waiting for nested response', static function () use ($record, $firstPaint): void {
+            $firstPaint('nested-spinner');
             $record('inner-callback');
             usleep(1200000);
         });
@@ -59,7 +88,11 @@ $operation = static function () use ($case, &$calls, $record, $mode, $output): i
     }
 
     if ($case === 'nested-invalid-start') {
-        new Animation($mode, $output, ["\xff", "\xff"])->during(static fn (): int => 0);
+        new Animation($mode, $output, ["\xff", "\xff"])->during(static function () use ($firstPaint): int {
+            $firstPaint('invalid-inner');
+
+            return 0;
+        });
     }
 
     $record('callback-return');
@@ -91,9 +124,11 @@ try {
         $display->admit('update', 'Update resource', 'Updating resource', 'Updated resource');
         $value = $display->during('resolve', $operation);
         $display->complete('resolve', ProgressState::Success, 'Resource found.');
-        $display->during('update', static function () use ($case, $mode, $output, $record): void {
+        $display->during('update', static function () use ($case, $mode, $output, $record, $firstPaint): void {
+            $firstPaint('update');
             if ($case === 'nested') {
-                new SpinnerDisplay($mode, $output)->during('Waiting for inner response', static function () use ($record): void {
+                new SpinnerDisplay($mode, $output)->during('Waiting for inner response', static function () use ($record, $firstPaint): void {
+                    $firstPaint('inner-spinner');
                     $record('inner-callback');
                     usleep(1200000);
                 });
@@ -102,7 +137,8 @@ try {
             if ($case === 'nested-progress') {
                 $inner = new ProgressDisplay($mode, $output, 'Inner operation');
                 $inner->admit('inner', 'Read inner resource', 'Reading inner resource', 'Read inner resource');
-                $inner->during('inner', static function () use ($record): void {
+                $inner->during('inner', static function () use ($record, $firstPaint): void {
+                    $firstPaint('inner-progress');
                     $record('inner-callback');
                     usleep(1200000);
                 });
