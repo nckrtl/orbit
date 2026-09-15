@@ -36,7 +36,7 @@ final readonly class RouteStateResolver
                 return new RoutePlacement(
                     nodeId: null,
                     clusterId: $cluster->id,
-                    effectiveTld: $nodeTld ?? $clusterTld,
+                    effectiveTld: $clusterTld ?? $nodeTld,
                 );
             }
         }

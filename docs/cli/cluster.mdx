@@ -39,7 +39,7 @@ orbit cluster:create <name> [--tld=TLD]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. |
+| `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. An active Cluster with this TLD owns generated development Route domains for its members. |
 
 ```bash
 orbit cluster:create lab --tld=test
@@ -90,7 +90,7 @@ orbit cluster:update 3 --state=active
 orbit cluster:update 3 --tld=
 ```
 
-Activating a Cluster that has a TLD, or setting a TLD on an active Cluster, makes the Gateway check that one active Router exists, that no non-member Node owns the proposed TLD, and that every affected Route keeps a valid domain, scope, and target. The Gateway then republishes DNS and Router projections before it stores the change. A failure leaves the previous state authoritative. A name change alone touches no traffic.
+Activating a Cluster that has a TLD, or setting a TLD on an active Cluster, makes the Gateway check that one active Router exists, that no non-member Node owns the proposed TLD, and that every affected Route keeps a valid domain, scope, and target. Generated domains then use the Cluster TLD even when member Nodes have their own TLDs. The Gateway then republishes DNS and Router projections before it stores the change. A failure leaves the previous state authoritative. A name change alone touches no traffic.
 
 | Error code | Meaning |
 | --- | --- |
@@ -118,7 +118,7 @@ orbit cluster:node:add <cluster> <node>
 orbit cluster:node:add 3 7
 ```
 
-Attaching to an inactive Cluster, or to an active Cluster without a TLD, records membership and leaves the Node's direct routing unchanged. Attaching to an active Cluster with a TLD reconciles the Node's Routes into Cluster scope before membership becomes authoritative. `node:add --cluster=ID` attaches a Node during provisioning with the same guards.
+Attaching to an inactive Cluster records membership and leaves Node routing and generated domains unchanged. Attaching to an active Cluster without a TLD uses Cluster scope and keeps generated domains on the Node TLD. Attaching to an active Cluster with a TLD moves generated Route domains into that Cluster namespace and Cluster scope before membership becomes authoritative. `node:add --cluster=ID` attaches a Node during provisioning with the same guards.
 
 | Error code | Meaning |
 | --- | --- |
@@ -128,7 +128,7 @@ Attaching to an inactive Cluster, or to an active Cluster without a TLD, records
 
 ## orbit cluster:node:remove
 
-Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends.
+Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD.
 
 ```bash
 orbit cluster:node:remove <cluster> <node> [--force]
