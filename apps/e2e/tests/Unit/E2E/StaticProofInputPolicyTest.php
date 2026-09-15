@@ -25,6 +25,8 @@ describe('StaticProofInputPolicy', function (): void {
         'E2E entrypoint' => ['bin/e2e-topology', 'runtime'],
         'SDK source' => ['packages/php-sdk/src/Client.php', 'runtime'],
         'maintained documentation' => ['docs/reference/incus-topologies.md', 'non-runtime'],
+        'contributor guide' => ['CONTRIBUTING.md', 'non-runtime'],
+        'project license' => ['LICENSE', 'non-runtime'],
         'historical formatter configuration' => ['apps/gateway/mago.toml', 'non-runtime'],
         'formatter configuration' => ['apps/gateway/pint.json', 'non-runtime'],
         'analysis configuration' => ['apps/cli/phpstan.neon', 'non-runtime'],
