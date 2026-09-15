@@ -81,6 +81,8 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppInstanceRemovalMember|null $removalMember
  * @property-read Collection<int, AppInstanceTransfer> $transfers
+ * @property-read Collection<int, AppInstanceDependencyObservation> $dependencyObservations
+ * @property-read Collection<int, AppInstanceDependencyScanAttempt> $dependencyScanAttempts
  */
 final class AppInstance extends Model
 {
@@ -234,6 +236,18 @@ final class AppInstance extends Model
     public function transfers(): HasMany
     {
         return $this->hasMany(AppInstanceTransfer::class);
+    }
+
+    /** @return HasMany<AppInstanceDependencyObservation, $this> */
+    public function dependencyObservations(): HasMany
+    {
+        return $this->hasMany(AppInstanceDependencyObservation::class);
+    }
+
+    /** @return HasMany<AppInstanceDependencyScanAttempt, $this> */
+    public function dependencyScanAttempts(): HasMany
+    {
+        return $this->hasMany(AppInstanceDependencyScanAttempt::class);
     }
 
     public function effectiveRoot(): ?string

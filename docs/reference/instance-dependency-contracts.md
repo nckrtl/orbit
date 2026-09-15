@@ -46,6 +46,26 @@ Operation callers use these values to report package work and inventory refresh 
 
 Update success requires completed package steps and a successful post-update inventory refresh. Successful commands can leave versions unchanged. A failed command can have changed files. An absent ecosystem completes without mutation; a step not run does not count as completed. A preflight refusal has no package mutation or post-update inventory.
 
+## Persisted inventory
+
+Gateway models store the catalog, each instance's latest successful ecosystem observation, its graph, and separate scan attempts.
+
+| Table | Ownership and identity |
+| --- | --- |
+| `dependency_packages` | One canonical name per ecosystem. Package versions do not belong to this shared catalog. |
+| `app_instance_dependency_observations` | One successful observation per instance and ecosystem, with observation time, verified presence or absence, project root, source reference, format, and input hashes. No row means unknown inventory. |
+| `app_instance_dependency_resolutions` | One opaque locator per observation, referencing a shared package. Versions, peer contexts, independent regular and development reachability, source references, and integrity remain distinct. |
+| `app_instance_dependency_edges` | Requirements within one observation. Null source means the root; null target means unresolved. Names, constraints, kind, scope, and optional status distinguish edges. |
+| `app_instance_dependency_scan_attempts` | Instance, ecosystem, attempt time, and nullable stable error code. Null error means success. Attempts do not own or replace successful observations. |
+
+Foreign keys prevent resolutions from using another ecosystem's catalog and prevent edges from crossing observations. Duplicate catalog identities, observation identities, resolution locators, and identical edges are rejected, including edges with null endpoints. Deleting an instance cascades its observations, resolutions, edges, and attempts. Shared package identities remain; deleting a package still in use is refused.
+
+Provenance has named fields rather than arbitrary metadata or process output. Source references accept revisions, not URLs or credentials. Input hashes contain root filenames and SHA-256 values, or null for verified absence. Models reject malformed provenance hashes and non-code attempt errors. Parsers and collectors must still remove credentials from every opaque lockfile field before persistence.
+
+Attempt error codes preserve the scan result's code, including dotted codes such as `dependencies.source_changed`. A code contains at most 128 characters. Each dot-separated segment starts with a lowercase letter and contains lowercase letters, digits, or underscores. Null means success; empty codes, URLs, credentials, and process text are rejected.
+
+The publisher must write successful observations and graphs in one database transaction. It records failed attempts separately and retains successful observation data. The schema supports this boundary; model saves alone do not implement publication, source checks, lifecycle locking, or stale-state reporting. These behaviors belong to the scan task.
+
 ## Implementation boundaries
 
 These values do not sanitize raw input or authorize publication. Parsers and collectors validate supported formats and layouts, remove credentials before constructing provenance, and reject incomplete graphs. Stable error codes carry failure information; raw process output and source contents do not belong in results.
