@@ -21,6 +21,7 @@ An App identifies a repository, while its instances can select different source 
 
 - The Gateway owns observed dependency inventory per App instance, with shared identities keyed by ecosystem and canonical package name.
 - Instance observations hold resolved versions, source provenance, requirement relationships, and development scope. One instance can contain multiple resolutions of one identity.
+- Supported JavaScript managers are npm, pnpm, and Bun; Composer remains supported. The owner’s [2026-09-15 scope amendment](/reference/instance-dependencies#yarn-scope-amendment) excludes Yarn Classic and modern Yarn from scans and updates. Yarn selection fails explicitly without fallback or successful empty inventory, and before any update mutation.
 - Inventory reads root manifests and lockfiles without package execution or registry requests. It describes resolved source, not verified installed state or exploitability.
 - Composer and JavaScript dependencies include direct, transitive, regular, and development paths. Peer requirements remain distinct from evidence of a resolved package.
 - Successful observations replace usage atomically per ecosystem. Failed or incomplete collection preserves the last successful observation and exposes stale or unknown state.
@@ -37,6 +38,7 @@ An App identifies a repository, while its instances can select different source 
 
 - Store one version per App: instances can run different source versions.
 - Store one global version on each dependency identity: different instances and dependency paths can resolve different versions.
+- Retain Yarn support from the earlier proposal: the owner explicitly narrowed the supported managers; historical task titles do not override that amendment.
 - Inventory only direct regular dependencies: transitive packages and development tools remain unaccounted for.
 - Require installed package directories for inventory: hibernated instances lose reconstructable directories while retaining their source requirements.
 - Resolve dependency versions during production updates: this bypasses the tested source and explicit release deployment flow.

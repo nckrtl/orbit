@@ -23,7 +23,7 @@ An inventory records locked versions. It does not prove that packages are instal
 
 ## Package identity and relationships
 
-The Gateway keeps one dependency identity per ecosystem and canonical package name. The ecosystems are `composer` and `npm`; npm, pnpm, Yarn, and Bun are JavaScript package managers, not separate package identities. Used versions belong to instance observations.
+The Gateway keeps one dependency identity per ecosystem and canonical package name. The ecosystems are `composer` and `npm`; npm, pnpm, and Bun are supported JavaScript package managers, not separate package identities. Used versions belong to instance observations.
 
 An instance can resolve several versions of one package. Orbit preserves distinct resolutions and the relationships that introduce them. Version strings and source references retain their meaning; a branch reference is not converted into a release version.
 
@@ -48,11 +48,11 @@ Each parser reads data only. It does not load project code, run a package manage
 | Composer | `composer.json`, `composer.lock` | Composer 1 and 2 JSON lock structure with `packages` and `packages-dev`; Composer has no lockfile format version field. Preserve aliases, source references, and platform or virtual requirements without inventing package resolutions. |
 | npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3, using the `packages` map and installation paths to distinguish resolutions. Shrinkwrap takes precedence over package-lock within npm. Version 1 is unsupported. |
 | pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0, one root importer (`.`), package records and snapshots, including peer context. Earlier versions are unsupported. |
-| Yarn Classic | `package.json`, `yarn.lock` | Yarn v1 lock syntax, including grouped selectors. Preserve selectors and resolved references. |
-| Yarn modern | `package.json`, `yarn.lock` | YAML locks with `__metadata.version` 4, 6, or 8 (Yarn 2, 3, or 4). Preserve descriptors, locators, aliases, and virtual peer context. Other metadata versions are unsupported. |
 | Bun | `package.json`, `bun.lock` | Text JSONC lock with `lockfileVersion` 1 and only its root workspace. Binary `bun.lockb` is unsupported. |
 
-JavaScript file selection follows the project's Vite+ package-manager selection signals. Conflicting signals or an ambiguous selection fail explicitly. A selected manager must have a supported root lockfile; another manager's lockfile cannot silently substitute for it. Workspace declarations, non-root importers or workspace entries, and local package links that require scanning another project produce an unsupported-layout error. The root records used by npm, pnpm, Yarn, and Bun do not by themselves make a project a monorepo.
+JavaScript file selection follows the project's Vite+ package-manager selection signals, limited to npm, pnpm, and Bun. Yarn Classic and modern Yarn are unsupported for both scans and updates. Yarn manager or lockfile selection produces an explicit failure; it never becomes an empty successful inventory or a fallback to another manager.
+
+Conflicting signals or an ambiguous selection fail explicitly. A selected manager must have a supported root lockfile; another manager's lockfile cannot silently substitute for it. Workspace declarations, non-root importers or workspace entries, and local package links that require scanning another project produce an unsupported-layout error. The root records used by npm, pnpm, and Bun do not by themselves make a project a monorepo.
 
 Parsers reject malformed or unrecognized records that prevent a complete graph. They preserve opaque versions, aliases, optional requirements, and unresolved peer or virtual requirements. They do not guess a resolution from a version constraint. Unsupported data produces a failed scan with retained stale or unknown inventory, never a successful empty graph.
 
@@ -101,11 +101,11 @@ orbit instance:dependencies:update
 orbit instance:dependencies:update --app=commander.test
 ```
 
-Orbit runs `composer update` for a root Composer project, then `vp update` for a root JavaScript project, as the instance's runtime user. Vite+ selects the project's package manager. Both regular and development dependencies are included. An absent ecosystem is skipped.
+Orbit runs `composer update` for a root Composer project, then `vp update` for a root JavaScript project, as the instance's runtime user. Vite+ selects the project's supported package manager: npm, pnpm, or Bun. Both regular and development dependencies are included. An absent ecosystem is skipped.
 
 An update respects the existing declared version constraints. Changing those constraints is an upgrade and is outside this feature. The command has no `--latest` or `--all` update mode. A successful update can retain a package version when its constraints prevent movement.
 
-Orbit validates target, source layout, and package-manager support before package mutation. It serializes managed updates for the same instance, bounds command execution, and reports verified progress. It does not discard existing source changes, commit, push, test, or deploy automatically.
+Orbit validates target, source layout, and package-manager support before package mutation. Yarn selection rejects the entire update before either Composer or JavaScript package work starts. It serializes managed updates for the same instance, bounds command execution, and reports verified progress. It does not discard existing source changes, commit, push, test, or deploy automatically.
 
 Composer and JavaScript updates are separate steps. If a step fails, Orbit stops package mutation and reports any completed work. It does not claim an automatic rollback. After completed or failed package work, Orbit scans the resulting readable files and reports the inventory outcome separately. If collection fails, the last successful inventory remains visible as stale. `--json` reports the same step outcomes without human output.
 
@@ -122,3 +122,11 @@ Nightly scanning refreshes inventory. It does not check advisories, query regist
 ## Limits
 
 The index covers root package projects and their locked dependency graphs. Monorepos, installed-file verification, security advisory checks, outdated counts, constraint-changing upgrades, and bulk package updates are outside this feature. Unsupported lockfile formats produce a visible failure instead of a complete-looking inventory.
+
+## Yarn scope amendment
+
+On 2026-09-15, the owner instructed: “Lets exclude yarn, only support npm, pnpm and bun”. Composer remains supported. This amendment supersedes earlier Yarn requirements throughout this feature, including parser, collection, update, scheduling, and integrated verification plans. Yarn scan failures preserve earlier inventory as stale; a first failed scan remains unknown. Yarn updates must fail before package mutation.
+
+Commander child 9 retains the original title “08. Parse modern Yarn lockfiles”, but its replacement outcome removes the partial modern reader and the accepted Classic reader, with their dedicated tests and fixtures. The shared supported parsers and contracts remain. Earlier commits and frozen task records remain intact; handoffs and reviews assess this replacement outcome rather than claiming the original Yarn criteria passed.
+
+Commander child 22 retains the original title “21. Enforce constrained Vite+ updates for Yarn”, but now verifies Yarn refusal. It checks manager and lockfile rejection before mutation, human and machine failure output, and stale inventory after unsupported scans. Actual refusal checks use fixtures on the app-dev machine in the feature’s discovery clone. It does not implement Yarn updates. Other children retain their outcomes within the narrowed scope, and integrated verification still gates feature completion.

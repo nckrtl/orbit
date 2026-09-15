@@ -28,6 +28,18 @@ function pnpmReaderRecords(): array
 }
 
 describe('pnpm v9 dependency graph reader', function (): void {
+    it('rejects excluded Yarn lockfiles instead of returning an empty inventory', function (string $lock, string $errorCode): void {
+        expect(fn () => (new ReadPnpmDependencyGraphAction)->execute('{"private":true}', $lock))
+            ->toThrow(DependencyParseException::class, $errorCode);
+    })->with([
+        'Classic empty lock' => ["# yarn lockfile v1\n", 'dependencies.invalid_pnpm_input'],
+        'Classic package record' => ["# yarn lockfile v1\none@^1:\n  version \"1.0.0\"\n", 'dependencies.unsupported_format'],
+        'modern v4' => ["__metadata:\n  version: 4\n", 'dependencies.unsupported_format'],
+        'modern v6' => ["__metadata:\n  version: 6\n", 'dependencies.unsupported_format'],
+        'modern v8 root only' => ["__metadata:\n  version: 8\n\"root@workspace:.\":\n  version: 0.0.0-use.local\n  resolution: \"root@workspace:.\"\n  linkType: soft\n", 'dependencies.unsupported_format'],
+        'modern metadata as JSON' => ['{"__metadata":{"version":8}}', 'dependencies.unsupported_format'],
+    ]);
+
     it('preserves peer contexts and versions with independent root reachability through cycles', function (): void {
         [$manifest, $lock] = pnpmReaderFixture();
 

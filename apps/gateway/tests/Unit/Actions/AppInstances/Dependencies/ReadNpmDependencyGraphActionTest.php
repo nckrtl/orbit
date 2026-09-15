@@ -19,6 +19,18 @@ function npmReaderFixture(int $version): array
 }
 
 describe('npm dependency reader', function (): void {
+    it('rejects excluded Yarn lockfiles instead of returning an empty inventory', function (string $lock, string $errorCode): void {
+        expect(fn () => (new ReadNpmDependencyGraphAction)->execute('{"private":true}', $lock))
+            ->toThrow(DependencyParseException::class, $errorCode);
+    })->with([
+        'Classic empty lock' => ["# yarn lockfile v1\n", 'dependencies.invalid_npm_input'],
+        'Classic package record' => ["# yarn lockfile v1\none@^1:\n  version \"1.0.0\"\n", 'dependencies.invalid_npm_input'],
+        'modern v4' => ["__metadata:\n  version: 4\n", 'dependencies.invalid_npm_input'],
+        'modern v6' => ["__metadata:\n  version: 6\n", 'dependencies.invalid_npm_input'],
+        'modern v8 root only' => ["__metadata:\n  version: 8\n\"root@workspace:.\":\n  version: 0.0.0-use.local\n  resolution: \"root@workspace:.\"\n  linkType: soft\n", 'dependencies.invalid_npm_input'],
+        'modern metadata as JSON' => ['{"__metadata":{"version":8}}', 'dependencies.unsupported_format'],
+    ]);
+
     it('preserves locations aliases cycles and independent root reachability', function (int $version): void {
         [$manifest, $lock] = npmReaderFixture($version);
 

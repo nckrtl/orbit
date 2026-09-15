@@ -153,35 +153,35 @@ describe('latest attempt and retained observations', function (): void {
         expect($failure->snapshot?->observedAt)->toEqual($snapshot->observedAt);
     });
 
-    it('distinguishes never scanned and first failure without inventing absence', function (): void {
+    it('distinguishes never scanned and first failure without inventing absence', function (string $errorCode): void {
         $instance = dependency_publication_instance();
         $reader = app(ReadInstanceDependencyScanAction::class);
         expect($reader->execute($instance->id, DependencyEcosystem::Npm))->toBeNull();
 
-        $result = app(PublishInstanceDependencyScanAction::class)->execute($instance->id, dependency_publication_failure());
+        $result = app(PublishInstanceDependencyScanAction::class)->execute($instance->id, dependency_publication_failure($errorCode));
 
         expect($result->state())->toBe(DependencyInventoryState::Unknown);
         expect($reader->execute($instance->id, DependencyEcosystem::Npm))->toEqual($result);
         $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-        $this->assertDatabaseHas('app_instance_dependency_scan_attempts', ['error_code' => 'dependencies.incomplete_source']);
-    });
+        $this->assertDatabaseHas('app_instance_dependency_scan_attempts', ['error_code' => $errorCode]);
+    })->with(['dependencies.incomplete_source', 'dependencies.unsupported_format']);
 
-    it('retains the stored snapshot and provenance instead of trusting a failure supplied snapshot', function (): void {
+    it('retains the stored snapshot and provenance instead of trusting a failure supplied snapshot', function (string $errorCode): void {
         $instance = dependency_publication_instance();
         $snapshot = dependency_publication_snapshot();
         $publisher = app(PublishInstanceDependencyScanAction::class);
         $publisher->execute($instance->id, DependencyScanResult::refreshed($snapshot));
         $previousRow = AppInstanceDependencyObservation::query()->sole()->getAttributes();
-        $failure = DependencyScanResult::failed(DependencyEcosystem::Npm, new DateTimeImmutable('2026-09-15 13:00:00 UTC'), 'dependencies.source_changed', dependency_publication_snapshot(version: 'untrusted'));
+        $failure = DependencyScanResult::failed(DependencyEcosystem::Npm, new DateTimeImmutable('2026-09-15 13:00:00 UTC'), $errorCode, dependency_publication_snapshot(version: 'untrusted'));
 
         $result = $publisher->execute($instance->id, $failure);
 
         expect($result->snapshot)->toEqual($snapshot);
         expect($result->state())->toBe(DependencyInventoryState::Stale);
         expect($result->attemptedAt)->toEqual($failure->attemptedAt);
-        expect($result->errorCode)->toBe('dependencies.source_changed');
+        expect($result->errorCode)->toBe($errorCode);
         expect(AppInstanceDependencyObservation::query()->sole()->getAttributes())->toBe($previousRow);
-    });
+    })->with(['dependencies.source_changed', 'dependencies.unsupported_format']);
 
     it('keeps previously verified absence stale after failure and clears failure on recovery', function (): void {
         $instance = dependency_publication_instance();
