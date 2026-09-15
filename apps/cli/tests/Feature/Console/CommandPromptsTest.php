@@ -66,11 +66,11 @@ it('shows the complete destructive question before narrow-terminal consent', fun
     'explicit Yes' => [['y', Key::ENTER], true],
 ])->with([true, false]);
 
-it('wraps confirmation feedback without losing its explanation', function (string $state): void {
-    withNativePromptFixture(function () use ($state): void {
+it('wraps confirmation feedback without losing its explanation', function (string $state, string $label): void {
+    withNativePromptFixture(function () use ($state, $label): void {
         $message = 'This operation requires consent before removing the selected Node.';
-        PromptContext::run(promptFixtureMode(columns: 24), new BufferedOutput, function () use ($state, $message): void {
-            $prompt = new ConfirmPrompt('Remove Node [app-prod-2] (#8) from this Gateway?', default: false, hint: $message);
+        PromptContext::run(promptFixtureMode(columns: 24), new BufferedOutput, function () use ($state, $message, $label): void {
+            $prompt = new ConfirmPrompt($label, default: false, hint: $message);
             $prompt->state = $state;
             $prompt->error = $message;
             $prompt->cancelMessage = $message;
@@ -85,7 +85,7 @@ it('wraps confirmation feedback without losing its explanation', function (strin
             }
         }, new PromptKeysFixtureTerminal([], columns: 24));
     });
-})->with(['active', 'error', 'cancel']);
+})->with(['active', 'error', 'cancel'])->with(['Proceed?', 'Remove Node [app-prod-2] (#8) from this Gateway?']);
 
 it('requires affirmative consent and stops before mutation on decline or aborted input', function (
     array $keys,

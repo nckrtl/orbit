@@ -14,7 +14,8 @@ final class ConfirmRenderer extends ConfirmPromptRenderer
     {
         $width = max(1, TableTheme::mode()->columns - 6);
 
-        if (TerminalText::width($prompt->label) <= $width) {
+        if (TerminalText::width($prompt->label) <= $width
+            && ($prompt->state !== 'error' || TerminalText::width($prompt->error) <= $width)) {
             return parent::__invoke($prompt);
         }
 
