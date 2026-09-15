@@ -43,7 +43,6 @@ final readonly class RoleRegistry
                 singleton: false,
                 assignableDuringProvisioning: false,
                 mutable: false,
-                conflicts: [RoleName::Database],
             ),
             RoleName::Ingress => new RoleDefinition(
                 name: $role,
@@ -80,7 +79,6 @@ final readonly class RoleRegistry
                 conflicts: [
                     RoleName::Gateway,
                     RoleName::Vpn,
-                    RoleName::Router,
                     RoleName::Ingress,
                     RoleName::AppProd,
                 ],

@@ -303,6 +303,42 @@ describe(AssignRoleAction::class, function (): void {
             ->and($node->roles()->count())
             ->toBe(2);
     });
+
+    it('assigns database beside router in both assignment orders', function (bool $routerFirst): void {
+        $cluster = Cluster::query()->create([
+            'name' => $routerFirst ? 'router-then-database' : 'database-then-router',
+        ]);
+        $node = Node::query()->create([
+            'name' => $cluster->name,
+            'public_ssh_host' => $routerFirst ? '192.0.2.88' : '192.0.2.89',
+            'cluster_id' => $cluster->id,
+        ]);
+        $action = app(AssignRoleAction::class);
+        $claimRouter = static function () use ($node, $cluster): void {
+            $node->roles()->create([
+                'role' => RoleName::Router,
+                'status' => 'provisioning',
+                'cluster_id' => $cluster->id,
+            ]);
+        };
+
+        if ($routerFirst) {
+            $claimRouter();
+            $database = $action->execute($node, RoleName::Database);
+
+            expect($database->role)->toBe(RoleName::Database);
+        } else {
+            $action->execute($node, RoleName::Database);
+            $action->preflight($node, RoleName::Router);
+            $claimRouter();
+        }
+
+        expect($node->roles()->pluck('role')->map->value->sort()->values()->all())
+            ->toBe(['database', 'router']);
+    })->with([
+        'router then database' => [true],
+        'database then router' => [false],
+    ]);
 });
 
 /** @return array{0: 'claim-lock'|'claim-source-read'|'role-policy', 1: int|null}|null */

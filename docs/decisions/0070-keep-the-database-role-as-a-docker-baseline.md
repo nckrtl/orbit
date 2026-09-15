@@ -1,7 +1,7 @@
 ---
 title: "ADR 0070: Keep the database role as a Docker baseline"
 sidebarTitle: "0070 Keep the database role as a Docker baseline"
-description: "Accepted on 2026-09-14. Extends ADR 0069."
+description: "Accepted on 2026-09-14. Extends ADR 0069. Amended by ADR 0077."
 ---
 
 # ADR 0070: Keep the database role as a Docker baseline
@@ -10,11 +10,13 @@ In the context of dedicated Nodes that host shared Docker databases, facing a re
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0069](/decisions/0069-allow-node-process-targets). Extends [ADR 0001](/decisions/0001-tool-management).
+Accepted on 2026-09-14. Extends [ADR 0069](/decisions/0069-allow-node-process-targets). Extends [ADR 0001](/decisions/0001-tool-management). Amended by [ADR 0077](/decisions/0077-allow-database-beside-router) for router compatibility.
 
 ## Context
 
 Shared Docker databases have a Node Process owner under ADR 0069. The rewrite has no `database` role. Operators need a dedicated role that converges Docker on a Node without taking ownership of MySQL or Postgres containers. Role removal already leaves packages and Tool intent in place.
+
+The original record refused `database` beside `router` without a technical interaction. Shared development Nodes already run Router with Docker for Metrics and other services. [ADR 0077](/decisions/0077-allow-database-beside-router) records why that pairing is now accepted and why the remaining refusals stay.
 
 ## Decision
 
@@ -24,8 +26,8 @@ Shared Docker databases have a Node Process owner under ADR 0069. The rewrite ha
 - Node Processes own Docker database container lifecycle under ADR 0069.
 - The Gateway must not create Tool intent for Docker during `database` role convergence.
 - The Gateway must not remove Docker packages, Docker service state, or Tool intent when it removes the `database` role.
-- The Gateway must refuse `database` on a Node that already carries `gateway`, `vpn`, `router`, `ingress`, or `app-prod`.
-- The Gateway must accept `database` beside `app-dev` or `metrics`.
+- The Gateway must refuse `database` on a Node that already carries `gateway`, `vpn`, `ingress`, or `app-prod`.
+- The Gateway must accept `database` beside `app-dev`, `metrics`, or `router`.
 - The Gateway must refuse a `database` role assignment that includes settings members.
 - Orbit must not require the `database` role before an operator adds a Node Process.
 
@@ -41,10 +43,11 @@ Shared Docker databases have a Node Process owner under ADR 0069. The rewrite ha
 - Operators can mark a Node as a dedicated Docker database host through existing node-role commands.
 - A Node without this role can still run Docker database Processes when Docker is present.
 - Removing the role leaves Docker installed, so a Process that remains on the Node can keep using it.
+- A shared development Node can carry `router` and `database` together. [ADR 0077](/decisions/0077-allow-database-beside-router) owns that compatibility change.
 
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0069](/decisions/0069-allow-node-process-targets); extends [ADR 0001](/decisions/0001-tool-management)
+- ADRs: extends [ADR 0069](/decisions/0069-allow-node-process-targets); extends [ADR 0001](/decisions/0001-tool-management); amended by [ADR 0077](/decisions/0077-allow-database-beside-router)
 - Detail: [Database role](/reference/database-role)
 - Verify: `composer docs-lint`; Gateway RoleRegistry, DatabaseRoleBaseline, and node-role conflict tests

@@ -280,6 +280,27 @@ it('adds converges and removes the database role through the existing node role 
         ->toBeFalse();
 });
 
+it('adds the database role beside an existing router without converging router', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'router-database']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create([
+        'role' => RoleName::Router,
+        'status' => LifecycleStatus::Active,
+        'cluster_id' => $cluster->id,
+    ]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])
+        ->assertCreated()
+        ->assertJsonPath('data.role', 'database')
+        ->assertJsonPath('data.assignment.status', 'active');
+
+    expect($this->roleLifecycle->converged)
+        ->toBe(['database'])
+        ->and($this->node->roles()->pluck('role')->map->value->sort()->values()->all())
+        ->toBe(['database', 'router']);
+});
+
 it('refuses database settings and documented role conflicts', function (): void {
     $this
         ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
