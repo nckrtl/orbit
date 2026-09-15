@@ -163,7 +163,7 @@ When Ingress shares a Node with the Router, with app-prod, or with both, one com
 
 Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. Router and workload listeners stay private. Direct public workload traffic is denied.
 
-An exact client-local override can send the Route domain to the Router address and then to the workload address without changing public Ingress or DNS state. Installing a client resolver is outside this contract.
+An exact client-local override can send the Route domain to the Router address and then to the workload address without changing public Ingress or DNS state. [Local resolver overrides](/reference/local-resolver-overrides) owns installing that caller-local resolver.
 
 Creating or showing a public Route adds no Node public-IP field and calls no DNS-provider API.
 

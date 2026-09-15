@@ -11,7 +11,7 @@ The Gateway selects the resolver policy when it provisions a managed Linux peer.
 | No per-Node DNS override | Orbit VPN DNS | `~.` | The normal operating-system resolver sends private and ordinary queries to Orbit VPN DNS. The Node TLD and Cluster TLD do not change this selection. |
 | Per-Node `--dns-server` override | The supplied address | The private VPN domain and the Node TLD when present | The explicit resolver keeps suffix-only routing, including when its address is inside the WireGuard subnet. |
 
-The `~.` routing domain makes Orbit VPN DNS the preferred resolver. It leaves `/etc/resolv.conf` ownership unchanged and needs no local DNS server, hostname records, or Route suffix list. Operator-owned clients are excluded. Existing peers keep their configuration until you provision them again or repair them individually.
+The `~.` routing domain makes Orbit VPN DNS the preferred resolver. It leaves `/etc/resolv.conf` ownership unchanged and needs no local DNS server, hostname records, or Route suffix list. Operator-owned clients are excluded. A macOS operator installs caller-local TLD and exact Route overrides with [local resolver overrides](/reference/local-resolver-overrides). Existing peers keep their configuration until you provision them again or repair them individually.
 
 ## Inspect a peer
 

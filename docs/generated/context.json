@@ -17,6 +17,7 @@
                 "Gateway",
                 "Node",
                 "Process",
+                "Route",
                 "Runtime hibernation",
                 "Schedule",
                 "Tool"
@@ -2028,6 +2029,25 @@
                 "0051",
                 "0056",
                 "0058"
+            ]
+        },
+        {
+            "path": "docs/reference/local-resolver-overrides.md",
+            "title": "Local resolver overrides",
+            "kind": "reference",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "App",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009"
             ]
         },
         {
