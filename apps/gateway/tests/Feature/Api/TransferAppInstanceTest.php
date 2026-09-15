@@ -11,6 +11,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\Clusters\ClusterState;
@@ -252,5 +253,6 @@ function transfer_api_bind_fakes(): void
     app()->instance(AppInstanceEnvironmentReader::class, new Orb245EnvironmentReader);
     app()->instance(AppInstanceEnvironmentWriter::class, new Orb245EnvironmentWriter);
     app()->instance(DevelopmentRouteProjector::class, new Orb245Projection);
+    app()->instance(AppInstanceTransferRouteProjector::class, new Orb245Projection);
     app()->instance(TransferAppInstanceAction::class, app(TransferAppInstanceAction::class));
 }

@@ -4,23 +4,28 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
+use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
+use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
+use App\Models\AppInstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
 
-final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, RouteDomainProjector
+final readonly class NativeDevelopmentRouteProjector implements AppInstanceTransferRouteProjector, DevelopmentRouteProjector, RouteDomainProjector
 {
     public function __construct(
         private RemoteAppDevPhpFpmManager $php,
@@ -78,6 +83,57 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
     {
         $this->certificates->convergeAppInstanceHostnameChange($appInstance, $candidate->domain);
+    }
+
+    public function retireSource(AppInstanceTransfer $transfer): void
+    {
+        app(DevelopmentProjectionOperationLock::class)->run(fn () => $this->retireSourceOwned($transfer));
+    }
+
+    private function retireSourceOwned(AppInstanceTransfer $transfer): void
+    {
+        $transfer->load(['sourceNode', 'appInstance.node']);
+        $source = $transfer->sourceNode;
+        $sourceRouter = Node::query()->find($transfer->source_router_node_id);
+        if (! $sourceRouter instanceof Node || $transfer->cutover_at === null) {
+            throw new RuntimeConvergenceException(
+                step: 'source-cleanup',
+                errorCode: 'instance.transfer_source_router_unknown',
+                message: 'The original Router must be recorded before retiring source projections.',
+            );
+        }
+        $destinationRoute = Route::query()->with('cluster.routerAssignment.node')
+            ->findOrFail($transfer->destination_route_id ?? $transfer->source_route_id);
+        $destinationRouter = $destinationRoute->cluster?->routerAssignment?->node;
+        $nodes = collect([$source, $sourceRouter, $transfer->appInstance->node]);
+        if ($destinationRouter instanceof Node) {
+            $nodes->push($destinationRouter);
+        }
+
+        foreach ($nodes->unique('id') as $node) {
+            $this->caddy->converge($node);
+        }
+        $this->php->converge($source);
+        $this->dns->converge();
+
+        $sourceInstance = clone $transfer->appInstance;
+        $sourceInstance->setRelation('node', $source);
+        if (! $this->usesCertificate($source, "app-instance-{$sourceInstance->id}")) {
+            $this->certificates->removeAppInstance($sourceInstance);
+        }
+        new RemoteAppDevRouteFirewallManager($this->ssh)->remove($source, $transfer->source_route_id);
+        if (! $this->usesCertificate($sourceRouter, "route-{$transfer->source_route_id}-router")) {
+            $oldRoute = new Route;
+            $oldRoute->id = $transfer->source_route_id;
+            $this->certificates->removeRouteRouter($oldRoute, $sourceRouter);
+        }
+    }
+
+    private function usesCertificate(Node $node, string $scope): bool
+    {
+        return new AppDevSiteRepository()->forNode($node)->contains(
+            static fn (AppDevSite $site): bool => ($site->certificateScope ?? $site->scope) === $scope,
+        );
     }
 
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
