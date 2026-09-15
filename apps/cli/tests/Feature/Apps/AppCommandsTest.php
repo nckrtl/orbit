@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Commands\Apps\UpdateAppCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
@@ -11,6 +12,7 @@ use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Apps\ShowAppRequest;
+use Orbit\Sdk\Requests\Apps\UpdateAppRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -398,6 +400,72 @@ describe('app:show', function (): void {
     });
 });
 
+describe('app:update', function (): void {
+    it('updates an app through the active gateway as JSON', function (): void {
+        $mockClient = MockClient::global([
+            UpdateAppRequest::class => app_mock_response(),
+        ]);
+
+        $this
+            ->artisan('app:update', [
+                'app' => '3',
+                '--repository' => 'https://github.com/nckrtl/orbit.git',
+                '--default-branch' => 'stable',
+                '--json' => true,
+            ])
+            ->expectsOutput(app_json())
+            ->assertExitCode(0);
+
+        $request = $mockClient->getLastRequest();
+
+        expect($mockClient->getLastPendingRequest()?->getUrl())
+            ->toBe('https://10.44.0.1/api/v1/apps/3')
+            ->and($request)
+            ->toBeInstanceOf(UpdateAppRequest::class)
+            ->and($request?->body()->all())
+            ->toBe([
+                'repository_url' => 'https://github.com/nckrtl/orbit.git',
+                'default_branch' => 'stable',
+            ])
+            ->and($request?->body()->all())
+            ->not
+            ->toHaveKey('main_branch');
+    });
+
+    it('reports the updated app for humans', function (): void {
+        MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+
+        $this
+            ->artisan('app:update', [
+                'app' => '3',
+                '--slug' => 'orbit',
+            ])
+            ->expectsOutput('App [orbit] updated.')
+            ->expectsOutput('Request ID: '.app_request_id())
+            ->assertExitCode(0);
+    });
+
+    it('refuses an empty update without gateway IO', function (): void {
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('app:update', ['app' => '3'])
+            ->expectsOutputToContain('Provide at least one App update.')
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    });
+
+    it('does not expose a main-branch option', function (): void {
+        $definition = $this->app->make(UpdateAppCommand::class)->getDefinition();
+
+        expect($definition->hasOption('default-branch'))
+            ->toBeTrue()
+            ->and($definition->hasOption('main-branch'))
+            ->toBeFalse();
+    });
+});
+
 describe('app:destroy', function (): void {
     it('removes an app as JSON', function (): void {
         $mockClient = MockClient::global([
@@ -436,6 +504,7 @@ it('rejects invalid app IDs before making an API request', function (string $com
 })->with([
     'show zero' => ['app:show', '0'],
     'show negative' => ['app:show', '-1'],
+    'update zero' => ['app:update', '0'],
     'remove non-numeric' => ['app:destroy', 'orbit'],
 ]);
 

@@ -67,6 +67,12 @@ final class App extends Model
         return $this->hasMany(ScheduleDefinition::class);
     }
 
+    /** @return HasMany<AppUpdate, $this> */
+    public function updates(): HasMany
+    {
+        return $this->hasMany(AppUpdate::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

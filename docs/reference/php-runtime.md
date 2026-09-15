@@ -49,6 +49,10 @@ Existing production placements without a dedicated service association remain on
 
 New dedicated runtime preparation, retry, removal, and explicit conversion do not rewrite or adopt an unrelated placement. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
 
+## App updates
+
+A slug or web-root update may reproject the owning production PHP-FPM service so the effective document root matches the App instance. The Gateway validates the complete effective configuration before it activates or reloads that service. It preserves `/etc/orbit/php-fpm/<production-user>/local.conf` byte-for-byte and does not reload, restart, or reset another production user's service or OPcache. [Applications](/domains/applications#reconcile-an-app-update) describes when this reprojection runs.
+
 ## Shared runtime module
 
 Development and existing shared placements use a normal Debian PHP module at `/etc/php/<version>/mods-available/orbit-runtime.ini`, enabled for the FPM Server Application Programming Interface (SAPI) as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini` through `phpenmod`. On every shared-runtime convergence the Gateway compares the rendered module with the installed file, repairs a missing or wrong `conf.d` link, and verifies the effective managed directives through `php-fpm<version> -i`.

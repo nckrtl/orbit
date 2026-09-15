@@ -152,3 +152,9 @@ The Gateway encrypts every literal and placeholder expression with its applicati
 Import and update change only stored Gateway configuration. They do not write the workload `.env`, run application code, refresh framework caches, restart services, or require an application database or installed framework dependencies. `instance:database:add` and `instance:database:remove` also write or clear prefixed stored keys without changing the workload file; [Database connections](/reference/database-connections) owns that contract.
 
 Synchronization changes only the workload `.env`. It does not run application code, refresh framework caches, restart services or application processes, change Git metadata or source, or touch application database files. Stale framework caches, missing dependencies, and an absent application database do not block it. Run the application's separate cache refresh or process restart step when the new file must become effective in already running application code.
+
+## App update boundary
+
+An App slug update reconciles the Laravel `APP_URL` that the Route domain owns. The Gateway first resolves the new authoritative domain, then writes the stored environment value, then synchronizes the workload `.env` projection. Cached `app.url` is a separate Laravel configuration write. Synchronization still does not run Artisan, refresh an application cache, or restart a process.
+
+A confirmed failure before the App slug is published restores the stored environment, the `.env` projection, and the previous Route. After publication, retries continue forward. An application HTTP error does not roll back an already published slug. [Applications](/domains/applications#reconcile-an-app-update) describes when this path runs.

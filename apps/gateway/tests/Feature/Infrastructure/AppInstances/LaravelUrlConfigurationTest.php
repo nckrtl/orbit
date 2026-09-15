@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Apps\UpdateAppAction;
+use App\Data\Apps\UpdateAppData;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstancePhpVersionCatalog;
 use App\Domain\AppInstances\ComposerSourceClassifier;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\Ssh\HostKey;
@@ -15,11 +18,13 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\Orb101AppUpdateFixture;
 
 it('requires one Composer Laravel declaration and one regular Artisan marker', function (): void {
     $classifier = new ComposerSourceClassifier(new AppInstancePhpVersionCatalog);
@@ -262,6 +267,78 @@ it('refuses duplicate Laravel URL values without changing the environment', func
     } finally {
         $files->deleteDirectory($directory);
     }
+});
+
+it('reconciles Laravel canonical URLs when an App slug changes', function (): void {
+    $fixture = Orb101AppUpdateFixture::bind($this);
+    $fixture->defaultInstance->environmentValues()->create([
+        'env_key' => 'APP_URL',
+        'env_value' => 'https://acme.test',
+    ]);
+
+    app(UpdateAppAction::class)->execute(
+        $fixture->app,
+        new UpdateAppData(
+            slugProvided: true,
+            slug: 'shop',
+            repositoryUrlProvided: false,
+            repositoryUrl: null,
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+        ),
+    );
+
+    expect($fixture->projections->laravelUrls)
+        ->toBe([['instance_id' => $fixture->defaultInstance->id, 'url' => 'https://shop.test']])
+        ->and(AppInstanceEnvironmentValue::query()->where('env_key', 'APP_URL')->value('env_value'))
+        ->toBe('https://shop.test');
+});
+
+it('restores Laravel URL environment on a failed slug update and ignores application errors after publication', function (): void {
+    $fixture = Orb101AppUpdateFixture::bind($this);
+    $fixture->defaultInstance->environmentValues()->create([
+        'env_key' => 'APP_URL',
+        'env_value' => 'https://acme.test',
+    ]);
+    $fixture->projections->failSlugPrepare = true;
+
+    expect(fn () => app(UpdateAppAction::class)->execute(
+        $fixture->app,
+        new UpdateAppData(
+            slugProvided: true,
+            slug: 'shop',
+            repositoryUrlProvided: false,
+            repositoryUrl: null,
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+        ),
+    ))->toThrow(ResourceOperationException::class);
+
+    expect(AppInstanceEnvironmentValue::query()->where('env_key', 'APP_URL')->value('env_value'))
+        ->toBe('https://acme.test');
+
+    $fixture->projections->failSlugPrepare = false;
+    $fixture->projections->applicationErrorOnUrl = true;
+
+    app(UpdateAppAction::class)->execute(
+        $fixture->app->refresh(),
+        new UpdateAppData(
+            slugProvided: true,
+            slug: 'shop',
+            repositoryUrlProvided: false,
+            repositoryUrl: null,
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+        ),
+    );
+
+    expect($fixture->app->refresh()->slug)->toBe('shop');
 });
 
 /** @return array{RemoteDevelopmentAppInstanceConfigurator, AppDevFakeSshExecutor, AppInstance} */

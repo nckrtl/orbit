@@ -66,6 +66,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'app:destroy',
         'app:list',
         'app:show',
+        'app:update',
         'cluster:create',
         'cluster:destroy',
         'cluster:list',
@@ -257,7 +258,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(106);
+    expect($orbitCommands)->toHaveCount(107);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -455,6 +456,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'app:destroy' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
+        'app:update' => [
+            ['app'],
+            ['slug' => null, 'repository' => null, 'default-branch' => null, 'root' => null, 'json' => false],
+        ],
         'cluster:list' => [[], ['json' => false]],
         'cluster:create' => [['name'], ['tld' => null, 'json' => false]],
         'cluster:node:add' => [['cluster', 'node'], ['json' => false]],
@@ -851,6 +856,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'app:create' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
         'app:destroy' => [['app' => '1'], ...$profileMissing],
         'app:show' => [['app' => '1'], ...$profileMissing],
+        'app:update' => [['app' => '1', '--slug' => 'shop'], ...$profileMissing],
         'cluster:list' => [[], ...$profileMissing],
         'cluster:create' => [['name' => 'development'], ...$profileMissing],
         'cluster:node:add' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
