@@ -129,3 +129,19 @@ Publication reloads and locks the instance inside the transaction. An instance m
 These values do not sanitize raw input or authorize publication. Parsers and collectors validate supported formats and layouts, remove credentials before constructing provenance, and reject incomplete graphs. Stable error codes carry failure information; raw process output and source contents do not belong in results.
 
 The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
+
+## Managed source collection
+
+`CollectInstanceDependencyFilesAction` reads the recorded development checkout or the production home's selected `current` release through pinned Gateway SSH. It ignores the public web root and installed dependency directories. Production without a selected release fails with `dependencies.source_unavailable`. The caller must authorize the instance and coordinate collection with managed source operations before publishing.
+
+The collector runs one fixed Python reader as the Node user for development or the recorded runtime user for production. It reads only root manifests, supported lockfiles, and package-manager signals. It never runs Git, package managers, project scripts, or registry requests. File contents remain transient parser input; callers must not log or serialize them into API responses.
+
+Each manifest or configuration file is limited to 1 MiB, each lockfile to 8 MiB, and all contents to 32 MiB. SSH has a 30-second deadline and a 48 MiB output limit. Nonregular files, unreadable files, symlinks, and noncanonical source paths fail explicitly. The reader compares directory identity, release selection, file metadata, and content hashes across two passes. A changed source produces `dependencies.source_changed`; no mixed collection is returned. This check does not replace operation locking or a final source check before publication.
+
+### Select parser input
+
+`SelectDependencyInputAction` returns one ecosystem's selected manifest, lockfile, and source hashes, or throws a stable error. Both files absent means absent; either file missing means incomplete. Composer and JavaScript selection are independent, so callers can preserve a successful ecosystem when the other fails. File errors remain distinct from verified absence.
+
+JavaScript selection examines `packageManager`, then `devEngines.packageManager`, then lockfile and configuration signals. Conflicting families and ambiguous locks fail instead of guessing. npm shrinkwrap wins over package-lock within npm; Bun text wins over a coexisting binary lock. Yarn selection and binary-only Bun fail as unsupported. Workspace declarations and `pnpm-workspace.yaml` fail as unsupported layouts. Configuration files are presence signals only and are never evaluated. No manager signal defaults to pnpm, whose supported lockfile is still required for a JavaScript project.
+
+The collection identity covers every inspected file and the selected directory. Stored provenance includes hashes for nonhidden root inputs; hidden manager signals remain covered by the transient identity. The collector leaves parser format unset and does not claim a checkout Git revision. The parser caller supplies the validated format when it builds an observation. Production provenance includes the selected release name.
