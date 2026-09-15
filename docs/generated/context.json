@@ -1809,6 +1809,29 @@
             ]
         },
         {
+            "path": "docs/reference/appinstance-transfer.md",
+            "title": "App instance transfer",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Route replacement",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0044",
+                "0065",
+                "0066"
+            ]
+        },
+        {
             "path": "docs/reference/apps.md",
             "title": "Apps",
             "kind": "reference",

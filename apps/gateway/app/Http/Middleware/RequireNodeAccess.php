@@ -76,7 +76,7 @@ final readonly class RequireNodeAccess
             return $next($request);
         }
 
-        if ($scope === ServingNode::CandidateClone) {
+        if (in_array($scope, [ServingNode::CandidateClone, ServingNode::InstanceTransfer], true)) {
             foreach ($servingNodes as $servingNode) {
                 if (! $this->authorizer->allows($consumer, $servingNode)) {
                     $request->attributes->set('orbit.error_code', 'node_access.required');

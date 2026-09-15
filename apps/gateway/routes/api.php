@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\AppInstanceReleasesController;
 use App\Http\Controllers\Api\AppInstanceRollbacksController;
 use App\Http\Controllers\Api\AppInstancesController;
+use App\Http\Controllers\Api\AppInstanceTransfersController;
 use App\Http\Controllers\Api\AppRuntimeDefinitionsController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
@@ -183,6 +184,9 @@ Route::prefix('v1')->group(function (): void {
         Route::post('instances/{candidate}/clone', [AppInstanceClonesController::class, 'store'])
             ->whereNumber('candidate')
             ->name('instance:clone');
+        Route::post('instances/{instance}/transfer', [AppInstanceTransfersController::class, 'store'])
+            ->whereNumber('instance')
+            ->name('instance:transfer');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:destroy');
         Route::get(
