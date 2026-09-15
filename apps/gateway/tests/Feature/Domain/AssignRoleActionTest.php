@@ -304,27 +304,40 @@ describe(AssignRoleAction::class, function (): void {
             ->toBe(2);
     });
 
-    it('assigns database beside router in both assignment orders', function (
-        RoleName $first,
-        RoleName $second,
-    ): void {
-        $cluster = Cluster::query()->create(['name' => "database-router-{$first->value}"]);
+    it('assigns database beside router in both assignment orders', function (bool $routerFirst): void {
+        $cluster = Cluster::query()->create([
+            'name' => $routerFirst ? 'router-then-database' : 'database-then-router',
+        ]);
         $node = Node::query()->create([
-            'name' => "database-router-{$first->value}",
-            'public_ssh_host' => $first === RoleName::Router ? '192.0.2.88' : '192.0.2.89',
+            'name' => $cluster->name,
+            'public_ssh_host' => $routerFirst ? '192.0.2.88' : '192.0.2.89',
             'cluster_id' => $cluster->id,
         ]);
         $action = app(AssignRoleAction::class);
-        $action->execute($node, $first);
-        $assigned = $action->execute($node, $second);
+        $claimRouter = static function () use ($node, $cluster): void {
+            $node->roles()->create([
+                'role' => RoleName::Router,
+                'status' => 'provisioning',
+                'cluster_id' => $cluster->id,
+            ]);
+        };
 
-        expect($assigned->role)
-            ->toBe($second)
-            ->and($node->roles()->pluck('role')->map->value->sort()->values()->all())
+        if ($routerFirst) {
+            $claimRouter();
+            $database = $action->execute($node, RoleName::Database);
+
+            expect($database->role)->toBe(RoleName::Database);
+        } else {
+            $action->execute($node, RoleName::Database);
+            $action->preflight($node, RoleName::Router);
+            $claimRouter();
+        }
+
+        expect($node->roles()->pluck('role')->map->value->sort()->values()->all())
             ->toBe(['database', 'router']);
     })->with([
-        'database then router' => [RoleName::Database, RoleName::Router],
-        'router then database' => [RoleName::Router, RoleName::Database],
+        'router then database' => [true],
+        'database then router' => [false],
     ]);
 });
 
