@@ -696,6 +696,12 @@ it('keeps the previous profile and CA path when an accepted replacement cannot b
 });
 
 it('does not install or pin a replacement that fails pinned HTTPS verification', function (): void {
+    $originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=120');
+    $this->beforeApplicationDestroyed(static function () use ($originalColumns): void {
+        putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
+    });
+
     $oldCertificate = gateway_trust_test_certificate($this->orbitHome.'/old-root');
     $oldFingerprint = openssl_x509_fingerprint($oldCertificate, digest_algo: 'sha256');
     $oldPath = gateway_trust_pin_profile($this->orbitHome, $oldCertificate);
@@ -732,6 +738,12 @@ it('does not install or pin a replacement that fails pinned HTTPS verification',
 });
 
 it('bounds unexpected local trust-store errors', function (): void {
+    $originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=120');
+    $this->beforeApplicationDestroyed(static function () use ($originalColumns): void {
+        putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
+    });
+
     MockClient::global([
         FetchRootCaCertificateRequest::class => MockResponse::make([
             'data' => [

@@ -185,4 +185,47 @@ describe('animation composition cadence', function (): void {
             fclose($stream);
         }
     });
+
+    it('preserves the last active glyph when stopping before explicit product settlement', function (bool $terminal): void {
+        $stream = tmpfile();
+        $path = stream_get_meta_data($stream)['uri'];
+        $output = new StreamOutput($stream);
+        $mode = new ConsoleMode(false, false, true, true, 80);
+        $frames = ["@outer:0@\n", "@outer:1@\n"];
+        $animation = new Animation($mode, $output, $frames,
+            settled: static fn (): string => $terminal ? "Finished.\n" : $frames[0]);
+
+        try {
+            $result = $animation->during(function () use ($path): int {
+                $deadline = microtime(true) + 2;
+
+                do {
+                    if (str_contains(file_get_contents($path), '@outer:1@')) {
+                        return 42;
+                    }
+
+                    usleep(5000);
+                } while (microtime(true) < $deadline);
+
+                throw new RuntimeException('Renderer did not paint the alternate glyph.');
+            });
+            $bytes = file_get_contents($path);
+            preg_match_all('/@outer:([01])@/', $bytes, $matches);
+            $glyphs = $matches[1];
+            expect($result)->toBe(42)->and(count($glyphs))->toBeGreaterThanOrEqual(2)
+                ->and($bytes)->toEndWith("\e[0m\e[?25h");
+
+            if ($terminal) {
+                expect($bytes)->toContain("Finished.\n");
+
+                return;
+            }
+
+            expect(count($glyphs))->toBeGreaterThanOrEqual(3)
+                ->and($glyphs[count($glyphs) - 1])->toBe($glyphs[count($glyphs) - 2])
+                ->and($bytes)->not->toContain('Finished.');
+        } finally {
+            fclose($stream);
+        }
+    })->with(['awaiting product evidence' => false, 'explicit terminal result' => true]);
 });

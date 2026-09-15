@@ -362,7 +362,7 @@ final class Animation
                 $settled = ! $clear && $this->settled !== null ? ($this->settled)() : '';
                 $prefix = ! $clear ? ($this->parent?->presentationFrames() ?? ['', '']) : ['', ''];
                 $children = ! $clear ? $this->childrenFrame() : '';
-                $finalFrames = [$prefix[0].$settled.$children, $prefix[1].$settled.$children];
+                $finalFrames = [$prefix[0].$settled.$children, $prefix[1].($settled === $this->frames[0] ? $this->frames[1] : $settled).$children];
 
                 if ($handoff && $this->parent !== null) {
                     $this->send(json_encode(['frames' => $finalFrames], JSON_THROW_ON_ERROR)."\n");
