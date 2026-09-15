@@ -1,3 +1,9 @@
+---
+title: "ADR 0013: Manage schedules with native systemd timers"
+sidebarTitle: "0013 Manage schedules with native systemd timers"
+description: "Accepted on 2026-08-31."
+---
+
 # ADR 0013: Manage schedules with native systemd timers
 
 ## Status

@@ -1,3 +1,8 @@
+---
+title: "Incus topology registry"
+description: "How the harness registers, leases, retains, and releases disposable Incus topologies for discovery and proof."
+---
+
 # Incus topology registry
 
 This page is for contributors, agents, and operators who use disposable Incus topologies from the `apps/e2e` harness. It answers which topology an issue or on-demand scenario starts from, which state it owns, and which `bin/e2e-topology` or `bin/e2e-scenarios` command controls it. The plan a proof runs is on [Proof plans](/reference/proof-plans). The persistent snapshot supplies ordinary topology clones and snapshot-lane scenarios and is described on [Topology snapshot](/reference/topology-snapshot).

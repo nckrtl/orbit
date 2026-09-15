@@ -1,3 +1,9 @@
+---
+title: "ADR 0012: Ubuntu 24.04 operator clients (no longer supported)"
+sidebarTitle: "0012 Ubuntu 24.04 operator clients (no longer supported)"
+description: "Accepted on 2026-08-31. Ubuntu 24.04 support withdrawn by the repository owner on 2026-09-10."
+---
+
 # ADR 0012: Ubuntu 24.04 operator clients (no longer supported)
 
 ## Status

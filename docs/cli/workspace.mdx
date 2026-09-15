@@ -1,0 +1,10 @@
+---
+title: "Git worktrees"
+description: "Use Git worktrees as development sources for App instances."
+---
+
+The CLI exposes no `workspace:*` commands. To adopt a Git worktree as a development App instance, run [`orbit instance:register`](/cli/instance#orbit-instanceregister) from that source on its app-dev Node. Use `--include-worktrees` only when you intend to adopt the checkout and its linked worktrees together.
+
+Git worktrees remain a supported source layout. They are distinct from the legacy Workspace records described in [Concepts](/concepts). The [Applications guide](/domains/applications#register-an-existing-development-source) describes source preservation, ownership transfer, and retries.
+
+Use [`orbit instance:create`](/cli/instance#orbit-instancecreate) to create an independent development checkout. Inspect and remove managed App instances through the same [instance command family](/cli/instance).

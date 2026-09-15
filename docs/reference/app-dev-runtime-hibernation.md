@@ -1,3 +1,8 @@
+---
+title: "App-dev runtime hibernation"
+description: "How Orbit stops idle development App instance Processes and wakes them on the next HTTP request."
+---
+
 # App-dev runtime hibernation
 
 This page tells an operator how Orbit stops idle development App instance Processes and starts them again on the next HTTP request. After a longer idle window it also deletes reconstructable checkout dependencies and restores them before those Processes start. [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes) owns the idle-halt boundary. [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies) owns the cold dependency tier. [App processes and schedules](/reference/app-processes-and-schedules) owns Process add, start, stop, and removal. [Schedules](/reference/schedules) owns timer execution.

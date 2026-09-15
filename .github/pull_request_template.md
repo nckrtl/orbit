@@ -1,10 +1,13 @@
-## What
+## Change
 
-<!-- One or two sentences: what changed and why. Link the Linear issue. -->
+<!-- Describe the problem and resulting behavior. Link a public or Linear issue if available. -->
 
-## Proof
+## Verification
 
-<!-- One of:
-Proved with `.loop/proof/<ISSUE>.json` at `<sha>`.
-Automated tests only.
--->
+<!-- List the commands you ran and their results. Name anything unverified.
+You may submit without Incus testing. Nick can perform required machine verification before merge.
+Maintainers: include the selected flow, exact candidate and artifact binding, acceptance evidence, and Builder gate receipt. -->
+
+## Documentation
+
+<!-- List changed pages, or explain why documentation does not change. -->

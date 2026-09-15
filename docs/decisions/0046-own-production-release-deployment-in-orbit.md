@@ -1,3 +1,9 @@
+---
+title: "ADR 0046: Own production release deployment in Orbit"
+sidebarTitle: "0046 Own production release deployment in Orbit"
+description: "Accepted on 2026-09-10."
+---
+
 # ADR 0046: Own production release deployment in Orbit
 
 In the context of production AppInstances deployed by an operating agent, facing repeated release preparation and runtime coordination outside Orbit, we decided for Orbit-owned branch deployments with instance-owned application steps and against an external-only deployment lifecycle, to make release activation consistent, accepting that the agent retains application compatibility and recovery decisions.

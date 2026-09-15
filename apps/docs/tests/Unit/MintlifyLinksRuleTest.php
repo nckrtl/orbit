@@ -79,3 +79,37 @@ it('rejects repository page URLs that would break Mintlify navigation', function
     expect($findings)->toHaveCount(1)
         ->and($findings[0]->message)->toContain('root-relative page URL');
 })->with(['reference/apps.md', '/reference/apps.md#overview', 'reference/apps']);
+
+it('checks operation navigation against the inherited local OpenAPI specification', function (): void {
+    file_put_contents($this->root.'/openapi.json', json_encode([
+        'openapi' => '3.1.0',
+        'paths' => ['/api/v1/nodes/{node}' => ['get' => ['summary' => 'Show a Node']]],
+    ], JSON_THROW_ON_ERROR));
+    file_put_contents($this->root.'/docs.json', json_encode([
+        'navigation' => ['groups' => [
+            ['openapi' => '/openapi.json', 'pages' => [
+                'GET /api/v1/nodes/{node}',
+                ['group' => 'Nested', 'pages' => ['GET /api/v1/nodes/{node}', 'reference/apps']],
+                'DELETE /api/v1/nodes/{node}',
+                'GET /api/v1/missing',
+            ]],
+            ['pages' => ['GET /api/v1/nodes/{node}']],
+        ]],
+    ], JSON_THROW_ON_ERROR));
+
+    $findings = $this->rule->check();
+
+    expect($findings)->toHaveCount(3)
+        ->and($findings[0]->message)->toContain('DELETE /api/v1/nodes/{node}')
+        ->and($findings[1]->message)->toContain('GET /api/v1/missing')
+        ->and($findings[2]->message)->toContain('GET /api/v1/nodes/{node}');
+});
+
+it('rejects operation navigation when its specification is missing or malformed', function (?string $contents): void {
+    if ($contents !== null) {
+        file_put_contents($this->root.'/openapi.json', $contents);
+    }
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"openapi":"/openapi.json","pages":["GET /api/v1/nodes"]}]}}');
+
+    expect($this->rule->check())->toHaveCount(1);
+})->with([null, '{broken', 'null', '{"paths":{}}']);

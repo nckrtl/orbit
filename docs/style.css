@@ -1,0 +1,134 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  --orbit-font-code: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --orbit-ink: #000000;
+  --orbit-text-primary: #20231f;
+  --orbit-text-secondary: #51534d;
+  --orbit-text-muted: #62645e;
+  --orbit-line-hairline: rgba(32, 35, 31, 0.08);
+  --orbit-line-default: rgba(32, 35, 31, 0.14);
+  --orbit-line-strong: rgba(32, 35, 31, 0.23);
+  --orbit-surface-card: #fbfaf7;
+}
+
+.dark {
+  --orbit-ink: #ffffff;
+  --orbit-text-primary: #f4f2ec;
+  --orbit-text-secondary: #b3b3ba;
+  --orbit-text-muted: #8e8e98;
+  --orbit-line-hairline: rgba(244, 242, 236, 0.08);
+  --orbit-line-default: rgba(244, 242, 236, 0.12);
+  --orbit-line-strong: rgba(244, 242, 236, 0.2);
+  --orbit-surface-card: #101013;
+}
+
+body {
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-wrap: pretty;
+}
+
+/* Headings: Space Grotesk medium with the tight tracking the website uses. */
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+#page-title {
+  font-size: 36px;
+  line-height: 40px;
+  letter-spacing: -0.025em;
+  text-align: start;
+}
+
+#content h2 {
+  font-size: 24px;
+  line-height: 32px;
+  margin-top: 36px;
+  margin-bottom: 18px;
+}
+
+#content h3 {
+  font-size: 18px;
+  line-height: 28px;
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+code,
+kbd,
+pre,
+pre * {
+  font-family: var(--orbit-font-code) !important;
+  letter-spacing: -0.01em;
+}
+
+/* Maintained .md pages keep their H1 for GitHub and the context index; Mintlify already renders the frontmatter title. */
+#content.mdx-content > h1:first-child {
+  display: none;
+}
+
+/* Sidebar group headings: the body font, sentence case, pure white or black depending on the theme. */
+#sidebar h5,
+#sidebar-content h5,
+.sidebar-group-header,
+#sidebar-group-header {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--orbit-ink) !important;
+  margin-bottom: 10px;
+}
+
+.sidebar-group-header * {
+  color: var(--orbit-ink) !important;
+}
+
+/* Hairline borders instead of the default grey rules. */
+#sidebar,
+#navbar,
+#content-side-layout,
+.border,
+.border-b,
+.border-t,
+.border-l,
+.border-r {
+  border-color: var(--orbit-line-default) !important;
+}
+
+hr {
+  border-color: var(--orbit-line-hairline);
+}
+
+table th {
+  font-weight: 500;
+  color: var(--orbit-text-primary);
+}
+
+table td,
+table th {
+  border-color: var(--orbit-line-default) !important;
+}
+
+/* Cards and callouts sit on the site's card surface with a 6px radius. */
+.card,
+[class*="rounded-2xl"],
+[class*="rounded-xl"] {
+  border-radius: 6px !important;
+}
+
+.dark ::selection {
+  background: #f4f2ec;
+  color: #050506;
+}
+
+:not(.dark) ::selection {
+  background: #20231f;
+  color: #f6f5f1;
+}

@@ -1,3 +1,8 @@
+---
+title: "Database connections"
+description: "The Gateway-owned registry of mysql, pgsql, and sqlite connections and how an operator attaches one to an App instance."
+---
+
 # Database connections
 
 This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records, which fields each driver requires, and how list, show, create, update, destroy, add, remove, and Doctor inspection behave. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.

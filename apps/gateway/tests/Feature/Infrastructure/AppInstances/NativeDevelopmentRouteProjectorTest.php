@@ -572,6 +572,9 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         phpVersion: $boundary === 'runtime' ? '8.5' : null,
     );
     $failure = match ($boundary) {
+        'source-access' => static fn (RemoteCommand $command): bool => (
+            ($command->arguments[3] ?? null) === $appInstance->checkout_path
+        ),
         'runtime' => static fn (RemoteCommand $command): bool => str_contains(
             $command->input ?? '',
             'for path in "$php_root"/*/fpm/pool.d/orbit-scopes.conf',
@@ -582,7 +585,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         'firewall' => static fn (RemoteCommand $command): bool => ($command->arguments[1] ?? null) === 'ufw',
         'dns' => null,
     };
-    [$projector, , $processes, $home] = orb127_route_projector($failure, failDns: $boundary === 'dns');
+    [$projector, $ssh, $processes, $home] = orb127_route_projector($failure, failDns: $boundary === 'dns');
 
     try {
         expect(fn () => $projector->converge($appInstance, $route))
@@ -593,10 +596,14 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
                     ->toBe($expectedCode);
             });
         expect($processes->invocations)->toHaveCount($boundary === 'dns' ? 1 : 0);
+        if ($boundary === 'source-access') {
+            expect($ssh->commands)->toHaveCount(1);
+        }
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
 })->with([
+    'source-access' => ['source-access', 'source-access', 'app-dev.source_access_failed'],
     'runtime' => ['runtime', 'php-fpm-discover', 'app-dev.php_fpm_discovery_failed'],
     'certificate' => ['certificate', 'certificate-request', 'app-dev.certificate_request_failed'],
     'firewall' => ['firewall', 'route-firewall', 'app-dev.route_firewall_failed'],

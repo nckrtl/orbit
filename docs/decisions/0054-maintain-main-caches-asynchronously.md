@@ -1,3 +1,9 @@
+---
+title: "ADR 0054: Maintain main caches asynchronously"
+sidebarTitle: "0054 Maintain main caches asynchronously"
+description: "Accepted on 2026-09-10. Extends ADR 0052."
+---
+
 # ADR 0054: Maintain main caches asynchronously
 
 In the context of independently reviewed feature candidates, facing worktree startup delays from main cache refreshes, we decided for asynchronous monorepo maintenance and against waiting for cache freshness before development or landing, to shorten the delivery loop, accepting delayed discovery of integration failures and occasional repair work.

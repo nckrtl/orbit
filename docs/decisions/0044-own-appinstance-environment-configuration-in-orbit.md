@@ -1,3 +1,9 @@
+---
+title: "ADR 0044: Own AppInstance environment configuration in Orbit"
+sidebarTitle: "0044 Own AppInstance environment configuration in Orbit"
+description: "Accepted on 2026-09-09. Extends ADR 0029 from Laravel URL ownership to complete AppInstance environment configuration."
+---
+
 # ADR 0044: Own AppInstance environment configuration in Orbit
 
 In the context of AppInstances whose environment configuration exists only on workload Nodes, facing configuration that cannot be regenerated for another placement, we decided for encrypted Gateway-owned values and instance-bound references and against treating local environment files as configuration authority, to make configuration reproducible, accepting explicit import and synchronization operations.

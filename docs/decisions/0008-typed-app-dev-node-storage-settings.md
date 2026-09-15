@@ -1,3 +1,9 @@
+---
+title: "ADR 0008: Define typed app-dev node storage settings"
+sidebarTitle: "0008 Define typed app-dev node storage settings"
+description: "Accepted on 2026-08-30."
+---
+
 # ADR 0008: Define typed app-dev node storage settings
 
 ## Status

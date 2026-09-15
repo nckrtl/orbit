@@ -1,3 +1,9 @@
+---
+title: "ADR 0021: Pin Sury PHP-FPM with OPcache profiles per role"
+sidebarTitle: "0021 Pin Sury PHP-FPM with OPcache profiles per role"
+description: "Accepted on 2026-09-03."
+---
+
 # ADR 0021: Pin Sury PHP-FPM with OPcache profiles per role
 
 In the context of PHP applications served by Caddy on `app-dev` and `app-prod` Nodes, facing engine OPcache defaults that overflow with two Laravel checkouts and re-check every file every two seconds, we decided for the Sury packages with one PHP-FPM service per version and an OPcache policy per role, and against static-php builds, the tracing JIT, and building Caddy from source, to achieve defined cache semantics and enough capacity for many sites on one Node, accepting that production code is cached until the service reloads and every production deploy must end with that reload.

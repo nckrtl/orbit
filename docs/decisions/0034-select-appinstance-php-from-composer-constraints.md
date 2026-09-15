@@ -1,3 +1,9 @@
+---
+title: "ADR 0034: Select AppInstance PHP from Composer constraints"
+sidebarTitle: "0034 Select AppInstance PHP from Composer constraints"
+description: "Accepted on 2026-09-05. Extends ADR 0021."
+---
+
 # ADR 0034: Select AppInstance PHP from Composer constraints
 
 In the context of development AppInstances whose source may declare a PHP platform constraint, facing a fixed role default that can be incompatible with an application, we decided for Orbit selecting the highest supported PHP version allowed by a PHP project's Composer constraint and against a fixed version or an AppInstance PHP setting, to run each PHP project on a compatible managed runtime, accepting that the available Orbit runtime set limits selection.

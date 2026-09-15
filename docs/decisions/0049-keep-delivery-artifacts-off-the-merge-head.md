@@ -1,3 +1,9 @@
+---
+title: "ADR 0049: Keep delivery artifacts off the merge head"
+sidebarTitle: "0049 Keep delivery artifacts off the merge head"
+description: "Accepted on 2026-09-10. Extends ADR 0015."
+---
+
 # ADR 0049: Keep delivery artifacts off the merge head
 
 In the context of independent feature review, facing a second approval and continuous integration run caused by deleting the implementation workspace, we decided for separate Git references bound to the candidate and against committing delivery artifacts on the feature branch, to merge the reviewed candidate without another content change, accepting separate artifact retrieval and retention.

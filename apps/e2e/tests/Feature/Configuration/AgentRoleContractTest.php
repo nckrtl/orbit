@@ -558,6 +558,7 @@ it('keeps decision records templated and linted', function () use ($read, $root)
 it('keeps repository guidance and agent manifests current', function () use ($read): void {
     $agents = $read('AGENTS.md');
     $readme = $read('README.md');
+    $contributing = $read('CONTRIBUTING.md');
     $developerManifest = $read('.agents/skills/developing-features/agents/openai.yaml');
     $decisions = $read('docs/decisions/README.md');
     $topologies = $read('docs/reference/incus-topologies.md');
@@ -571,12 +572,15 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     expect($agents)->toContain('Production release is separate from development proof');
 
     expect($readme)
-        ->toContain('bin/worktree-create ')
-        ->toContain('/fast/worktrees/orbit/orb-217')
-        ->toContain('independently invokable')
-        ->toContain('optional task guides')
-        ->toContain('contributors and coding')
+        ->toContain('[Contribute](CONTRIBUTING.md)')
         ->not->toContain('reconciliation');
+
+    expect($contributing)
+        ->toContain('bin/worktree-create')
+        ->toContain('bin/bootstrap')
+        ->toContain('composer test:affected')
+        ->toContain('without a local Incus installation')
+        ->toContain('implementation loop');
 
     expect($developerManifest)
         ->toContain('Todo or In Progress Orbit issue')

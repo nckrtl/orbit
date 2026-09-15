@@ -1,3 +1,8 @@
+---
+title: "Apps"
+description: "How an App records one repository, its default branch, and the web root that App instances inherit."
+---
+
 # Apps
 
 An App stores one application's Git repository, access URL, default branch, and relative web root. New App instances inherit these source defaults. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity; [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.

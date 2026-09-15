@@ -1,7 +1,14 @@
+---
+title: "Orbit documentation"
+description: "A map of the maintained documentation corpus and the commands that keep it consistent."
+---
+
 # Orbit documentation
 
 These pages explain what Orbit can do, how its main parts work together, and
 how to use it.
+
+The same pages publish as the Orbit documentation site through Mintlify. `docs.json` holds the site navigation and theme, `style.css` holds the site styling, and the pages under `cli/` and `api/` exist for the site only. `openapi.json` describes the Gateway API for the site's API tab; `composer docs-openapi` regenerates it from the Gateway routes, form requests, data classes, and the PHP SDK.
 
 If you are new to Orbit, start with the mission and architecture. Keep the
 concepts page nearby for any Orbit terms you do not know yet.
@@ -20,6 +27,7 @@ Choose a page based on what you want to learn:
 - [Tech stack](/tech-stack) lists the main tools and technologies used by
   Orbit.
 - [Concepts](/concepts) gives short explanations of common Orbit terms.
+- [Using the CLI](/cli/overview) documents every command family and its arguments.
 - [Product areas](/domains/README) groups feature documentation as it grows.
 - [Decisions](/decisions/README) keeps the history behind important design
   choices.

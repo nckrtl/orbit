@@ -1,0 +1,257 @@
+---
+title: "process"
+description: "Install, start, stop, inspect, and remove systemd services and Docker containers owned by an App instance or a Node, and record App-owned process definitions."
+---
+
+A Process is Gateway intent for one systemd service or Docker container. It belongs to exactly one owner: an App instance, a managed Node, or, as a reusable definition, an App. The `process` family installs the runtime artifact, changes its desired state, reads a bounded log tail, and removes it.
+
+The [App process and Schedule definitions](/reference/app-processes-and-schedules) reference owns the runtime contract, the owner rules, and the App-definition copy model. The [hibernation reference](/reference/app-dev-runtime-hibernation) owns idle halt and wake for development App instance Processes.
+
+## Choose the owner
+
+`process:create` and `process:list` need exactly one selector. The CLI refuses two selectors together and refuses `--for` without `--app` before it sends a request.
+
+| Selector | Owner | Result |
+| --- | --- | --- |
+| `--instance=ID` | App instance | The Gateway derives the host Node and runtime user from the App instance. |
+| `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed runtime user for shared infrastructure such as a Docker database. |
+| `--app=APP --for=ENV[,ENV]` | App definition | The Gateway records a reusable definition for `development`, `production`, or both. Production preparation copies it into a new App instance Process. |
+
+`process:show`, `process:update`, and `process:destroy` with `--app` select a definition by name. `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without `--app` take the numeric Process ID from `process:list`.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`process:create`](#orbit-processcreate) | Install one Process or record one App process definition. |
+| [`process:list`](#orbit-processlist) | List the Processes of one App instance or Node, or the definitions of one App. |
+| [`process:show`](#orbit-processshow) | Show one App process definition. |
+| [`process:update`](#orbit-processupdate) | Replace one App process definition. |
+| [`process:start`](#orbit-processstart) | Start one Process and record the running desired state. |
+| [`process:stop`](#orbit-processstop) | Stop one Process and record the stopped desired state. |
+| [`process:restart`](#orbit-processrestart) | Restart one Process. |
+| [`process:logs`](#orbit-processlogs) | Return a bounded log tail. |
+| [`process:destroy`](#orbit-processdestroy) | Remove one Process and its artifacts, or one definition. |
+
+Every command accepts `--json`. Human and JSON output include the Gateway request ID.
+
+## orbit process:create
+
+Install one stopped or initially running systemd service or Docker container, or record an App-owned definition.
+
+```bash
+orbit process:create <name> (--instance=ID | --node=ID-or-name | --app=APP --for=ENV[,ENV]) [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Process name of at most 63 characters. It is unique within the owner. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--instance=ID` | none | Positive App instance ID. |
+| `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list before it sends the request. |
+| `--app=APP` | none | Numeric App ID for a definition. |
+| `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--app`. |
+| `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
+| `--command=ARG` | none | One argv item. Repeat the option for each argument, at most 64 items of 4,096 bytes each. |
+| `--image=IMAGE` | none | Docker image. |
+| `--working-directory=PATH` | see below | Runtime working directory. |
+| `--environment=NAME=VALUE` | none | Docker environment variable. Repeat as needed. |
+| `--port=HOST:CONTAINER[/tcp\|udp]` | none | Docker published port. Repeat as needed. |
+| `--volume=SOURCE:TARGET[:ro]` | none | Docker volume. Repeat as needed. |
+| `--restart=POLICY` | `never` | `never`, `on-failure`, `always`, or `unless-stopped`. |
+| `--keep-alive` | off | Keep the Process running through app-dev idle hibernation. |
+| `--start` | off | Start the Process after installing it. Not accepted for a definition. |
+
+The two runtimes accept these values.
+
+| Runtime | Required | Optional | Default working directory |
+| --- | --- | --- | --- |
+| systemd | Absolute executable with argv | Working directory, restart policy, keep-alive, initial start | The development checkout, the production home's `current` path, or `/home/{user}` on a Node |
+| Docker | Image and command argv | Working directory, environment, ports, volumes, restart policy, keep-alive, initial start | `/app` |
+
+Install a Vite development server on an App instance and start it:
+
+```bash
+orbit process:create vite \
+  --instance=12 \
+  --runtime=systemd \
+  --command=/usr/local/bin/vp \
+  --command=run \
+  --command=dev \
+  --command=--host=0.0.0.0 \
+  --restart=always \
+  --start
+```
+
+Run a shared Postgres container on a Node:
+
+```bash
+orbit process:create postgres \
+  --node=beast \
+  --runtime=docker \
+  --image=postgres:18 \
+  --port=5432:5432 \
+  --volume=postgres-data:/var/lib/postgresql/data
+```
+
+Record a queue worker definition that every production copy inherits:
+
+```bash
+orbit process:create queue \
+  --app=1 \
+  --for=development,production \
+  --runtime=systemd \
+  --command=/usr/bin/php \
+  --command=artisan \
+  --command=queue:work \
+  --restart=on-failure \
+  --keep-alive
+```
+
+A development systemd Process runs as the Node's managed runtime user, reads the `.env` file in the recorded checkout, and receives `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, and the `ORBIT_DEV_SERVER_*` values for the App instance Route domain. A production Process runs as the dedicated production user from the `current` release. A Node Process receives no App instance environment.
+
+Repeating an identical create returns the same Process and keeps its desired state. A changed specification with the same owner and name returns `process.name_taken` without changing the record or the runtime; destroy the Process and create it again to change it.
+
+<Note>
+On a Node with the active `app-dev` role, the Gateway installs a development systemd Process without host-boot start intent and stops it after the idle window. `--keep-alive` exempts the Process from idle halt; the restart policy does not. A Docker Process with `--restart=always` maps to Docker `unless-stopped` there so an idle stop survives a daemon restart.
+</Note>
+
+A prepared production home without a selected release accepts a stopped installation, but `--start` and a later `process:start` fail until `instance:deploy` selects a release.
+
+## orbit process:list
+
+List the Process records of one App instance or Node with their desired and observed states and `keep_alive`, or the definitions of one App without their commands.
+
+```bash
+orbit process:list (--instance=ID | --node=ID-or-name | --app=APP) [--json]
+```
+
+```bash
+orbit process:list --instance=12
+orbit process:list --node=beast
+orbit process:list --app=1
+```
+
+## orbit process:show
+
+Show one App process definition by name, including its UUID and complete specification.
+
+```bash
+orbit process:show <name> --app=APP [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Process definition name. |
+
+| Option | Meaning |
+| --- | --- |
+| `--app=APP` | Numeric App ID that owns the definition. |
+
+## orbit process:update
+
+Replace one App process definition with a complete specification. The command accepts the same runtime options as `process:create` and requires `--app` and `--for`.
+
+```bash
+orbit process:update <name> --app=APP --for=ENV[,ENV] [runtime options] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Process definition name. |
+
+Changing a definition changes only App-owned configuration. It makes no remote call and does not change an existing App instance Process copy or its runtime state.
+
+## orbit process:start
+
+Start an installed Process and record the running desired state.
+
+```bash
+orbit process:start <process> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `process` | yes | Numeric Process ID. |
+
+Starting an App instance Process requires an active App instance on a reachable active Node. Starting a Node Process requires a reachable active managed Node. A competitor for the same App instance waits for at most 30 seconds and then receives `process.operation_busy`; a competitor for the same Process receives `process.runtime_lock_failed`.
+
+## orbit process:stop
+
+Stop an installed Process and record the stopped desired state. After a stop, hibernation wake leaves the Process stopped.
+
+```bash
+orbit process:stop <process> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `process` | yes | Numeric Process ID. |
+
+## orbit process:restart
+
+Restart an installed Process and record the running desired state.
+
+```bash
+orbit process:restart <process> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `process` | yes | Numeric Process ID. |
+
+## orbit process:logs
+
+Return one non-streaming log tail for a Process. Docker environment values and credential-shaped data are redacted.
+
+```bash
+orbit process:logs <process> [--lines=COUNT] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `process` | yes | Numeric Process ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--lines=COUNT` | `100` | Number of lines, from 1 through 1,000. |
+
+```bash
+orbit process:logs 41 --lines=250
+```
+
+## orbit process:destroy
+
+Stop and remove the exact owned runtime artifacts of one Process, then delete its record. With `--app`, destroy one App process definition by name.
+
+```bash
+orbit process:destroy <process> [--app=APP] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `process` | yes | Numeric Process ID, or the definition name with `--app`. |
+
+| Option | Meaning |
+| --- | --- |
+| `--app=APP` | Numeric App ID. Selects a definition instead of an installed Process. |
+
+```bash
+orbit process:destroy 41
+orbit process:destroy queue --app=1
+```
+
+<Warning>
+The command sends the request without a confirmation prompt. Systemd units are named `orbit-process-{id}-{name}.service` and containers `orbit-process-{id}-{name}`; the Gateway checks that exact owner marker before it stops or removes anything and never adopts or deletes a colliding unit or container.
+</Warning>
+
+Destroying a definition leaves every existing App instance copy in place.
+
+## Related
+
+- [`schedule`](/cli/schedule) records recurring commands; Process commands do not operate on Schedules.
+- [`instance`](/cli/instance) removal cleans up every owned Process; Node-owned Processes stay in place.
+- [`doctor`](/cli/doctor) with `--family=process` compares desired and observed state without changing it.
+- [`database`](/cli/database) connections can align with a same-Node Docker Process on a published port.

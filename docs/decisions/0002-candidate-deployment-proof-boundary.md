@@ -1,3 +1,9 @@
+---
+title: "ADR 0002: Keep proof resources task-owned and production separate"
+sidebarTitle: "0002 Keep proof resources task-owned and production separate"
+description: "Accepted on 2026-08-26. The former shared-live development-proof venue is superseded by ADR 0006."
+---
+
 # ADR 0002: Keep proof resources task-owned and production separate
 
 ## Status

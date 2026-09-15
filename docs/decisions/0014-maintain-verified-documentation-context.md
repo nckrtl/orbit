@@ -1,3 +1,9 @@
+---
+title: "ADR 0014: Maintain verified documentation as implementation context"
+sidebarTitle: "0014 Maintain verified documentation as implementation context"
+description: "Accepted on 2026-09-01."
+---
+
 # ADR 0014: Maintain verified documentation as implementation context
 
 ## Status

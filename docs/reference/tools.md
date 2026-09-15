@@ -1,3 +1,8 @@
+---
+title: "Tools"
+description: "Tool Manager availability, first-use provisioning, installs, Homebrew formulae, removal, and Doctor results for packages on a Node."
+---
+
 # Tools
 
 This reference is for operators who manage packages on Nodes and need to understand Tool Manager availability, first-use provisioning, retries, removal, and Doctor results.

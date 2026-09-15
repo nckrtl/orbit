@@ -1,3 +1,9 @@
+---
+title: "ADR 0030: Complete AppInstance provisioning without application health gates"
+sidebarTitle: "0030 Complete AppInstance provisioning without application health gates"
+description: "Accepted on 2026-09-05. Extends ADR 0028."
+---
+
 # ADR 0030: Complete AppInstance provisioning without application health gates
 
 In the context of creating an AppInstance before its application dependencies and services are configured, facing active-state requirements that depend on application health, we decided for automatic completion after Orbit provisions the instance and Route and aligns Laravel URL configuration and against a separate activation step, to expose the endpoint for application setup, accepting that an active instance can serve application errors.
