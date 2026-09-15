@@ -8,6 +8,15 @@ use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\CommandPrompts;
+use App\Support\Console\ConsoleInterrupted;
+use App\Support\Console\ConsoleMode;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\HumanRenderer;
+use App\Support\Console\ProgressDisplay;
+use App\Support\Console\PromptAborted;
+use App\Support\Console\PromptContext;
+use App\Support\Console\SpinnerDisplay;
 use App\Support\GatewayFailureRenderer;
 use InvalidArgumentException;
 use JsonException;
@@ -29,21 +38,58 @@ abstract class GatewayCommand extends Command
     public function run(InputInterface $input, OutputInterface $output): int
     {
         try {
-            return parent::run($input, $output);
+            return PromptContext::preserve(fn (): int => parent::run($input, $output));
+        } catch (PromptAborted $exception) {
+            if ($input->hasParameterOption('--json', true)) {
+                ConsoleWriter::write($output, GatewayFailureRenderer::json('input.invalid', $exception->getMessage())."\n");
+            } else {
+                ConsoleWriter::write($output, new HumanRenderer(ConsoleMode::detect($input, $output))->failure($exception->getMessage()));
+            }
+
+            return self::FAILURE;
+        } catch (ConsoleInterrupted $exception) {
+            return $exception->getCode();
         } catch (ExceptionInterface $exception) {
-            if (! $input->hasParameterOption('--json')) {
+            if (! $input->hasParameterOption('--json', true)) {
                 throw $exception;
             }
 
             $message = trim($exception->getMessage());
 
-            $output->writeln(GatewayFailureRenderer::json(
+            ConsoleWriter::write($output, GatewayFailureRenderer::json(
                 'input.invalid',
                 $message !== '' ? $message : 'Command input is invalid.',
-            ));
+            )."\n");
 
             return self::FAILURE;
         }
+    }
+
+    /** Resolve after framework setup and input binding, using the selected stream. */
+    protected function consoleMode(?OutputInterface $output = null): ConsoleMode
+    {
+        return ConsoleMode::detect($this->input, $output ?? $this->output,
+            machine: $this->getDefinition()->hasOption('json') && $this->option('json') === true);
+    }
+
+    protected function commandPrompts(): CommandPrompts
+    {
+        return new CommandPrompts($this->consoleMode(), $this->output);
+    }
+
+    protected function humanRenderer(): HumanRenderer
+    {
+        return new HumanRenderer($this->consoleMode());
+    }
+
+    protected function progressDisplay(string $title): ProgressDisplay
+    {
+        return new ProgressDisplay($this->consoleMode(), $this->output, $title);
+    }
+
+    protected function spinnerDisplay(): SpinnerDisplay
+    {
+        return new SpinnerDisplay($this->consoleMode(), $this->output);
     }
 
     protected function gatewayConnector(
@@ -272,7 +318,7 @@ abstract class GatewayCommand extends Command
     /** @param array<string, mixed> $payload */
     protected function writeJson(array $payload): void
     {
-        $this->line(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        ConsoleWriter::write($this->output, json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n");
     }
 
     /** @param array<string,string> $details */

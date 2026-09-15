@@ -2371,6 +2371,7 @@
                 "apps/cli"
             ],
             "concepts": [
+                "App",
                 "Process"
             ],
             "governing_adrs": [

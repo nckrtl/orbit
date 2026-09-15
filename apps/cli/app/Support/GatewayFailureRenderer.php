@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Support\Console\ConsoleMode;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\HumanRenderer;
 use LaravelZero\Framework\Commands\Command;
+use Symfony\Component\Console\Input\ArrayInput;
 
 final class GatewayFailureRenderer
 {
@@ -53,12 +57,10 @@ final class GatewayFailureRenderer
         $requestId = self::safeRequestId($requestId);
 
         if ($command->option('json') === true) {
-            $command->line(self::json($code, $message, $requestId, $details));
+            ConsoleWriter::write($command->getOutput(), self::json($code, $message, $requestId, $details)."\n");
 
             return;
         }
-
-        $command->error(self::safeErrorMessage($humanMessage ?? $message));
 
         $humanDetails = $details;
         $id = $humanDetails['id'] ?? null;
@@ -67,15 +69,13 @@ final class GatewayFailureRenderer
             $humanDetails['id'] = (string) $id;
         }
 
-        foreach (self::fieldDetails($humanDetails) as $field => $messages) {
-            foreach (is_string($messages) ? [$messages] : $messages as $fieldMessage) {
-                $command->line("{$field}: {$fieldMessage}");
-            }
-        }
-
-        if ($requestId !== null) {
-            $command->line("Request ID: {$requestId}");
-        }
+        $output = $command->getOutput();
+        $renderer = new HumanRenderer(ConsoleMode::detect(new ArrayInput([]), $output));
+        ConsoleWriter::write($output, $renderer->failure(
+            self::safeErrorMessage($humanMessage ?? $message),
+            self::fieldDetails($humanDetails),
+            $requestId,
+        ));
     }
 
     /**
