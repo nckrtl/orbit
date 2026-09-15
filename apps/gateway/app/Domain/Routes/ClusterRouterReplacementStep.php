@@ -8,7 +8,7 @@ enum ClusterRouterReplacementStep: string
 {
     case RouterCertificate = 'router-certificate';
     case FirewallPolicy = 'firewall-policy';
-    case WorkloadVerified = 'workload-verified';
+    case WorkloadVerified = 'workload-verify';
     case RouterCaddy = 'router-caddy';
     case DnsPublished = 'dns-publication';
     case DatabaseCutover = 'database';
