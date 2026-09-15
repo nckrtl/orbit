@@ -10,6 +10,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
@@ -40,7 +41,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class RemoveAppInstanceAction
+final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 {
     public function __construct(
         private DevelopmentAppInstanceSourceRemoval $sourceInspector,

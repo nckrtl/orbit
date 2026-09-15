@@ -25,7 +25,10 @@ final readonly class RouteResponse
         public ?int $replacesRouteId,
         public ?int $replacedByRouteId,
         public ?string $replacementStep,
+        public ?string $targetSetStep,
         public ?RouteTargetResponse $target,
+        /** @var list<RouteTargetResponse> */
+        public array $targets,
         public string $requestId,
     ) {}
 
@@ -37,6 +40,7 @@ final readonly class RouteResponse
         string $requestId,
     ): self {
         $target = self::target($data['target'] ?? null);
+        $targets = self::targets($data['targets'] ?? null, $target);
 
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
@@ -58,12 +62,14 @@ final readonly class RouteResponse
                 ? $data['replaced_by_route_id']
                 : null,
             replacementStep: is_string($data['replacement_step'] ?? null) ? $data['replacement_step'] : null,
+            targetSetStep: is_string($data['target_set_step'] ?? null) ? $data['target_set_step'] : null,
             target: $target,
+            targets: $targets,
             requestId: $requestId,
         );
     }
 
-    /** @return array<string, int|string|null|array{id: int, app_instance_id: int, position: int}> */
+    /** @return array<string, int|string|null|array{id: int, app_instance_id: int, position: int}|list<array{id: int, app_instance_id: int, position: int}>> */
     public function toArray(): array
     {
         return [
@@ -82,9 +88,44 @@ final readonly class RouteResponse
             'replaces_route_id' => $this->replacesRouteId,
             'replaced_by_route_id' => $this->replacedByRouteId,
             'replacement_step' => $this->replacementStep,
+            'target_set_step' => $this->targetSetStep,
             'target' => $this->target?->toArray(),
+            'targets' => array_map(
+                static fn (RouteTargetResponse $target): array => $target->toArray(),
+                $this->targets,
+            ),
             'request_id' => $this->requestId,
         ];
+    }
+
+    /**
+     * @return list<RouteTargetResponse>
+     */
+    private static function targets(#[SensitiveParameter] mixed $value, ?RouteTargetResponse $target): array
+    {
+        if (! is_array($value)) {
+            return $target instanceof RouteTargetResponse ? [$target] : [];
+        }
+
+        $targets = [];
+
+        foreach ($value as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $normalized = [];
+
+            foreach ($item as $key => $entry) {
+                if (is_string($key)) {
+                    $normalized[$key] = $entry;
+                }
+            }
+
+            $targets[] = RouteTargetResponse::fromGatewayData($normalized);
+        }
+
+        return $targets;
     }
 
     private static function target(#[SensitiveParameter] mixed $value): ?RouteTargetResponse

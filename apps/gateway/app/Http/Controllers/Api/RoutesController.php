@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Routes\ClearRouteTargetAction;
+use App\Actions\Routes\ConvergeRouteTargetSetAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\ListRoutesAction;
 use App\Actions\Routes\RemoveRouteAction;
@@ -79,9 +80,14 @@ final class RoutesController extends Controller
         SetRouteTargetRequest $request,
         Route $route,
         SetRouteTargetAction $action,
+        ConvergeRouteTargetSetAction $targetSet,
     ): JsonResponse {
+        $updated = $request->isTargetSet()
+            ? $targetSet->execute($route, $request->payload())
+            : $action->execute($route, $request->appInstanceId());
+
         return response()->json([
-            'data' => RouteData::fromModel($action->execute($route, $request->appInstanceId()))->toArray(),
+            'data' => RouteData::fromModel($updated)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

@@ -727,7 +727,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'route:destroy' => [['route'], ['json' => false]],
         'route:show' => [['route'], ['json' => false]],
         'route:target:unset' => [['route'], ['json' => false]],
-        'route:target:set' => [['route', 'target'], ['json' => false]],
+        'route:target:set' => [['route', 'target'], ['targets' => [], 'reassign' => [], 'remove' => [], 'json' => false]],
         'route:update' => [['route'], ['domain' => null, 'publication' => null, 'json' => false]],
         'schedule:enable' => [['schedule'], ['json' => false]],
         'schedule:create' => [[

@@ -207,6 +207,39 @@ it('accepts pending active activating retiring and failed Route statuses', funct
         ->toThrow(QueryException::class);
 });
 
+it('allows target-set failure evidence and empty explicit Cluster Routes', function (): void {
+    $active = route_migration_replacement_route('target-set-evidence');
+    $active->update(['target_set_step' => 'reserved']);
+
+    expect(fn () => $active->update([
+        'failed_step' => 'database-committed',
+        'error_code' => 'route.target_set_failed',
+    ]))
+        ->not->toThrow(QueryException::class);
+
+    $app = App\Models\App::query()->create([
+        'name' => 'Vacated',
+        'slug' => 'vacated',
+        'repository_url' => 'https://example.test/vacated.git',
+    ]);
+    $cluster = Cluster::query()->create(['name' => 'vacated', 'state' => 'active']);
+    $empty = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'domain' => 'vacated-empty.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+
+    $empty->update(['target_set_step' => 'reserved']);
+
+    expect(fn () => $empty->update(['status' => RouteStatus::Active]))
+        ->not->toThrow(QueryException::class)
+        ->and($empty->refresh()->status)
+        ->toBe(RouteStatus::Active);
+});
+
 it('enforces multi-target storage with compatible Cluster-scoped production rows', function (): void {
     $app = App\Models\App::query()->create([
         'name' => 'Acme',

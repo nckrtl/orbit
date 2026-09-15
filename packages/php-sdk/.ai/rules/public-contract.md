@@ -56,8 +56,10 @@ operations. Keep the public API typed and small.
   synchronization body, and the bounded value-free operation result. The
   Gateway owns lookup, validation, references, storage, and synchronization.
 - Keep Route transport limited to App, domain, publication intent, exclusive
-  Node-or-Cluster scope, and at most one scalar AppInstance target. The Gateway
-  owns domain, scope, basis, relationship, and lifecycle policy.
+  Node-or-Cluster scope, a single AppInstance target, or an ordered production
+  target set with explicit AppInstance and Route identities plus removal
+  authorization. The Gateway owns domain, scope, basis, relationship, pool
+  policy, and lifecycle policy.
 - Preserve explicitly supplied process fields for every runtime. The Gateway
   owns cross-field policy.
 - Keep App runtime definition transport limited to a numeric App ID, a

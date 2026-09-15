@@ -7,7 +7,6 @@ namespace App\Domain\AppInstances\Environment;
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteProvenance;
-use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -220,7 +219,6 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         if (
             $authoritative->provenance !== RouteProvenance::Explicit
-            || $authoritative->publication !== RoutePublication::Private
             || $routeDomain === ''
         ) {
             $this->conflict();
